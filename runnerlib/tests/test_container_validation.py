@@ -61,10 +61,11 @@ class TestContainerImageAvailability:
         """Test when image is not available locally or in registry."""
         mock_which.return_value = "/usr/bin/nerdctl"
         
-        # Both calls fail
+        # All calls fail
         mock_run.side_effect = [
             MagicMock(returncode=1),  # Local check fails
-            MagicMock(returncode=1)   # Registry check fails
+            MagicMock(returncode=1),  # Pull dry-run check fails  
+            MagicMock(returncode=1)   # Manifest check fails
         ]
         
         available, message = check_container_image_availability("test:image")

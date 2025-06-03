@@ -3,7 +3,7 @@
 import subprocess
 import shutil
 from typing import Optional, Tuple
-from runnerlib.logging import log_stdout, log_stderr
+from src.logging import log_stdout, log_stderr
 
 
 def check_container_image_availability(image: str, timeout: int = 30) -> Tuple[bool, Optional[str]]:

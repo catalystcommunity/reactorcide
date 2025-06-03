@@ -137,11 +137,14 @@ class TestEnvironmentVariableIntegration:
     def setup_method(self):
         """Set up test environment."""
         self.temp_dir = tempfile.mkdtemp()
-        self.job_dir = Path(self.temp_dir) / "job"
+        self.original_cwd = os.getcwd()
+        os.chdir(self.temp_dir)
+        self.job_dir = Path("./job")
         self.job_dir.mkdir()
 
     def teardown_method(self):
         """Clean up test environment."""
+        os.chdir(self.original_cwd)
         if os.path.exists(self.temp_dir):
             shutil.rmtree(self.temp_dir, ignore_errors=True)
 
@@ -158,7 +161,7 @@ DEBUG=true"""
         # Configure to use the environment file
         config = get_config(
             job_command='test',
-            job_env=str(env_file),
+            job_env="./job/test.env",
             runner_image='test:image'
         )
         
@@ -174,14 +177,14 @@ DEBUG=true"""
         assert env_vars['DATABASE_URL'] == 'postgresql://localhost/test'
         assert env_vars['API_KEY'] == 'secret-key-123'
         assert env_vars['DEBUG'] == 'true'
-        assert env_vars['REACTORCIDE_JOB_ENV'] == str(env_file)
+        assert env_vars['REACTORCIDE_JOB_ENV'] == "./job/test.env"
 
     def test_environment_security_validation(self):
         """Test security validation for environment files."""
-        # Test with insecure path
+        # Test with path traversal in job directory context
         config = get_config(
             job_command='test',
-            job_env='../../../etc/passwd',  # Path traversal attempt
+            job_env='./job/../../../etc/passwd',  # Path traversal attempt
             runner_image='test:image'
         )
         

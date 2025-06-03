@@ -5,9 +5,9 @@ import subprocess
 import shutil
 from pathlib import Path
 from typing import List, Optional, Dict
-from runnerlib.logging import log_stdout, log_stderr
-from runnerlib.config import RunnerConfig, get_environment_vars
-from runnerlib.source_prep import prepare_job_directory
+from src.logging import log_stdout, log_stderr
+from src.config import RunnerConfig, get_environment_vars
+from src.source_prep import prepare_job_directory
 
 
 def run_container(
