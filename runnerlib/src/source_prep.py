@@ -6,8 +6,8 @@ import subprocess
 from pathlib import Path
 from typing import Optional
 from git import Repo
-from runnerlib.logging import log_stdout, log_stderr
-from runnerlib.config import RunnerConfig, get_config
+from src.logging import log_stdout, log_stderr
+from src.config import RunnerConfig, get_config
 
 
 def prepare_job_directory(config: Optional[RunnerConfig] = None) -> Path:

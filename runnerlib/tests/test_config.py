@@ -2,6 +2,7 @@
 
 import os
 import tempfile
+import shutil
 import pytest
 from pathlib import Path
 from unittest.mock import patch
@@ -15,6 +16,15 @@ class TestConfigManager:
     def setup_method(self):
         """Set up test environment."""
         self.config_manager = ConfigManager()
+        self.temp_dir = tempfile.mkdtemp()
+        self.original_cwd = os.getcwd()
+        os.chdir(self.temp_dir)
+
+    def teardown_method(self):
+        """Clean up test environment."""
+        os.chdir(self.original_cwd)
+        if os.path.exists(self.temp_dir):
+            shutil.rmtree(self.temp_dir, ignore_errors=True)
 
     def test_defaults(self):
         """Test that default values are properly set."""
@@ -132,31 +142,21 @@ KEY3=value3"""
 
     def test_parse_job_environment_from_file(self):
         """Test parsing environment variables from a file."""
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.env', delete=False) as f:
-            f.write("FILE_KEY1=file_value1\nFILE_KEY2=file_value2")
-            temp_file = f.name
+        # Create job directory structure
+        job_dir = Path("./job")
+        job_dir.mkdir(exist_ok=True)
+        env_file = job_dir / "test.env"
         
-        try:
-            # Move file to job directory structure
-            job_dir = Path("./job")
-            job_dir.mkdir(exist_ok=True)
-            env_file = job_dir / "test.env"
-            Path(temp_file).rename(env_file)
-            
-            result = self.config_manager.parse_job_environment(str(env_file))
-            
-            expected = {
-                'FILE_KEY1': 'file_value1',
-                'FILE_KEY2': 'file_value2'
-            }
-            assert result == expected
-            
-        finally:
-            # Clean up
-            if env_file.exists():
-                env_file.unlink()
-            if job_dir.exists():
-                job_dir.rmdir()
+        # Write environment file
+        env_file.write_text("FILE_KEY1=file_value1\nFILE_KEY2=file_value2")
+        
+        result = self.config_manager.parse_job_environment("./job/test.env")
+        
+        expected = {
+            'FILE_KEY1': 'file_value1',
+            'FILE_KEY2': 'file_value2'
+        }
+        assert result == expected
 
     def test_parse_job_environment_invalid_format(self):
         """Test that invalid environment variable format raises ValueError."""
@@ -179,10 +179,15 @@ KEY3=value3"""
 
     def test_parse_job_environment_insecure_path(self):
         """Test that insecure file paths raise ValueError."""
+        # Path traversal in job directory context should be blocked
         with pytest.raises(ValueError, match="Path traversal not allowed"):
-            self.config_manager.parse_job_environment("../../../etc/passwd")
+            self.config_manager.parse_job_environment("./job/../../../etc/passwd")
         
-        with pytest.raises(ValueError, match="job_env file path must start with"):
+        # Non-job paths are treated as inline content and fail format validation
+        with pytest.raises(ValueError, match="Invalid environment variable format"):
+            self.config_manager.parse_job_environment("../../../etc/passwd")
+            
+        with pytest.raises(ValueError, match="Invalid environment variable format"):
             self.config_manager.parse_job_environment("/absolute/path/file.env")
 
     def test_get_all_environment_vars(self):

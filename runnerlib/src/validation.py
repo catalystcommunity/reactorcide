@@ -6,8 +6,8 @@ from pathlib import Path
 from typing import List, Optional, Dict, Any
 from dataclasses import dataclass
 
-from runnerlib.config import RunnerConfig, config_manager
-from runnerlib.source_prep import get_code_directory_path, get_job_directory_path
+from src.config import RunnerConfig, config_manager
+from src.source_prep import get_code_directory_path, get_job_directory_path
 
 
 @dataclass
