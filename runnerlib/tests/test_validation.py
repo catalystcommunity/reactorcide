@@ -1,11 +1,8 @@
 """Tests for validation module."""
 
-import os
-import tempfile
 import shutil
 from pathlib import Path
-from unittest.mock import patch, MagicMock
-import pytest
+from unittest.mock import patch
 
 from src.validation import (
     ValidationError, ValidationResult, ConfigValidator, 
@@ -243,26 +240,26 @@ class TestConfigValidator:
         assert any("latest" in warning.message for warning in warnings)
 
     @patch('shutil.which')
-    def test_validate_external_dependencies_nerdctl_missing(self, mock_which):
-        """Test validation fails when nerdctl is missing."""
-        mock_which.return_value = None  # nerdctl not found
+    def test_validate_external_dependencies_docker_missing(self, mock_which):
+        """Test validation fails when docker is missing."""
+        mock_which.return_value = None  # docker not found
         
         errors = self.validator._validate_external_dependencies()
         assert len(errors) == 1
         assert errors[0].field == "system"
-        assert "nerdctl is not available" in errors[0].message
+        assert "docker is not available" in errors[0].message
 
     @patch('shutil.which')
-    def test_validate_external_dependencies_nerdctl_available(self, mock_which):
-        """Test validation passes when nerdctl is available."""
-        mock_which.return_value = "/usr/bin/nerdctl"  # nerdctl found
+    def test_validate_external_dependencies_docker_available(self, mock_which):
+        """Test validation passes when docker is available."""
+        mock_which.return_value = "/usr/bin/docker"  # docker found
         
         errors = self.validator._validate_external_dependencies()
         assert len(errors) == 0
 
     def test_validate_config_integration_valid(self):
         """Test full config validation for valid configuration."""
-        with patch('shutil.which', return_value="/usr/bin/nerdctl"):
+        with patch('shutil.which', return_value="/usr/bin/docker"):
             result = self.validator.validate_config(self.valid_config, check_files=False)
             
             assert result.is_valid is True
@@ -277,7 +274,7 @@ class TestConfigValidator:
             runner_image=""  # Invalid - empty
         )
         
-        with patch('shutil.which', return_value=None):  # nerdctl not available
+        with patch('shutil.which', return_value=None):  # docker not available
             result = self.validator.validate_config(invalid_config, check_files=False)
             
             assert result.is_valid is False
@@ -314,7 +311,7 @@ class TestConvenienceFunctions:
             runner_image="test:image"
         )
         
-        with patch('shutil.which', return_value="/usr/bin/nerdctl"):
+        with patch('shutil.which', return_value="/usr/bin/docker"):
             result = validate_config(config, check_files=False)
             assert isinstance(result, ValidationResult)
 

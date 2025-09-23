@@ -12,10 +12,11 @@ dependencies = [
 [project.optional-dependencies]
 test = [
     "pytest>=8.0.0",
+    "requests>=2.31.0",
 ]
 
 [project.scripts]
-runnerlib = "runnerlib.cli:app"
+runnerlib = "src.cli:app"
 
 [build-system]
 requires = ["hatchling"]
@@ -30,4 +31,7 @@ packages = ["src"]
 [dependency-groups]
 test = [
     "pytest>=8.3.5",
+]
+dev = [
+    "pytest-cov>=7.0.0",
 ]

@@ -1,7 +1,6 @@
 """Git operations for runnerlib."""
 
 import os
-from pathlib import Path
 from git import Repo, InvalidGitRepositoryError, GitCommandError
 from typing import List
 
@@ -108,7 +107,7 @@ def get_repository_info(repo_path: str) -> dict:
         
         try:
             info["current_branch"] = repo.active_branch.name
-        except:
+        except Exception:
             info["current_branch"] = "detached HEAD"
         
         info["current_commit"] = str(repo.head.commit)[:8]

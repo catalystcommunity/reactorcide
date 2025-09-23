@@ -1,0 +1,10 @@
+{
+  "name": "test-job",
+  "image": "node:18-alpine",
+  "command": "node --version && npm --version",
+  "environment": {
+    "NODE_ENV": "production",
+    "LOG_LEVEL": "info"
+  },
+  "secrets": ["NPM_TOKEN", "API_KEY"]
+}

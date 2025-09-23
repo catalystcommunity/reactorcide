@@ -1,0 +1,69 @@
+# Skaffold local development values
+app:
+  enabled: true
+  prometheus:
+    enabled: true
+  resources:
+    limits:
+      cpu: 500m
+      memory: 512Mi
+    requests:
+      cpu: 100m
+      memory: 128Mi
+
+web:
+  enabled: false  # Can be enabled if needed
+  resources:
+    limits:
+      cpu: 250m
+      memory: 256Mi
+    requests:
+      cpu: 50m
+      memory: 64Mi
+
+worker:
+  enabled: true
+  replicaCount: 1
+  resources:
+    limits:
+      cpu: 1000m
+      memory: 1Gi
+    requests:
+      cpu: 250m
+      memory: 256Mi
+
+postgres:
+  uri: postgresql://devuser:devpass@reactorcide-postgresql:5432/reactorcide?sslmode=disable
+
+postgresql:
+  enabled: true
+  auth:
+    username: "devuser"
+    postgresPassword: "devpass"
+    password: "devpass"
+    database: "reactorcide"
+  persistence:
+    enabled: false  # Disable for local development
+  resources:
+    limits:
+      cpu: 500m
+      memory: 512Mi
+    requests:
+      cpu: 100m
+      memory: 128Mi
+
+# Corndogs configuration for local development
+corndogs:
+  enabled: false  # Set to true when Corndogs is deployed
+  baseUrl: "corndogs:8080"
+
+# Use filesystem storage for local development
+objectStore:
+  type: filesystem
+  bucket: reactorcide-objects
+  basePath: /tmp/reactorcide-objects
+
+migrations:
+  # set the job name to be a timestamp, so that `skaffold dev` doesn't run into
+  # an issue when attempting to update the job
+  setJobNameAsTimestamp: true

@@ -1,16 +1,17 @@
 """CLI interface for runnerlib."""
 
 import os
-import sys
 import typer
 from typing import List, Optional
 
-from runnerlib.logging import log_stdout, log_stderr
-from runnerlib.git_ops import get_files_changed
-from runnerlib.container import run_container
-from runnerlib.source_prep import checkout_git_repo, copy_directory, cleanup_job_directory
-from runnerlib.config import get_config
-from runnerlib.validation import validate_config, format_validation_result
+from src.logging import log_stdout, log_stderr
+from src.git_ops import get_files_changed
+from src.container import run_container
+from src.source_prep import checkout_git_repo, copy_directory, cleanup_job_directory
+from src.config import get_config, get_secrets_to_mask, get_environment_vars
+from src.validation import validate_config, format_validation_result
+from src.secrets import SecretMasker
+from src.plugins import plugin_manager, PluginContext, PluginPhase, initialize_plugins
 
 app = typer.Typer()
 
@@ -25,13 +26,17 @@ def run(
     job_command: Optional[str] = typer.Option(None, "--job-command", help="Command to run in the container"),
     runner_image: Optional[str] = typer.Option(None, "--runner-image", help="Container image to use (default: quay.io/catalystcommunity/reactorcide_runner)"),
     job_env: Optional[str] = typer.Option(None, "--job-env", help="Environment variables as key=value pairs or file path (must start with ./job/)"),
+    secrets_list: Optional[str] = typer.Option(None, "--secrets-list", help="Comma-separated list of secret values to mask in logs, or path to secrets file"),
+    secrets_file: Optional[str] = typer.Option(None, "--secrets-file", help="Path to secrets file to mount into container at /run/secrets/env"),
+    work_dir: Optional[str] = typer.Option(None, "--work-dir", help="Working directory for job execution (default: current directory)"),
+    plugin_dir: Optional[str] = typer.Option(None, "--plugin-dir", help="Directory containing custom plugins"),
     # Dry run flag
     dry_run: bool = typer.Option(False, "--dry-run", help="Validate configuration without executing")
 ):
     """Run a job command, passing through all arguments."""
     # Get all arguments passed after 'run'
     command_args = ctx.args if ctx.args else (args or [])
-    
+
     # Build configuration overrides from CLI arguments
     cli_overrides = {}
     if code_dir is not None:
@@ -44,31 +49,62 @@ def run(
         cli_overrides['runner_image'] = runner_image
     if job_env is not None:
         cli_overrides['job_env'] = job_env
-    
+    if secrets_list is not None:
+        cli_overrides['secrets_list'] = secrets_list
+    if secrets_file is not None:
+        cli_overrides['secrets_file'] = secrets_file
+
     try:
+        # Initialize plugins
+        initialize_plugins(plugin_dir)
+        if plugin_manager.plugins:
+            log_stdout(f"Loaded {len(plugin_manager.plugins)} plugins: {', '.join(plugin_manager.list_plugins())}")
+
         # Get configuration with CLI overrides
         config = get_config(**cli_overrides)
-        
+
+        # If work_dir is provided, change to it before running
+        if work_dir:
+            os.chdir(work_dir)
+            log_stdout(f"Changed working directory to: {work_dir}")
+
+        # Create plugin context for validation
+        plugin_context = PluginContext(
+            config=config,
+            phase=PluginPhase.PRE_VALIDATION,
+            metadata={}
+        )
+
+        # Execute pre-validation plugins
+        plugin_manager.execute_phase(PluginPhase.PRE_VALIDATION, plugin_context)
+
         # Validate configuration
         validation_result = validate_config(config, check_files=True)
-        
+
         if not validation_result.is_valid:
             log_stderr("Configuration validation failed:")
             log_stderr(format_validation_result(validation_result))
             raise typer.Exit(1)
-        
+
+        # Execute post-validation plugins
+        plugin_context.phase = PluginPhase.POST_VALIDATION
+        plugin_manager.execute_phase(PluginPhase.POST_VALIDATION, plugin_context)
+
         # Show warnings if any
         if validation_result.has_warnings:
             log_stderr(format_validation_result(validation_result))
-        
+
         if dry_run:
             # Dry-run mode: show configuration and what would be executed
             _perform_dry_run(config, command_args)
             raise typer.Exit(0)
-        
+
         # Run the container with the job
         exit_code = run_container(config=config, additional_args=command_args)
         raise typer.Exit(exit_code)
+    except typer.Exit:
+        # Re-raise typer.Exit to avoid catching it as a generic exception
+        raise
     except (ValueError, FileNotFoundError) as e:
         log_stderr(f"Configuration error: {e}")
         raise typer.Exit(1)
@@ -84,7 +120,8 @@ def checkout(
     # Configuration overrides
     code_dir: Optional[str] = typer.Option(None, "--code-dir", help="Code directory path (default: /job/src)"),
     job_dir: Optional[str] = typer.Option(None, "--job-dir", help="Job directory path (default: same as code-dir)"),
-    runner_image: Optional[str] = typer.Option(None, "--runner-image", help="Container image to use (default: quay.io/catalystcommunity/reactorcide_runner)")
+    runner_image: Optional[str] = typer.Option(None, "--runner-image", help="Container image to use (default: quay.io/catalystcommunity/reactorcide_runner)"),
+    work_dir: Optional[str] = typer.Option(None, "--work-dir", help="Working directory for job execution (default: current directory)")
 ):
     """Checkout a git repository to the configured code directory."""
     # Build configuration overrides from CLI arguments
@@ -95,11 +132,16 @@ def checkout(
         cli_overrides['job_dir'] = job_dir
     if runner_image is not None:
         cli_overrides['runner_image'] = runner_image
-    
+
     try:
         # Get configuration with CLI overrides (dummy job_command for directory setup)
         config = get_config(job_command="dummy", **cli_overrides)
-        
+
+        # If work_dir is provided, change to it before checkout
+        if work_dir:
+            os.chdir(work_dir)
+            log_stdout(f"Changed working directory to: {work_dir}")
+
         # Validate configuration for directory operations
         validation_result = validate_config(config, check_files=False)  # Don't check files for checkout
         if not validation_result.is_valid:
@@ -119,12 +161,12 @@ def checkout(
         log_stdout("✅ Repository checkout complete")
         
         # Show what was created
-        from runnerlib.source_prep import get_code_directory_path
+        from src.source_prep import get_code_directory_path
         code_path = get_code_directory_path(config)
         try:
             item_count = len(list(code_path.iterdir()))
             log_stdout(f"📂 Created {item_count} items in {code_path}")
-        except:
+        except Exception:
             pass
             
     except (ValueError, FileNotFoundError) as e:
@@ -136,12 +178,113 @@ def checkout(
 
 
 @app.command()
+def run_job(
+    job_file: str = typer.Argument(..., help="Path to job definition file (JSON or YAML)"),
+    secrets_file: Optional[str] = typer.Option(None, "--secrets-file", help="Path to secrets file to mount into container"),
+    work_dir: Optional[str] = typer.Option(None, "--work-dir", help="Working directory for job execution"),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Validate configuration without executing")
+):
+    """Run a job from a JSON/YAML definition file."""
+    import json
+    import yaml
+    from pathlib import Path
+
+    # Read job file
+    job_file_path = Path(job_file)
+    if not job_file_path.exists():
+        log_stderr(f"Job file not found: {job_file}")
+        raise typer.Exit(1)
+
+    try:
+        with open(job_file_path, 'r') as f:
+            if job_file_path.suffix in ['.yaml', '.yml']:
+                job_spec = yaml.safe_load(f)
+            else:
+                job_spec = json.load(f)
+    except Exception as e:
+        log_stderr(f"Failed to parse job file: {e}")
+        raise typer.Exit(1)
+
+    # Extract job configuration
+    cli_overrides = {
+        'runner_image': job_spec.get('image', 'alpine:latest'),
+        'job_command': job_spec.get('command', 'echo "No command specified"'),
+    }
+
+    # Add secrets file if provided
+    if secrets_file:
+        cli_overrides['secrets_file'] = secrets_file
+
+    # Handle environment variables
+    if 'environment' in job_spec:
+        env_pairs = [f"{k}={v}" for k, v in job_spec['environment'].items()]
+        cli_overrides['job_env'] = ','.join(env_pairs)
+
+    # Handle source configuration
+    source = job_spec.get('source', {})
+    source_type = source.get('type', 'local')
+
+    if source_type == 'git':
+        # For git sources, checkout first
+        from src.source_prep import checkout_git_repo
+        git_url = source.get('url')
+        git_ref = source.get('ref', 'main')
+
+        if git_url:
+            log_stdout(f"Checking out {git_url} (ref: {git_ref})")
+            config = get_config(job_command="dummy")
+            checkout_git_repo(git_url, git_ref, config)
+
+    # Get configuration
+    try:
+        config = get_config(**cli_overrides)
+
+        if work_dir:
+            os.chdir(work_dir)
+            log_stdout(f"Changed working directory to: {work_dir}")
+
+        # Validate
+        validation_result = validate_config(config, check_files=True)
+        if not validation_result.is_valid:
+            log_stderr("Configuration validation failed:")
+            log_stderr(format_validation_result(validation_result))
+            raise typer.Exit(1)
+
+        if validation_result.has_warnings:
+            log_stderr(format_validation_result(validation_result))
+
+        # Log job info
+        log_stdout(f"Running job: {job_spec.get('name', 'unnamed')}")
+        log_stdout(f"Image: {config.runner_image}")
+        log_stdout(f"Command: {config.job_command}")
+
+        if dry_run:
+            log_stdout("🔍 Dry-run mode - skipping execution")
+            return
+
+        # Run the container
+        exit_code = run_container(config=config)
+        if exit_code != 0:
+            raise typer.Exit(exit_code)
+
+    except (ValueError, FileNotFoundError) as e:
+        log_stderr(f"Configuration error: {e}")
+        raise typer.Exit(1)
+    except typer.Exit:
+        raise  # Re-raise Exit exceptions
+    except Exception as e:
+        log_stderr(f"Job execution failed: {e}")
+        raise typer.Exit(1)
+
+
+@app.command()
 def copy(
     source_dir: str,
     # Configuration overrides
     code_dir: Optional[str] = typer.Option(None, "--code-dir", help="Code directory path (default: /job/src)"),
     job_dir: Optional[str] = typer.Option(None, "--job-dir", help="Job directory path (default: same as code-dir)"),
-    runner_image: Optional[str] = typer.Option(None, "--runner-image", help="Container image to use (default: quay.io/catalystcommunity/reactorcide_runner)")
+    runner_image: Optional[str] = typer.Option(None, "--runner-image", help="Container image to use (default: quay.io/catalystcommunity/reactorcide_runner)"),
+    work_dir: Optional[str] = typer.Option(None, "--work-dir", help="Working directory for job execution (default: current directory)")
 ):
     """Copy a directory to the configured code directory."""
     # Build configuration overrides from CLI arguments
@@ -152,11 +295,16 @@ def copy(
         cli_overrides['job_dir'] = job_dir
     if runner_image is not None:
         cli_overrides['runner_image'] = runner_image
-    
+
     try:
         # Get configuration with CLI overrides (dummy job_command for directory setup)
         config = get_config(job_command="dummy", **cli_overrides)
-        
+
+        # If work_dir is provided, change to it before copy
+        if work_dir:
+            os.chdir(work_dir)
+            log_stdout(f"Changed working directory to: {work_dir}")
+
         # Validate configuration for directory operations
         validation_result = validate_config(config, check_files=False)  # Don't check files for copy
         if not validation_result.is_valid:
@@ -174,12 +322,12 @@ def copy(
         log_stdout("✅ Directory copy complete")
         
         # Show what was created
-        from runnerlib.source_prep import get_code_directory_path
+        from src.source_prep import get_code_directory_path
         code_path = get_code_directory_path(config)
         try:
             item_count = len(list(code_path.iterdir()))
             log_stdout(f"📂 Copied {item_count} items to {code_path}")
-        except:
+        except Exception:
             pass
             
     except (ValueError, FileNotFoundError) as e:
@@ -192,12 +340,19 @@ def copy(
 
 @app.command()
 def cleanup(
-    verbose: bool = typer.Option(False, "--verbose", "-v", help="Show detailed cleanup information")
+    verbose: bool = typer.Option(False, "--verbose", "-v", help="Show detailed cleanup information"),
+    work_dir: Optional[str] = typer.Option(None, "--work-dir", help="Working directory for job execution (default: current directory)")
 ):
     """Clean up the job directory."""
     try:
         from pathlib import Path
-        
+
+        # If work_dir is provided, change to it before cleanup
+        if work_dir:
+            os.chdir(work_dir)
+            if verbose:
+                log_stdout(f"Changed working directory to: {work_dir}")
+
         job_path = Path("./job")
         
         if verbose and job_path.exists():
@@ -212,7 +367,7 @@ def cleanup(
                 # Show top-level contents
                 top_level = list(job_path.iterdir())
                 if top_level:
-                    log_stdout(f"📂 Top-level contents:")
+                    log_stdout("📂 Top-level contents:")
                     for item in top_level[:10]:  # Show first 10 items
                         item_type = "📁" if item.is_dir() else "📄"
                         log_stdout(f"  {item_type} {item.name}")
@@ -242,6 +397,7 @@ def config(
     job_command: Optional[str] = typer.Option(None, "--job-command", help="Command to run in the container"),
     runner_image: Optional[str] = typer.Option(None, "--runner-image", help="Container image to use (default: quay.io/catalystcommunity/reactorcide_runner)"),
     job_env: Optional[str] = typer.Option(None, "--job-env", help="Environment variables as key=value pairs or file path (must start with ./job/)"),
+    secrets_list: Optional[str] = typer.Option(None, "--secrets-list", help="Comma-separated list of secret values to mask in logs, or path to secrets file"),
 ):
     """Display the resolved configuration."""
     # Build configuration overrides from CLI arguments
@@ -256,10 +412,12 @@ def config(
         cli_overrides['runner_image'] = runner_image
     if job_env is not None:
         cli_overrides['job_env'] = job_env
+    if secrets_list is not None:
+        cli_overrides['secrets_list'] = secrets_list
     
     try:
         # Get configuration with CLI overrides
-        from runnerlib.config import get_environment_vars
+        from src.config import get_environment_vars
         config = get_config(**cli_overrides)
         
         log_stdout("Resolved Configuration:")
@@ -291,6 +449,7 @@ def validate(
     job_command: Optional[str] = typer.Option(None, "--job-command", help="Command to run in the container"),
     runner_image: Optional[str] = typer.Option(None, "--runner-image", help="Container image to use (default: quay.io/catalystcommunity/reactorcide_runner)"),
     job_env: Optional[str] = typer.Option(None, "--job-env", help="Environment variables as key=value pairs or file path (must start with ./job/)"),
+    secrets_list: Optional[str] = typer.Option(None, "--secrets-list", help="Comma-separated list of secret values to mask in logs, or path to secrets file"),
     # Validation options
     check_files: bool = typer.Option(True, "--check-files/--no-check-files", help="Check file and directory existence"),
 ):
@@ -307,6 +466,8 @@ def validate(
         cli_overrides['runner_image'] = runner_image
     if job_env is not None:
         cli_overrides['job_env'] = job_env
+    if secrets_list is not None:
+        cli_overrides['secrets_list'] = secrets_list
     
     try:
         # Get configuration with CLI overrides
@@ -370,13 +531,13 @@ def git_files_changed(
             raise typer.Exit(1)
         
         # Get the host path for the code directory
-        from runnerlib.source_prep import get_code_directory_path
+        from src.source_prep import get_code_directory_path
         repo_path = get_code_directory_path(config)
         
         # Check if repository exists
         if not repo_path.exists():
             log_stderr(f"Repository directory does not exist: {repo_path}")
-            log_stderr("💡 Use 'runnerlib checkout' or 'runnerlib copy' to set up the code directory first")
+            log_stderr("💡 Use 'reactorcide checkout' or 'reactorcide copy' to set up the code directory first")
             raise typer.Exit(1)
         
         if not (repo_path / ".git").exists():
@@ -425,8 +586,8 @@ def git_info(
         config = get_config(job_command="dummy", **cli_overrides)
         
         # Get the host path for the code directory
-        from runnerlib.source_prep import get_code_directory_path
-        from runnerlib.git_ops import get_repository_info, validate_git_repository
+        from src.source_prep import get_code_directory_path
+        from src.git_ops import get_repository_info, validate_git_repository
         
         repo_path = get_code_directory_path(config)
         
@@ -447,7 +608,7 @@ def git_info(
             log_stderr(f"❌ Repository error: {repo_info['error']}")
             raise typer.Exit(1)
         
-        log_stdout(f"\n📋 Repository Information:")
+        log_stdout("\n📋 Repository Information:")
         log_stdout(f"  Branch: {repo_info['current_branch']}")
         log_stdout(f"  Commit: {repo_info['current_commit']}")
         log_stdout(f"  Status: {'🔴 Dirty' if repo_info['is_dirty'] else '✅ Clean'}")
@@ -455,7 +616,7 @@ def git_info(
         if repo_info['remotes']:
             log_stdout(f"  Remotes: {', '.join(repo_info['remotes'])}")
         else:
-            log_stdout(f"  Remotes: None")
+            log_stdout("  Remotes: None")
             
     except (ValueError, FileNotFoundError) as e:
         log_stderr(f"Configuration error: {e}")
@@ -472,14 +633,11 @@ def _perform_dry_run(config, additional_args: Optional[List[str]] = None) -> Non
         config: Runner configuration
         additional_args: Additional arguments that would be passed to the job
     """
-    from runnerlib.config import get_environment_vars
-    from runnerlib.source_prep import prepare_job_directory, get_code_directory_path, get_job_directory_path
-    from runnerlib.container_validation import (
+    from src.source_prep import get_code_directory_path, get_job_directory_path
+    from src.container_validation import (
         check_container_image_availability, 
-        validate_container_runtime,
-        format_container_validation_results
+        validate_container_runtime
     )
-    import shutil
     from pathlib import Path
     
     log_stdout("🔍 DRY RUN MODE - No execution will occur")
@@ -502,31 +660,31 @@ def _perform_dry_run(config, additional_args: Optional[List[str]] = None) -> Non
     # Show environment variables
     env_vars = get_environment_vars(config)
     log_stdout(f"\n🌍 Environment Variables ({len(env_vars)} total):")
-    
+
     # Group environment variables for better display
     reactorcide_vars = {k: v for k, v in env_vars.items() if k.startswith('REACTORCIDE_')}
     job_vars = {k: v for k, v in env_vars.items() if not k.startswith('REACTORCIDE_')}
-    
+
+    # Create masker with proper secrets list
+    masker = SecretMasker()
+    secrets_list = get_secrets_to_mask(config, env_vars)
+    masker.register_secrets(secrets_list)
+
     if reactorcide_vars:
         log_stdout("  REACTORCIDE Configuration:")
         for key, value in sorted(reactorcide_vars.items()):
-            # Mask potentially sensitive values
-            if any(sensitive in key.lower() for sensitive in ['token', 'secret', 'key', 'password', 'auth']):
-                log_stdout(f"    {key}=***")
-            else:
-                log_stdout(f"    {key}={value}")
-    
+            # REACTORCIDE vars are config, not secrets - show them unmasked
+            log_stdout(f"    {key}={value}")
+
     if job_vars:
         log_stdout("  Job-specific Variables:")
         for key, value in sorted(job_vars.items()):
-            # Mask potentially sensitive values
-            if any(sensitive in key.lower() for sensitive in ['token', 'secret', 'key', 'password', 'auth']):
-                log_stdout(f"    {key}=***")
-            else:
-                log_stdout(f"    {key}={value}")
+            # Job vars may contain secrets, mask them
+            masked_value = masker.mask_string(str(value))
+            log_stdout(f"    {key}={masked_value}")
     
     # Show detailed directory structure
-    log_stdout(f"\n📁 Directory Structure Validation:")
+    log_stdout("\n📁 Directory Structure Validation:")
     job_path = Path("./job").resolve()
     log_stdout(f"  Host Job Directory: {job_path}")
     log_stdout(f"  Container Mount: {job_path} → /job")
@@ -540,7 +698,7 @@ def _perform_dry_run(config, additional_args: Optional[List[str]] = None) -> Non
         if config.code_dir != config.job_dir:
             log_stdout(f"  Job Directory: {job_dir_path} → {config.job_dir}")
         else:
-            log_stdout(f"  Job Directory: Same as code directory")
+            log_stdout("  Job Directory: Same as code directory")
     except Exception as e:
         log_stdout(f"  ⚠️  Error resolving directory paths: {e}")
         code_path = job_path / "src"
@@ -549,7 +707,7 @@ def _perform_dry_run(config, additional_args: Optional[List[str]] = None) -> Non
     # Check base job directory
     if job_path.exists():
         if job_path.is_dir():
-            log_stdout(f"  ✅ Base job directory exists and is accessible")
+            log_stdout("  ✅ Base job directory exists and is accessible")
             
             # Show directory contents with more detail
             try:
@@ -571,13 +729,13 @@ def _perform_dry_run(config, additional_args: Optional[List[str]] = None) -> Non
                     if len(all_contents) > 8:
                         log_stdout(f"    ... and {len(all_contents) - 8} more items")
                 else:
-                    log_stdout(f"  📂 Directory is empty")
+                    log_stdout("  📂 Directory is empty")
             except PermissionError:
-                log_stdout(f"  ⚠️  Cannot read directory contents (permission denied)")
+                log_stdout("  ⚠️  Cannot read directory contents (permission denied)")
         else:
-            log_stdout(f"  ❌ Path exists but is not a directory")
+            log_stdout("  ❌ Path exists but is not a directory")
     else:
-        log_stdout(f"  ⚠️  Job directory does not exist (will be created automatically)")
+        log_stdout("  ⚠️  Job directory does not exist (will be created automatically)")
     
     # Check specific code directory
     if code_path.exists():
@@ -591,11 +749,11 @@ def _perform_dry_run(config, additional_args: Optional[List[str]] = None) -> Non
                 if found_indicators:
                     log_stdout(f"    📋 Detected: {', '.join(found_indicators)}")
             except PermissionError:
-                log_stdout(f"  ⚠️  Code directory exists but cannot be read")
+                log_stdout("  ⚠️  Code directory exists but cannot be read")
         else:
-            log_stdout(f"  ❌ Code path exists but is not a directory")
+            log_stdout("  ❌ Code path exists but is not a directory")
     else:
-        log_stdout(f"  ⚠️  Code directory does not exist")
+        log_stdout("  ⚠️  Code directory does not exist")
     
     # Check job directory if different
     if config.code_dir != config.job_dir and job_dir_path != code_path:
@@ -605,14 +763,14 @@ def _perform_dry_run(config, additional_args: Optional[List[str]] = None) -> Non
                     job_contents = list(job_dir_path.iterdir())
                     log_stdout(f"  ✅ Job directory exists ({len(job_contents)} items)")
                 except PermissionError:
-                    log_stdout(f"  ⚠️  Job directory exists but cannot be read")
+                    log_stdout("  ⚠️  Job directory exists but cannot be read")
             else:
-                log_stdout(f"  ❌ Job path exists but is not a directory")
+                log_stdout("  ❌ Job path exists but is not a directory")
         else:
-            log_stdout(f"  ⚠️  Job directory does not exist")
+            log_stdout("  ⚠️  Job directory does not exist")
     
     # Validate container runtime and image
-    log_stdout(f"\n🔧 Container Runtime & Image Validation:")
+    log_stdout("\n🔧 Container Runtime & Image Validation:")
     
     # Check runtime
     runtime_valid, runtime_message = validate_container_runtime()
@@ -624,28 +782,28 @@ def _perform_dry_run(config, additional_args: Optional[List[str]] = None) -> Non
         image_available, image_message = check_container_image_availability(config.runner_image)
         
         if image_available:
-            log_stdout(f"  ✅ Container image is available")
+            log_stdout("  ✅ Container image is available")
             if image_message:
                 log_stdout(f"    💡 {image_message}")
         else:
-            log_stdout(f"  ❌ Container image is NOT available")
+            log_stdout("  ❌ Container image is NOT available")
             if image_message:
                 log_stdout(f"    ⚠️  {image_message}")
     else:
-        log_stdout(f"  ⏭️  Skipping image check (runtime not available)")
+        log_stdout("  ⏭️  Skipping image check (runtime not available)")
     
     # Show container execution details
-    log_stdout(f"\n🐳 Container Execution Plan:")
+    log_stdout("\n🐳 Container Execution Plan:")
     log_stdout(f"  Image: {config.runner_image}")
     log_stdout(f"  Working Directory: {config.job_dir}")
     log_stdout(f"  Command: {config.job_command}")
     if additional_args:
         log_stdout(f"  Arguments: {' '.join(additional_args)}")
     else:
-        log_stdout(f"  Arguments: None")
+        log_stdout("  Arguments: None")
     
     # Build the actual command that would be executed (for reference)
-    cmd_parts = ["nerdctl", "run", "--rm"]
+    cmd_parts = ["docker", "run", "--rm"]
     
     # Add environment variables
     for key, value in env_vars.items():
@@ -662,7 +820,7 @@ def _perform_dry_run(config, additional_args: Optional[List[str]] = None) -> Non
     if additional_args:
         cmd_parts.extend(additional_args)
     
-    log_stdout(f"\n💻 Equivalent Command:")
+    log_stdout("\n💻 Equivalent Command:")
     # Split long commands for readability
     cmd_str = " ".join(cmd_parts)
     if len(cmd_str) > 80:
@@ -679,7 +837,7 @@ def _perform_dry_run(config, additional_args: Optional[List[str]] = None) -> Non
         log_stdout(f"  {cmd_str}")
     
     # Provide overall assessment
-    log_stdout(f"\n📊 Execution Readiness Assessment:")
+    log_stdout("\n📊 Execution Readiness Assessment:")
     
     issues = []
     warnings = []
@@ -697,7 +855,7 @@ def _perform_dry_run(config, additional_args: Optional[List[str]] = None) -> Non
     if config.job_env:
         try:
             # Re-validate job environment during dry-run
-            from runnerlib.config import config_manager
+            from src.config import config_manager
             config_manager.parse_job_environment(config.job_env)
         except Exception as e:
             issues.append(f"Job environment configuration error: {e}")
@@ -711,11 +869,11 @@ def _perform_dry_run(config, additional_args: Optional[List[str]] = None) -> Non
         log_stdout(f"  ⚠️  Execution might succeed ({len(warnings)} warnings):")
         for warning in warnings:
             log_stdout(f"    • {warning}")
-        log_stdout(f"  💡 Consider addressing warnings before execution")
+        log_stdout("  💡 Consider addressing warnings before execution")
     else:
-        log_stdout(f"  ✅ Execution should succeed - all checks passed")
+        log_stdout("  ✅ Execution should succeed - all checks passed")
     
-    log_stdout(f"\n🔍 Dry-run completed")
+    log_stdout("\n🔍 Dry-run completed")
     if not issues:
         log_stdout("💡 Run without --dry-run to execute the job")
     else:

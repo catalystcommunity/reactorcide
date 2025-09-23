@@ -1,0 +1,10 @@
+name: yaml-test-job
+image: alpine:latest
+command: sh -c 'echo "Hello from YAML job!" && uname -a'
+environment:
+  ENV_TYPE: test
+  SERVICE_NAME: reactorcide
+
+source:
+  type: local
+  path: .

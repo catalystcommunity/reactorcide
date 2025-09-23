@@ -1,0 +1,40 @@
+# Reactorcide E2E Test Configuration
+# This file contains configuration for end-to-end testing
+
+database:
+  url: postgres://devuser:devpass@localhost:5432/testpg?sslmode=disable
+
+object_storage:
+  endpoint: http://localhost:9000
+  access_key: minioadmin
+  secret_key: minioadmin
+  bucket_logs: reactorcide-logs
+  bucket_artifacts: reactorcide-artifacts
+  use_ssl: false
+
+api:
+  port: 8080
+  host: localhost
+  # Token for authentication (from coordinator-api logs)
+  token: 47dd6842039fd80ad087b16cbc440e2db91900d414e0ab680b35f3f6d307a63e
+  user_id: 550e8400-e29b-41d4-a716-446655440000
+  log_level: debug
+
+worker:
+  concurrency: 2
+  poll_interval: 5s
+  timeout: 3600s
+
+# Test specific configuration
+test:
+  timeout: 60
+  quick_mode: false
+  verbose: true
+
+# Runnerlib defaults for testing
+runnerlib:
+  runner_image: ""
+  git_ref: main
+  code_dir: /job/code
+  job_dir: /job
+  job_env: ""

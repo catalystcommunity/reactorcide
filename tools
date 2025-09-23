@@ -1,0 +1,284 @@
+#!/usr/bin/env bash
+
+# If you are used to a Makefile, this is where you do the work instead
+set -e
+
+THISSCRIPT=$(basename $0)
+
+PROJECT_ROOT_DIR=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
+
+# colors
+GREEN=$'\e[0;32m'
+NC=$'\e[0m'
+
+# Modify for the help message
+usage() {
+    log_status "Usage"
+    echo "${THISSCRIPT} command"
+    echo ""
+    echo "Commands:"
+    echo ""
+    echo "  setup              Install all dependencies (Python with uv, Go modules)"
+    echo "  test               Run all tests (Python + Go)"
+    echo "  test-runnerlib     Run Python tests only"
+    echo "  test-coordinator   Run Go tests only"
+    echo "  run-api            Start coordinator API locally"
+    echo "  run-worker         Start worker locally"
+    echo "  build              Build Go binary"
+    echo "  docker-build       Build Docker images"
+    echo "  clean              Clean generated files"
+    echo "  dev                Start full local development stack"
+    echo "  updatedb           Get the DB up to latest"
+    echo "  check-deps         Check for required tools"
+    echo "  test-e2e           Run end-to-end tests"
+    echo "  test-e2e-quick     Run quick E2E tests"
+    echo ""
+    exit 0
+}
+
+check_deps(){
+    log_status "Checking dependencies"
+    local missing_deps=0
+
+    # Check Python
+    if ! command -v python3 2>&1 >/dev/null; then
+        echo "❌ Python 3.13+ is required but not found"
+        missing_deps=1
+    else
+        python_version=$(python3 --version | cut -d' ' -f2)
+        echo "✅ Python ${python_version} found"
+    fi
+
+    # Check Go
+    if ! command -v go 2>&1 >/dev/null; then
+        echo "❌ Go 1.23+ is required but not found"
+        missing_deps=1
+    else
+        go_version=$(go version | cut -d' ' -f3)
+        echo "✅ Go ${go_version} found"
+    fi
+
+    # Check Docker
+    if ! command -v docker 2>&1 >/dev/null; then
+        echo "❌ Docker is required but not found"
+        missing_deps=1
+    else
+        docker_version=$(docker --version | cut -d' ' -f3 | tr -d ',')
+        echo "✅ Docker ${docker_version} found"
+    fi
+
+    # Check uv
+    if ! command -v uv 2>&1 >/dev/null; then
+        echo "⚠️  uv is not installed, will install it"
+    else
+        uv_version=$(uv --version | cut -d' ' -f2)
+        echo "✅ uv ${uv_version} found"
+    fi
+
+    if [ $missing_deps -eq 1 ]; then
+        echo ""
+        echo "Please install missing dependencies before continuing"
+        exit 1
+    fi
+}
+
+setup(){
+    log_status "Setting up development environment"
+
+    check_deps
+
+    # Install uv if not present
+    if ! command -v uv 2>&1 >/dev/null; then
+        log_status "Installing uv"
+        curl -LsSf https://astral.sh/uv/install.sh | sh
+        export PATH="$HOME/.cargo/bin:$PATH"
+    fi
+
+    # Set up Python environment with uv
+    log_status "Setting up Python environment"
+    cd "${PROJECT_ROOT_DIR}/runnerlib"
+    uv sync
+    cd "${PROJECT_ROOT_DIR}"
+
+    # Install Go dependencies
+    log_status "Installing Go dependencies"
+    cd "${PROJECT_ROOT_DIR}/coordinator_api"
+    go mod download
+    cd "${PROJECT_ROOT_DIR}"
+
+    echo ""
+    echo "✅ Setup complete!"
+}
+
+updatedb(){
+    cd "${PROJECT_ROOT_DIR}/coordinator_api"
+    go run -- migrate
+    cd "${PROJECT_ROOT_DIR}"
+}
+
+log_status() {
+  echo "${GREEN}---------------------------------  ${1}  ---------------------------------${NC}"
+}
+
+test(){
+    log_status "Running all tests"
+    test_runnerlib
+    test_coordinator
+    echo "✅ All tests passed!"
+}
+
+test_runnerlib(){
+    log_status "Running Python tests"
+    cd "${PROJECT_ROOT_DIR}/runnerlib"
+    uv run pytest -v
+    cd "${PROJECT_ROOT_DIR}"
+}
+
+test_coordinator(){
+    log_status "Running Go tests"
+    cd "${PROJECT_ROOT_DIR}/coordinator_api"
+    go test -v ./...
+    cd "${PROJECT_ROOT_DIR}"
+}
+
+run_api(){
+    log_status "Starting coordinator API"
+    cd "${PROJECT_ROOT_DIR}/coordinator_api"
+    go run ./cmd/api
+}
+
+run_worker(){
+    log_status "Starting worker"
+    cd "${PROJECT_ROOT_DIR}/coordinator_api"
+    go run ./cmd/worker
+}
+
+build(){
+    log_status "Building Go binaries"
+    cd "${PROJECT_ROOT_DIR}/coordinator_api"
+    go build -o ../bin/coordinator-api ./cmd/api
+    go build -o ../bin/worker ./cmd/worker
+    cd "${PROJECT_ROOT_DIR}"
+    echo "✅ Binaries built in ./bin/"
+}
+
+docker_build(){
+    log_status "Building Docker images"
+    docker build -t reactorcide-runnerlib:latest -f runnerlib/Dockerfile runnerlib/
+    docker build -t reactorcide-coordinator:latest -f coordinator_api/Dockerfile coordinator_api/
+    echo "✅ Docker images built"
+}
+
+clean(){
+    log_status "Cleaning generated files"
+    rm -rf "${PROJECT_ROOT_DIR}"/bin/
+    rm -rf "${PROJECT_ROOT_DIR}"/runnerlib/.pytest_cache
+    rm -rf "${PROJECT_ROOT_DIR}"/runnerlib/__pycache__
+    rm -rf "${PROJECT_ROOT_DIR}"/runnerlib/src/__pycache__
+    rm -rf "${PROJECT_ROOT_DIR}"/runnerlib/tests/__pycache__
+    find "${PROJECT_ROOT_DIR}"/ -type d -name "*.egg-info" -exec rm -rf {} + 2>/dev/null || true
+    echo "✅ Cleaned"
+}
+
+dev(){
+    log_status "Starting local development stack"
+    if [ ! -f "docker-compose.yml" ]; then
+        echo "❌ docker-compose.yml not found"
+        echo "Please create it first or run from the project root"
+        exit 1
+    fi
+    docker-compose up -d
+    echo "✅ Development stack started"
+    echo "Run 'docker-compose logs -f' to see logs"
+}
+
+test_e2e(){
+    log_status "Running end-to-end tests"
+
+    # Check if test script exists
+    if [ ! -f "${PROJECT_ROOT_DIR}/examples/run_e2e_tests.sh" ]; then
+        echo "❌ E2E test script not found"
+        exit 1
+    fi
+
+    # Run E2E tests
+    bash "${PROJECT_ROOT_DIR}/examples/run_e2e_tests.sh" "$@"
+}
+
+test_e2e_quick(){
+    log_status "Running quick E2E tests"
+
+    # Check if test script exists
+    if [ ! -f "${PROJECT_ROOT_DIR}/examples/e2e_test.sh" ]; then
+        echo "❌ Quick E2E test script not found"
+        exit 1
+    fi
+
+    # Run quick tests
+    bash "${PROJECT_ROOT_DIR}/examples/e2e_test.sh" quick
+}
+
+# This should be last in the script, all other functions are named beforehand.
+case "$1" in
+    "setup")
+        shift
+        setup "$@"
+        ;;
+    "test")
+        shift
+        test "$@"
+        ;;
+    "test-runnerlib")
+        shift
+        test_runnerlib "$@"
+        ;;
+    "test-coordinator")
+        shift
+        test_coordinator "$@"
+        ;;
+    "run-api")
+        shift
+        run_api "$@"
+        ;;
+    "run-worker")
+        shift
+        run_worker "$@"
+        ;;
+    "build")
+        shift
+        build "$@"
+        ;;
+    "docker-build")
+        shift
+        docker_build "$@"
+        ;;
+    "clean")
+        shift
+        clean "$@"
+        ;;
+    "dev")
+        shift
+        dev "$@"
+        ;;
+    "updatedb")
+        shift
+        updatedb "$@"
+        ;;
+    "check-deps")
+        shift
+        check_deps "$@"
+        ;;
+    "test-e2e")
+        shift
+        test_e2e "$@"
+        ;;
+    "test-e2e-quick")
+        shift
+        test_e2e_quick "$@"
+        ;;
+    *)
+        usage
+        ;;
+esac
+
+exit 0

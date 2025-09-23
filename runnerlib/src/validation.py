@@ -3,11 +3,11 @@
 import os
 import shutil
 from pathlib import Path
-from typing import List, Optional, Dict, Any
+from typing import List, Optional
 from dataclasses import dataclass
 
 from src.config import RunnerConfig, config_manager
-from src.source_prep import get_code_directory_path, get_job_directory_path
+from src.source_prep import get_code_directory_path
 
 
 @dataclass
@@ -232,12 +232,12 @@ class ConfigValidator:
         """Validate external tool dependencies."""
         errors = []
         
-        # Check for nerdctl
-        if not shutil.which("nerdctl"):
+        # Check for docker
+        if not shutil.which("docker"):
             errors.append(ValidationError(
                 field="system",
-                message="nerdctl is not available in PATH",
-                suggestion="Install nerdctl container runtime: https://github.com/containerd/nerdctl"
+                message="docker is not available in PATH",
+                suggestion="Install docker: https://docs.docker.com/get-docker/"
             ))
         
         return errors

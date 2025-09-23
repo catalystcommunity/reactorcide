@@ -38,7 +38,8 @@ class TestConfigManager:
             'job_dir': 'REACTORCIDE_JOB_DIR',
             'job_command': 'REACTORCIDE_JOB_COMMAND',
             'runner_image': 'REACTORCIDE_RUNNER_IMAGE',
-            'job_env': 'REACTORCIDE_JOB_ENV'
+            'job_env': 'REACTORCIDE_JOB_ENV',
+            'secrets_list': 'REACTORCIDE_SECRETS_LIST'
         }
         assert self.config_manager.ENV_VARS == expected_mappings
 

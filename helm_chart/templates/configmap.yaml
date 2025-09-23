@@ -1,0 +1,45 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "app.name" . }}-config
+  labels:
+    {{- include "app.labels" . | nindent 4 }}
+data:
+  # Core configuration
+  GRPC_MAX_MSG_SIZE_BYTES: {{ .Values.grpc.maxMessageSizeBytes | quote }}
+  PORT: {{ .Values.app.service.port | quote }}
+  COMMIT_ON_SUCCESS: {{ .Values.app.commitOnSuccess | quote }}
+
+  # Prometheus configuration
+  PROMETHEUS_ENABLED: {{ .Values.app.prometheus.enabled | quote }}
+  PROMETHEUS_PATH: {{ .Values.app.prometheus.path | quote }}
+  PROMETHEUS_PORT: {{ .Values.app.prometheus.port | quote }}
+  PROMETHEUS_LATENCY_HISTOGRAMS_ENABLED: {{ .Values.app.prometheus.latencyHistogramsEnabled | quote }}
+
+  # Corndogs configuration
+  {{- if .Values.corndogs.enabled }}
+  CORNDOGS_BASE_URL: {{ .Values.corndogs.baseUrl | quote }}
+  {{- end }}
+
+  # Default configuration
+  DEFAULT_QUEUE_NAME: {{ .Values.defaults.queueName | quote }}
+  DEFAULT_TIMEOUT: {{ .Values.defaults.timeout | quote }}
+  {{- if .Values.defaults.userId }}
+  DEFAULT_USER_ID: {{ .Values.defaults.userId | quote }}
+  {{- end }}
+
+  # Object store configuration
+  OBJECT_STORE_TYPE: {{ .Values.objectStore.type | quote }}
+  OBJECT_STORE_BUCKET: {{ .Values.objectStore.bucket | quote }}
+  OBJECT_STORE_BASE_PATH: {{ .Values.objectStore.basePath | quote }}
+  OBJECT_STORE_PREFIX: {{ .Values.objectStore.prefix | quote }}
+  {{- if eq .Values.objectStore.type "s3" }}
+  AWS_REGION: {{ .Values.objectStore.s3.region | quote }}
+  S3_ENDPOINT: {{ .Values.objectStore.s3.endpoint | quote }}
+  {{- end }}
+
+  # Worker configuration
+  WORKER_QUEUE: {{ .Values.worker.queue | quote }}
+  WORKER_POLL_INTERVAL: {{ .Values.worker.pollInterval | quote }}
+  WORKER_CONCURRENCY: {{ .Values.worker.concurrency | quote }}
+  WORKER_DRY_RUN: {{ .Values.worker.dryRun | quote }}

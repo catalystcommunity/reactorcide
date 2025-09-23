@@ -1,470 +1,335 @@
 # Runnerlib Usage Guide
 
+Runnerlib is a containerized job runner - it executes commands in isolated containers with proper secret handling and source preparation.
+
 ## Quick Start
 
 ### Prerequisites
 
-- **nerdctl** - Container runtime ([installation guide](https://github.com/containerd/nerdctl))
-- **Python 3.13+** - For running runnerlib
+- **Container Runtime** - Docker, containerd, nerdctl, or podman
+- **Python 3.8+** - For running runnerlib
+- **Git** - For repository operations
 
-### Basic Usage
-
-1. **Set up your job**:
-```bash
-# Set required environment variable
-export REACTORCIDE_JOB_COMMAND="npm test"
-
-# Or use CLI flag
-runnerlib run --job-command "npm test"
-```
-
-2. **Prepare your code**:
-```bash
-# Clone from git
-runnerlib checkout https://github.com/user/repo.git
-
-# Or copy local directory
-runnerlib copy ./my-project
-```
-
-3. **Run your job**:
-```bash
-runnerlib run
-```
-
-## Configuration
-
-### Environment Variables
-
-Set these in your shell or CI environment:
+### Installation
 
 ```bash
-export REACTORCIDE_CODE_DIR="/job/src"          # Code directory (default)
-export REACTORCIDE_JOB_DIR="/job/src"           # Job working directory
-export REACTORCIDE_JOB_COMMAND="npm test"       # Command to run (required)
-export REACTORCIDE_RUNNER_IMAGE="node:18"       # Container image
-export REACTORCIDE_JOB_ENV="NODE_ENV=test"      # Job environment variables
+# Clone the repository
+git clone https://github.com/catalystcommunity/reactorcide.git
+cd reactorcide/runnerlib
+
+# Install dependencies
+pip install -e .
+# Or with uv:
+uv pip install -e .
+
+# Test the installation
+python -m src.cli run --runner-image alpine:latest --job-command "echo 'Hello World'"
 ```
 
-### CLI Overrides
+## Core Commands
 
-Override any environment variable via CLI:
-
-```bash
-runnerlib run \
-  --job-command "pytest tests/" \
-  --runner-image "python:3.11" \
-  --job-env "DJANGO_SETTINGS_MODULE=test_settings"
-```
-
-### Configuration Hierarchy
-
-Configuration is resolved in this order (later overrides earlier):
-
-1. **Defaults** → 2. **Environment Variables** → 3. **CLI Arguments**
-
-## Commands
-
-### `run` - Execute Job
+### `run` - Execute Commands Directly
 
 Execute a job in a container:
 
 ```bash
 # Basic execution
-runnerlib run
+python -m src.cli run \
+  --runner-image alpine:latest \
+  --job-command "echo 'Hello World'"
 
-# With additional arguments passed to job command
-runnerlib run --verbose --coverage
-
-# With custom configuration
-runnerlib run \
-  --job-command "make test" \
-  --runner-image "gcc:latest" \
-  --job-dir "/job/build"
+# With secrets file (secure environment variables)
+python -m src.cli run \
+  --runner-image node:18 \
+  --job-command "npm test" \
+  --secrets-file secrets.env
 
 # Dry-run to preview execution
-runnerlib run --dry-run
+python -m src.cli run \
+  --runner-image alpine:latest \
+  --job-command "ls -la" \
+  --dry-run
+```
+
+### `run-job` - Execute from Job Files
+
+Run jobs defined in JSON or YAML files:
+
+```bash
+# Run a job file
+python -m src.cli run-job my-job.yaml
+
+# With secrets
+python -m src.cli run-job my-job.yaml --secrets-file secrets.env
+
+# Dry-run mode
+python -m src.cli run-job my-job.yaml --dry-run
+```
+
+#### Job File Format
+
+**JSON Example (`job.json`):**
+```json
+{
+  "name": "test-job",
+  "image": "node:18-alpine",
+  "command": "npm test",
+  "environment": {
+    "NODE_ENV": "production",
+    "LOG_LEVEL": "info"
+  },
+  "source": {
+    "type": "git",
+    "url": "https://github.com/user/repo.git",
+    "ref": "main"
+  }
+}
+```
+
+**YAML Example (`job.yaml`):**
+```yaml
+name: build-job
+image: golang:1.21
+command: go test ./...
+environment:
+  GOOS: linux
+  GOARCH: amd64
+source:
+  type: local
+  path: .
 ```
 
 ### `checkout` - Clone Repository
 
-Clone a git repository to the code directory:
+Clone a git repository to the job workspace:
 
 ```bash
 # Clone default branch
-runnerlib checkout https://github.com/user/repo.git
+python -m src.cli checkout https://github.com/user/repo.git
 
 # Clone specific branch/tag/commit
-runnerlib checkout https://github.com/user/repo.git --ref main
-runnerlib checkout https://github.com/user/repo.git --ref v1.2.3
-runnerlib checkout https://github.com/user/repo.git --ref abc123
-
-# With custom directory configuration
-runnerlib checkout https://github.com/user/repo.git --code-dir "/job/source"
+python -m src.cli checkout https://github.com/user/repo.git --ref main
+python -m src.cli checkout https://github.com/user/repo.git --ref v1.2.3
 ```
 
 ### `copy` - Copy Local Directory
 
-Copy a local directory to the code directory:
+Copy a local directory to the job workspace:
 
 ```bash
-# Copy current directory
-runnerlib copy .
-
-# Copy specific directory
-runnerlib copy ./my-project
-
-# With custom configuration
-runnerlib copy ./src --code-dir "/job/app"
+python -m src.cli copy ./my-project
 ```
 
-### `cleanup` - Remove Job Directory
-
-Clean up the job directory:
+### Other Commands
 
 ```bash
-# Basic cleanup
-runnerlib cleanup
+# Show configuration
+python -m src.cli config
 
-# Verbose cleanup (shows what's being removed)
-runnerlib cleanup --verbose
+# Validate setup
+python -m src.cli validate
+
+# Clean up job directories
+python -m src.cli cleanup
+
+# Git operations
+python -m src.cli git files-changed --from-ref main
+python -m src.cli git info
 ```
 
-### `config` - View Configuration
+## Secure Secrets Management
 
-Display the resolved configuration:
+### Using `--secrets-file`
 
-```bash
-# Show current configuration
-runnerlib config
-
-# Show configuration with overrides
-runnerlib config --job-command "test" --runner-image "alpine:latest"
-```
-
-### `validate` - Validate Configuration
-
-Validate configuration without execution:
+The `--secrets-file` option provides secure secret injection without exposing them in process lists:
 
 ```bash
-# Validate current configuration
-runnerlib validate
-
-# Validate with custom settings
-runnerlib validate --job-command "build" --runner-image "node:16"
-
-# Skip file system checks
-runnerlib validate --no-check-files
-```
-
-### `git` - Git Operations
-
-#### `git files-changed` - Show Changed Files
-
-```bash
-# Show files changed from HEAD~1
-runnerlib git files-changed HEAD~1
-
-# Show files changed from main branch
-runnerlib git files-changed main
-
-# Show files changed from specific commit
-runnerlib git files-changed abc123def
-
-# Pipe to other commands
-runnerlib git files-changed HEAD~1 | xargs grep "TODO"
-```
-
-#### `git info` - Repository Information
-
-```bash
-# Show repository information
-runnerlib git info
-```
-
-## Environment Variables
-
-### Job Environment Configuration
-
-You can set job-specific environment variables in two ways:
-
-#### 1. Inline Format
-
-```bash
-export REACTORCIDE_JOB_ENV="NODE_ENV=test
-DEBUG=true
-API_URL=https://api.test.com"
-```
-
-#### 2. File Format
-
-Create an environment file in the job directory:
-
-```bash
-# Create environment file
-mkdir -p ./job/config
-cat > ./job/config/test.env << EOF
-# Test environment configuration
-NODE_ENV=test
-DEBUG=true
-API_URL=https://api.test.com
-DATABASE_URL=postgresql://localhost/test_db
+# Create a secrets file
+cat > secrets.env << EOF
+API_KEY=secret123
+DATABASE_URL=postgresql://user:pass@localhost/db
+NPM_TOKEN=npm_auth_token
 EOF
 
-# Reference the file
-export REACTORCIDE_JOB_ENV="./job/config/test.env"
+# Use with run command
+python -m src.cli run \
+  --runner-image node:18 \
+  --job-command "npm publish" \
+  --secrets-file secrets.env
+
+# Use with job file
+python -m src.cli run-job build.yaml --secrets-file secrets.env
 ```
 
-**Security Note**: Environment files must be within the `./job/` directory for security.
+**Security Features:**
+- Secrets loaded as environment variables inside container
+- Secrets file also mounted read-only at `/run/secrets/env`
+- **Never visible in process lists** (ps aux)
+- Automatic masking in logs
 
-### Environment File Format
+## Configuration
 
-Environment files support:
-- Key=value pairs
-- Comments (lines starting with `#`)
-- Empty lines
-- Values with spaces
+### Environment Variables
 
-```env
-# Application configuration
-APP_NAME=MyApp
-APP_VERSION=1.0.0
-
-# Database settings
-DATABASE_URL=postgresql://localhost/myapp
-DATABASE_POOL_SIZE=10
-
-# Feature flags
-ENABLE_FEATURE_X=true
-DEBUG_MODE=false
-
-# Secrets (will be masked in logs)
-API_SECRET=super-secret-key
-AUTH_TOKEN=jwt-token-here
+```bash
+export REACTORCIDE_CODE_DIR="/job/src"          # Code directory in container
+export REACTORCIDE_JOB_DIR="/job/src"           # Working directory in container
+export REACTORCIDE_JOB_COMMAND="npm test"       # Command to run
+export REACTORCIDE_RUNNER_IMAGE="node:18"       # Container image
+export REACTORCIDE_JOB_ENV="NODE_ENV=test"      # Environment variables
+export REACTORCIDE_SECRETS_FILE="secrets.env"   # Secrets file path
 ```
+
+### Configuration Hierarchy
+
+Configuration is resolved in order (later overrides earlier):
+
+1. **Defaults** → 2. **Environment Variables** → 3. **CLI Arguments**
 
 ## Examples
 
 ### Node.js Project
 
 ```bash
-# Set up Node.js testing environment
-export REACTORCIDE_JOB_COMMAND="npm test"
-export REACTORCIDE_RUNNER_IMAGE="node:18-alpine"
-export REACTORCIDE_JOB_ENV="NODE_ENV=test
-CI=true"
+# Direct execution
+python -m src.cli run \
+  --runner-image node:18 \
+  --job-command "npm test" \
+  --secrets-file npm-secrets.env
 
-# Clone and test
-runnerlib checkout https://github.com/user/node-app.git
-runnerlib run
+# Using job file
+cat > node-job.yaml << EOF
+name: node-tests
+image: node:18-alpine
+command: npm ci && npm test
+environment:
+  NODE_ENV: test
+  CI: true
+EOF
+
+python -m src.cli run-job node-job.yaml
 ```
 
 ### Python Project
 
 ```bash
-# Python project with pytest
-runnerlib run \
-  --job-command "python -m pytest tests/ -v" \
-  --runner-image "python:3.11" \
-  --job-env "PYTHONPATH=/job/src
-DJANGO_SETTINGS_MODULE=settings.test"
+# Run pytest
+python -m src.cli run \
+  --runner-image python:3.11 \
+  --job-command "pytest tests/ -v" \
+  --job-env "PYTHONPATH=/job/src"
 ```
 
 ### Go Project
 
 ```bash
-# Go project with custom build
-runnerlib copy ./my-go-app
-runnerlib run \
+# Build and test
+python -m src.cli run \
+  --runner-image golang:1.21 \
   --job-command "go test ./..." \
-  --runner-image "golang:1.21" \
   --job-dir "/job/src"
 ```
 
-### Multi-step Workflow
+### Shell Script in Container
 
 ```bash
-# 1. Prepare environment
-mkdir -p ./job/config
-echo "ENVIRONMENT=staging" > ./job/config/app.env
+# Run deployment script on remote host via SSH
+cat > deploy.yaml << EOF
+name: deploy-to-vm
+image: ubuntu:22.04
+command: |
+  sh -c '
+    apt-get update && apt-get install -y openssh-client &&
+    echo "\${SSH_PRIVATE_KEY}" > /tmp/key &&
+    chmod 600 /tmp/key &&
+    ssh -i /tmp/key \${VM_HOST} "echo deployed"
+  '
+EOF
 
-# 2. Get code
-runnerlib checkout https://github.com/user/app.git --ref develop
-
-# 3. Validate configuration
-runnerlib validate \
-  --job-command "make test" \
-  --runner-image "ubuntu:22.04" \
-  --job-env "./job/config/app.env"
-
-# 4. Run with dry-run first
-runnerlib run --dry-run \
-  --job-command "make test" \
-  --runner-image "ubuntu:22.04" \
-  --job-env "./job/config/app.env"
-
-# 5. Execute if dry-run looks good
-runnerlib run \
-  --job-command "make test" \
-  --runner-image "ubuntu:22.04" \
-  --job-env "./job/config/app.env"
-
-# 6. Clean up
-runnerlib cleanup --verbose
+python -m src.cli run-job deploy.yaml --secrets-file vm-secrets.env
 ```
 
-## Dry-Run Mode
+## Directory Structure
 
-The dry-run mode is perfect for debugging and validation:
+Runnerlib manages a workspace structure:
 
-```bash
-# Preview what would be executed
-runnerlib run --dry-run
-
-# Check if container image is available
-runnerlib run --dry-run --runner-image "custom:latest"
-
-# Validate environment file parsing
-runnerlib run --dry-run --job-env "./job/test.env"
 ```
-
-### Dry-Run Use Cases
-
-1. **CI/CD Pipeline Development** - Validate job configuration
-2. **Environment Debugging** - Check variable resolution
-3. **Container Image Testing** - Verify image availability
-4. **Directory Structure Validation** - Ensure files are in place
+./job/                    # Job workspace (mounted as /job in container)
+├── src/                  # Source code (from git or local copy)
+├── work/                 # Working directory
+└── config/               # Configuration files (if using job_env with files)
+```
 
 ## Troubleshooting
 
 ### Common Issues
 
-#### "nerdctl is not available in PATH"
-
-**Solution**: Install nerdctl container runtime:
+#### "Container runtime not found"
 ```bash
-# On Linux with curl
-curl -fsSL https://github.com/containerd/nerdctl/releases/download/v1.7.0/nerdctl-1.7.0-linux-amd64.tar.gz | sudo tar -xz -C /usr/local/bin
+# Check available runtimes
+which docker || which nerdctl || which podman
 
-# Or follow official installation guide
+# Install Docker if needed
+curl -fsSL https://get.docker.com | sh
 ```
 
 #### "Missing required configuration: job_command"
-
-**Solution**: Set the job command:
 ```bash
-export REACTORCIDE_JOB_COMMAND="your-command-here"
-# OR
-runnerlib run --job-command "your-command-here"
+# Provide via CLI
+python -m src.cli run --job-command "echo test"
+
+# Or via environment
+export REACTORCIDE_JOB_COMMAND="echo test"
 ```
 
-#### "Path traversal not allowed in job_env path"
-
-**Solution**: Use paths within the job directory:
+#### "Secrets file not found"
 ```bash
-# ❌ Invalid
-export REACTORCIDE_JOB_ENV="../../../etc/passwd"
-
-# ✅ Valid
-export REACTORCIDE_JOB_ENV="./job/config/app.env"
+# Check file exists and has correct permissions
+ls -la secrets.env
+chmod 600 secrets.env
 ```
 
-#### "Repository directory does not exist"
-
-**Solution**: Set up your code first:
-```bash
-runnerlib checkout https://github.com/user/repo.git
-# OR
-runnerlib copy ./your-project
-```
-
-#### "Container image is NOT available"
-
-**Solution**: Check image name and registry access:
-```bash
-# Test image availability
-nerdctl pull your-image:tag
-
-# Use a known image
-runnerlib run --runner-image "alpine:latest"
-```
-
-### Debug Information
-
-For troubleshooting, use these commands:
+### Debug Commands
 
 ```bash
-# Check configuration resolution
-runnerlib config
+# Check configuration
+python -m src.cli config
 
 # Validate setup
-runnerlib validate --verbose
+python -m src.cli validate
 
-# Preview execution
-runnerlib run --dry-run
+# Dry-run to preview
+python -m src.cli run --dry-run \
+  --runner-image alpine:latest \
+  --job-command "ls -la"
 
-# Check git repository
-runnerlib git info
-
-# Verify directory structure
-runnerlib cleanup --verbose  # Shows what would be cleaned
+# Check git status
+python -m src.cli git info
 ```
 
-### Getting Help
+## Security Best Practices
+
+1. **Never pass secrets as CLI arguments** - Use `--secrets-file` instead
+2. **Set proper file permissions** - `chmod 600` on secret files
+3. **Use `.gitignore`** - Add `*.secrets` and `*-secrets.env`
+4. **Use specific image tags** - Avoid `:latest` in production
+5. **Validate job sources** - Be careful with untrusted repositories
+
+## Plugin System
+
+Runnerlib supports plugins for extending functionality. See [plugin_development.md](plugin_development.md) for details on creating custom plugins.
+
+## Getting Help
 
 ```bash
 # Command help
-runnerlib --help
-runnerlib run --help
-runnerlib git --help
+python -m src.cli --help
+python -m src.cli run --help
+python -m src.cli run-job --help
 
-# Validate your configuration
-runnerlib validate
+# Validate configuration
+python -m src.cli validate
 
-# See what would be executed
-runnerlib run --dry-run
-```
-
-## Best Practices
-
-### Security
-
-1. **Use relative paths** for job environment files
-2. **Store secrets securely** - they'll be masked in logs
-3. **Validate configurations** before production use
-4. **Use specific image tags** instead of `latest`
-
-### Performance
-
-1. **Use local container images** when possible
-2. **Reuse job directories** for iterative development
-3. **Use `.gitignore`** to avoid copying unnecessary files
-4. **Clean up regularly** to free disk space
-
-### Development Workflow
-
-1. **Start with dry-run** to validate configuration
-2. **Use validate command** during development
-3. **Test with simple commands** first
-4. **Use verbose flags** for debugging
-
-### CI/CD Integration
-
-```bash
-#!/bin/bash
-# Example CI script
-
-set -e
-
-# Validate environment
-runnerlib validate --job-command "$JOB_COMMAND" --runner-image "$RUNNER_IMAGE"
-
-# Get code
-runnerlib checkout "$REPO_URL" --ref "$GIT_REF"
-
-# Run job
-runnerlib run --job-command "$JOB_COMMAND" --runner-image "$RUNNER_IMAGE"
-
-# Cleanup
-runnerlib cleanup
+# Preview execution
+python -m src.cli run --dry-run
 ```

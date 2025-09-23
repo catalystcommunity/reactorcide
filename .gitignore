@@ -160,3 +160,22 @@ cython_debug/
 #  and can be added to the global gitignore or merged into this file.  For a more nuclear
 #  option (not recommended) you can uncomment the following to ignore the entire idea folder.
 #.idea/
+
+# Deployment configuration (actual files, not examples)
+deploy-vm.job.yaml
+deploy-vm.env
+deploy-vm.secrets
+deploy-k8s.job.yaml
+deploy-k8s.env
+deploy-k8s.secrets
+
+# Test secrets
+test-secrets.env
+*.secrets
+*-secrets.env
+
+# SSH keys
+*.pem
+*.key
+id_rsa*
+id_ed25519*
