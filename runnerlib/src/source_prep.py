@@ -1,12 +1,10 @@
 """Source preparation utilities for runnerlib."""
 
-import os
 import shutil
-import subprocess
 from pathlib import Path
 from typing import Optional
 from git import Repo
-from src.logging import log_stdout, log_stderr
+from src.logging import log_stdout, log_stderr, logger
 from src.config import RunnerConfig, get_config
 
 
@@ -35,6 +33,7 @@ def prepare_job_directory(config: Optional[RunnerConfig] = None) -> Path:
     
     # Create job directory structure
     job_path.mkdir(parents=True, exist_ok=True)
+    logger.debug("Created job directory", fields={"path": str(job_path)})
     
     # Create code directory (relative to container mount point for validation)
     # Remove /job prefix if present since we're working in host context
@@ -46,6 +45,7 @@ def prepare_job_directory(config: Optional[RunnerConfig] = None) -> Path:
     
     code_path = job_path / code_dir if code_dir else job_path / "src"
     code_path.mkdir(parents=True, exist_ok=True)
+    logger.debug("Created code directory", fields={"path": str(code_path)})
     
     # Create job directory if different from code directory
     if config.job_dir != config.code_dir:
@@ -97,21 +97,25 @@ def checkout_git_repo(
     if src_path.exists():
         shutil.rmtree(src_path)
     
+    logger.info("Cloning git repository", fields={"url": git_url, "ref": git_ref or "default"})
     log_stdout(f"Cloning repository: {git_url}")
-    
+
     try:
         # Clone the repository
         repo = Repo.clone_from(git_url, src_path)
-        
+
         # Checkout specific ref if provided
         if git_ref:
+            logger.debug("Checking out git ref", fields={"ref": git_ref})
             log_stdout(f"Checking out ref: {git_ref}")
             repo.git.checkout(git_ref)
-        
+
+        logger.info("Repository cloned successfully", fields={"path": str(src_path)})
         log_stdout(f"Repository checked out to: {src_path}")
         return src_path
-        
+
     except Exception as e:
+        logger.error("Failed to clone repository", error=e, fields={"url": git_url})
         log_stderr(f"Failed to checkout repository: {e}")
         raise
 
@@ -159,15 +163,18 @@ def copy_directory(
     if src_path.exists():
         shutil.rmtree(src_path)
     
+    logger.info("Copying directory", fields={"source": str(source_path), "destination": str(src_path)})
     log_stdout(f"Copying directory: {source_path} -> {src_path}")
-    
+
     try:
         # Copy the directory tree
         shutil.copytree(source_path, src_path)
+        logger.info("Directory copied successfully", fields={"path": str(src_path)})
         log_stdout(f"Directory copied to: {src_path}")
         return src_path
-        
+
     except Exception as e:
+        logger.error("Failed to copy directory", error=e, fields={"source": str(source_path)})
         log_stderr(f"Failed to copy directory: {e}")
         raise
 
@@ -182,9 +189,11 @@ def cleanup_job_directory(config: Optional[RunnerConfig] = None) -> None:
     job_path = Path("./job")
     
     if job_path.exists():
+        logger.info("Cleaning up job directory", fields={"path": str(job_path)})
         log_stdout(f"Cleaning up job directory: {job_path}")
         shutil.rmtree(job_path)
     else:
+        logger.debug("Job directory does not exist", fields={"path": str(job_path)})
         log_stdout(f"Job directory does not exist: {job_path}")
 
 

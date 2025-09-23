@@ -1,0 +1,145 @@
+syntax = "proto3";
+
+package corndogs.v1alpha1;
+
+option go_package = "github.com/catalystcommunity/reactorcide/coordinator_api/internal/corndogs/v1alpha1";
+
+message Task { // Use only in responses
+  string uuid = 1;
+  string queue = 2;
+  string current_state = 3;
+  string auto_target_state = 4;
+  int64 submit_time = 5;
+  int64 update_time = 6;
+  int64 timeout = 7;
+  bytes payload = 8;
+  int64 priority = 9;
+}
+
+message SubmitTaskRequest {
+  string queue = 1;
+  string current_state = 2;
+  string auto_target_state = 3;
+  int64 timeout = 4;
+  bytes payload = 5;
+  int64 priority = 6;
+}
+
+message SubmitTaskResponse {
+  Task task = 1;
+}
+
+message GetTaskStateByIDRequest {
+  string uuid = 1;
+  string queue = 2;
+}
+
+message GetTaskStateByIDResponse {
+  Task task = 1;
+}
+
+message GetNextTaskRequest {
+  string queue = 1;
+  string current_state = 2;
+  int64 override_timeout = 3;
+  string override_current_state = 4;
+  string override_auto_target_state = 5;
+}
+
+message GetNextTaskResponse {
+  Task task = 1;
+}
+
+message CompleteTaskRequest {
+  string uuid = 1;
+  string queue = 2;
+  string current_state = 3;
+}
+
+message CompleteTaskResponse {
+  Task task = 1;
+}
+
+message UpdateTaskRequest {
+  string uuid = 1;
+  string queue = 2;
+  string current_state = 3;
+  string auto_target_state = 4;
+  int64 timeout = 5;
+  string new_state = 6;
+  bytes payload = 7;
+  int64 priority = 8;
+}
+
+message UpdateTaskResponse {
+  Task task = 1;
+}
+
+message CancelTaskRequest {
+  string uuid = 1;
+  string queue = 2;
+  string current_state = 3;
+}
+
+message CancelTaskResponse {
+  Task task = 1;
+}
+
+message CleanUpTimedOutRequest {
+  int64 at_time = 1;
+  string queue = 2;
+}
+
+message CleanUpTimedOutResponse {
+  int64 timed_out = 1;
+}
+
+message GetQueuesRequest {}
+message GetQueuesResponse {
+    repeated string queues = 1;
+    int64 total_task_count = 2;
+}
+
+message GetQueueTaskCountsRequest {}
+message GetQueueTaskCountsResponse {
+    map<string, int64> queue_counts = 1;
+    int64 total_task_count = 2;
+}
+
+message GetTaskStateCountsRequest {
+    string queue = 1;
+}
+
+message GetTaskStateCountsResponse {
+    string queue = 1;
+    int64 count = 2;
+    map<string, int64> state_counts = 3;
+}
+
+message QueueAndStateCounts {
+    string queue = 1;
+    int64 count = 2;
+    map<string, int64> state_counts = 3;
+}
+
+message GetQueueAndStateCountsRequest {}
+message GetQueueAndStateCountsResponse {
+    map<string, QueueAndStateCounts> queue_and_state_counts = 1;
+}
+
+message EmptyRequest {}
+
+service CorndogsService {
+  rpc SubmitTask(SubmitTaskRequest) returns (SubmitTaskResponse) {}
+  rpc GetTaskStateByID(GetTaskStateByIDRequest) returns (GetTaskStateByIDResponse) {}
+  rpc GetNextTask(GetNextTaskRequest) returns (GetNextTaskResponse) {}
+  rpc UpdateTask(UpdateTaskRequest) returns (UpdateTaskResponse) {}
+  rpc CompleteTask(CompleteTaskRequest) returns (CompleteTaskResponse) {}
+  rpc CancelTask(CancelTaskRequest) returns (CancelTaskResponse) {}
+  rpc CleanUpTimedOut(CleanUpTimedOutRequest) returns (CleanUpTimedOutResponse) {}
+  // Metrics
+  rpc GetQueues(GetQueuesRequest) returns (GetQueuesResponse) {}
+  rpc GetQueueTaskCounts(GetQueueTaskCountsRequest) returns (GetQueueTaskCountsResponse) {}
+  rpc GetTaskStateCounts(GetTaskStateCountsRequest) returns (GetTaskStateCountsResponse) {}
+  rpc GetQueueAndStateCounts(GetQueueAndStateCountsRequest) returns (GetQueueAndStateCountsResponse) {}
+}

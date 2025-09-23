@@ -1,0 +1,12 @@
+version: v1
+name: buf.build/catalystcommunity/corndogsapis
+deps:
+  - buf.build/googleapis/googleapis
+lint:
+  use:
+    - STANDARD
+  ignore:
+    - google/type/datetime.proto
+breaking:
+  use:
+    - FILE

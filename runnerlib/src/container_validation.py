@@ -3,7 +3,6 @@
 import subprocess
 import shutil
 from typing import Optional, Tuple
-from src.logging import log_stdout, log_stderr
 
 
 def check_container_image_availability(image: str, timeout: int = 30) -> Tuple[bool, Optional[str]]:
@@ -16,14 +15,14 @@ def check_container_image_availability(image: str, timeout: int = 30) -> Tuple[b
     Returns:
         Tuple of (is_available, error_message)
     """
-    # First check if nerdctl is available
-    if not shutil.which("nerdctl"):
-        return False, "nerdctl is not available in PATH"
-    
+    # First check if docker is available
+    if not shutil.which("docker"):
+        return False, "docker is not available in PATH"
+
     # Check if image exists locally
     try:
         result = subprocess.run(
-            ["nerdctl", "image", "inspect", image],
+            ["docker", "image", "inspect", image],
             capture_output=True,
             text=True,
             timeout=timeout
@@ -36,11 +35,11 @@ def check_container_image_availability(image: str, timeout: int = 30) -> Tuple[b
         return False, f"Error checking local image: {e}"
     
     # If not local, try to check if it can be pulled (without actually pulling)
-    # We'll use nerdctl to check if the image exists in the registry
+    # We'll use docker to check if the image exists in the registry
     try:
         # Use manifest command to check if image exists without downloading
         result = subprocess.run(
-            ["nerdctl", "image", "pull", "--quiet", "--dry-run", image],
+            ["docker", "image", "pull", "--quiet", "--dry-run", image],
             capture_output=True,
             text=True,
             timeout=timeout
@@ -51,7 +50,7 @@ def check_container_image_availability(image: str, timeout: int = 30) -> Tuple[b
             # Try a different approach if dry-run isn't supported
             # Check manifest instead
             result = subprocess.run(
-                ["nerdctl", "manifest", "inspect", image],
+                ["docker", "manifest", "inspect", image],
                 capture_output=True,
                 text=True,
                 timeout=timeout
@@ -62,10 +61,10 @@ def check_container_image_availability(image: str, timeout: int = 30) -> Tuple[b
                 return False, f"Image not found in registry: {image}"
     except subprocess.TimeoutExpired:
         return False, f"Timeout checking registry for image: {image}"
-    except Exception as e:
+    except Exception:
         # If manifest or dry-run commands aren't available, we can't easily check
         # without pulling, so we'll indicate unknown status
-        return True, f"Cannot verify image availability (nerdctl limitations): {image}"
+        return True, f"Cannot verify image availability (docker limitations): {image}"
 
 
 def validate_container_runtime() -> Tuple[bool, str]:
@@ -74,14 +73,14 @@ def validate_container_runtime() -> Tuple[bool, str]:
     Returns:
         Tuple of (is_valid, status_message)
     """
-    # Check nerdctl availability
-    if not shutil.which("nerdctl"):
-        return False, "❌ nerdctl is not available in PATH"
+    # Check docker availability
+    if not shutil.which("docker"):
+        return False, "❌ docker is not available in PATH"
     
-    # Check if nerdctl can communicate with containerd
+    # Check if docker can communicate with containerd
     try:
         result = subprocess.run(
-            ["nerdctl", "version"],
+            ["docker", "version"],
             capture_output=True,
             text=True,
             timeout=10
@@ -89,13 +88,13 @@ def validate_container_runtime() -> Tuple[bool, str]:
         if result.returncode == 0:
             # Extract version info
             version_info = result.stdout.strip()
-            return True, f"✅ nerdctl is working\n{version_info}"
+            return True, f"✅ docker is working\n{version_info}"
         else:
-            return False, f"❌ nerdctl version check failed: {result.stderr}"
+            return False, f"❌ docker version check failed: {result.stderr}"
     except subprocess.TimeoutExpired:
-        return False, "❌ nerdctl version check timed out"
+        return False, "❌ docker version check timed out"
     except Exception as e:
-        return False, f"❌ Error checking nerdctl: {e}"
+        return False, f"❌ Error checking docker: {e}"
 
 
 def get_container_runtime_info() -> dict:
@@ -105,23 +104,23 @@ def get_container_runtime_info() -> dict:
         Dictionary with runtime information
     """
     info = {
-        "nerdctl_available": False,
-        "nerdctl_path": None,
+        "docker_available": False,
+        "docker_path": None,
         "version_info": None,
         "containerd_status": "unknown"
     }
     
-    # Check nerdctl path
-    nerdctl_path = shutil.which("nerdctl")
-    if nerdctl_path:
-        info["nerdctl_available"] = True
-        info["nerdctl_path"] = nerdctl_path
+    # Check docker path
+    docker_path = shutil.which("docker")
+    if docker_path:
+        info["docker_available"] = True
+        info["docker_path"] = docker_path
     
     # Get version information
-    if info["nerdctl_available"]:
+    if info["docker_available"]:
         try:
             result = subprocess.run(
-                ["nerdctl", "version"],
+                ["docker", "version"],
                 capture_output=True,
                 text=True,
                 timeout=10
@@ -131,7 +130,7 @@ def get_container_runtime_info() -> dict:
                 info["containerd_status"] = "accessible"
             else:
                 info["containerd_status"] = "error"
-        except:
+        except Exception:
             info["containerd_status"] = "timeout"
     
     return info
@@ -161,11 +160,11 @@ def format_container_validation_results(
     
     lines.append("\n🐳 Container Image Validation:")
     if image_available:
-        lines.append(f"  ✅ Image is available")
+        lines.append("  ✅ Image is available")
         if image_message:
             lines.append(f"  💡 {image_message}")
     else:
-        lines.append(f"  ❌ Image is NOT available")
+        lines.append("  ❌ Image is NOT available")
         if image_message:
             lines.append(f"  ⚠️  {image_message}")
     

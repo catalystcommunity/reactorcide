@@ -55,16 +55,16 @@ class TestConfigurationIntegration:
             runner_image=''  # Invalid - empty
         )
         
-        with patch('shutil.which', return_value=None):  # nerdctl not available
+        with patch('shutil.which', return_value=None):  # docker not available
             result = validate_config(invalid_config, check_files=False)
             
             assert not result.is_valid
-            assert len(result.errors) >= 2  # At least path and nerdctl errors
+            assert len(result.errors) >= 2  # At least path and docker errors
             
             # Check specific error types
             error_messages = [error.message for error in result.errors]
             assert any('absolute path' in msg for msg in error_messages)
-            assert any('nerdctl' in msg for msg in error_messages)
+            assert any('docker' in msg for msg in error_messages)
 
 
 class TestDirectoryManagementIntegration:
@@ -113,7 +113,7 @@ class TestDirectoryManagementIntegration:
         )
         
         # Test validation without directories
-        with patch('shutil.which', return_value="/usr/bin/nerdctl"):
+        with patch('shutil.which', return_value="/usr/bin/docker"):
             result = validate_config(config, check_files=True)
             
             # Should have warnings about missing directories
@@ -124,7 +124,7 @@ class TestDirectoryManagementIntegration:
         # Create directories and test again
         prepare_job_directory(config)
         
-        with patch('shutil.which', return_value="/usr/bin/nerdctl"):
+        with patch('shutil.which', return_value="/usr/bin/docker"):
             result = validate_config(config, check_files=True)
             
             # Should be valid now (may still have warnings about empty dirs)
@@ -166,7 +166,7 @@ DEBUG=true"""
         )
         
         # Validate configuration
-        with patch('shutil.which', return_value="/usr/bin/nerdctl"):
+        with patch('shutil.which', return_value="/usr/bin/docker"):
             result = validate_config(config, check_files=True)
             assert result.is_valid
         
@@ -211,32 +211,38 @@ class TestContainerExecutionIntegration:
         
         # Mock container execution to capture command
         with patch('subprocess.Popen') as mock_popen, \
-             patch('shutil.which', return_value="/usr/bin/nerdctl"), \
+             patch('shutil.which', return_value="/usr/bin/docker"), \
              patch('src.source_prep.prepare_job_directory') as mock_prepare:
             
             mock_process = MagicMock()
-            mock_process.poll.return_value = 0
+            # First call returns None (still running), second returns 0 (finished)
+            mock_process.poll.side_effect = [None, 0]
             mock_process.communicate.return_value = ("", "")
+            # Mock stdout and stderr with proper readline behavior
+            mock_process.stdout.readline.side_effect = ["test output\n", ""]  # One line then EOF
+            mock_process.stderr.readline.return_value = ""  # No stderr
             mock_popen.return_value = mock_process
             
             mock_prepare.return_value = Path("/tmp/job")
             
             # Run container
-            exit_code = run_container(config, additional_args=["--verbose"])
+            run_container(config, additional_args=["--verbose"])
             
             # Verify command was built correctly
             mock_popen.assert_called_once()
             call_args = mock_popen.call_args[0][0]  # First positional argument (the command)
             
             # Check command structure
-            assert call_args[0] == "nerdctl"
+            assert call_args[0] == "docker"
             assert call_args[1] == "run"
             assert "--rm" in call_args
             assert "-v" in call_args
             assert "-w" in call_args
             assert "/job/work" in call_args  # Working directory
             assert "node:18" in call_args  # Image
-            assert "npm test" in call_args  # Command
+            # Command is now split with shlex
+            assert "npm" in call_args  # Command part 1
+            assert "test" in call_args  # Command part 2
             assert "--verbose" in call_args  # Additional args
             
             # Check environment variables are included
@@ -263,8 +269,8 @@ class TestContainerExecutionIntegration:
         
         # Container execution should handle validation gracefully
         # (since CLI layer usually validates first, but container should be defensive)
-        with patch('shutil.which', return_value=None):  # nerdctl not available
-            with pytest.raises(FileNotFoundError, match="nerdctl is not available"):
+        with patch('shutil.which', return_value=None):  # docker not available
+            with pytest.raises(FileNotFoundError, match="docker is not available"):
                 run_container(config)
 
 
@@ -293,7 +299,7 @@ class TestDryRunIntegration:
         assert env_vars['PYTEST_ARGS'] == '--verbose'
         
         # Validate configuration
-        with patch('shutil.which', return_value="/usr/bin/nerdctl"):
+        with patch('shutil.which', return_value="/usr/bin/docker"):
             result = validate_config(config, check_files=False)
             assert result.is_valid
 
@@ -319,7 +325,7 @@ class TestErrorHandlingIntegration:
                     
                     # Should have multiple errors
                     assert not result.is_valid
-                    assert len(result.errors) >= 3  # Path, command, nerdctl, env format
+                    assert len(result.errors) >= 3  # Path, command, docker, env format
                     
             except ValueError as e:
                 # Or might fail at config creation level
@@ -345,6 +351,6 @@ class TestErrorHandlingIntegration:
             runner_image='test:image'
         )
         
-        with patch('shutil.which', return_value="/usr/bin/nerdctl"):  # Fixed nerdctl
+        with patch('shutil.which', return_value="/usr/bin/docker"):  # Fixed docker
             result = validate_config(valid_config, check_files=False)
             assert result.is_valid

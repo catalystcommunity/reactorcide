@@ -1,0 +1,14 @@
+# Minimal VM deployment job
+# Usage: python -m runnerlib.src.cli run-job deploy-vm.job.yaml --secrets-file deploy-vm.secrets
+name: deploy-vm
+image: ubuntu:22.04
+command: |
+  sh -c '
+    apt-get update && apt-get install -y openssh-client &&
+    echo "${SSH_PRIVATE_KEY}" > /tmp/deploy.key &&
+    chmod 600 /tmp/deploy.key &&
+    ssh-keyscan -H ${VM_HOST#*@} >> ~/.ssh/known_hosts 2>/dev/null || true &&
+    scp -i /tmp/deploy.key ./deploy-to-host.sh ${VM_HOST}:/tmp/ &&
+    ssh -i /tmp/deploy.key ${VM_HOST} "bash /tmp/deploy-to-host.sh --local-install" &&
+    rm -f /tmp/deploy.key
+  '

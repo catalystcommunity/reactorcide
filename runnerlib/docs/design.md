@@ -2,7 +2,7 @@
 
 ## Overview
 
-Runnerlib is a containerized job runner designed as the core of a CI system. It provides a secure, configurable way to execute jobs in isolated containers using nerdctl, with comprehensive configuration management and validation.
+Runnerlib is a containerized job runner designed as the core of a CI system. It provides a secure, configurable way to execute jobs in isolated containers using docker, with comprehensive configuration management and validation.
 
 ## Architecture
 
@@ -123,20 +123,20 @@ The validation system provides:
 - **Fixed Mount Point**: `./job` → `/job` (no arbitrary mounts)
 - **Working Directory**: Configurable within `/job/`
 - **Environment Injection**: Controlled via configuration
-- **Container Runtime**: nerdctl only (no arbitrary runtimes)
+- **Container Runtime**: docker only (no arbitrary runtimes)
 
 ### Execution Flow
 
 1. **Validation** - Comprehensive pre-execution checks
 2. **Directory Preparation** - Create required directory structure
 3. **Environment Setup** - Merge REACTORCIDE_* and job variables
-4. **Container Launch** - Execute with nerdctl
+4. **Container Launch** - Execute with docker
 5. **Output Streaming** - Real-time stdout/stderr forwarding
 
 ### Command Generation
 
 ```bash
-nerdctl run --rm \
+docker run --rm \
   -e REACTORCIDE_CODE_DIR=/job/src \
   -e REACTORCIDE_JOB_DIR=/job/src \
   -e REACTORCIDE_JOB_COMMAND=npm test \
@@ -159,7 +159,7 @@ The dry-run mode provides comprehensive pre-flight checking:
 2. **Environment Analysis** - All variables with security masking
 3. **Directory Inspection** - Structure and content analysis
 4. **Container Validation** - Image availability and runtime checks
-5. **Command Preview** - Exact nerdctl command
+5. **Command Preview** - Exact docker command
 6. **Readiness Assessment** - Overall execution likelihood
 
 ### Dry-Run Output Example
@@ -199,8 +199,8 @@ The dry-run mode provides comprehensive pre-flight checking:
     📋 Detected: package.json, .git
 
 🔧 Container Runtime & Image Validation:
-  ✅ nerdctl is working
-  nerdctl version 1.7.0
+  ✅ docker is working
+  docker version 1.7.0
   ✅ Container image is available
     💡 Image available for pull (not local)
 
@@ -210,7 +210,7 @@ The dry-run mode provides comprehensive pre-flight checking:
   Command: npm test
 
 💻 Equivalent Command:
-  nerdctl run --rm \
+  docker run --rm \
     -e REACTORCIDE_CODE_DIR=/job/src \
     -e REACTORCIDE_JOB_DIR=/job/src \
     -e REACTORCIDE_JOB_COMMAND=npm test \
@@ -286,7 +286,7 @@ All commands support configuration overrides:
 
 ### Container Security
 
-- Fixed container runtime (nerdctl only)
+- Fixed container runtime (docker only)
 - No privileged containers
 - Controlled environment injection
 - Working directory restrictions
@@ -356,7 +356,7 @@ class RunnerConfig:
 
 ### Common Issues
 
-1. **nerdctl not available** - Install container runtime
+1. **docker not available** - Install container runtime
 2. **Image not found** - Check image name and registry access
 3. **Permission denied** - Verify directory permissions
 4. **Path traversal blocked** - Use paths within ./job/

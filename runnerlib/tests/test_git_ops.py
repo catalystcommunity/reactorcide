@@ -1,7 +1,6 @@
 """Tests for git_ops module."""
 
 import os
-import sys
 import tempfile
 import shutil
 from pathlib import Path

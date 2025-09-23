@@ -1,0 +1,189 @@
+app:
+  enabled: true # enabled by default
+  migrateJobName: "reactorcide-migrate"
+  image:
+    repository: quay.io/catalystcommunity/reactorcide-coordinator-api
+    pullPolicy: IfNotPresent
+    # Overrides the image tag whose default is the chart appVersion
+    tag: ""
+  prometheus:
+    enabled: false
+    path: /metrics
+    port: 9000
+    latencyHistogramsEnabled: true
+  service:
+    type: ClusterIP
+    port: 6080
+  autoscaling:
+    enabled: false
+    minReplicas: 1
+    maxReplicas: 10
+    targetCPUUtilizationPercentage: 80
+    targetMemoryUtilizationPercentage: 80
+  replicaCount: 1
+  commitOnSuccess: true
+  resources:
+    limits:
+      cpu: 1000m
+      memory: 1Gi
+    requests:
+      cpu: 100m
+      memory: 128Mi
+
+web:
+  enabled: false # disabled by default
+  image:
+    repository: quay.io/catalystcommunity/reactorcide-web
+    pullPolicy: IfNotPresent
+    # Overrides the image tag whose default is the chart appVersion
+    tag: ""
+  service:
+    type: ClusterIP
+    port: 4080
+  apiUrl: "http://reactorcide-coordinator-api-service:6080"
+  autoscaling:
+    enabled: false
+    minReplicas: 1
+    maxReplicas: 5
+    targetCPUUtilizationPercentage: 80
+    targetMemoryUtilizationPercentage: 80
+  replicaCount: 1
+  resources:
+    limits:
+      cpu: 500m
+      memory: 512Mi
+    requests:
+      cpu: 50m
+      memory: 64Mi
+
+worker:
+  enabled: true
+  image:
+    repository: quay.io/catalystcommunity/reactorcide-coordinator-api
+    pullPolicy: IfNotPresent
+    tag: ""
+  replicaCount: 1
+  queue: "reactorcide-jobs"
+  pollInterval: 5  # seconds
+  concurrency: 2    # concurrent jobs per worker pod
+  dryRun: false
+  autoscaling:
+    enabled: false
+    minReplicas: 1
+    maxReplicas: 10
+    targetCPUUtilizationPercentage: 70
+    targetMemoryUtilizationPercentage: 80
+  livenessProbe:
+    enabled: true
+    initialDelaySeconds: 30
+    periodSeconds: 30
+    timeoutSeconds: 5
+    successThreshold: 1
+    failureThreshold: 3
+  resources:
+    limits:
+      cpu: 2000m
+      memory: 2Gi
+    requests:
+      cpu: 500m
+      memory: 512Mi
+
+migrations:
+  jobName: "migrations"
+  restartPolicy: "OnFailure"
+  resources: {}
+  # Useful if you have to run this a lot, like in a skaffold dev env
+  setJobNameAsTimestamp: false
+  ttlSecondsAfterFinished: 14400 # defaults to a day
+
+grpc:
+  maxMessageSizeBytes: "1000000000"
+
+postgres:
+  uri: postgresql://devuser:devpass@reactorcide-postgresql:5432/reactorcide?sslmode=disable
+
+# Corndogs queue configuration
+corndogs:
+  enabled: true
+  baseUrl: "corndogs:8080"  # Assumes Corndogs service in same namespace
+  apiKey: ""  # Leave empty if not required
+
+# Object storage configuration
+objectStore:
+  type: filesystem  # Options: filesystem, s3, gcs, memory
+  bucket: reactorcide-objects
+  basePath: /tmp/reactorcide-objects  # For filesystem type
+  prefix: reactorcide/  # For s3/gcs types
+  s3:
+    accessKeyId: ""
+    secretAccessKey: ""
+    region: us-east-1
+    endpoint: ""  # Leave empty for AWS S3, set for S3-compatible services
+  gcs:
+    serviceAccountJson: ""
+
+# Default configuration
+defaults:
+  queueName: reactorcide-jobs
+  timeout: 3600  # seconds
+  userId: ""  # UUID for default user (optional)
+
+storage:
+  type: postgres
+
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+
+# You could give a service account per service, but this is simpler for most use cases
+# We did add _helpers entries to make this an easy exercise for the reader
+serviceAccount:
+  # Specifies whether a service account should be created
+  create: true
+  # Annotations to add to the service account
+  annotations: {}
+  # The base name of the service account to use.
+  # If not set and create is true, a name is generated using the fullname template
+  name: ""
+
+# The rest of these are also pretty standard, but are not implemented as separate template
+# entries for simplicity reasons. These are for advanced security cases and for deployment
+# styles you should avoid.
+podAnnotations: {}
+
+podSecurityContext: {}
+  # fsGroup: 2000
+
+securityContext: {}
+  # capabilities:
+  #   drop:
+  #   - ALL
+  # readOnlyRootFilesystem: true
+  # runAsNonRoot: true
+  # runAsUser: 1000
+
+
+nodeSelector: {}
+
+tolerations: []
+
+affinity: {}
+
+# Dependency charts
+postgresql:
+  enabled: true
+  auth:
+    username: "devuser"
+    postgresPassword: "devpass"
+    password: "devpass"
+    database: "reactorcide"
+  persistence:
+    enabled: true
+    size: 10Gi
+  resources:
+    limits:
+      cpu: 1000m
+      memory: 1Gi
+    requests:
+      cpu: 100m
+      memory: 256Mi

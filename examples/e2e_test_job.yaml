@@ -1,0 +1,127 @@
+# Sample job configuration that exercises all Reactorcide features
+# This job demonstrates:
+# - Git repository checkout
+# - Environment variables (inline and from file)
+# - Container execution with working directory
+# - Multiple commands
+# - Output generation
+
+name: "Full Feature Test Job"
+description: "End-to-end test job that exercises all Reactorcide features"
+
+# Source configuration - clone a repository
+source:
+  type: git
+  url: https://github.com/nodejs/examples.git
+  ref: main
+  # This repo contains simple Node.js examples we can test with
+
+# Container configuration
+container:
+  image: node:20-alpine
+  working_dir: /job
+
+# Environment variables - both inline and from file
+environment:
+  # Inline environment variables
+  NODE_ENV: test
+  TEST_VAR: "Hello from Reactorcide"
+  BUILD_ID: "${BUILD_ID:-local-test}"
+
+# Commands to execute in sequence
+commands:
+  # First, show the environment
+  - name: "Show environment"
+    command: |
+      echo "=== Environment Variables ==="
+      env | grep -E "NODE_ENV|TEST_VAR|BUILD_ID" | sort
+      echo ""
+
+  # Show git information
+  - name: "Show repository info"
+    command: |
+      echo "=== Repository Information ==="
+      if [ -d .git ]; then
+        git log --oneline -n 5
+        echo ""
+        echo "Current branch/ref:"
+        git rev-parse --abbrev-ref HEAD || git describe --tags --always
+      else
+        echo "Not a git repository"
+      fi
+      echo ""
+
+  # List repository contents
+  - name: "List files"
+    command: |
+      echo "=== Repository Contents ==="
+      ls -la
+      echo ""
+
+  # If there's a package.json, show it
+  - name: "Check for Node.js project"
+    command: |
+      echo "=== Node.js Project Check ==="
+      if [ -f package.json ]; then
+        echo "Found package.json:"
+        cat package.json | head -20
+      else
+        echo "No package.json found in root"
+        # Try to find one in subdirectories
+        find . -name package.json -type f | head -5
+      fi
+      echo ""
+
+  # Create a test output file
+  - name: "Generate output"
+    command: |
+      echo "=== Generating Test Output ==="
+      cat > test-output.txt << EOF
+      Reactorcide E2E Test Output
+      ===========================
+      Timestamp: $(date -u +"%Y-%m-%d %H:%M:%S UTC")
+      Node Version: $(node --version)
+      NPM Version: $(npm --version)
+      Environment: ${NODE_ENV}
+      Test Variable: ${TEST_VAR}
+      Build ID: ${BUILD_ID}
+      Working Directory: $(pwd)
+      User: $(whoami)
+      EOF
+
+      echo "Created test-output.txt:"
+      cat test-output.txt
+      echo ""
+
+  # Simulate a longer-running task
+  - name: "Simulate processing"
+    command: |
+      echo "=== Simulating Processing ==="
+      for i in 1 2 3 4 5; do
+        echo "Processing step $i/5..."
+        sleep 1
+      done
+      echo "Processing complete!"
+      echo ""
+
+  # Final summary
+  - name: "Job summary"
+    command: |
+      echo "=== Job Summary ==="
+      echo "✅ Environment variables configured"
+      echo "✅ Git repository checked out"
+      echo "✅ Container execution successful"
+      echo "✅ Multiple commands executed"
+      echo "✅ Output file generated"
+      echo ""
+      echo "Job completed successfully!"
+
+# Expected outputs/artifacts
+outputs:
+  - test-output.txt
+
+# Metadata
+metadata:
+  test_type: "e2e"
+  expected_duration: "10s"
+  requires_network: true

@@ -1,8 +1,7 @@
 """Configuration management for runnerlib with environment variable hierarchy."""
 
 import os
-from pathlib import Path
-from typing import Dict, Optional, Any
+from typing import Dict, Optional, List
 from dataclasses import dataclass
 
 
@@ -14,6 +13,8 @@ class RunnerConfig:
     job_command: str
     runner_image: str
     job_env: Optional[str] = None
+    secrets_list: Optional[str] = None  # Comma-separated list of secret values to mask
+    secrets_file: Optional[str] = None  # Path to secrets file to mount into container
 
 
 class ConfigManager:
@@ -28,10 +29,12 @@ class ConfigManager:
     # Environment variable mappings
     ENV_VARS = {
         'code_dir': 'REACTORCIDE_CODE_DIR',
-        'job_dir': 'REACTORCIDE_JOB_DIR', 
+        'job_dir': 'REACTORCIDE_JOB_DIR',
         'job_command': 'REACTORCIDE_JOB_COMMAND',
         'runner_image': 'REACTORCIDE_RUNNER_IMAGE',
-        'job_env': 'REACTORCIDE_JOB_ENV'
+        'job_env': 'REACTORCIDE_JOB_ENV',
+        'secrets_list': 'REACTORCIDE_SECRETS_LIST',
+        'secrets_file': 'REACTORCIDE_SECRETS_FILE'
     }
     
     def __init__(self):
@@ -81,7 +84,9 @@ class ConfigManager:
             job_dir=config['job_dir'],
             job_command=config['job_command'],
             runner_image=config['runner_image'],
-            job_env=config.get('job_env')
+            job_env=config.get('job_env'),
+            secrets_list=config.get('secrets_list'),
+            secrets_file=config.get('secrets_file')
         )
     
     def _validate_job_env_path(self, path: str) -> None:
@@ -190,3 +195,42 @@ def get_config(**cli_overrides) -> RunnerConfig:
 def get_environment_vars(config: RunnerConfig) -> Dict[str, str]:
     """Convenience function to get all environment variables."""
     return config_manager.get_all_environment_vars(config)
+
+
+def get_secrets_to_mask(config: RunnerConfig, env_vars: Dict[str, str]) -> List[str]:
+    """Get the list of secret values that should be masked in logs.
+
+    Args:
+        config: Runner configuration
+        env_vars: All environment variables
+
+    Returns:
+        List of secret values to mask
+    """
+    secrets = []
+
+    # If explicit secrets list is provided, use ONLY that list
+    if config.secrets_list is not None:
+        # Could be a file path or comma-separated values
+        if config.secrets_list and config.secrets_list.startswith('./job/') and os.path.exists(config.secrets_list):
+            # Read secrets from file
+            try:
+                with open(config.secrets_list, 'r') as f:
+                    for line in f:
+                        line = line.strip()
+                        if line and not line.startswith('#'):
+                            secrets.append(line)
+            except Exception:
+                pass  # Ignore file read errors
+        else:
+            # Treat as comma-separated values
+            secrets.extend([s.strip() for s in config.secrets_list.split(',') if s.strip()])
+    else:
+        # Only when NO explicit list is provided, use default behavior:
+        # Register all non-REACTORCIDE environment variable VALUES as potential secrets
+        # (REACTORCIDE vars are system configuration like paths, not secrets)
+        for key, value in env_vars.items():
+            if not key.startswith('REACTORCIDE_') and value and value not in secrets:
+                secrets.append(value)
+
+    return secrets

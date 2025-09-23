@@ -1,0 +1,63 @@
+# Git files
+.git
+.gitignore
+
+# IDE files
+.vscode
+.idea
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Build artifacts
+coordinator_api/coordinator_api
+*.exe
+*.dll
+*.so
+*.dylib
+
+# Test files
+coordinator_api/test
+*_test.go
+coverage.out
+coverage.html
+
+# Documentation
+*.md
+docs/
+
+# Temporary files
+*.tmp
+*.temp
+*.log
+
+# Development files
+coordinator_api/next-time.md
+coordinator_api_tasks.md
+tasks-claude.md
+.env
+.env.local
+.env.development
+
+# Node modules (if any)
+node_modules/
+
+# Vendor directory (if using vendor)
+vendor/
+
+# Any local data directories
+data/
+logs/
+tmp/
+
+# Exclude other project directories we don't need
+runnerlib/
+helm_chart/
+web_client/
+tools
+skaffold.yaml
+values-skaffold-local.yaml*

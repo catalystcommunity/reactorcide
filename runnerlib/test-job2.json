@@ -1,0 +1,9 @@
+{
+  "name": "complex-test",
+  "image": "node:18-alpine",
+  "command": "sh -c 'echo \"Starting job...\" && node --version && npm --version && echo \"NODE_ENV=$NODE_ENV\" && echo \"Job complete!\"'",
+  "environment": {
+    "NODE_ENV": "production",
+    "LOG_LEVEL": "info"
+  }
+}
