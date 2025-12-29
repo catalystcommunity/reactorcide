@@ -35,6 +35,10 @@ func (m *MockCornDogsClient) UpdateTask(ctx context.Context, taskID string, curr
 	return nil, nil
 }
 
+func (m *MockCornDogsClient) SendHeartbeat(ctx context.Context, taskID string, currentState string, timeoutExtensionSeconds int64) (*pb.Task, error) {
+	return nil, nil
+}
+
 func (m *MockCornDogsClient) CompleteTask(ctx context.Context, taskID string, currentState string) (*pb.Task, error) {
 	return nil, nil
 }

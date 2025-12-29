@@ -142,10 +142,11 @@ func (u *JobStatusUpdater) getStatusDescription(job *models.Job) string {
 		return fmt.Sprintf("CI build completed with exit code %d", *job.ExitCode)
 	case "failed":
 		if job.LastError != "" {
-			// Truncate error message if too long
+			// Truncate error message if too long (accounting for "CI build failed: " prefix)
+			// Target is ~65 chars total, so error message should be ~44 chars + "..."
 			errMsg := job.LastError
-			if len(errMsg) > 50 {
-				errMsg = errMsg[:47] + "..."
+			if len(errMsg) > 44 {
+				errMsg = errMsg[:44] + "..."
 			}
 			return fmt.Sprintf("CI build failed: %s", errMsg)
 		}

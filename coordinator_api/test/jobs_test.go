@@ -21,8 +21,8 @@ type JobResponse struct {
 	Name        string            `json:"name"`
 	Description string            `json:"description"`
 	Status      string            `json:"status"`
-	GitURL      string            `json:"git_url,omitempty"`
-	GitRef      string            `json:"git_ref,omitempty"`
+	SourceURL      string            `json:"source_url,omitempty"`
+	SourceRef      string            `json:"source_ref,omitempty"`
 	SourceType  string            `json:"source_type"`
 	SourcePath  string            `json:"source_path,omitempty"`
 	CodeDir     string            `json:"code_dir"`
@@ -40,8 +40,8 @@ type JobResponse struct {
 type CreateJobRequest struct {
 	Name           string            `json:"name"`
 	Description    string            `json:"description,omitempty"`
-	GitURL         string            `json:"git_url,omitempty"`
-	GitRef         string            `json:"git_ref,omitempty"`
+	SourceURL         string            `json:"source_url,omitempty"`
+	SourceRef         string            `json:"source_ref,omitempty"`
 	SourceType     string            `json:"source_type"`
 	SourcePath     string            `json:"source_path,omitempty"`
 	CodeDir        string            `json:"code_dir,omitempty"`
@@ -108,8 +108,8 @@ func TestJobsAPI(t *testing.T) {
 				Name:        "Test Job",
 				Description: "A test job for API testing",
 				SourceType:  "git",
-				GitURL:      "https://github.com/test/repo.git",
-				GitRef:      "main",
+				SourceURL:      "https://github.com/test/repo.git",
+				SourceRef:      "main",
 				JobCommand:  "echo 'Hello World'",
 			}
 
@@ -133,8 +133,8 @@ func TestJobsAPI(t *testing.T) {
 			assert.Equal(t, "Test Job", response.Name)
 			assert.Equal(t, "A test job for API testing", response.Description)
 			assert.Equal(t, "git", response.SourceType)
-			assert.Equal(t, "https://github.com/test/repo.git", response.GitURL)
-			assert.Equal(t, "main", response.GitRef)
+			assert.Equal(t, "https://github.com/test/repo.git", response.SourceURL)
+			assert.Equal(t, "main", response.SourceRef)
 			assert.Equal(t, "echo 'Hello World'", response.JobCommand)
 			assert.Equal(t, "submitted", response.Status)
 			assert.NotEmpty(t, response.JobID)
@@ -148,7 +148,7 @@ func TestJobsAPI(t *testing.T) {
 			jobRequest := CreateJobRequest{
 				Name:       "Test Job",
 				SourceType: "git",
-				GitURL:     "https://github.com/test/repo.git",
+				SourceURL:     "https://github.com/test/repo.git",
 				JobCommand: "echo test",
 			}
 

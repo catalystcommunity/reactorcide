@@ -235,6 +235,28 @@ func (c *Client) GetTaskStateCounts(ctx context.Context) (int64, map[string]int6
 	return resp.Count, resp.StateCounts, nil
 }
 
+// SendHeartbeat sends a heartbeat for a task by extending its timeout
+// This prevents the task from timing out during long-running operations
+func (c *Client) SendHeartbeat(ctx context.Context, taskID string, currentState string, timeoutExtensionSeconds int64) (*pb.Task, error) {
+	// Use UpdateTask to extend the timeout
+	// We keep the same state and just update the timeout
+	req := &pb.UpdateTaskRequest{
+		Uuid:         taskID,
+		Queue:        c.config.QueueName,
+		CurrentState: currentState,
+		NewState:     currentState, // Keep same state
+		Timeout:      timeoutExtensionSeconds,
+		Payload:      nil, // Keep existing payload
+	}
+
+	resp, err := c.client.UpdateTask(ctx, req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to send heartbeat: %w", err)
+	}
+
+	return resp.Task, nil
+}
+
 // ParseTaskPayload parses a task payload into a TaskPayload struct
 func ParseTaskPayload(task *pb.Task) (*TaskPayload, error) {
 	var payload TaskPayload

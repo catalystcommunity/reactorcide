@@ -453,6 +453,7 @@ class TestPluginIntegration:
         config.job_dir = "/job"
         config.job_env = None
         config.secrets_list = None
+        config.secrets_file = None
 
         # Run container
         with patch('src.container.SecretRegistrationServer'):

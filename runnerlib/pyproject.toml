@@ -7,6 +7,8 @@ requires-python = ">=3.13"
 dependencies = [
     "typer>=0.12.3",
     "GitPython>=3.1.40",
+    "pyyaml>=6.0.2",
+    "cryptography>=43.0.0",
 ]
 
 [project.optional-dependencies]

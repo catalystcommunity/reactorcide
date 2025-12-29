@@ -1,7 +1,8 @@
 """Integration tests for dynamic secret registration during job execution."""
 
-import tempfile
 import subprocess
+import sys
+import tempfile
 from pathlib import Path
 import pytest
 
@@ -55,7 +56,7 @@ echo "Using secret in command: curl -H 'Authorization: Bearer $FETCHED_SECRET' e
         # Run the container with our test script
         result = subprocess.run(
             [
-                "python", "-m", "src.cli", "run",
+                sys.executable, "-m", "src.cli", "run",
                 "--runner-image", "python:3.9-alpine",  # Has Python for our registration
                 "--job-command", "sh /job/dynamic_secret_test.sh",
                 "--code-dir", "/job",
@@ -134,7 +135,7 @@ echo "API call with token=$API_TOKEN"
         # Run the test
         result = subprocess.run(
             [
-                "python", "-m", "src.cli", "run",
+                sys.executable, "-m", "src.cli", "run",
                 "--runner-image", "python:3.9-alpine",
                 "--job-command", "sh /job/helper_test.sh",
                 "--code-dir", "/job",
@@ -213,7 +214,7 @@ else:
         # Run the test
         result = subprocess.run(
             [
-                "python", "-m", "src.cli", "run",
+                sys.executable, "-m", "src.cli", "run",
                 "--runner-image", "python:3.9-alpine",
                 "--job-command", "python3 /job/multi_secret_test.py",
                 "--code-dir", "/job",

@@ -1,0 +1,32 @@
+name: build-runnerbase
+image: alpine:3.19
+capabilities:
+  - docker
+command: |-
+  sh -c '
+    set -euo pipefail
+
+    echo "Building runnerbase image: $REGISTRY/$IMAGE:$TAG"
+
+    # Install nerdctl (containerd CLI)
+    NERDCTL_VERSION=2.1.3
+    wget -q "https://github.com/containerd/nerdctl/releases/download/v${NERDCTL_VERSION}/nerdctl-${NERDCTL_VERSION}-linux-amd64.tar.gz" -O /tmp/nerdctl.tar.gz
+    tar -xzf /tmp/nerdctl.tar.gz -C /usr/local/bin nerdctl
+    rm /tmp/nerdctl.tar.gz
+
+    # Build image
+    cd /job/runnerlib
+    nerdctl build -t "$REGISTRY/$IMAGE:$TAG" -f Dockerfile.runner .
+
+    # Login and push
+    echo "$REGISTRY_PASSWORD" | nerdctl login "$REGISTRY" -u "$REGISTRY_USER" --password-stdin
+    nerdctl push "$REGISTRY/$IMAGE:$TAG"
+
+    echo "Done! Image pushed to $REGISTRY/$IMAGE:$TAG"
+  '
+environment:
+  REGISTRY: containers.catalystsquad.com
+  IMAGE: public/reactorcide/runnerbase
+  TAG: dev
+  REGISTRY_USER: "${env:REGISTRY_USER}"
+  REGISTRY_PASSWORD: "${secret:reactorcide/local-dev:registry_password}"

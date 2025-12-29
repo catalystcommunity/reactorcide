@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"strconv"
 	"strings"
 
 	"github.com/sirupsen/logrus"
@@ -298,7 +297,7 @@ func (c *GitLabClient) parsePushEvent(body []byte, event *WebhookEvent) error {
 
 	// Extract branch name from ref
 	ref := payload.Ref
-	branch := strings.TrimPrefix(ref, "refs/heads/")
+	_ = strings.TrimPrefix(ref, "refs/heads/")
 
 	event.Push = &PushInfo{
 		Ref:         payload.Ref,

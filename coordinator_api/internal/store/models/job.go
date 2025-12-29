@@ -44,16 +44,26 @@ type Job struct {
 	CreatedAt time.Time `gorm:"autoCreateTime:false;default:timezone('utc', now())" json:"created_at"`
 	UpdatedAt time.Time `gorm:"autoUpdateTime:false;default:timezone('utc', now())" json:"updated_at"`
 	UserID    string    `gorm:"type:uuid;not null" json:"user_id"`
+	ProjectID *string   `gorm:"type:uuid" json:"project_id"`
 
 	// Job metadata
 	Name        string `gorm:"type:text;not null" json:"name"`
 	Description string `gorm:"type:text" json:"description"`
 
-	// Source configuration
-	GitURL     string `gorm:"type:text" json:"git_url"`
-	GitRef     string `gorm:"type:text" json:"git_ref"`
-	SourceType string `gorm:"type:text;not null;check:source_type IN ('git', 'copy')" json:"source_type"`
-	SourcePath string `gorm:"type:text" json:"source_path"`
+	// Source configuration (untrusted code being tested - optional)
+	// VCS-agnostic fields: works with git, mercurial, svn, or any source control
+	SourceURL  *string     `gorm:"type:text" json:"source_url"`
+	SourceRef  *string     `gorm:"type:text" json:"source_ref"`
+	SourceType *SourceType `gorm:"type:source_type" json:"source_type"`
+	SourcePath *string     `gorm:"type:text" json:"source_path"`
+
+	// CI Source configuration (trusted CI pipeline code - optional)
+	CISourceType *SourceType `gorm:"type:source_type" json:"ci_source_type"`
+	CISourceURL  *string     `gorm:"type:text" json:"ci_source_url"`
+	CISourceRef  *string     `gorm:"type:text" json:"ci_source_ref"`
+
+	// Container configuration
+	ContainerImage *string `gorm:"type:text" json:"container_image"` // Custom image per job
 
 	// Runnerlib configuration
 	CodeDir     string `gorm:"type:text;not null;default:'/job/src'" json:"code_dir"`
@@ -89,7 +99,8 @@ type Job struct {
 	ArtifactsObjectKey string `gorm:"type:text" json:"artifacts_object_key"`
 
 	// Relationships
-	User User `gorm:"foreignKey:UserID" json:"user,omitempty"`
+	User    User     `gorm:"foreignKey:UserID" json:"user,omitempty"`
+	Project *Project `gorm:"foreignKey:ProjectID" json:"project,omitempty"`
 }
 
 // TableName specifies the table name for the model

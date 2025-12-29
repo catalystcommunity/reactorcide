@@ -1,7 +1,8 @@
 """Test dynamic secret masking - showing before/after registration behavior."""
 
-import tempfile
 import subprocess
+import sys
+import tempfile
 from pathlib import Path
 
 
@@ -87,7 +88,7 @@ print("=" * 50)
         # Run the job with an explicit empty secrets list to prevent default masking
         result = subprocess.run(
             [
-                "python", "-m", "src.cli", "run",
+                sys.executable, "-m", "src.cli", "run",
                 "--runner-image", "python:3.9-alpine",
                 "--job-command", "python3 -u /job/show_masking.py",  # -u for unbuffered output
                 "--code-dir", "/job",
@@ -189,7 +190,7 @@ echo "  Webhook: $SECRET3"
         # Run the job with an explicit empty secrets list
         result = subprocess.run(
             [
-                "python", "-m", "src.cli", "run",
+                sys.executable, "-m", "src.cli", "run",
                 "--runner-image", "python:3.9-alpine",
                 "--job-command", "sh /job/progressive_masking.sh",
                 "--code-dir", "/job",
@@ -285,7 +286,7 @@ if socket_path:
         # Run the job with an explicit empty secrets list
         result = subprocess.run(
             [
-                "python", "-m", "src.cli", "run",
+                sys.executable, "-m", "src.cli", "run",
                 "--runner-image", "python:3.9-alpine",
                 "--job-command", "python3 /job/streaming_test.py",
                 "--code-dir", "/job",

@@ -1,0 +1,107 @@
+name: build-all-images
+image: golang:1.24-alpine
+capabilities:
+  - docker
+command: |-
+  sh -c '
+    set -euo pipefail
+
+    echo "========================================"
+    echo "Building all Reactorcide images (tag: $TAG)"
+    echo "========================================"
+
+    # Setup environment
+    export HOME=/root
+    export XDG_RUNTIME_DIR=/tmp/run-root
+    mkdir -p $XDG_RUNTIME_DIR $HOME/.docker
+
+    # Install buildkit, runc, and git
+    apk add --no-cache git runc
+
+    BUILDKIT_VERSION=0.17.3
+    wget -q "https://github.com/moby/buildkit/releases/download/v${BUILDKIT_VERSION}/buildkit-v${BUILDKIT_VERSION}.linux-amd64.tar.gz" -O /tmp/buildkit.tar.gz
+    tar -xzf /tmp/buildkit.tar.gz -C /usr/local
+    rm /tmp/buildkit.tar.gz
+
+    # Start buildkitd with OCI worker
+    echo "Starting buildkitd..."
+    buildkitd \
+      --oci-worker=true \
+      --containerd-worker=false \
+      --root=$HOME/.local/share/buildkit \
+      --addr=unix://$XDG_RUNTIME_DIR/buildkit/buildkitd.sock &
+
+    # Wait for buildkitd to be ready
+    for i in $(seq 1 30); do
+      if buildctl --addr=unix://$XDG_RUNTIME_DIR/buildkit/buildkitd.sock debug info >/dev/null 2>&1; then
+        echo "buildkitd is ready"
+        break
+      fi
+      sleep 1
+    done
+
+    export BUILDKIT_HOST=unix://$XDG_RUNTIME_DIR/buildkit/buildkitd.sock
+
+    # Setup registry auth for buildkit
+    echo "Configuring registry authentication..."
+    AUTH=$(printf "%s:%s" "$REGISTRY_USER" "$REGISTRY_PASSWORD" | base64 -w 0)
+    printf "{\"auths\":{\"%s\":{\"auth\":\"%s\"}}}\n" "$REGISTRY" "$AUTH" > $HOME/.docker/config.json
+
+    # Helper function to build and push with buildctl
+    build_and_push() {
+      local context="$1"
+      local dockerfile="$2"
+      local image="$3"
+      echo "Building and pushing $image..."
+      buildctl build \
+        --frontend dockerfile.v0 \
+        --local context="$context" \
+        --local dockerfile="$context" \
+        --opt filename="$dockerfile" \
+        --output type=image,name="$image",push=true
+    }
+
+    # Build runnerbase
+    echo ""
+    echo ">>> Building runnerbase..."
+    echo "----------------------------------------"
+    build_and_push /job/runnerlib Dockerfile.runner "$REGISTRY/public/reactorcide/runnerbase:$TAG"
+
+    # Build Go binary (shared by coordinator and worker)
+    echo ""
+    echo ">>> Building Go binary..."
+    echo "----------------------------------------"
+    cd /job/coordinator_api
+    CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -buildvcs=false -o reactorcide .
+    cp reactorcide /job/deployment/
+
+    # Build coordinator
+    echo ""
+    echo ">>> Building coordinator..."
+    echo "----------------------------------------"
+    build_and_push /job/deployment Dockerfile.coordinator "$REGISTRY/public/reactorcide/coordinator:$TAG"
+
+    # Build worker
+    echo ""
+    echo ">>> Building worker..."
+    echo "----------------------------------------"
+    build_and_push /job/deployment Dockerfile.worker "$REGISTRY/public/reactorcide/worker:$TAG"
+
+    # Cleanup
+    rm -f /job/deployment/reactorcide
+
+    echo ""
+    echo "========================================"
+    echo "All images built and pushed successfully!"
+    echo "========================================"
+    echo ""
+    echo "Images:"
+    echo "  - $REGISTRY/public/reactorcide/runnerbase:$TAG"
+    echo "  - $REGISTRY/public/reactorcide/coordinator:$TAG"
+    echo "  - $REGISTRY/public/reactorcide/worker:$TAG"
+  '
+environment:
+  REGISTRY: containers.catalystsquad.com
+  TAG: dev
+  REGISTRY_USER: "${env:REGISTRY_USER}"
+  REGISTRY_PASSWORD: "${secret:reactorcide/local-dev:registry_password}"

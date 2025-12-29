@@ -39,7 +39,14 @@ class TestConfigManager:
             'job_command': 'REACTORCIDE_JOB_COMMAND',
             'runner_image': 'REACTORCIDE_RUNNER_IMAGE',
             'job_env': 'REACTORCIDE_JOB_ENV',
-            'secrets_list': 'REACTORCIDE_SECRETS_LIST'
+            'secrets_list': 'REACTORCIDE_SECRETS_LIST',
+            'secrets_file': 'REACTORCIDE_SECRETS_FILE',
+            'source_type': 'REACTORCIDE_SOURCE_TYPE',
+            'source_url': 'REACTORCIDE_SOURCE_URL',
+            'source_ref': 'REACTORCIDE_SOURCE_REF',
+            'ci_source_type': 'REACTORCIDE_CI_SOURCE_TYPE',
+            'ci_source_url': 'REACTORCIDE_CI_SOURCE_URL',
+            'ci_source_ref': 'REACTORCIDE_CI_SOURCE_REF'
         }
         assert self.config_manager.ENV_VARS == expected_mappings
 
@@ -202,14 +209,15 @@ KEY3=value3"""
         )
         
         env_vars = self.config_manager.get_all_environment_vars(config)
-        
+
         # Should include REACTORCIDE_* vars
         assert env_vars['REACTORCIDE_CODE_DIR'] == "/job/src"
         assert env_vars['REACTORCIDE_JOB_DIR'] == "/job/work"
         assert env_vars['REACTORCIDE_JOB_COMMAND'] == "test-cmd"
         assert env_vars['REACTORCIDE_RUNNER_IMAGE'] == "test:image"
-        assert env_vars['REACTORCIDE_JOB_ENV'] == "TEST_VAR=test_value"
-        
+        # NOTE: REACTORCIDE_JOB_ENV is NOT passed to container (see config.py:175-176)
+        # Individual parsed variables are passed instead
+
         # Should include job-specific vars
         assert env_vars['TEST_VAR'] == "test_value"
 

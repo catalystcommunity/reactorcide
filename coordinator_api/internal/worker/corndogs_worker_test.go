@@ -20,6 +20,10 @@ type MockJobProcessor struct {
 }
 
 func (m *MockJobProcessor) ProcessJob(ctx context.Context, job *models.Job) *JobResult {
+	return m.ProcessJobWithContext(ctx, job, nil)
+}
+
+func (m *MockJobProcessor) ProcessJobWithContext(ctx context.Context, job *models.Job, execCtx *JobExecutionContext) *JobResult {
 	m.ProcessJobCalls = append(m.ProcessJobCalls, *job)
 	if m.ProcessJobFunc != nil {
 		return m.ProcessJobFunc(ctx, job)
@@ -80,6 +84,20 @@ func (m *MockStore) GetAPITokensByUser(ctx context.Context, userID string) ([]mo
 	return nil, nil
 }
 func (m *MockStore) DeleteAPIToken(ctx context.Context, tokenID string) error { return nil }
+
+// Project operations (stubs for interface compliance)
+func (m *MockStore) CreateProject(ctx context.Context, project *models.Project) error { return nil }
+func (m *MockStore) GetProjectByID(ctx context.Context, projectID string) (*models.Project, error) {
+	return nil, nil
+}
+func (m *MockStore) GetProjectByRepoURL(ctx context.Context, repoURL string) (*models.Project, error) {
+	return nil, nil
+}
+func (m *MockStore) UpdateProject(ctx context.Context, project *models.Project) error { return nil }
+func (m *MockStore) DeleteProject(ctx context.Context, projectID string) error        { return nil }
+func (m *MockStore) ListProjects(ctx context.Context, limit, offset int) ([]models.Project, error) {
+	return nil, nil
+}
 
 func TestCornDogsWorker_ProcessNextTask_Success(t *testing.T) {
 	// Setup mocks

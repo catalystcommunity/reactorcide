@@ -7,18 +7,28 @@ import (
 	"time"
 
 	"github.com/catalystcommunity/app-utils-go/logging"
+	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/objects"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store/models"
 )
 
 // Config holds the configuration for the worker
 type Config struct {
-	QueueName    string
-	PollInterval time.Duration
-	Concurrency  int
-	DryRun       bool
-	Store        store.Store
-	WorkerID     string // Unique identifier for this worker instance
+	QueueName        string
+	PollInterval     time.Duration
+	Concurrency      int
+	DryRun           bool
+	Store            store.Store
+	WorkerID         string        // Unique identifier for this worker instance
+	ContainerRuntime string        // Container runtime backend: "docker", "containerd", or "kubernetes"
+
+	// Log shipping configuration
+	ObjectStore      objects.ObjectStore // Object store for logs and artifacts
+	LogChunkInterval time.Duration       // Interval for uploading log chunks (default: 3 seconds)
+
+	// Heartbeat configuration
+	HeartbeatInterval time.Duration // Interval for sending heartbeats to Corndogs (default: 30 seconds)
+	HeartbeatTimeout  time.Duration // Timeout extension for each heartbeat (default: 10 minutes)
 }
 
 // Worker represents a job processing worker
@@ -47,6 +57,33 @@ func New(config *Config) *Worker {
 		config.WorkerID = fmt.Sprintf("worker-%d", time.Now().Unix())
 	}
 
+	// Default container runtime to docker if not specified
+	if config.ContainerRuntime == "" {
+		config.ContainerRuntime = "docker"
+	}
+
+	// Set default log chunk interval if not specified
+	if config.LogChunkInterval == 0 {
+		config.LogChunkInterval = 3 * time.Second
+	}
+
+	// Set default heartbeat interval if not specified
+	if config.HeartbeatInterval == 0 {
+		config.HeartbeatInterval = 30 * time.Second
+	}
+
+	// Set default heartbeat timeout if not specified
+	if config.HeartbeatTimeout == 0 {
+		config.HeartbeatTimeout = 10 * time.Minute
+	}
+
+	// Create job runner based on container runtime
+	runner, err := NewJobRunner(config.ContainerRuntime)
+	if err != nil {
+		logging.Log.WithError(err).WithField("runtime", config.ContainerRuntime).
+			Fatal("Failed to create job runner")
+	}
+
 	// Create resource monitor
 	monitor, err := NewResourceMonitor(config.WorkerID, config.Concurrency)
 	if err != nil {
@@ -57,7 +94,7 @@ func New(config *Config) *Worker {
 	return &Worker{
 		config:     config,
 		jobChan:    make(chan *models.Job, config.Concurrency*2), // Buffered channel
-		processor:  NewJobProcessor(config.Store, config.DryRun),
+		processor:  NewJobProcessor(config.Store, runner, config.DryRun),
 		workerPool: make(chan struct{}, config.Concurrency),
 		lifecycle:  NewLifecycleManager(config.Store),
 		monitor:    monitor,

@@ -4,9 +4,16 @@ This is the minimalist CI/CD system that aims to be fully fledged for the needs 
 
 You should be able to run jobs from your laptop just as easily as from the whole system, so if your source control (git, mercurial, whatever) provider is down, fine. It's just building blocks. Glue to make it specific to a provider is also provided where we needed it.
 
+## Documentation
+
+- **[DESIGN.md](./DESIGN.md)** - Complete system architecture, design principles, and deployment models
+- **[CLAUDE.md](./CLAUDE.md)** - Implementation guidance for AI assistants and contributors
+- **[runnerlib/DESIGN.md](./runnerlib/DESIGN.md)** - Detailed runnerlib architecture and API
+- **[deployment-plan.md](./deployment-plan.md)** - Deployment strategy and migration roadmap
+
 ## Philosophy
 
-We want to react to git events. Ultimately we want to have:
+We want to react to source code change events. Ultimately we want to have:
 * An isolated run from a known state as much as is feasible
 * A configuration for some knobs for the thing running the job (the CI/CD system, or reactorcide in this case)
 * A configuration passed to the job itself (the VCS ref, the context, secrets, etc)

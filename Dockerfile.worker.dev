@@ -1,0 +1,32 @@
+# Build stage
+FROM golang:alpine AS builder
+
+WORKDIR /app
+
+# Install CA certificates (needed for final image)
+RUN apk add --no-cache ca-certificates
+
+# Copy coredb module first (local dependency)
+COPY coredb /coredb
+
+# Copy coordinator_api files
+COPY coordinator_api/go.mod coordinator_api/go.sum ./
+RUN go mod download
+
+# Copy source code
+COPY coordinator_api .
+
+# Build the binary with CGO disabled for static linking
+RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -ldflags="-w -s" -o reactorcide .
+
+# Final stage - scratch for maximum security
+FROM scratch
+
+# Copy CA certificates for HTTPS calls
+COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
+
+# Copy the binary from builder
+COPY --from=builder /app/reactorcide /reactorcide
+
+# Run worker subcommand
+ENTRYPOINT ["/reactorcide", "worker"]

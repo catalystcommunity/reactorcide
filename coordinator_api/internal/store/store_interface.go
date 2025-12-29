@@ -23,6 +23,14 @@ func GetDB() *gorm.DB {
 type Store interface {
 	Initialize() (deferredFunc func(), err error)
 
+	// Project operations
+	CreateProject(ctx context.Context, project *models.Project) error
+	GetProjectByID(ctx context.Context, projectID string) (*models.Project, error)
+	GetProjectByRepoURL(ctx context.Context, repoURL string) (*models.Project, error)
+	UpdateProject(ctx context.Context, project *models.Project) error
+	DeleteProject(ctx context.Context, projectID string) error
+	ListProjects(ctx context.Context, limit, offset int) ([]models.Project, error)
+
 	// Job operations
 	GetJobsByUser(ctx context.Context, userID string, limit, offset int) ([]models.Job, error)
 	GetJobByID(ctx context.Context, jobID string) (*models.Job, error)

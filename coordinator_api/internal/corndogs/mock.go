@@ -18,6 +18,7 @@ type MockClient struct {
 	SubmitTaskFunc      func(ctx context.Context, payload *TaskPayload, priority int64) (*pb.Task, error)
 	GetNextTaskFunc     func(ctx context.Context, state string, timeout int64) (*pb.Task, error)
 	UpdateTaskFunc      func(ctx context.Context, taskID string, currentState string, newState string, payload []byte) (*pb.Task, error)
+	SendHeartbeatFunc   func(ctx context.Context, taskID string, currentState string, timeoutExtensionSeconds int64) (*pb.Task, error)
 	CompleteTaskFunc    func(ctx context.Context, taskID string, currentState string) (*pb.Task, error)
 	CancelTaskFunc      func(ctx context.Context, taskID string, currentState string) (*pb.Task, error)
 	GetTaskByIDFunc     func(ctx context.Context, taskID string) (*pb.Task, error)
@@ -28,6 +29,7 @@ type MockClient struct {
 	SubmitTaskCalls      []SubmitTaskCall
 	GetNextTaskCalls     []GetNextTaskCall
 	UpdateTaskCalls      []UpdateTaskCall
+	SendHeartbeatCalls   []SendHeartbeatCall
 	CompleteTaskCalls    []CompleteTaskCall
 	CancelTaskCalls      []CancelTaskCall
 	GetTaskByIDCalls     []GetTaskByIDCall
@@ -50,6 +52,12 @@ type UpdateTaskCall struct {
 	CurrentState string
 	NewState     string
 	Payload      []byte
+}
+
+type SendHeartbeatCall struct {
+	TaskID                   string
+	CurrentState             string
+	TimeoutExtensionSeconds  int64
 }
 
 type CompleteTaskCall struct {
@@ -143,6 +151,32 @@ func (m *MockClient) UpdateTask(ctx context.Context, taskID string, currentState
 		CurrentState:    newState,
 		AutoTargetState: "completed",
 		UpdateTime:      time.Now().Unix(),
+	}, nil
+}
+
+// SendHeartbeat mock implementation
+func (m *MockClient) SendHeartbeat(ctx context.Context, taskID string, currentState string, timeoutExtensionSeconds int64) (*pb.Task, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	m.SendHeartbeatCalls = append(m.SendHeartbeatCalls, SendHeartbeatCall{
+		TaskID:                  taskID,
+		CurrentState:            currentState,
+		TimeoutExtensionSeconds: timeoutExtensionSeconds,
+	})
+
+	if m.SendHeartbeatFunc != nil {
+		return m.SendHeartbeatFunc(ctx, taskID, currentState, timeoutExtensionSeconds)
+	}
+
+	// Default behavior - return updated task with extended timeout
+	return &pb.Task{
+		Uuid:            taskID,
+		Queue:           "reactorcide-jobs",
+		CurrentState:    currentState,
+		AutoTargetState: "completed",
+		UpdateTime:      time.Now().Unix(),
+		Timeout:         timeoutExtensionSeconds,
 	}, nil
 }
 
@@ -278,6 +312,7 @@ func (m *MockClient) Reset() {
 	m.SubmitTaskCalls = nil
 	m.GetNextTaskCalls = nil
 	m.UpdateTaskCalls = nil
+	m.SendHeartbeatCalls = nil
 	m.CompleteTaskCalls = nil
 	m.CancelTaskCalls = nil
 	m.GetTaskByIDCalls = nil

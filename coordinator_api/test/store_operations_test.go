@@ -207,13 +207,16 @@ func testCreateJobAndGetJobByID(t *testing.T, ctx context.Context, tx *gorm.DB) 
 	require.NoError(t, err)
 
 	// Create test job
+	gitURL := "https://github.com/example/repo.git"
+	gitRef := "main"
+	sourceType := models.SourceTypeGit
 	job := &models.Job{
 		UserID:      user.UserID,
 		Name:        "Test Job",
 		Description: "A test job for validation",
-		GitURL:      "https://github.com/example/repo.git",
-		GitRef:      "main",
-		SourceType:  "git",
+		SourceURL:      &gitURL,
+		SourceRef:      &gitRef,
+		SourceType:  &sourceType,
 		JobCommand:  "echo 'Hello World'",
 		QueueName:   "test-queue",
 		Status:      "submitted",
@@ -230,7 +233,7 @@ func testCreateJobAndGetJobByID(t *testing.T, ctx context.Context, tx *gorm.DB) 
 	assert.Equal(t, job.JobID, retrievedJob.JobID)
 	assert.Equal(t, job.Name, retrievedJob.Name)
 	assert.Equal(t, job.UserID, retrievedJob.UserID)
-	assert.Equal(t, job.GitURL, retrievedJob.GitURL)
+	assert.Equal(t, job.SourceURL, retrievedJob.SourceURL)
 	assert.Equal(t, job.Status, retrievedJob.Status)
 }
 

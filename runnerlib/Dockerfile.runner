@@ -1,0 +1,29 @@
+# Minimal base image for Reactorcide job execution
+# This image contains runnerlib and is spawned by the worker for each job
+FROM python:3.13-slim-trixie
+
+# Install system dependencies (minimal set)
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+        git \
+        ca-certificates && \
+    rm -rf /var/lib/apt/lists/*
+
+# Install uv for fast Python package installation
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
+
+# Set working directory for jobs
+WORKDIR /job
+
+# Copy and install runnerlib
+COPY . /tmp/runnerlib
+RUN cd /tmp/runnerlib && \
+    uv pip install --system . && \
+    rm -rf /tmp/runnerlib
+
+# Verify installation works
+RUN runnerlib --help
+
+# Default entrypoint - can be overridden by worker when spawning containers
+ENTRYPOINT ["runnerlib"]
+CMD ["--help"]

@@ -2,15 +2,19 @@ package handlers
 
 import (
 	"encoding/json"
+	"log"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/checkauth"
+	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/config"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/corndogs"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/metrics"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store/models"
+	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/vcs"
 )
 
 // JobHandler handles job-related HTTP requests
@@ -33,11 +37,18 @@ type CreateJobRequest struct {
 	Name        string `json:"name" validate:"required,max=255"`
 	Description string `json:"description,omitempty"`
 
-	// Source configuration
-	GitURL     string `json:"git_url,omitempty"`
-	GitRef     string `json:"git_ref,omitempty"`
+	// Source configuration (VCS-agnostic: works with git, mercurial, svn, etc.)
+	// This is the untrusted source code being tested (e.g., PR code)
+	SourceURL  string `json:"source_url,omitempty"`
+	SourceRef  string `json:"source_ref,omitempty"`
 	SourceType string `json:"source_type" validate:"required,oneof=git copy"`
 	SourcePath string `json:"source_path,omitempty"`
+
+	// CI Source configuration (trusted CI pipeline code - optional)
+	// This is the trusted code that defines the job (e.g., test scripts, build config)
+	CISourceType string `json:"ci_source_type,omitempty" validate:"omitempty,oneof=git copy"`
+	CISourceURL  string `json:"ci_source_url,omitempty"`
+	CISourceRef  string `json:"ci_source_ref,omitempty"`
 
 	// Runnerlib configuration
 	CodeDir     string `json:"code_dir,omitempty"`
@@ -64,11 +75,16 @@ type JobResponse struct {
 	CreatedAt   time.Time `json:"created_at"`
 	UpdatedAt   time.Time `json:"updated_at"`
 
-	// Source info
-	GitURL     string `json:"git_url,omitempty"`
-	GitRef     string `json:"git_ref,omitempty"`
+	// Source info (VCS-agnostic) - untrusted code being tested
+	SourceURL  string `json:"source_url,omitempty"`
+	SourceRef  string `json:"source_ref,omitempty"`
 	SourceType string `json:"source_type"`
 	SourcePath string `json:"source_path,omitempty"`
+
+	// CI Source info (trusted CI pipeline code)
+	CISourceType string `json:"ci_source_type,omitempty"`
+	CISourceURL  string `json:"ci_source_url,omitempty"`
+	CISourceRef  string `json:"ci_source_ref,omitempty"`
 
 	// Runnerlib config
 	CodeDir     string            `json:"code_dir"`
@@ -116,7 +132,12 @@ func (h *JobHandler) CreateJob(w http.ResponseWriter, r *http.Request) {
 
 	// Validate required fields
 	if err := h.validateCreateJobRequest(&req); err != nil {
-		h.respondWithError(w, http.StatusBadRequest, err)
+		// Check if this is a forbidden error (e.g., CI code URL not in allowlist)
+		if err == store.ErrForbidden {
+			h.respondWithError(w, http.StatusForbidden, err)
+		} else {
+			h.respondWithError(w, http.StatusBadRequest, err)
+		}
 		return
 	}
 
@@ -130,10 +151,32 @@ func (h *JobHandler) CreateJob(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Record job submission metric
-	metrics.RecordJobSubmission(job.QueueName, job.SourceType)
+	sourceTypeStr := ""
+	if job.SourceType != nil {
+		sourceTypeStr = string(*job.SourceType)
+	}
+	metrics.RecordJobSubmission(job.QueueName, sourceTypeStr)
 
 	// Submit job to Corndogs queue
 	if h.corndogsClient != nil {
+		// Dereference pointer fields for payload
+		sourceTypeStr := ""
+		if job.SourceType != nil {
+			sourceTypeStr = string(*job.SourceType)
+		}
+		sourceURL := ""
+		if job.SourceURL != nil {
+			sourceURL = *job.SourceURL
+		}
+		sourceRef := ""
+		if job.SourceRef != nil {
+			sourceRef = *job.SourceRef
+		}
+		sourcePath := ""
+		if job.SourcePath != nil {
+			sourcePath = *job.SourcePath
+		}
+
 		taskPayload := &corndogs.TaskPayload{
 			JobID:   job.JobID,
 			JobType: "run",
@@ -146,10 +189,10 @@ func (h *JobHandler) CreateJob(w http.ResponseWriter, r *http.Request) {
 				"job_dir":     job.JobDir,
 			},
 			Source: map[string]interface{}{
-				"type":        job.SourceType,
-				"url":         job.GitURL,
-				"ref":         job.GitRef,
-				"source_path": job.SourcePath,
+				"type":        sourceTypeStr,
+				"url":         sourceURL,
+				"ref":         sourceRef,
+				"source_path": sourcePath,
 			},
 			Metadata: map[string]interface{}{
 				"user_id":      job.UserID,
@@ -170,7 +213,8 @@ func (h *JobHandler) CreateJob(w http.ResponseWriter, r *http.Request) {
 		task, err := h.corndogsClient.SubmitTask(r.Context(), taskPayload, int64(job.Priority))
 		if err != nil {
 			// Log error but don't fail the request - job is in DB
-			// TODO: Add proper logging
+			log.Printf("ERROR: Failed to submit task to Corndogs - job_id=%s job_name=%s queue=%s error=%v",
+				job.JobID, job.Name, job.QueueName, err)
 			job.Status = "failed"
 			// Record failed submission metric
 			metrics.RecordCornDogsTaskSubmission(job.QueueName, false)
@@ -361,7 +405,7 @@ func (h *JobHandler) validateCreateJobRequest(req *CreateJobRequest) error {
 		return store.ErrInvalidInput
 	}
 
-	if req.SourceType == "git" && req.GitURL == "" {
+	if req.SourceType == "git" && req.SourceURL == "" {
 		return store.ErrInvalidInput
 	}
 
@@ -369,20 +413,92 @@ func (h *JobHandler) validateCreateJobRequest(req *CreateJobRequest) error {
 		return store.ErrInvalidInput
 	}
 
+	// Validate CI source fields if provided
+	if req.CISourceType != "" {
+		if req.CISourceType != "git" && req.CISourceType != "copy" {
+			return store.ErrInvalidInput
+		}
+
+		if req.CISourceType == "git" && req.CISourceURL == "" {
+			return store.ErrInvalidInput
+		}
+
+		if req.CISourceType == "copy" {
+			// Copy type not supported for security - could allow local path injection
+			log.Printf("WARNING: Rejected ci_source_type 'copy' - not yet supported for security reasons")
+			return store.ErrInvalidInput
+		}
+
+		// Validate CI code URL against allowlist
+		if req.CISourceURL != "" {
+			if err := h.validateCiCodeURL(req.CISourceURL); err != nil {
+				return err
+			}
+		}
+	}
+
 	return nil
 }
 
+// validateCiCodeURL validates that a CI source URL is in the allowlist
+// Returns store.ErrForbidden if the URL is not allowed
+func (h *JobHandler) validateCiCodeURL(ciSourceURL string) error {
+	// Get the allowlist from config
+	allowlist := config.CiCodeAllowlist
+
+	// If allowlist is empty, warn but allow (not recommended for production)
+	if allowlist == "" {
+		log.Printf("WARNING: REACTORCIDE_CI_CODE_ALLOWLIST is not configured - all CI code URLs are allowed. " +
+			"This is a security risk and not recommended for production.")
+		return nil
+	}
+
+	// Parse the comma-separated allowlist
+	allowedURLs := strings.Split(allowlist, ",")
+
+	// Normalize the CI source URL
+	normalizedCIURL := vcs.NormalizeRepoURL(ciSourceURL)
+
+	// Check if the URL is in the allowlist
+	for _, allowedURL := range allowedURLs {
+		allowedURL = strings.TrimSpace(allowedURL)
+		if allowedURL == "" {
+			continue
+		}
+
+		// Use URL matching to handle different formats
+		if vcs.MatchRepoURL(ciSourceURL, allowedURL) {
+			return nil
+		}
+	}
+
+	// URL not in allowlist - log and return forbidden error
+	log.Printf("SECURITY: Rejected CI source URL not in allowlist: %s (normalized: %s)", ciSourceURL, normalizedCIURL)
+	return store.ErrForbidden
+}
+
 func (h *JobHandler) createJobFromRequest(req *CreateJobRequest, userID string) *models.Job {
+	// Convert source type string to SourceType enum
+	var sourceType models.SourceType
+	switch req.SourceType {
+	case "git":
+		sourceType = models.SourceTypeGit
+	case "copy":
+		sourceType = models.SourceTypeCopy
+	default:
+		sourceType = models.SourceTypeNone
+	}
+
 	job := &models.Job{
 		UserID:      userID,
 		Name:        req.Name,
 		Description: req.Description,
 		Status:      "submitted",
 
-		GitURL:     req.GitURL,
-		GitRef:     req.GitRef,
-		SourceType: req.SourceType,
-		SourcePath: req.SourcePath,
+		SourceURL:  &req.SourceURL,
+		SourceRef:  &req.SourceRef,
+		SourceType: &sourceType,
+		SourcePath: &req.SourcePath,
 
 		JobCommand:  req.JobCommand,
 		CodeDir:     req.CodeDir,
@@ -393,6 +509,39 @@ func (h *JobHandler) createJobFromRequest(req *CreateJobRequest, userID string) 
 		QueueName: req.QueueName,
 	}
 
+	// Handle CI source fields with defaults if not provided
+	if req.CISourceType != "" {
+		// Convert CI source type to enum
+		var ciSourceType models.SourceType
+		switch req.CISourceType {
+		case "git":
+			ciSourceType = models.SourceTypeGit
+		case "copy":
+			ciSourceType = models.SourceTypeCopy
+		default:
+			ciSourceType = models.SourceTypeNone
+		}
+		job.CISourceType = &ciSourceType
+
+		// Use provided CI source URL or fall back to default
+		ciSourceURL := req.CISourceURL
+		if ciSourceURL == "" && config.DefaultCiSourceURL != "" {
+			ciSourceURL = config.DefaultCiSourceURL
+		}
+		if ciSourceURL != "" {
+			job.CISourceURL = &ciSourceURL
+		}
+
+		// Use provided CI source ref or fall back to default
+		ciSourceRef := req.CISourceRef
+		if ciSourceRef == "" && config.DefaultCiSourceRef != "" {
+			ciSourceRef = config.DefaultCiSourceRef
+		}
+		if ciSourceRef != "" {
+			job.CISourceRef = &ciSourceRef
+		}
+	}
+
 	// Set defaults
 	if job.CodeDir == "" {
 		job.CodeDir = "/job/src"
@@ -401,7 +550,7 @@ func (h *JobHandler) createJobFromRequest(req *CreateJobRequest, userID string) 
 		job.JobDir = job.CodeDir
 	}
 	if job.RunnerImage == "" {
-		job.RunnerImage = "quay.io/catalystcommunity/reactorcide_runner"
+		job.RunnerImage = "reactorcide/runner:latest"
 	}
 	if job.QueueName == "" {
 		job.QueueName = "reactorcide-jobs"
@@ -430,6 +579,38 @@ func (h *JobHandler) createJobFromRequest(req *CreateJobRequest, userID string) 
 }
 
 func (h *JobHandler) jobToResponse(job *models.Job) JobResponse {
+	// Handle pointer fields for source
+	sourceURL := ""
+	if job.SourceURL != nil {
+		sourceURL = *job.SourceURL
+	}
+	sourceRef := ""
+	if job.SourceRef != nil {
+		sourceRef = *job.SourceRef
+	}
+	sourceType := ""
+	if job.SourceType != nil {
+		sourceType = string(*job.SourceType)
+	}
+	sourcePath := ""
+	if job.SourcePath != nil {
+		sourcePath = *job.SourcePath
+	}
+
+	// Handle pointer fields for CI source
+	ciSourceType := ""
+	if job.CISourceType != nil {
+		ciSourceType = string(*job.CISourceType)
+	}
+	ciSourceURL := ""
+	if job.CISourceURL != nil {
+		ciSourceURL = *job.CISourceURL
+	}
+	ciSourceRef := ""
+	if job.CISourceRef != nil {
+		ciSourceRef = *job.CISourceRef
+	}
+
 	response := JobResponse{
 		JobID:       job.JobID,
 		Name:        job.Name,
@@ -438,10 +619,14 @@ func (h *JobHandler) jobToResponse(job *models.Job) JobResponse {
 		CreatedAt:   job.CreatedAt,
 		UpdatedAt:   job.UpdatedAt,
 
-		GitURL:     job.GitURL,
-		GitRef:     job.GitRef,
-		SourceType: job.SourceType,
-		SourcePath: job.SourcePath,
+		SourceURL:  sourceURL,
+		SourceRef:  sourceRef,
+		SourceType: sourceType,
+		SourcePath: sourcePath,
+
+		CISourceType: ciSourceType,
+		CISourceURL:  ciSourceURL,
+		CISourceRef:  ciSourceRef,
 
 		CodeDir:        job.CodeDir,
 		JobDir:         job.JobDir,

@@ -162,7 +162,7 @@ func TestGitHubClient_ValidateWebhook(t *testing.T) {
 		{
 			name:      "valid_signature",
 			body:      `{"test": "data"}`,
-			signature: "sha256=1b2c16b75bd2a870c114153ccda5bcfca63314bc722fa160d690de133ccbb9db",
+			signature: "sha256=b4820cec871eff53285edfbf9e7cd0081e8e5cca759fa3b0453d9023489421a3",
 			secret:    "test-secret",
 			wantErr:   false,
 		},

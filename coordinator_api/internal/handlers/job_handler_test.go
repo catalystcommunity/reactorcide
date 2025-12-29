@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/checkauth"
+	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/config"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/corndogs"
 	pb "github.com/catalystcommunity/reactorcide/coordinator_api/internal/corndogs/v1alpha1"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store"
@@ -115,6 +116,20 @@ func (m *MockStore) GetJobsByUser(ctx context.Context, userID string, limit, off
 	return nil, nil
 }
 
+// Project operations (stubs for interface compliance)
+func (m *MockStore) CreateProject(ctx context.Context, project *models.Project) error { return nil }
+func (m *MockStore) GetProjectByID(ctx context.Context, projectID string) (*models.Project, error) {
+	return nil, nil
+}
+func (m *MockStore) GetProjectByRepoURL(ctx context.Context, repoURL string) (*models.Project, error) {
+	return nil, nil
+}
+func (m *MockStore) UpdateProject(ctx context.Context, project *models.Project) error { return nil }
+func (m *MockStore) DeleteProject(ctx context.Context, projectID string) error        { return nil }
+func (m *MockStore) ListProjects(ctx context.Context, limit, offset int) ([]models.Project, error) {
+	return nil, nil
+}
+
 func TestJobHandler_CreateJob_WithCorndogs(t *testing.T) {
 	tests := []struct {
 		name                  string
@@ -131,7 +146,7 @@ func TestJobHandler_CreateJob_WithCorndogs(t *testing.T) {
 				Name:       "Test Job",
 				JobCommand: "echo hello",
 				SourceType: "git",
-				GitURL:     "https://github.com/test/repo.git",
+				SourceURL:     "https://github.com/test/repo.git",
 			},
 			setupMockStore: func(m *MockStore) {
 				m.CreateJobFunc = func(ctx context.Context, job *models.Job) error {
@@ -167,7 +182,7 @@ func TestJobHandler_CreateJob_WithCorndogs(t *testing.T) {
 				Name:       "Test Job",
 				JobCommand: "echo hello",
 				SourceType: "git",
-				GitURL:     "https://github.com/test/repo.git",
+				SourceURL:     "https://github.com/test/repo.git",
 			},
 			setupMockStore: func(m *MockStore) {
 				m.CreateJobFunc = func(ctx context.Context, job *models.Job) error {
@@ -197,7 +212,7 @@ func TestJobHandler_CreateJob_WithCorndogs(t *testing.T) {
 				Name:       "Test Job",
 				JobCommand: "echo hello",
 				SourceType: "git",
-				GitURL:     "https://github.com/test/repo.git",
+				SourceURL:     "https://github.com/test/repo.git",
 			},
 			setupMockStore: func(m *MockStore) {
 				m.CreateJobFunc = func(ctx context.Context, job *models.Job) error {
@@ -434,8 +449,8 @@ func TestJobHandler_CorndogsPayloadGeneration(t *testing.T) {
 		Description: "Test Description",
 		JobCommand:  "echo hello",
 		SourceType:  "git",
-		GitURL:      "https://github.com/test/repo.git",
-		GitRef:      "main",
+		SourceURL:      "https://github.com/test/repo.git",
+		SourceRef:      "main",
 		JobEnvVars: map[string]string{
 			"KEY1": "value1",
 			"KEY2": "value2",
@@ -513,4 +528,218 @@ func TestJobHandler_CorndogsPayloadGeneration(t *testing.T) {
 // Helper function to create int pointer
 func intPtr(i int) *int {
 	return &i
+}
+
+// TestJobHandler_CICodeAllowlist tests the CI code allowlist enforcement
+func TestJobHandler_CICodeAllowlist(t *testing.T) {
+	// Import config to set/unset allowlist
+	originalAllowlist := config.CiCodeAllowlist
+	defer func() {
+		config.CiCodeAllowlist = originalAllowlist
+	}()
+
+	tests := []struct {
+		name           string
+		allowlist      string // Set in config before test
+		request        CreateJobRequest
+		setupMockStore func(*MockStore)
+		expectedStatus int
+		errorContains  string // If non-empty, check error response contains this string
+	}{
+		{
+			name:      "job without CI source - allowlist not enforced",
+			allowlist: "github.com/trusted/ci-repo",
+			request: CreateJobRequest{
+				Name:       "Test Job",
+				JobCommand: "echo hello",
+				SourceType: "git",
+				SourceURL:  "https://github.com/untrusted/source.git",
+				// No CI source fields
+			},
+			setupMockStore: func(m *MockStore) {
+				m.CreateJobFunc = func(ctx context.Context, job *models.Job) error {
+					job.JobID = "test-job-id"
+					return nil
+				}
+			},
+			expectedStatus: http.StatusCreated,
+		},
+		{
+			name:      "job with CI source in allowlist - succeeds",
+			allowlist: "github.com/trusted/ci-repo",
+			request: CreateJobRequest{
+				Name:         "Test Job",
+				JobCommand:   "echo hello",
+				SourceType:   "git",
+				SourceURL:    "https://github.com/untrusted/source.git",
+				CISourceType: "git",
+				CISourceURL:  "https://github.com/trusted/ci-repo.git",
+				CISourceRef:  "main",
+			},
+			setupMockStore: func(m *MockStore) {
+				m.CreateJobFunc = func(ctx context.Context, job *models.Job) error {
+					job.JobID = "test-job-id"
+					return nil
+				}
+			},
+			expectedStatus: http.StatusCreated,
+		},
+		{
+			name:      "job with CI source NOT in allowlist - returns 403",
+			allowlist: "github.com/trusted/ci-repo",
+			request: CreateJobRequest{
+				Name:         "Test Job",
+				JobCommand:   "echo hello",
+				SourceType:   "git",
+				SourceURL:    "https://github.com/untrusted/source.git",
+				CISourceType: "git",
+				CISourceURL:  "https://github.com/malicious/ci-repo.git",
+				CISourceRef:  "main",
+			},
+			setupMockStore: func(m *MockStore) {
+				// Should never be called since validation fails
+			},
+			expectedStatus: http.StatusForbidden,
+		},
+		{
+			name:      "URL normalization - different formats match",
+			allowlist: "github.com/trusted/ci-repo",
+			request: CreateJobRequest{
+				Name:         "Test Job",
+				JobCommand:   "echo hello",
+				SourceType:   "git",
+				SourceURL:    "https://github.com/untrusted/source.git",
+				CISourceType: "git",
+				// Different format but same repo
+				CISourceURL: "git@github.com:trusted/ci-repo.git",
+				CISourceRef: "main",
+			},
+			setupMockStore: func(m *MockStore) {
+				m.CreateJobFunc = func(ctx context.Context, job *models.Job) error {
+					job.JobID = "test-job-id"
+					return nil
+				}
+			},
+			expectedStatus: http.StatusCreated,
+		},
+		{
+			name:      "multiple repos in allowlist - matches second entry",
+			allowlist: "github.com/org1/repo1,github.com/org2/repo2,github.com/org3/repo3",
+			request: CreateJobRequest{
+				Name:         "Test Job",
+				JobCommand:   "echo hello",
+				SourceType:   "git",
+				SourceURL:    "https://github.com/untrusted/source.git",
+				CISourceType: "git",
+				CISourceURL:  "https://github.com/org2/repo2",
+				CISourceRef:  "main",
+			},
+			setupMockStore: func(m *MockStore) {
+				m.CreateJobFunc = func(ctx context.Context, job *models.Job) error {
+					job.JobID = "test-job-id"
+					return nil
+				}
+			},
+			expectedStatus: http.StatusCreated,
+		},
+		{
+			name:      "empty allowlist - all CI sources allowed with warning",
+			allowlist: "",
+			request: CreateJobRequest{
+				Name:         "Test Job",
+				JobCommand:   "echo hello",
+				SourceType:   "git",
+				SourceURL:    "https://github.com/untrusted/source.git",
+				CISourceType: "git",
+				CISourceURL:  "https://github.com/any/repo.git",
+				CISourceRef:  "main",
+			},
+			setupMockStore: func(m *MockStore) {
+				m.CreateJobFunc = func(ctx context.Context, job *models.Job) error {
+					job.JobID = "test-job-id"
+					return nil
+				}
+			},
+			expectedStatus: http.StatusCreated,
+		},
+		{
+			name:      "ci_source_type copy - rejected for security",
+			allowlist: "github.com/trusted/ci-repo",
+			request: CreateJobRequest{
+				Name:         "Test Job",
+				JobCommand:   "echo hello",
+				SourceType:   "git",
+				SourceURL:    "https://github.com/untrusted/source.git",
+				CISourceType: "copy",
+				CISourceURL:  "/local/path",
+			},
+			setupMockStore: func(m *MockStore) {
+				// Should never be called
+			},
+			expectedStatus: http.StatusBadRequest,
+			errorContains:  "invalid_input",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Set allowlist for this test
+			config.CiCodeAllowlist = tt.allowlist
+
+			// Setup mock store
+			mockStore := &MockStore{}
+			if tt.setupMockStore != nil {
+				tt.setupMockStore(mockStore)
+			}
+
+			// Create handler (no corndogs client needed for these tests)
+			handler := NewJobHandler(mockStore, nil)
+
+			// Create request
+			body, _ := json.Marshal(tt.request)
+			req := httptest.NewRequest("POST", "/api/v1/jobs", bytes.NewReader(body))
+
+			// Add user to context
+			user := &models.User{UserID: "test-user-id"}
+			ctx := checkauth.SetUserContext(req.Context(), user)
+			req = req.WithContext(ctx)
+
+			// Execute request
+			w := httptest.NewRecorder()
+			handler.CreateJob(w, req)
+
+			// Check status code
+			if w.Code != tt.expectedStatus {
+				t.Errorf("expected status %d, got %d. Response: %s", tt.expectedStatus, w.Code, w.Body.String())
+			}
+
+			// Check error message if expected
+			if tt.errorContains != "" && !bytes.Contains(w.Body.Bytes(), []byte(tt.errorContains)) {
+				t.Errorf("expected error to contain '%s', got: %s", tt.errorContains, w.Body.String())
+			}
+
+			// If created successfully, verify CI source fields were stored
+			if tt.expectedStatus == http.StatusCreated && tt.request.CISourceType != "" {
+				if len(mockStore.CreateJobCalls) != 1 {
+					t.Fatalf("expected 1 CreateJob call, got %d", len(mockStore.CreateJobCalls))
+				}
+				createdJob := mockStore.CreateJobCalls[0]
+
+				// Check CI source fields
+				if createdJob.CISourceType == nil {
+					t.Error("expected CISourceType to be set")
+				} else if string(*createdJob.CISourceType) != tt.request.CISourceType {
+					t.Errorf("expected CISourceType '%s', got '%s'", tt.request.CISourceType, string(*createdJob.CISourceType))
+				}
+
+				if createdJob.CISourceURL == nil {
+					t.Error("expected CISourceURL to be set")
+				}
+
+				if createdJob.CISourceRef == nil {
+					t.Error("expected CISourceRef to be set")
+				}
+			}
+		})
+	}
 }

@@ -180,6 +180,36 @@ func (du *DataUtils) CreateJob(setup DataSetup) (*models.Job, error) {
 							fieldValue.Set(rv)
 						}
 					}
+				} else if fieldName == "SourceURL" || fieldName == "SourceRef" || fieldName == "SourcePath" ||
+					fieldName == "CISourceURL" || fieldName == "CISourceRef" || fieldName == "ContainerImage" {
+					// Handle pointer to string fields
+					switch v := val.(type) {
+					case string:
+						fieldValue.Set(reflect.ValueOf(&v))
+					case *string:
+						fieldValue.Set(reflect.ValueOf(v))
+					default:
+						rv := reflect.ValueOf(val)
+						if rv.Type().AssignableTo(fieldValue.Type()) {
+							fieldValue.Set(rv)
+						}
+					}
+				} else if fieldName == "SourceType" || fieldName == "CISourceType" {
+					// Handle pointer to SourceType fields
+					switch v := val.(type) {
+					case string:
+						sourceType := models.SourceType(v)
+						fieldValue.Set(reflect.ValueOf(&sourceType))
+					case models.SourceType:
+						fieldValue.Set(reflect.ValueOf(&v))
+					case *models.SourceType:
+						fieldValue.Set(reflect.ValueOf(v))
+					default:
+						rv := reflect.ValueOf(val)
+						if rv.Type().AssignableTo(fieldValue.Type()) {
+							fieldValue.Set(rv)
+						}
+					}
 				} else {
 					// Handle other types
 					rv := reflect.ValueOf(val)
@@ -197,15 +227,19 @@ func (du *DataUtils) CreateJob(setup DataSetup) (*models.Job, error) {
 					fieldValue.SetString("Test Job " + gofakeit.Word())
 				case "Description":
 					fieldValue.SetString(gofakeit.Sentence(5))
-				case "GitURL":
-					fieldValue.SetString("https://github.com/" + gofakeit.Username() + "/" + gofakeit.Word() + ".git")
-				case "GitRef":
-					fieldValue.SetString("main")
+				case "SourceURL":
+					sourceURL := "https://github.com/" + gofakeit.Username() + "/" + gofakeit.Word() + ".git"
+					fieldValue.Set(reflect.ValueOf(&sourceURL))
+				case "SourceRef":
+					sourceRef := "main"
+					fieldValue.Set(reflect.ValueOf(&sourceRef))
 				case "SourceType":
-					fieldValue.SetString("git")
+					sourceType := models.SourceTypeGit
+					fieldValue.Set(reflect.ValueOf(&sourceType))
 				case "SourcePath":
 					if gofakeit.Bool() {
-						fieldValue.SetString("./" + gofakeit.Word())
+						sourcePath := "./" + gofakeit.Word()
+						fieldValue.Set(reflect.ValueOf(&sourcePath))
 					}
 				case "CodeDir":
 					fieldValue.SetString("/job/src")

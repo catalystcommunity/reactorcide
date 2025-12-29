@@ -1,0 +1,32 @@
+name: deploy-reactorcide-vm
+description: Deploy Reactorcide to a VM using Docker Compose
+image: containers.catalystsquad.com/public/reactorcide/runnerbase:dev
+command: /bin/bash /job/deploy-vm.sh
+
+# Files that need to be present in the job directory
+required_files:
+  - deploy-vm.sh
+  - docker-compose.prod.yml
+  - nginx.conf
+  - Dockerfile.coordinator
+  - coordinator_api/coordinator-api
+
+# Pre-job setup commands (run in container before main command)
+setup: |
+  # Install required packages (runnerbase already has git, ca-certificates)
+  apt-get update && apt-get install -y --no-install-recommends openssh-client rsync curl
+
+  # Setup SSH configuration
+  mkdir -p ~/.ssh
+  cp /job/.ssh/* ~/.ssh/ 2>/dev/null || true
+  chmod 700 ~/.ssh
+  chmod 600 ~/.ssh/* 2>/dev/null || true
+
+  # Make deployment script executable
+  chmod +x /job/deploy-vm.sh
+
+# Post-job verification (optional)
+verify: |
+  echo "Deployment completed. Verifying remote services..."
+  ssh ${DEPLOY_HOST} 'cd ~/reactorcide && docker compose -f docker-compose.prod.yml ps'
+  ssh ${DEPLOY_HOST} 'curl -sf http://localhost:8080/api/v1/health' && echo "API is healthy" || echo "API health check failed"
