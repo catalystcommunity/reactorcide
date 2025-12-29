@@ -39,6 +39,9 @@ type ClientInterface interface {
 	// GetTaskStateCounts gets task counts per state for a queue
 	GetTaskStateCounts(ctx context.Context) (int64, map[string]int64, error)
 
+	// SendHeartbeat sends a heartbeat for a task by extending its timeout
+	SendHeartbeat(ctx context.Context, taskID string, currentState string, timeoutExtensionSeconds int64) (*pb.Task, error)
+
 	// Close closes the connection
 	Close() error
 }

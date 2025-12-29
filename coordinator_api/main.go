@@ -10,10 +10,16 @@ import (
 
 func main() {
 	app := &cli.App{
+		Name:  "reactorcide",
+		Usage: "Reactorcide CI/CD system",
 		Commands: []*cli.Command{
 			cmd.ServeCommand,
 			cmd.MigrateCommand,
 			cmd.WorkerCommand,
+			cmd.HealthCheckCommand,
+			cmd.TokenCommand,
+			cmd.SecretsCommand,
+			cmd.RunLocalCommand,
 		},
 	}
 	err := app.Run(os.Args)

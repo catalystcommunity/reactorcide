@@ -220,20 +220,300 @@ def get_code_directory_path(config: RunnerConfig) -> Path:
 
 def get_job_directory_path(config: RunnerConfig) -> Path:
     """Get the host path for the job directory.
-    
+
     Args:
         config: Runner configuration
-        
+
     Returns:
         Path to the job directory on the host
     """
     job_path = Path("./job").resolve()
-    
+
     # Convert container path to host path
     job_dir = config.job_dir
     if job_dir.startswith('/job/'):
         job_dir = job_dir[5:]
     elif job_dir.startswith('/job'):
         job_dir = job_dir[4:]
-    
+
     return job_path / job_dir if job_dir else job_path
+
+
+def _prepare_git_source(source_url: str, source_ref: Optional[str], target_path: Path) -> Path:
+    """Prepare source code from a git repository.
+
+    Args:
+        source_url: Git repository URL
+        source_ref: Git reference (branch, tag, commit)
+        target_path: Where to clone the repository
+
+    Returns:
+        Path to the cloned repository
+    """
+    logger.info("Preparing git source", fields={"url": source_url, "ref": source_ref or "default", "target": str(target_path)})
+    log_stdout(f"Cloning git repository: {source_url}")
+
+    # Remove existing source if it exists
+    if target_path.exists():
+        shutil.rmtree(target_path)
+
+    try:
+        # Clone the repository
+        repo = Repo.clone_from(source_url, target_path)
+
+        # Checkout specific ref if provided
+        if source_ref:
+            logger.debug("Checking out git ref", fields={"ref": source_ref})
+            log_stdout(f"Checking out ref: {source_ref}")
+            repo.git.checkout(source_ref)
+
+        logger.info("Git source prepared successfully", fields={"path": str(target_path)})
+        log_stdout(f"Repository checked out to: {target_path}")
+        return target_path
+
+    except Exception as e:
+        logger.error("Failed to prepare git source", error=e, fields={"url": source_url})
+        log_stderr(f"Failed to checkout repository: {e}")
+        raise
+
+
+def _prepare_copy_source(source_url: str, target_path: Path) -> Path:
+    """Prepare source code by copying from a local directory.
+
+    Args:
+        source_url: Path to source directory
+        target_path: Where to copy the directory
+
+    Returns:
+        Path to the copied directory
+    """
+    source_path = Path(source_url).resolve()
+
+    if not source_path.exists():
+        raise FileNotFoundError(f"Source directory does not exist: {source_path}")
+
+    if not source_path.is_dir():
+        raise ValueError(f"Source path is not a directory: {source_path}")
+
+    logger.info("Preparing copy source", fields={"source": str(source_path), "target": str(target_path)})
+    log_stdout(f"Copying directory: {source_path} -> {target_path}")
+
+    # Remove existing source if it exists
+    if target_path.exists():
+        shutil.rmtree(target_path)
+
+    try:
+        # Copy the directory tree
+        shutil.copytree(source_path, target_path)
+        logger.info("Copy source prepared successfully", fields={"path": str(target_path)})
+        log_stdout(f"Directory copied to: {target_path}")
+        return target_path
+
+    except Exception as e:
+        logger.error("Failed to prepare copy source", error=e, fields={"source": str(source_path)})
+        log_stderr(f"Failed to copy directory: {e}")
+        raise
+
+
+def _prepare_tarball_source(source_url: str, source_ref: Optional[str], target_path: Path) -> Path:
+    """Prepare source code from a tarball (STUB - not yet implemented).
+
+    Args:
+        source_url: URL or path to tarball
+        source_ref: Version or tag (optional)
+        target_path: Where to extract the tarball
+
+    Returns:
+        Path to the extracted directory
+
+    Raises:
+        NotImplementedError: Tarball support is not yet implemented
+    """
+    logger.info("Tarball source preparation requested", fields={"url": source_url})
+    log_stderr("⚠️  Tarball source preparation is not yet implemented")
+    raise NotImplementedError(
+        f"Tarball source preparation is not yet implemented. "
+        f"URL: {source_url}, ref: {source_ref}, target: {target_path}"
+    )
+
+
+def _prepare_hg_source(source_url: str, source_ref: Optional[str], target_path: Path) -> Path:
+    """Prepare source code from a Mercurial repository (STUB - not yet implemented).
+
+    Args:
+        source_url: Mercurial repository URL
+        source_ref: Mercurial changeset/bookmark/tag
+        target_path: Where to clone the repository
+
+    Returns:
+        Path to the cloned repository
+
+    Raises:
+        NotImplementedError: Mercurial support is not yet implemented
+    """
+    logger.info("Mercurial source preparation requested", fields={"url": source_url})
+    log_stderr("⚠️  Mercurial (hg) source preparation is not yet implemented")
+    raise NotImplementedError(
+        f"Mercurial source preparation is not yet implemented. "
+        f"URL: {source_url}, ref: {source_ref}, target: {target_path}"
+    )
+
+
+def _prepare_svn_source(source_url: str, source_ref: Optional[str], target_path: Path) -> Path:
+    """Prepare source code from a Subversion repository (STUB - not yet implemented).
+
+    Args:
+        source_url: SVN repository URL
+        source_ref: SVN revision number
+        target_path: Where to checkout the repository
+
+    Returns:
+        Path to the checked out repository
+
+    Raises:
+        NotImplementedError: Subversion support is not yet implemented
+    """
+    logger.info("Subversion source preparation requested", fields={"url": source_url})
+    log_stderr("⚠️  Subversion (svn) source preparation is not yet implemented")
+    raise NotImplementedError(
+        f"Subversion source preparation is not yet implemented. "
+        f"URL: {source_url}, ref: {source_ref}, target: {target_path}"
+    )
+
+
+def prepare_source(config: RunnerConfig) -> Optional[Path]:
+    """Prepare source code based on configuration.
+
+    This is the main entry point for source preparation. It dispatches to the appropriate
+    strategy based on the source_type in the configuration.
+
+    Args:
+        config: Runner configuration with source settings
+
+    Returns:
+        Path to the prepared source directory, or None if no source preparation needed
+
+    Raises:
+        ValueError: If source_type is invalid
+        NotImplementedError: If source_type is not yet supported (tarball, hg, svn)
+    """
+    # If no source type specified, assume no source preparation needed
+    if not config.source_type or config.source_type == 'none':
+        logger.debug("No source preparation configured (source_type=none or not set)")
+        log_stdout("ℹ️  No source preparation configured - using pre-mounted source or no source")
+        return None
+
+    # Ensure we have a job directory
+    job_path = prepare_job_directory(config)
+
+    # Determine target path for source code
+    # Source code goes in /job/src/ by default
+    target_path = job_path / "src"
+
+    logger.info("Preparing source", fields={
+        "type": config.source_type,
+        "url": config.source_url or "none",
+        "ref": config.source_ref or "default"
+    })
+
+    # Dispatch based on source type
+    if config.source_type == 'git':
+        if not config.source_url:
+            raise ValueError("source_url is required when source_type='git'")
+        return _prepare_git_source(config.source_url, config.source_ref, target_path)
+
+    elif config.source_type == 'copy':
+        if not config.source_url:
+            raise ValueError("source_url is required when source_type='copy'")
+        return _prepare_copy_source(config.source_url, target_path)
+
+    elif config.source_type == 'tarball':
+        if not config.source_url:
+            raise ValueError("source_url is required when source_type='tarball'")
+        return _prepare_tarball_source(config.source_url, config.source_ref, target_path)
+
+    elif config.source_type == 'hg':
+        if not config.source_url:
+            raise ValueError("source_url is required when source_type='hg'")
+        return _prepare_hg_source(config.source_url, config.source_ref, target_path)
+
+    elif config.source_type == 'svn':
+        if not config.source_url:
+            raise ValueError("source_url is required when source_type='svn'")
+        return _prepare_svn_source(config.source_url, config.source_ref, target_path)
+
+    else:
+        raise ValueError(
+            f"Invalid source_type: {config.source_type}. "
+            f"Supported types: git, copy, tarball, hg, svn, none"
+        )
+
+
+def prepare_ci_source(config: RunnerConfig) -> Optional[Path]:
+    """Prepare CI source code (trusted scripts) based on configuration.
+
+    CI source code is kept separate from regular source code for security. This allows
+    running CI/CD scripts from a trusted repository while testing code from untrusted
+    sources (e.g., pull requests from external contributors).
+
+    Args:
+        config: Runner configuration with ci_source settings
+
+    Returns:
+        Path to the prepared CI source directory, or None if no CI source preparation needed
+
+    Raises:
+        ValueError: If ci_source_type is invalid
+        NotImplementedError: If ci_source_type is not yet supported (tarball, hg, svn)
+    """
+    # If no CI source type specified, assume no CI source preparation needed
+    if not config.ci_source_type or config.ci_source_type == 'none':
+        logger.debug("No CI source preparation configured (ci_source_type=none or not set)")
+        return None
+
+    # Ensure we have a job directory
+    job_path = prepare_job_directory(config)
+
+    # Determine target path for CI source code
+    # CI source code goes in /job/ci/ (separate from regular source)
+    target_path = job_path / "ci"
+
+    logger.info("Preparing CI source", fields={
+        "type": config.ci_source_type,
+        "url": config.ci_source_url or "none",
+        "ref": config.ci_source_ref or "default"
+    })
+
+    log_stdout(f"🔐 Preparing trusted CI source (type: {config.ci_source_type})")
+
+    # Dispatch based on CI source type
+    if config.ci_source_type == 'git':
+        if not config.ci_source_url:
+            raise ValueError("ci_source_url is required when ci_source_type='git'")
+        return _prepare_git_source(config.ci_source_url, config.ci_source_ref, target_path)
+
+    elif config.ci_source_type == 'copy':
+        if not config.ci_source_url:
+            raise ValueError("ci_source_url is required when ci_source_type='copy'")
+        return _prepare_copy_source(config.ci_source_url, target_path)
+
+    elif config.ci_source_type == 'tarball':
+        if not config.ci_source_url:
+            raise ValueError("ci_source_url is required when ci_source_type='tarball'")
+        return _prepare_tarball_source(config.ci_source_url, config.ci_source_ref, target_path)
+
+    elif config.ci_source_type == 'hg':
+        if not config.ci_source_url:
+            raise ValueError("ci_source_url is required when ci_source_type='hg'")
+        return _prepare_hg_source(config.ci_source_url, config.ci_source_ref, target_path)
+
+    elif config.ci_source_type == 'svn':
+        if not config.ci_source_url:
+            raise ValueError("ci_source_url is required when ci_source_type='svn'")
+        return _prepare_svn_source(config.ci_source_url, config.ci_source_ref, target_path)
+
+    else:
+        raise ValueError(
+            f"Invalid ci_source_type: {config.ci_source_type}. "
+            f"Supported types: git, copy, tarball, hg, svn, none"
+        )

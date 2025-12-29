@@ -17,14 +17,14 @@ import (
 
 // WebhookHandler handles VCS webhook events
 type WebhookHandler struct {
-	store         store.Interface
+	store         store.Store
 	vcsClients    map[vcs.Provider]vcs.Client
 	webhookSecret string
 	logger        *logrus.Logger
 }
 
 // NewWebhookHandler creates a new webhook handler
-func NewWebhookHandler(store store.Interface) *WebhookHandler {
+func NewWebhookHandler(store store.Store) *WebhookHandler {
 	logger := logrus.New()
 	logger.SetFormatter(&logrus.JSONFormatter{})
 
@@ -137,15 +137,63 @@ func (h *WebhookHandler) processPullRequestEvent(event *vcs.WebhookEvent, client
 		return nil
 	}
 
+	// Normalize repository URL and look up project
+	normalizedRepoURL := vcs.NormalizeRepoURL(event.Repository.CloneURL)
+	project, err := h.store.GetProjectByRepoURL(context.Background(), normalizedRepoURL)
+	if err != nil {
+		h.logger.WithFields(logrus.Fields{
+			"repo_url":    event.Repository.CloneURL,
+			"normalized":  normalizedRepoURL,
+			"error":       err.Error(),
+		}).Debug("No project found for repository - skipping event")
+		return nil // Not an error - just no project configured
+	}
+
+	// Apply event filtering
+	if !project.ShouldProcessEvent("pull_request", pr.BaseRef) {
+		h.logger.WithFields(logrus.Fields{
+			"project":     project.Name,
+			"event_type":  "pull_request",
+			"base_branch": pr.BaseRef,
+		}).Debug("Event filtered out by project configuration")
+		return nil
+	}
+
+	// Prepare source fields (untrusted code being tested)
+	gitURL := event.Repository.CloneURL
+	gitRef := pr.HeadSHA
+	sourceType := models.SourceTypeGit
+
+	// Prepare CI source fields (trusted CI pipeline code)
+	var ciSourceType *models.SourceType
+	var ciSourceURL *string
+	var ciSourceRef *string
+	if project.DefaultCISourceType != "" && project.DefaultCISourceType != models.SourceTypeNone {
+		ciSourceType = &project.DefaultCISourceType
+		if project.DefaultCISourceURL != "" {
+			ciSourceURL = &project.DefaultCISourceURL
+		}
+		if project.DefaultCISourceRef != "" {
+			ciSourceRef = &project.DefaultCISourceRef
+		}
+	}
+
 	// Create a job for the PR
 	job := &models.Job{
+		ProjectID:   &project.ProjectID,
 		Name:        fmt.Sprintf("PR #%d: %s", pr.Number, pr.Title),
 		Description: fmt.Sprintf("CI build for PR #%d", pr.Number),
-		GitURL:      event.Repository.CloneURL,
-		GitRef:      pr.HeadSHA,
-		SourceType:  "git",
-		JobCommand:  h.getCICommand(event.Repository.FullName),
-		RunnerImage: "quay.io/catalystcommunity/reactorcide_runner",
+		// Source fields (untrusted)
+		SourceURL:  &gitURL,
+		SourceRef:  &gitRef,
+		SourceType: &sourceType,
+		// CI Source fields (trusted)
+		CISourceType: ciSourceType,
+		CISourceURL:  ciSourceURL,
+		CISourceRef:  ciSourceRef,
+		// Job configuration
+		JobCommand:  h.getJobCommand(project),
+		RunnerImage: project.DefaultRunnerImage,
 		JobEnvVars: models.JSONB{
 			"CI":             "true",
 			"CI_PROVIDER":    string(event.Provider),
@@ -155,8 +203,8 @@ func (h *WebhookHandler) processPullRequestEvent(event *vcs.WebhookEvent, client
 			"CI_PR_BASE_REF": pr.BaseRef,
 			"CI_REPO":        event.Repository.FullName,
 		},
-		Priority:   10, // Higher priority for PRs
-		QueueName:  "ci-pr",
+		Priority:  10, // Higher priority for PRs
+		QueueName: project.DefaultQueueName,
 	}
 
 	// Store VCS metadata for status updates
@@ -164,7 +212,7 @@ func (h *WebhookHandler) processPullRequestEvent(event *vcs.WebhookEvent, client
 		event.Provider, event.Repository.FullName, pr.Number, pr.HeadSHA)
 
 	// Create the job in the database
-	createdJob, err := h.store.CreateJob(job)
+	err = h.store.CreateJob(context.Background(), job)
 	if err != nil {
 		return fmt.Errorf("creating job: %w", err)
 	}
@@ -173,7 +221,7 @@ func (h *WebhookHandler) processPullRequestEvent(event *vcs.WebhookEvent, client
 	statusUpdate := vcs.StatusUpdate{
 		SHA:         pr.HeadSHA,
 		State:       vcs.StatusPending,
-		TargetURL:   h.getJobURL(createdJob.JobID),
+		TargetURL:   h.getJobURL(job.JobID),
 		Description: "CI build queued",
 		Context:     "continuous-integration/reactorcide",
 	}
@@ -184,7 +232,8 @@ func (h *WebhookHandler) processPullRequestEvent(event *vcs.WebhookEvent, client
 	}
 
 	h.logger.WithFields(logrus.Fields{
-		"job_id":    createdJob.JobID,
+		"job_id":    job.JobID,
+		"project":   project.Name,
 		"pr_number": pr.Number,
 		"sha":       pr.HeadSHA,
 	}).Info("Created job for pull request")
@@ -205,31 +254,73 @@ func (h *WebhookHandler) processPushEvent(event *vcs.WebhookEvent, client vcs.Cl
 	// Extract branch name from ref
 	branch := strings.TrimPrefix(push.Ref, "refs/heads/")
 
-	// Only process pushes to main/master or develop branches by default
-	if !h.shouldProcessBranch(branch) {
-		h.logger.WithField("branch", branch).Debug("Ignoring push to branch")
+	// Normalize repository URL and look up project
+	normalizedRepoURL := vcs.NormalizeRepoURL(event.Repository.CloneURL)
+	project, err := h.store.GetProjectByRepoURL(context.Background(), normalizedRepoURL)
+	if err != nil {
+		h.logger.WithFields(logrus.Fields{
+			"repo_url":    event.Repository.CloneURL,
+			"normalized":  normalizedRepoURL,
+			"error":       err.Error(),
+		}).Debug("No project found for repository - skipping event")
+		return nil // Not an error - just no project configured
+	}
+
+	// Apply event filtering
+	if !project.ShouldProcessEvent("push", branch) {
+		h.logger.WithFields(logrus.Fields{
+			"project":    project.Name,
+			"event_type": "push",
+			"branch":     branch,
+		}).Debug("Event filtered out by project configuration")
 		return nil
+	}
+
+	// Prepare source fields (untrusted code being tested)
+	gitURL := event.Repository.CloneURL
+	gitRef := push.After
+	sourceType := models.SourceTypeGit
+
+	// Prepare CI source fields (trusted CI pipeline code)
+	var ciSourceType *models.SourceType
+	var ciSourceURL *string
+	var ciSourceRef *string
+	if project.DefaultCISourceType != "" && project.DefaultCISourceType != models.SourceTypeNone {
+		ciSourceType = &project.DefaultCISourceType
+		if project.DefaultCISourceURL != "" {
+			ciSourceURL = &project.DefaultCISourceURL
+		}
+		if project.DefaultCISourceRef != "" {
+			ciSourceRef = &project.DefaultCISourceRef
+		}
 	}
 
 	// Create a job for the push
 	job := &models.Job{
+		ProjectID:   &project.ProjectID,
 		Name:        fmt.Sprintf("Push to %s: %.7s", branch, push.After),
 		Description: fmt.Sprintf("CI build for push to %s", branch),
-		GitURL:      event.Repository.CloneURL,
-		GitRef:      push.After,
-		SourceType:  "git",
-		JobCommand:  h.getCICommand(event.Repository.FullName),
-		RunnerImage: "quay.io/catalystcommunity/reactorcide_runner",
+		// Source fields (untrusted)
+		SourceURL:  &gitURL,
+		SourceRef:  &gitRef,
+		SourceType: &sourceType,
+		// CI Source fields (trusted)
+		CISourceType: ciSourceType,
+		CISourceURL:  ciSourceURL,
+		CISourceRef:  ciSourceRef,
+		// Job configuration
+		JobCommand:  h.getJobCommand(project),
+		RunnerImage: project.DefaultRunnerImage,
 		JobEnvVars: models.JSONB{
-			"CI":          "true",
-			"CI_PROVIDER": string(event.Provider),
-			"CI_BRANCH":   branch,
-			"CI_SHA":      push.After,
-			"CI_REPO":     event.Repository.FullName,
+			"CI":                "true",
+			"CI_PROVIDER":       string(event.Provider),
+			"CI_BRANCH":         branch,
+			"CI_SHA":            push.After,
+			"CI_REPO":           event.Repository.FullName,
 			"CI_COMMIT_MESSAGE": h.getFirstCommitMessage(push),
 		},
-		Priority:   5, // Lower priority than PRs
-		QueueName:  "ci-push",
+		Priority:  5, // Lower priority than PRs
+		QueueName: project.DefaultQueueName,
 	}
 
 	// Store VCS metadata for status updates
@@ -237,7 +328,7 @@ func (h *WebhookHandler) processPushEvent(event *vcs.WebhookEvent, client vcs.Cl
 		event.Provider, event.Repository.FullName, branch, push.After)
 
 	// Create the job in the database
-	createdJob, err := h.store.CreateJob(job)
+	err = h.store.CreateJob(context.Background(), job)
 	if err != nil {
 		return fmt.Errorf("creating job: %w", err)
 	}
@@ -246,7 +337,7 @@ func (h *WebhookHandler) processPushEvent(event *vcs.WebhookEvent, client vcs.Cl
 	statusUpdate := vcs.StatusUpdate{
 		SHA:         push.After,
 		State:       vcs.StatusPending,
-		TargetURL:   h.getJobURL(createdJob.JobID),
+		TargetURL:   h.getJobURL(job.JobID),
 		Description: "CI build queued",
 		Context:     "continuous-integration/reactorcide",
 	}
@@ -257,18 +348,22 @@ func (h *WebhookHandler) processPushEvent(event *vcs.WebhookEvent, client vcs.Cl
 	}
 
 	h.logger.WithFields(logrus.Fields{
-		"job_id": createdJob.JobID,
-		"branch": branch,
-		"sha":    push.After,
+		"job_id":  job.JobID,
+		"project": project.Name,
+		"branch":  branch,
+		"sha":     push.After,
 	}).Info("Created job for push")
 
 	return nil
 }
 
-// getCICommand returns the CI command for a repository
-func (h *WebhookHandler) getCICommand(repo string) string {
-	// TODO: Make this configurable per repository
-	// For now, return a default CI script
+// getJobCommand returns the job command from project config or default
+func (h *WebhookHandler) getJobCommand(project *models.Project) string {
+	if project.DefaultJobCommand != "" {
+		return project.DefaultJobCommand
+	}
+
+	// Default CI script if no project command is configured
 	return `#!/bin/bash
 set -e
 
@@ -289,18 +384,6 @@ else
     exit 0
 fi
 `
-}
-
-// shouldProcessBranch determines if a branch should trigger CI
-func (h *WebhookHandler) shouldProcessBranch(branch string) bool {
-	// TODO: Make this configurable
-	protectedBranches := []string{"main", "master", "develop", "staging", "production"}
-	for _, protected := range protectedBranches {
-		if branch == protected {
-			return true
-		}
-	}
-	return false
 }
 
 // getFirstCommitMessage gets the first commit message from a push

@@ -1,0 +1,131 @@
+services:
+  # PostgreSQL for Coordinator
+  postgres:
+    image: postgres:18-alpine
+    container_name: reactorcide-postgres
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    networks:
+      - reactorcide
+
+  # PostgreSQL for Corndogs
+  postgres-corndogs:
+    image: postgres:18-alpine
+    container_name: reactorcide-postgres-corndogs
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${CORNDOGS_DB_NAME}
+    volumes:
+      - postgres_corndogs_data:/var/lib/postgresql/data
+    ports:
+      - "5433:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    networks:
+      - reactorcide
+
+  # Corndogs Task Queue
+  corndogs:
+    image: quay.io/catalystcommunity/corndogs:latest
+    container_name: reactorcide-corndogs
+    environment:
+      DATABASE_HOST: postgres-corndogs
+      DATABASE_PORT: 5432
+      DATABASE_NAME: ${CORNDOGS_DB_NAME}
+      DATABASE_USER: ${POSTGRES_USER}
+      DATABASE_PASSWORD: ${POSTGRES_PASSWORD}
+      DATABASE_SSL_MODE: disable
+      GRPC_PORT: 5080
+      GRPC_BIND_ADDRESS: 0.0.0.0
+    ports:
+      - "5080:5080"
+    depends_on:
+      postgres-corndogs:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - reactorcide
+    command: ["run"]
+
+  # Coordinator API
+  coordinator-api:
+    image: ${REACTORCIDE_COORDINATOR_IMAGE:-containers.catalystsquad.com/public/reactorcide/coordinator:dev}
+    container_name: reactorcide-coordinator
+    environment:
+      REACTORCIDE_DB_URI: ${REACTORCIDE_DB_URI}
+      REACTORCIDE_JWT_SECRET: ${REACTORCIDE_JWT_SECRET}
+      REACTORCIDE_CORNDOGS_BASE_URL: corndogs:5080
+      REACTORCIDE_OBJECT_STORE_TYPE: ${REACTORCIDE_OBJECT_STORE_TYPE}
+      REACTORCIDE_OBJECT_STORE_BASE_PATH: ${REACTORCIDE_OBJECT_STORE_BASE_PATH}
+      REACTORCIDE_LOG_LEVEL: ${REACTORCIDE_LOG_LEVEL}
+      REACTORCIDE_DEFAULT_USER_ID: "550e8400-e29b-41d4-a716-446655440000"
+    ports:
+      - "6080:6080"
+    volumes:
+      - reactorcide_data:${REACTORCIDE_OBJECT_STORE_BASE_PATH}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      corndogs:
+        condition: service_started
+    restart: unless-stopped
+    networks:
+      - reactorcide
+    healthcheck:
+      test: ["CMD", "/reactorcide", "healthcheck"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Worker
+  worker:
+    image: ${REACTORCIDE_WORKER_IMAGE:-containers.catalystsquad.com/public/reactorcide/worker:dev}
+    container_name: reactorcide-worker
+    environment:
+      REACTORCIDE_DB_URI: ${REACTORCIDE_DB_URI}
+      REACTORCIDE_CORNDOGS_BASE_URL: corndogs:5080
+      REACTORCIDE_WORKER_QUEUE: reactorcide-jobs
+      REACTORCIDE_WORKER_CONCURRENCY: ${REACTORCIDE_WORKER_CONCURRENCY}
+      REACTORCIDE_WORKER_POLL_INTERVAL: ${REACTORCIDE_WORKER_POLL_INTERVAL}
+      REACTORCIDE_CONTAINER_RUNTIME: ${REACTORCIDE_CONTAINER_RUNTIME}
+      REACTORCIDE_OBJECT_STORE_TYPE: ${REACTORCIDE_OBJECT_STORE_TYPE}
+      REACTORCIDE_OBJECT_STORE_BASE_PATH: ${REACTORCIDE_OBJECT_STORE_BASE_PATH}
+      REACTORCIDE_LOG_LEVEL: ${REACTORCIDE_LOG_LEVEL}
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - reactorcide_data:${REACTORCIDE_OBJECT_STORE_BASE_PATH}
+      - /tmp/reactorcide-jobs:/tmp/reactorcide-jobs
+    depends_on:
+      coordinator-api:
+        condition: service_healthy
+      corndogs:
+        condition: service_started
+    restart: unless-stopped
+    networks:
+      - reactorcide
+
+networks:
+  reactorcide:
+    driver: bridge
+
+volumes:
+  postgres_data:
+  postgres_corndogs_data:
+  reactorcide_data:

@@ -54,13 +54,14 @@ class TestConfigurationIntegration:
             job_command='test',
             runner_image=''  # Invalid - empty
         )
-        
+
         with patch('shutil.which', return_value=None):  # docker not available
-            result = validate_config(invalid_config, check_files=False)
-            
+            # Pass require_container_runtime=True to test docker validation
+            result = validate_config(invalid_config, check_files=False, require_container_runtime=True)
+
             assert not result.is_valid
             assert len(result.errors) >= 2  # At least path and docker errors
-            
+
             # Check specific error types
             error_messages = [error.message for error in result.errors]
             assert any('absolute path' in msg for msg in error_messages)
@@ -172,12 +173,13 @@ DEBUG=true"""
         
         # Get all environment variables
         env_vars = get_environment_vars(config)
-        
+
         # Should include both REACTORCIDE_* and file variables
         assert env_vars['DATABASE_URL'] == 'postgresql://localhost/test'
         assert env_vars['API_KEY'] == 'secret-key-123'
         assert env_vars['DEBUG'] == 'true'
-        assert env_vars['REACTORCIDE_JOB_ENV'] == "./job/test.env"
+        # NOTE: REACTORCIDE_JOB_ENV is NOT passed to container (see config.py:175-176)
+        # Individual parsed variables (like DATABASE_URL, API_KEY, DEBUG) are passed instead
 
     def test_environment_security_validation(self):
         """Test security validation for environment files."""
@@ -290,9 +292,11 @@ class TestDryRunIntegration:
         # Test dry-run output (would be tested via CLI in real usage)
         # This tests the underlying data structures
         env_vars = get_environment_vars(config)
-        
+
         # Should have complete environment
-        assert len(env_vars) >= 6  # 5 REACTORCIDE_* + 1 job-specific
+        # 4 REACTORCIDE_* (CODE_DIR, JOB_DIR, JOB_COMMAND, RUNNER_IMAGE) + 1 job-specific
+        # NOTE: REACTORCIDE_JOB_ENV is NOT passed to container (see config.py:175-176)
+        assert len(env_vars) >= 5
         assert env_vars['REACTORCIDE_CODE_DIR'] == '/job/custom-src'
         assert env_vars['REACTORCIDE_JOB_DIR'] == '/job/custom-work'
         assert env_vars['REACTORCIDE_JOB_COMMAND'] == 'pytest tests/'

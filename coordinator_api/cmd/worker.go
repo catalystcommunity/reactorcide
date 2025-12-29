@@ -31,28 +31,28 @@ var workerFlags = []cli.Flag{
 		Aliases: []string{"q"},
 		Value:   "reactorcide-jobs",
 		Usage:   "Queue name to process jobs from",
-		EnvVars: []string{"WORKER_QUEUE"},
+		EnvVars: []string{"REACTORCIDE_WORKER_QUEUE", "WORKER_QUEUE"},
 	},
 	&cli.IntFlag{
 		Name:    "poll-interval",
 		Aliases: []string{"p"},
 		Value:   5,
 		Usage:   "Poll interval in seconds for checking new jobs",
-		EnvVars: []string{"WORKER_POLL_INTERVAL"},
+		EnvVars: []string{"REACTORCIDE_WORKER_POLL_INTERVAL", "WORKER_POLL_INTERVAL"},
 	},
 	&cli.IntFlag{
 		Name:    "concurrency",
 		Aliases: []string{"c"},
 		Value:   1,
 		Usage:   "Number of jobs to process concurrently",
-		EnvVars: []string{"WORKER_CONCURRENCY"},
+		EnvVars: []string{"REACTORCIDE_WORKER_CONCURRENCY", "WORKER_CONCURRENCY"},
 	},
 	&cli.BoolFlag{
 		Name:    "dry-run",
 		Aliases: []string{"d"},
 		Value:   false,
 		Usage:   "Dry run mode - don't actually execute jobs",
-		EnvVars: []string{"WORKER_DRY_RUN"},
+		EnvVars: []string{"REACTORCIDE_WORKER_DRY_RUN", "WORKER_DRY_RUN"},
 	},
 }
 

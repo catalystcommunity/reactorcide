@@ -1,0 +1,6 @@
+name: hello-world
+# Uses default runnerbase image if not specified
+command: |-
+  sh -c 'echo "Hello from Reactorcide!" && echo "MY_VAR is: $MY_VAR" && date'
+environment:
+  MY_VAR: test-value

@@ -1,0 +1,20 @@
+# Local development environment overlay for Reactorcide builds
+# Copy this to ~/.config/reactorcide/reactorcide-builds-env-local.yaml and customize
+#
+# Usage: reactorcide run-local -i ~/.config/reactorcide/reactorcide-builds-env-local.yaml jobs/build-runnerbase.yaml
+#
+# Multiple overlays can be layered (first has highest priority):
+#   reactorcide run-local -i prod-overrides.yaml -i base-env.yaml jobs/build-all.yaml
+
+environment:
+  # Your container registry username
+  REGISTRY_USER: your-username
+
+  # Override the image tag for local builds
+  # TAG: dev
+
+  # Override registry (if using a different one locally)
+  # REGISTRY: localhost:5000
+
+  # You can even override secrets with plaintext for testing (will show a warning)
+  # REGISTRY_PASSWORD: my-test-password

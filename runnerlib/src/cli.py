@@ -1,19 +1,135 @@
 """CLI interface for runnerlib."""
 
 import os
+import subprocess
+import shlex
+import sys
+import getpass
 import typer
-from typing import List, Optional
+from typing import List, Optional, Dict
 
 from src.logging import log_stdout, log_stderr
 from src.git_ops import get_files_changed
 from src.container import run_container
 from src.source_prep import checkout_git_repo, copy_directory, cleanup_job_directory
 from src.config import get_config, get_secrets_to_mask, get_environment_vars
+from src.secrets_resolver import has_secret_refs, resolve_secrets_in_dict
 from src.validation import validate_config, format_validation_result
 from src.secrets import SecretMasker
 from src.plugins import plugin_manager, PluginContext, PluginPhase, initialize_plugins
 
 app = typer.Typer()
+
+
+def resolve_job_secrets(env_vars: Dict[str, str]) -> Dict[str, str]:
+    """Resolve any ${secret:path:key} references in environment variables.
+
+    Args:
+        env_vars: Dictionary of environment variables that may contain secret refs
+
+    Returns:
+        Dictionary with secret references resolved to actual values
+    """
+    from src import secrets_local as secrets
+    from src.secrets import register_secret
+
+    # Quick check: any secret refs present?
+    needs_resolution = any(has_secret_refs(str(v)) for v in env_vars.values())
+    if not needs_resolution:
+        return env_vars
+
+    # Get password
+    password = os.environ.get("REACTORCIDE_SECRETS_PASSWORD")
+    if not password:
+        password = getpass.getpass("Secrets password: ")
+
+    # Create getter function that uses local provider
+    def get_secret(path: str, key: str) -> Optional[str]:
+        return secrets.secret_get(path, key, password)
+
+    # Resolve all references
+    resolved = resolve_secrets_in_dict(env_vars, get_secret)
+
+    # Register resolved values with secret masker for log redaction
+    for orig_key in env_vars:
+        orig_val = env_vars[orig_key]
+        new_val = resolved.get(orig_key)
+        if orig_val != new_val and new_val:  # A substitution happened
+            register_secret(new_val)
+
+    return resolved
+
+
+def _run_local(config, command_args):
+    """
+    Execute a job command locally on the host (no container).
+
+    This is the default execution mode for runnerlib, enabling:
+    - Emergency job execution when infrastructure is down
+    - Local development and testing
+    - Deployment scenarios
+
+    Args:
+        config: RunnerConfig with job details
+        command_args: Additional command line arguments
+
+    Returns:
+        Exit code from the executed command
+    """
+    from src.secrets import SecretMasker
+
+    log_stdout("Executing job locally (no container)")
+    log_stdout(f"Command: {config.job_command}")
+
+    # Get environment variables for the job
+    env = os.environ.copy()
+    job_env_vars = get_environment_vars(config)
+
+    # Resolve secret references in environment variables
+    job_env_vars = resolve_job_secrets(job_env_vars)
+
+    env.update(job_env_vars)
+
+    # Initialize secret masker
+    masker = SecretMasker()
+    secrets = get_secrets_to_mask(config, job_env_vars)
+    for secret in secrets:
+        masker.register_secret(secret)
+
+    # Execute the command using shell
+    try:
+        # Run command with shell to support complex commands (pipes, redirects, etc.)
+        # Use subprocess.run for simpler cross-platform streaming
+        process = subprocess.Popen(
+            config.job_command,
+            shell=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,  # Merge stderr into stdout for simpler handling
+            env=env,
+            text=True,
+            bufsize=1  # Line buffered
+        )
+
+        # Stream output in real-time with secret masking
+        for line in iter(process.stdout.readline, ''):
+            if line:
+                # Mask secrets and output
+                masked_line = masker.mask_string(line.rstrip())
+                log_stdout(masked_line)
+
+        # Wait for process to complete
+        exit_code = process.wait()
+
+        if exit_code == 0:
+            log_stdout(f"✓ Job completed successfully (exit code: {exit_code})")
+        else:
+            log_stderr(f"✗ Job failed with exit code: {exit_code}")
+
+        return exit_code
+
+    except Exception as e:
+        log_stderr(f"Error executing job: {e}")
+        return 1
 
 
 @app.command()
@@ -30,8 +146,17 @@ def run(
     secrets_file: Optional[str] = typer.Option(None, "--secrets-file", help="Path to secrets file to mount into container at /run/secrets/env"),
     work_dir: Optional[str] = typer.Option(None, "--work-dir", help="Working directory for job execution (default: current directory)"),
     plugin_dir: Optional[str] = typer.Option(None, "--plugin-dir", help="Directory containing custom plugins"),
-    # Dry run flag
-    dry_run: bool = typer.Option(False, "--dry-run", help="Validate configuration without executing")
+    # Source preparation options
+    source_type: Optional[str] = typer.Option(None, "--source-type", help="Source type: git, copy, tarball, hg, svn, none (default: none)"),
+    source_url: Optional[str] = typer.Option(None, "--source-url", help="Source URL or path (required for git, copy, tarball, hg, svn)"),
+    source_ref: Optional[str] = typer.Option(None, "--source-ref", help="Source ref: branch, tag, commit, or version"),
+    # CI source preparation options
+    ci_source_type: Optional[str] = typer.Option(None, "--ci-source-type", help="CI source type: git, copy, tarball, hg, svn, none (default: none)"),
+    ci_source_url: Optional[str] = typer.Option(None, "--ci-source-url", help="CI source URL or path (required for git, copy, tarball, hg, svn)"),
+    ci_source_ref: Optional[str] = typer.Option(None, "--ci-source-ref", help="CI source ref: branch, tag, commit, or version"),
+    # Execution mode flags
+    dry_run: bool = typer.Option(False, "--dry-run", help="Validate configuration without executing"),
+    container: bool = typer.Option(False, "--container", help="Run job in a container (for integration testing). Default is local execution.")
 ):
     """Run a job command, passing through all arguments."""
     # Get all arguments passed after 'run'
@@ -53,6 +178,18 @@ def run(
         cli_overrides['secrets_list'] = secrets_list
     if secrets_file is not None:
         cli_overrides['secrets_file'] = secrets_file
+    if source_type is not None:
+        cli_overrides['source_type'] = source_type
+    if source_url is not None:
+        cli_overrides['source_url'] = source_url
+    if source_ref is not None:
+        cli_overrides['source_ref'] = source_ref
+    if ci_source_type is not None:
+        cli_overrides['ci_source_type'] = ci_source_type
+    if ci_source_url is not None:
+        cli_overrides['ci_source_url'] = ci_source_url
+    if ci_source_ref is not None:
+        cli_overrides['ci_source_ref'] = ci_source_ref
 
     try:
         # Initialize plugins
@@ -78,8 +215,12 @@ def run(
         # Execute pre-validation plugins
         plugin_manager.execute_phase(PluginPhase.PRE_VALIDATION, plugin_context)
 
-        # Validate configuration
-        validation_result = validate_config(config, check_files=True)
+        # Determine execution mode before validation
+        # Container mode is used if --container flag is set OR --runner-image is specified
+        use_container = container or runner_image is not None
+
+        # Validate configuration (only require docker if using container mode)
+        validation_result = validate_config(config, check_files=True, require_container_runtime=use_container)
 
         if not validation_result.is_valid:
             log_stderr("Configuration validation failed:")
@@ -99,8 +240,34 @@ def run(
             _perform_dry_run(config, command_args)
             raise typer.Exit(0)
 
-        # Run the container with the job
-        exit_code = run_container(config=config, additional_args=command_args)
+        # Prepare source code (if configured)
+        plugin_context.phase = PluginPhase.PRE_SOURCE_PREP
+        plugin_manager.execute_phase(PluginPhase.PRE_SOURCE_PREP, plugin_context)
+
+        from src.source_prep import prepare_source, prepare_ci_source
+
+        # Prepare CI source first (trusted code)
+        ci_source_path = prepare_ci_source(config)
+        if ci_source_path:
+            plugin_context.metadata['ci_source_path'] = str(ci_source_path)
+
+        # Prepare regular source (potentially untrusted)
+        source_path = prepare_source(config)
+        if source_path:
+            plugin_context.metadata['source_path'] = str(source_path)
+
+        plugin_context.phase = PluginPhase.POST_SOURCE_PREP
+        plugin_manager.execute_phase(PluginPhase.POST_SOURCE_PREP, plugin_context)
+
+        # Execute the job (use_container already determined before validation)
+        if use_container:
+            # Container execution mode - for integration testing
+            log_stdout("Running job in CONTAINER mode")
+            exit_code = run_container(config=config, additional_args=command_args)
+        else:
+            # Local execution mode (default) - for deployment and emergency use
+            exit_code = _run_local(config, command_args)
+
         raise typer.Exit(exit_code)
     except typer.Exit:
         # Re-raise typer.Exit to avoid catching it as a generic exception
@@ -499,6 +666,10 @@ def validate(
 
 git_app = typer.Typer()
 app.add_typer(git_app, name="git")
+
+# Note: Secrets CLI commands have been moved to the Go CLI (reactorcide secrets *).
+# The resolve_job_secrets function above still uses secrets_local.py for reading
+# secrets during job execution.
 
 
 @git_app.command("files-changed")

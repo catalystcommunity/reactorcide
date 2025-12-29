@@ -38,14 +38,16 @@ class ValidationResult:
 
 class ConfigValidator:
     """Validates runner configuration and environment."""
-    
-    def validate_config(self, config: RunnerConfig, check_files: bool = True) -> ValidationResult:
+
+    def validate_config(self, config: RunnerConfig, check_files: bool = True, require_container_runtime: bool = False) -> ValidationResult:
         """Validate a runner configuration.
-        
+
         Args:
             config: Configuration to validate
             check_files: Whether to check file and directory existence
-            
+            require_container_runtime: Whether to require docker/container runtime.
+                Set to True when running in container mode, False for local execution.
+
         Returns:
             ValidationResult with errors and warnings
         """
@@ -66,8 +68,8 @@ class ConfigValidator:
         # Validate container image
         warnings.extend(self._validate_container_image(config))
         
-        # Check external dependencies
-        errors.extend(self._validate_external_dependencies())
+        # Check external dependencies (only require container runtime if running in container mode)
+        errors.extend(self._validate_external_dependencies(require_container_runtime))
         
         # Check file and directory existence if requested
         if check_files:
@@ -228,18 +230,23 @@ class ConfigValidator:
         
         return warnings
     
-    def _validate_external_dependencies(self) -> List[ValidationError]:
-        """Validate external tool dependencies."""
+    def _validate_external_dependencies(self, require_container_runtime: bool = False) -> List[ValidationError]:
+        """Validate external tool dependencies.
+
+        Args:
+            require_container_runtime: Whether to require docker/container runtime.
+                Only checked when running in container mode (--container flag or --runner-image specified).
+        """
         errors = []
-        
-        # Check for docker
-        if not shutil.which("docker"):
+
+        # Only check for docker if container execution mode is requested
+        if require_container_runtime and not shutil.which("docker"):
             errors.append(ValidationError(
                 field="system",
                 message="docker is not available in PATH",
                 suggestion="Install docker: https://docs.docker.com/get-docker/"
             ))
-        
+
         return errors
     
     def _validate_file_system(self, config: RunnerConfig) -> tuple[List[ValidationError], List[ValidationError]]:
@@ -296,9 +303,9 @@ class ConfigValidator:
 validator = ConfigValidator()
 
 
-def validate_config(config: RunnerConfig, check_files: bool = True) -> ValidationResult:
+def validate_config(config: RunnerConfig, check_files: bool = True, require_container_runtime: bool = False) -> ValidationResult:
     """Convenience function to validate configuration."""
-    return validator.validate_config(config, check_files)
+    return validator.validate_config(config, check_files, require_container_runtime)
 
 
 def format_validation_result(result: ValidationResult) -> str:

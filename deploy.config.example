@@ -1,0 +1,10 @@
+# Reactorcide Deployment Configuration Example
+# Copy to ~/my-reactorcide-vm.config and customize
+# Usage: source ~/my-reactorcide-vm.config
+
+# VM Connection
+export REACTORCIDE_DEPLOY_HOST="user@hostname"
+export REACTORCIDE_DEPLOY_USER="user"
+
+# Domains (comma-separated)
+export REACTORCIDE_DEPLOY_DOMAINS="reactorcide.example.local"

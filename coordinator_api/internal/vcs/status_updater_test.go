@@ -114,8 +114,6 @@ func TestJobStatusUpdater_UpdateJobStatus(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			mockClient.On("GetProvider").Return(GitHub)
-
 			if tt.expectUpdate {
 				// Parse metadata to check if PR comment is expected
 				var metadata JobMetadata

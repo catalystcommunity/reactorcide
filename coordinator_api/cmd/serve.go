@@ -21,14 +21,14 @@ var flags = []cli.Flag{
 		Value:       "postgresql://devuser:devpass@monodemo-postgresql:5432/monodemopg?sslmode=disable",
 		Usage:       "The uri to use to connect to the db",
 		Destination: &config.DbUri,
-		EnvVars:     []string{"DB_URI"},
+		EnvVars:     []string{"REACTORCIDE_DB_URI", "DB_URI"},
 	},
 	&cli.IntFlag{
 		Name:        "port",
 		Aliases:     []string{"gp"},
 		Value:       6080,
 		Usage:       "Port to expose the web API on",
-		EnvVars:     []string{"PORT"},
+		EnvVars:     []string{"REACTORCIDE_PORT", "PORT"},
 		Destination: &config.Port,
 	},
 }

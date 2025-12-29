@@ -1,0 +1,22 @@
+# Use multi-stage build to get CA certificates
+FROM alpine:latest AS certs
+RUN apk add --no-cache ca-certificates
+
+# Final stage - minimal scratch-based image
+FROM scratch
+
+# Copy CA certificates for HTTPS calls
+COPY --from=certs /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
+
+# Copy the statically-linked binary
+COPY reactorcide /reactorcide
+
+# Expose API port
+EXPOSE 6080
+
+# Run as non-root (coordinator binary should handle this)
+USER 1000:1000
+
+# Run coordinator
+ENTRYPOINT ["/reactorcide"]
+CMD ["serve"]

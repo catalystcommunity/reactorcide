@@ -1,123 +1,130 @@
-version: '3.8'
-
 services:
-  # PostgreSQL database for coredb
-  postgres:
-    image: postgres:17
-    environment:
-      POSTGRES_USER: devuser
-      POSTGRES_PASSWORD: devpass
-      POSTGRES_DB: testpg
-    ports:
-      - "5432:5432"
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U devuser"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
+    # PostgreSQL database for Coordinator
+    postgres:
+        image: postgres:17
+        container_name: reactorcide-postgres-dev
+        environment:
+            POSTGRES_USER: ${POSTGRES_USER}
+            POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+            POSTGRES_DB: ${POSTGRES_DB}
+        ports:
+            - "5432:5432"
+        volumes:
+            - postgres_data:/var/lib/postgresql/data
+        healthcheck:
+            test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER}"]
+            interval: 10s
+            timeout: 5s
+            retries: 5
+        networks:
+            - reactorcide
 
-  # MinIO for object storage (S3-compatible)
-  minio:
-    image: minio/minio:latest
-    command: server /data --console-address ":9001"
-    environment:
-      MINIO_ROOT_USER: minioadmin
-      MINIO_ROOT_PASSWORD: minioadmin
-    ports:
-      - "9000:9000"  # API
-      - "9001:9001"  # Console
-    volumes:
-      - minio_data:/data
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
-      interval: 30s
-      timeout: 20s
-      retries: 3
+    # PostgreSQL database for Corndogs
+    postgres-corndogs:
+        image: postgres:17
+        container_name: reactorcide-postgres-corndogs-dev
+        environment:
+            POSTGRES_USER: ${POSTGRES_USER}
+            POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+            POSTGRES_DB: ${CORNDOGS_DB_NAME}
+        ports:
+            - "5433:5432"
+        volumes:
+            - postgres_corndogs_data:/var/lib/postgresql/data
+        healthcheck:
+            test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER}"]
+            interval: 10s
+            timeout: 5s
+            retries: 5
+        networks:
+            - reactorcide
 
-  # Create initial MinIO bucket
-  minio-init:
-    image: minio/mc:latest
-    depends_on:
-      minio:
-        condition: service_healthy
-    entrypoint: >
-      /bin/sh -c "
-      mc alias set myminio http://minio:9000 minioadmin minioadmin;
-      mc mb myminio/reactorcide-logs || true;
-      mc mb myminio/reactorcide-artifacts || true;
-      mc policy set public myminio/reactorcide-logs;
-      mc policy set public myminio/reactorcide-artifacts;
-      exit 0;
-      "
+    # Corndogs Task Queue
+    corndogs:
+        image: reactorcide/corndogs:latest
+        container_name: reactorcide-corndogs-dev
+        environment:
+            DATABASE_HOST: postgres-corndogs
+            DATABASE_PORT: "5432"
+            DATABASE_NAME: ${CORNDOGS_DB_NAME}
+            DATABASE_USER: ${POSTGRES_USER}
+            DATABASE_PASSWORD: ${POSTGRES_PASSWORD}
+            DATABASE_SSL_MODE: disable
+            GRPC_PORT: 5080
+            GRPC_BIND_ADDRESS: 0.0.0.0
+        ports:
+            - "5080:5080"
+        depends_on:
+            postgres-corndogs:
+                condition: service_healthy
+        networks:
+            - reactorcide
 
-  # Run database migrations
-  migrate:
-    build:
-      context: .
-      dockerfile: ./coordinator_api/Dockerfile
-    depends_on:
-      postgres:
-        condition: service_healthy
-    environment:
-      DB_URI: "postgres://devuser:devpass@postgres:5432/testpg?sslmode=disable"
-    command: ["migrate"]
+    # Coordinator API
+    coordinator-api:
+        build:
+            context: .
+            dockerfile: Dockerfile.coordinator.dev
+        image: reactorcide/coordinator:dev
+        container_name: reactorcide-coordinator-dev
+        command: ["serve"]
+        environment:
+            DB_URI: "postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}?sslmode=disable"
+            PORT: "8080"
+            CORNDOGS_BASE_URL: ${REACTORCIDE_CORNDOGS_ENDPOINT}
+            REACTORCIDE_JWT_SECRET: ${REACTORCIDE_JWT_SECRET}
+            OBJECT_STORE_TYPE: ${REACTORCIDE_OBJECT_STORE_TYPE}
+            OBJECT_STORE_BASE_PATH: ${REACTORCIDE_OBJECT_STORE_BASE_PATH}
+            REACTORCIDE_LOG_LEVEL: ${REACTORCIDE_LOG_LEVEL}
+            REACTORCIDE_CI_CODE_ALLOWLIST: ${REACTORCIDE_CI_CODE_ALLOWLIST}
+            REACTORCIDE_DEFAULT_CI_SOURCE_URL: ${REACTORCIDE_DEFAULT_CI_SOURCE_URL}
+            REACTORCIDE_DEFAULT_CI_SOURCE_REF: ${REACTORCIDE_DEFAULT_CI_SOURCE_REF}
+        ports:
+            - "8080:8080"
+        volumes:
+            - reactorcide_data:${REACTORCIDE_OBJECT_STORE_BASE_PATH}
+        depends_on:
+            postgres:
+                condition: service_healthy
+            corndogs:
+                condition: service_started
+        networks:
+            - reactorcide
 
-  # Coordinator API
-  coordinator-api:
-    build:
-      context: .
-      dockerfile: ./coordinator_api/Dockerfile
-    depends_on:
-      postgres:
-        condition: service_healthy
-      minio:
-        condition: service_healthy
-      migrate:
-        condition: service_completed_successfully
-    environment:
-      DB_URI: "postgres://devuser:devpass@postgres:5432/testpg?sslmode=disable"
-      S3_ENDPOINT: "http://minio:9000"
-      S3_ACCESS_KEY: "minioadmin"
-      S3_SECRET_KEY: "minioadmin"
-      S3_BUCKET_LOGS: "reactorcide-logs"
-      S3_BUCKET_ARTIFACTS: "reactorcide-artifacts"
-      PORT: "8080"
-      LOG_LEVEL: "debug"
-      DEFAULT_USER_ID: "550e8400-e29b-41d4-a716-446655440000"
-    command: ["serve"]
-    ports:
-      - "8080:8080"
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8080/api/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
+    # Worker
+    worker:
+        build:
+            context: .
+            dockerfile: Dockerfile.worker.dev
+        image: reactorcide/worker:dev
+        container_name: reactorcide-worker-dev
+        environment:
+            DB_URI: "postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}?sslmode=disable"
+            CORNDOGS_BASE_URL: ${REACTORCIDE_CORNDOGS_ENDPOINT}
+            WORKER_QUEUE: ${REACTORCIDE_CORNDOGS_QUEUE}
+            WORKER_CONCURRENCY: ${REACTORCIDE_WORKER_CONCURRENCY}
+            WORKER_POLL_INTERVAL: ${REACTORCIDE_WORKER_POLL_INTERVAL}
+            REACTORCIDE_CONTAINER_RUNTIME: ${REACTORCIDE_CONTAINER_RUNTIME}
+            OBJECT_STORE_TYPE: ${REACTORCIDE_OBJECT_STORE_TYPE}
+            OBJECT_STORE_BASE_PATH: ${REACTORCIDE_OBJECT_STORE_BASE_PATH}
+            REACTORCIDE_LOG_LEVEL: ${REACTORCIDE_LOG_LEVEL}
+        volumes:
+            - /var/run/docker.sock:/var/run/docker.sock
+            - reactorcide_data:${REACTORCIDE_OBJECT_STORE_BASE_PATH}
+            - /tmp/reactorcide-jobs:/tmp/reactorcide-jobs
+        depends_on:
+            coordinator-api:
+                condition: service_started
+            corndogs:
+                condition: service_started
+        networks:
+            - reactorcide
 
-  # Worker (commented out until Corndogs integration is complete)
-  # worker:
-  #   build:
-  #     context: ./coordinator_api
-  #     dockerfile: Dockerfile.worker
-  #   depends_on:
-  #     postgres:
-  #       condition: service_healthy
-  #     minio:
-  #       condition: service_healthy
-  #   environment:
-  #     DB_URI: "postgres://devuser:devpass@postgres:5432/testpg?sslmode=disable"
-  #     S3_ENDPOINT: "http://minio:9000"
-  #     S3_ACCESS_KEY: "minioadmin"
-  #     S3_SECRET_KEY: "minioadmin"
-  #     S3_BUCKET_LOGS: "reactorcide-logs"
-  #     S3_BUCKET_ARTIFACTS: "reactorcide-artifacts"
-  #     WORKER_CONCURRENCY: "2"
-  #     LOG_LEVEL: "debug"
-  #   volumes:
-  #     - /var/run/docker.sock:/var/run/docker.sock  # For Docker access
-  #     - ./job:/job  # Job directory
+networks:
+    reactorcide:
+        driver: bridge
 
 volumes:
-  postgres_data:
-  minio_data:
+    postgres_data:
+    postgres_corndogs_data:
+    reactorcide_data:

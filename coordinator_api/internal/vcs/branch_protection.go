@@ -2,10 +2,7 @@ package vcs
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
-	"io"
-	"net/http"
 	"strings"
 
 	"github.com/sirupsen/logrus"

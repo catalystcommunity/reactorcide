@@ -241,10 +241,11 @@ class TestConfigValidator:
 
     @patch('shutil.which')
     def test_validate_external_dependencies_docker_missing(self, mock_which):
-        """Test validation fails when docker is missing."""
+        """Test validation fails when docker is missing and container mode is required."""
         mock_which.return_value = None  # docker not found
-        
-        errors = self.validator._validate_external_dependencies()
+
+        # With require_container_runtime=True, docker check should fail
+        errors = self.validator._validate_external_dependencies(require_container_runtime=True)
         assert len(errors) == 1
         assert errors[0].field == "system"
         assert "docker is not available" in errors[0].message
@@ -253,8 +254,17 @@ class TestConfigValidator:
     def test_validate_external_dependencies_docker_available(self, mock_which):
         """Test validation passes when docker is available."""
         mock_which.return_value = "/usr/bin/docker"  # docker found
-        
-        errors = self.validator._validate_external_dependencies()
+
+        errors = self.validator._validate_external_dependencies(require_container_runtime=True)
+        assert len(errors) == 0
+
+    @patch('shutil.which')
+    def test_validate_external_dependencies_local_mode_no_docker_required(self, mock_which):
+        """Test validation passes in local mode even without docker."""
+        mock_which.return_value = None  # docker not found
+
+        # With require_container_runtime=False (default), docker check is skipped
+        errors = self.validator._validate_external_dependencies(require_container_runtime=False)
         assert len(errors) == 0
 
     def test_validate_config_integration_valid(self):

@@ -24,7 +24,7 @@ var MigrateCommand = &cli.Command{
 			Value:       "postgresql://devuser:devpass@monodemo-postgresql:5432/monodemopg?sslmode=disable",
 			Usage:       "The uri to use to connect to the db",
 			Destination: &config.DbUri,
-			EnvVars:     []string{"DB_URI"},
+			EnvVars:     []string{"REACTORCIDE_DB_URI", "DB_URI"},
 		},
 	},
 	Action: func(ctx *cli.Context) error {

@@ -16,6 +16,16 @@ class RunnerConfig:
     secrets_list: Optional[str] = None  # Comma-separated list of secret values to mask
     secrets_file: Optional[str] = None  # Path to secrets file to mount into container
 
+    # Source code configuration (optional - for untrusted code from PRs, etc.)
+    source_type: Optional[str] = None  # git, copy, tarball, hg, svn, none
+    source_url: Optional[str] = None  # URL or path to source code
+    source_ref: Optional[str] = None  # Branch, tag, commit, or version ref
+
+    # CI code configuration (optional - for trusted CI/CD scripts)
+    ci_source_type: Optional[str] = None  # git, copy, tarball, hg, svn, none
+    ci_source_url: Optional[str] = None  # URL or path to CI code
+    ci_source_ref: Optional[str] = None  # Branch, tag, commit, or version ref
+
 
 class ConfigManager:
     """Manages configuration with hierarchy: defaults < env vars < CLI args."""
@@ -34,7 +44,13 @@ class ConfigManager:
         'runner_image': 'REACTORCIDE_RUNNER_IMAGE',
         'job_env': 'REACTORCIDE_JOB_ENV',
         'secrets_list': 'REACTORCIDE_SECRETS_LIST',
-        'secrets_file': 'REACTORCIDE_SECRETS_FILE'
+        'secrets_file': 'REACTORCIDE_SECRETS_FILE',
+        'source_type': 'REACTORCIDE_SOURCE_TYPE',
+        'source_url': 'REACTORCIDE_SOURCE_URL',
+        'source_ref': 'REACTORCIDE_SOURCE_REF',
+        'ci_source_type': 'REACTORCIDE_CI_SOURCE_TYPE',
+        'ci_source_url': 'REACTORCIDE_CI_SOURCE_URL',
+        'ci_source_ref': 'REACTORCIDE_CI_SOURCE_REF'
     }
     
     def __init__(self):
@@ -86,7 +102,13 @@ class ConfigManager:
             runner_image=config['runner_image'],
             job_env=config.get('job_env'),
             secrets_list=config.get('secrets_list'),
-            secrets_file=config.get('secrets_file')
+            secrets_file=config.get('secrets_file'),
+            source_type=config.get('source_type'),
+            source_url=config.get('source_url'),
+            source_ref=config.get('source_ref'),
+            ci_source_type=config.get('ci_source_type'),
+            ci_source_url=config.get('ci_source_url'),
+            ci_source_ref=config.get('ci_source_ref')
         )
     
     def _validate_job_env_path(self, path: str) -> None:
@@ -158,28 +180,28 @@ class ConfigManager:
     
     def get_all_environment_vars(self, config: RunnerConfig) -> Dict[str, str]:
         """Get all environment variables to pass to container.
-        
+
         Args:
             config: Runner configuration
-            
+
         Returns:
             Dictionary of all environment variables including REACTORCIDE_* vars
         """
         env_vars = {}
-        
+
         # Add REACTORCIDE_* configuration variables
         env_vars['REACTORCIDE_CODE_DIR'] = config.code_dir
         env_vars['REACTORCIDE_JOB_DIR'] = config.job_dir
         env_vars['REACTORCIDE_JOB_COMMAND'] = config.job_command
         env_vars['REACTORCIDE_RUNNER_IMAGE'] = config.runner_image
-        if config.job_env:
-            env_vars['REACTORCIDE_JOB_ENV'] = config.job_env
-        
+        # NOTE: Do NOT pass REACTORCIDE_JOB_ENV to the container
+        # The individual parsed variables are passed instead (see below)
+
         # Add job-specific environment variables
         if config.job_env:
             job_env_vars = self.parse_job_environment(config.job_env)
             env_vars.update(job_env_vars)
-        
+
         return env_vars
 
 

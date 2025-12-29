@@ -23,10 +23,45 @@ type CornDogsWorker struct {
 
 // NewCornDogsWorker creates a new worker that uses Corndogs for task management
 func NewCornDogsWorker(config *Config, corndogsClient corndogs.ClientInterface) *CornDogsWorker {
+	// Default container runtime to docker if not specified
+	if config.ContainerRuntime == "" {
+		config.ContainerRuntime = "docker"
+	}
+
+	// Set default log chunk interval if not specified
+	if config.LogChunkInterval == 0 {
+		config.LogChunkInterval = 3 * time.Second
+	}
+
+	// Set default heartbeat interval if not specified
+	if config.HeartbeatInterval == 0 {
+		config.HeartbeatInterval = 30 * time.Second
+	}
+
+	// Set default heartbeat timeout if not specified
+	if config.HeartbeatTimeout == 0 {
+		config.HeartbeatTimeout = 10 * time.Minute
+	}
+
+	// Create job runner
+	runner, err := NewJobRunner(config.ContainerRuntime)
+	if err != nil {
+		logging.Log.WithError(err).WithField("runtime", config.ContainerRuntime).
+			Fatal("Failed to create job runner")
+	}
+
+	// Create job processor with configuration
+	processor := NewJobProcessorWithConfig(config.Store, runner, config.DryRun, &JobProcessorConfig{
+		ObjectStore:       config.ObjectStore,
+		LogChunkInterval:  config.LogChunkInterval,
+		HeartbeatInterval: config.HeartbeatInterval,
+		HeartbeatTimeout:  config.HeartbeatTimeout,
+	})
+
 	return &CornDogsWorker{
 		config:         config,
 		corndogsClient: corndogsClient,
-		processor:      NewJobProcessor(config.Store, config.DryRun),
+		processor:      processor,
 		workerPool:     make(chan struct{}, config.Concurrency),
 	}
 }
@@ -113,6 +148,14 @@ func (w *CornDogsWorker) processNextTask(ctx context.Context, workerID int) {
 		}
 		return
 	}
+
+	// Check if task is nil (no tasks available)
+	if task == nil {
+		logger.Debug("No tasks available in queue")
+		metrics.RecordCornDogsTaskPoll(w.config.QueueName, false)
+		return
+	}
+
 	// Record successful poll
 	metrics.RecordCornDogsTaskPoll(w.config.QueueName, true)
 
@@ -161,9 +204,20 @@ func (w *CornDogsWorker) processNextTask(ctx context.Context, workerID int) {
 		logger.WithError(err).Warn("Failed to update task state to processing")
 	}
 
-	// Execute the job using the processor
+	// Create heartbeat function that extends the Corndogs task timeout
+	heartbeatFunc := func(hbCtx context.Context) error {
+		timeoutExtension := int64(w.config.HeartbeatTimeout.Seconds())
+		_, err := w.corndogsClient.SendHeartbeat(hbCtx, task.Uuid, "processing", timeoutExtension)
+		return err
+	}
+
+	// Execute the job using the processor with heartbeat support
+	execCtx := &JobExecutionContext{
+		HeartbeatFunc: heartbeatFunc,
+	}
+
 	startTime := time.Now()
-	result := w.processor.ProcessJob(ctx, job)
+	result := w.processor.ProcessJobWithContext(ctx, job, execCtx)
 	duration := time.Since(startTime).Seconds()
 
 	// Record job processing metrics

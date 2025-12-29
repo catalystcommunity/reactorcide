@@ -1,6 +1,7 @@
 """Simple integration test for Docker container execution."""
 
 import subprocess
+import sys
 import tempfile
 from pathlib import Path
 
@@ -30,7 +31,7 @@ exit 0
         # Run the container using runnerlib CLI
         result = subprocess.run(
             [
-                "python", "-m", "src.cli", "run",
+                sys.executable, "-m", "src.cli", "run",
                 "--runner-image", "alpine:latest",
                 "--job-command", "sh /job/test.sh",
                 "--code-dir", "/job",
@@ -88,7 +89,7 @@ CUSTOM_VAR=custom_value
         # Run with environment file - needs to be relative path starting with ./job/
         result = subprocess.run(
             [
-                "python", "-m", "src.cli", "run",
+                sys.executable, "-m", "src.cli", "run",
                 "--runner-image", "alpine:latest",
                 "--job-command", "sh /job/env_test.sh",
                 "--code-dir", "/job",
@@ -143,7 +144,7 @@ sys.exit(0)
         # Run Python container
         result = subprocess.run(
             [
-                "python", "-m", "src.cli", "run",
+                sys.executable, "-m", "src.cli", "run",
                 "--runner-image", "python:3.11-alpine",
                 "--job-command", "python /job/test.py",
                 "--code-dir", "/job",
@@ -191,7 +192,7 @@ exit 42
         # Run container that should fail
         result = subprocess.run(
             [
-                "python", "-m", "src.cli", "run",
+                sys.executable, "-m", "src.cli", "run",
                 "--runner-image", "alpine:latest",
                 "--job-command", "sh /job/fail.sh",
                 "--code-dir", "/job",
@@ -277,7 +278,7 @@ exit 0
         # Run with working directory set to /job
         result = subprocess.run(
             [
-                "python", "-m", "src.cli", "run",
+                sys.executable, "-m", "src.cli", "run",
                 "--runner-image", "alpine:latest",
                 "--job-command", "sh pwd_test.sh",  # Note: no /job/ prefix since we're in that dir
                 "--code-dir", "/job",
@@ -318,7 +319,7 @@ exit 1
         # Run in dry-run mode
         result = subprocess.run(
             [
-                "python", "-m", "src.cli", "run",
+                sys.executable, "-m", "src.cli", "run",
                 "--runner-image", "alpine:latest",
                 "--job-command", "sh /job/should_not_run.sh",
                 "--code-dir", "/job",
@@ -363,7 +364,7 @@ process.exit(0);
         # Run Node container
         result = subprocess.run(
             [
-                "python", "-m", "src.cli", "run",
+                sys.executable, "-m", "src.cli", "run",
                 "--runner-image", "node:18-alpine",
                 "--job-command", "node /job/test.js",
                 "--code-dir", "/job",
@@ -412,7 +413,7 @@ fi
         # Run with multiple env vars in a single --job-env (newline separated)
         result = subprocess.run(
             [
-                "python", "-m", "src.cli", "run",
+                sys.executable, "-m", "src.cli", "run",
                 "--runner-image", "alpine:latest",
                 "--job-command", "sh /job/multi_env.sh",
                 "--code-dir", "/job",
@@ -456,7 +457,7 @@ exit 0
         # Run with environment vars and explicitly mark only some as secrets
         result = subprocess.run(
             [
-                "python", "-m", "src.cli", "run",
+                sys.executable, "-m", "src.cli", "run",
                 "--runner-image", "alpine:latest",
                 "--job-command", "sh /job/selective_test.sh",
                 "--code-dir", "/job",
