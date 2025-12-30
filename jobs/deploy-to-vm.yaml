@@ -1,32 +1,186 @@
 name: deploy-reactorcide-vm
-description: Deploy Reactorcide to a VM using Docker Compose
 image: containers.catalystsquad.com/public/reactorcide/runnerbase:dev
-command: /bin/bash /job/deploy-vm.sh
+command: |-
+  sh -c '
+    set -euo pipefail
 
-# Files that need to be present in the job directory
-required_files:
-  - deploy-vm.sh
-  - docker-compose.prod.yml
-  - nginx.conf
-  - Dockerfile.coordinator
-  - coordinator_api/coordinator-api
+    echo "========================================"
+    echo "Reactorcide VM Deployment"
+    echo "========================================"
+    echo "Target: ${REACTORCIDE_DEPLOY_USER}@${REACTORCIDE_DEPLOY_HOST}"
+    echo "Domains: ${REACTORCIDE_DEPLOY_DOMAINS}"
+    echo ""
 
-# Pre-job setup commands (run in container before main command)
-setup: |
-  # Install required packages (runnerbase already has git, ca-certificates)
-  apt-get update && apt-get install -y --no-install-recommends openssh-client rsync curl
+    # Install required packages
+    apt-get update && apt-get install -y --no-install-recommends openssh-client rsync curl
 
-  # Setup SSH configuration
-  mkdir -p ~/.ssh
-  cp /job/.ssh/* ~/.ssh/ 2>/dev/null || true
-  chmod 700 ~/.ssh
-  chmod 600 ~/.ssh/* 2>/dev/null || true
+    # Setup SSH from environment variable
+    mkdir -p ~/.ssh
+    chmod 700 ~/.ssh
 
-  # Make deployment script executable
-  chmod +x /job/deploy-vm.sh
+    if [ -z "${SSH_PRIVATE_KEY:-}" ]; then
+      echo "ERROR: SSH_PRIVATE_KEY environment variable not set"
+      exit 1
+    fi
 
-# Post-job verification (optional)
-verify: |
-  echo "Deployment completed. Verifying remote services..."
-  ssh ${DEPLOY_HOST} 'cd ~/reactorcide && docker compose -f docker-compose.prod.yml ps'
-  ssh ${DEPLOY_HOST} 'curl -sf http://localhost:8080/api/v1/health' && echo "API is healthy" || echo "API health check failed"
+    echo "${SSH_PRIVATE_KEY}" > ~/.ssh/id_rsa
+    chmod 600 ~/.ssh/id_rsa
+    echo "SSH key configured"
+
+    # Add host to known_hosts to avoid prompt
+    ssh-keyscan -H "${REACTORCIDE_DEPLOY_HOST}" >> ~/.ssh/known_hosts 2>/dev/null || true
+
+    # Test SSH connection
+    echo "Testing SSH connection..."
+    if ! ssh -o ConnectTimeout=10 "${REACTORCIDE_DEPLOY_USER}@${REACTORCIDE_DEPLOY_HOST}" "echo SSH OK"; then
+      echo "ERROR: SSH connection failed"
+      exit 1
+    fi
+
+    # Generate secrets if not provided
+    DB_PASSWORD="${REACTORCIDE_DB_PASSWORD:-$(openssl rand -hex 24)}"
+    JWT_SECRET="${REACTORCIDE_JWT_SECRET:-$(openssl rand -hex 32)}"
+    REMOTE_DIR="${REACTORCIDE_REMOTE_DIR:-~/reactorcide}"
+
+    echo ""
+    echo "Step 1: Creating remote directory structure"
+    ssh "${REACTORCIDE_DEPLOY_USER}@${REACTORCIDE_DEPLOY_HOST}" "mkdir -p ${REMOTE_DIR}"
+
+    echo ""
+    echo "Step 2: Copying deployment files"
+    rsync -avz --progress \
+      /job/deployment/ \
+      "${REACTORCIDE_DEPLOY_USER}@${REACTORCIDE_DEPLOY_HOST}:${REMOTE_DIR}/"
+
+    echo ""
+    echo "Step 3: Creating environment configuration on VM"
+    ssh "${REACTORCIDE_DEPLOY_USER}@${REACTORCIDE_DEPLOY_HOST}" bash <<REMOTE_EOF
+set -euo pipefail
+cd ${REMOTE_DIR}
+
+cat > .env <<ENVFILE
+# Database Configuration (for postgres containers)
+POSTGRES_USER=reactorcide
+POSTGRES_PASSWORD=${DB_PASSWORD}
+POSTGRES_DB=reactorcide_db
+CORNDOGS_DB_NAME=corndogs_db
+
+# Reactorcide Configuration
+REACTORCIDE_DB_URI=postgresql://reactorcide:${DB_PASSWORD}@postgres:5432/reactorcide_db?sslmode=disable
+REACTORCIDE_JWT_SECRET=${JWT_SECRET}
+REACTORCIDE_OBJECT_STORE_TYPE=filesystem
+REACTORCIDE_OBJECT_STORE_BASE_PATH=/data/reactorcide
+REACTORCIDE_WORKER_CONCURRENCY=${REACTORCIDE_WORKER_CONCURRENCY:-2}
+REACTORCIDE_WORKER_POLL_INTERVAL=${REACTORCIDE_WORKER_POLL_INTERVAL:-5}
+REACTORCIDE_CONTAINER_RUNTIME=docker
+REACTORCIDE_LOG_LEVEL=${REACTORCIDE_LOG_LEVEL:-info}
+ENVFILE
+
+echo "Environment configuration created"
+REMOTE_EOF
+
+    echo ""
+    echo "Step 4: Pulling Docker images on VM"
+    ssh "${REACTORCIDE_DEPLOY_USER}@${REACTORCIDE_DEPLOY_HOST}" bash <<REMOTE_EOF
+set -euo pipefail
+cd ${REMOTE_DIR}
+
+# Pull all Reactorcide images from registry
+echo "Pulling coordinator image..."
+docker compose -f docker-compose.prod.yml pull coordinator-api
+
+echo "Pulling worker image..."
+docker compose -f docker-compose.prod.yml pull worker
+
+# Pull runner image (used by worker to spawn job containers)
+RUNNER_IMAGE="${REACTORCIDE_RUNNER_IMAGE:-containers.catalystsquad.com/public/reactorcide/runnerbase:dev}"
+echo "Pulling runner image: \${RUNNER_IMAGE}..."
+docker pull "\${RUNNER_IMAGE}"
+
+# Tag as local name for worker to use
+docker tag "\${RUNNER_IMAGE}" reactorcide/runner:latest
+
+echo "Images ready"
+REMOTE_EOF
+
+    echo ""
+    echo "Step 5: Starting services"
+    ssh "${REACTORCIDE_DEPLOY_USER}@${REACTORCIDE_DEPLOY_HOST}" bash <<REMOTE_EOF
+set -euo pipefail
+cd ${REMOTE_DIR}
+
+# Stop existing services
+echo "Stopping existing services..."
+docker compose -f docker-compose.prod.yml down || true
+
+# Start services
+echo "Starting services..."
+docker compose -f docker-compose.prod.yml up -d
+
+# Wait for startup
+sleep 10
+
+# Show status
+docker compose -f docker-compose.prod.yml ps
+REMOTE_EOF
+
+    echo ""
+    echo "Step 6: Running database migrations"
+    ssh "${REACTORCIDE_DEPLOY_USER}@${REACTORCIDE_DEPLOY_HOST}" bash <<REMOTE_EOF
+set -euo pipefail
+cd ${REMOTE_DIR}
+
+echo "Running migrations..."
+docker compose -f docker-compose.prod.yml exec -T coordinator-api /reactorcide migrate
+
+echo "Restarting coordinator to initialize default user..."
+docker compose -f docker-compose.prod.yml restart coordinator-api
+
+echo "Waiting for coordinator to be healthy..."
+sleep 10
+
+echo "Migrations and restart completed"
+REMOTE_EOF
+
+    echo ""
+    echo "Step 7: Verifying deployment"
+    ssh "${REACTORCIDE_DEPLOY_USER}@${REACTORCIDE_DEPLOY_HOST}" bash <<REMOTE_EOF
+set -euo pipefail
+cd ${REMOTE_DIR}
+
+if curl -sf http://localhost:6080/api/v1/health > /dev/null; then
+  echo "✓ Coordinator API is healthy"
+else
+  echo "✗ API health check failed"
+  exit 1
+fi
+REMOTE_EOF
+
+    echo ""
+    echo "========================================"
+    echo "✓ Deployment completed successfully!"
+    echo "========================================"
+    echo ""
+    echo "Next steps:"
+    echo "  1. Access the API: http://${REACTORCIDE_DEPLOY_HOST}:6080/api/v1/health"
+    echo "  2. Create an API token: ssh ${REACTORCIDE_DEPLOY_HOST} docker exec reactorcide-coordinator /reactorcide token create --name admin"
+  '
+environment:
+  # Required - target configuration
+  REACTORCIDE_DEPLOY_HOST: "${env:REACTORCIDE_DEPLOY_HOST}"
+  REACTORCIDE_DEPLOY_USER: "${env:REACTORCIDE_DEPLOY_USER}"
+  REACTORCIDE_DEPLOY_DOMAINS: "${env:REACTORCIDE_DEPLOY_DOMAINS}"
+
+  # Required - SSH key for deployment (secret)
+  SSH_PRIVATE_KEY: "${secret:reactorcide/deploy:ssh_private_key}"
+
+  # Optional - can use secrets or generate at runtime
+  REACTORCIDE_DB_PASSWORD: "${secret:reactorcide/deploy:db_password}"
+  REACTORCIDE_JWT_SECRET: "${secret:reactorcide/deploy:jwt_secret}"
+
+  # Optional with defaults
+  REACTORCIDE_WORKER_CONCURRENCY: "${env:REACTORCIDE_WORKER_CONCURRENCY}"
+  REACTORCIDE_WORKER_POLL_INTERVAL: "${env:REACTORCIDE_WORKER_POLL_INTERVAL}"
+  REACTORCIDE_LOG_LEVEL: "${env:REACTORCIDE_LOG_LEVEL}"
+  REACTORCIDE_RUNNER_IMAGE: "${env:REACTORCIDE_RUNNER_IMAGE}"
+  REACTORCIDE_REMOTE_DIR: "${env:REACTORCIDE_REMOTE_DIR}"

@@ -1,31 +1,62 @@
-# reactorcide
+# Reactorcide
 
-This is the minimalist CI/CD system that aims to be fully fledged for the needs of a serious engineering team. It should work well for open source or business needs, with a particular focus on "outside contributions" have security in place. It evolved from a simple set of bash utilities.
+A minimalist CI/CD system for serious engineering teams. Works with open source or business needs, with particular focus on security for outside contributions.
 
-You should be able to run jobs from your laptop just as easily as from the whole system, so if your source control (git, mercurial, whatever) provider is down, fine. It's just building blocks. Glue to make it specific to a provider is also provided where we needed it.
+Run jobs from your laptop just as easily as from the full system. If your VCS provider is down, fine - it's just building blocks.
+
+## Quick Start
+
+### Running Jobs with reactorcide CLI
+
+```bash
+# Build and push all images to registry
+REACTORCIDE_SECRETS_PASSWORD="$(cat ~/.reactorcide-pass)" \
+  reactorcide run-local --job-dir ./ ./jobs/build-all.yaml
+
+# Deploy to VM (requires env overlay with target config)
+REACTORCIDE_SECRETS_PASSWORD="$(cat ~/.reactorcide-pass)" \
+  reactorcide run-local \
+  -i ~/.config/reactorcide/reactorcide-vm-deploy-local.yaml \
+  --job-dir ./ \
+  ./jobs/deploy-to-vm.yaml
+```
+
+### Local Development
+
+```bash
+# Start local dev stack
+docker compose up -d
+
+# Run tests
+./tools test
+
+# Build Docker images locally (for development)
+./tools docker-build
+```
 
 ## Documentation
 
-- **[DESIGN.md](./DESIGN.md)** - Complete system architecture, design principles, and deployment models
-- **[CLAUDE.md](./CLAUDE.md)** - Implementation guidance for AI assistants and contributors
+- **[DESIGN.md](./DESIGN.md)** - Complete system architecture and design principles
+- **[AGENTS.md](./AGENTS.md)** - Implementation guidance for AI assistants and contributors
 - **[runnerlib/DESIGN.md](./runnerlib/DESIGN.md)** - Detailed runnerlib architecture and API
-- **[deployment-plan.md](./deployment-plan.md)** - Deployment strategy and migration roadmap
+- **[docs/](./docs/)** - Additional documentation
 
 ## Philosophy
 
-We want to react to source code change events. Ultimately we want to have:
-* An isolated run from a known state as much as is feasible
-* A configuration for some knobs for the thing running the job (the CI/CD system, or reactorcide in this case)
-* A configuration passed to the job itself (the VCS ref, the context, secrets, etc)
-* No ties to the VCS host, so if say, this VCS host is down, we can still run reactorcide from a checkout on anything we can pass the job to (the API, and a place to pull it from, maybe a tarball included in the payload, whatever)
-* Functions to make some checks easier. Like, has the commit we've checked out already been tagged? With <foo> specifically? Files changed? Those should just be function calls.
-* Run the actual job inside a given docker container. We'll have standards of a "this is where the lib and your metadata is mounted, we'll run your entrypoint" style API
+- **Isolation First**: Run jobs from a known state in isolated containers
+- **Configuration Flexibility**: System config and job config are separate
+- **VCS Agnostic**: No hard ties to specific VCS providers
+- **Local Development**: Run jobs from your laptop as easily as from the full system
+- **Building Blocks**: Modular components that can be combined as needed
+- **Security by Design**: Built with outside contributions and security in mind
 
-We might add some additional things later like a webhook-to-job API and a log capture mechanism or something. Secrets are a whole thing, a job queue is a whole thing. We're doing the basic versions of those to start. We're trying to be minimal so peeps (mostly us) can glue this up however they want.
+## Components
 
-## Status
+- **reactorcide CLI** - Main binary for running jobs, managing secrets, serving API
+- **runnerlib** - Python library for job execution inside containers
+- **Coordinator API** - REST API for job management and orchestration
+- **Worker** - Distributed job processing with Corndogs task queue
 
-Just beginning and playing. Join the [Catalyst Community Discord](https://discord.gg/sfNb9xRjPn) to chat about it.
+## Project Status
 
-If you want to try it, we'll have more here when the new not-bash version is ready (for us, because the instructions will also be for us).
-
+Active development. Join the [Catalyst Community Discord](https://discord.gg/sfNb9xRjPn) to discuss and contribute.
