@@ -2,12 +2,23 @@
 # This image contains runnerlib and is spawned by the worker for each job
 FROM python:3.13-slim-trixie
 
-# Install system dependencies (minimal set)
+# Install system dependencies
+# - Common tools needed for most CI/CD jobs
+# - sudo for jobs that need to install additional packages
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
         git \
-        ca-certificates && \
+        ca-certificates \
+        openssh-client \
+        rsync \
+        curl \
+        sudo && \
     rm -rf /var/lib/apt/lists/*
+
+# Create non-root user with home directory
+# UID 1001 matches what the worker uses when running containers
+RUN useradd -m -u 1001 -s /bin/sh runner && \
+    echo "runner ALL=(ALL) NOPASSWD: /usr/bin/apt-get, /usr/bin/apt" >> /etc/sudoers.d/runner
 
 # Install uv for fast Python package installation
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
@@ -23,6 +34,9 @@ RUN cd /tmp/runnerlib && \
 
 # Verify installation works
 RUN runnerlib --help
+
+# Set ownership of job directory for non-root user
+RUN chown runner:runner /job
 
 # Default entrypoint - can be overridden by worker when spawning containers
 ENTRYPOINT ["runnerlib"]

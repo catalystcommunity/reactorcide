@@ -6,19 +6,69 @@ Run jobs from your laptop just as easily as from the full system. If your VCS pr
 
 ## Quick Start
 
-### Running Jobs with reactorcide CLI
+### 1. Build the CLI
 
 ```bash
-# Build and push all images to registry
-REACTORCIDE_SECRETS_PASSWORD="$(cat ~/.reactorcide-pass)" \
-  reactorcide run-local --job-dir ./ ./jobs/build-all.yaml
+cd coordinator_api && go build -o reactorcide . && cd ..
 
-# Deploy to VM (requires env overlay with target config)
-REACTORCIDE_SECRETS_PASSWORD="$(cat ~/.reactorcide-pass)" \
+# Optionally add to PATH
+sudo cp coordinator_api/reactorcide /usr/local/bin/
+```
+
+### 2. Initialize Secrets Storage
+
+```bash
+# Initialize encrypted secrets vault
+reactorcide secrets init
+
+# Add secrets (e.g., for VM deployment)
+reactorcide secrets set reactorcide/deploy ssh_private_key "$(cat ~/.ssh/id_rsa)"
+```
+
+### 3. Deploy to a VM
+
+Create an overlay file at `~/.config/reactorcide/my-vm.yaml`:
+
+```yaml
+environment:
+  REACTORCIDE_DEPLOY_HOST: "your-vm-hostname"
+  REACTORCIDE_DEPLOY_USER: "your-username"
+  REACTORCIDE_DEPLOY_DOMAINS: "reactorcide.example.com"
+```
+
+Run the deployment:
+
+```bash
+REACTORCIDE_SECRETS_PASSWORD="<your-secrets-password>" \
   reactorcide run-local \
-  -i ~/.config/reactorcide/reactorcide-vm-deploy-local.yaml \
   --job-dir ./ \
+  -i ~/.config/reactorcide/my-vm.yaml \
   ./jobs/deploy-to-vm.yaml
+```
+
+### 4. Create an API Token
+
+After deployment, create a token to authenticate with the API:
+
+```bash
+# For Docker Compose deployment
+ssh your-vm-hostname "docker exec reactorcide-coordinator /reactorcide token create --name my-token"
+
+# For Kubernetes deployment
+kubectl exec -it deploy/reactorcide-coordinator -- /reactorcide token create --name my-token
+```
+
+Save the returned token - it cannot be retrieved again.
+
+### 5. Use the API
+
+```bash
+# Check API health
+curl http://your-vm-hostname:6080/api/v1/health
+
+# List jobs (authenticated)
+curl -H "Authorization: Bearer <your-token>" \
+  http://your-vm-hostname:6080/api/v1/jobs
 ```
 
 ### Local Development
@@ -32,6 +82,13 @@ docker compose up -d
 
 # Build Docker images locally (for development)
 ./tools docker-build
+```
+
+### Running Jobs Locally
+
+```bash
+REACTORCIDE_SECRETS_PASSWORD="<your-secrets-password>" \
+  reactorcide run-local --job-dir ./ ./jobs/build-all.yaml
 ```
 
 ## Documentation
