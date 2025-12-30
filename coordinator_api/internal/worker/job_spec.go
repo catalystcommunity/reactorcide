@@ -21,9 +21,15 @@ type JobSpec struct {
 	// Name is a human-readable name for the job
 	Name string `json:"name" yaml:"name"`
 
-	// Command is the full command to execute (e.g., "sh -c 'echo hello'")
-	// The command is parsed respecting shell quoting rules
+	// Command is the full command to execute.
+	// Single-line commands are parsed and split on whitespace.
+	// Multiline commands are wrapped with "sh -c" by default (see CommandPrefix).
 	Command string `json:"command" yaml:"command"`
+
+	// CommandPrefix overrides the default shell wrapper for multiline commands.
+	// Default is "sh -c". Examples: "bash -c", "zsh -c", "/bin/ash -c"
+	// Only applies to multiline commands that don't already start with a shell invocation.
+	CommandPrefix string `json:"command_prefix" yaml:"command_prefix"`
 
 	// Image is the container image to use (defaults to DefaultRunnerImage)
 	Image string `json:"image" yaml:"image"`
@@ -102,8 +108,8 @@ func LoadJobSpec(path string) (*JobSpec, error) {
 // workspaceDir is the host directory to mount into the container
 // jobID is a unique identifier for this job execution
 func (s *JobSpec) ToJobConfig(workspaceDir, jobID, queueName string) *JobConfig {
-	// Parse command into args
-	command := ParseCommand(s.Command)
+	// Parse command into args, using CommandPrefix for multiline commands
+	command := ParseCommandWithPrefix(s.Command, s.CommandPrefix)
 
 	// Build environment
 	env := make(map[string]string)
@@ -137,8 +143,65 @@ func (s *JobSpec) ToJobConfig(workspaceDir, jobID, queueName string) *JobConfig 
 	return config
 }
 
-// ParseCommand splits a command string respecting shell quoting rules
+// shellPrefixes are command prefixes that indicate the command is already
+// wrapped for shell execution and shouldn't be double-wrapped.
+var shellPrefixes = []string{
+	"sh -c",
+	"bash -c",
+	"zsh -c",
+	"/bin/sh -c",
+	"/bin/bash -c",
+	"/bin/zsh -c",
+	"/usr/bin/sh -c",
+	"/usr/bin/bash -c",
+	"/usr/bin/zsh -c",
+}
+
+// ParseCommandWithPrefix converts a command string to []string for container execution.
+// For multiline commands, wraps with the specified prefix (default "sh -c").
+// For single-line commands, splits on whitespace respecting basic quoting.
+func ParseCommandWithPrefix(cmd, prefix string) []string {
+	cmd = strings.TrimSpace(cmd)
+
+	// Check if command is multiline
+	if strings.Contains(cmd, "\n") {
+		// Check if command already starts with a shell invocation
+		cmdLower := strings.ToLower(cmd)
+		for _, shellPrefix := range shellPrefixes {
+			if strings.HasPrefix(cmdLower, shellPrefix) {
+				// Already has shell prefix, parse normally
+				// (this handles cases like "sh -c '\n script \n'")
+				return parseSimpleCommand(cmd)
+			}
+		}
+
+		// Wrap with shell prefix
+		if prefix == "" {
+			prefix = "sh -c"
+		}
+
+		// Parse the prefix to get shell and flag
+		prefixParts := strings.SplitN(prefix, " ", 2)
+		if len(prefixParts) == 2 {
+			return []string{prefixParts[0], prefixParts[1], cmd}
+		}
+		// If prefix doesn't have a flag (unusual), just use sh -c
+		return []string{"sh", "-c", cmd}
+	}
+
+	// Single-line command: parse normally
+	return parseSimpleCommand(cmd)
+}
+
+// ParseCommand splits a command string for container execution.
+// Uses default "sh -c" prefix for multiline commands.
 func ParseCommand(cmd string) []string {
+	return ParseCommandWithPrefix(cmd, "")
+}
+
+// parseSimpleCommand splits a single-line command on whitespace,
+// respecting basic shell quoting rules.
+func parseSimpleCommand(cmd string) []string {
 	var args []string
 	var current strings.Builder
 	inSingleQuote := false
@@ -326,6 +389,7 @@ func MergeJobSpecs(base *JobSpec, overlays []*JobSpec, overlayFiles []string) (*
 	result := &JobSpec{
 		Name:           base.Name,
 		Command:        base.Command,
+		CommandPrefix:  base.CommandPrefix,
 		Image:          base.Image,
 		WorkingDir:     base.WorkingDir,
 		TimeoutSeconds: base.TimeoutSeconds,
@@ -370,6 +434,9 @@ func MergeJobSpecs(base *JobSpec, overlays []*JobSpec, overlayFiles []string) (*
 		}
 		if overlay.Command != "" {
 			result.Command = overlay.Command
+		}
+		if overlay.CommandPrefix != "" {
+			result.CommandPrefix = overlay.CommandPrefix
 		}
 		if overlay.Image != "" {
 			result.Image = overlay.Image
