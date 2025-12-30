@@ -1,0 +1,27 @@
+# VM Deployment environment overlay for Reactorcide
+# Copy to ~/.config/reactorcide/reactorcide-vm-deploy-local.yaml and customize
+#
+# Usage:
+#   REACTORCIDE_SECRETS_PASSWORD="$(cat ~/.reactorcide-pass)" \
+#     reactorcide run-local \
+#     -i ~/.config/reactorcide/reactorcide-vm-deploy-local.yaml \
+#     --job-dir ./ \
+#     ./jobs/deploy-to-vm.yaml
+#
+# Before first use, add your SSH key and secrets:
+#   reactorcide secrets set reactorcide/deploy ssh_private_key "$(cat ~/.ssh/id_ed25519)"
+#   reactorcide secrets set reactorcide/deploy db_password "your-db-password"
+#   reactorcide secrets set reactorcide/deploy jwt_secret "your-jwt-secret"
+
+environment:
+  # Required: Target VM configuration
+  REACTORCIDE_DEPLOY_HOST: your-vm-hostname
+  REACTORCIDE_DEPLOY_USER: your-username
+  REACTORCIDE_DEPLOY_DOMAINS: reactorcide.example.com
+
+  # Optional: Override defaults
+  # REACTORCIDE_WORKER_CONCURRENCY: "2"
+  # REACTORCIDE_WORKER_POLL_INTERVAL: "5"
+  # REACTORCIDE_LOG_LEVEL: "info"
+  # REACTORCIDE_RUNNER_IMAGE: "containers.catalystsquad.com/public/reactorcide/runnerbase:dev"
+  # REACTORCIDE_REMOTE_DIR: "~/reactorcide"

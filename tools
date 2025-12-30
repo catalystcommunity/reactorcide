@@ -164,9 +164,30 @@ build(){
 
 docker_build(){
     log_status "Building Docker images"
-    docker build -t reactorcide-runnerlib:latest -f runnerlib/Dockerfile runnerlib/
-    docker build -t reactorcide-coordinator:latest -f coordinator_api/Dockerfile coordinator_api/
-    echo "✅ Docker images built"
+
+    # Build runnerbase image
+    docker build -t reactorcide/runnerbase:latest -f runnerlib/Dockerfile.runner runnerlib/
+
+    # Build Go binary for coordinator and worker
+    log_status "Building Go binary"
+    cd "${PROJECT_ROOT_DIR}/coordinator_api"
+    CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o reactorcide .
+    cp reactorcide "${PROJECT_ROOT_DIR}/deployment/"
+    cd "${PROJECT_ROOT_DIR}"
+
+    # Build coordinator image
+    docker build -t reactorcide/coordinator:latest -f deployment/Dockerfile.coordinator deployment/
+
+    # Build worker image
+    docker build -t reactorcide/worker:latest -f deployment/Dockerfile.worker deployment/
+
+    # Cleanup
+    rm -f "${PROJECT_ROOT_DIR}/deployment/reactorcide"
+
+    echo "✅ Docker images built:"
+    echo "   - reactorcide/runnerbase:latest"
+    echo "   - reactorcide/coordinator:latest"
+    echo "   - reactorcide/worker:latest"
 }
 
 clean(){
