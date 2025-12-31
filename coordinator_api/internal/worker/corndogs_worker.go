@@ -23,9 +23,9 @@ type CornDogsWorker struct {
 
 // NewCornDogsWorker creates a new worker that uses Corndogs for task management
 func NewCornDogsWorker(config *Config, corndogsClient corndogs.ClientInterface) *CornDogsWorker {
-	// Default container runtime to docker if not specified
+	// Default container runtime to auto-detect if not specified
 	if config.ContainerRuntime == "" {
-		config.ContainerRuntime = "docker"
+		config.ContainerRuntime = "auto"
 	}
 
 	// Set default log chunk interval if not specified

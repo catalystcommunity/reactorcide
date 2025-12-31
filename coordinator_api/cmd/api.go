@@ -18,6 +18,11 @@ import (
 var Server *http.ServeMux
 
 func Serve() error {
+	// Run migrations first (with advisory lock for concurrent safety)
+	if err := RunMigrations(); err != nil {
+		return fmt.Errorf("failed to run migrations: %w", err)
+	}
+
 	// set stores
 	store.AppStore = postgres_store.PostgresStore
 

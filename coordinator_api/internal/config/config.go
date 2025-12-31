@@ -15,8 +15,8 @@ var (
 	// Default is true, but can be set to false for testing environments
 	CommitOnSuccess = env.GetEnvAsBoolOrDefault("REACTORCIDE_COMMIT_ON_SUCCESS", "true")
 
-	// Corndogs integration
-	CornDogsBaseURL = env.GetEnvOrDefault("REACTORCIDE_CORNDOGS_BASE_URL", "http://corndogs:8080")
+	// Corndogs integration (gRPC address - no http:// prefix)
+	CornDogsBaseURL = env.GetEnvOrDefault("REACTORCIDE_CORNDOGS_BASE_URL", "")
 	CornDogsAPIKey  = env.GetEnvOrDefault("REACTORCIDE_CORNDOGS_API_KEY", "")
 
 	// Default queue settings

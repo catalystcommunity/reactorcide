@@ -2,12 +2,14 @@ package postgres_store
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"os"
 	"strings"
 	"time"
 
 	"github.com/catalystcommunity/app-utils-go/env"
+	"github.com/catalystcommunity/app-utils-go/logging"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/config"
 	"github.com/jackc/pgx/v4/log/logrusadapter"
 	"github.com/jackc/pgx/v4/pgxpool"
@@ -78,8 +80,10 @@ func GetDBFromContext(ctx context.Context) *gorm.DB {
 }
 
 func (s PostgresDbStore) Initialize() (func(), error) {
-	var err error
 	uri := config.DbUri
+	maxRetries := env.GetEnvAsIntOrDefault("DB_CONNECT_MAX_RETRIES", "30")
+	retryInterval := time.Duration(env.GetEnvAsIntOrDefault("DB_CONNECT_RETRY_INTERVAL_SECONDS", "2")) * time.Second
+
 	pgxpoolConfig, err := pgxpool.ParseConfig(uri)
 	if err != nil {
 		return nil, err
@@ -93,16 +97,27 @@ func (s PostgresDbStore) Initialize() (func(), error) {
 		ReportCaller: false,
 	}
 	pgxpoolConfig.ConnConfig.Logger = logrusadapter.NewLogger(logrusLogger)
-	pgxPool, err = pgxpool.ConnectConfig(context.Background(), pgxpoolConfig)
-	if err != nil {
-		return nil, err
+
+	// Retry connection with backoff
+	for attempt := 1; attempt <= maxRetries; attempt++ {
+		pgxPool, err = pgxpool.ConnectConfig(context.Background(), pgxpoolConfig)
+		if err == nil {
+			break
+		}
+		if attempt == maxRetries {
+			return nil, fmt.Errorf("failed to connect to database after %d attempts: %w", maxRetries, err)
+		}
+		logging.Log.WithError(err).Warnf("Database connection attempt %d/%d failed, retrying in %v", attempt, maxRetries, retryInterval)
+		time.Sleep(retryInterval)
 	}
-	logger := getLogger()
+
+	gormLogger := getLogger()
 	nowFunc := func() time.Time {
 		return time.Now().UTC()
 	}
-	db, err = gorm.Open(postgres.Open(uri), &gorm.Config{Logger: logger, NowFunc: nowFunc})
+	db, err = gorm.Open(postgres.Open(uri), &gorm.Config{Logger: gormLogger, NowFunc: nowFunc})
 	if err != nil {
+		pgxPool.Close()
 		return nil, err
 	}
 	return func() {

@@ -1,6 +1,8 @@
 # Skaffold local development values
 app:
   enabled: true
+  image:
+    pullPolicy: Never  # Images loaded directly into kind
   prometheus:
     enabled: true
   resources:
@@ -13,6 +15,8 @@ app:
 
 web:
   enabled: false  # Can be enabled if needed
+  image:
+    pullPolicy: Never  # Images loaded directly into kind
   resources:
     limits:
       cpu: 250m
@@ -24,6 +28,8 @@ web:
 worker:
   enabled: true
   replicaCount: 1
+  image:
+    pullPolicy: Never  # Images loaded directly into kind
   resources:
     limits:
       cpu: 1000m
@@ -35,15 +41,11 @@ worker:
 postgres:
   uri: postgresql://devuser:devpass@reactorcide-postgresql:5432/reactorcide?sslmode=disable
 
+# Enable bundled PostgreSQL for local development
 postgresql:
   enabled: true
-  auth:
-    username: "devuser"
-    postgresPassword: "devpass"
-    password: "devpass"
-    database: "reactorcide"
   persistence:
-    enabled: false  # Disable for local development
+    enabled: false  # Disable persistence for local development
   resources:
     limits:
       cpu: 500m
@@ -54,16 +56,22 @@ postgresql:
 
 # Corndogs configuration for local development
 corndogs:
-  enabled: false  # Set to true when Corndogs is deployed
-  baseUrl: "corndogs:8080"
+  enabled: true  # Deploy Corndogs subchart
+  # Disable bitnami postgresql
+  postgresql:
+    enabled: false
+  # Enable our custom postgres:18 for Corndogs
+  customPostgresql:
+    enabled: true
+    persistence:
+      enabled: false
+
+# Default user for local development
+defaults:
+  userId: "00000000-0000-0000-0000-000000000001"
 
 # Use filesystem storage for local development
 objectStore:
   type: filesystem
   bucket: reactorcide-objects
   basePath: /tmp/reactorcide-objects
-
-migrations:
-  # set the job name to be a timestamp, so that `skaffold dev` doesn't run into
-  # an issue when attempting to update the job
-  setJobNameAsTimestamp: true

@@ -81,15 +81,9 @@ spec:
                   key: AWS_SECRET_ACCESS_KEY
             {{- end }}
           volumeMounts:
-            - name: docker-sock
-              mountPath: /var/run/docker.sock
             - name: work-dir
               mountPath: /tmp/reactorcide-jobs
       volumes:
-        - name: docker-sock
-          hostPath:
-            path: /var/run/docker.sock
-            type: Socket
         - name: work-dir
           emptyDir: {}
       {{- with .Values.nodeSelector }}

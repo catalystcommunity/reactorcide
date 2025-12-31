@@ -28,7 +28,7 @@ usage() {
     echo "  docker-build       Build Docker images"
     echo "  clean              Clean generated files"
     echo "  dev                Start full local development stack"
-    echo "  updatedb           Get the DB up to latest"
+    echo "  updatedb           Run migrations manually (normally runs on app startup)"
     echo "  check-deps         Check for required tools"
     echo "  test-e2e           Run end-to-end tests"
     echo "  test-e2e-quick     Run quick E2E tests"
@@ -111,8 +111,10 @@ setup(){
 }
 
 updatedb(){
+    # Note: Migrations now run automatically on app startup.
+    # This command is only needed for running migrations manually (e.g., local dev without docker).
     cd "${PROJECT_ROOT_DIR}/coordinator_api"
-    go run -- migrate
+    go run . migrate
     cd "${PROJECT_ROOT_DIR}"
 }
 

@@ -57,9 +57,9 @@ func New(config *Config) *Worker {
 		config.WorkerID = fmt.Sprintf("worker-%d", time.Now().Unix())
 	}
 
-	// Default container runtime to docker if not specified
+	// Default container runtime to auto-detect if not specified
 	if config.ContainerRuntime == "" {
-		config.ContainerRuntime = "docker"
+		config.ContainerRuntime = "auto"
 	}
 
 	// Set default log chunk interval if not specified
