@@ -73,8 +73,16 @@ command: |-
     # Reactorcide Configuration
     REACTORCIDE_DB_URI=postgresql://reactorcide:${DB_PASSWORD}@postgres:5432/reactorcide_db?sslmode=disable
     REACTORCIDE_JWT_SECRET=${JWT_SECRET}
+
+    # Object Storage Configuration
+    # WARNING: Job logs are stored here. The 'filesystem' type stores logs in a Docker volume.
+    # If you remove the reactorcide_data volume, all job logs will be lost.
+    # For production deployments, consider using S3/GCS object storage instead.
+    # Options: filesystem, s3, gcs
     REACTORCIDE_OBJECT_STORE_TYPE=filesystem
     REACTORCIDE_OBJECT_STORE_BASE_PATH=/data/reactorcide
+
+    # Worker Configuration
     REACTORCIDE_WORKER_CONCURRENCY=2
     REACTORCIDE_WORKER_POLL_INTERVAL=5
     REACTORCIDE_CONTAINER_RUNTIME=docker

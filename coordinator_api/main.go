@@ -20,6 +20,7 @@ func main() {
 			cmd.TokenCommand,
 			cmd.SecretsCommand,
 			cmd.RunLocalCommand,
+			cmd.SubmitCommand,
 		},
 	}
 	err := app.Run(os.Args)
