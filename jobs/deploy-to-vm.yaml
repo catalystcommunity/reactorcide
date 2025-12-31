@@ -49,15 +49,21 @@ command: |-
       "${REACTORCIDE_DEPLOY_USER}@${REACTORCIDE_DEPLOY_HOST}:${REMOTE_DIR}/"
 
     echo ""
-    echo "Step 3: Creating environment configuration on VM"
+    echo "Step 3: Checking environment configuration on VM"
     ssh "${REACTORCIDE_DEPLOY_USER}@${REACTORCIDE_DEPLOY_HOST}" bash -s <<'REMOTE_EOF'
     set -euo pipefail
     cd ~/reactorcide
 
-    DB_PASSWORD=$(openssl rand -hex 24)
-    JWT_SECRET=$(openssl rand -hex 32)
+    if [ -f .env ]; then
+      echo "Existing .env found - preserving configuration"
+      echo "Current config (passwords masked):"
+      grep -v PASSWORD .env | grep -v SECRET | grep -v URI || true
+    else
+      echo "No existing .env found - creating new configuration"
+      DB_PASSWORD=$(openssl rand -hex 24)
+      JWT_SECRET=$(openssl rand -hex 32)
 
-    cat > .env <<ENVFILE
+      cat > .env <<ENVFILE
     # Database Configuration (for postgres containers)
     POSTGRES_USER=reactorcide
     POSTGRES_PASSWORD=${DB_PASSWORD}
@@ -75,10 +81,11 @@ command: |-
     REACTORCIDE_LOG_LEVEL=info
     ENVFILE
 
-    # Remove leading whitespace from .env file
-    sed -i 's/^  //' .env
+      # Remove leading whitespace from .env file
+      sed -i 's/^    //' .env
 
-    echo "Environment configuration created"
+      echo "Environment configuration created"
+    fi
     REMOTE_EOF
 
     echo ""
@@ -127,7 +134,30 @@ command: |-
     REMOTE_EOF
 
     echo ""
-    echo "Step 6: Waiting for coordinator to be healthy (migrations run on startup)"
+    echo "Step 6: Waiting for postgres to be healthy"
+    for i in $(seq 1 30); do
+      if ssh "${REACTORCIDE_DEPLOY_USER}@${REACTORCIDE_DEPLOY_HOST}" "docker exec reactorcide-postgres pg_isready -U reactorcide" > /dev/null 2>&1; then
+        echo "Postgres is ready"
+        break
+      fi
+      echo "Waiting for postgres... ($i/30)"
+      sleep 2
+    done
+
+    echo ""
+    echo "Step 7: Running database migrations"
+    ssh "${REACTORCIDE_DEPLOY_USER}@${REACTORCIDE_DEPLOY_HOST}" "docker exec reactorcide-coordinator /reactorcide migrate"
+
+    echo ""
+    echo "Step 8: Restarting coordinator to pick up migrations"
+    ssh "${REACTORCIDE_DEPLOY_USER}@${REACTORCIDE_DEPLOY_HOST}" bash -s <<'REMOTE_EOF'
+    set -euo pipefail
+    cd ~/reactorcide
+    docker compose -f docker-compose.prod.yml restart coordinator-api
+    REMOTE_EOF
+
+    echo ""
+    echo "Step 9: Waiting for coordinator to be healthy"
     for i in $(seq 1 30); do
       if ssh "${REACTORCIDE_DEPLOY_USER}@${REACTORCIDE_DEPLOY_HOST}" "curl -sf http://localhost:6080/api/v1/health" > /dev/null 2>&1; then
         echo "Coordinator is healthy"
@@ -138,18 +168,18 @@ command: |-
     done
 
     echo ""
-    echo "Step 7: Verifying default user was created"
+    echo "Step 10: Verifying database and users"
     USER_COUNT=$(ssh "${REACTORCIDE_DEPLOY_USER}@${REACTORCIDE_DEPLOY_HOST}" \
       "docker exec reactorcide-postgres psql -U reactorcide -d reactorcide_db -t -c 'SELECT COUNT(*) FROM users;'" | tr -d ' ')
     if [ "$USER_COUNT" -gt 0 ]; then
-      echo "Default user created successfully (found $USER_COUNT user(s))"
+      echo "Users exist in database (found $USER_COUNT user(s))"
     else
       echo "ERROR: No users found in database"
       exit 1
     fi
 
     echo ""
-    echo "Step 8: Verifying deployment"
+    echo "Step 11: Final verification"
     ssh "${REACTORCIDE_DEPLOY_USER}@${REACTORCIDE_DEPLOY_HOST}" bash -s <<'REMOTE_EOF'
     set -euo pipefail
     cd ~/reactorcide
@@ -160,6 +190,11 @@ command: |-
       echo "API health check failed"
       exit 1
     fi
+
+    # Show running services
+    echo ""
+    echo "Running services:"
+    docker compose -f docker-compose.prod.yml ps --format "table {{.Name}}\t{{.Status}}"
     REMOTE_EOF
 
     echo ""
@@ -167,9 +202,7 @@ command: |-
     echo "Deployment completed successfully!"
     echo "========================================"
     echo ""
-    echo "Next steps:"
-    echo "  1. Access the API: http://${REACTORCIDE_DEPLOY_HOST}:6080/api/v1/health"
-    echo "  2. Create an API token: ssh ${REACTORCIDE_DEPLOY_HOST} docker exec reactorcide-coordinator /reactorcide token create --name admin"
+    echo "Access the API: http://${REACTORCIDE_DEPLOY_HOST}:6080/api/v1/health"
 environment:
     # Required - target configuration
     REACTORCIDE_DEPLOY_HOST: "${env:REACTORCIDE_DEPLOY_HOST}"

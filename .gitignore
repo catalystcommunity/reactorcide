@@ -180,3 +180,5 @@ test-secrets.env
 id_rsa*
 id_ed25519*
 .ssh/
+coordinator_api/reactorcide
+
