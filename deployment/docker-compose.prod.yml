@@ -128,4 +128,7 @@ networks:
 volumes:
   postgres_data:
   postgres_corndogs_data:
+  # Job logs are stored in this volume. If you remove this volume, all job logs will be lost.
+  # For production deployments, consider using S3/GCS object storage instead of filesystem.
+  # See REACTORCIDE_OBJECT_STORE_TYPE in .env to configure object storage type.
   reactorcide_data:

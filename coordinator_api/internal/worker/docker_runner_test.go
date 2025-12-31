@@ -285,11 +285,13 @@ func TestIsBackendImplemented(t *testing.T) {
 		backend  string
 		expected bool
 	}{
-		{"docker", true},       // fully implemented
-		{"containerd", false},  // stub only
-		{"kubernetes", false},  // stub only
+		{"docker", true},      // fully implemented
+		{"containerd", false}, // stub only
+		{"kubernetes", true},  // fully implemented
+		{"auto", true},        // fully implemented (auto-detection)
 		{"invalid", false},
-		{"DOCKER", true},       // case insensitive
+		{"DOCKER", true},      // case insensitive
+		{"KUBERNETES", true},  // case insensitive
 	}
 
 	for _, tt := range tests {
@@ -305,14 +307,15 @@ func TestIsBackendImplemented(t *testing.T) {
 // TestGetSupportedBackends tests getting the list of supported backends
 func TestGetSupportedBackends(t *testing.T) {
 	backends := GetSupportedBackends()
-	if len(backends) != 3 {
-		t.Errorf("expected 3 supported backends, got %d", len(backends))
+	if len(backends) != 4 {
+		t.Errorf("expected 4 supported backends, got %d", len(backends))
 	}
 
 	expectedBackends := map[RunnerBackend]bool{
-		BackendDocker:      true,
-		BackendContainerd:  true,
-		BackendKubernetes:  true,
+		BackendAuto:       true,
+		BackendDocker:     true,
+		BackendContainerd: true,
+		BackendKubernetes: true,
 	}
 
 	for _, backend := range backends {
@@ -323,6 +326,7 @@ func TestGetSupportedBackends(t *testing.T) {
 }
 
 // TestStubRunners_ReturnErrors tests that stub runners return appropriate errors
+// Note: Only containerd remains as a stub; kubernetes is now fully implemented
 func TestStubRunners_ReturnErrors(t *testing.T) {
 	ctx := context.Background()
 	config := &JobConfig{
@@ -339,10 +343,6 @@ func TestStubRunners_ReturnErrors(t *testing.T) {
 		{
 			name:   "containerd",
 			runner: &ContainerdRunner{},
-		},
-		{
-			name:   "kubernetes",
-			runner: &KubernetesRunner{},
 		},
 	}
 

@@ -136,10 +136,13 @@ corndogs:
     port: 5080
 
 # Object storage configuration
+# WARNING: Job logs are stored here. The default 'filesystem' type is for DEVELOPMENT ONLY.
+# Logs will be LOST when pods restart since there is no persistent volume for filesystem storage.
+# For production, you MUST configure 's3' or 'gcs' type with appropriate credentials below.
 objectStore:
-  type: filesystem  # Options: filesystem, s3, gcs, memory
+  type: filesystem  # Options: filesystem, s3, gcs, memory (filesystem is dev-only!)
   bucket: reactorcide-objects
-  basePath: /tmp/reactorcide-objects  # For filesystem type
+  basePath: /tmp/reactorcide-objects  # For filesystem type (ephemeral - dev only)
   prefix: reactorcide/  # For s3/gcs types
   s3:
     accessKeyId: ""

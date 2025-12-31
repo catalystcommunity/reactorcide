@@ -13,33 +13,10 @@ import (
 	"golang.org/x/term"
 )
 
-// getPassword gets the password from environment or prompts interactively.
+// getPassword gets the secrets password from REACTORCIDE_SECRETS_PASSWORD env var or prompts.
+// This is a convenience wrapper around promptForSecret for the secrets password specifically.
 func getPassword(prompt string) (string, error) {
-	// Check environment variable first
-	if pw := os.Getenv("REACTORCIDE_SECRETS_PASSWORD"); pw != "" {
-		return pw, nil
-	}
-
-	// Interactive prompt
-	fmt.Fprint(os.Stderr, prompt)
-
-	// Check if stdin is a terminal
-	if term.IsTerminal(int(os.Stdin.Fd())) {
-		pwBytes, err := term.ReadPassword(int(os.Stdin.Fd()))
-		fmt.Fprintln(os.Stderr) // newline after password
-		if err != nil {
-			return "", fmt.Errorf("failed to read password: %w", err)
-		}
-		return string(pwBytes), nil
-	}
-
-	// Non-terminal: read from stdin
-	reader := bufio.NewReader(os.Stdin)
-	pw, err := reader.ReadString('\n')
-	if err != nil {
-		return "", fmt.Errorf("failed to read password: %w", err)
-	}
-	return strings.TrimSpace(pw), nil
+	return promptForSecret("REACTORCIDE_SECRETS_PASSWORD", prompt)
 }
 
 // getPasswordConfirm gets and confirms a password.

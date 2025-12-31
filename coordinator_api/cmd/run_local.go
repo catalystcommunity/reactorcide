@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/secrets"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/worker"
@@ -68,14 +67,8 @@ func runLocalAction(ctx *cli.Context) error {
 	}
 
 	// Check for secret overrides
-	if len(secretOverrides) > 0 {
-		for _, override := range secretOverrides {
-			fmt.Fprintf(os.Stderr, "WARNING: %s overrides secret reference in %s with plaintext value\n",
-				override.OverlayFile, override.Key)
-		}
-		if !allowSecretOverrides {
-			return fmt.Errorf("secret references were overridden with plaintext values; use --allow-secret-overrides to proceed")
-		}
+	if err := checkSecretOverrides(secretOverrides, allowSecretOverrides); err != nil {
+		return err
 	}
 
 	fmt.Printf("Job: %s\n", spec.Name)
@@ -135,51 +128,6 @@ func runLocalAction(ctx *cli.Context) error {
 	return executeLocalJob(context.Background(), runner, jobConfig, masker)
 }
 
-// resolveJobSecrets resolves ${secret:path:key} references in environment variables
-func resolveJobSecrets(env map[string]string) (map[string]string, []string, error) {
-	// Check if any env vars contain secret references
-	hasSecrets := false
-	for _, v := range env {
-		if worker.HasSecretRefs(v) {
-			hasSecrets = true
-			break
-		}
-	}
-
-	if !hasSecrets {
-		return env, nil, nil
-	}
-
-	// Initialize secrets storage
-	storage := secrets.NewStorage()
-	if !storage.IsInitialized() {
-		return nil, nil, fmt.Errorf("secrets storage not initialized, run 'reactorcide secrets init' first")
-	}
-
-	password, err := getPassword("Secrets password: ")
-	if err != nil {
-		return nil, nil, err
-	}
-
-	// Create getter function for secrets
-	getSecret := func(path, key string) (string, error) {
-		return storage.Get(path, key, password)
-	}
-
-	return worker.ResolveSecretsInEnv(env, getSecret)
-}
-
-// isSensitiveKey checks if an environment variable key suggests sensitive data
-func isSensitiveKey(key string) bool {
-	keyUpper := strings.ToUpper(key)
-	sensitivePatterns := []string{"TOKEN", "SECRET", "PASSWORD", "KEY", "AUTH", "CREDENTIAL", "API_KEY"}
-	for _, pattern := range sensitivePatterns {
-		if strings.Contains(keyUpper, pattern) {
-			return true
-		}
-	}
-	return false
-}
 
 func performLocalDryRun(spec *worker.JobSpec, config *worker.JobConfig, masker *secrets.Masker, jobDir string) error {
 	fmt.Println("\n--- DRY RUN MODE ---")
