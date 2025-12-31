@@ -2,13 +2,20 @@ apiVersion: skaffold/v4beta11
 kind: Config
 build:
   artifacts:
-    - image: coordinator_api
+    - image: coordinator-api
       context: .
-    - image: web_client
-      context: web_client/
+      docker:
+        dockerfile: Dockerfile.coordinator.dev
+    # TODO: Uncomment when web_client is ready
+    # - image: web-client
+    #   context: web_client/
+    #   docker:
+    #     dockerfile: Dockerfile
   local:
     useDockerCLI: false
     useBuildkit: true
+    # Push to kind cluster
+    push: false
 deploy:
   helm:
     hooks:
@@ -17,7 +24,7 @@ deploy:
             command:
               - sh
               - -c
-              - helm repo add bitnami https://charts.bitnami.com/bitnami && helm repo add catalystcommunity https://raw.githubusercontent.com/catalystcommunity/charts/main
+              - helm repo add catalystcommunity https://raw.githubusercontent.com/catalystcommunity/charts/main
     releases:
       - name: reactorcide
         chartPath: ./helm_chart
@@ -26,15 +33,17 @@ deploy:
         skipBuildDependencies: true
         setValueTemplates:
           app.image.repository: "{{.IMAGE_REPO_coordinator_api}}"
-          app.image.tag: "{{.IMAGE_TAG_coordinator_api}}@{{.IMAGE_DIGEST_coordinator_api}}"
+          app.image.tag: "{{.IMAGE_TAG_coordinator_api}}"
           worker.image.repository: "{{.IMAGE_REPO_coordinator_api}}"
-          worker.image.tag: "{{.IMAGE_TAG_coordinator_api}}@{{.IMAGE_DIGEST_coordinator_api}}"
-          web.image.repository: "{{.IMAGE_REPO_web_client}}"
-          web.image.tag: "{{.IMAGE_TAG_web_client}}@{{.IMAGE_DIGEST_web_client}}"
+          worker.image.tag: "{{.IMAGE_TAG_coordinator_api}}"
+          # TODO: Uncomment when web_client is ready
+          # web.image.repository: "{{.IMAGE_REPO_web_client}}"
+          # web.image.tag: "{{.IMAGE_TAG_web_client}}"
         valuesFiles:
           - values-skaffold-local.yaml
         recreatePods: true
         wait: true
+        upgradeOnChange: true
 portForward:
   # pf for postgresdb
   - resourceType: service
@@ -54,12 +63,24 @@ portForward:
     namespace: skaffoldreactorcide
     port: 9000
     localPort: 9000
-  # pf for web app
+  # pf for web app (disabled - web not deployed in local dev)
+  # - resourceType: service
+  #   resourceName: reactorcideweb
+  #   namespace: skaffoldreactorcide
+  #   port: 4080
+  #   localPort: 4080
+  # pf for corndogs
   - resourceType: service
-    resourceName: reactorcideweb
+    resourceName: reactorcide-corndogs
     namespace: skaffoldreactorcide
-    port: 4080
-    localPort: 4080
+    port: 5080
+    localPort: 5080
+  # pf for corndogs postgresql
+  - resourceType: service
+    resourceName: reactorcide-corndogs-postgresql
+    namespace: skaffoldreactorcide
+    port: 5432
+    localPort: 5433
 profiles:
   - name: no-app
     patches:

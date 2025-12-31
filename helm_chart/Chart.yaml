@@ -20,7 +20,7 @@ version: 0.1.0
 appVersion: 0.1.0
 
 dependencies:
-  - name: postgresql
-    repository: https://charts.bitnami.com/bitnami
-    version: 16.4.5
-    condition: postgres.enabled
+  - name: corndogs
+    version: "0.1.10"
+    repository: "https://raw.githubusercontent.com/catalystcommunity/charts/main"
+    condition: corndogs.enabled

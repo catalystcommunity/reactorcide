@@ -127,17 +127,7 @@ command: |-
     REMOTE_EOF
 
     echo ""
-    echo "Step 6: Running database migrations"
-    ssh "${REACTORCIDE_DEPLOY_USER}@${REACTORCIDE_DEPLOY_HOST}" \
-      "cd ~/reactorcide && docker compose -f docker-compose.prod.yml exec -T coordinator-api /reactorcide migrate"
-
-    echo ""
-    echo "Step 7: Restarting coordinator to initialize default user"
-    ssh "${REACTORCIDE_DEPLOY_USER}@${REACTORCIDE_DEPLOY_HOST}" \
-      "cd ~/reactorcide && docker compose -f docker-compose.prod.yml restart coordinator-api"
-
-    echo ""
-    echo "Step 8: Waiting for coordinator to be healthy"
+    echo "Step 6: Waiting for coordinator to be healthy (migrations run on startup)"
     for i in $(seq 1 30); do
       if ssh "${REACTORCIDE_DEPLOY_USER}@${REACTORCIDE_DEPLOY_HOST}" "curl -sf http://localhost:6080/api/v1/health" > /dev/null 2>&1; then
         echo "Coordinator is healthy"
@@ -148,7 +138,7 @@ command: |-
     done
 
     echo ""
-    echo "Step 9: Verifying default user was created"
+    echo "Step 7: Verifying default user was created"
     USER_COUNT=$(ssh "${REACTORCIDE_DEPLOY_USER}@${REACTORCIDE_DEPLOY_HOST}" \
       "docker exec reactorcide-postgres psql -U reactorcide -d reactorcide_db -t -c 'SELECT COUNT(*) FROM users;'" | tr -d ' ')
     if [ "$USER_COUNT" -gt 0 ]; then
@@ -159,7 +149,7 @@ command: |-
     fi
 
     echo ""
-    echo "Step 10: Verifying deployment"
+    echo "Step 8: Verifying deployment"
     ssh "${REACTORCIDE_DEPLOY_USER}@${REACTORCIDE_DEPLOY_HOST}" bash -s <<'REMOTE_EOF'
     set -euo pipefail
     cd ~/reactorcide

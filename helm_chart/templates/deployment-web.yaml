@@ -1,3 +1,4 @@
+{{- if .Values.web.enabled }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -6,7 +7,7 @@ metadata:
     {{- include "web.labels" . | nindent 4 }}
 spec:
   {{- if not .Values.web.autoscaling.enabled }}
-  replicas: {{ .Values.replicaCount }}
+  replicas: {{ .Values.web.replicaCount }}
   {{- end }}
   selector:
     matchLabels:
@@ -75,3 +76,4 @@ spec:
       tolerations:
         {{- toYaml . | nindent 8 }}
       {{- end }}
+{{- end }}

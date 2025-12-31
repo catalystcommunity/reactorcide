@@ -1,11 +1,10 @@
 app:
   enabled: true # enabled by default
-  migrateJobName: "reactorcide-migrate"
   image:
-    repository: quay.io/catalystcommunity/reactorcide-coordinator-api
+    repository: containers.catalystsquad.com/public/reactorcide/coordinator-api
     pullPolicy: IfNotPresent
     # Overrides the image tag whose default is the chart appVersion
-    tag: ""
+    tag: "dev"
   prometheus:
     enabled: false
     path: /metrics
@@ -33,10 +32,10 @@ app:
 web:
   enabled: false # disabled by default
   image:
-    repository: quay.io/catalystcommunity/reactorcide-web
+    repository: containers.catalystsquad.com/public/reactorcide/web
     pullPolicy: IfNotPresent
     # Overrides the image tag whose default is the chart appVersion
-    tag: ""
+    tag: "dev"
   service:
     type: ClusterIP
     port: 4080
@@ -59,9 +58,9 @@ web:
 worker:
   enabled: true
   image:
-    repository: quay.io/catalystcommunity/reactorcide-coordinator-api
+    repository: containers.catalystsquad.com/public/reactorcide/coordinator-api
     pullPolicy: IfNotPresent
-    tag: ""
+    tag: "dev"
   replicaCount: 1
   queue: "reactorcide-jobs"
   pollInterval: 5  # seconds
@@ -88,25 +87,53 @@ worker:
       cpu: 500m
       memory: 512Mi
 
-migrations:
-  jobName: "migrations"
-  restartPolicy: "OnFailure"
-  resources: {}
-  # Useful if you have to run this a lot, like in a skaffold dev env
-  setJobNameAsTimestamp: false
-  ttlSecondsAfterFinished: 14400 # defaults to a day
-
 grpc:
   maxMessageSizeBytes: "1000000000"
 
 postgres:
   uri: postgresql://devuser:devpass@reactorcide-postgresql:5432/reactorcide?sslmode=disable
 
-# Corndogs queue configuration
+# Corndogs task queue configuration
+# Disabled by default - users should provide their own Corndogs in production
 corndogs:
-  enabled: true
-  baseUrl: "corndogs:8080"  # Assumes Corndogs service in same namespace
-  apiKey: ""  # Leave empty if not required
+  enabled: false  # Set to true to deploy Corndogs subchart
+  # External Corndogs URL - used when subchart is disabled but you have external Corndogs
+  baseUrl: ""  # e.g., "http://corndogs.example.com:5080"
+  # Disable bitnami postgresql in corndogs subchart
+  postgresql:
+    enabled: false
+  # Our custom postgres:18 deployment for Corndogs (separate from bitnami)
+  customPostgresql:
+    enabled: false  # Disabled by default
+    image:
+      repository: postgres
+      tag: "18"
+      pullPolicy: IfNotPresent
+    auth:
+      username: "corndogs"
+      password: "corndogs"
+      database: "corndogs"
+    persistence:
+      enabled: false
+      size: 10Gi
+      storageClass: ""
+    resources:
+      limits:
+        cpu: 500m
+        memory: 512Mi
+      requests:
+        cpu: 100m
+        memory: 128Mi
+  # Database connection for Corndogs (points to our postgres deployment)
+  # Uses 'database' key to match corndogs chart expectations
+  database:
+    dbname: "corndogs"
+    host: "reactorcide-corndogs-postgresql"
+    user: "corndogs"
+    password: "corndogs"
+  # Service configuration
+  service:
+    port: 5080
 
 # Object storage configuration
 objectStore:
@@ -169,17 +196,23 @@ tolerations: []
 
 affinity: {}
 
-# Dependency charts
+# Bundled PostgreSQL - disabled by default
+# Users should provide their own PostgreSQL in production
+# Enable only for local development or testing
 postgresql:
-  enabled: true
+  enabled: false  # Disabled by default - use your own PostgreSQL
+  image:
+    repository: postgres
+    tag: "18"
+    pullPolicy: IfNotPresent
   auth:
     username: "devuser"
-    postgresPassword: "devpass"
     password: "devpass"
     database: "reactorcide"
   persistence:
-    enabled: true
+    enabled: false  # Disabled by default for dev environments
     size: 10Gi
+    storageClass: ""  # Use default storage class
   resources:
     limits:
       cpu: 1000m

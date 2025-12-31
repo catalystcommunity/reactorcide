@@ -1,0 +1,119 @@
+{{- if and .Values.corndogs.enabled .Values.corndogs.customPostgresql.enabled }}
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ .Release.Name }}-corndogs-postgresql
+  labels:
+    app.kubernetes.io/name: {{ .Release.Name }}-corndogs-postgresql
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/component: corndogs-database
+spec:
+  serviceName: {{ .Release.Name }}-corndogs-postgresql
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ .Release.Name }}-corndogs-postgresql
+      app.kubernetes.io/instance: {{ .Release.Name }}
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: {{ .Release.Name }}-corndogs-postgresql
+        app.kubernetes.io/instance: {{ .Release.Name }}
+    spec:
+      containers:
+        - name: postgresql
+          image: "{{ .Values.corndogs.customPostgresql.image.repository }}:{{ .Values.corndogs.customPostgresql.image.tag }}"
+          imagePullPolicy: {{ .Values.corndogs.customPostgresql.image.pullPolicy }}
+          ports:
+            - name: postgresql
+              containerPort: 5432
+              protocol: TCP
+          env:
+            - name: POSTGRES_USER
+              value: {{ .Values.corndogs.customPostgresql.auth.username | quote }}
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Release.Name }}-corndogs-postgresql
+                  key: password
+            - name: POSTGRES_DB
+              value: {{ .Values.corndogs.customPostgresql.auth.database | quote }}
+            - name: PGDATA
+              value: /var/lib/postgresql/data/pgdata
+          {{- if .Values.corndogs.customPostgresql.persistence.enabled }}
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+          {{- end }}
+          livenessProbe:
+            exec:
+              command:
+                - pg_isready
+                - -U
+                - {{ .Values.corndogs.customPostgresql.auth.username | quote }}
+                - -d
+                - {{ .Values.corndogs.customPostgresql.auth.database | quote }}
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 6
+          readinessProbe:
+            exec:
+              command:
+                - pg_isready
+                - -U
+                - {{ .Values.corndogs.customPostgresql.auth.username | quote }}
+                - -d
+                - {{ .Values.corndogs.customPostgresql.auth.database | quote }}
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 6
+          resources:
+            {{- toYaml .Values.corndogs.customPostgresql.resources | nindent 12 }}
+  {{- if .Values.corndogs.customPostgresql.persistence.enabled }}
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes:
+          - ReadWriteOnce
+        {{- if .Values.corndogs.customPostgresql.persistence.storageClass }}
+        storageClassName: {{ .Values.corndogs.customPostgresql.persistence.storageClass | quote }}
+        {{- end }}
+        resources:
+          requests:
+            storage: {{ .Values.corndogs.customPostgresql.persistence.size }}
+  {{- end }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Release.Name }}-corndogs-postgresql
+  labels:
+    app.kubernetes.io/name: {{ .Release.Name }}-corndogs-postgresql
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/component: corndogs-database
+spec:
+  type: ClusterIP
+  ports:
+    - port: 5432
+      targetPort: postgresql
+      protocol: TCP
+      name: postgresql
+  selector:
+    app.kubernetes.io/name: {{ .Release.Name }}-corndogs-postgresql
+    app.kubernetes.io/instance: {{ .Release.Name }}
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: {{ .Release.Name }}-corndogs-postgresql
+  labels:
+    app.kubernetes.io/name: {{ .Release.Name }}-corndogs-postgresql
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/component: corndogs-database
+type: Opaque
+data:
+  password: {{ .Values.corndogs.customPostgresql.auth.password | b64enc | quote }}
+{{- end }}

@@ -105,13 +105,24 @@ Create the name of the secret. Default to the service name, allow overriding.
 {{- end }}
 
 {{/*
-Create migrate job name. For hosted environments, default to the app version.
-This prevents problems with the job's image being immutable.
+PostgreSQL helpers
 */}}
-{{- define "app.migrationJobName" -}}
-{{- if .Values.migrations.setJobNameAsTimestamp }}
-{{- printf "%s-migrate-%s" .Values.migrations.jobName (now | date "20060102150405") }}
-{{- else }}
-{{- printf "%s-migrate-%s" .Values.migrations.jobName .Chart.AppVersion }}
+{{- define "postgresql.name" -}}
+{{- printf "%s-postgresql" .Release.Name }}
 {{- end }}
+
+{{- define "postgresql.labels" -}}
+helm.sh/chart: {{ printf "%s-%s" .Chart.Name .Chart.Version | replace "+" "_" | trunc 63 | trimSuffix "-" }}
+app.kubernetes.io/name: {{ include "postgresql.name" . }}
+app.kubernetes.io/instance: {{ .Release.Name }}
+{{- if .Chart.AppVersion }}
+app.kubernetes.io/version: {{ .Chart.AppVersion | quote }}
+{{- end }}
+app.kubernetes.io/managed-by: {{ .Release.Service }}
+app.kubernetes.io/component: database
+{{- end }}
+
+{{- define "postgresql.selectorLabels" -}}
+app.kubernetes.io/name: {{ include "postgresql.name" . }}
+app.kubernetes.io/instance: {{ .Release.Name }}
 {{- end }}

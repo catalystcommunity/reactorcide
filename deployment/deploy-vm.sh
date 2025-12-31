@@ -143,22 +143,15 @@ sleep 10
 docker compose -f docker-compose.prod.yml ps
 EOF
 
-log "Step 7: Running database migrations"
-ssh "${REACTORCIDE_DEPLOY_USER}@${REACTORCIDE_DEPLOY_HOST}" bash <<EOF
-set -euo pipefail
-cd ${REMOTE_DIR}
-
-echo "Running migrations..."
-docker compose -f docker-compose.prod.yml exec -T coordinator-api /reactorcide migrate
-
-echo "Restarting coordinator to initialize default user..."
-docker compose -f docker-compose.prod.yml restart coordinator-api
-
-echo "Waiting for coordinator to be healthy..."
-sleep 10
-
-echo "Migrations and restart completed"
-EOF
+log "Step 7: Waiting for coordinator to be healthy (migrations run on startup)"
+for i in $(seq 1 30); do
+    if ssh "${REACTORCIDE_DEPLOY_USER}@${REACTORCIDE_DEPLOY_HOST}" "curl -sf http://localhost:6080/api/v1/health" > /dev/null 2>&1; then
+        info "Coordinator is healthy"
+        break
+    fi
+    echo "Waiting... ($i/30)"
+    sleep 2
+done
 
 log "Step 8: Verifying deployment"
 ssh "${REACTORCIDE_DEPLOY_USER}@${REACTORCIDE_DEPLOY_HOST}" bash <<EOF

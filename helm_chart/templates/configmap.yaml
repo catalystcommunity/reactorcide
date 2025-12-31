@@ -16,16 +16,20 @@ data:
   PROMETHEUS_PORT: {{ .Values.app.prometheus.port | quote }}
   PROMETHEUS_LATENCY_HISTOGRAMS_ENABLED: {{ .Values.app.prometheus.latencyHistogramsEnabled | quote }}
 
-  # Corndogs configuration
+  # Corndogs configuration (gRPC - no http:// prefix)
   {{- if .Values.corndogs.enabled }}
-  CORNDOGS_BASE_URL: {{ .Values.corndogs.baseUrl | quote }}
+  # Corndogs subchart is deployed - use internal service
+  REACTORCIDE_CORNDOGS_BASE_URL: "{{ .Release.Name }}-corndogs:{{ .Values.corndogs.service.port }}"
+  {{- else if .Values.corndogs.baseUrl }}
+  # External Corndogs provided
+  REACTORCIDE_CORNDOGS_BASE_URL: {{ .Values.corndogs.baseUrl | quote }}
   {{- end }}
 
   # Default configuration
   DEFAULT_QUEUE_NAME: {{ .Values.defaults.queueName | quote }}
   DEFAULT_TIMEOUT: {{ .Values.defaults.timeout | quote }}
   {{- if .Values.defaults.userId }}
-  DEFAULT_USER_ID: {{ .Values.defaults.userId | quote }}
+  REACTORCIDE_DEFAULT_USER_ID: {{ .Values.defaults.userId | quote }}
   {{- end }}
 
   # Object store configuration
