@@ -1,5 +1,5 @@
 name: build-all-images
-image: golang:1.24-alpine
+image: golang:1.25-alpine
 capabilities:
   - docker
 command: |-
