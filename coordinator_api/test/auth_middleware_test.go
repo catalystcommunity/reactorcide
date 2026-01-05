@@ -547,6 +547,146 @@ func TestTokenHashValidation(t *testing.T) {
 	})
 }
 
+// TestRequireRoleMiddleware tests the role-based authorization middleware
+func TestRequireRoleMiddleware(t *testing.T) {
+	t.Run("User with required role", func(t *testing.T) {
+		RunTransactionalTest(t, func(ctx context.Context, tx *gorm.DB) {
+			// Create admin user
+			dataUtils := &DataUtils{db: tx}
+			user, err := dataUtils.CreateUser(DataSetup{
+				"Username": "adminuser",
+				"Email":    "admin@example.com",
+				"Roles":    []string{"admin", "user"},
+			})
+			require.NoError(t, err)
+
+			// Create API token
+			rawToken := make([]byte, 32)
+			_, err = rand.Read(rawToken)
+			require.NoError(t, err)
+			tokenString := string(rawToken)
+			tokenHash := checkauth.HashAPIToken(tokenString)
+
+			apiToken := &models.APIToken{
+				UserID:    user.UserID,
+				TokenHash: tokenHash,
+				Name:      "Admin Token",
+				IsActive:  true,
+			}
+			err = tx.Create(apiToken).Error
+			require.NoError(t, err)
+
+			// Create handler chain with role middleware
+			finalHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.WriteHeader(http.StatusOK)
+				w.Write([]byte(`{"status":"admin_access"}`))
+			})
+
+			authMiddleware := middleware.APITokenMiddleware(store.AppStore)
+			roleMiddleware := middleware.RequireRoleMiddleware("admin")
+			handler := authMiddleware(roleMiddleware(finalHandler))
+
+			// Create request
+			req := httptest.NewRequest("GET", "/admin/test", nil)
+			req.Header.Set("Authorization", "Bearer "+tokenString)
+			req = req.WithContext(ctx)
+
+			// Execute request
+			w := httptest.NewRecorder()
+			handler.ServeHTTP(w, req)
+
+			// Should succeed
+			assert.Equal(t, http.StatusOK, w.Code)
+
+			var response map[string]string
+			err = json.Unmarshal(w.Body.Bytes(), &response)
+			require.NoError(t, err)
+			assert.Equal(t, "admin_access", response["status"])
+		})
+	})
+
+	t.Run("User without required role", func(t *testing.T) {
+		RunTransactionalTest(t, func(ctx context.Context, tx *gorm.DB) {
+			// Create regular user (without admin role)
+			dataUtils := &DataUtils{db: tx}
+			user, err := dataUtils.CreateUser(DataSetup{
+				"Username": "regularuser",
+				"Email":    "regular@example.com",
+				"Roles":    []string{"user"},
+			})
+			require.NoError(t, err)
+
+			// Create API token
+			rawToken := make([]byte, 32)
+			_, err = rand.Read(rawToken)
+			require.NoError(t, err)
+			tokenString := string(rawToken)
+			tokenHash := checkauth.HashAPIToken(tokenString)
+
+			apiToken := &models.APIToken{
+				UserID:    user.UserID,
+				TokenHash: tokenHash,
+				Name:      "User Token",
+				IsActive:  true,
+			}
+			err = tx.Create(apiToken).Error
+			require.NoError(t, err)
+
+			// Create handler chain with role middleware
+			finalHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				t.Fatal("Handler should not be called when role check fails")
+			})
+
+			authMiddleware := middleware.APITokenMiddleware(store.AppStore)
+			roleMiddleware := middleware.RequireRoleMiddleware("admin")
+			handler := authMiddleware(roleMiddleware(finalHandler))
+
+			// Create request
+			req := httptest.NewRequest("GET", "/admin/test", nil)
+			req.Header.Set("Authorization", "Bearer "+tokenString)
+			req = req.WithContext(ctx)
+
+			// Execute request
+			w := httptest.NewRecorder()
+			handler.ServeHTTP(w, req)
+
+			// Should get forbidden
+			assert.Equal(t, http.StatusForbidden, w.Code)
+
+			var response AuthErrorResponse
+			err = json.Unmarshal(w.Body.Bytes(), &response)
+			require.NoError(t, err)
+			assert.Equal(t, "forbidden", response.Error)
+			assert.Contains(t, response.Message, "Requires role: admin")
+		})
+	})
+
+	t.Run("Unauthenticated user", func(t *testing.T) {
+		// Test that role middleware properly handles missing user in context
+		finalHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			t.Fatal("Handler should not be called when not authenticated")
+		})
+
+		roleMiddleware := middleware.RequireRoleMiddleware("admin")
+		handler := roleMiddleware(finalHandler)
+
+		// Create request without auth (no user in context)
+		req := httptest.NewRequest("GET", "/admin/test", nil)
+
+		// Execute request
+		w := httptest.NewRecorder()
+		handler.ServeHTTP(w, req)
+
+		// Should get unauthorized
+		assert.Equal(t, http.StatusUnauthorized, w.Code)
+
+		var response AuthErrorResponse
+		err := json.Unmarshal(w.Body.Bytes(), &response)
+		require.NoError(t, err)
+		assert.Equal(t, "unauthorized", response.Error)
+	})
+}
+
 // TestMiddlewareChaining tests that the auth middleware works properly in a chain
 func TestMiddlewareChaining(t *testing.T) {
 	t.Run("Auth Middleware with Transaction Middleware", func(t *testing.T) {

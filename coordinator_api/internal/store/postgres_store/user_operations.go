@@ -10,6 +10,7 @@ import (
 
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/checkauth"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/config"
+	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/secrets"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store/models"
 	"github.com/google/uuid"
@@ -80,6 +81,18 @@ func (ps PostgresDbStore) EnsureDefaultUser() error {
 
 	if err := ps.getDB(ctx).Create(defaultUser).Error; err != nil {
 		return fmt.Errorf("failed to create default user: %w", err)
+	}
+
+	// Try to auto-initialize secrets using LoadOrCreateMasterKeys
+	// This will load from env, DB, or auto-generate keys if needed
+	if keyMgr, err := secrets.LoadOrCreateMasterKeys(ps.getDB(ctx)); err == nil {
+		if err := keyMgr.InitializeOrgSecretsWithMark(ps.getDB(ctx), userUUID.String()); err != nil {
+			log.Printf("Warning: failed to auto-initialize secrets for default user: %v", err)
+		} else {
+			log.Printf("Initialized secrets for default user %s", userUUID)
+		}
+	} else {
+		log.Printf("Warning: could not load or create master keys for default user: %v", err)
 	}
 
 	// Create a default API token

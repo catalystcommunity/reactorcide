@@ -66,3 +66,36 @@ func VerificationMiddleware(next http.Handler) http.Handler {
 		next.ServeHTTP(w, r)
 	})
 }
+
+// RequireRoleMiddleware creates middleware that checks if the authenticated user has a required role
+func RequireRoleMiddleware(role string) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			user := checkauth.GetUserFromContext(r.Context())
+			if user == nil {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusUnauthorized)
+				w.Write([]byte(`{"error":"unauthorized","message":"User not authenticated"}`))
+				return
+			}
+
+			// Check if user has the required role
+			hasRole := false
+			for _, userRole := range user.Roles {
+				if userRole == role {
+					hasRole = true
+					break
+				}
+			}
+
+			if !hasRole {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusForbidden)
+				w.Write([]byte(`{"error":"forbidden","message":"Insufficient permissions. Requires role: ` + role + `"}`))
+				return
+			}
+
+			next.ServeHTTP(w, r)
+		})
+	}
+}

@@ -4,6 +4,7 @@ import (
 	"context"
 	"time"
 
+	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store/ctxkey"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store/models"
 	"gorm.io/gorm"
 )
@@ -18,6 +19,16 @@ func GetDB() *gorm.DB {
 		return store.GetDB()
 	}
 	return nil
+}
+
+// GetDBFromContext returns the transaction from context if present, otherwise the global DB
+func GetDBFromContext(ctx context.Context) *gorm.DB {
+	// Check if there's a transaction in the context
+	if tx, ok := ctx.Value(ctxkey.TxKey()).(*gorm.DB); ok && tx != nil {
+		return tx
+	}
+	// Otherwise return the global DB
+	return GetDB()
 }
 
 type Store interface {

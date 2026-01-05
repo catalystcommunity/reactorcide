@@ -10,6 +10,7 @@ import (
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/corndogs"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/metrics"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/middleware"
+	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/secrets"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store"
 
 	"github.com/rs/cors"
@@ -20,6 +21,8 @@ var (
 	appMux *http.ServeMux
 	// Corndogs client for the singleton
 	singletoncorndogsClient corndogs.ClientInterface
+	// Master key manager for secrets (singleton)
+	singletonKeyManager *secrets.MasterKeyManager
 )
 
 // GetAppMux returns the application's HTTP ServeMux for both API and tests
@@ -46,6 +49,21 @@ func createAppMux() *http.ServeMux {
 	jobHandler := NewJobHandler(store.AppStore, singletoncorndogsClient)
 	tokenHandler := NewTokenHandler(store.AppStore)
 	webhookHandler := NewWebhookHandler(store.AppStore)
+
+	// Create secrets handler - keys are loaded from env, DB, or auto-generated
+	var secretsHandler *SecretsHandler
+	if singletonKeyManager == nil {
+		if db := store.GetDB(); db != nil {
+			// LoadOrCreateMasterKeys tries: env var → database → auto-generate
+			if keyMgr, err := secrets.LoadOrCreateMasterKeys(db); err == nil {
+				singletonKeyManager = keyMgr
+			}
+			// If err != nil, secrets will be unavailable but app continues
+		}
+	}
+	if singletonKeyManager != nil {
+		secretsHandler = NewSecretsHandler(store.AppStore, singletonKeyManager)
+	}
 
 	// Apply middleware to all handlers
 	transactionMiddleware := middleware.TransactionMiddleware
@@ -174,6 +192,152 @@ func createAppMux() *http.ServeMux {
 		}
 		transactionMiddleware(http.HandlerFunc(webhookHandler.HandleGitLabWebhook)).ServeHTTP(w, r)
 	})
+
+	// Secrets routes (require auth and master keys to be configured)
+	if secretsHandler != nil {
+		// GET /api/v1/secrets?path=... - List keys in path
+		// GET /api/v1/secrets/value?path=...&key=... - Get secret value
+		// PUT /api/v1/secrets/value?path=...&key=... - Set secret value
+		// DELETE /api/v1/secrets/value?path=...&key=... - Delete secret
+		mux.HandleFunc("/api/v1/secrets", func(w http.ResponseWriter, r *http.Request) {
+			handler := transactionMiddleware(authMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.Method == http.MethodGet {
+					secretsHandler.ListKeys(w, r)
+				} else {
+					http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+				}
+			})))
+			handler.ServeHTTP(w, r)
+		})
+
+		mux.HandleFunc("/api/v1/secrets/value", func(w http.ResponseWriter, r *http.Request) {
+			handler := transactionMiddleware(authMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				switch r.Method {
+				case http.MethodGet:
+					secretsHandler.GetSecret(w, r)
+				case http.MethodPut:
+					secretsHandler.SetSecret(w, r)
+				case http.MethodDelete:
+					secretsHandler.DeleteSecret(w, r)
+				default:
+					http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+				}
+			})))
+			handler.ServeHTTP(w, r)
+		})
+
+		// GET /api/v1/secrets/paths - List all paths
+		mux.HandleFunc("/api/v1/secrets/paths", func(w http.ResponseWriter, r *http.Request) {
+			handler := transactionMiddleware(authMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.Method == http.MethodGet {
+					secretsHandler.ListPaths(w, r)
+				} else {
+					http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+				}
+			})))
+			handler.ServeHTTP(w, r)
+		})
+
+		// POST /api/v1/secrets/init - Initialize secrets
+		mux.HandleFunc("/api/v1/secrets/init", func(w http.ResponseWriter, r *http.Request) {
+			handler := transactionMiddleware(authMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.Method == http.MethodPost {
+					secretsHandler.InitSecrets(w, r)
+				} else {
+					http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+				}
+			})))
+			handler.ServeHTTP(w, r)
+		})
+
+		// POST /api/v1/secrets/batch/get - Batch get secrets
+		mux.HandleFunc("/api/v1/secrets/batch/get", func(w http.ResponseWriter, r *http.Request) {
+			handler := transactionMiddleware(authMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.Method == http.MethodPost {
+					secretsHandler.BatchGet(w, r)
+				} else {
+					http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+				}
+			})))
+			handler.ServeHTTP(w, r)
+		})
+
+		// POST /api/v1/secrets/batch/set - Batch set secrets
+		mux.HandleFunc("/api/v1/secrets/batch/set", func(w http.ResponseWriter, r *http.Request) {
+			handler := transactionMiddleware(authMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.Method == http.MethodPost {
+					secretsHandler.BatchSet(w, r)
+				} else {
+					http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+				}
+			})))
+			handler.ServeHTTP(w, r)
+		})
+
+		// Admin endpoints for master key management (require admin role)
+		adminMiddleware := middleware.RequireRoleMiddleware("admin")
+
+		// POST /api/v1/admin/secrets/master-keys - Create master key
+		// GET /api/v1/admin/secrets/master-keys - List master keys
+		mux.HandleFunc("/api/v1/admin/secrets/master-keys", func(w http.ResponseWriter, r *http.Request) {
+			handler := transactionMiddleware(authMiddleware(adminMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				switch r.Method {
+				case http.MethodPost:
+					secretsHandler.CreateMasterKey(w, r)
+				case http.MethodGet:
+					secretsHandler.ListMasterKeys(w, r)
+				default:
+					http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+				}
+			}))))
+			handler.ServeHTTP(w, r)
+		})
+
+		// POST /api/v1/admin/secrets/master-keys/{name}/rotate - Rotate to key
+		// DELETE /api/v1/admin/secrets/master-keys/{name} - Decommission key
+		mux.HandleFunc("/api/v1/admin/secrets/master-keys/", func(w http.ResponseWriter, r *http.Request) {
+			path := strings.TrimPrefix(r.URL.Path, "/api/v1/admin/secrets/master-keys/")
+			if path == "" {
+				http.Error(w, "Invalid path", http.StatusBadRequest)
+				return
+			}
+
+			handler := transactionMiddleware(authMiddleware(adminMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				// Handle {name}/rotate
+				if strings.HasSuffix(path, "/rotate") {
+					keyName := strings.TrimSuffix(path, "/rotate")
+					r = r.WithContext(setIDContext(r.Context(), "key_name", keyName))
+					if r.Method == http.MethodPost {
+						secretsHandler.RotateMasterKey(w, r)
+						return
+					}
+					http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+					return
+				}
+
+				// Handle {name} for DELETE (decommission)
+				r = r.WithContext(setIDContext(r.Context(), "key_name", path))
+				if r.Method == http.MethodDelete {
+					secretsHandler.DecommissionMasterKey(w, r)
+					return
+				}
+				http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+			}))))
+			handler.ServeHTTP(w, r)
+		})
+
+		// POST /api/v1/admin/secrets/sync-primary - Sync primary from env
+		mux.HandleFunc("/api/v1/admin/secrets/sync-primary", func(w http.ResponseWriter, r *http.Request) {
+			handler := transactionMiddleware(authMiddleware(adminMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.Method == http.MethodPost {
+					secretsHandler.SyncPrimary(w, r)
+				} else {
+					http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+				}
+			}))))
+			handler.ServeHTTP(w, r)
+		})
+	}
 
 	return mux
 }

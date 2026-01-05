@@ -11,6 +11,7 @@ import (
 	"github.com/catalystcommunity/app-utils-go/env"
 	"github.com/catalystcommunity/app-utils-go/logging"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/config"
+	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store/ctxkey"
 	"github.com/jackc/pgx/v4/log/logrusadapter"
 	"github.com/jackc/pgx/v4/pgxpool"
 	"github.com/sirupsen/logrus"
@@ -60,18 +61,15 @@ func (ps PostgresDbStore) getDB(ctx context.Context) *gorm.DB {
 	return GetDBFromContext(ctx)
 }
 
-// Transaction context key type
-type txContextKey struct{}
-
 // GetTxContextKey returns the transaction context key for use in middleware
 func GetTxContextKey() interface{} {
-	return txContextKey{}
+	return ctxkey.TxKey()
 }
 
 // GetDBFromContext returns either the transaction from the context or the global DB
 func GetDBFromContext(ctx context.Context) *gorm.DB {
 	// Check if there's a transaction in the context
-	if tx, ok := ctx.Value(txContextKey{}).(*gorm.DB); ok && tx != nil {
+	if tx, ok := ctx.Value(ctxkey.TxKey()).(*gorm.DB); ok && tx != nil {
 		return tx
 	}
 

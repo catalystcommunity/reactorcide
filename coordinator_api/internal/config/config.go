@@ -47,4 +47,10 @@ var (
 	// Default CI code repository for jobs that don't specify one
 	DefaultCiSourceURL = env.GetEnvOrDefault("REACTORCIDE_DEFAULT_CI_SOURCE_URL", "")
 	DefaultCiSourceRef = env.GetEnvOrDefault("REACTORCIDE_DEFAULT_CI_SOURCE_REF", "main")
+
+	// Secrets configuration
+	// SecretsStorageType determines where secrets are stored: "database" (default), "local", or external providers (future)
+	SecretsStorageType = env.GetEnvOrDefault("REACTORCIDE_SECRETS_STORAGE_TYPE", "database")
+	// SecretsLocalPath is the path for local secrets storage (only used when SecretsStorageType="local")
+	SecretsLocalPath = env.GetEnvOrDefault("REACTORCIDE_SECRETS_LOCAL_PATH", "")
 )

@@ -54,6 +54,15 @@ if [ -z "${REACTORCIDE_JWT_SECRET:-}" ]; then
     info "Generated JWT secret"
 fi
 
+# Generate master key for secrets management if not provided
+# Format: name:base64key (e.g., mk-2026-01:base64encodedkey)
+if [ -z "${REACTORCIDE_MASTER_KEYS:-}" ]; then
+    MASTER_KEY_NAME="mk-$(date +%Y-%m)"
+    MASTER_KEY_VALUE=$(openssl rand -base64 32)
+    REACTORCIDE_MASTER_KEYS="${MASTER_KEY_NAME}:${MASTER_KEY_VALUE}"
+    info "Generated master key: ${MASTER_KEY_NAME}"
+fi
+
 # Deployment configuration
 REMOTE_DIR="${REACTORCIDE_REMOTE_DIR:-~/reactorcide}"
 LOCAL_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -95,6 +104,11 @@ REACTORCIDE_WORKER_CONCURRENCY=${REACTORCIDE_WORKER_CONCURRENCY:-2}
 REACTORCIDE_WORKER_POLL_INTERVAL=${REACTORCIDE_WORKER_POLL_INTERVAL:-5}
 REACTORCIDE_CONTAINER_RUNTIME=docker
 REACTORCIDE_LOG_LEVEL=${REACTORCIDE_LOG_LEVEL:-info}
+
+# Secrets Management (database storage enabled by default)
+# Master keys format: name1:base64key1,name2:base64key2 (first is primary)
+REACTORCIDE_SECRETS_STORAGE_TYPE=database
+REACTORCIDE_MASTER_KEYS=${REACTORCIDE_MASTER_KEYS}
 ENVFILE
 
 echo "Environment configuration created"
