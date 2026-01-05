@@ -491,3 +491,170 @@ func TestToJobConfig(t *testing.T) {
 		t.Errorf("expected 2 capabilities, got %d", len(config.Capabilities))
 	}
 }
+
+// TestResolveSecretRefs tests secret reference resolution
+func TestResolveSecretRefs(t *testing.T) {
+	// Mock secret getter
+	mockSecrets := map[string]string{
+		"vault/prod:api_key":     "secret-api-key-123",
+		"vault/prod:db_password": "secret-db-pass-456",
+		"myapp/staging:token":    "staging-token-789",
+	}
+
+	getSecret := func(path, key string) (string, error) {
+		fullKey := path + ":" + key
+		if val, ok := mockSecrets[fullKey]; ok {
+			return val, nil
+		}
+		return "", nil
+	}
+
+	tests := []struct {
+		name        string
+		input       string
+		expected    string
+		shouldError bool
+	}{
+		{
+			name:     "single secret ref",
+			input:    "${secret:vault/prod:api_key}",
+			expected: "secret-api-key-123",
+		},
+		{
+			name:     "secret with prefix and suffix",
+			input:    "prefix-${secret:vault/prod:api_key}-suffix",
+			expected: "prefix-secret-api-key-123-suffix",
+		},
+		{
+			name:     "multiple secrets",
+			input:    "${secret:vault/prod:api_key}:${secret:vault/prod:db_password}",
+			expected: "secret-api-key-123:secret-db-pass-456",
+		},
+		{
+			name:     "no secrets",
+			input:    "plain text value",
+			expected: "plain text value",
+		},
+		{
+			name:        "secret not found",
+			input:       "${secret:vault/prod:nonexistent}",
+			shouldError: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result, err := ResolveSecretRefs(tt.input, getSecret)
+
+			if tt.shouldError {
+				if err == nil {
+					t.Errorf("expected error, got none")
+				}
+				return
+			}
+
+			if err != nil {
+				t.Errorf("unexpected error: %v", err)
+				return
+			}
+
+			if result != tt.expected {
+				t.Errorf("ResolveSecretRefs(%q) = %q, want %q", tt.input, result, tt.expected)
+			}
+		})
+	}
+}
+
+// TestResolveSecretsInEnv tests resolving secrets in an environment map
+func TestResolveSecretsInEnv(t *testing.T) {
+	// Mock secret getter
+	mockSecrets := map[string]string{
+		"vault/prod:api_key":     "secret-api-key",
+		"vault/prod:db_password": "secret-db-pass",
+	}
+
+	getSecret := func(path, key string) (string, error) {
+		fullKey := path + ":" + key
+		if val, ok := mockSecrets[fullKey]; ok {
+			return val, nil
+		}
+		return "", nil
+	}
+
+	t.Run("resolves secrets and returns values for masking", func(t *testing.T) {
+		env := map[string]string{
+			"API_KEY":      "${secret:vault/prod:api_key}",
+			"DB_PASSWORD":  "${secret:vault/prod:db_password}",
+			"PLAIN_VALUE":  "no-secret-here",
+			"MIXED_VALUE":  "prefix-${secret:vault/prod:api_key}-suffix",
+		}
+
+		resolved, secretValues, err := ResolveSecretsInEnv(env, getSecret)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		// Check resolved values
+		if resolved["API_KEY"] != "secret-api-key" {
+			t.Errorf("API_KEY = %q, want %q", resolved["API_KEY"], "secret-api-key")
+		}
+		if resolved["DB_PASSWORD"] != "secret-db-pass" {
+			t.Errorf("DB_PASSWORD = %q, want %q", resolved["DB_PASSWORD"], "secret-db-pass")
+		}
+		if resolved["PLAIN_VALUE"] != "no-secret-here" {
+			t.Errorf("PLAIN_VALUE = %q, want %q", resolved["PLAIN_VALUE"], "no-secret-here")
+		}
+		if resolved["MIXED_VALUE"] != "prefix-secret-api-key-suffix" {
+			t.Errorf("MIXED_VALUE = %q, want %q", resolved["MIXED_VALUE"], "prefix-secret-api-key-suffix")
+		}
+
+		// Check secret values returned for masking
+		// Should have 3 secret values (API_KEY, DB_PASSWORD, MIXED_VALUE all contain secrets)
+		if len(secretValues) != 3 {
+			t.Errorf("expected 3 secret values for masking, got %d", len(secretValues))
+		}
+
+		// Check that secret values are included
+		secretValuesMap := make(map[string]bool)
+		for _, v := range secretValues {
+			secretValuesMap[v] = true
+		}
+		if !secretValuesMap["secret-api-key"] {
+			t.Error("secret-api-key should be in secret values for masking")
+		}
+		if !secretValuesMap["secret-db-pass"] {
+			t.Error("secret-db-pass should be in secret values for masking")
+		}
+	})
+
+	t.Run("error on missing secret", func(t *testing.T) {
+		env := map[string]string{
+			"MISSING_SECRET": "${secret:vault/prod:nonexistent}",
+		}
+
+		_, _, err := ResolveSecretsInEnv(env, getSecret)
+		if err == nil {
+			t.Error("expected error for missing secret, got none")
+		}
+	})
+
+	t.Run("no secrets in env", func(t *testing.T) {
+		env := map[string]string{
+			"VAR1": "value1",
+			"VAR2": "value2",
+		}
+
+		resolved, secretValues, err := ResolveSecretsInEnv(env, getSecret)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		if len(secretValues) != 0 {
+			t.Errorf("expected no secret values, got %d", len(secretValues))
+		}
+
+		if resolved["VAR1"] != "value1" || resolved["VAR2"] != "value2" {
+			t.Error("plain values should be preserved")
+		}
+	})
+}

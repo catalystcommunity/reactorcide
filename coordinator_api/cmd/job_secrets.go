@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"bufio"
+	"context"
 	"fmt"
 	"os"
 	"strings"
@@ -27,7 +28,7 @@ func resolveJobSecrets(env map[string]string) (map[string]string, []string, erro
 		return env, nil, nil
 	}
 
-	// Initialize secrets storage
+	// Check if secrets storage is initialized
 	storage := secrets.NewStorage()
 	if !storage.IsInitialized() {
 		return nil, nil, fmt.Errorf("secrets storage not initialized, run 'reactorcide secrets init' first")
@@ -38,9 +39,16 @@ func resolveJobSecrets(env map[string]string) (map[string]string, []string, erro
 		return nil, nil, err
 	}
 
-	// Create getter function for secrets
+	// Create local provider using the Provider interface
+	provider, err := secrets.NewLocalProvider("", password)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to initialize secrets provider: %w", err)
+	}
+
+	// Create getter function for secrets using Provider interface
+	ctx := context.Background()
 	getSecret := func(path, key string) (string, error) {
-		return storage.Get(path, key, password)
+		return provider.Get(ctx, path, key)
 	}
 
 	return worker.ResolveSecretsInEnv(env, getSecret)

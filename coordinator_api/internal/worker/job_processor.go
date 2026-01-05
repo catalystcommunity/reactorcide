@@ -44,6 +44,16 @@ type JobProcessorConfig struct {
 
 	// Optional: Callbacks for log updates and heartbeats
 	OnLogUpdate func(jobID, objectKey string, bytesWritten int64) error
+
+	// Secrets configuration
+	// SecretsKeyManager is the master key manager for decrypting org keys
+	SecretsKeyManager *secrets.MasterKeyManager
+	// SecretsStorageType determines where secrets are stored: "database" (default), "local", or "none"
+	SecretsStorageType string
+	// SecretsLocalPath is the path for local secrets storage (only used when SecretsStorageType="local")
+	SecretsLocalPath string
+	// SecretsLocalPassword is the password for local secrets storage
+	SecretsLocalPassword string
 }
 
 // JobExecutionContext holds context for job execution
@@ -289,6 +299,95 @@ func (jp *JobProcessor) buildJobEnv(job *models.Job) map[string]string {
 	return env
 }
 
+// getSecretsProvider returns a secrets provider for the given job's user.
+// Returns nil if secrets are disabled or not configured.
+func (jp *JobProcessor) getSecretsProvider(ctx context.Context, job *models.Job) (secrets.Provider, error) {
+	storageType := jp.config.SecretsStorageType
+	if storageType == "" {
+		storageType = "database" // Default to database
+	}
+
+	switch storageType {
+	case "none", "disabled":
+		// Secrets disabled
+		return nil, nil
+
+	case "local":
+		// Use local provider
+		if jp.config.SecretsLocalPassword == "" {
+			return nil, fmt.Errorf("local secrets password not configured")
+		}
+		return secrets.NewLocalProvider(jp.config.SecretsLocalPath, jp.config.SecretsLocalPassword)
+
+	case "database":
+		// Use database provider with per-user encryption
+		if jp.config.SecretsKeyManager == nil {
+			return nil, fmt.Errorf("secrets key manager not configured")
+		}
+
+		// Get the org encryption key for this job's user
+		db := store.GetDB()
+		if db == nil {
+			return nil, fmt.Errorf("database not available")
+		}
+
+		orgKey, err := jp.config.SecretsKeyManager.GetOrgEncryptionKey(db, job.UserID)
+		if err != nil {
+			// If not initialized, secrets aren't available for this user
+			if err == secrets.ErrNotInitialized {
+				return nil, nil
+			}
+			return nil, fmt.Errorf("failed to get org encryption key: %w", err)
+		}
+
+		return secrets.NewDatabaseProvider(db, job.UserID, orgKey)
+
+	default:
+		return nil, fmt.Errorf("unknown secrets storage type: %s", storageType)
+	}
+}
+
+// resolveJobSecrets resolves all ${secret:path:key} references in the job environment.
+// Returns the resolved environment and the list of secret values for masking.
+func (jp *JobProcessor) resolveJobSecrets(ctx context.Context, job *models.Job, env map[string]string) (map[string]string, []string, error) {
+	// Check if any environment variables contain secret references
+	hasSecrets := false
+	for _, v := range env {
+		if HasSecretRefs(v) {
+			hasSecrets = true
+			break
+		}
+	}
+
+	if !hasSecrets {
+		// No secrets to resolve
+		return env, nil, nil
+	}
+
+	// Get secrets provider
+	provider, err := jp.getSecretsProvider(ctx, job)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to get secrets provider: %w", err)
+	}
+
+	if provider == nil {
+		// Secrets are disabled or not available
+		return nil, nil, fmt.Errorf("job contains secret references but secrets are not configured")
+	}
+
+	// Create getter function for ResolveSecretsInEnv
+	getSecret := func(path, key string) (string, error) {
+		return provider.Get(ctx, path, key)
+	}
+
+	// Resolve secrets in environment
+	resolvedEnv, secretValues, err := ResolveSecretsInEnv(env, getSecret)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	return resolvedEnv, secretValues, nil
+}
 
 // buildJobConfig creates a JobConfig from a models.Job
 // The job command is executed directly with the entrypoint cleared.
@@ -366,6 +465,24 @@ func (jp *JobProcessor) executeWithRunnerlib(ctx context.Context, job *models.Jo
 
 	// Build job configuration for container runner
 	jobConfig := jp.buildJobConfig(job, workspaceDir)
+
+	// Resolve secret references in environment variables
+	resolvedEnv, secretValues, err := jp.resolveJobSecrets(ctx, job, jobConfig.Env)
+	if err != nil {
+		logger.WithError(err).Error("Failed to resolve secrets in job environment")
+		return &JobResult{
+			ExitCode: 1,
+			Error:    fmt.Sprintf("Failed to resolve secrets: %v", err),
+		}
+	}
+	if resolvedEnv != nil {
+		jobConfig.Env = resolvedEnv
+	}
+
+	// Register resolved secret values for masking
+	for _, secretValue := range secretValues {
+		masker.RegisterSecret(secretValue)
+	}
 
 	// Mask command for logging
 	maskedCmd := masker.MaskCommandArgs(jobConfig.Command)

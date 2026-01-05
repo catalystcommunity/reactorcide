@@ -161,6 +161,21 @@ defaults:
 storage:
   type: postgres
 
+# Secrets management configuration
+# Database storage is the default and recommended for multi-tenant deployments.
+# Local storage is only for single-user CLI deployments.
+secrets:
+  # Storage type: "database" (default), "local", or "none" to disable
+  storageType: database
+  # Master keys for encryption. Format: "name1:base64key1,name2:base64key2"
+  # First key in the list is the primary key used for new encryptions.
+  # Generate a key with: openssl rand -base64 32
+  # IMPORTANT: In production, set this via external secret management, not in values.yaml
+  masterKeys: ""  # e.g., "mk-2026-01:K7xZ9pQrStUvWxYz1234567890ABCDEF"
+  # Reference an existing Kubernetes secret containing REACTORCIDE_MASTER_KEYS
+  existingSecret: ""  # e.g., "reactorcide-master-keys"
+  existingSecretKey: "master-keys"  # Key within the existing secret
+
 imagePullSecrets: []
 nameOverride: ""
 fullnameOverride: ""

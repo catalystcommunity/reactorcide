@@ -1,26 +1,24 @@
 package test
 
 import (
+	"context"
 	"flag"
 	"fmt"
-	"net"
 	"os"
 	"testing"
 	"time"
 
 	"github.com/catalystcommunity/reactorcide/coordinator_api/cmd"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/config"
+	"github.com/testcontainers/testcontainers-go"
+	"github.com/testcontainers/testcontainers-go/modules/postgres"
+	"github.com/testcontainers/testcontainers-go/wait"
 )
 
-// checkDatabaseConnectivity tests if the database is reachable
-func checkDatabaseConnectivity(host string, port string) bool {
-	conn, err := net.DialTimeout("tcp", net.JoinHostPort(host, port), 2*time.Second)
-	if err != nil {
-		return false
-	}
-	conn.Close()
-	return true
-}
+var (
+	// Container holds the postgres container for cleanup
+	postgresContainer *postgres.PostgresContainer
+)
 
 // TestMain for all tests in the test package
 func TestMain(m *testing.M) {
@@ -33,40 +31,62 @@ func TestMain(m *testing.M) {
 		os.Exit(0)
 	}
 
-	// Check if database is reachable before attempting connection
-	if !checkDatabaseConnectivity("localhost", "5432") {
-		fmt.Println("Skipping database integration tests: PostgreSQL not available at localhost:5432")
-		fmt.Println("To run these tests, start PostgreSQL with a 'testpg' database")
-		os.Exit(0)
+	// Start postgres container using testcontainers-go
+	ctx := context.Background()
+	var err error
+
+	fmt.Println("Starting PostgreSQL container for tests...")
+	postgresContainer, err = postgres.Run(ctx,
+		"postgres:17",
+		postgres.WithDatabase("testpg"),
+		postgres.WithUsername("devuser"),
+		postgres.WithPassword("devpass"),
+		testcontainers.WithWaitStrategy(
+			wait.ForLog("database system is ready to accept connections").
+				WithOccurrence(2).
+				WithStartupTimeout(60*time.Second)),
+	)
+	if err != nil {
+		fmt.Printf("Failed to start postgres container: %v\n", err)
+		os.Exit(1)
 	}
 
-	// Configure test database URI for the running container
-	testDbUri := "postgresql://devuser:devpass@localhost:5432/testpg?sslmode=disable"
-	os.Setenv("TEST_DB_URI", testDbUri)
+	// Get the container's connection string
+	connStr, err := postgresContainer.ConnectionString(ctx, "sslmode=disable")
+	if err != nil {
+		fmt.Printf("Failed to get connection string: %v\n", err)
+		terminateContainer(ctx)
+		os.Exit(1)
+	}
+
+	fmt.Printf("PostgreSQL container started: %s\n", connStr)
+
+	// Configure test database URI
+	os.Setenv("TEST_DB_URI", connStr)
 
 	// Also set the main DB_URI for migrations
-	config.DbUri = testDbUri
-	os.Setenv("DB_URI", testDbUri)
+	config.DbUri = connStr
+	os.Setenv("DB_URI", connStr)
 
 	// Configure test environment to never commit transactions
 	os.Setenv("COMMIT_ON_SUCCESS", "false")
 	// Reload config to pick up the environment variable
 	config.CommitOnSuccess = false
 
-	// Simply run migrations before tests
-	// This is safe because goose tracks applied migrations and won't rerun them
-	err := cmd.RunMigrations()
+	// Run migrations
+	err = cmd.RunMigrations()
 	if err != nil {
-		fmt.Printf("Skipping database integration tests: failed to run migrations: %v\n", err)
-		fmt.Println("Ensure the 'testpg' database exists and is accessible")
-		os.Exit(0)
+		fmt.Printf("Failed to run migrations: %v\n", err)
+		terminateContainer(ctx)
+		os.Exit(1)
 	}
 
 	// Initialize the test database connections
 	initTestDB()
 	if initErr != nil {
-		fmt.Printf("Skipping database integration tests: failed to initialize: %v\n", initErr)
-		os.Exit(0)
+		fmt.Printf("Failed to initialize test database: %v\n", initErr)
+		terminateContainer(ctx)
+		os.Exit(1)
 	}
 
 	// Run the tests
@@ -77,6 +97,19 @@ func TestMain(m *testing.M) {
 		cleanupFunc()
 	}
 
+	// Terminate the container
+	terminateContainer(ctx)
+
 	// Exit with the test status code
 	os.Exit(code)
+}
+
+// terminateContainer cleans up the postgres container
+func terminateContainer(ctx context.Context) {
+	if postgresContainer != nil {
+		fmt.Println("Terminating PostgreSQL container...")
+		if err := postgresContainer.Terminate(ctx); err != nil {
+			fmt.Printf("Failed to terminate postgres container: %v\n", err)
+		}
+	}
 }
