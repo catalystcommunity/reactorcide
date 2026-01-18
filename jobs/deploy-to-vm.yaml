@@ -43,13 +43,26 @@ command: |-
     ssh "${REACTORCIDE_DEPLOY_USER}@${REACTORCIDE_DEPLOY_HOST}" "mkdir -p ${REMOTE_DIR}"
 
     echo ""
-    echo "Step 2: Copying deployment files"
-    rsync -avz --progress \
-      /job/deployment/ \
-      "${REACTORCIDE_DEPLOY_USER}@${REACTORCIDE_DEPLOY_HOST}:${REMOTE_DIR}/"
+    echo "Step 2: Detecting Docker access"
+    ssh "${REACTORCIDE_DEPLOY_USER}@${REACTORCIDE_DEPLOY_HOST}" bash -s <<'REMOTE_EOF'
+    if docker ps >/dev/null 2>&1; then
+      echo "Docker accessible without sudo"
+      echo 'DOCKER_CMD="docker"' > ~/reactorcide/.docker-cmd
+    elif sudo docker ps >/dev/null 2>&1; then
+      echo "Docker requires sudo"
+      echo 'DOCKER_CMD="sudo docker"' > ~/reactorcide/.docker-cmd
+    else
+      echo "ERROR: Cannot access Docker (tried both docker and sudo docker)"
+      exit 1
+    fi
+    REMOTE_EOF
 
     echo ""
-    echo "Step 3: Checking environment configuration on VM"
+    echo "Step 3: Copying deployment files"
+    tar -C /job/deployment -czf - docker-compose.prod.yml nginx.conf | ssh "${REACTORCIDE_DEPLOY_USER}@${REACTORCIDE_DEPLOY_HOST}" "tar -C ${REMOTE_DIR} -xzf -"
+
+    echo ""
+    echo "Step 4: Checking environment configuration on VM"
     ssh "${REACTORCIDE_DEPLOY_USER}@${REACTORCIDE_DEPLOY_HOST}" bash -s <<'REMOTE_EOF'
     set -euo pipefail
     cd ~/reactorcide
@@ -97,54 +110,83 @@ command: |-
     REMOTE_EOF
 
     echo ""
-    echo "Step 4: Pulling Docker images on VM"
-    ssh "${REACTORCIDE_DEPLOY_USER}@${REACTORCIDE_DEPLOY_HOST}" bash -s <<'REMOTE_EOF'
+    echo "Step 5: Updating image configuration"
+    ssh "${REACTORCIDE_DEPLOY_USER}@${REACTORCIDE_DEPLOY_HOST}" bash -s <<REMOTE_EOF
     set -euo pipefail
     cd ~/reactorcide
 
+    # Update image configuration in .env (add or replace)
+    update_env_var() {
+      local key="\$1"
+      local value="\$2"
+      if [ -n "\$value" ]; then
+        if grep -q "^\${key}=" .env 2>/dev/null; then
+          sed -i "s|^\${key}=.*|\${key}=\${value}|" .env
+        else
+          echo "\${key}=\${value}" >> .env
+        fi
+        echo "  \${key}=\${value}"
+      fi
+    }
+
+    echo "Configuring container images:"
+    update_env_var "REACTORCIDE_COORDINATOR_IMAGE" "${REACTORCIDE_COORDINATOR_IMAGE:-}"
+    update_env_var "REACTORCIDE_WORKER_IMAGE" "${REACTORCIDE_WORKER_IMAGE:-}"
+    update_env_var "REACTORCIDE_RUNNER_IMAGE" "${REACTORCIDE_RUNNER_IMAGE:-}"
+    REMOTE_EOF
+
+    echo ""
+    echo "Step 6: Pulling Docker images on VM"
+    ssh "${REACTORCIDE_DEPLOY_USER}@${REACTORCIDE_DEPLOY_HOST}" bash -s <<'REMOTE_EOF'
+    set -euo pipefail
+    cd ~/reactorcide
+    source .docker-cmd
+    source .env
+
     # Pull all Reactorcide images from registry
     echo "Pulling coordinator image..."
-    docker compose -f docker-compose.prod.yml pull coordinator-api
+    $DOCKER_CMD compose -f docker-compose.prod.yml pull coordinator-api
 
     echo "Pulling worker image..."
-    docker compose -f docker-compose.prod.yml pull worker
+    $DOCKER_CMD compose -f docker-compose.prod.yml pull worker
 
     # Pull runner image (used by worker to spawn job containers)
-    RUNNER_IMAGE="containers.catalystsquad.com/public/reactorcide/runnerbase:dev"
+    RUNNER_IMAGE="${REACTORCIDE_RUNNER_IMAGE:-containers.catalystsquad.com/public/reactorcide/runnerbase:dev}"
     echo "Pulling runner image: ${RUNNER_IMAGE}..."
-    docker pull "${RUNNER_IMAGE}"
+    $DOCKER_CMD pull "${RUNNER_IMAGE}"
 
     # Tag as local name for worker to use
-    docker tag "${RUNNER_IMAGE}" reactorcide/runner:latest
+    $DOCKER_CMD tag "${RUNNER_IMAGE}" reactorcide/runner:latest
 
     echo "Images ready"
     REMOTE_EOF
 
     echo ""
-    echo "Step 5: Starting services"
+    echo "Step 7: Starting services"
     ssh "${REACTORCIDE_DEPLOY_USER}@${REACTORCIDE_DEPLOY_HOST}" bash -s <<'REMOTE_EOF'
     set -euo pipefail
     cd ~/reactorcide
+    source .docker-cmd
 
     # Stop existing services
     echo "Stopping existing services..."
-    docker compose -f docker-compose.prod.yml down || true
+    $DOCKER_CMD compose -f docker-compose.prod.yml down || true
 
     # Start services
     echo "Starting services..."
-    docker compose -f docker-compose.prod.yml up -d
+    $DOCKER_CMD compose -f docker-compose.prod.yml up -d
 
     # Wait for startup
     sleep 10
 
     # Show status
-    docker compose -f docker-compose.prod.yml ps
+    $DOCKER_CMD compose -f docker-compose.prod.yml ps
     REMOTE_EOF
 
     echo ""
-    echo "Step 6: Waiting for postgres to be healthy"
+    echo "Step 8: Waiting for postgres to be healthy"
     for i in $(seq 1 30); do
-      if ssh "${REACTORCIDE_DEPLOY_USER}@${REACTORCIDE_DEPLOY_HOST}" "docker exec reactorcide-postgres pg_isready -U reactorcide" > /dev/null 2>&1; then
+      if ssh "${REACTORCIDE_DEPLOY_USER}@${REACTORCIDE_DEPLOY_HOST}" "source ~/reactorcide/.docker-cmd && \$DOCKER_CMD exec reactorcide-postgres pg_isready -U reactorcide" > /dev/null 2>&1; then
         echo "Postgres is ready"
         break
       fi
@@ -153,19 +195,20 @@ command: |-
     done
 
     echo ""
-    echo "Step 7: Running database migrations"
-    ssh "${REACTORCIDE_DEPLOY_USER}@${REACTORCIDE_DEPLOY_HOST}" "docker exec reactorcide-coordinator /reactorcide migrate"
+    echo "Step 9: Running database migrations"
+    ssh "${REACTORCIDE_DEPLOY_USER}@${REACTORCIDE_DEPLOY_HOST}" "source ~/reactorcide/.docker-cmd && \$DOCKER_CMD exec reactorcide-coordinator /reactorcide migrate"
 
     echo ""
-    echo "Step 8: Restarting coordinator to pick up migrations"
+    echo "Step 10: Restarting coordinator to pick up migrations"
     ssh "${REACTORCIDE_DEPLOY_USER}@${REACTORCIDE_DEPLOY_HOST}" bash -s <<'REMOTE_EOF'
     set -euo pipefail
     cd ~/reactorcide
-    docker compose -f docker-compose.prod.yml restart coordinator-api
+    source .docker-cmd
+    $DOCKER_CMD compose -f docker-compose.prod.yml restart coordinator-api
     REMOTE_EOF
 
     echo ""
-    echo "Step 9: Waiting for coordinator to be healthy"
+    echo "Step 11: Waiting for coordinator to be healthy"
     for i in $(seq 1 30); do
       if ssh "${REACTORCIDE_DEPLOY_USER}@${REACTORCIDE_DEPLOY_HOST}" "curl -sf http://localhost:6080/api/v1/health" > /dev/null 2>&1; then
         echo "Coordinator is healthy"
@@ -176,9 +219,9 @@ command: |-
     done
 
     echo ""
-    echo "Step 10: Verifying database and users"
+    echo "Step 12: Verifying database and users"
     USER_COUNT=$(ssh "${REACTORCIDE_DEPLOY_USER}@${REACTORCIDE_DEPLOY_HOST}" \
-      "docker exec reactorcide-postgres psql -U reactorcide -d reactorcide_db -t -c 'SELECT COUNT(*) FROM users;'" | tr -d ' ')
+      "source ~/reactorcide/.docker-cmd && \$DOCKER_CMD exec reactorcide-postgres psql -U reactorcide -d reactorcide_db -t -c 'SELECT COUNT(*) FROM users;'" | tr -d ' ')
     if [ "$USER_COUNT" -gt 0 ]; then
       echo "Users exist in database (found $USER_COUNT user(s))"
     else
@@ -187,10 +230,11 @@ command: |-
     fi
 
     echo ""
-    echo "Step 11: Final verification"
+    echo "Step 13: Final verification"
     ssh "${REACTORCIDE_DEPLOY_USER}@${REACTORCIDE_DEPLOY_HOST}" bash -s <<'REMOTE_EOF'
     set -euo pipefail
     cd ~/reactorcide
+    source .docker-cmd
 
     if curl -sf http://localhost:6080/api/v1/health > /dev/null; then
       echo "Coordinator API is healthy"
@@ -202,7 +246,7 @@ command: |-
     # Show running services
     echo ""
     echo "Running services:"
-    docker compose -f docker-compose.prod.yml ps --format "table {{.Name}}\t{{.Status}}"
+    $DOCKER_CMD compose -f docker-compose.prod.yml ps
     REMOTE_EOF
 
     echo ""
@@ -228,5 +272,9 @@ environment:
     REACTORCIDE_WORKER_CONCURRENCY: "${env:REACTORCIDE_WORKER_CONCURRENCY}"
     REACTORCIDE_WORKER_POLL_INTERVAL: "${env:REACTORCIDE_WORKER_POLL_INTERVAL}"
     REACTORCIDE_LOG_LEVEL: "${env:REACTORCIDE_LOG_LEVEL}"
-    REACTORCIDE_RUNNER_IMAGE: "${env:REACTORCIDE_RUNNER_IMAGE}"
     REACTORCIDE_REMOTE_DIR: "${env:REACTORCIDE_REMOTE_DIR}"
+
+    # Container image overrides (for internal registries)
+    REACTORCIDE_COORDINATOR_IMAGE: "${env:REACTORCIDE_COORDINATOR_IMAGE}"
+    REACTORCIDE_WORKER_IMAGE: "${env:REACTORCIDE_WORKER_IMAGE}"
+    REACTORCIDE_RUNNER_IMAGE: "${env:REACTORCIDE_RUNNER_IMAGE}"
