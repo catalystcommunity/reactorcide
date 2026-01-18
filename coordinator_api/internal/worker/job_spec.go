@@ -326,28 +326,51 @@ func ResolveEnvInMap(env map[string]string) map[string]string {
 	return resolved
 }
 
+// SecretResolutionResult holds the results of resolving secrets in environment variables
+type SecretResolutionResult struct {
+	// Resolved contains all environment variables with secrets resolved
+	Resolved map[string]string
+	// SecretValues contains the actual secret values for masking
+	SecretValues []string
+	// SecretEnvNames contains the names of env vars that contained secret references
+	SecretEnvNames []string
+}
+
 // ResolveSecretsInEnv resolves all secret references in environment variables
-// Returns a new map with resolved values and a list of resolved secret values for masking
+// Returns a new map with resolved values, a list of resolved secret values for masking,
+// and a list of env var names that contained secrets.
 // Note: ${env:VAR} references should be resolved first using ResolveEnvInMap
 func ResolveSecretsInEnv(env map[string]string, getSecret func(path, key string) (string, error)) (map[string]string, []string, error) {
-	resolved := make(map[string]string)
-	var secretValues []string
+	result, err := ResolveSecretsInEnvFull(env, getSecret)
+	if err != nil {
+		return nil, nil, err
+	}
+	return result.Resolved, result.SecretValues, nil
+}
+
+// ResolveSecretsInEnvFull resolves all secret references and returns full result including env var names
+func ResolveSecretsInEnvFull(env map[string]string, getSecret func(path, key string) (string, error)) (*SecretResolutionResult, error) {
+	result := &SecretResolutionResult{
+		Resolved: make(map[string]string),
+	}
 
 	for k, v := range env {
 		if HasSecretRefs(v) {
 			resolvedValue, err := ResolveSecretRefs(v, getSecret)
 			if err != nil {
-				return nil, nil, fmt.Errorf("failed to resolve secret in %s: %w", k, err)
+				return nil, fmt.Errorf("failed to resolve secret in %s: %w", k, err)
 			}
-			resolved[k] = resolvedValue
+			result.Resolved[k] = resolvedValue
 			// Track the resolved value for masking
-			secretValues = append(secretValues, resolvedValue)
+			result.SecretValues = append(result.SecretValues, resolvedValue)
+			// Track the env var name that contained a secret
+			result.SecretEnvNames = append(result.SecretEnvNames, k)
 		} else {
-			resolved[k] = v
+			result.Resolved[k] = v
 		}
 	}
 
-	return resolved, secretValues, nil
+	return result, nil
 }
 
 // LoadJobSpecOverlay reads a partial job specification from a YAML/JSON file

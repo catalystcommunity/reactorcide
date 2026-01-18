@@ -452,7 +452,8 @@ class TestPluginIntegration:
         config.code_dir = "/job/src"
         config.job_dir = "/job"
         config.job_env = None
-        config.secrets_list = None
+        config.secret_values_list = None
+        config.secret_env_names = None
         config.secrets_file = None
 
         # Run container

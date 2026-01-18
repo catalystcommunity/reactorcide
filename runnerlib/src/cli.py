@@ -142,7 +142,8 @@ def run(
     job_command: Optional[str] = typer.Option(None, "--job-command", help="Command to run in the container"),
     runner_image: Optional[str] = typer.Option(None, "--runner-image", help="Container image to use (default: quay.io/catalystcommunity/reactorcide_runner)"),
     job_env: Optional[str] = typer.Option(None, "--job-env", help="Environment variables as key=value pairs or file path (must start with ./job/)"),
-    secrets_list: Optional[str] = typer.Option(None, "--secrets-list", help="Comma-separated list of secret values to mask in logs, or path to secrets file"),
+    secret_values_list: Optional[str] = typer.Option(None, "--secret-values-list", help="Comma-separated list of secret values to mask in logs, or path to secrets file"),
+    secret_env_names: Optional[str] = typer.Option(None, "--secret-env-names", help="Comma-separated list of env var names whose values should be masked"),
     secrets_file: Optional[str] = typer.Option(None, "--secrets-file", help="Path to secrets file to mount into container at /run/secrets/env"),
     work_dir: Optional[str] = typer.Option(None, "--work-dir", help="Working directory for job execution (default: current directory)"),
     plugin_dir: Optional[str] = typer.Option(None, "--plugin-dir", help="Directory containing custom plugins"),
@@ -174,8 +175,10 @@ def run(
         cli_overrides['runner_image'] = runner_image
     if job_env is not None:
         cli_overrides['job_env'] = job_env
-    if secrets_list is not None:
-        cli_overrides['secrets_list'] = secrets_list
+    if secret_values_list is not None:
+        cli_overrides['secret_values_list'] = secret_values_list
+    if secret_env_names is not None:
+        cli_overrides['secret_env_names'] = secret_env_names
     if secrets_file is not None:
         cli_overrides['secrets_file'] = secrets_file
     if source_type is not None:
@@ -564,7 +567,8 @@ def config(
     job_command: Optional[str] = typer.Option(None, "--job-command", help="Command to run in the container"),
     runner_image: Optional[str] = typer.Option(None, "--runner-image", help="Container image to use (default: quay.io/catalystcommunity/reactorcide_runner)"),
     job_env: Optional[str] = typer.Option(None, "--job-env", help="Environment variables as key=value pairs or file path (must start with ./job/)"),
-    secrets_list: Optional[str] = typer.Option(None, "--secrets-list", help="Comma-separated list of secret values to mask in logs, or path to secrets file"),
+    secret_values_list: Optional[str] = typer.Option(None, "--secret-values-list", help="Comma-separated list of secret values to mask in logs, or path to secrets file"),
+    secret_env_names: Optional[str] = typer.Option(None, "--secret-env-names", help="Comma-separated list of env var names whose values should be masked"),
 ):
     """Display the resolved configuration."""
     # Build configuration overrides from CLI arguments
@@ -579,14 +583,16 @@ def config(
         cli_overrides['runner_image'] = runner_image
     if job_env is not None:
         cli_overrides['job_env'] = job_env
-    if secrets_list is not None:
-        cli_overrides['secrets_list'] = secrets_list
-    
+    if secret_values_list is not None:
+        cli_overrides['secret_values_list'] = secret_values_list
+    if secret_env_names is not None:
+        cli_overrides['secret_env_names'] = secret_env_names
+
     try:
         # Get configuration with CLI overrides
         from src.config import get_environment_vars
         config = get_config(**cli_overrides)
-        
+
         log_stdout("Resolved Configuration:")
         log_stdout(f"  Code Directory: {config.code_dir}")
         log_stdout(f"  Job Directory: {config.job_dir}")
@@ -616,7 +622,8 @@ def validate(
     job_command: Optional[str] = typer.Option(None, "--job-command", help="Command to run in the container"),
     runner_image: Optional[str] = typer.Option(None, "--runner-image", help="Container image to use (default: quay.io/catalystcommunity/reactorcide_runner)"),
     job_env: Optional[str] = typer.Option(None, "--job-env", help="Environment variables as key=value pairs or file path (must start with ./job/)"),
-    secrets_list: Optional[str] = typer.Option(None, "--secrets-list", help="Comma-separated list of secret values to mask in logs, or path to secrets file"),
+    secret_values_list: Optional[str] = typer.Option(None, "--secret-values-list", help="Comma-separated list of secret values to mask in logs, or path to secrets file"),
+    secret_env_names: Optional[str] = typer.Option(None, "--secret-env-names", help="Comma-separated list of env var names whose values should be masked"),
     # Validation options
     check_files: bool = typer.Option(True, "--check-files/--no-check-files", help="Check file and directory existence"),
 ):
@@ -633,9 +640,11 @@ def validate(
         cli_overrides['runner_image'] = runner_image
     if job_env is not None:
         cli_overrides['job_env'] = job_env
-    if secrets_list is not None:
-        cli_overrides['secrets_list'] = secrets_list
-    
+    if secret_values_list is not None:
+        cli_overrides['secret_values_list'] = secret_values_list
+    if secret_env_names is not None:
+        cli_overrides['secret_env_names'] = secret_env_names
+
     try:
         # Get configuration with CLI overrides
         config = get_config(**cli_overrides)

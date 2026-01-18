@@ -348,8 +348,9 @@ func (jp *JobProcessor) getSecretsProvider(ctx context.Context, job *models.Job)
 }
 
 // resolveJobSecrets resolves all ${secret:path:key} references in the job environment.
-// Returns the resolved environment and the list of secret values for masking.
-func (jp *JobProcessor) resolveJobSecrets(ctx context.Context, job *models.Job, env map[string]string) (map[string]string, []string, error) {
+// Returns the resolved environment, the list of secret values for masking, and
+// the list of env var names that contained secrets.
+func (jp *JobProcessor) resolveJobSecrets(ctx context.Context, job *models.Job, env map[string]string) (*SecretResolutionResult, error) {
 	// Check if any environment variables contain secret references
 	hasSecrets := false
 	for _, v := range env {
@@ -360,33 +361,37 @@ func (jp *JobProcessor) resolveJobSecrets(ctx context.Context, job *models.Job, 
 	}
 
 	if !hasSecrets {
-		// No secrets to resolve
-		return env, nil, nil
+		// No secrets to resolve - return original env with empty secret lists
+		return &SecretResolutionResult{
+			Resolved:       env,
+			SecretValues:   nil,
+			SecretEnvNames: nil,
+		}, nil
 	}
 
 	// Get secrets provider
 	provider, err := jp.getSecretsProvider(ctx, job)
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to get secrets provider: %w", err)
+		return nil, fmt.Errorf("failed to get secrets provider: %w", err)
 	}
 
 	if provider == nil {
 		// Secrets are disabled or not available
-		return nil, nil, fmt.Errorf("job contains secret references but secrets are not configured")
+		return nil, fmt.Errorf("job contains secret references but secrets are not configured")
 	}
 
-	// Create getter function for ResolveSecretsInEnv
+	// Create getter function for ResolveSecretsInEnvFull
 	getSecret := func(path, key string) (string, error) {
 		return provider.Get(ctx, path, key)
 	}
 
 	// Resolve secrets in environment
-	resolvedEnv, secretValues, err := ResolveSecretsInEnv(env, getSecret)
+	result, err := ResolveSecretsInEnvFull(env, getSecret)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 
-	return resolvedEnv, secretValues, nil
+	return result, nil
 }
 
 // buildJobConfig creates a JobConfig from a models.Job
@@ -467,7 +472,7 @@ func (jp *JobProcessor) executeWithRunnerlib(ctx context.Context, job *models.Jo
 	jobConfig := jp.buildJobConfig(job, workspaceDir)
 
 	// Resolve secret references in environment variables
-	resolvedEnv, secretValues, err := jp.resolveJobSecrets(ctx, job, jobConfig.Env)
+	secretResult, err := jp.resolveJobSecrets(ctx, job, jobConfig.Env)
 	if err != nil {
 		logger.WithError(err).Error("Failed to resolve secrets in job environment")
 		return &JobResult{
@@ -475,13 +480,18 @@ func (jp *JobProcessor) executeWithRunnerlib(ctx context.Context, job *models.Jo
 			Error:    fmt.Sprintf("Failed to resolve secrets: %v", err),
 		}
 	}
-	if resolvedEnv != nil {
-		jobConfig.Env = resolvedEnv
+	if secretResult.Resolved != nil {
+		jobConfig.Env = secretResult.Resolved
 	}
 
 	// Register resolved secret values for masking
-	for _, secretValue := range secretValues {
+	for _, secretValue := range secretResult.SecretValues {
 		masker.RegisterSecret(secretValue)
+	}
+
+	// Set REACTORCIDE_SECRET_ENV_NAMES so runnerlib knows which env vars contain secrets
+	if len(secretResult.SecretEnvNames) > 0 {
+		jobConfig.Env["REACTORCIDE_SECRET_ENV_NAMES"] = strings.Join(secretResult.SecretEnvNames, ",")
 	}
 
 	// Mask command for logging

@@ -13,7 +13,8 @@ class RunnerConfig:
     job_command: str
     runner_image: str
     job_env: Optional[str] = None
-    secrets_list: Optional[str] = None  # Comma-separated list of secret values to mask
+    secret_values_list: Optional[str] = None  # Comma-separated list of secret values to mask
+    secret_env_names: Optional[str] = None  # Comma-separated list of env var names whose values are secrets
     secrets_file: Optional[str] = None  # Path to secrets file to mount into container
 
     # Source code configuration (optional - for untrusted code from PRs, etc.)
@@ -43,7 +44,8 @@ class ConfigManager:
         'job_command': 'REACTORCIDE_JOB_COMMAND',
         'runner_image': 'REACTORCIDE_RUNNER_IMAGE',
         'job_env': 'REACTORCIDE_JOB_ENV',
-        'secrets_list': 'REACTORCIDE_SECRETS_LIST',
+        'secret_values_list': 'REACTORCIDE_SECRET_VALUES_LIST',
+        'secret_env_names': 'REACTORCIDE_SECRET_ENV_NAMES',
         'secrets_file': 'REACTORCIDE_SECRETS_FILE',
         'source_type': 'REACTORCIDE_SOURCE_TYPE',
         'source_url': 'REACTORCIDE_SOURCE_URL',
@@ -101,7 +103,8 @@ class ConfigManager:
             job_command=config['job_command'],
             runner_image=config['runner_image'],
             job_env=config.get('job_env'),
-            secrets_list=config.get('secrets_list'),
+            secret_values_list=config.get('secret_values_list'),
+            secret_env_names=config.get('secret_env_names'),
             secrets_file=config.get('secrets_file'),
             source_type=config.get('source_type'),
             source_url=config.get('source_url'),
@@ -222,6 +225,11 @@ def get_environment_vars(config: RunnerConfig) -> Dict[str, str]:
 def get_secrets_to_mask(config: RunnerConfig, env_vars: Dict[str, str]) -> List[str]:
     """Get the list of secret values that should be masked in logs.
 
+    Supports multiple ways to specify secrets:
+    1. REACTORCIDE_SECRET_ENV_NAMES: Comma-separated list of env var NAMES whose values are secrets
+    2. REACTORCIDE_SECRET_VALUES_LIST: Comma-separated list of secret VALUES (or file path)
+    3. Default: If neither is set, treat all non-REACTORCIDE env var values as secrets
+
     Args:
         config: Runner configuration
         env_vars: All environment variables
@@ -230,27 +238,43 @@ def get_secrets_to_mask(config: RunnerConfig, env_vars: Dict[str, str]) -> List[
         List of secret values to mask
     """
     secrets = []
+    has_explicit_config = False
 
-    # If explicit secrets list is provided, use ONLY that list
-    if config.secrets_list is not None:
+    # First, check for secret env var names - look up their values
+    if config.secret_env_names:
+        has_explicit_config = True
+        for name in config.secret_env_names.split(','):
+            name = name.strip()
+            if name and name in env_vars:
+                value = env_vars[name]
+                if value and value not in secrets:
+                    secrets.append(value)
+
+    # Second, check for explicit secret values list
+    if config.secret_values_list is not None:
+        has_explicit_config = True
         # Could be a file path or comma-separated values
-        if config.secrets_list and config.secrets_list.startswith('./job/') and os.path.exists(config.secrets_list):
+        if config.secret_values_list and config.secret_values_list.startswith('./job/') and os.path.exists(config.secret_values_list):
             # Read secrets from file
             try:
-                with open(config.secrets_list, 'r') as f:
+                with open(config.secret_values_list, 'r') as f:
                     for line in f:
                         line = line.strip()
-                        if line and not line.startswith('#'):
+                        if line and not line.startswith('#') and line not in secrets:
                             secrets.append(line)
             except Exception:
                 pass  # Ignore file read errors
         else:
             # Treat as comma-separated values
-            secrets.extend([s.strip() for s in config.secrets_list.split(',') if s.strip()])
-    else:
-        # Only when NO explicit list is provided, use default behavior:
-        # Register all non-REACTORCIDE environment variable VALUES as potential secrets
-        # (REACTORCIDE vars are system configuration like paths, not secrets)
+            for s in config.secret_values_list.split(','):
+                s = s.strip()
+                if s and s not in secrets:
+                    secrets.append(s)
+
+    # Only when NO explicit config is provided, use default behavior:
+    # Register all non-REACTORCIDE environment variable VALUES as potential secrets
+    # (REACTORCIDE vars are system configuration like paths, not secrets)
+    if not has_explicit_config:
         for key, value in env_vars.items():
             if not key.startswith('REACTORCIDE_') and value and value not in secrets:
                 secrets.append(value)
