@@ -195,10 +195,8 @@ def run(
         cli_overrides['ci_source_ref'] = ci_source_ref
 
     try:
-        # Initialize plugins
-        initialize_plugins(plugin_dir)
-        if plugin_manager.plugins:
-            log_stdout(f"Loaded {len(plugin_manager.plugins)} plugins: {', '.join(plugin_manager.list_plugins())}")
+        # NOTE: Plugin loading is deferred until after source prep so plugins
+        # can be loaded from the checked-out repository.
 
         # Get configuration with CLI overrides
         config = get_config(**cli_overrides)
@@ -244,8 +242,8 @@ def run(
             raise typer.Exit(0)
 
         # Prepare source code (if configured)
-        plugin_context.phase = PluginPhase.PRE_SOURCE_PREP
-        plugin_manager.execute_phase(PluginPhase.PRE_SOURCE_PREP, plugin_context)
+        # NOTE: We don't execute PRE_SOURCE_PREP plugins yet because plugins haven't been loaded.
+        # Plugins are loaded from the source after checkout.
 
         from src.source_prep import prepare_source, prepare_ci_source
 
@@ -259,6 +257,39 @@ def run(
         if source_path:
             plugin_context.metadata['source_path'] = str(source_path)
 
+        # Now load plugins from standard locations AFTER source checkout
+        # This allows plugins to be part of the checked-out repository
+        from pathlib import Path as PathLib
+
+        plugin_dirs = []
+
+        # Check CI source directory for plugins first (trusted code)
+        if ci_source_path:
+            ci_plugin_dir = PathLib(ci_source_path) / ".reactorcide" / "plugins"
+            if ci_plugin_dir.exists():
+                plugin_dirs.append(str(ci_plugin_dir))
+                log_stdout(f"Found plugins in CI source: {ci_plugin_dir}")
+
+        # Check regular source directory for plugins
+        if source_path:
+            src_plugin_dir = PathLib(source_path) / ".reactorcide" / "plugins"
+            if src_plugin_dir.exists():
+                plugin_dirs.append(str(src_plugin_dir))
+                log_stdout(f"Found plugins in source: {src_plugin_dir}")
+
+        # Add explicitly provided plugin directory
+        if plugin_dir:
+            plugin_dirs.append(plugin_dir)
+
+        # Initialize plugins from all discovered directories
+        initialize_plugins(None)  # Load built-in plugins first
+        for pdir in plugin_dirs:
+            plugin_manager.load_plugins_from_directory(pdir)
+
+        if plugin_manager.plugins:
+            log_stdout(f"Loaded {len(plugin_manager.plugins)} plugins: {', '.join(plugin_manager.list_plugins())}")
+
+        # Now execute POST_SOURCE_PREP plugins (they can access the checked-out source)
         plugin_context.phase = PluginPhase.POST_SOURCE_PREP
         plugin_manager.execute_phase(PluginPhase.POST_SOURCE_PREP, plugin_context)
 

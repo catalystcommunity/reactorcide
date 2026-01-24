@@ -13,6 +13,22 @@ app:
   service:
     type: ClusterIP
     port: 6080
+  # Gateway API HTTPRoute configuration (routes /api/* to coordinator)
+  gateway:
+    enabled: false
+    # List of domains to create HTTPRoutes for
+    domains: []
+    # Example:
+    # domains:
+    #   - reactorcide.example.com
+    # Name of the Gateway resource to attach to
+    gatewayName: ""
+    # Namespace of the Gateway (optional, defaults to same namespace)
+    gatewayNamespace: ""
+    # Section name on the Gateway (listener name)
+    sectionName: "https"
+    # Additional annotations for the HTTPRoute
+    annotations: {}
   autoscaling:
     enabled: false
     minReplicas: 1
@@ -40,6 +56,22 @@ web:
     type: ClusterIP
     port: 4080
   apiUrl: "http://reactorcide-coordinator-api-service:6080"
+  # Gateway API HTTPRoute configuration (routes /* to web UI)
+  gateway:
+    enabled: false
+    # List of domains to create HTTPRoutes for
+    domains: []
+    # Example:
+    # domains:
+    #   - reactorcide.example.com
+    # Name of the Gateway resource to attach to
+    gatewayName: ""
+    # Namespace of the Gateway (optional, defaults to same namespace)
+    gatewayNamespace: ""
+    # Section name on the Gateway (listener name)
+    sectionName: "https"
+    # Additional annotations for the HTTPRoute
+    annotations: {}
   autoscaling:
     enabled: false
     minReplicas: 1

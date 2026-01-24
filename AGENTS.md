@@ -142,6 +142,54 @@ Distributed task queue system for job distribution:
 3. **Kubernetes Deployment**: Deploy with Helm chart for production use
 4. **Integration**: Connect to existing Corndogs deployment or deploy alongside
 
+## Common Operations
+
+### Prerequisites
+
+These operations assume you have:
+- A secrets password file (e.g., `~/.reactorcide-pass`)
+- Environment configuration files for builds and deployments stored in a config directory (e.g., `~/.config/reactorcide/`)
+- The `reactorcide` CLI built and available at `./coordinator_api/reactorcide`
+
+### Building and Pushing All Docker Images
+
+Build all containers and push them to the configured registry:
+
+```bash
+REACTORCIDE_SECRETS_PASSWORD="$(cat <secrets-password-file>)" ./coordinator_api/reactorcide run-local -i <path-to-builds-env-config>.yaml --job-dir ./ ./jobs/build-all.yaml
+```
+
+### Deploying Reactorcide to a VM
+
+Deploy or update Reactorcide on a VM environment (idempotent):
+
+```bash
+REACTORCIDE_SECRETS_PASSWORD="$(cat <secrets-password-file>)" ./coordinator_api/reactorcide run-local --job-dir ./ -i <path-to-vm-deploy-config>.yaml ./jobs/deploy-to-vm.yaml
+```
+
+### Submitting a Job via the API
+
+Submit a job to a running Reactorcide instance:
+
+```bash
+# Get API key from secrets
+API_KEY=$(REACTORCIDE_SECRETS_PASSWORD="$(cat <secrets-password-file>)" \
+  ./coordinator_api/reactorcide secrets get <secret-path> api_key)
+
+# Submit job
+curl -s -X POST "http://<api-host>:<port>/api/v1/jobs" \
+  -H "Authorization: Bearer $API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "job-name",
+    "source_type": "git",
+    "source_url": "https://github.com/owner/repo.git",
+    "source_ref": "main",
+    "job_command": "echo Hello from Reactorcide!",
+    "runner_image": "docker.io/library/alpine:latest"
+  }'
+```
+
 ## Project Status
 
 The system is actively being developed with the core runnerlib functionality complete and the coordinator API providing job management capabilities. Join the [Catalyst Community Discord](https://discord.gg/sfNb9xRjPn) to discuss and contribute.

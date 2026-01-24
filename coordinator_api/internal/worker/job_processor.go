@@ -456,7 +456,9 @@ func (jp *JobProcessor) executeWithRunnerlib(ctx context.Context, job *models.Jo
 	}
 
 	// Create a temporary workspace directory for this job
-	workspaceDir, err := os.MkdirTemp("", fmt.Sprintf("reactorcide-job-%s-*", job.JobID))
+	// Use /tmp/reactorcide-jobs as base so it's accessible from host (for containerd/runc)
+	// This path should be mounted as a volume shared between the worker and host
+	workspaceDir, err := os.MkdirTemp("/tmp/reactorcide-jobs", fmt.Sprintf("reactorcide-job-%s-*", job.JobID))
 	if err != nil {
 		logger.WithError(err).Error("Failed to create workspace directory")
 		return &JobResult{

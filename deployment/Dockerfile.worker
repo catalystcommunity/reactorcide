@@ -1,20 +1,21 @@
 # Use Alpine for worker (needs /tmp for job workspaces)
 FROM alpine:latest
 
-# Install CA certificates and git for source checkout
-RUN apk add --no-cache ca-certificates git
+# Install CA certificates, git for source checkout, and iptables for CNI networking
+RUN apk add --no-cache ca-certificates git iptables
 
 # Create temp directory writable by non-root user
 RUN mkdir -p /tmp && chmod 1777 /tmp
 
-# Create non-root user with docker group access (GID 996 matches host docker group)
-RUN addgroup -g 996 docker && adduser -D -u 1000 -G docker worker
+# Create docker group for socket access (GID 996 matches host docker/containerd group)
+RUN addgroup -g 996 docker
 
 # Copy the statically-linked binary
 COPY reactorcide /reactorcide
 
-# Run as non-root worker user
-USER worker
+# Note: Worker must run as root for privileged container operations.
+# When using containerd runtime, the worker needs mount capabilities to create
+# container rootfs, which requires running as UID 0 even in a privileged container.
 
 # Run worker subcommand
 ENTRYPOINT ["/reactorcide", "worker"]
