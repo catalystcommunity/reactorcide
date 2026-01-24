@@ -1,0 +1,74 @@
+# Kubernetes Deployment overlay for Reactorcide
+# Copy to ~/.config/reactorcide/k8s-deploy.yaml and customize
+#
+# Usage:
+#   reactorcide run-local \
+#     -i ~/.config/reactorcide/k8s-deploy.yaml \
+#     --job-dir ./ \
+#     ./jobs/deploy-to-k8s.yaml
+#
+# Before first use, add your secrets:
+#   reactorcide secrets set reactorcide/k8s kubeconfig "$(cat ~/.kube/config)"
+#   reactorcide secrets set reactorcide/k8s s3_access_key "your-access-key"
+#   reactorcide secrets set reactorcide/k8s s3_secret_key "your-secret-key"
+
+environment:
+  # Required: Namespace and release name
+  REACTORCIDE_K8S_NAMESPACE: reactorcide
+  REACTORCIDE_HELM_RELEASE: reactorcide
+
+  # Database configuration - choose one:
+  #
+  # Option 1: Provide your own database URI
+  # REACTORCIDE_DB_URI: "postgresql://user:pass@host:5432/reactorcide?sslmode=require"
+  #
+  # Option 2: Provision via Zalando Postgres Operator (must be installed in cluster)
+  REACTORCIDE_PROVISION_POSTGRES: "true"
+  REACTORCIDE_POSTGRES_TEAM: reactorcide
+  REACTORCIDE_POSTGRES_VERSION: "16"
+  REACTORCIDE_POSTGRES_SIZE: 5Gi
+  REACTORCIDE_POSTGRES_INSTANCES: "1"
+
+  # Corndogs configuration - choose one:
+  #
+  # Option 1: Deploy Corndogs into the namespace
+  # REACTORCIDE_DEPLOY_CORNDOGS: "true"
+  # REACTORCIDE_CORNDOGS_DB_HOST: "your-corndogs-db-host"
+  # REACTORCIDE_CORNDOGS_DB_NAME: corndogs
+  # REACTORCIDE_CORNDOGS_DB_USER: corndogs
+  #
+  # Option 2: Use external Corndogs
+  # REACTORCIDE_CORNDOGS_URL: "corndogs.other-namespace.svc.cluster.local:5080"
+
+  # Object storage - defaults to seaweedfs S3 endpoint
+  # Customize if using different S3-compatible storage or different namespace
+  # REACTORCIDE_OBJECT_STORE_TYPE: s3
+  # REACTORCIDE_S3_ENDPOINT: "http://seaweedfs-s3.seaweedfs.svc.cluster.local:8333"
+  # REACTORCIDE_S3_BUCKET: reactorcide
+  # REACTORCIDE_S3_REGION: us-east-1
+
+  # Gateway API HTTPRoutes - for external access
+  REACTORCIDE_GATEWAY_ENABLED: "true"
+  REACTORCIDE_GATEWAY_DOMAINS: "reactorcide.example.com"
+  REACTORCIDE_GATEWAY_NAME: "your-gateway"
+  # REACTORCIDE_GATEWAY_NAMESPACE: "gateway-namespace"
+  REACTORCIDE_GATEWAY_SECTION: "https"
+
+  # Optional: Image tag override
+  # REACTORCIDE_IMAGE_TAG: "v1.0.0"
+
+  # Optional: Default user ID (auto-generated if not provided)
+  # REACTORCIDE_DEFAULT_USER_ID: "your-uuid-here"
+
+  # Optional: Inline helm values for advanced configuration
+  # These are written to a temp file and passed to helm -f
+  # REACTORCIDE_HELM_VALUES: |
+  #   app:
+  #     replicaCount: 2
+  #     resources:
+  #       limits:
+  #         cpu: 2000m
+  #         memory: 2Gi
+  #   worker:
+  #     replicaCount: 3
+  #     concurrency: 4

@@ -43,18 +43,102 @@ command: |-
     ssh "${REACTORCIDE_DEPLOY_USER}@${REACTORCIDE_DEPLOY_HOST}" "mkdir -p ${REMOTE_DIR}"
 
     echo ""
-    echo "Step 2: Detecting Docker access"
+    echo "Step 2: Detecting and configuring container runtime"
     ssh "${REACTORCIDE_DEPLOY_USER}@${REACTORCIDE_DEPLOY_HOST}" bash -s <<'REMOTE_EOF'
-    if docker ps >/dev/null 2>&1; then
-      echo "Docker accessible without sudo"
-      echo 'DOCKER_CMD="docker"' > ~/reactorcide/.docker-cmd
-    elif sudo docker ps >/dev/null 2>&1; then
-      echo "Docker requires sudo"
-      echo 'DOCKER_CMD="sudo docker"' > ~/reactorcide/.docker-cmd
-    else
-      echo "ERROR: Cannot access Docker (tried both docker and sudo docker)"
+    set -euo pipefail
+    cd ~/reactorcide
+
+    # Detect container runtime and socket
+    CONTAINER_RUNTIME=""
+    CONTAINER_SOCKET=""
+    DOCKER_CMD=""
+
+    # Check for containerd first (nerdctl)
+    if [ -S /run/containerd/containerd.sock ]; then
+      # First check if non-root access already works
+      if nerdctl ps >/dev/null 2>&1; then
+        CONTAINER_RUNTIME="containerd"
+        CONTAINER_SOCKET="/run/containerd/containerd.sock"
+        DOCKER_CMD="nerdctl"
+        echo "Detected: containerd with nerdctl (no sudo needed)"
+      elif sudo nerdctl ps >/dev/null 2>&1; then
+        CONTAINER_RUNTIME="containerd"
+        CONTAINER_SOCKET="/run/containerd/containerd.sock"
+        echo "Detected: containerd with nerdctl (checking socket permissions...)"
+
+        # Check actual socket group ownership (GID 996 = containerd group)
+        SOCKET_GID=$(stat -c %g /run/containerd/containerd.sock 2>/dev/null || echo "0")
+        if [ "$SOCKET_GID" = "996" ]; then
+          echo "Socket already has correct group (gid=996), user may need re-login for group membership"
+          DOCKER_CMD="sudo nerdctl"
+        else
+          echo "Configuring containerd socket for non-root access (current gid=$SOCKET_GID)..."
+
+          # Create containerd group (GID 996 matches docker group convention)
+          sudo groupadd -g 996 containerd 2>/dev/null || true
+
+          # Update containerd config with socket group permissions
+          sudo mkdir -p /etc/containerd
+          sudo tee /etc/containerd/config.toml > /dev/null <<'CONTAINERD_CONFIG'
+    version = 2
+
+    [grpc]
+    address = "/run/containerd/containerd.sock"
+    uid = 0
+    gid = 996
+    CONTAINERD_CONFIG
+
+          sudo sed -i 's/^    //' /etc/containerd/config.toml
+
+          echo "Restarting containerd to apply socket permissions..."
+          sudo systemctl restart containerd
+          sleep 2
+
+          # Check if it worked
+          if nerdctl ps >/dev/null 2>&1; then
+            DOCKER_CMD="nerdctl"
+            echo "Socket permissions configured successfully"
+          else
+            DOCKER_CMD="sudo nerdctl"
+            echo "Using sudo nerdctl (group membership requires re-login)"
+          fi
+        fi
+      fi
+    fi
+
+    # Fall back to Docker if containerd not available
+    if [ -z "$CONTAINER_RUNTIME" ]; then
+      if [ -S /var/run/docker.sock ]; then
+        if docker ps >/dev/null 2>&1; then
+          CONTAINER_RUNTIME="docker"
+          CONTAINER_SOCKET="/var/run/docker.sock"
+          DOCKER_CMD="docker"
+          echo "Detected: Docker (no sudo)"
+        elif sudo docker ps >/dev/null 2>&1; then
+          CONTAINER_RUNTIME="docker"
+          CONTAINER_SOCKET="/var/run/docker.sock"
+          DOCKER_CMD="sudo docker"
+          echo "Detected: Docker (requires sudo)"
+        fi
+      fi
+    fi
+
+    if [ -z "$CONTAINER_RUNTIME" ]; then
+      echo "ERROR: No container runtime found (checked containerd and docker)"
       exit 1
     fi
+
+    # Save runtime detection results
+    cat > .docker-cmd <<CMDFILE
+    DOCKER_CMD="${DOCKER_CMD}"
+    CONTAINER_RUNTIME="${CONTAINER_RUNTIME}"
+    CONTAINER_SOCKET="${CONTAINER_SOCKET}"
+    CMDFILE
+
+    sed -i 's/^    //' .docker-cmd
+
+    echo "Container runtime: ${CONTAINER_RUNTIME}"
+    echo "Socket: ${CONTAINER_SOCKET}"
     REMOTE_EOF
 
     echo ""
@@ -66,11 +150,20 @@ command: |-
     ssh "${REACTORCIDE_DEPLOY_USER}@${REACTORCIDE_DEPLOY_HOST}" bash -s <<'REMOTE_EOF'
     set -euo pipefail
     cd ~/reactorcide
+    source .docker-cmd
 
     if [ -f .env ]; then
       echo "Existing .env found - preserving configuration"
       echo "Current config (passwords masked):"
       grep -v PASSWORD .env | grep -v SECRET | grep -v URI || true
+
+      # Update container runtime if it changed
+      if grep -q "^REACTORCIDE_CONTAINER_RUNTIME=" .env; then
+        sed -i "s|^REACTORCIDE_CONTAINER_RUNTIME=.*|REACTORCIDE_CONTAINER_RUNTIME=${CONTAINER_RUNTIME}|" .env
+      else
+        echo "REACTORCIDE_CONTAINER_RUNTIME=${CONTAINER_RUNTIME}" >> .env
+      fi
+      echo "Updated REACTORCIDE_CONTAINER_RUNTIME=${CONTAINER_RUNTIME}"
     else
       echo "No existing .env found - creating new configuration"
       DB_PASSWORD=$(openssl rand -hex 24)
@@ -98,7 +191,7 @@ command: |-
     # Worker Configuration
     REACTORCIDE_WORKER_CONCURRENCY=2
     REACTORCIDE_WORKER_POLL_INTERVAL=5
-    REACTORCIDE_CONTAINER_RUNTIME=docker
+    REACTORCIDE_CONTAINER_RUNTIME=${CONTAINER_RUNTIME}
     REACTORCIDE_LOG_LEVEL=info
     ENVFILE
 
@@ -107,6 +200,34 @@ command: |-
 
       echo "Environment configuration created"
     fi
+
+    # Generate compose override for container socket mount and runtime-specific volumes
+    echo "Generating compose override for ${CONTAINER_RUNTIME}..."
+    if [ "${CONTAINER_RUNTIME}" = "containerd" ]; then
+      # Find nerdctl binary path
+      NERDCTL_PATH=$(which nerdctl 2>/dev/null || echo "/usr/local/bin/nerdctl")
+      if [ ! -f "$NERDCTL_PATH" ]; then
+        NERDCTL_PATH="/usr/bin/nerdctl"
+      fi
+      echo "Using nerdctl at: $NERDCTL_PATH"
+
+      # Create nerdctl data directory if it doesn't exist
+      sudo mkdir -p /var/lib/nerdctl
+
+      # Containerd/nerdctl needs these mounts:
+      # - /run/containerd for socket and FIFO pipes
+      # - /var/lib/containerd for snapshotter data (image layers)
+      # - /var/lib/nerdctl for nerdctl state (container metadata, names, etc.)
+      # - /etc/containerd for containerd config and registry certs
+      # - /opt/cni/bin for CNI plugin binaries
+      # - /etc/cni/net.d for CNI network configuration
+      # - nerdctl binary (needed by OCI runtime shim for logging)
+      printf 'services:\n  worker:\n    volumes:\n      - /run/containerd:/run/containerd\n      - /var/lib/containerd:/var/lib/containerd\n      - /var/lib/nerdctl:/var/lib/nerdctl\n      - /etc/containerd:/etc/containerd:ro\n      - /opt/cni/bin:/opt/cni/bin:ro\n      - /etc/cni/net.d:/etc/cni/net.d:ro\n      - %s:/usr/local/bin/nerdctl:ro\n' "$NERDCTL_PATH" > docker-compose.override.yml
+    else
+      # Docker only needs the socket
+      printf 'services:\n  worker:\n    volumes:\n      - %s:%s\n' "${CONTAINER_SOCKET}" "${CONTAINER_SOCKET}" > docker-compose.override.yml
+    fi
+    echo "Created docker-compose.override.yml for ${CONTAINER_RUNTIME}"
     REMOTE_EOF
 
     echo ""
@@ -145,10 +266,10 @@ command: |-
 
     # Pull all Reactorcide images from registry
     echo "Pulling coordinator image..."
-    $DOCKER_CMD compose -f docker-compose.prod.yml pull coordinator-api
+    $DOCKER_CMD compose -f docker-compose.prod.yml -f docker-compose.override.yml pull coordinator-api
 
     echo "Pulling worker image..."
-    $DOCKER_CMD compose -f docker-compose.prod.yml pull worker
+    $DOCKER_CMD compose -f docker-compose.prod.yml -f docker-compose.override.yml pull worker
 
     # Pull runner image (used by worker to spawn job containers)
     RUNNER_IMAGE="${REACTORCIDE_RUNNER_IMAGE:-containers.catalystsquad.com/public/reactorcide/runnerbase:dev}"
@@ -170,17 +291,17 @@ command: |-
 
     # Stop existing services
     echo "Stopping existing services..."
-    $DOCKER_CMD compose -f docker-compose.prod.yml down || true
+    $DOCKER_CMD compose -f docker-compose.prod.yml -f docker-compose.override.yml down || true
 
     # Start services
     echo "Starting services..."
-    $DOCKER_CMD compose -f docker-compose.prod.yml up -d
+    $DOCKER_CMD compose -f docker-compose.prod.yml -f docker-compose.override.yml up -d
 
     # Wait for startup
     sleep 10
 
     # Show status
-    $DOCKER_CMD compose -f docker-compose.prod.yml ps
+    $DOCKER_CMD compose -f docker-compose.prod.yml -f docker-compose.override.yml ps
     REMOTE_EOF
 
     echo ""
@@ -204,7 +325,7 @@ command: |-
     set -euo pipefail
     cd ~/reactorcide
     source .docker-cmd
-    $DOCKER_CMD compose -f docker-compose.prod.yml restart coordinator-api
+    $DOCKER_CMD compose -f docker-compose.prod.yml -f docker-compose.override.yml restart coordinator-api
     REMOTE_EOF
 
     echo ""
@@ -246,7 +367,7 @@ command: |-
     # Show running services
     echo ""
     echo "Running services:"
-    $DOCKER_CMD compose -f docker-compose.prod.yml ps
+    $DOCKER_CMD compose -f docker-compose.prod.yml -f docker-compose.override.yml ps
     REMOTE_EOF
 
     echo ""

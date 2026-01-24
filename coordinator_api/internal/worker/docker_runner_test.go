@@ -1,7 +1,6 @@
 package worker
 
 import (
-	"context"
 	"testing"
 )
 
@@ -286,12 +285,13 @@ func TestIsBackendImplemented(t *testing.T) {
 		expected bool
 	}{
 		{"docker", true},      // fully implemented
-		{"containerd", false}, // stub only
+		{"containerd", true},  // fully implemented
 		{"kubernetes", true},  // fully implemented
 		{"auto", true},        // fully implemented (auto-detection)
 		{"invalid", false},
-		{"DOCKER", true},      // case insensitive
-		{"KUBERNETES", true},  // case insensitive
+		{"DOCKER", true},       // case insensitive
+		{"KUBERNETES", true},   // case insensitive
+		{"CONTAINERD", true},   // case insensitive
 	}
 
 	for _, tt := range tests {
@@ -325,49 +325,92 @@ func TestGetSupportedBackends(t *testing.T) {
 	}
 }
 
-// TestStubRunners_ReturnErrors tests that stub runners return appropriate errors
-// Note: Only containerd remains as a stub; kubernetes is now fully implemented
-func TestStubRunners_ReturnErrors(t *testing.T) {
-	ctx := context.Background()
-	config := &JobConfig{
-		Image:        "alpine:latest",
-		Command:      []string{"echo", "test"},
-		WorkspaceDir: "/tmp/test",
-		JobID:        "test-123",
+// TestContainerdRunner_validateConfig tests the configuration validation for containerd
+func TestContainerdRunner_validateConfig(t *testing.T) {
+	runner := &ContainerdRunner{
+		containerStreams: make(map[string]*containerIO),
 	}
 
 	tests := []struct {
-		name   string
-		runner JobRunner
+		name        string
+		config      *JobConfig
+		expectError bool
 	}{
 		{
-			name:   "containerd",
-			runner: &ContainerdRunner{},
+			name: "valid config",
+			config: &JobConfig{
+				Image:        "alpine:latest",
+				Command:      []string{"echo", "hello"},
+				WorkspaceDir: "/tmp/test",
+				JobID:        "test-123",
+			},
+			expectError: false,
+		},
+		{
+			name: "missing image",
+			config: &JobConfig{
+				Command:      []string{"echo", "hello"},
+				WorkspaceDir: "/tmp/test",
+				JobID:        "test-123",
+			},
+			expectError: true,
+		},
+		{
+			name: "missing command",
+			config: &JobConfig{
+				Image:        "alpine:latest",
+				Command:      []string{},
+				WorkspaceDir: "/tmp/test",
+				JobID:        "test-123",
+			},
+			expectError: true,
+		},
+		{
+			name: "missing workspace",
+			config: &JobConfig{
+				Image:   "alpine:latest",
+				Command: []string{"echo", "hello"},
+				JobID:   "test-123",
+			},
+			expectError: true,
+		},
+		{
+			name: "missing job ID",
+			config: &JobConfig{
+				Image:        "alpine:latest",
+				Command:      []string{"echo", "hello"},
+				WorkspaceDir: "/tmp/test",
+			},
+			expectError: true,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// All methods should return errors for stub implementations
-			_, err := tt.runner.SpawnJob(ctx, config)
-			if err == nil {
-				t.Error("SpawnJob should return error for stub implementation")
+			err := runner.validateConfig(tt.config)
+			if tt.expectError && err == nil {
+				t.Errorf("expected error but got none")
 			}
-
-			_, _, err = tt.runner.StreamLogs(ctx, "test-id")
-			if err == nil {
-				t.Error("StreamLogs should return error for stub implementation")
-			}
-
-			_, err = tt.runner.WaitForCompletion(ctx, "test-id")
-			if err == nil {
-				t.Error("WaitForCompletion should return error for stub implementation")
-			}
-
-			err = tt.runner.Cleanup(ctx, "test-id")
-			if err == nil {
-				t.Error("Cleanup should return error for stub implementation")
+			if !tt.expectError && err != nil {
+				t.Errorf("unexpected error: %v", err)
 			}
 		})
+	}
+}
+
+// TestNewJobRunner_Containerd tests creating a Containerd runner via the factory
+func TestNewJobRunner_Containerd(t *testing.T) {
+	runner, err := NewJobRunner("containerd")
+	if err != nil {
+		t.Skipf("Containerd not available: %v", err)
+	}
+
+	if runner == nil {
+		t.Fatal("expected non-nil runner")
+	}
+
+	// Verify it's the right type
+	if _, ok := runner.(*ContainerdRunner); !ok {
+		t.Errorf("expected *ContainerdRunner, got %T", runner)
 	}
 }

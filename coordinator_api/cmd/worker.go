@@ -54,6 +54,13 @@ var workerFlags = []cli.Flag{
 		Usage:   "Dry run mode - don't actually execute jobs",
 		EnvVars: []string{"REACTORCIDE_WORKER_DRY_RUN", "WORKER_DRY_RUN"},
 	},
+	&cli.StringFlag{
+		Name:    "container-runtime",
+		Aliases: []string{"r"},
+		Value:   "auto",
+		Usage:   "Container runtime backend: docker, containerd, kubernetes, or auto",
+		EnvVars: []string{"REACTORCIDE_CONTAINER_RUNTIME", "CONTAINER_RUNTIME"},
+	},
 }
 
 func RunWorker(ctx *cli.Context) error {
@@ -71,20 +78,23 @@ func RunWorker(ctx *cli.Context) error {
 	pollInterval := time.Duration(ctx.Int("poll-interval")) * time.Second
 	concurrency := ctx.Int("concurrency")
 	dryRun := ctx.Bool("dry-run")
+	containerRuntime := ctx.String("container-runtime")
 
 	// Log startup information
 	logging.Log.Infof("Starting worker for queue: %s", queueName)
 	logging.Log.Infof("Poll interval: %v", pollInterval)
 	logging.Log.Infof("Concurrency: %d", concurrency)
 	logging.Log.Infof("Dry run mode: %t", dryRun)
+	logging.Log.Infof("Container runtime: %s", containerRuntime)
 
 	// Create worker configuration
 	workerConfig := &worker.Config{
-		QueueName:    queueName,
-		PollInterval: pollInterval,
-		Concurrency:  concurrency,
-		DryRun:       dryRun,
-		Store:        store.AppStore,
+		QueueName:        queueName,
+		PollInterval:     pollInterval,
+		Concurrency:      concurrency,
+		DryRun:           dryRun,
+		Store:            store.AppStore,
+		ContainerRuntime: containerRuntime,
 	}
 
 	// Set up graceful shutdown

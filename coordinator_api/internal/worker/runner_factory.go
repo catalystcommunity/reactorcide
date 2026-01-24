@@ -96,8 +96,9 @@ func IsBackendSupported(backend string) bool {
 // IsBackendImplemented checks if a backend is fully implemented (not just stubbed)
 func IsBackendImplemented(backend string) bool {
 	backend = strings.ToLower(strings.TrimSpace(backend))
-	// Docker and Kubernetes are fully implemented
+	// Docker, Containerd, and Kubernetes are fully implemented
 	return backend == string(BackendDocker) ||
+		backend == string(BackendContainerd) ||
 		backend == string(BackendKubernetes) ||
 		backend == string(BackendAuto)
 }
