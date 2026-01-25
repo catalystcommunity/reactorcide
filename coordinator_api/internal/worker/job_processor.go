@@ -249,6 +249,15 @@ func (jp *JobProcessor) buildJobEnv(job *models.Job) map[string]string {
 	env["REACTORCIDE_JOB_ID"] = job.JobID
 	env["REACTORCIDE_QUEUE"] = job.QueueName
 
+	// Signal to runnerlib that it's running inside a container
+	// This makes runnerlib use /job directly instead of creating ./job
+	env["REACTORCIDE_IN_CONTAINER"] = "true"
+
+	// Set the code and job directories for runnerlib
+	// These absolute paths ensure runnerlib uses the correct paths in container mode
+	env["REACTORCIDE_CODE_DIR"] = "/job/src"
+	env["REACTORCIDE_JOB_DIR"] = "/job/src"
+
 	// Add source configuration if present
 	if job.SourceType != nil {
 		env["REACTORCIDE_SOURCE_TYPE"] = string(*job.SourceType)
@@ -467,6 +476,16 @@ func (jp *JobProcessor) executeWithRunnerlib(ctx context.Context, job *models.Jo
 		}
 	}
 	defer os.RemoveAll(workspaceDir)
+
+	// Change ownership to user 1001:1001 so non-root containers can write to it
+	// This matches the --user 1001:1001 flag used in containerd_runner.go
+	if err := os.Chown(workspaceDir, 1001, 1001); err != nil {
+		logger.WithError(err).Warn("Failed to chown workspace directory - job may fail if running as non-root")
+	}
+	// Also make it world-writable as a fallback
+	if err := os.Chmod(workspaceDir, 0777); err != nil {
+		logger.WithError(err).Warn("Failed to chmod workspace directory")
+	}
 
 	logger.WithField("workspace_dir", workspaceDir).Info("Created workspace directory")
 

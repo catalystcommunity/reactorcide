@@ -1,5 +1,6 @@
 """Source preparation utilities for runnerlib."""
 
+import os
 import shutil
 from pathlib import Path
 from typing import Optional
@@ -8,28 +9,70 @@ from src.logging import log_stdout, log_stderr, logger
 from src.config import RunnerConfig, get_config
 
 
+def is_in_container_mode() -> bool:
+    """Check if runnerlib is running inside a container.
+
+    In container mode, the /job directory is already mounted and we should
+    use it directly instead of creating ./job on the host.
+
+    Returns:
+        True if running in container mode
+    """
+    # Check explicit environment variable
+    if os.getenv("REACTORCIDE_IN_CONTAINER", "").lower() in ("true", "1", "yes"):
+        return True
+
+    # Auto-detect: if /job exists and we're not at the root filesystem,
+    # we're likely inside a container
+    job_path = Path("/job")
+    if job_path.exists() and job_path.is_dir():
+        # Additional check: if cwd starts with /job, we're definitely in container
+        cwd = Path.cwd()
+        try:
+            cwd.relative_to(job_path)
+            return True
+        except ValueError:
+            pass
+        # If /job exists and is writable, assume container mode
+        if os.access(job_path, os.W_OK):
+            return True
+
+    return False
+
+
+def get_job_base_path() -> Path:
+    """Get the base job path, accounting for container mode.
+
+    Returns:
+        Path object for the job base directory
+    """
+    if is_in_container_mode():
+        return Path("/job")
+    return Path("./job").resolve()
+
+
 def prepare_job_directory(config: Optional[RunnerConfig] = None) -> Path:
     """Prepare the job directory structure.
-    
+
     Args:
         config: Runner configuration (if None, will get default config)
-        
+
     Returns:
         Path to the job directory
     """
+    # Get base job path (handles container mode vs host mode)
+    job_path = get_job_base_path()
+
     if config is None:
         # Get minimal config for directory preparation
         try:
             config = get_config(job_command="dummy")  # Dummy command to satisfy validation
         except ValueError:
             # If we can't get config, fall back to basic structure
-            job_path = Path("./job").resolve()
             src_path = job_path / "src"
             job_path.mkdir(parents=True, exist_ok=True)
             src_path.mkdir(parents=True, exist_ok=True)
             return job_path
-    
-    job_path = Path("./job").resolve()
     
     # Create job directory structure
     job_path.mkdir(parents=True, exist_ok=True)
@@ -181,13 +224,18 @@ def copy_directory(
 
 def cleanup_job_directory(config: Optional[RunnerConfig] = None) -> None:
     """Clean up the job directory.
-    
+
     Args:
-        config: Runner configuration (if None, will clean up default ./job directory)
+        config: Runner configuration (if None, will clean up default job directory)
     """
-    # Always clean up the fixed ./job directory structure
-    job_path = Path("./job")
-    
+    # Get job path based on mode (container vs host)
+    job_path = get_job_base_path()
+
+    # In container mode, don't clean up /job as it's a mount point
+    if is_in_container_mode():
+        logger.debug("Skipping cleanup in container mode", fields={"path": str(job_path)})
+        return
+
     if job_path.exists():
         logger.info("Cleaning up job directory", fields={"path": str(job_path)})
         log_stdout(f"Cleaning up job directory: {job_path}")
@@ -198,36 +246,44 @@ def cleanup_job_directory(config: Optional[RunnerConfig] = None) -> None:
 
 
 def get_code_directory_path(config: RunnerConfig) -> Path:
-    """Get the host path for the code directory.
-    
+    """Get the path for the code directory.
+
     Args:
         config: Runner configuration
-        
+
     Returns:
-        Path to the code directory on the host
+        Path to the code directory
     """
-    job_path = Path("./job").resolve()
-    
+    job_path = get_job_base_path()
+
+    # In container mode, code_dir is already an absolute path
+    if is_in_container_mode() and config.code_dir.startswith('/'):
+        return Path(config.code_dir)
+
     # Convert container path to host path
     code_dir = config.code_dir
     if code_dir.startswith('/job/'):
         code_dir = code_dir[5:]
     elif code_dir.startswith('/job'):
         code_dir = code_dir[4:]
-    
+
     return job_path / code_dir if code_dir else job_path / "src"
 
 
 def get_job_directory_path(config: RunnerConfig) -> Path:
-    """Get the host path for the job directory.
+    """Get the path for the job directory.
 
     Args:
         config: Runner configuration
 
     Returns:
-        Path to the job directory on the host
+        Path to the job directory
     """
-    job_path = Path("./job").resolve()
+    job_path = get_job_base_path()
+
+    # In container mode, job_dir is already an absolute path
+    if is_in_container_mode() and config.job_dir.startswith('/'):
+        return Path(config.job_dir)
 
     # Convert container path to host path
     job_dir = config.job_dir

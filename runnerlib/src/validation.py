@@ -7,7 +7,7 @@ from typing import List, Optional
 from dataclasses import dataclass
 
 from src.config import RunnerConfig, config_manager
-from src.source_prep import get_code_directory_path
+from src.source_prep import get_code_directory_path, get_job_base_path, is_in_container_mode
 
 
 @dataclass
@@ -253,21 +253,32 @@ class ConfigValidator:
         """Validate file system state."""
         errors = []
         warnings = []
-        
+
         try:
             # Check if job directory exists and is accessible
-            job_base_path = Path("./job")
+            # Use get_job_base_path() to handle both host and container modes
+            job_base_path = get_job_base_path()
+            in_container = is_in_container_mode()
+
             if not job_base_path.exists():
-                warnings.append(ValidationError(
-                    field="filesystem",
-                    message="Job directory ./job does not exist",
-                    suggestion="It will be created automatically, but you may want to prepare it first"
-                ))
+                if in_container:
+                    # In container mode, /job should exist (it's the mount point)
+                    errors.append(ValidationError(
+                        field="filesystem",
+                        message=f"Job directory {job_base_path} does not exist",
+                        suggestion="The /job directory should be mounted in the container"
+                    ))
+                else:
+                    warnings.append(ValidationError(
+                        field="filesystem",
+                        message=f"Job directory {job_base_path} does not exist",
+                        suggestion="It will be created automatically, but you may want to prepare it first"
+                    ))
             elif not job_base_path.is_dir():
                 errors.append(ValidationError(
                     field="filesystem",
-                    message="./job exists but is not a directory",
-                    suggestion="Remove the file './job' and let the system create the directory"
+                    message=f"{job_base_path} exists but is not a directory",
+                    suggestion=f"Remove the file '{job_base_path}' and let the system create the directory"
                 ))
             
             # Check code directory if it should exist

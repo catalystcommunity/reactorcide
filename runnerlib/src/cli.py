@@ -554,7 +554,8 @@ def cleanup(
             if verbose:
                 log_stdout(f"Changed working directory to: {work_dir}")
 
-        job_path = Path("./job")
+        from src.source_prep import get_job_base_path
+        job_path = get_job_base_path()
         
         if verbose and job_path.exists():
             log_stdout("🗂️  Analyzing job directory before cleanup...")
@@ -896,9 +897,13 @@ def _perform_dry_run(config, additional_args: Optional[List[str]] = None) -> Non
     
     # Show detailed directory structure
     log_stdout("\n📁 Directory Structure Validation:")
-    job_path = Path("./job").resolve()
-    log_stdout(f"  Host Job Directory: {job_path}")
-    log_stdout(f"  Container Mount: {job_path} → /job")
+    from src.source_prep import get_job_base_path, is_in_container_mode
+    job_path = get_job_base_path()
+    if is_in_container_mode():
+        log_stdout(f"  Job Directory (container mode): {job_path}")
+    else:
+        log_stdout(f"  Host Job Directory: {job_path}")
+        log_stdout(f"  Container Mount: {job_path} → /job")
     
     # Get specific directory paths
     try:

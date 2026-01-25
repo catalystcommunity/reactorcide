@@ -4,7 +4,7 @@ source:
   type: git
   url: https://github.com/catalystcommunity/reactorcide.git
   ref: main
-command: python /job/src/jobs/scripts/deploy_k8s.py
+command: runnerlib run --job-command "python /job/src/jobs/scripts/deploy_k8s.py"
 environment:
     # Required - Kubernetes access (raw kubeconfig YAML content)
     KUBECONFIG_CONTENT: "${secret:reactorcide/k8s:kubeconfig}"

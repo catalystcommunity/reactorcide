@@ -4,12 +4,15 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 	"sync"
 	"time"
 
 	"github.com/catalystcommunity/app-utils-go/logging"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/corndogs"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/metrics"
+	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/secrets"
+	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store"
 )
 
 // CornDogsWorker represents a job processing worker that uses Corndogs for task management
@@ -50,12 +53,37 @@ func NewCornDogsWorker(config *Config, corndogsClient corndogs.ClientInterface) 
 			Fatal("Failed to create job runner")
 	}
 
+	// Determine secrets storage type from environment
+	secretsStorageType := os.Getenv("REACTORCIDE_SECRETS_STORAGE_TYPE")
+	if secretsStorageType == "" {
+		secretsStorageType = "database" // Default to database
+	}
+
+	// Load master keys for database-backed secrets
+	var keyManager *secrets.MasterKeyManager
+	if secretsStorageType == "database" {
+		db := store.GetDB()
+		if db != nil {
+			var err error
+			keyManager, err = secrets.LoadOrCreateMasterKeys(db)
+			if err != nil {
+				logging.Log.WithError(err).Warn("Failed to load master keys - secrets resolution will be unavailable")
+			} else {
+				logging.Log.Info("Master keys loaded for secrets resolution")
+			}
+		} else {
+			logging.Log.Warn("Database not available - secrets resolution will be unavailable")
+		}
+	}
+
 	// Create job processor with configuration
 	processor := NewJobProcessorWithConfig(config.Store, runner, config.DryRun, &JobProcessorConfig{
-		ObjectStore:       config.ObjectStore,
-		LogChunkInterval:  config.LogChunkInterval,
-		HeartbeatInterval: config.HeartbeatInterval,
-		HeartbeatTimeout:  config.HeartbeatTimeout,
+		ObjectStore:        config.ObjectStore,
+		LogChunkInterval:   config.LogChunkInterval,
+		HeartbeatInterval:  config.HeartbeatInterval,
+		HeartbeatTimeout:   config.HeartbeatTimeout,
+		SecretsKeyManager:  keyManager,
+		SecretsStorageType: secretsStorageType,
 	})
 
 	return &CornDogsWorker{
