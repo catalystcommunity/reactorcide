@@ -146,12 +146,13 @@ func submitAction(ctx *cli.Context) error {
 	// Resolve ${env:VAR_NAME} references from host environment
 	spec.Environment = worker.ResolveEnvInMap(spec.Environment)
 
-	// Resolve ${secret:path:key} references
-	resolvedEnv, _, err := resolveJobSecrets(spec.Environment)
-	if err != nil {
-		return err
-	}
-	spec.Environment = resolvedEnv
+	// NOTE: ${secret:path:key} references are NOT resolved here.
+	// They are passed through to the API, which resolves them using its
+	// database-backed secrets provider. This ensures:
+	// 1. Secrets are never sent as plaintext over HTTP
+	// 2. The API knows which values are secrets for proper masking
+	// 3. REACTORCIDE_SECRET_ENV_NAMES is set so runnerlib masks them too
+	// 4. Audit trail is maintained on the server side
 
 	// Get API token
 	if token == "" {
