@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -419,8 +420,9 @@ func (jp *JobProcessor) buildJobConfig(job *models.Job, workspaceDir string) *Jo
 		image = job.RunnerImage
 	}
 
-	// Parse the job command using shell-style quoting rules
-	command := ParseCommand(job.JobCommand)
+	// Pass the job command as a single string since containerd_runner uses /bin/sh -c
+	// Parsing and re-joining loses quoting (e.g., --arg "foo bar" becomes --arg foo bar)
+	command := []string{job.JobCommand}
 
 	// Build environment variables
 	env := jp.buildJobEnv(job)
@@ -485,6 +487,16 @@ func (jp *JobProcessor) executeWithRunnerlib(ctx context.Context, job *models.Jo
 	// Also make it world-writable as a fallback
 	if err := os.Chmod(workspaceDir, 0777); err != nil {
 		logger.WithError(err).Warn("Failed to chmod workspace directory")
+	}
+
+	// Create the src subdirectory with proper permissions
+	// This is where source code will be checked out (REACTORCIDE_CODE_DIR=/job/src)
+	srcDir := filepath.Join(workspaceDir, "src")
+	if err := os.MkdirAll(srcDir, 0777); err != nil {
+		logger.WithError(err).Warn("Failed to create src directory")
+	}
+	if err := os.Chown(srcDir, 1001, 1001); err != nil {
+		logger.WithError(err).Warn("Failed to chown src directory")
 	}
 
 	logger.WithField("workspace_dir", workspaceDir).Info("Created workspace directory")

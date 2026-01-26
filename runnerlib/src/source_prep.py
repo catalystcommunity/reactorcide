@@ -310,7 +310,16 @@ def _prepare_git_source(source_url: str, source_ref: Optional[str], target_path:
     log_stdout(f"Cloning git repository: {source_url}")
 
     # Remove existing source if it exists
+    # First change to a safe directory in case target_path is the current working directory
+    # (which can happen when workdir is set to /job/src)
+    original_cwd = None
     if target_path.exists():
+        try:
+            original_cwd = os.getcwd()
+            # Change to parent directory before removing target
+            os.chdir(target_path.parent)
+        except OSError:
+            pass  # getcwd might fail if cwd was already deleted
         shutil.rmtree(target_path)
 
     try:
