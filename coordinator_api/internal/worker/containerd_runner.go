@@ -71,8 +71,9 @@ func (cr *ContainerdRunner) SpawnJob(ctx context.Context, config *JobConfig) (st
 		"--namespace", containerdNamespace,
 		"run",
 		"--name", containerID,
-		"--rm=false", // Don't auto-remove so we can get logs and exit code
+		"--rm=false",      // Don't auto-remove so we can get logs and exit code
 		"--net", "bridge", // Use bridge networking with CNI
+		"--pull", "always", // Always pull to get latest image
 	}
 
 	// Determine working directory

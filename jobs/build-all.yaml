@@ -57,7 +57,9 @@ command: |-
         --frontend dockerfile.v0 \
         --local context="$context" \
         --local dockerfile="$context" \
+        --opt build-arg:CACHEBUST=$(date +%s) \
         --opt filename="$dockerfile" \
+        --no-cache \
         --output type=image,name="$image",push=true
     }
 
