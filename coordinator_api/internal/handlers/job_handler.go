@@ -1,9 +1,13 @@
 package handlers
 
 import (
+	"context"
 	"encoding/json"
+	"fmt"
+	"io"
 	"log"
 	"net/http"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -12,16 +16,26 @@ import (
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/config"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/corndogs"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/metrics"
+	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/objects"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store/models"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/vcs"
 )
+
+// LogEntry represents a single log line in JSON format (matches worker.LogEntry)
+type LogEntry struct {
+	Timestamp string `json:"timestamp"`
+	Stream    string `json:"stream"`
+	Level     string `json:"level,omitempty"`
+	Message   string `json:"message"`
+}
 
 // JobHandler handles job-related HTTP requests
 type JobHandler struct {
 	BaseHandler
 	store          store.Store
 	corndogsClient corndogs.ClientInterface
+	objectStore    objects.ObjectStore
 }
 
 // NewJobHandler creates a new job handler
@@ -29,6 +43,15 @@ func NewJobHandler(store store.Store, corndogsClient corndogs.ClientInterface) *
 	return &JobHandler{
 		store:          store,
 		corndogsClient: corndogsClient,
+	}
+}
+
+// NewJobHandlerWithObjectStore creates a new job handler with object store support
+func NewJobHandlerWithObjectStore(store store.Store, corndogsClient corndogs.ClientInterface, objectStore objects.ObjectStore) *JobHandler {
+	return &JobHandler{
+		store:          store,
+		corndogsClient: corndogsClient,
+		objectStore:    objectStore,
 	}
 }
 
@@ -388,6 +411,175 @@ func (h *JobHandler) DeleteJob(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// GetJobLogs handles GET /api/v1/jobs/{job_id}/logs
+// Query parameters:
+//   - stream: "stdout", "stderr", or "combined" (default: "combined")
+func (h *JobHandler) GetJobLogs(w http.ResponseWriter, r *http.Request) {
+	jobID := h.getID(r, "job_id")
+	if jobID == "" {
+		h.respondWithError(w, http.StatusBadRequest, store.ErrInvalidInput)
+		return
+	}
+
+	job, err := h.store.GetJobByID(r.Context(), jobID)
+	if err != nil {
+		h.respondWithError(w, http.StatusNotFound, err)
+		return
+	}
+
+	// Check if user can access this job
+	user := checkauth.GetUserFromContext(r.Context())
+	if user == nil {
+		h.respondWithError(w, http.StatusUnauthorized, store.ErrUnauthorized)
+		return
+	}
+
+	if !h.canUserAccessJob(user, job) {
+		h.respondWithError(w, http.StatusForbidden, store.ErrForbidden)
+		return
+	}
+
+	// Check if object store is configured
+	if h.objectStore == nil {
+		h.respondWithError(w, http.StatusServiceUnavailable, store.ErrServiceUnavailable)
+		return
+	}
+
+	// Get the stream parameter (default to combined)
+	stream := r.URL.Query().Get("stream")
+	if stream == "" {
+		stream = "combined"
+	}
+
+	// Validate stream parameter
+	if stream != "stdout" && stream != "stderr" && stream != "combined" {
+		h.respondWithError(w, http.StatusBadRequest, store.ErrInvalidInput)
+		return
+	}
+
+	// Build log object keys based on job ID
+	// Log format: logs/{job_id}/{stdout|stderr}.json (JSON array format)
+	var logContent []byte
+
+	switch stream {
+	case "stdout":
+		key := fmt.Sprintf("logs/%s/stdout.json", jobID)
+		content, err := h.fetchLogContent(r.Context(), key)
+		if err != nil {
+			if err == objects.ErrNotFound {
+				h.respondWithError(w, http.StatusNotFound, store.ErrNotFound)
+				return
+			}
+			h.respondWithError(w, http.StatusInternalServerError, err)
+			return
+		}
+		logContent = content
+
+	case "stderr":
+		key := fmt.Sprintf("logs/%s/stderr.json", jobID)
+		content, err := h.fetchLogContent(r.Context(), key)
+		if err != nil {
+			if err == objects.ErrNotFound {
+				h.respondWithError(w, http.StatusNotFound, store.ErrNotFound)
+				return
+			}
+			h.respondWithError(w, http.StatusInternalServerError, err)
+			return
+		}
+		logContent = content
+
+	case "combined":
+		// Fetch both stdout and stderr, combine them into a single sorted array
+		stdoutKey := fmt.Sprintf("logs/%s/stdout.json", jobID)
+		stderrKey := fmt.Sprintf("logs/%s/stderr.json", jobID)
+
+		stdoutContent, stdoutErr := h.fetchLogContent(r.Context(), stdoutKey)
+		stderrContent, stderrErr := h.fetchLogContent(r.Context(), stderrKey)
+
+		// If both are not found, return 404
+		if stdoutErr == objects.ErrNotFound && stderrErr == objects.ErrNotFound {
+			h.respondWithError(w, http.StatusNotFound, store.ErrNotFound)
+			return
+		}
+
+		// Handle other errors
+		if stdoutErr != nil && stdoutErr != objects.ErrNotFound {
+			h.respondWithError(w, http.StatusInternalServerError, stdoutErr)
+			return
+		}
+		if stderrErr != nil && stderrErr != objects.ErrNotFound {
+			h.respondWithError(w, http.StatusInternalServerError, stderrErr)
+			return
+		}
+
+		// Merge JSON arrays and sort by timestamp
+		combined, err := h.mergeAndSortLogArrays(stdoutContent, stderrContent)
+		if err != nil {
+			h.respondWithError(w, http.StatusInternalServerError, err)
+			return
+		}
+		logContent = combined
+	}
+
+	// Return logs as JSON
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Content-Length", fmt.Sprintf("%d", len(logContent)))
+	w.WriteHeader(http.StatusOK)
+	w.Write(logContent)
+}
+
+// fetchLogContent retrieves log content from object storage
+func (h *JobHandler) fetchLogContent(ctx context.Context, key string) ([]byte, error) {
+	reader, err := h.objectStore.Get(ctx, key)
+	if err != nil {
+		return nil, err
+	}
+	defer reader.Close()
+
+	content, err := io.ReadAll(reader)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read log content: %w", err)
+	}
+
+	return content, nil
+}
+
+// mergeAndSortLogArrays merges two JSON log arrays and sorts by timestamp
+func (h *JobHandler) mergeAndSortLogArrays(stdoutContent, stderrContent []byte) ([]byte, error) {
+	var allEntries []LogEntry
+
+	// Parse stdout entries if present
+	if len(stdoutContent) > 0 {
+		var stdoutEntries []LogEntry
+		if err := json.Unmarshal(stdoutContent, &stdoutEntries); err != nil {
+			return nil, fmt.Errorf("failed to parse stdout logs: %w", err)
+		}
+		allEntries = append(allEntries, stdoutEntries...)
+	}
+
+	// Parse stderr entries if present
+	if len(stderrContent) > 0 {
+		var stderrEntries []LogEntry
+		if err := json.Unmarshal(stderrContent, &stderrEntries); err != nil {
+			return nil, fmt.Errorf("failed to parse stderr logs: %w", err)
+		}
+		allEntries = append(allEntries, stderrEntries...)
+	}
+
+	// Sort by timestamp
+	sort.Slice(allEntries, func(i, j int) bool {
+		return allEntries[i].Timestamp < allEntries[j].Timestamp
+	})
+
+	// Marshal back to JSON
+	result, err := json.Marshal(allEntries)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal combined logs: %w", err)
+	}
+
+	return result, nil
 }
 
 // Helper methods
