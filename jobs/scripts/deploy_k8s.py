@@ -189,7 +189,7 @@ spec:
             raise RuntimeError("Timed out waiting for PostgreSQL")
 
     # Get reactorcide credentials
-    pg_secret = f"{release}-postgres.reactorcide.credentials.postgresql.acid.zalan.do"
+    pg_secret = f"reactorcide.{release}-postgres.credentials.postgresql.acid.zalan.do"
     log(f"Retrieving reactorcide credentials from secret: {pg_secret}")
 
     if not dry_run:
@@ -227,7 +227,7 @@ spec:
     # Get corndogs credentials if deploying corndogs
     corndogs_db_config = None
     if config['deploy_corndogs']:
-        corndogs_pg_secret = f"{release}-postgres.corndogs.credentials.postgresql.acid.zalan.do"
+        corndogs_pg_secret = f"corndogs.{release}-postgres.credentials.postgresql.acid.zalan.do"
         log(f"Retrieving corndogs credentials from secret: {corndogs_pg_secret}")
 
         if not dry_run:

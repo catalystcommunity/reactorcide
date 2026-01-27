@@ -14,9 +14,11 @@ environment:
     REACTORCIDE_HELM_RELEASE: "${env:REACTORCIDE_HELM_RELEASE}"
 
     # Database - provide URI or set PROVISION_POSTGRES=true
-    # Zalando postgres defaults: team=reactorcide, version=16, size=5Gi, instances=1
+    # Zalando postgres defaults: team=reactorcide, size=5Gi, instances=1
+    # Version must be set explicitly (operator support varies)
     REACTORCIDE_DB_URI: "${env:REACTORCIDE_DB_URI}"
     REACTORCIDE_PROVISION_POSTGRES: "${env:REACTORCIDE_PROVISION_POSTGRES}"
+    REACTORCIDE_POSTGRES_VERSION: "${env:REACTORCIDE_POSTGRES_VERSION}"
 
     # Inline helm values (YAML content)
     REACTORCIDE_HELM_VALUES: "${env:REACTORCIDE_HELM_VALUES}"
