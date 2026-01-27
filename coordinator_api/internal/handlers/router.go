@@ -3,13 +3,16 @@ package handlers
 import (
 	"context"
 	"encoding/json"
+	"log"
 	"net/http"
 	"strings"
 
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/checkauth"
+	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/config"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/corndogs"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/metrics"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/middleware"
+	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/objects"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/secrets"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store"
 
@@ -23,6 +26,8 @@ var (
 	singletoncorndogsClient corndogs.ClientInterface
 	// Master key manager for secrets (singleton)
 	singletonKeyManager *secrets.MasterKeyManager
+	// Object store for logs and artifacts (singleton)
+	singletonObjectStore objects.ObjectStore
 )
 
 // GetAppMux returns the application's HTTP ServeMux for both API and tests
@@ -41,12 +46,47 @@ func GetAppMuxWithClient(corndogsClient corndogs.ClientInterface) *http.ServeMux
 	return appMux
 }
 
+// SetObjectStore sets the singleton object store (useful for testing)
+func SetObjectStore(store objects.ObjectStore) {
+	singletonObjectStore = store
+}
+
+// GetObjectStore returns the singleton object store
+func GetObjectStore() objects.ObjectStore {
+	return singletonObjectStore
+}
+
+// ResetAppMux resets the app mux singleton (useful for testing)
+func ResetAppMux() {
+	appMux = nil
+	singletoncorndogsClient = nil
+	singletonObjectStore = nil
+	singletonKeyManager = nil
+}
+
 // createAppMux creates and configures the application ServeMux with all routes
 func createAppMux() *http.ServeMux {
 	mux := http.NewServeMux()
 
+	// Initialize object store if not already done
+	if singletonObjectStore == nil {
+		objectStoreConfig := objects.ObjectStoreConfig{
+			Type: config.ObjectStoreType,
+			Config: map[string]string{
+				"base_path": config.ObjectStoreBasePath,
+				"bucket":    config.ObjectStoreBucket,
+				"prefix":    config.ObjectStorePrefix,
+			},
+		}
+		var err error
+		singletonObjectStore, err = objects.NewObjectStore(objectStoreConfig)
+		if err != nil {
+			log.Printf("WARNING: Failed to initialize object store: %v - log retrieval will be unavailable", err)
+		}
+	}
+
 	// Create handlers
-	jobHandler := NewJobHandler(store.AppStore, singletoncorndogsClient)
+	jobHandler := NewJobHandlerWithObjectStore(store.AppStore, singletoncorndogsClient, singletonObjectStore)
 	tokenHandler := NewTokenHandler(store.AppStore)
 	webhookHandler := NewWebhookHandler(store.AppStore)
 
@@ -121,6 +161,18 @@ func createAppMux() *http.ServeMux {
 				r = r.WithContext(setIDContext(r.Context(), "job_id", jobID))
 				if r.Method == http.MethodPut {
 					jobHandler.CancelJob(w, r)
+					return
+				}
+				http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+				return
+			}
+
+			// Handle the special case for job_id/logs
+			if strings.HasSuffix(path, "/logs") {
+				jobID := strings.TrimSuffix(path, "/logs")
+				r = r.WithContext(setIDContext(r.Context(), "job_id", jobID))
+				if r.Method == http.MethodGet {
+					jobHandler.GetJobLogs(w, r)
 					return
 				}
 				http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)

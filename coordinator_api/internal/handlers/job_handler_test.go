@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -14,9 +16,12 @@ import (
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/config"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/corndogs"
 	pb "github.com/catalystcommunity/reactorcide/coordinator_api/internal/corndogs/v1alpha1"
+	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/objects"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store/models"
 	"github.com/google/uuid"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 // MockStore implements store.Store for testing
@@ -742,4 +747,389 @@ func TestJobHandler_CICodeAllowlist(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestGetJobLogsWithMemoryStore tests GetJobLogs with an in-memory object store
+func TestGetJobLogsWithMemoryStore(t *testing.T) {
+	testJobID := "test-job-123"
+	testUserID := "test-user-456"
+
+	testJob := &models.Job{
+		JobID:  testJobID,
+		UserID: testUserID,
+		Name:   "Test Job",
+		Status: "completed",
+	}
+
+	testUser := &models.User{
+		UserID:   testUserID,
+		Username: "testuser",
+		Email:    "test@example.com",
+	}
+
+	mockStoreInstance := &MockStore{
+		GetJobByIDFunc: func(ctx context.Context, jobID string) (*models.Job, error) {
+			if jobID == testJobID {
+				return testJob, nil
+			}
+			return nil, store.ErrNotFound
+		},
+	}
+
+	t.Run("returns stdout logs from memory store", func(t *testing.T) {
+		memStore := objects.NewMemoryObjectStore()
+		handler := NewJobHandlerWithObjectStore(mockStoreInstance, nil, memStore)
+
+		// Store test logs as JSON array
+		stdoutEntries := []LogEntry{
+			{Timestamp: "2024-01-01T10:00:00Z", Stream: "stdout", Level: "info", Message: "Hello from stdout!"},
+			{Timestamp: "2024-01-01T10:00:01Z", Stream: "stdout", Level: "info", Message: "Line 2"},
+		}
+		stdoutContent, _ := json.Marshal(stdoutEntries)
+		stdoutKey := "logs/" + testJobID + "/stdout.json"
+		err := memStore.Put(context.Background(), stdoutKey, bytes.NewReader(stdoutContent), "application/json")
+		require.NoError(t, err)
+
+		// Create request with user context
+		req := httptest.NewRequest("GET", "/api/v1/jobs/"+testJobID+"/logs?stream=stdout", nil)
+		ctx := checkauth.SetUserContext(req.Context(), testUser)
+		ctx = context.WithValue(ctx, GetContextKey("job_id"), testJobID)
+		req = req.WithContext(ctx)
+
+		rr := httptest.NewRecorder()
+		handler.GetJobLogs(rr, req)
+
+		assert.Equal(t, http.StatusOK, rr.Code)
+		assert.Equal(t, "application/json", rr.Header().Get("Content-Type"))
+
+		// Parse and verify JSON array
+		var entries []LogEntry
+		err = json.Unmarshal(rr.Body.Bytes(), &entries)
+		require.NoError(t, err)
+		assert.Len(t, entries, 2)
+		assert.Equal(t, "Hello from stdout!", entries[0].Message)
+	})
+
+	t.Run("returns stderr logs from memory store", func(t *testing.T) {
+		memStore := objects.NewMemoryObjectStore()
+		handler := NewJobHandlerWithObjectStore(mockStoreInstance, nil, memStore)
+
+		// Store test logs as JSON array
+		stderrEntries := []LogEntry{
+			{Timestamp: "2024-01-01T10:00:00Z", Stream: "stderr", Level: "error", Message: "Error output"},
+			{Timestamp: "2024-01-01T10:00:01Z", Stream: "stderr", Level: "error", Message: "Stack trace"},
+		}
+		stderrContent, _ := json.Marshal(stderrEntries)
+		stderrKey := "logs/" + testJobID + "/stderr.json"
+		err := memStore.Put(context.Background(), stderrKey, bytes.NewReader(stderrContent), "application/json")
+		require.NoError(t, err)
+
+		// Create request with user context
+		req := httptest.NewRequest("GET", "/api/v1/jobs/"+testJobID+"/logs?stream=stderr", nil)
+		ctx := checkauth.SetUserContext(req.Context(), testUser)
+		ctx = context.WithValue(ctx, GetContextKey("job_id"), testJobID)
+		req = req.WithContext(ctx)
+
+		rr := httptest.NewRecorder()
+		handler.GetJobLogs(rr, req)
+
+		assert.Equal(t, http.StatusOK, rr.Code)
+
+		// Parse and verify JSON array
+		var entries []LogEntry
+		err = json.Unmarshal(rr.Body.Bytes(), &entries)
+		require.NoError(t, err)
+		assert.Len(t, entries, 2)
+		assert.Equal(t, "Error output", entries[0].Message)
+	})
+
+	t.Run("returns combined logs by default", func(t *testing.T) {
+		memStore := objects.NewMemoryObjectStore()
+		handler := NewJobHandlerWithObjectStore(mockStoreInstance, nil, memStore)
+
+		// Store both stdout and stderr as JSON arrays
+		stdoutEntries := []LogEntry{
+			{Timestamp: "2024-01-01T10:00:00Z", Stream: "stdout", Level: "info", Message: "stdout first"},
+			{Timestamp: "2024-01-01T10:00:02Z", Stream: "stdout", Level: "info", Message: "stdout second"},
+		}
+		stderrEntries := []LogEntry{
+			{Timestamp: "2024-01-01T10:00:01Z", Stream: "stderr", Level: "error", Message: "stderr middle"},
+		}
+		stdoutContent, _ := json.Marshal(stdoutEntries)
+		stderrContent, _ := json.Marshal(stderrEntries)
+		err := memStore.Put(context.Background(), "logs/"+testJobID+"/stdout.json", bytes.NewReader(stdoutContent), "application/json")
+		require.NoError(t, err)
+		err = memStore.Put(context.Background(), "logs/"+testJobID+"/stderr.json", bytes.NewReader(stderrContent), "application/json")
+		require.NoError(t, err)
+
+		// Create request with user context
+		req := httptest.NewRequest("GET", "/api/v1/jobs/"+testJobID+"/logs", nil)
+		ctx := checkauth.SetUserContext(req.Context(), testUser)
+		ctx = context.WithValue(ctx, GetContextKey("job_id"), testJobID)
+		req = req.WithContext(ctx)
+
+		rr := httptest.NewRecorder()
+		handler.GetJobLogs(rr, req)
+
+		assert.Equal(t, http.StatusOK, rr.Code)
+
+		// Parse and verify combined JSON array is sorted by timestamp
+		var entries []LogEntry
+		err = json.Unmarshal(rr.Body.Bytes(), &entries)
+		require.NoError(t, err)
+		assert.Len(t, entries, 3)
+		// Should be sorted by timestamp
+		assert.Equal(t, "stdout first", entries[0].Message)
+		assert.Equal(t, "stderr middle", entries[1].Message)
+		assert.Equal(t, "stdout second", entries[2].Message)
+	})
+
+	t.Run("returns 404 when no logs exist", func(t *testing.T) {
+		memStore := objects.NewMemoryObjectStore()
+		handler := NewJobHandlerWithObjectStore(mockStoreInstance, nil, memStore)
+
+		// No logs stored
+		req := httptest.NewRequest("GET", "/api/v1/jobs/"+testJobID+"/logs", nil)
+		ctx := checkauth.SetUserContext(req.Context(), testUser)
+		ctx = context.WithValue(ctx, GetContextKey("job_id"), testJobID)
+		req = req.WithContext(ctx)
+
+		rr := httptest.NewRecorder()
+		handler.GetJobLogs(rr, req)
+
+		assert.Equal(t, http.StatusNotFound, rr.Code)
+	})
+
+	t.Run("returns 400 for invalid stream parameter", func(t *testing.T) {
+		memStore := objects.NewMemoryObjectStore()
+		handler := NewJobHandlerWithObjectStore(mockStoreInstance, nil, memStore)
+
+		req := httptest.NewRequest("GET", "/api/v1/jobs/"+testJobID+"/logs?stream=invalid", nil)
+		ctx := checkauth.SetUserContext(req.Context(), testUser)
+		ctx = context.WithValue(ctx, GetContextKey("job_id"), testJobID)
+		req = req.WithContext(ctx)
+
+		rr := httptest.NewRecorder()
+		handler.GetJobLogs(rr, req)
+
+		assert.Equal(t, http.StatusBadRequest, rr.Code)
+	})
+
+	t.Run("returns 401 when user not in context", func(t *testing.T) {
+		memStore := objects.NewMemoryObjectStore()
+		handler := NewJobHandlerWithObjectStore(mockStoreInstance, nil, memStore)
+
+		req := httptest.NewRequest("GET", "/api/v1/jobs/"+testJobID+"/logs", nil)
+		ctx := context.WithValue(req.Context(), GetContextKey("job_id"), testJobID)
+		req = req.WithContext(ctx)
+
+		rr := httptest.NewRecorder()
+		handler.GetJobLogs(rr, req)
+
+		assert.Equal(t, http.StatusUnauthorized, rr.Code)
+	})
+
+	t.Run("returns 403 when user doesn't own the job", func(t *testing.T) {
+		memStore := objects.NewMemoryObjectStore()
+		handler := NewJobHandlerWithObjectStore(mockStoreInstance, nil, memStore)
+
+		otherUser := &models.User{
+			UserID:   "other-user-789",
+			Username: "otheruser",
+			Email:    "other@example.com",
+		}
+
+		req := httptest.NewRequest("GET", "/api/v1/jobs/"+testJobID+"/logs", nil)
+		ctx := checkauth.SetUserContext(req.Context(), otherUser)
+		ctx = context.WithValue(ctx, GetContextKey("job_id"), testJobID)
+		req = req.WithContext(ctx)
+
+		rr := httptest.NewRecorder()
+		handler.GetJobLogs(rr, req)
+
+		assert.Equal(t, http.StatusForbidden, rr.Code)
+	})
+}
+
+// TestGetJobLogsWithFilesystemStore tests GetJobLogs with a filesystem object store using tmp directories
+func TestGetJobLogsWithFilesystemStore(t *testing.T) {
+	testJobID := "test-job-fs-123"
+	testUserID := "test-user-fs-456"
+
+	testJob := &models.Job{
+		JobID:  testJobID,
+		UserID: testUserID,
+		Name:   "Test Job FS",
+		Status: "completed",
+	}
+
+	testUser := &models.User{
+		UserID:   testUserID,
+		Username: "testuser",
+		Email:    "test@example.com",
+	}
+
+	mockStoreInstance := &MockStore{
+		GetJobByIDFunc: func(ctx context.Context, jobID string) (*models.Job, error) {
+			if jobID == testJobID {
+				return testJob, nil
+			}
+			return nil, store.ErrNotFound
+		},
+	}
+
+	t.Run("returns logs from filesystem store with tmp directory", func(t *testing.T) {
+		// Create a temporary directory for the test
+		tmpDir, err := os.MkdirTemp("", "reactorcide-logs-test-*")
+		require.NoError(t, err)
+		defer os.RemoveAll(tmpDir)
+
+		// Create filesystem object store
+		fsStore := objects.NewFilesystemObjectStore(tmpDir)
+		handler := NewJobHandlerWithObjectStore(mockStoreInstance, nil, fsStore)
+
+		// Store test logs as JSON array using the filesystem store
+		stdoutEntries := []LogEntry{
+			{Timestamp: "2024-01-01T10:00:00Z", Stream: "stdout", Level: "info", Message: "Hello from filesystem!"},
+			{Timestamp: "2024-01-01T10:00:01Z", Stream: "stdout", Level: "info", Message: "Line 2"},
+			{Timestamp: "2024-01-01T10:00:02Z", Stream: "stdout", Level: "info", Message: "Line 3"},
+		}
+		stdoutContent, _ := json.Marshal(stdoutEntries)
+		stdoutKey := "logs/" + testJobID + "/stdout.json"
+		err = fsStore.Put(context.Background(), stdoutKey, bytes.NewReader(stdoutContent), "application/json")
+		require.NoError(t, err)
+
+		// Verify the file was created
+		expectedPath := filepath.Join(tmpDir, "logs", testJobID, "stdout.json")
+		_, err = os.Stat(expectedPath)
+		require.NoError(t, err, "Log file should exist on filesystem")
+
+		// Create request with user context
+		req := httptest.NewRequest("GET", "/api/v1/jobs/"+testJobID+"/logs?stream=stdout", nil)
+		ctx := checkauth.SetUserContext(req.Context(), testUser)
+		ctx = context.WithValue(ctx, GetContextKey("job_id"), testJobID)
+		req = req.WithContext(ctx)
+
+		rr := httptest.NewRecorder()
+		handler.GetJobLogs(rr, req)
+
+		assert.Equal(t, http.StatusOK, rr.Code)
+		assert.Equal(t, "application/json", rr.Header().Get("Content-Type"))
+
+		// Parse and verify JSON array
+		var entries []LogEntry
+		err = json.Unmarshal(rr.Body.Bytes(), &entries)
+		require.NoError(t, err)
+		assert.Len(t, entries, 3)
+		assert.Equal(t, "Hello from filesystem!", entries[0].Message)
+	})
+
+	t.Run("returns combined logs from filesystem", func(t *testing.T) {
+		// Create a temporary directory for the test
+		tmpDir, err := os.MkdirTemp("", "reactorcide-logs-combined-test-*")
+		require.NoError(t, err)
+		defer os.RemoveAll(tmpDir)
+
+		// Create filesystem object store
+		fsStore := objects.NewFilesystemObjectStore(tmpDir)
+		handler := NewJobHandlerWithObjectStore(mockStoreInstance, nil, fsStore)
+
+		// Store both stdout and stderr as JSON arrays
+		stdoutEntries := []LogEntry{
+			{Timestamp: "2024-01-01T10:00:00Z", Stream: "stdout", Level: "info", Message: "Standard output"},
+		}
+		stderrEntries := []LogEntry{
+			{Timestamp: "2024-01-01T10:00:01Z", Stream: "stderr", Level: "error", Message: "Standard error"},
+		}
+		stdoutContent, _ := json.Marshal(stdoutEntries)
+		stderrContent, _ := json.Marshal(stderrEntries)
+		err = fsStore.Put(context.Background(), "logs/"+testJobID+"/stdout.json", bytes.NewReader(stdoutContent), "application/json")
+		require.NoError(t, err)
+		err = fsStore.Put(context.Background(), "logs/"+testJobID+"/stderr.json", bytes.NewReader(stderrContent), "application/json")
+		require.NoError(t, err)
+
+		// Create request with user context
+		req := httptest.NewRequest("GET", "/api/v1/jobs/"+testJobID+"/logs", nil)
+		ctx := checkauth.SetUserContext(req.Context(), testUser)
+		ctx = context.WithValue(ctx, GetContextKey("job_id"), testJobID)
+		req = req.WithContext(ctx)
+
+		rr := httptest.NewRecorder()
+		handler.GetJobLogs(rr, req)
+
+		assert.Equal(t, http.StatusOK, rr.Code)
+
+		// Parse and verify combined JSON array is sorted by timestamp
+		var entries []LogEntry
+		err = json.Unmarshal(rr.Body.Bytes(), &entries)
+		require.NoError(t, err)
+		assert.Len(t, entries, 2)
+		assert.Equal(t, "Standard output", entries[0].Message)
+		assert.Equal(t, "Standard error", entries[1].Message)
+	})
+
+	t.Run("handles non-existent logs directory gracefully", func(t *testing.T) {
+		// Create a temporary directory for the test
+		tmpDir, err := os.MkdirTemp("", "reactorcide-logs-empty-test-*")
+		require.NoError(t, err)
+		defer os.RemoveAll(tmpDir)
+
+		// Create filesystem object store
+		fsStore := objects.NewFilesystemObjectStore(tmpDir)
+		handler := NewJobHandlerWithObjectStore(mockStoreInstance, nil, fsStore)
+
+		// Don't store any logs - request should return 404
+		req := httptest.NewRequest("GET", "/api/v1/jobs/"+testJobID+"/logs", nil)
+		ctx := checkauth.SetUserContext(req.Context(), testUser)
+		ctx = context.WithValue(ctx, GetContextKey("job_id"), testJobID)
+		req = req.WithContext(ctx)
+
+		rr := httptest.NewRecorder()
+		handler.GetJobLogs(rr, req)
+
+		assert.Equal(t, http.StatusNotFound, rr.Code)
+	})
+}
+
+// TestGetJobLogsObjectStoreNotConfigured tests behavior when object store is nil
+func TestGetJobLogsObjectStoreNotConfigured(t *testing.T) {
+	testJobID := "test-job-no-store"
+	testUserID := "test-user-no-store"
+
+	testJob := &models.Job{
+		JobID:  testJobID,
+		UserID: testUserID,
+		Name:   "Test Job No Store",
+		Status: "completed",
+	}
+
+	testUser := &models.User{
+		UserID:   testUserID,
+		Username: "testuser",
+		Email:    "test@example.com",
+	}
+
+	mockStoreInstance := &MockStore{
+		GetJobByIDFunc: func(ctx context.Context, jobID string) (*models.Job, error) {
+			if jobID == testJobID {
+				return testJob, nil
+			}
+			return nil, store.ErrNotFound
+		},
+	}
+
+	t.Run("returns 503 when object store is not configured", func(t *testing.T) {
+		// Handler with nil object store
+		handler := NewJobHandlerWithObjectStore(mockStoreInstance, nil, nil)
+
+		req := httptest.NewRequest("GET", "/api/v1/jobs/"+testJobID+"/logs", nil)
+		ctx := checkauth.SetUserContext(req.Context(), testUser)
+		ctx = context.WithValue(ctx, GetContextKey("job_id"), testJobID)
+		req = req.WithContext(ctx)
+
+		rr := httptest.NewRecorder()
+		handler.GetJobLogs(rr, req)
+
+		assert.Equal(t, http.StatusServiceUnavailable, rr.Code)
+	})
 }

@@ -10,6 +10,7 @@ import (
 	"github.com/catalystcommunity/app-utils-go/logging"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/config"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/corndogs"
+	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/objects"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store/postgres_store"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/worker"
@@ -87,6 +88,23 @@ func RunWorker(ctx *cli.Context) error {
 	logging.Log.Infof("Dry run mode: %t", dryRun)
 	logging.Log.Infof("Container runtime: %s", containerRuntime)
 
+	// Initialize object store for log shipping
+	var objectStore objects.ObjectStore
+	objectStoreConfig := objects.ObjectStoreConfig{
+		Type: config.ObjectStoreType,
+		Config: map[string]string{
+			"base_path": config.ObjectStoreBasePath,
+			"bucket":    config.ObjectStoreBucket,
+			"prefix":    config.ObjectStorePrefix,
+		},
+	}
+	objectStore, err := objects.NewObjectStore(objectStoreConfig)
+	if err != nil {
+		logging.Log.WithError(err).Warn("Failed to initialize object store - log shipping will be disabled")
+	} else {
+		logging.Log.Infof("Object store initialized: %s", config.ObjectStoreType)
+	}
+
 	// Create worker configuration
 	workerConfig := &worker.Config{
 		QueueName:        queueName,
@@ -95,6 +113,7 @@ func RunWorker(ctx *cli.Context) error {
 		DryRun:           dryRun,
 		Store:            store.AppStore,
 		ContainerRuntime: containerRuntime,
+		ObjectStore:      objectStore,
 	}
 
 	// Set up graceful shutdown

@@ -21,6 +21,7 @@ func main() {
 			cmd.SecretsCommand,
 			cmd.RunLocalCommand,
 			cmd.SubmitCommand,
+			cmd.LogsCommand,
 		},
 	}
 	err := app.Run(os.Args)

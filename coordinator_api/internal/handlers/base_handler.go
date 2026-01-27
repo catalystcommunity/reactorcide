@@ -57,6 +57,10 @@ func (h *BaseHandler) respondWithError(w http.ResponseWriter, code int, err erro
 		errType = "unauthorized"
 		message = "Unauthorized"
 		code = http.StatusUnauthorized
+	case errors.Is(err, store.ErrServiceUnavailable):
+		errType = "service_unavailable"
+		message = "Service temporarily unavailable"
+		code = http.StatusServiceUnavailable
 	default:
 		errType = "internal_error"
 		message = "Internal server error"

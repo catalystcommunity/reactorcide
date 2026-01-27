@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"sync"
@@ -13,6 +14,14 @@ import (
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/objects"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/secrets"
 )
+
+// LogEntry represents a single log line in JSON format
+type LogEntry struct {
+	Timestamp string `json:"timestamp"`
+	Stream    string `json:"stream"`
+	Level     string `json:"level,omitempty"`
+	Message   string `json:"message"`
+}
 
 // LogShipperConfig holds configuration for log shipping
 type LogShipperConfig struct {
@@ -25,9 +34,9 @@ type LogShipperConfig struct {
 
 // LogShipper handles streaming logs to object storage in chunks
 type LogShipper struct {
-	config LogShipperConfig
-	buffer *bytes.Buffer
-	mu     sync.Mutex
+	config  LogShipperConfig
+	entries []LogEntry
+	mu      sync.Mutex
 
 	// Statistics
 	totalBytes    int64
@@ -45,12 +54,12 @@ func NewLogShipper(config LogShipperConfig, masker *secrets.Masker) *LogShipper 
 		config.ChunkInterval = 3 * time.Second
 	}
 
-	// Generate object key
-	objectKey := fmt.Sprintf("logs/%s/%s.log", config.JobID, config.StreamType)
+	// Generate object key - use .json extension for JSON array format
+	objectKey := fmt.Sprintf("logs/%s/%s.json", config.JobID, config.StreamType)
 
 	return &LogShipper{
 		config:    config,
-		buffer:    new(bytes.Buffer),
+		entries:   make([]LogEntry, 0),
 		objectKey: objectKey,
 		masker:    masker,
 	}
@@ -91,10 +100,12 @@ func (ls *LogShipper) StreamAndShip(ctx context.Context, reader io.ReadCloser) (
 			maskedLine = ls.masker.MaskString(line)
 		}
 
-		// Write to buffer (with newline)
+		// Create log entry
+		entry := ls.parseLogLine(maskedLine)
+
+		// Add to entries slice
 		ls.mu.Lock()
-		ls.buffer.WriteString(maskedLine)
-		ls.buffer.WriteString("\n")
+		ls.entries = append(ls.entries, entry)
 		ls.mu.Unlock()
 	}
 
@@ -152,38 +163,29 @@ func (ls *LogShipper) periodicUploader(ctx context.Context, ticker *time.Ticker,
 	}
 }
 
-// uploadChunk uploads the current buffer contents to object storage
+// uploadChunk uploads the current entries to object storage as a JSON array
 func (ls *LogShipper) uploadChunk(ctx context.Context) error {
 	ls.mu.Lock()
 	defer ls.mu.Unlock()
 
-	// Nothing to upload if buffer is empty
-	if ls.buffer.Len() == 0 {
+	// Nothing to upload if no new entries
+	if len(ls.entries) == 0 {
 		return nil
 	}
 
 	logger := logging.Log.WithFields(map[string]interface{}{
 		"job_id":      ls.config.JobID,
 		"stream_type": ls.config.StreamType,
-		"chunk_size":  ls.buffer.Len(),
+		"entry_count": len(ls.entries),
 		"chunk_num":   ls.chunksWritten + 1,
 	})
 
-	// Get chunk size before we manipulate the buffer
-	chunkSize := int64(ls.buffer.Len())
+	contentType := "application/json"
 
-	// Upload to object storage
-	// Note: For chunked uploads, we append to the same object key
-	// The filesystem backend will append if the file exists
-	contentType := "text/plain"
-
-	// For first chunk, use Put. For subsequent chunks, we need to append
-	// Since the ObjectStore interface doesn't have Append, we'll read existing content,
-	// append new content, and write back
-	var finalContent []byte
+	// Read existing entries from storage if this isn't the first chunk
+	var allEntries []LogEntry
 
 	if ls.chunksWritten > 0 {
-		// Read existing content
 		existingReader, err := ls.config.ObjectStore.Get(ctx, ls.objectKey)
 		if err != nil && err != objects.ErrNotFound {
 			logger.WithError(err).Error("Failed to read existing log content")
@@ -198,30 +200,36 @@ func (ls *LogShipper) uploadChunk(ctx context.Context) error {
 				return fmt.Errorf("failed to read existing data: %w", err)
 			}
 
-			// Append new chunk to existing content
-			finalContent = append(existingData, ls.buffer.Bytes()...)
-		} else {
-			// File doesn't exist yet (shouldn't happen for chunks > 0, but handle it)
-			finalContent = ls.buffer.Bytes()
+			// Parse existing JSON array
+			if err := json.Unmarshal(existingData, &allEntries); err != nil {
+				logger.WithError(err).Warn("Failed to parse existing log data as JSON array, starting fresh")
+				allEntries = nil
+			}
 		}
-	} else {
-		// First chunk - just use buffer content
-		finalContent = ls.buffer.Bytes()
 	}
 
-	// Write the complete content
-	finalReader := bytes.NewReader(finalContent)
-	if err := ls.config.ObjectStore.Put(ctx, ls.objectKey, finalReader, contentType); err != nil {
+	// Append new entries
+	allEntries = append(allEntries, ls.entries...)
+
+	// Marshal to JSON array
+	jsonData, err := json.Marshal(allEntries)
+	if err != nil {
+		logger.WithError(err).Error("Failed to marshal log entries to JSON")
+		return fmt.Errorf("failed to marshal entries: %w", err)
+	}
+
+	// Write the complete JSON array
+	if err := ls.config.ObjectStore.Put(ctx, ls.objectKey, bytes.NewReader(jsonData), contentType); err != nil {
 		logger.WithError(err).Error("Failed to upload log chunk")
 		return fmt.Errorf("failed to upload chunk: %w", err)
 	}
 
 	// Update statistics
-	ls.totalBytes += chunkSize
+	ls.totalBytes = int64(len(jsonData))
 	ls.chunksWritten++
 
-	// Clear the buffer
-	ls.buffer.Reset()
+	// Clear the entries buffer
+	ls.entries = ls.entries[:0]
 
 	logger.WithField("total_bytes", ls.totalBytes).Debug("Log chunk uploaded successfully")
 
@@ -229,11 +237,34 @@ func (ls *LogShipper) uploadChunk(ctx context.Context) error {
 	if ls.config.OnChunkUploaded != nil {
 		if err := ls.config.OnChunkUploaded(ls.objectKey, ls.totalBytes); err != nil {
 			logger.WithError(err).Warn("Chunk upload callback failed")
-			// Don't return error - callback failure shouldn't stop log shipping
 		}
 	}
 
 	return nil
+}
+
+// parseLogLine parses a log line, preserving existing JSON structure if present
+func (ls *LogShipper) parseLogLine(line string) LogEntry {
+	// Try to parse the line as JSON
+	var existing LogEntry
+	if err := json.Unmarshal([]byte(line), &existing); err == nil {
+		// Line is valid JSON, check if it has the required fields
+		if existing.Timestamp != "" && existing.Message != "" {
+			// Use existing timestamp and message, fill in stream if missing
+			if existing.Stream == "" {
+				existing.Stream = ls.config.StreamType
+			}
+			return existing
+		}
+	}
+
+	// Line is not valid JSON or missing required fields, create new entry
+	return LogEntry{
+		Timestamp: time.Now().UTC().Format(time.RFC3339Nano),
+		Stream:    ls.config.StreamType,
+		Level:     "info",
+		Message:   line,
+	}
 }
 
 // GetObjectKey returns the object key where logs are being stored
