@@ -308,6 +308,7 @@ def deploy_corndogs(config: Dict[str, Any], corndogs_db_config: Optional[Dict], 
         f"--set database.dbname={db_name} "
         f"--set database.user={db_user} "
         f"--set database.password={db_pass} "
+        f"--set database.tls.enabled=true "
         f"--wait --timeout 5m"
     )
     run_cmd(cmd, dry_run=dry_run)
