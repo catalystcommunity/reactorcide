@@ -23,11 +23,8 @@ environment:
   # REACTORCIDE_DB_URI: "postgresql://user:pass@host:5432/reactorcide?sslmode=require"
   #
   # Option 2: Provision via Zalando Postgres Operator (must be installed in cluster)
+  # Defaults: team=reactorcide, version=18, size=5Gi, instances=1
   REACTORCIDE_PROVISION_POSTGRES: "true"
-  REACTORCIDE_POSTGRES_TEAM: reactorcide
-  REACTORCIDE_POSTGRES_VERSION: "16"
-  REACTORCIDE_POSTGRES_SIZE: 5Gi
-  REACTORCIDE_POSTGRES_INSTANCES: "1"
 
   # Corndogs configuration - choose one:
   #

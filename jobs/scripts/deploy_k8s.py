@@ -56,7 +56,7 @@ def read_config() -> Dict[str, Any]:
         'db_uri': os.environ.get('REACTORCIDE_DB_URI', ''),
         'provision_postgres': os.environ.get('REACTORCIDE_PROVISION_POSTGRES', 'false').lower() == 'true',
         'postgres_team': os.environ.get('REACTORCIDE_POSTGRES_TEAM', 'reactorcide'),
-        'postgres_version': os.environ.get('REACTORCIDE_POSTGRES_VERSION', '16'),
+        'postgres_version': os.environ.get('REACTORCIDE_POSTGRES_VERSION', '18'),
         'postgres_size': os.environ.get('REACTORCIDE_POSTGRES_SIZE', '5Gi'),
         'postgres_instances': os.environ.get('REACTORCIDE_POSTGRES_INSTANCES', '1'),
         'deploy_corndogs': os.environ.get('REACTORCIDE_DEPLOY_CORNDOGS', 'false').lower() == 'true',
