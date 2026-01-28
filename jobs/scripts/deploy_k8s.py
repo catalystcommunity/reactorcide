@@ -7,7 +7,10 @@ Tools (helm, kubectl) are installed by the plugin_k8s_tools.py lifecycle hook.
 Can be tested independently with required env vars:
     KUBECONFIG_CONTENT="..." REACTORCIDE_K8S_NAMESPACE=test python deploy_k8s.py --dry-run
 """
+import json
 import os
+import socket
+import struct
 import subprocess
 import sys
 import argparse
@@ -38,6 +41,24 @@ def run_cmd_output(cmd: str, dry_run: bool = False) -> str:
         return ""
     result = subprocess.run(cmd, shell=True, capture_output=True, text=True, check=True)
     return result.stdout.strip()
+
+
+def register_secret(secret: str) -> None:
+    """Register a secret value for masking via the runnerlib secrets socket."""
+    socket_path = os.environ.get('REACTORCIDE_SECRETS_SOCKET')
+    if not socket_path or not secret:
+        return
+    try:
+        sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        sock.settimeout(5.0)
+        sock.connect(socket_path)
+        msg = json.dumps({'action': 'register', 'secrets': [secret]}).encode('utf-8')
+        sock.send(struct.pack('!I', len(msg)))
+        sock.send(msg)
+        sock.close()
+    except Exception as e:
+        log(f"ERROR: Failed to register secret for masking: {e}")
+        pass
 
 
 def setup_path() -> None:
@@ -152,6 +173,8 @@ spec:
 {databases_spec}
   postgresql:
     version: "{config['postgres_version']}"
+    parameters:
+      ssl: "off"
 """
 
     if dry_run:
@@ -210,17 +233,11 @@ spec:
             f"kubectl get secret {pg_secret} -n {namespace} -o jsonpath='{{.data.password}}' | base64 -d"
         )
 
-        db_uri = f"postgresql://{pg_user}:{pg_pass}@{pg_host}:5432/reactorcide?sslmode=require"
+        db_uri = f"postgresql://{pg_user}:{pg_pass}@{pg_host}:5432/reactorcide?sslmode=disable"
 
-        # Register password for masking if socket is available
-        secrets_socket = os.environ.get('REACTORCIDE_SECRETS_SOCKET')
-        if secrets_socket:
-            try:
-                subprocess.run(["python", "-m", "src.register_secret", pg_pass], check=False, capture_output=True)
-            except Exception:
-                pass
+        register_secret(pg_pass)
     else:
-        db_uri = f"postgresql://reactorcide:***@{pg_host}:5432/reactorcide?sslmode=require"
+        db_uri = f"postgresql://reactorcide:***@{pg_host}:5432/reactorcide?sslmode=disable"
 
     log("Database URI configured from Zalando PostgreSQL")
 
@@ -253,13 +270,7 @@ spec:
                 'password': corndogs_db_pass,
             }
 
-            # Register for masking
-            secrets_socket = os.environ.get('REACTORCIDE_SECRETS_SOCKET')
-            if secrets_socket:
-                try:
-                    subprocess.run(["python", "-m", "src.register_secret", corndogs_db_pass], check=False, capture_output=True)
-                except Exception:
-                    pass
+            register_secret(corndogs_db_pass)
         else:
             corndogs_db_config = {
                 'host': pg_host,
@@ -308,7 +319,6 @@ def deploy_corndogs(config: Dict[str, Any], corndogs_db_config: Optional[Dict], 
         f"--set database.dbname={db_name} "
         f"--set database.user={db_user} "
         f"--set database.password={db_pass} "
-        f"--set database.tls.enabled=true "
         f"--wait --timeout 5m"
     )
     run_cmd(cmd, dry_run=dry_run)
@@ -514,13 +524,7 @@ def create_api_token(config: Dict[str, Any], dry_run: bool = False) -> None:
                 token_id = line.split(" ", 2)[2] if len(line.split(" ")) > 2 else ""
 
         if api_token:
-            # Register for masking
-            secrets_socket = os.environ.get('REACTORCIDE_SECRETS_SOCKET')
-            if secrets_socket:
-                try:
-                    subprocess.run(["python", "-m", "src.register_secret", api_token], check=False, capture_output=True)
-                except Exception:
-                    pass
+            register_secret(api_token)
 
             # Store in k8s secret
             run_cmd(
