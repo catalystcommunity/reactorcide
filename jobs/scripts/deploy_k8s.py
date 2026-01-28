@@ -173,8 +173,6 @@ spec:
 {databases_spec}
   postgresql:
     version: "{config['postgres_version']}"
-    parameters:
-      ssl: "off"
 """
 
     if dry_run:
@@ -233,11 +231,11 @@ spec:
             f"kubectl get secret {pg_secret} -n {namespace} -o jsonpath='{{.data.password}}' | base64 -d"
         )
 
-        db_uri = f"postgresql://{pg_user}:{pg_pass}@{pg_host}:5432/reactorcide?sslmode=disable"
+        db_uri = f"postgresql://{pg_user}:{pg_pass}@{pg_host}:5432/reactorcide?sslmode=require"
 
         register_secret(pg_pass)
     else:
-        db_uri = f"postgresql://reactorcide:***@{pg_host}:5432/reactorcide?sslmode=disable"
+        db_uri = f"postgresql://reactorcide:***@{pg_host}:5432/reactorcide?sslmode=require"
 
     log("Database URI configured from Zalando PostgreSQL")
 
@@ -319,6 +317,7 @@ def deploy_corndogs(config: Dict[str, Any], corndogs_db_config: Optional[Dict], 
         f"--set database.dbname={db_name} "
         f"--set database.user={db_user} "
         f"--set database.password={db_pass} "
+        f"--set database.tls.enabled=require "
         f"--wait --timeout 5m"
     )
     run_cmd(cmd, dry_run=dry_run)
