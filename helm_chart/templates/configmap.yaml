@@ -28,9 +28,7 @@ data:
   # Default configuration
   DEFAULT_QUEUE_NAME: {{ .Values.defaults.queueName | quote }}
   DEFAULT_TIMEOUT: {{ .Values.defaults.timeout | quote }}
-  {{- if .Values.defaults.userId }}
-  REACTORCIDE_DEFAULT_USER_ID: {{ .Values.defaults.userId | quote }}
-  {{- end }}
+  # REACTORCIDE_DEFAULT_USER_ID is read from {{ .Values.defaults.userSecretName }} secret
 
   # Object store configuration
   OBJECT_STORE_TYPE: {{ .Values.objectStore.type | quote }}

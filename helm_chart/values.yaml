@@ -188,7 +188,11 @@ objectStore:
 defaults:
   queueName: reactorcide-jobs
   timeout: 3600  # seconds
-  userId: ""  # UUID for default user (optional)
+  userId: ""  # UUID for default user (optional - auto-generated if not set)
+  # Secret name for default user credentials (userId and API token)
+  # This secret is auto-created with a generated userId on first install
+  # The deploy script adds the API token after user creation
+  userSecretName: "base-reactorcide-user"
 
 storage:
   type: postgres

@@ -114,6 +114,12 @@ spec:
                   name: {{ include "app.secretName" . }}
                   key: REACTORCIDE_MASTER_KEYS
             {{- end }}
+            # Default user ID from generated secret
+            - name: REACTORCIDE_DEFAULT_USER_ID
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.defaults.userSecretName }}
+                  key: user-id
       {{- with .Values.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}
