@@ -411,6 +411,9 @@ func (m *MasterKeyManager) AutoRegisterKeys(db *gorm.DB) (int, error) {
 //
 // This enables a "just works" experience where users don't need to manage keys,
 // while still allowing power users to provide their own keys via env var.
+//
+// Handles race conditions when multiple services start simultaneously by retrying
+// the database load if key generation fails due to duplicate key constraints.
 func LoadOrCreateMasterKeys(db *gorm.DB) (*MasterKeyManager, error) {
 	// 1. Try environment variable first (takes precedence)
 	if mgr, err := LoadMasterKeys(); err == nil {
@@ -428,6 +431,13 @@ func LoadOrCreateMasterKeys(db *gorm.DB) (*MasterKeyManager, error) {
 
 	// 3. No keys anywhere - generate new ones
 	if err := GenerateAndStoreMasterKeys(db, DefaultKeyCount); err != nil {
+		// If generation failed due to duplicate key (race condition with another service),
+		// retry loading from database - the other service may have just created the keys
+		if strings.Contains(err.Error(), "duplicate key") || strings.Contains(err.Error(), "unique constraint") {
+			if mgr, loadErr := LoadMasterKeysFromDB(db); loadErr == nil {
+				return mgr, nil
+			}
+		}
 		return nil, fmt.Errorf("failed to generate master keys: %w", err)
 	}
 

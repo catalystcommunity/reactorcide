@@ -11,7 +11,7 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       POSTGRES_DB: ${POSTGRES_DB}
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - postgres_data:/var/lib/postgresql
     ports:
       - "5432:5432"
     healthcheck:
@@ -34,7 +34,7 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       POSTGRES_DB: ${CORNDOGS_DB_NAME}
     volumes:
-      - postgres_corndogs_data:/var/lib/postgresql/data
+      - postgres_corndogs_data:/var/lib/postgresql
     ports:
       - "5433:5432"
     healthcheck:

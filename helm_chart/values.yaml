@@ -188,6 +188,9 @@ objectStore:
 defaults:
   queueName: reactorcide-jobs
   timeout: 3600  # seconds
+  # Default runner image for jobs that don't specify one
+  # Set this to your registry's runnerlib image (e.g., "registry.example.com/reactorcide/runner:latest")
+  runnerImage: ""
   userId: ""  # UUID for default user (optional - auto-generated if not set)
   # Secret name for default user credentials (userId and API token)
   # This secret is auto-created with a generated userId on first install

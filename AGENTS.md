@@ -167,16 +167,41 @@ Deploy or update Reactorcide on a VM environment (idempotent):
 REACTORCIDE_SECRETS_PASSWORD="$(cat <secrets-password-file>)" ./coordinator_api/reactorcide run-local --job-dir ./ -i <path-to-vm-deploy-config>.yaml ./jobs/deploy-to-vm.yaml
 ```
 
-### Submitting a Job via the API
+### Submitting a Job to a Remote Coordinator
 
-Submit a job to a running Reactorcide instance:
+**Preferred: Use the CLI tool** for submitting jobs to a remote Reactorcide instance:
+
+```bash
+# Submit a job using the CLI (recommended)
+REACTORCIDE_SECRETS_PASSWORD="$(cat <secrets-password-file>)" \
+  ./coordinator_api/reactorcide submit \
+    --api-url "http://<api-host>:<port>" \
+    --token "$(./coordinator_api/reactorcide secrets get <secret-path> api_key)" \
+    --overlay <optional-overlay-file>.yaml \
+    ./path/to/job.yaml
+
+# Or with --wait to block until completion
+./coordinator_api/reactorcide submit \
+    --api-url "http://<api-host>:<port>" \
+    --token "$API_TOKEN" \
+    --wait \
+    ./jobs/my-job.yaml
+```
+
+The CLI handles:
+- Job YAML parsing and validation
+- Overlay file merging (environment-specific config)
+- Secret reference resolution
+- Proper error reporting
+
+**Alternative: Direct API call** (for scripts or when CLI isn't available):
 
 ```bash
 # Get API key from secrets
 API_KEY=$(REACTORCIDE_SECRETS_PASSWORD="$(cat <secrets-password-file>)" \
   ./coordinator_api/reactorcide secrets get <secret-path> api_key)
 
-# Submit job
+# Submit job via curl
 curl -s -X POST "http://<api-host>:<port>/api/v1/jobs" \
   -H "Authorization: Bearer $API_KEY" \
   -H "Content-Type: application/json" \
@@ -189,6 +214,61 @@ curl -s -X POST "http://<api-host>:<port>/api/v1/jobs" \
     "runner_image": "docker.io/library/alpine:latest"
   }'
 ```
+
+## Job Types
+
+Reactorcide supports two main job execution patterns:
+
+### Simple Command Jobs
+
+Run any command in any container image. No source code checkout required.
+
+```yaml
+name: simple-echo
+job_command: echo "Hello from Reactorcide!"
+runner_image: alpine:latest
+source_type: git
+source_url: https://github.com/example/repo.git  # Required but can be minimal
+source_ref: main
+```
+
+Use cases:
+- Running arbitrary scripts or binaries
+- Container-based utilities (linters, formatters, etc.)
+- Quick tests or one-off commands
+
+### Runnerlib Jobs
+
+Full CI/CD job execution with source preparation, environment management, and structured output.
+
+```yaml
+name: build-project
+image: containers.catalystsquad.com/public/reactorcide/runnerbase:dev
+command: runnerlib run --job-command "python /job/src/scripts/build.py"
+source:
+  type: git
+  url: https://github.com/org/project.git
+  ref: main
+environment:
+  BUILD_ENV: production
+  DEPLOY_TARGET: staging
+```
+
+Use cases:
+- Full CI/CD pipelines
+- Jobs requiring source code checkout
+- Jobs with complex environment configuration
+- Jobs using the runnerlib Python framework
+
+### Key Differences
+
+| Feature | Simple Command | Runnerlib Job |
+|---------|---------------|---------------|
+| Container image | Any | runnerbase or custom with runnerlib |
+| Source checkout | Optional (but source_type required) | Handled by runnerlib |
+| Working directory | Container's WORKDIR | Configurable via code_dir |
+| Environment | Passed directly | Managed by runnerlib with secret resolution |
+| Output handling | Basic stdout/stderr | Structured logs with masking |
 
 ## Project Status
 

@@ -3,6 +3,7 @@ package worker
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -97,11 +98,8 @@ func (kr *KubernetesRunner) SpawnJob(ctx context.Context, config *JobConfig) (st
 	// Generate unique job name
 	jobName := fmt.Sprintf("reactorcide-job-%s-%s", config.JobID, uuid.New().String()[:8])
 
-	// Determine working directory
-	workingDir := "/job"
-	if config.WorkingDir != "" {
-		workingDir = config.WorkingDir
-	}
+	// Use working directory if specified, otherwise container uses its image's WORKDIR
+	workingDir := config.WorkingDir
 
 	// Build environment variables
 	envVars := make([]corev1.EnvVar, 0, len(config.Env))
@@ -421,8 +419,31 @@ func (kr *KubernetesRunner) validateConfig(config *JobConfig) error {
 	return nil
 }
 
+// PodStartupError represents a pod that failed to start
+type PodStartupError struct {
+	Reason  string
+	Message string
+}
+
+func (e *PodStartupError) Error() string {
+	if e.Message != "" {
+		return fmt.Sprintf("pod failed to start: %s - %s", e.Reason, e.Message)
+	}
+	return fmt.Sprintf("pod failed to start: %s", e.Reason)
+}
+
+// IsPodStartupError checks if an error is a pod startup failure
+// Uses errors.As to handle wrapped errors
+func IsPodStartupError(err error) bool {
+	var podErr *PodStartupError
+	return errors.As(err, &podErr)
+}
+
 // waitForPod waits for a pod to be created for the job and returns its name
+// It also detects pod startup failures (e.g., ImagePullBackOff) and returns early with an error
 func (kr *KubernetesRunner) waitForPod(ctx context.Context, jobName string) (string, error) {
+	logger := logging.Log.WithField("job_name", jobName)
+
 	// Poll for pod creation
 	ticker := time.NewTicker(500 * time.Millisecond)
 	defer ticker.Stop()
@@ -434,6 +455,15 @@ func (kr *KubernetesRunner) waitForPod(ctx context.Context, jobName string) (str
 		case <-ctx.Done():
 			return "", ctx.Err()
 		case <-timeout:
+			// Before timing out, check if there's a pod with startup failure
+			pods, err := kr.clientset.CoreV1().Pods(kr.namespace).List(ctx, metav1.ListOptions{
+				LabelSelector: fmt.Sprintf("reactorcide.io/job-name=%s", jobName),
+			})
+			if err == nil && len(pods.Items) > 0 {
+				if reason, message := kr.checkPodStartupFailure(&pods.Items[0]); reason != "" {
+					return "", &PodStartupError{Reason: reason, Message: message}
+				}
+			}
 			return "", fmt.Errorf("timeout waiting for pod to be created")
 		case <-ticker.C:
 			pods, err := kr.clientset.CoreV1().Pods(kr.namespace).List(ctx, metav1.ListOptions{
@@ -445,6 +475,17 @@ func (kr *KubernetesRunner) waitForPod(ctx context.Context, jobName string) (str
 
 			if len(pods.Items) > 0 {
 				pod := &pods.Items[0]
+
+				// Check for startup failures first (ImagePullBackOff, etc.)
+				if reason, message := kr.checkPodStartupFailure(pod); reason != "" {
+					logger.WithFields(map[string]interface{}{
+						"pod_name": pod.Name,
+						"reason":   reason,
+						"message":  message,
+					}).Error("Pod startup failure detected")
+					return "", &PodStartupError{Reason: reason, Message: message}
+				}
+
 				// Wait for pod to be running or completed
 				if pod.Status.Phase == corev1.PodRunning ||
 					pod.Status.Phase == corev1.PodSucceeded ||
@@ -463,6 +504,67 @@ func (kr *KubernetesRunner) waitForPod(ctx context.Context, jobName string) (str
 			}
 		}
 	}
+}
+
+// checkPodStartupFailure checks if the pod has a startup failure condition
+// Returns the reason and message if a failure is detected, empty strings otherwise
+func (kr *KubernetesRunner) checkPodStartupFailure(pod *corev1.Pod) (reason, message string) {
+	// Check container statuses for waiting states that indicate failures
+	for _, status := range pod.Status.ContainerStatuses {
+		if status.State.Waiting != nil {
+			waiting := status.State.Waiting
+			switch waiting.Reason {
+			case "ImagePullBackOff", "ErrImagePull", "ImageInspectError", "ErrImageNeverPull":
+				// Image-related failures - these won't recover without user intervention
+				return waiting.Reason, waiting.Message
+			case "CrashLoopBackOff":
+				// Container is crashing repeatedly
+				return waiting.Reason, waiting.Message
+			case "CreateContainerConfigError", "CreateContainerError":
+				// Container configuration issues
+				return waiting.Reason, waiting.Message
+			case "InvalidImageName":
+				// Invalid image name
+				return waiting.Reason, waiting.Message
+			case "RunContainerError":
+				// Failed to run the container
+				return waiting.Reason, waiting.Message
+			}
+		}
+	}
+
+	// Check init container statuses as well
+	for _, status := range pod.Status.InitContainerStatuses {
+		if status.State.Waiting != nil {
+			waiting := status.State.Waiting
+			switch waiting.Reason {
+			case "ImagePullBackOff", "ErrImagePull", "ImageInspectError", "ErrImageNeverPull":
+				return waiting.Reason, waiting.Message
+			case "CrashLoopBackOff":
+				return waiting.Reason, waiting.Message
+			case "CreateContainerConfigError", "CreateContainerError":
+				return waiting.Reason, waiting.Message
+			case "InvalidImageName":
+				return waiting.Reason, waiting.Message
+			case "RunContainerError":
+				return waiting.Reason, waiting.Message
+			}
+		}
+	}
+
+	// Check pod conditions for scheduling failures
+	for _, condition := range pod.Status.Conditions {
+		if condition.Type == corev1.PodScheduled && condition.Status == corev1.ConditionFalse {
+			// Pod can't be scheduled - check the reason
+			switch condition.Reason {
+			case "Unschedulable":
+				// Node affinity, resource constraints, etc.
+				return condition.Reason, condition.Message
+			}
+		}
+	}
+
+	return "", ""
 }
 
 // getPodExitCode gets the exit code from the job's pod
@@ -525,6 +627,69 @@ func parseCPULimit(cpuStr string) (string, error) {
 	// Convert to millicores
 	millicores := int64(f * 1000)
 	return fmt.Sprintf("%dm", millicores), nil
+}
+
+// GetJobStatus returns the current status of a Kubernetes job
+// Returns: running, succeeded, failed, or pending
+// Also returns an error message if the job failed
+func (kr *KubernetesRunner) GetJobStatus(ctx context.Context, jobName string) (status string, failureReason string, err error) {
+	logger := logging.Log.WithField("job_name", jobName)
+
+	// Get the job
+	job, err := kr.clientset.BatchV1().Jobs(kr.namespace).Get(ctx, jobName, metav1.GetOptions{})
+	if err != nil {
+		return "", "", fmt.Errorf("failed to get job: %w", err)
+	}
+
+	// Check job conditions
+	for _, condition := range job.Status.Conditions {
+		if condition.Type == batchv1.JobComplete && condition.Status == corev1.ConditionTrue {
+			return "succeeded", "", nil
+		}
+		if condition.Type == batchv1.JobFailed && condition.Status == corev1.ConditionTrue {
+			return "failed", condition.Message, nil
+		}
+	}
+
+	// Check pod status for more details
+	pods, err := kr.clientset.CoreV1().Pods(kr.namespace).List(ctx, metav1.ListOptions{
+		LabelSelector: fmt.Sprintf("reactorcide.io/job-name=%s", jobName),
+	})
+	if err != nil {
+		logger.WithError(err).Warn("Failed to get pods for job")
+		return "pending", "", nil
+	}
+
+	if len(pods.Items) == 0 {
+		return "pending", "", nil
+	}
+
+	pod := &pods.Items[0]
+
+	// Check for pod startup failures
+	if reason, message := kr.checkPodStartupFailure(pod); reason != "" {
+		return "failed", fmt.Sprintf("%s: %s", reason, message), nil
+	}
+
+	// Check pod phase
+	switch pod.Status.Phase {
+	case corev1.PodRunning:
+		return "running", "", nil
+	case corev1.PodSucceeded:
+		return "succeeded", "", nil
+	case corev1.PodFailed:
+		// Get failure reason from container status
+		for _, status := range pod.Status.ContainerStatuses {
+			if status.State.Terminated != nil && status.State.Terminated.ExitCode != 0 {
+				return "failed", status.State.Terminated.Reason, nil
+			}
+		}
+		return "failed", "pod failed", nil
+	case corev1.PodPending:
+		return "pending", "", nil
+	default:
+		return "pending", "", nil
+	}
 }
 
 // Ensure KubernetesRunner implements JobRunner interface

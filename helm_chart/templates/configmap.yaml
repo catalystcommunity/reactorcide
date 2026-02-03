@@ -28,6 +28,9 @@ data:
   # Default configuration
   DEFAULT_QUEUE_NAME: {{ .Values.defaults.queueName | quote }}
   DEFAULT_TIMEOUT: {{ .Values.defaults.timeout | quote }}
+  {{- if .Values.defaults.runnerImage }}
+  REACTORCIDE_DEFAULT_RUNNER_IMAGE: {{ .Values.defaults.runnerImage | quote }}
+  {{- end }}
   # REACTORCIDE_DEFAULT_USER_ID is read from {{ .Values.defaults.userSecretName }} secret
 
   # Object store configuration

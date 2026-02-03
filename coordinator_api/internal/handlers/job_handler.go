@@ -735,14 +735,10 @@ func (h *JobHandler) createJobFromRequest(req *CreateJobRequest, userID string) 
 	}
 
 	// Set defaults
-	if job.CodeDir == "" {
-		job.CodeDir = "/job/src"
-	}
-	if job.JobDir == "" {
-		job.JobDir = job.CodeDir
-	}
-	if job.RunnerImage == "" {
-		job.RunnerImage = "reactorcide/runner:latest"
+	// Note: CodeDir is intentionally not defaulted - if not specified,
+	// the container will use its own WORKDIR from the image
+	if job.RunnerImage == "" && config.DefaultRunnerImage != "" {
+		job.RunnerImage = config.DefaultRunnerImage
 	}
 	if job.QueueName == "" {
 		job.QueueName = "reactorcide-jobs"

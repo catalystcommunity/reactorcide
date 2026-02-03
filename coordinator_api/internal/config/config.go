@@ -23,6 +23,10 @@ var (
 	DefaultQueueName = env.GetEnvOrDefault("REACTORCIDE_DEFAULT_QUEUE_NAME", "reactorcide-jobs")
 	DefaultTimeout   = env.GetEnvAsIntOrDefault("REACTORCIDE_DEFAULT_TIMEOUT", "3600")
 
+	// Default runner image for jobs that don't specify one
+	// Should be configured per deployment (e.g., "registry.example.com/reactorcide/runner:latest")
+	DefaultRunnerImage = env.GetEnvOrDefault("REACTORCIDE_DEFAULT_RUNNER_IMAGE", "")
+
 	// Default user for API token auth
 	DefaultUserID = env.GetEnvOrDefault("REACTORCIDE_DEFAULT_USER_ID", "")
 
