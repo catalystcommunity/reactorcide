@@ -108,6 +108,11 @@ func TestParseCommand(t *testing.T) {
 			expected: []string{"echo", "hello"},
 		},
 		{
+			name:     "command with multiple args",
+			input:    "echo hello from kubernetes",
+			expected: []string{"echo", "hello", "from", "kubernetes"},
+		},
+		{
 			name:     "single quotes",
 			input:    "sh -c 'echo hello world'",
 			expected: []string{"sh", "-c", "echo hello world"},
@@ -127,11 +132,83 @@ func TestParseCommand(t *testing.T) {
 			input:    `echo hello\ world`,
 			expected: []string{"echo", "hello world"},
 		},
+		{
+			name:     "runnerlib command",
+			input:    `runnerlib run --job-command "make build"`,
+			expected: []string{"runnerlib", "run", "--job-command", "make build"},
+		},
+		{
+			name:     "python with flags",
+			input:    "python script.py --verbose --output /tmp/out",
+			expected: []string{"python", "script.py", "--verbose", "--output", "/tmp/out"},
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			result := ParseCommand(tt.input)
+			if len(result) != len(tt.expected) {
+				t.Errorf("got %d args, want %d: %v vs %v", len(result), len(tt.expected), result, tt.expected)
+				return
+			}
+			for i, v := range result {
+				if v != tt.expected[i] {
+					t.Errorf("arg[%d] = %q, want %q", i, v, tt.expected[i])
+				}
+			}
+		})
+	}
+}
+
+// TestParseCommandWithPrefix tests multiline command handling and custom shell prefixes
+func TestParseCommandWithPrefix(t *testing.T) {
+	tests := []struct {
+		name     string
+		cmd      string
+		prefix   string
+		expected []string
+	}{
+		{
+			name:     "single-line command (no prefix needed)",
+			cmd:      "echo hello",
+			prefix:   "",
+			expected: []string{"echo", "hello"},
+		},
+		{
+			name:     "multiline command with default shell",
+			cmd:      "set -e\necho hello\nexit 0",
+			prefix:   "",
+			expected: []string{"sh", "-c", "set -e\necho hello\nexit 0"},
+		},
+		{
+			name:     "multiline command with custom bash prefix",
+			cmd:      "set -e\necho hello",
+			prefix:   "bash -c",
+			expected: []string{"bash", "-c", "set -e\necho hello"},
+		},
+		{
+			name:     "multiline command with full path shell",
+			cmd:      "echo line1\necho line2",
+			prefix:   "/bin/bash -c",
+			expected: []string{"/bin/bash", "-c", "echo line1\necho line2"},
+		},
+		{
+			name:     "multiline already has shell prefix",
+			cmd:      "sh -c 'echo hello\nexit 0'",
+			prefix:   "",
+			expected: []string{"sh", "-c", "echo hello\nexit 0"},
+		},
+		{
+			name:     "single-line with custom prefix (ignored for single-line)",
+			cmd:      "echo hello",
+			prefix:   "bash -c",
+			expected: []string{"echo", "hello"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := ParseCommandWithPrefix(tt.cmd, tt.prefix)
 			if len(result) != len(tt.expected) {
 				t.Errorf("got %d args, want %d: %v vs %v", len(result), len(tt.expected), result, tt.expected)
 				return

@@ -420,18 +420,28 @@ func (jp *JobProcessor) buildJobConfig(job *models.Job, workspaceDir string) *Jo
 		image = job.RunnerImage
 	}
 
-	// Pass the job command as a single string since containerd_runner uses /bin/sh -c
-	// Parsing and re-joining loses quoting (e.g., --arg "foo bar" becomes --arg foo bar)
-	command := []string{job.JobCommand}
+	// Check for REACTORCIDE_JOB_SHELLCMD in job environment to override shell wrapper
+	// This allows users to specify a custom shell (e.g., "/bin/bash -c") for multiline commands
+	shellPrefix := ""
+	if job.JobEnvVars != nil {
+		if shellCmd, ok := job.JobEnvVars["REACTORCIDE_JOB_SHELLCMD"]; ok {
+			if shellCmdStr, ok := shellCmd.(string); ok {
+				shellPrefix = shellCmdStr
+			}
+		}
+	}
+
+	// Parse the job command into a proper []string array
+	// This handles shell quoting (e.g., --arg "foo bar" stays as a single argument)
+	// If shellPrefix is set, it overrides the default "sh -c" for multiline commands
+	command := ParseCommandWithPrefix(job.JobCommand, shellPrefix)
 
 	// Build environment variables
 	env := jp.buildJobEnv(job)
 
-	// Determine working directory
-	workingDir := "/job"
-	if job.CodeDir != "" {
-		workingDir = job.CodeDir
-	}
+	// Use code_dir as working directory if specified
+	// If not specified, leave empty so container uses its own WORKDIR
+	workingDir := job.CodeDir
 
 	// Create job config
 	config := &JobConfig{
@@ -566,7 +576,18 @@ func (jp *JobProcessor) executeWithRunnerlib(ctx context.Context, job *models.Jo
 	stdout, stderr, err := jp.runner.StreamLogs(ctx, containerID)
 	if err != nil {
 		logger.WithError(err).Error("Failed to stream logs from container")
-		// Continue anyway - we still want to wait for completion
+
+		// Check if this is a pod startup failure (ImagePullBackOff, etc.)
+		// These errors won't recover, so we should fail immediately
+		if IsPodStartupError(err) {
+			logger.WithError(err).Error("Pod startup failure detected - failing job immediately")
+			return &JobResult{
+				ExitCode: 1,
+				Error:    err.Error(),
+			}
+		}
+
+		// For other errors, continue anyway - we still want to wait for completion
 	}
 
 	// Create log shippers for streaming logs to object storage

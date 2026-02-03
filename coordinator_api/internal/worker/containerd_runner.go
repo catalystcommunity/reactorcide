@@ -76,12 +76,10 @@ func (cr *ContainerdRunner) SpawnJob(ctx context.Context, config *JobConfig) (st
 		"--pull", "always", // Always pull to get latest image
 	}
 
-	// Determine working directory
-	workingDir := "/job"
+	// Set working directory only if specified, otherwise use container's default
 	if config.WorkingDir != "" {
-		workingDir = config.WorkingDir
+		args = append(args, "--workdir", config.WorkingDir)
 	}
-	args = append(args, "--workdir", workingDir)
 
 	// Mount workspace directory
 	args = append(args, "-v", fmt.Sprintf("%s:/job", config.WorkspaceDir))
@@ -130,20 +128,20 @@ func (cr *ContainerdRunner) SpawnJob(ctx context.Context, config *JobConfig) (st
 	args = append(args, "--label", fmt.Sprintf("reactorcide.queue=%s", config.QueueName))
 	args = append(args, "--label", "reactorcide.component=job-container")
 
-	// Override entrypoint to use shell
-	args = append(args, "--entrypoint", "/bin/sh")
+	// Clear entrypoint so command is executed directly
+	// This allows job commands like "runnerlib run ..." to work with any base image
+	args = append(args, "--entrypoint", "")
 
 	// Add image
 	args = append(args, config.Image)
 
-	// Add command - join for shell execution
-	shellCmd := strings.Join(config.Command, " ")
-	args = append(args, "-c", shellCmd)
+	// Add command arguments directly (already parsed by job_processor)
+	args = append(args, config.Command...)
 
 	logger.WithFields(map[string]interface{}{
 		"container_id": containerID,
 		"image":        config.Image,
-		"command":      shellCmd,
+		"command":      config.Command,
 	}).Info("Creating nerdctl container")
 
 	// Create pipes for stdout/stderr

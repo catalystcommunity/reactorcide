@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"os/signal"
 	"syscall"
@@ -65,6 +66,12 @@ var workerFlags = []cli.Flag{
 }
 
 func RunWorker(ctx *cli.Context) error {
+	// Wait for migrations to complete (same as API server)
+	// This ensures the database schema is ready before the worker tries to access it
+	if err := RunMigrations(); err != nil {
+		return fmt.Errorf("failed to run migrations: %w", err)
+	}
+
 	// Set up stores
 	store.AppStore = postgres_store.PostgresStore
 

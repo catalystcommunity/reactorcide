@@ -328,7 +328,7 @@ func TestGetSupportedBackends(t *testing.T) {
 // TestContainerdRunner_validateConfig tests the configuration validation for containerd
 func TestContainerdRunner_validateConfig(t *testing.T) {
 	runner := &ContainerdRunner{
-		containerStreams: make(map[string]*containerIO),
+		containers: make(map[string]*containerProcess),
 	}
 
 	tests := []struct {

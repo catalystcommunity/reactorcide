@@ -55,18 +55,13 @@ func (dr *DockerRunner) SpawnJob(ctx context.Context, config *JobConfig) (string
 		return "", fmt.Errorf("failed to ensure image: %w", err)
 	}
 
-	// Determine working directory
-	workingDir := "/job"
-	if config.WorkingDir != "" {
-		workingDir = config.WorkingDir
-	}
-
 	// Prepare container configuration
+	// WorkingDir uses container's default if not specified
 	containerConfig := &container.Config{
 		Image:        config.Image,
 		Cmd:          config.Command,
 		Env:          dr.envMapToSlice(config.Env),
-		WorkingDir:   workingDir,
+		WorkingDir:   config.WorkingDir,
 		AttachStdout: true,
 		AttachStderr: true,
 		Tty:          false,
