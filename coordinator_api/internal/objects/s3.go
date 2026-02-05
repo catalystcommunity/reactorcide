@@ -2,8 +2,10 @@ package objects
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 	"time"
 
@@ -11,6 +13,8 @@ import (
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
+	"github.com/aws/aws-sdk-go-v2/service/s3/types"
+	smithyhttp "github.com/aws/smithy-go/transport/http"
 )
 
 // S3ObjectStore implements ObjectStore using AWS S3 or S3-compatible storage
@@ -108,11 +112,30 @@ func (s *S3ObjectStore) Get(ctx context.Context, key string) (io.ReadCloser, err
 		Key:    aws.String(s.fullKey(key)),
 	})
 	if err != nil {
-		// Check if it's a not found error
+		if isS3NotFound(err) {
+			return nil, ErrNotFound
+		}
 		return nil, fmt.Errorf("failed to get object: %w", err)
 	}
 
 	return output.Body, nil
+}
+
+// isS3NotFound checks if an S3 error indicates the object was not found
+func isS3NotFound(err error) bool {
+	// Check for typed NoSuchKey error
+	var nsk *types.NoSuchKey
+	if errors.As(err, &nsk) {
+		return true
+	}
+
+	// Check for HTTP 404 response (works with S3-compatible services like SeaweedFS)
+	var respErr *smithyhttp.ResponseError
+	if errors.As(err, &respErr) && respErr.HTTPStatusCode() == http.StatusNotFound {
+		return true
+	}
+
+	return false
 }
 
 // GetURL returns a pre-signed URL for the object
@@ -152,8 +175,10 @@ func (s *S3ObjectStore) Exists(ctx context.Context, key string) (bool, error) {
 		Key:    aws.String(s.fullKey(key)),
 	})
 	if err != nil {
-		// Check if it's a not found error - for now just return false
-		return false, nil
+		if isS3NotFound(err) {
+			return false, nil
+		}
+		return false, fmt.Errorf("failed to check object existence: %w", err)
 	}
 
 	return true, nil
