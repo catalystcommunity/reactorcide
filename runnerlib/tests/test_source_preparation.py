@@ -178,10 +178,11 @@ class TestSourcePreparation:
         assert source_result.exists()
         assert (source_result / "app.py").exists()
 
-        # Verify they're in different directories
-        job_path = Path("./job")
-        assert (job_path / "ci" / "pipeline.py").exists()
-        assert (job_path / "src" / "app.py").exists()
+        # Verify they're in different directories under the same job path
+        assert ci_result != source_result
+        assert ci_result.parent == source_result.parent  # Both under job/
+        assert ci_result.name == "ci"
+        assert source_result.name == "src"
 
     def test_ci_source_only(self):
         """Test preparation of CI source without regular source."""

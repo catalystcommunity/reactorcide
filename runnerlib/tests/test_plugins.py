@@ -18,8 +18,8 @@ from src.plugins import (
 from src.config import RunnerConfig
 
 
-class TestPlugin(Plugin):
-    """Test plugin for unit tests."""
+class MockPlugin(Plugin):
+    """Mock plugin for unit tests."""
 
     def __init__(self, name: str = "test_plugin", priority: int = 100):
         super().__init__(name=name, priority=priority)
@@ -56,14 +56,14 @@ class TestPluginCore:
 
     def test_plugin_initialization(self):
         """Test plugin initialization."""
-        plugin = TestPlugin(name="my_test", priority=75)
+        plugin = MockPlugin(name="my_test", priority=75)
         assert plugin.name == "my_test"
         assert plugin.priority == 75
         assert plugin.enabled is True
 
     def test_supported_phases(self):
         """Test plugin phase support."""
-        plugin = TestPlugin()
+        plugin = MockPlugin()
         phases = plugin.supported_phases()
         assert PluginPhase.PRE_VALIDATION in phases
         assert PluginPhase.POST_CONTAINER in phases
@@ -87,7 +87,7 @@ class TestPluginCore:
 
     def test_plugin_execution(self):
         """Test plugin execution tracking."""
-        plugin = TestPlugin()
+        plugin = MockPlugin()
         config = Mock(spec=RunnerConfig)
 
         # Execute in different phases
@@ -109,7 +109,7 @@ class TestPluginManager:
 
     def test_register_plugin(self):
         """Test plugin registration."""
-        plugin = TestPlugin()
+        plugin = MockPlugin()
         self.manager.register_plugin(plugin)
 
         assert "test_plugin" in self.manager.plugins
@@ -117,8 +117,8 @@ class TestPluginManager:
 
     def test_register_duplicate_plugin(self):
         """Test registering duplicate plugins."""
-        plugin1 = TestPlugin(name="duplicate")
-        plugin2 = TestPlugin(name="duplicate")
+        plugin1 = MockPlugin(name="duplicate")
+        plugin2 = MockPlugin(name="duplicate")
 
         self.manager.register_plugin(plugin1)
         self.manager.register_plugin(plugin2)
@@ -128,7 +128,7 @@ class TestPluginManager:
 
     def test_unregister_plugin(self):
         """Test plugin unregistration."""
-        plugin = TestPlugin()
+        plugin = MockPlugin()
         self.manager.register_plugin(plugin)
 
         self.manager.unregister_plugin("test_plugin")
@@ -137,9 +137,9 @@ class TestPluginManager:
 
     def test_plugin_priority_ordering(self):
         """Test plugins are executed in priority order."""
-        plugin1 = TestPlugin(name="high_priority", priority=10)
-        plugin2 = TestPlugin(name="low_priority", priority=100)
-        plugin3 = TestPlugin(name="medium_priority", priority=50)
+        plugin1 = MockPlugin(name="high_priority", priority=10)
+        plugin2 = MockPlugin(name="low_priority", priority=100)
+        plugin3 = MockPlugin(name="medium_priority", priority=50)
 
         self.manager.register_plugin(plugin2)
         self.manager.register_plugin(plugin1)
@@ -153,8 +153,8 @@ class TestPluginManager:
 
     def test_execute_phase(self):
         """Test executing plugins for a phase."""
-        plugin1 = TestPlugin(name="plugin1")
-        plugin2 = TestPlugin(name="plugin2")
+        plugin1 = MockPlugin(name="plugin1")
+        plugin2 = MockPlugin(name="plugin2")
 
         self.manager.register_plugin(plugin1)
         self.manager.register_plugin(plugin2)
@@ -173,7 +173,7 @@ class TestPluginManager:
 
     def test_disabled_plugin_not_executed(self):
         """Test disabled plugins are not executed."""
-        plugin = TestPlugin()
+        plugin = MockPlugin()
         self.manager.register_plugin(plugin)
         self.manager.disable_plugin("test_plugin")
 
@@ -191,7 +191,7 @@ class TestPluginManager:
 
     def test_enable_disable_plugin(self):
         """Test enabling and disabling plugins."""
-        plugin = TestPlugin()
+        plugin = MockPlugin()
         self.manager.register_plugin(plugin)
 
         assert plugin.enabled is True
@@ -204,8 +204,8 @@ class TestPluginManager:
 
     def test_list_plugins(self):
         """Test listing registered plugins."""
-        plugin1 = TestPlugin(name="plugin1")
-        plugin2 = TestPlugin(name="plugin2")
+        plugin1 = MockPlugin(name="plugin1")
+        plugin2 = MockPlugin(name="plugin2")
 
         self.manager.register_plugin(plugin1)
         self.manager.register_plugin(plugin2)
@@ -233,7 +233,7 @@ class TestPluginManager:
     def test_on_error_phase_execution(self):
         """Test ON_ERROR phase is triggered on plugin failure."""
         error_plugin = ErrorPlugin()
-        error_handler = TestPlugin(name="error_handler")
+        error_handler = MockPlugin(name="error_handler")
 
         # Modify error_handler to support ON_ERROR phase
         error_handler.supported_phases = lambda: [PluginPhase.ON_ERROR]
@@ -442,7 +442,7 @@ class TestPluginIntegration:
         mock_popen.return_value = process_mock
 
         # Register a test plugin
-        test_plugin = TestPlugin()
+        test_plugin = MockPlugin()
         plugin_manager.register_plugin(test_plugin)
 
         # Create config
@@ -461,7 +461,7 @@ class TestPluginIntegration:
             run_container(config)
 
         # Verify plugin was executed for supported phases
-        # Note: TestPlugin only supports PRE_VALIDATION, POST_VALIDATION, PRE_CONTAINER, POST_CONTAINER
+        # Note: MockPlugin only supports PRE_VALIDATION, POST_VALIDATION, PRE_CONTAINER, POST_CONTAINER
         assert PluginPhase.PRE_CONTAINER in test_plugin.executed_phases
         assert PluginPhase.POST_CONTAINER in test_plugin.executed_phases
         # These phases were executed but our plugin doesn't support them:

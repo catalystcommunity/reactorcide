@@ -1,8 +1,8 @@
 app:
   enabled: true # enabled by default
   image:
-    repository: containers.catalystsquad.com/public/reactorcide/coordinator-api
-    pullPolicy: IfNotPresent
+    repository: containers.catalystsquad.com/public/reactorcide/coordinator
+    pullPolicy: Always
     # Overrides the image tag whose default is the chart appVersion
     tag: "dev"
   prometheus:
@@ -90,8 +90,8 @@ web:
 worker:
   enabled: true
   image:
-    repository: containers.catalystsquad.com/public/reactorcide/coordinator-api
-    pullPolicy: IfNotPresent
+    repository: containers.catalystsquad.com/public/reactorcide/worker
+    pullPolicy: Always
     tag: "dev"
   replicaCount: 1
   queue: "reactorcide-jobs"

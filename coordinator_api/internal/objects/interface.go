@@ -61,7 +61,12 @@ func NewObjectStore(config ObjectStoreConfig) (ObjectStore, error) {
 	case "memory":
 		return NewMemoryObjectStore(), nil
 	case "s3":
-		return nil, errors.New("S3 object store not implemented yet")
+		bucket := config.Config["bucket"]
+		if bucket == "" {
+			return nil, errors.New("S3 bucket is required")
+		}
+		prefix := config.Config["prefix"]
+		return NewS3ObjectStoreFromEnv(bucket, prefix)
 	case "gcs":
 		return nil, errors.New("GCS object store not implemented yet")
 	default:

@@ -435,7 +435,7 @@ fi
 
 
 def test_selective_secret_masking():
-    """Test selective masking of secrets using --secrets-list."""
+    """Test selective masking of secrets using --secret-values-list."""
     with tempfile.TemporaryDirectory() as tmpdir:
         work_dir = Path(tmpdir)
 
@@ -463,7 +463,7 @@ exit 0
                 "--code-dir", "/job",
                 "--job-dir", "/job",
                 "--job-env", "API_KEY=my-secret-api-key-123\nPUBLIC_VALUE=not-a-secret\nSECRET_TOKEN=super-secret-token\nCONFIG_PATH=/etc/config",
-                "--secrets-list", "my-secret-api-key-123,super-secret-token",  # Only mask these specific values
+                "--secret-values-list", "my-secret-api-key-123,super-secret-token",  # Only mask these specific values
             ],
             capture_output=True,
             text=True,

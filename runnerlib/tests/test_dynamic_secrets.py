@@ -61,7 +61,7 @@ echo "Using secret in command: curl -H 'Authorization: Bearer $FETCHED_SECRET' e
                 "--job-command", "sh /job/dynamic_secret_test.sh",
                 "--code-dir", "/job",
                 "--job-dir", "/job",
-                "--secrets-list", "",  # Empty list to prevent default masking
+                "--secret-values-list", "",  # Empty list to prevent default masking
             ],
             capture_output=True,
             text=True,
@@ -140,7 +140,7 @@ echo "API call with token=$API_TOKEN"
                 "--job-command", "sh /job/helper_test.sh",
                 "--code-dir", "/job",
                 "--job-dir", "/job",
-                "--secrets-list", "",  # Empty list to prevent default masking
+                "--secret-values-list", "",  # Empty list to prevent default masking
             ],
             capture_output=True,
             text=True,
@@ -219,7 +219,7 @@ else:
                 "--job-command", "python3 /job/multi_secret_test.py",
                 "--code-dir", "/job",
                 "--job-dir", "/job",
-                "--secrets-list", "",  # Empty list to prevent default masking
+                "--secret-values-list", "",  # Empty list to prevent default masking
             ],
             capture_output=True,
             text=True,

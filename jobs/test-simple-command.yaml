@@ -1,0 +1,9 @@
+name: test-simple-command
+image: alpine:latest
+source:
+  type: git
+  url: https://github.com/catalystcommunity/reactorcide.git
+  ref: main
+command: uname -a
+environment:
+  TEST_VAR: "hello-from-test"

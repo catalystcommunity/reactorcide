@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -15,17 +16,25 @@ import (
 	"gorm.io/gorm"
 )
 
+// LogEntry matches the structure in job_handler.go
+type LogEntry struct {
+	Timestamp string `json:"timestamp"`
+	Stream    string `json:"stream"`
+	Level     string `json:"level,omitempty"`
+	Message   string `json:"message"`
+}
+
 // TestJobLogsAPI tests the job logs API endpoint
 func TestJobLogsAPI(t *testing.T) {
 	t.Run("GET /api/v1/jobs/{job_id}/logs returns stdout logs", func(t *testing.T) {
 		RunTransactionalTest(t, func(ctx context.Context, tx *gorm.DB) {
 			// Create and set up a memory object store for this test
+			// Reset app mux first, then set up a memory object store for this test
+			handlers.ResetAppMux()
 			memStore := objects.NewMemoryObjectStore()
 			handlers.SetObjectStore(memStore)
 			defer handlers.SetObjectStore(nil)
 
-			// Reset app mux to pick up the new object store
-			handlers.ResetAppMux()
 			mux := handlers.GetAppMux()
 
 			dataUtils := &DataUtils{db: tx}
@@ -51,10 +60,17 @@ func TestJobLogsAPI(t *testing.T) {
 			})
 			require.NoError(t, err)
 
-			// Store logs in the memory object store
-			stdoutContent := "Hello from stdout!\nLine 2\nLine 3"
-			stdoutKey := "logs/" + job.JobID + "/stdout.log"
-			err = memStore.Put(ctx, stdoutKey, bytes.NewReader([]byte(stdoutContent)), "text/plain")
+			// Store logs in the memory object store as JSON array
+			logEntries := []LogEntry{
+				{Timestamp: "2024-01-01T00:00:00Z", Stream: "stdout", Message: "Hello from stdout!"},
+				{Timestamp: "2024-01-01T00:00:01Z", Stream: "stdout", Message: "Line 2"},
+				{Timestamp: "2024-01-01T00:00:02Z", Stream: "stdout", Message: "Line 3"},
+			}
+			stdoutContent, err := json.Marshal(logEntries)
+			require.NoError(t, err)
+
+			stdoutKey := "logs/" + job.JobID + "/stdout.json"
+			err = memStore.Put(ctx, stdoutKey, bytes.NewReader(stdoutContent), "application/json")
 			require.NoError(t, err)
 
 			// Request logs with stream=stdout
@@ -66,20 +82,26 @@ func TestJobLogsAPI(t *testing.T) {
 			mux.ServeHTTP(rr, req)
 
 			assert.Equal(t, http.StatusOK, rr.Code)
-			assert.Equal(t, "text/plain; charset=utf-8", rr.Header().Get("Content-Type"))
-			assert.Equal(t, stdoutContent, rr.Body.String())
+			assert.Equal(t, "application/json", rr.Header().Get("Content-Type"))
+
+			// Parse response and verify content
+			var responseEntries []LogEntry
+			err = json.Unmarshal(rr.Body.Bytes(), &responseEntries)
+			require.NoError(t, err)
+			assert.Len(t, responseEntries, 3)
+			assert.Equal(t, "Hello from stdout!", responseEntries[0].Message)
 		})
 	})
 
 	t.Run("GET /api/v1/jobs/{job_id}/logs returns stderr logs", func(t *testing.T) {
 		RunTransactionalTest(t, func(ctx context.Context, tx *gorm.DB) {
 			// Create and set up a memory object store for this test
+			// Reset app mux first, then set up a memory object store for this test
+			handlers.ResetAppMux()
 			memStore := objects.NewMemoryObjectStore()
 			handlers.SetObjectStore(memStore)
 			defer handlers.SetObjectStore(nil)
 
-			// Reset app mux to pick up the new object store
-			handlers.ResetAppMux()
 			mux := handlers.GetAppMux()
 
 			dataUtils := &DataUtils{db: tx}
@@ -105,10 +127,16 @@ func TestJobLogsAPI(t *testing.T) {
 			})
 			require.NoError(t, err)
 
-			// Store stderr logs in the memory object store
-			stderrContent := "Error: Something went wrong\nStack trace here"
-			stderrKey := "logs/" + job.JobID + "/stderr.log"
-			err = memStore.Put(ctx, stderrKey, bytes.NewReader([]byte(stderrContent)), "text/plain")
+			// Store stderr logs in the memory object store as JSON array
+			logEntries := []LogEntry{
+				{Timestamp: "2024-01-01T00:00:00Z", Stream: "stderr", Level: "error", Message: "Error: Something went wrong"},
+				{Timestamp: "2024-01-01T00:00:01Z", Stream: "stderr", Level: "error", Message: "Stack trace here"},
+			}
+			stderrContent, err := json.Marshal(logEntries)
+			require.NoError(t, err)
+
+			stderrKey := "logs/" + job.JobID + "/stderr.json"
+			err = memStore.Put(ctx, stderrKey, bytes.NewReader(stderrContent), "application/json")
 			require.NoError(t, err)
 
 			// Request logs with stream=stderr
@@ -120,20 +148,26 @@ func TestJobLogsAPI(t *testing.T) {
 			mux.ServeHTTP(rr, req)
 
 			assert.Equal(t, http.StatusOK, rr.Code)
-			assert.Equal(t, "text/plain; charset=utf-8", rr.Header().Get("Content-Type"))
-			assert.Equal(t, stderrContent, rr.Body.String())
+			assert.Equal(t, "application/json", rr.Header().Get("Content-Type"))
+
+			// Parse response and verify content
+			var responseEntries []LogEntry
+			err = json.Unmarshal(rr.Body.Bytes(), &responseEntries)
+			require.NoError(t, err)
+			assert.Len(t, responseEntries, 2)
+			assert.Equal(t, "Error: Something went wrong", responseEntries[0].Message)
 		})
 	})
 
 	t.Run("GET /api/v1/jobs/{job_id}/logs returns combined logs by default", func(t *testing.T) {
 		RunTransactionalTest(t, func(ctx context.Context, tx *gorm.DB) {
 			// Create and set up a memory object store for this test
+			// Reset app mux first, then set up a memory object store for this test
+			handlers.ResetAppMux()
 			memStore := objects.NewMemoryObjectStore()
 			handlers.SetObjectStore(memStore)
 			defer handlers.SetObjectStore(nil)
 
-			// Reset app mux to pick up the new object store
-			handlers.ResetAppMux()
 			mux := handlers.GetAppMux()
 
 			dataUtils := &DataUtils{db: tx}
@@ -159,15 +193,26 @@ func TestJobLogsAPI(t *testing.T) {
 			})
 			require.NoError(t, err)
 
-			// Store both stdout and stderr logs
-			stdoutContent := "Output line 1\nOutput line 2"
-			stderrContent := "Warning: something happened"
-			stdoutKey := "logs/" + job.JobID + "/stdout.log"
-			stderrKey := "logs/" + job.JobID + "/stderr.log"
+			// Store both stdout and stderr logs as JSON arrays
+			stdoutEntries := []LogEntry{
+				{Timestamp: "2024-01-01T00:00:00Z", Stream: "stdout", Message: "Output line 1"},
+				{Timestamp: "2024-01-01T00:00:02Z", Stream: "stdout", Message: "Output line 2"},
+			}
+			stderrEntries := []LogEntry{
+				{Timestamp: "2024-01-01T00:00:01Z", Stream: "stderr", Level: "warn", Message: "Warning: something happened"},
+			}
 
-			err = memStore.Put(ctx, stdoutKey, bytes.NewReader([]byte(stdoutContent)), "text/plain")
+			stdoutContent, err := json.Marshal(stdoutEntries)
 			require.NoError(t, err)
-			err = memStore.Put(ctx, stderrKey, bytes.NewReader([]byte(stderrContent)), "text/plain")
+			stderrContent, err := json.Marshal(stderrEntries)
+			require.NoError(t, err)
+
+			stdoutKey := "logs/" + job.JobID + "/stdout.json"
+			stderrKey := "logs/" + job.JobID + "/stderr.json"
+
+			err = memStore.Put(ctx, stdoutKey, bytes.NewReader(stdoutContent), "application/json")
+			require.NoError(t, err)
+			err = memStore.Put(ctx, stderrKey, bytes.NewReader(stderrContent), "application/json")
 			require.NoError(t, err)
 
 			// Request logs without stream parameter (should return combined)
@@ -179,26 +224,29 @@ func TestJobLogsAPI(t *testing.T) {
 			mux.ServeHTTP(rr, req)
 
 			assert.Equal(t, http.StatusOK, rr.Code)
-			assert.Equal(t, "text/plain; charset=utf-8", rr.Header().Get("Content-Type"))
+			assert.Equal(t, "application/json", rr.Header().Get("Content-Type"))
 
-			// Combined output should contain both with separator
-			responseBody := rr.Body.String()
-			assert.Contains(t, responseBody, "Output line 1")
-			assert.Contains(t, responseBody, "Output line 2")
-			assert.Contains(t, responseBody, "--- stderr ---")
-			assert.Contains(t, responseBody, "Warning: something happened")
+			// Parse response and verify combined content sorted by timestamp
+			var responseEntries []LogEntry
+			err = json.Unmarshal(rr.Body.Bytes(), &responseEntries)
+			require.NoError(t, err)
+			assert.Len(t, responseEntries, 3)
+			// Should be sorted by timestamp
+			assert.Equal(t, "Output line 1", responseEntries[0].Message)
+			assert.Equal(t, "Warning: something happened", responseEntries[1].Message)
+			assert.Equal(t, "Output line 2", responseEntries[2].Message)
 		})
 	})
 
 	t.Run("GET /api/v1/jobs/{job_id}/logs returns 404 when no logs exist", func(t *testing.T) {
 		RunTransactionalTest(t, func(ctx context.Context, tx *gorm.DB) {
 			// Create and set up a memory object store for this test
+			// Reset app mux first, then set up a memory object store for this test
+			handlers.ResetAppMux()
 			memStore := objects.NewMemoryObjectStore()
 			handlers.SetObjectStore(memStore)
 			defer handlers.SetObjectStore(nil)
 
-			// Reset app mux to pick up the new object store
-			handlers.ResetAppMux()
 			mux := handlers.GetAppMux()
 
 			dataUtils := &DataUtils{db: tx}
@@ -239,12 +287,12 @@ func TestJobLogsAPI(t *testing.T) {
 	t.Run("GET /api/v1/jobs/{job_id}/logs returns 404 for non-existent job", func(t *testing.T) {
 		RunTransactionalTest(t, func(ctx context.Context, tx *gorm.DB) {
 			// Create and set up a memory object store for this test
+			// Reset app mux first, then set up a memory object store for this test
+			handlers.ResetAppMux()
 			memStore := objects.NewMemoryObjectStore()
 			handlers.SetObjectStore(memStore)
 			defer handlers.SetObjectStore(nil)
 
-			// Reset app mux to pick up the new object store
-			handlers.ResetAppMux()
 			mux := handlers.GetAppMux()
 
 			dataUtils := &DataUtils{db: tx}
@@ -275,12 +323,12 @@ func TestJobLogsAPI(t *testing.T) {
 	t.Run("GET /api/v1/jobs/{job_id}/logs returns 401 without auth", func(t *testing.T) {
 		RunTransactionalTest(t, func(ctx context.Context, tx *gorm.DB) {
 			// Create and set up a memory object store for this test
+			// Reset app mux first, then set up a memory object store for this test
+			handlers.ResetAppMux()
 			memStore := objects.NewMemoryObjectStore()
 			handlers.SetObjectStore(memStore)
 			defer handlers.SetObjectStore(nil)
 
-			// Reset app mux to pick up the new object store
-			handlers.ResetAppMux()
 			mux := handlers.GetAppMux()
 
 			dataUtils := &DataUtils{db: tx}
@@ -314,12 +362,12 @@ func TestJobLogsAPI(t *testing.T) {
 	t.Run("GET /api/v1/jobs/{job_id}/logs returns 403 for other user's job", func(t *testing.T) {
 		RunTransactionalTest(t, func(ctx context.Context, tx *gorm.DB) {
 			// Create and set up a memory object store for this test
+			// Reset app mux first, then set up a memory object store for this test
+			handlers.ResetAppMux()
 			memStore := objects.NewMemoryObjectStore()
 			handlers.SetObjectStore(memStore)
 			defer handlers.SetObjectStore(nil)
 
-			// Reset app mux to pick up the new object store
-			handlers.ResetAppMux()
 			mux := handlers.GetAppMux()
 
 			dataUtils := &DataUtils{db: tx}
@@ -351,9 +399,14 @@ func TestJobLogsAPI(t *testing.T) {
 			require.NoError(t, err)
 
 			// Store logs for user1's job
-			stdoutContent := "User1's logs"
-			stdoutKey := "logs/" + job.JobID + "/stdout.log"
-			err = memStore.Put(ctx, stdoutKey, bytes.NewReader([]byte(stdoutContent)), "text/plain")
+			logEntries := []LogEntry{
+				{Timestamp: "2024-01-01T00:00:00Z", Stream: "stdout", Message: "User1's logs"},
+			}
+			stdoutContent, err := json.Marshal(logEntries)
+			require.NoError(t, err)
+
+			stdoutKey := "logs/" + job.JobID + "/stdout.json"
+			err = memStore.Put(ctx, stdoutKey, bytes.NewReader(stdoutContent), "application/json")
 			require.NoError(t, err)
 
 			// User2 tries to access User1's job logs
@@ -371,12 +424,12 @@ func TestJobLogsAPI(t *testing.T) {
 	t.Run("GET /api/v1/jobs/{job_id}/logs returns 400 for invalid stream parameter", func(t *testing.T) {
 		RunTransactionalTest(t, func(ctx context.Context, tx *gorm.DB) {
 			// Create and set up a memory object store for this test
+			// Reset app mux first, then set up a memory object store for this test
+			handlers.ResetAppMux()
 			memStore := objects.NewMemoryObjectStore()
 			handlers.SetObjectStore(memStore)
 			defer handlers.SetObjectStore(nil)
 
-			// Reset app mux to pick up the new object store
-			handlers.ResetAppMux()
 			mux := handlers.GetAppMux()
 
 			dataUtils := &DataUtils{db: tx}
@@ -416,12 +469,12 @@ func TestJobLogsAPI(t *testing.T) {
 	t.Run("GET /api/v1/jobs/{job_id}/logs returns only stdout when stderr is missing", func(t *testing.T) {
 		RunTransactionalTest(t, func(ctx context.Context, tx *gorm.DB) {
 			// Create and set up a memory object store for this test
+			// Reset app mux first, then set up a memory object store for this test
+			handlers.ResetAppMux()
 			memStore := objects.NewMemoryObjectStore()
 			handlers.SetObjectStore(memStore)
 			defer handlers.SetObjectStore(nil)
 
-			// Reset app mux to pick up the new object store
-			handlers.ResetAppMux()
 			mux := handlers.GetAppMux()
 
 			dataUtils := &DataUtils{db: tx}
@@ -447,10 +500,15 @@ func TestJobLogsAPI(t *testing.T) {
 			})
 			require.NoError(t, err)
 
-			// Only store stdout logs (no stderr)
-			stdoutContent := "Output without errors"
-			stdoutKey := "logs/" + job.JobID + "/stdout.log"
-			err = memStore.Put(ctx, stdoutKey, bytes.NewReader([]byte(stdoutContent)), "text/plain")
+			// Only store stdout logs (no stderr) as JSON array
+			logEntries := []LogEntry{
+				{Timestamp: "2024-01-01T00:00:00Z", Stream: "stdout", Message: "Output without errors"},
+			}
+			stdoutContent, err := json.Marshal(logEntries)
+			require.NoError(t, err)
+
+			stdoutKey := "logs/" + job.JobID + "/stdout.json"
+			err = memStore.Put(ctx, stdoutKey, bytes.NewReader(stdoutContent), "application/json")
 			require.NoError(t, err)
 
 			// Request combined logs (default)
@@ -462,8 +520,13 @@ func TestJobLogsAPI(t *testing.T) {
 			mux.ServeHTTP(rr, req)
 
 			assert.Equal(t, http.StatusOK, rr.Code)
-			assert.Equal(t, stdoutContent, rr.Body.String())
-			assert.NotContains(t, rr.Body.String(), "--- stderr ---")
+
+			// Parse response and verify content
+			var responseEntries []LogEntry
+			err = json.Unmarshal(rr.Body.Bytes(), &responseEntries)
+			require.NoError(t, err)
+			assert.Len(t, responseEntries, 1)
+			assert.Equal(t, "Output without errors", responseEntries[0].Message)
 		})
 	})
 }
@@ -473,12 +536,12 @@ func TestJobLogsAdminAccess(t *testing.T) {
 	t.Run("admin can access other user's job logs", func(t *testing.T) {
 		RunTransactionalTest(t, func(ctx context.Context, tx *gorm.DB) {
 			// Create and set up a memory object store for this test
+			// Reset app mux first, then set up a memory object store for this test
+			handlers.ResetAppMux()
 			memStore := objects.NewMemoryObjectStore()
 			handlers.SetObjectStore(memStore)
 			defer handlers.SetObjectStore(nil)
 
-			// Reset app mux to pick up the new object store
-			handlers.ResetAppMux()
 			mux := handlers.GetAppMux()
 
 			dataUtils := &DataUtils{db: tx}
@@ -520,10 +583,15 @@ func TestJobLogsAdminAccess(t *testing.T) {
 			})
 			require.NoError(t, err)
 
-			// Store logs for regular user's job
-			stdoutContent := "Regular user's logs"
-			stdoutKey := "logs/" + job.JobID + "/stdout.log"
-			err = memStore.Put(ctx, stdoutKey, bytes.NewReader([]byte(stdoutContent)), "text/plain")
+			// Store logs for regular user's job as JSON array
+			logEntries := []LogEntry{
+				{Timestamp: "2024-01-01T00:00:00Z", Stream: "stdout", Message: "Regular user's logs"},
+			}
+			stdoutContent, err := json.Marshal(logEntries)
+			require.NoError(t, err)
+
+			stdoutKey := "logs/" + job.JobID + "/stdout.json"
+			err = memStore.Put(ctx, stdoutKey, bytes.NewReader(stdoutContent), "application/json")
 			require.NoError(t, err)
 
 			// Admin requests logs for regular user's job
@@ -535,7 +603,13 @@ func TestJobLogsAdminAccess(t *testing.T) {
 			mux.ServeHTTP(rr, req)
 
 			assert.Equal(t, http.StatusOK, rr.Code)
-			assert.Equal(t, stdoutContent, rr.Body.String())
+
+			// Parse response and verify content
+			var responseEntries []LogEntry
+			err = json.Unmarshal(rr.Body.Bytes(), &responseEntries)
+			require.NoError(t, err)
+			assert.Len(t, responseEntries, 1)
+			assert.Equal(t, "Regular user's logs", responseEntries[0].Message)
 		})
 	})
 }

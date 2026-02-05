@@ -93,7 +93,7 @@ print("=" * 50)
                 "--job-command", "python3 -u /job/show_masking.py",  # -u for unbuffered output
                 "--code-dir", "/job",
                 "--job-dir", "/job",
-                "--secrets-list", "",  # Empty list prevents default masking of all values
+                "--secret-values-list", "",  # Empty list prevents default masking of all values
             ],
             capture_output=True,
             text=True,
@@ -195,7 +195,7 @@ echo "  Webhook: $SECRET3"
                 "--job-command", "sh /job/progressive_masking.sh",
                 "--code-dir", "/job",
                 "--job-dir", "/job",
-                "--secrets-list", "",  # Empty list prevents default masking
+                "--secret-values-list", "",  # Empty list prevents default masking
             ],
             capture_output=True,
             text=True,
@@ -291,7 +291,7 @@ if socket_path:
                 "--job-command", "python3 /job/streaming_test.py",
                 "--code-dir", "/job",
                 "--job-dir", "/job",
-                "--secrets-list", "",  # Empty list prevents default masking
+                "--secret-values-list", "",  # Empty list prevents default masking
             ],
             capture_output=True,
             text=True,
