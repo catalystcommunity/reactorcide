@@ -17,11 +17,12 @@ import (
 
 // CornDogsWorker represents a job processing worker that uses Corndogs for task management
 type CornDogsWorker struct {
-	config         *Config
-	corndogsClient corndogs.ClientInterface
-	processor      JobProcessorInterface
-	wg             sync.WaitGroup
-	workerPool     chan struct{}
+	config             *Config
+	corndogsClient     corndogs.ClientInterface
+	processor          JobProcessorInterface
+	triggerProcessor   *TriggerProcessor
+	wg                 sync.WaitGroup
+	workerPool         chan struct{}
 }
 
 // NewCornDogsWorker creates a new worker that uses Corndogs for task management
@@ -86,21 +87,26 @@ func NewCornDogsWorker(config *Config, corndogsClient corndogs.ClientInterface) 
 		SecretsStorageType: secretsStorageType,
 	})
 
+	// Create trigger processor for handling eval job output
+	triggerProc := NewTriggerProcessor(config.Store, corndogsClient)
+
 	return &CornDogsWorker{
-		config:         config,
-		corndogsClient: corndogsClient,
-		processor:      processor,
-		workerPool:     make(chan struct{}, config.Concurrency),
+		config:           config,
+		corndogsClient:   corndogsClient,
+		processor:        processor,
+		triggerProcessor: triggerProc,
+		workerPool:       make(chan struct{}, config.Concurrency),
 	}
 }
 
 // NewCornDogsWorkerWithProcessor creates a new worker with a custom processor (for testing)
-func NewCornDogsWorkerWithProcessor(config *Config, corndogsClient corndogs.ClientInterface, processor JobProcessorInterface) *CornDogsWorker {
+func NewCornDogsWorkerWithProcessor(config *Config, corndogsClient corndogs.ClientInterface, processor JobProcessorInterface, triggerProcessor *TriggerProcessor) *CornDogsWorker {
 	return &CornDogsWorker{
-		config:         config,
-		corndogsClient: corndogsClient,
-		processor:      processor,
-		workerPool:     make(chan struct{}, config.Concurrency),
+		config:           config,
+		corndogsClient:   corndogsClient,
+		processor:        processor,
+		triggerProcessor: triggerProcessor,
+		workerPool:       make(chan struct{}, config.Concurrency),
 	}
 }
 
@@ -248,6 +254,11 @@ func (w *CornDogsWorker) processNextTask(ctx context.Context, workerID int) {
 	result := w.processor.ProcessJobWithContext(ctx, job, execCtx)
 	duration := time.Since(startTime).Seconds()
 
+	// Ensure workspace cleanup happens after trigger processing
+	if result.WorkspaceDir != "" {
+		defer os.RemoveAll(result.WorkspaceDir)
+	}
+
 	// Record job processing metrics
 	status := "completed"
 	if result.ExitCode != 0 {
@@ -262,6 +273,14 @@ func (w *CornDogsWorker) processNextTask(ctx context.Context, workerID int) {
 
 	if result.ExitCode == 0 {
 		job.Status = "completed"
+
+		// Process triggers from eval jobs before completing the task
+		if w.triggerProcessor != nil && result.WorkspaceDir != "" {
+			if triggerErr := w.triggerProcessor.ProcessTriggers(ctx, result.WorkspaceDir, job); triggerErr != nil {
+				logger.WithError(triggerErr).Error("Failed to process triggers")
+			}
+		}
+
 		// Complete the task in Corndogs
 		_, err = w.corndogsClient.CompleteTask(ctx, task.Uuid, "processing")
 		if err != nil {

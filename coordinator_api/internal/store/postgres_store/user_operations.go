@@ -6,7 +6,6 @@ import (
 	"encoding/hex"
 	"fmt"
 	"log"
-	"strings"
 
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/checkauth"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/config"
@@ -19,14 +18,14 @@ import (
 
 // GetUserByID retrieves a user by their ID
 func (ps PostgresDbStore) GetUserByID(ctx context.Context, userID string) (*models.User, error) {
+	if !isValidUUID(userID) {
+		return nil, store.ErrNotFound
+	}
+
 	var user models.User
 
 	if err := ps.getDB(ctx).Where("user_id = ?", userID).First(&user).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
-			return nil, store.ErrNotFound
-		}
-		// Check for PostgreSQL invalid UUID syntax error
-		if strings.Contains(err.Error(), "invalid input syntax for type uuid") {
 			return nil, store.ErrNotFound
 		}
 		return nil, fmt.Errorf("failed to get user %s: %w", userID, err)

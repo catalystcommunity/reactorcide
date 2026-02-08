@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store/models"
 )
 
@@ -19,6 +20,10 @@ func (ps PostgresDbStore) CreateProject(ctx context.Context, project *models.Pro
 
 // GetProjectByID retrieves a project by its ID
 func (ps PostgresDbStore) GetProjectByID(ctx context.Context, projectID string) (*models.Project, error) {
+	if !isValidUUID(projectID) {
+		return nil, store.ErrNotFound
+	}
+
 	db := ps.getDB(ctx)
 	var project models.Project
 	result := db.Where("project_id = ?", projectID).First(&project)
@@ -52,13 +57,17 @@ func (ps PostgresDbStore) UpdateProject(ctx context.Context, project *models.Pro
 
 // DeleteProject deletes a project by its ID
 func (ps PostgresDbStore) DeleteProject(ctx context.Context, projectID string) error {
+	if !isValidUUID(projectID) {
+		return store.ErrNotFound
+	}
+
 	db := ps.getDB(ctx)
 	result := db.Where("project_id = ?", projectID).Delete(&models.Project{})
 	if result.Error != nil {
 		return fmt.Errorf("failed to delete project: %w", result.Error)
 	}
 	if result.RowsAffected == 0 {
-		return fmt.Errorf("project not found")
+		return store.ErrNotFound
 	}
 	return nil
 }

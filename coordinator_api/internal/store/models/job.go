@@ -98,9 +98,14 @@ type Job struct {
 	LogsObjectKey      string `gorm:"type:text" json:"logs_object_key"`
 	ArtifactsObjectKey string `gorm:"type:text" json:"artifacts_object_key"`
 
+	// Event metadata for webhook-triggered jobs
+	EventMetadata JSONB   `gorm:"type:jsonb" json:"event_metadata"`
+	ParentJobID   *string `gorm:"type:uuid" json:"parent_job_id"`
+
 	// Relationships
-	User    User     `gorm:"foreignKey:UserID" json:"user,omitempty"`
-	Project *Project `gorm:"foreignKey:ProjectID" json:"project,omitempty"`
+	User      User     `gorm:"foreignKey:UserID" json:"user,omitempty"`
+	Project   *Project `gorm:"foreignKey:ProjectID" json:"project,omitempty"`
+	ParentJob *Job     `gorm:"foreignKey:ParentJobID" json:"parent_job,omitempty"`
 }
 
 // TableName specifies the table name for the model

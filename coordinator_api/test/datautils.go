@@ -135,7 +135,7 @@ func (du *DataUtils) CreateJob(setup DataSetup) (*models.Job, error) {
 		fieldName := field.Name
 
 		// Skip fields that should be handled by the database or relationships
-		if fieldName == "JobID" || fieldName == "CreatedAt" || fieldName == "UpdatedAt" || fieldName == "User" {
+		if fieldName == "JobID" || fieldName == "CreatedAt" || fieldName == "UpdatedAt" || fieldName == "User" || fieldName == "ParentJob" {
 			continue
 		}
 
@@ -160,7 +160,7 @@ func (du *DataUtils) CreateJob(setup DataSetup) (*models.Job, error) {
 							fieldValue.Set(rv)
 						}
 					}
-				} else if fieldName == "JobEnvVars" {
+				} else if fieldName == "JobEnvVars" || fieldName == "EventMetadata" {
 					// Handle JSONB type
 					switch v := val.(type) {
 					case map[string]string:
@@ -181,7 +181,8 @@ func (du *DataUtils) CreateJob(setup DataSetup) (*models.Job, error) {
 						}
 					}
 				} else if fieldName == "SourceURL" || fieldName == "SourceRef" || fieldName == "SourcePath" ||
-					fieldName == "CISourceURL" || fieldName == "CISourceRef" || fieldName == "ContainerImage" {
+					fieldName == "CISourceURL" || fieldName == "CISourceRef" || fieldName == "ContainerImage" ||
+					fieldName == "ParentJobID" {
 					// Handle pointer to string fields
 					switch v := val.(type) {
 					case string:

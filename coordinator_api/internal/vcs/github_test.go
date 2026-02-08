@@ -33,6 +33,7 @@ func TestGitHubClient_ParseWebhook(t *testing.T) {
 					"title": "Test PR",
 					"body": "Test description",
 					"state": "open",
+					"merged": false,
 					"html_url": "https://github.com/test/repo/pull/123",
 					"head": {
 						"ref": "feature-branch",
@@ -58,12 +59,132 @@ func TestGitHubClient_ParseWebhook(t *testing.T) {
 			checkResult: func(t *testing.T, event *WebhookEvent) {
 				assert.Equal(t, GitHub, event.Provider)
 				assert.Equal(t, "pull_request", event.EventType)
+				assert.Equal(t, EventPullRequestOpened, event.GenericEvent)
 				assert.NotNil(t, event.PullRequest)
 				assert.Equal(t, 123, event.PullRequest.Number)
 				assert.Equal(t, "Test PR", event.PullRequest.Title)
 				assert.Equal(t, "opened", event.PullRequest.Action)
+				assert.False(t, event.PullRequest.Merged)
 				assert.Equal(t, "abc123", event.PullRequest.HeadSHA)
 				assert.Equal(t, "test/repo", event.Repository.FullName)
+			},
+		},
+		{
+			name:      "pull_request_synchronize",
+			eventType: "pull_request",
+			payload: `{
+				"action": "synchronize",
+				"number": 123,
+				"pull_request": {
+					"number": 123,
+					"title": "Test PR",
+					"body": "Test description",
+					"state": "open",
+					"merged": false,
+					"html_url": "https://github.com/test/repo/pull/123",
+					"head": {
+						"ref": "feature-branch",
+						"sha": "newsha456"
+					},
+					"base": {
+						"ref": "main",
+						"sha": "def456"
+					},
+					"user": {
+						"login": "testuser"
+					}
+				},
+				"repository": {
+					"full_name": "test/repo",
+					"clone_url": "https://github.com/test/repo.git",
+					"ssh_url": "git@github.com:test/repo.git",
+					"html_url": "https://github.com/test/repo",
+					"default_branch": "main"
+				}
+			}`,
+			wantErr: false,
+			checkResult: func(t *testing.T, event *WebhookEvent) {
+				assert.Equal(t, EventPullRequestUpdated, event.GenericEvent)
+				assert.Equal(t, "synchronize", event.PullRequest.Action)
+			},
+		},
+		{
+			name:      "pull_request_merged",
+			eventType: "pull_request",
+			payload: `{
+				"action": "closed",
+				"number": 123,
+				"pull_request": {
+					"number": 123,
+					"title": "Test PR",
+					"body": "Test description",
+					"state": "closed",
+					"merged": true,
+					"html_url": "https://github.com/test/repo/pull/123",
+					"head": {
+						"ref": "feature-branch",
+						"sha": "abc123"
+					},
+					"base": {
+						"ref": "main",
+						"sha": "def456"
+					},
+					"user": {
+						"login": "testuser"
+					}
+				},
+				"repository": {
+					"full_name": "test/repo",
+					"clone_url": "https://github.com/test/repo.git",
+					"ssh_url": "git@github.com:test/repo.git",
+					"html_url": "https://github.com/test/repo",
+					"default_branch": "main"
+				}
+			}`,
+			wantErr: false,
+			checkResult: func(t *testing.T, event *WebhookEvent) {
+				assert.Equal(t, EventPullRequestMerged, event.GenericEvent)
+				assert.True(t, event.PullRequest.Merged)
+				assert.Equal(t, "closed", event.PullRequest.Action)
+			},
+		},
+		{
+			name:      "pull_request_closed_without_merge",
+			eventType: "pull_request",
+			payload: `{
+				"action": "closed",
+				"number": 123,
+				"pull_request": {
+					"number": 123,
+					"title": "Test PR",
+					"body": "Test description",
+					"state": "closed",
+					"merged": false,
+					"html_url": "https://github.com/test/repo/pull/123",
+					"head": {
+						"ref": "feature-branch",
+						"sha": "abc123"
+					},
+					"base": {
+						"ref": "main",
+						"sha": "def456"
+					},
+					"user": {
+						"login": "testuser"
+					}
+				},
+				"repository": {
+					"full_name": "test/repo",
+					"clone_url": "https://github.com/test/repo.git",
+					"ssh_url": "git@github.com:test/repo.git",
+					"html_url": "https://github.com/test/repo",
+					"default_branch": "main"
+				}
+			}`,
+			wantErr: false,
+			checkResult: func(t *testing.T, event *WebhookEvent) {
+				assert.Equal(t, EventPullRequestClosed, event.GenericEvent)
+				assert.False(t, event.PullRequest.Merged)
 			},
 		},
 		{
@@ -108,11 +229,41 @@ func TestGitHubClient_ParseWebhook(t *testing.T) {
 			checkResult: func(t *testing.T, event *WebhookEvent) {
 				assert.Equal(t, GitHub, event.Provider)
 				assert.Equal(t, "push", event.EventType)
+				assert.Equal(t, EventPush, event.GenericEvent)
 				assert.NotNil(t, event.Push)
 				assert.Equal(t, "refs/heads/main", event.Push.Ref)
 				assert.Equal(t, "abc123", event.Push.After)
 				assert.Len(t, event.Push.Commits, 1)
 				assert.Equal(t, "Test commit", event.Push.Commits[0].Message)
+			},
+		},
+		{
+			name:      "tag_push_event",
+			eventType: "push",
+			payload: `{
+				"ref": "refs/tags/v1.0.0",
+				"before": "0000000000000000000000000000000000000000",
+				"after": "abc123",
+				"created": true,
+				"deleted": false,
+				"forced": false,
+				"commits": [],
+				"repository": {
+					"full_name": "test/repo",
+					"clone_url": "https://github.com/test/repo.git",
+					"ssh_url": "git@github.com:test/repo.git",
+					"html_url": "https://github.com/test/repo",
+					"default_branch": "main"
+				},
+				"pusher": {
+					"name": "testuser",
+					"email": "test@example.com"
+				}
+			}`,
+			wantErr: false,
+			checkResult: func(t *testing.T, event *WebhookEvent) {
+				assert.Equal(t, EventTagCreated, event.GenericEvent)
+				assert.Equal(t, "refs/tags/v1.0.0", event.Push.Ref)
 			},
 		},
 		{
@@ -123,6 +274,7 @@ func TestGitHubClient_ParseWebhook(t *testing.T) {
 			checkResult: func(t *testing.T, event *WebhookEvent) {
 				assert.Equal(t, GitHub, event.Provider)
 				assert.Equal(t, "ping", event.EventType)
+				assert.Equal(t, EventUnknown, event.GenericEvent)
 			},
 		},
 	}

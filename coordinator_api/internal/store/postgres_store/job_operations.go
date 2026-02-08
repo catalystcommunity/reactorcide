@@ -3,7 +3,6 @@ package postgres_store
 import (
 	"context"
 	"fmt"
-	"strings"
 
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store/models"
@@ -28,18 +27,14 @@ func (ps PostgresDbStore) GetJobsByUser(ctx context.Context, userID string, limi
 
 // GetJobByID retrieves a job by its ID
 func (ps PostgresDbStore) GetJobByID(ctx context.Context, jobID string) (*models.Job, error) {
+	if !isValidUUID(jobID) {
+		return nil, store.ErrNotFound
+	}
+
 	var job models.Job
 
 	if err := ps.getDB(ctx).Where("job_id = ?", jobID).First(&job).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
-			return nil, store.ErrNotFound
-		}
-		// Check for PostgreSQL invalid UUID syntax error
-		if strings.Contains(err.Error(), "invalid input syntax for type uuid") {
-			return nil, store.ErrNotFound
-		}
-		// Check for PostgreSQL transaction abort error (happens after invalid UUID)
-		if strings.Contains(err.Error(), "current transaction is aborted") {
 			return nil, store.ErrNotFound
 		}
 		return nil, fmt.Errorf("failed to get job %s: %w", jobID, err)
@@ -70,16 +65,12 @@ func (ps PostgresDbStore) UpdateJob(ctx context.Context, job *models.Job) error 
 
 // DeleteJob deletes a job by its ID
 func (ps PostgresDbStore) DeleteJob(ctx context.Context, jobID string) error {
+	if !isValidUUID(jobID) {
+		return store.ErrNotFound
+	}
+
 	result := ps.getDB(ctx).Where("job_id = ?", jobID).Delete(&models.Job{})
 	if result.Error != nil {
-		// Check for PostgreSQL invalid UUID syntax error
-		if strings.Contains(result.Error.Error(), "invalid input syntax for type uuid") {
-			return store.ErrNotFound
-		}
-		// Check for PostgreSQL transaction abort error (happens after invalid UUID)
-		if strings.Contains(result.Error.Error(), "current transaction is aborted") {
-			return store.ErrNotFound
-		}
 		return fmt.Errorf("failed to delete job %s: %w", jobID, result.Error)
 	}
 	if result.RowsAffected == 0 {

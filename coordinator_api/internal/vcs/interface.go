@@ -15,12 +15,13 @@ const (
 
 // WebhookEvent represents a parsed webhook event from a VCS provider
 type WebhookEvent struct {
-	Provider    Provider
-	EventType   string
-	Repository  RepositoryInfo
-	PullRequest *PullRequestInfo
-	Push        *PushInfo
-	RawPayload  []byte
+	Provider     Provider
+	EventType    string // raw event type from the VCS provider (e.g., "pull_request", "push")
+	GenericEvent EventType // VCS-agnostic event type (e.g., EventPullRequestOpened)
+	Repository   RepositoryInfo
+	PullRequest  *PullRequestInfo
+	Push         *PushInfo
+	RawPayload   []byte
 }
 
 // RepositoryInfo contains repository information
@@ -37,7 +38,8 @@ type PullRequestInfo struct {
 	Number      int
 	Title       string
 	Description string
-	State       string // open, closed, merged
+	State       string // open, closed
+	Merged      bool
 	HeadSHA     string
 	HeadRef     string // branch name
 	BaseSHA     string

@@ -149,20 +149,22 @@ This metadata is used to:
 Jobs triggered by VCS events receive these environment variables:
 
 ### Common Variables
-- `CI=true` - Indicates CI environment
-- `CI_PROVIDER` - VCS provider (github/gitlab)
-- `CI_REPO` - Repository full name
-- `CI_SHA` - Commit SHA
+- `REACTORCIDE_CI=true` - Indicates Reactorcide CI environment
+- `REACTORCIDE_PROVIDER` - VCS provider (github/gitlab)
+- `REACTORCIDE_REPO` - Repository full name
+- `REACTORCIDE_SHA` - Commit SHA
+- `REACTORCIDE_EVENT_TYPE` - Generic event type (push, pull_request_opened, etc.)
+- `REACTORCIDE_SOURCE_URL` - Source repository clone URL
 
 ### Pull Request Variables
-- `CI_PR_NUMBER` - Pull request number
-- `CI_PR_SHA` - Pull request head SHA
-- `CI_PR_REF` - Pull request source branch
-- `CI_PR_BASE_REF` - Pull request target branch
+- `REACTORCIDE_PR_NUMBER` - Pull request number
+- `REACTORCIDE_PR_SHA` - Pull request head SHA
+- `REACTORCIDE_PR_REF` - Pull request source branch
+- `REACTORCIDE_PR_BASE_REF` - Pull request target branch
 
 ### Push Variables
-- `CI_BRANCH` - Branch name
-- `CI_COMMIT_MESSAGE` - First commit message in push
+- `REACTORCIDE_BRANCH` - Branch name
+- `REACTORCIDE_COMMIT_MESSAGE` - First commit message in push
 
 ## Default CI Commands
 

@@ -1,0 +1,12 @@
+name: deploy
+description: "Deploy when a release tag is pushed"
+triggers:
+  events:
+    - tag_created
+job:
+  image: alpine:latest
+  command: "sh /job/ci/scripts/deploy.sh"
+  timeout: 1800
+  priority: 20
+environment:
+  DEPLOY_ENV: "production"

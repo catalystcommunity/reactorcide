@@ -138,7 +138,7 @@ Distributed task queue system for job distribution:
 ## Getting Started
 
 1. **Local Development**: Run with `docker-compose up` for a complete environment
-2. **Job Execution**: Use `python -m src.cli run` or submit jobs via the API
+2. **Job Execution**: Use `uv run python -m src.cli run` or submit jobs via the API
 3. **Kubernetes Deployment**: Deploy with Helm chart for production use
 4. **Integration**: Connect to existing Corndogs deployment or deploy alongside
 

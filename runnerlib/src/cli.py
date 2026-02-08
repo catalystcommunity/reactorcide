@@ -705,6 +705,103 @@ def validate(
         raise typer.Exit(1)
 
 
+@app.command("eval")
+def eval_cmd(
+    ci_source_dir: str = typer.Option("/job/ci", envvar="REACTORCIDE_CI_SOURCE_DIR", help="CI source directory containing job definitions"),
+    source_dir: str = typer.Option("/job/src", envvar="REACTORCIDE_SOURCE_DIR", help="Source code directory"),
+    event_type: str = typer.Option(..., envvar="REACTORCIDE_EVENT_TYPE", help="Generic event type (e.g., push, pull_request_opened)"),
+    branch: str = typer.Option("", envvar="REACTORCIDE_BRANCH", help="Branch name"),
+    pr_base_ref: str = typer.Option("", envvar="REACTORCIDE_PR_BASE_REF", help="PR base branch reference"),
+    pr_number: str = typer.Option("", envvar="REACTORCIDE_PR_NUMBER", help="Pull request number"),
+    source_url: str = typer.Option("", envvar="REACTORCIDE_SOURCE_URL", help="Source repository URL"),
+    source_ref: str = typer.Option("", envvar="REACTORCIDE_SHA", help="Source git reference (SHA)"),
+    ci_source_url: str = typer.Option("", envvar="REACTORCIDE_CI_SOURCE_URL", help="CI source repository URL"),
+    ci_source_ref: str = typer.Option("", envvar="REACTORCIDE_CI_SOURCE_REF", help="CI source git reference"),
+    triggers_file: str = typer.Option("/job/triggers.json", help="Path to write triggers output"),
+):
+    """Evaluate job definitions against an event and generate triggers.
+
+    Reads job definitions from the CI source directory, matches them against
+    the current event type/branch/changed files, and writes matched triggers
+    to a JSON file for the worker to pick up.
+    """
+    from pathlib import Path
+    from src.eval import (
+        load_job_definitions,
+        evaluate_event,
+        generate_triggers,
+        EventContext,
+        VALID_EVENT_TYPES,
+    )
+    from src.workflow import WorkflowContext, changed_files
+
+    # Validate event type
+    if event_type not in VALID_EVENT_TYPES:
+        log_stderr(f"Invalid event type: {event_type}")
+        log_stderr(f"Valid types: {', '.join(sorted(VALID_EVENT_TYPES))}")
+        raise typer.Exit(1)
+
+    ci_source_path = Path(ci_source_dir)
+    source_path = Path(source_dir)
+
+    # Load job definitions
+    log_stdout(f"Loading job definitions from {ci_source_path}")
+    definitions = load_job_definitions(ci_source_path)
+
+    if not definitions:
+        log_stdout("No job definitions found, nothing to evaluate")
+        raise typer.Exit(0)
+
+    log_stdout(f"Loaded {len(definitions)} job definition(s)")
+
+    # Get changed files via git diff if source dir is a git repo
+    changed = None
+    if source_path.exists() and (source_path / ".git").exists():
+        try:
+            if pr_base_ref:
+                changed = changed_files(f"origin/{pr_base_ref}", "HEAD", str(source_path))
+            else:
+                changed = changed_files("HEAD^", "HEAD", str(source_path))
+            if changed:
+                log_stdout(f"Found {len(changed)} changed file(s)")
+        except Exception as e:
+            log_stderr(f"Warning: could not determine changed files: {e}")
+
+    # Evaluate definitions against event
+    matched = evaluate_event(definitions, event_type, branch, changed)
+
+    log_stdout(f"Matched {len(matched)} job(s) for event '{event_type}'")
+
+    if not matched:
+        log_stdout("No jobs matched, no triggers to generate")
+        raise typer.Exit(0)
+
+    # Build event context
+    ctx = EventContext(
+        event_type=event_type,
+        branch=branch,
+        source_url=source_url,
+        source_ref=source_ref,
+        ci_source_url=ci_source_url,
+        ci_source_ref=ci_source_ref,
+        pr_base_ref=pr_base_ref,
+        pr_number=pr_number,
+    )
+
+    # Generate triggers
+    triggers = generate_triggers(matched, ctx)
+
+    # Write triggers using WorkflowContext
+    workflow_ctx = WorkflowContext(triggers_file=triggers_file)
+    workflow_ctx.triggers = triggers
+    workflow_ctx.flush_triggers()
+
+    for trigger in triggers:
+        log_stdout(f"  Triggered: {trigger.job_name}")
+
+    log_stdout(f"Wrote {len(triggers)} trigger(s) to {triggers_file}")
+
+
 git_app = typer.Typer()
 app.add_typer(git_app, name="git")
 

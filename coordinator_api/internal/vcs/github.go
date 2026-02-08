@@ -77,6 +77,13 @@ func (c *GitHubClient) ParseWebhook(r *http.Request) (*WebhookEvent, error) {
 		c.logger.WithField("event_type", eventType).Warn("Unsupported GitHub event type")
 	}
 
+	// Translate raw GitHub event into a generic, VCS-agnostic event type
+	var action string
+	if event.PullRequest != nil {
+		action = event.PullRequest.Action
+	}
+	event.GenericEvent = GenericEventFromGitHub(eventType, action, event.PullRequest, event.Push)
+
 	return event, nil
 }
 
@@ -246,6 +253,7 @@ func (c *GitHubClient) parsePullRequestEvent(body []byte, event *WebhookEvent) e
 		Title:       payload.PullRequest.Title,
 		Description: payload.PullRequest.Body,
 		State:       payload.PullRequest.State,
+		Merged:      payload.PullRequest.Merged,
 		HeadSHA:     payload.PullRequest.Head.SHA,
 		HeadRef:     payload.PullRequest.Head.Ref,
 		BaseSHA:     payload.PullRequest.Base.SHA,
@@ -328,6 +336,7 @@ func (c *GitHubClient) convertPRInfo(pr githubPullRequest) *PullRequestInfo {
 		Title:       pr.Title,
 		Description: pr.Body,
 		State:       pr.State,
+		Merged:      pr.Merged,
 		HeadSHA:     pr.Head.SHA,
 		HeadRef:     pr.Head.Ref,
 		BaseSHA:     pr.Base.SHA,
@@ -350,6 +359,7 @@ type githubPullRequest struct {
 	Title   string           `json:"title"`
 	Body    string           `json:"body"`
 	State   string           `json:"state"`
+	Merged  bool             `json:"merged"`
 	HTMLURL string           `json:"html_url"`
 	Head    githubRef        `json:"head"`
 	Base    githubRef        `json:"base"`

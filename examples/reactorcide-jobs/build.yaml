@@ -1,0 +1,16 @@
+name: build
+description: "Build and publish artifacts on push to main"
+triggers:
+  events:
+    - push
+  branches:
+    - main
+job:
+  image: golang:1.22
+  command: "make build && make publish"
+  timeout: 3600
+  priority: 5
+environment:
+  CGO_ENABLED: "0"
+  GOOS: "linux"
+  GOARCH: "amd64"
