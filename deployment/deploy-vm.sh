@@ -109,6 +109,9 @@ REACTORCIDE_LOG_LEVEL=${REACTORCIDE_LOG_LEVEL:-info}
 # Master keys format: name1:base64key1,name2:base64key2 (first is primary)
 REACTORCIDE_SECRETS_STORAGE_TYPE=database
 REACTORCIDE_MASTER_KEYS=${REACTORCIDE_MASTER_KEYS}
+
+# VCS webhook secret for GitHub signature validation
+REACTORCIDE_VCS_GITHUB_SECRET=${REACTORCIDE_VCS_GITHUB_SECRET:-}
 ENVFILE
 
 echo "Environment configuration created"

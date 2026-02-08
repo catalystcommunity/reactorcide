@@ -254,6 +254,9 @@ command: |-
     update_env_var "REACTORCIDE_COORDINATOR_IMAGE" "${REACTORCIDE_COORDINATOR_IMAGE:-}"
     update_env_var "REACTORCIDE_WORKER_IMAGE" "${REACTORCIDE_WORKER_IMAGE:-}"
     update_env_var "REACTORCIDE_RUNNER_IMAGE" "${REACTORCIDE_RUNNER_IMAGE:-}"
+
+    echo "Configuring VCS webhook secrets:"
+    update_env_var "REACTORCIDE_VCS_GITHUB_SECRET" "${REACTORCIDE_VCS_GITHUB_SECRET:-}"
     REMOTE_EOF
 
     echo ""
@@ -394,6 +397,9 @@ environment:
     REACTORCIDE_WORKER_POLL_INTERVAL: "${env:REACTORCIDE_WORKER_POLL_INTERVAL}"
     REACTORCIDE_LOG_LEVEL: "${env:REACTORCIDE_LOG_LEVEL}"
     REACTORCIDE_REMOTE_DIR: "${env:REACTORCIDE_REMOTE_DIR}"
+
+    # VCS webhook secret for GitHub signature validation
+    REACTORCIDE_VCS_GITHUB_SECRET: "${secret:reactorcide/deployment:github_webhook_secret}"
 
     # Container image overrides (for internal registries)
     REACTORCIDE_COORDINATOR_IMAGE: "${env:REACTORCIDE_COORDINATOR_IMAGE}"

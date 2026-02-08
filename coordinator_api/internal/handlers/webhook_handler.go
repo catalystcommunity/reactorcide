@@ -80,17 +80,21 @@ func (h *WebhookHandler) handleWebhook(w http.ResponseWriter, r *http.Request, p
 	// Replace the body for parsing
 	r.Body = io.NopCloser(bytes.NewReader(body))
 
-	// Validate webhook signature if secret is configured
-	if h.webhookSecret != "" {
-		// Create a new request with the body for validation
-		validateReq, _ := http.NewRequest(r.Method, r.URL.String(), bytes.NewReader(body))
-		validateReq.Header = r.Header
+	// Validate webhook signature — reject if no secret is configured
+	if h.webhookSecret == "" {
+		h.logger.Error("Webhook secret not configured — rejecting request")
+		http.Error(w, "Webhook secret not configured", http.StatusInternalServerError)
+		return
+	}
 
-		if err := client.ValidateWebhook(validateReq, h.webhookSecret); err != nil {
-			h.logger.WithError(err).Warn("Invalid webhook signature")
-			http.Error(w, "Invalid webhook signature", http.StatusUnauthorized)
-			return
-		}
+	// Create a new request with the body for validation
+	validateReq, _ := http.NewRequest(r.Method, r.URL.String(), bytes.NewReader(body))
+	validateReq.Header = r.Header
+
+	if err := client.ValidateWebhook(validateReq, h.webhookSecret); err != nil {
+		h.logger.WithError(err).Warn("Invalid webhook signature")
+		http.Error(w, "Invalid webhook signature", http.StatusUnauthorized)
+		return
 	}
 
 	// Parse the webhook event

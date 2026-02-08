@@ -242,6 +242,7 @@ func TestWebhookHandler_PREvent_SubmitsToCorndogs(t *testing.T) {
 	mockCorndogs := corndogs.NewMockClient()
 
 	handler := NewWebhookHandler(mockStore, mockCorndogs)
+	handler.SetWebhookSecret("test-secret")
 
 	// Create a mock VCS client that returns a PR event
 	prEvent := &vcs.WebhookEvent{
@@ -325,6 +326,7 @@ func TestWebhookHandler_PushEvent_SubmitsToCorndogs(t *testing.T) {
 	mockCorndogs := corndogs.NewMockClient()
 
 	handler := NewWebhookHandler(mockStore, mockCorndogs)
+	handler.SetWebhookSecret("test-secret")
 
 	pushEvent := &vcs.WebhookEvent{
 		Provider:     vcs.GitHub,
@@ -409,6 +411,7 @@ func TestWebhookHandler_CorndogsSubmissionFailure_JobStillCreated(t *testing.T) 
 	}
 
 	handler := NewWebhookHandler(mockStore, mockCorndogs)
+	handler.SetWebhookSecret("test-secret")
 
 	prEvent := &vcs.WebhookEvent{
 		Provider:     vcs.GitHub,
@@ -468,6 +471,7 @@ func TestWebhookHandler_NilCorndogsClient_JobCreatedNoSubmission(t *testing.T) {
 
 	// Pass nil corndogs client
 	handler := NewWebhookHandler(mockStore, nil)
+	handler.SetWebhookSecret("test-secret")
 
 	pushEvent := &vcs.WebhookEvent{
 		Provider:     vcs.GitHub,
@@ -513,6 +517,7 @@ func TestWebhookHandler_NilCorndogsClient_JobCreatedNoSubmission(t *testing.T) {
 func TestWebhookHandler_UnknownGenericEvent_Ignored(t *testing.T) {
 	mockStore := &WebhookMockStore{}
 	handler := NewWebhookHandler(mockStore, nil)
+	handler.SetWebhookSecret("test-secret")
 
 	// A "labeled" PR action maps to EventUnknown
 	prEvent := &vcs.WebhookEvent{
@@ -563,6 +568,7 @@ func TestWebhookHandler_PRClosed_FilteredByDefaultProject(t *testing.T) {
 		},
 	}
 	handler := NewWebhookHandler(mockStore, nil)
+	handler.SetWebhookSecret("test-secret")
 
 	prEvent := &vcs.WebhookEvent{
 		Provider:     vcs.GitHub,
@@ -612,6 +618,7 @@ func TestWebhookHandler_PRMerged_AllowedWhenConfigured(t *testing.T) {
 		},
 	}
 	handler := NewWebhookHandler(mockStore, nil)
+	handler.SetWebhookSecret("test-secret")
 
 	prEvent := &vcs.WebhookEvent{
 		Provider:     vcs.GitHub,
@@ -660,6 +667,7 @@ func TestWebhookHandler_TagCreated_AllowedByDefault(t *testing.T) {
 		},
 	}
 	handler := NewWebhookHandler(mockStore, nil)
+	handler.SetWebhookSecret("test-secret")
 
 	// Tag pushes are processed through processPushEvent but with GenericEvent = tag_created
 	pushEvent := &vcs.WebhookEvent{
@@ -711,6 +719,7 @@ func TestWebhookHandler_TagCreated_WithEmptyTargetBranches(t *testing.T) {
 		},
 	}
 	handler := NewWebhookHandler(mockStore, nil)
+	handler.SetWebhookSecret("test-secret")
 
 	pushEvent := &vcs.WebhookEvent{
 		Provider:     vcs.GitHub,
@@ -757,6 +766,7 @@ func TestWebhookHandler_PRSynchronize_CreatesJob(t *testing.T) {
 		},
 	}
 	handler := NewWebhookHandler(mockStore, nil)
+	handler.SetWebhookSecret("test-secret")
 
 	prEvent := &vcs.WebhookEvent{
 		Provider:     vcs.GitHub,
@@ -807,6 +817,7 @@ func TestWebhookHandler_EvalJob_WithDedicatedCISourceRepo(t *testing.T) {
 		},
 	}
 	handler := NewWebhookHandler(mockStore, nil)
+	handler.SetWebhookSecret("test-secret")
 
 	prEvent := &vcs.WebhookEvent{
 		Provider:     vcs.GitHub,
@@ -859,4 +870,24 @@ func TestWebhookHandler_EvalJob_WithDedicatedCISourceRepo(t *testing.T) {
 	// Env vars should include CI source info
 	assert.Equal(t, "https://github.com/test-org/ci-pipelines.git", createdJob.JobEnvVars["REACTORCIDE_CI_SOURCE_URL"])
 	assert.Equal(t, "main", createdJob.JobEnvVars["REACTORCIDE_CI_SOURCE_REF"])
+}
+
+func TestWebhookHandler_NoSecret_RejectsRequest(t *testing.T) {
+	mockStore := &WebhookMockStore{}
+	handler := NewWebhookHandler(mockStore, nil)
+	// Deliberately do NOT set webhook secret
+
+	mockVCS := &MockVCSClient{}
+	handler.AddVCSClient(vcs.GitHub, mockVCS)
+
+	body := makePushWebhookBody("test-org/test-repo", "https://github.com/test-org/test-repo.git", "sha123", "refs/heads/main")
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/webhooks/github", bytes.NewReader(body))
+	req.Header.Set("X-GitHub-Event", "push")
+	w := httptest.NewRecorder()
+
+	handler.HandleGitHubWebhook(w, req)
+
+	assert.Equal(t, http.StatusInternalServerError, w.Code)
+	assert.Contains(t, w.Body.String(), "Webhook secret not configured")
+	assert.Len(t, mockStore.CreateJobCalls, 0)
 }

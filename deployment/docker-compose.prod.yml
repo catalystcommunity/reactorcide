@@ -88,6 +88,8 @@ services:
       # Secrets management (database storage enabled by default)
       REACTORCIDE_SECRETS_STORAGE_TYPE: ${REACTORCIDE_SECRETS_STORAGE_TYPE:-database}
       REACTORCIDE_MASTER_KEYS: ${REACTORCIDE_MASTER_KEYS:-}
+      # VCS webhook secret for GitHub signature validation
+      REACTORCIDE_VCS_GITHUB_SECRET: ${REACTORCIDE_VCS_GITHUB_SECRET:-}
     ports:
       - "6080:6080"
     volumes:
