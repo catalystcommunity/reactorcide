@@ -1,0 +1,21 @@
+name: test
+description: "Run unit tests on pull requests"
+triggers:
+  events:
+    - pull_request_opened
+    - pull_request_updated
+  branches:
+    - main
+    - "develop"
+    - "release/*"
+paths:
+  include: ["src/**", "tests/**", "lib/**"]
+  exclude: ["**/*.md"]
+job:
+  image: python:3.12
+  command: "pip install -r requirements.txt && pytest -v"
+  timeout: 1800
+  priority: 10
+environment:
+  PYTHONDONTWRITEBYTECODE: "1"
+  CI: "true"

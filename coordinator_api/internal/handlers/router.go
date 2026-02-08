@@ -88,7 +88,8 @@ func createAppMux() *http.ServeMux {
 	// Create handlers
 	jobHandler := NewJobHandlerWithObjectStore(store.AppStore, singletoncorndogsClient, singletonObjectStore)
 	tokenHandler := NewTokenHandler(store.AppStore)
-	webhookHandler := NewWebhookHandler(store.AppStore)
+	webhookHandler := NewWebhookHandler(store.AppStore, singletoncorndogsClient)
+	projectHandler := NewProjectHandler(store.AppStore)
 
 	// Create secrets handler - keys are loaded from env, DB, or auto-generated
 	var secretsHandler *SecretsHandler
@@ -243,6 +244,45 @@ func createAppMux() *http.ServeMux {
 			return
 		}
 		transactionMiddleware(http.HandlerFunc(webhookHandler.HandleGitLabWebhook)).ServeHTTP(w, r)
+	})
+
+	// Project routes (require auth)
+	mux.HandleFunc("/api/v1/projects", func(w http.ResponseWriter, r *http.Request) {
+		handler := transactionMiddleware(authMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			switch r.Method {
+			case http.MethodGet:
+				projectHandler.ListProjects(w, r)
+			case http.MethodPost:
+				projectHandler.CreateProject(w, r)
+			default:
+				http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+			}
+		})))
+		handler.ServeHTTP(w, r)
+	})
+
+	mux.HandleFunc("/api/v1/projects/", func(w http.ResponseWriter, r *http.Request) {
+		path := strings.TrimPrefix(r.URL.Path, "/api/v1/projects/")
+		if path == "" {
+			http.Error(w, "Invalid path", http.StatusBadRequest)
+			return
+		}
+
+		r = r.WithContext(setIDContext(r.Context(), "project_id", path))
+
+		handler := transactionMiddleware(authMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			switch r.Method {
+			case http.MethodGet:
+				projectHandler.GetProject(w, r)
+			case http.MethodPut:
+				projectHandler.UpdateProject(w, r)
+			case http.MethodDelete:
+				projectHandler.DeleteProject(w, r)
+			default:
+				http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+			}
+		})))
+		handler.ServeHTTP(w, r)
 	})
 
 	// Secrets routes (require auth and master keys to be configured)

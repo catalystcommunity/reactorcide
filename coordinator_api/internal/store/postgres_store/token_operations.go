@@ -3,7 +3,6 @@ package postgres_store
 import (
 	"context"
 	"fmt"
-	"strings"
 	"time"
 
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/checkauth"
@@ -77,16 +76,12 @@ func (ps PostgresDbStore) GetAPITokensByUser(ctx context.Context, userID string)
 
 // DeleteAPIToken deletes an API token by its ID
 func (ps PostgresDbStore) DeleteAPIToken(ctx context.Context, tokenID string) error {
+	if !isValidUUID(tokenID) {
+		return store.ErrNotFound
+	}
+
 	result := ps.getDB(ctx).Where("token_id = ?", tokenID).Delete(&models.APIToken{})
 	if result.Error != nil {
-		// Check for PostgreSQL invalid UUID syntax error
-		if strings.Contains(result.Error.Error(), "invalid input syntax for type uuid") {
-			return store.ErrNotFound
-		}
-		// Check for PostgreSQL transaction abort error (happens after invalid UUID)
-		if strings.Contains(result.Error.Error(), "current transaction is aborted") {
-			return store.ErrNotFound
-		}
 		return fmt.Errorf("failed to delete API token %s: %w", tokenID, result.Error)
 	}
 	if result.RowsAffected == 0 {

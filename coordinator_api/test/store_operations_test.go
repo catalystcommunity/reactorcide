@@ -86,6 +86,12 @@ func TestJobOperations(t *testing.T) {
 			testJobEnvironmentVariables(t, ctx, tx)
 		})
 	})
+
+	t.Run("Job Event Metadata and Parent Job", func(t *testing.T) {
+		RunTransactionalTest(t, func(ctx context.Context, tx *gorm.DB) {
+			testJobEventMetadataAndParentJob(t, ctx, tx)
+		})
+	})
 }
 
 // TestAPITokenOperations tests API token CRUD operations
@@ -433,6 +439,57 @@ func testJobEnvironmentVariables(t *testing.T, ctx context.Context, tx *gorm.DB)
 	assert.Equal(t, envVars, retrievedEnvVars)
 }
 
+func testJobEventMetadataAndParentJob(t *testing.T, ctx context.Context, tx *gorm.DB) {
+	dataUtils := &DataUtils{db: tx}
+
+	// Create a parent job
+	parentJob, err := dataUtils.CreateJob(DataSetup{
+		"Name":   "Parent Eval Job",
+		"Status": "completed",
+	})
+	require.NoError(t, err)
+
+	// Create a child job with event metadata and parent reference
+	eventMetadata := models.JSONB{
+		"event_type": "pull_request_opened",
+		"branch":     "feature/test",
+		"pr_number":  float64(42),
+		"sha":        "abc1234",
+	}
+
+	childJob, err := dataUtils.CreateJob(DataSetup{
+		"Name":          "Triggered Child Job",
+		"Status":        "submitted",
+		"EventMetadata": eventMetadata,
+		"ParentJobID":   parentJob.JobID,
+	})
+	require.NoError(t, err)
+
+	// Retrieve and verify event metadata
+	retrievedJob, err := store.AppStore.GetJobByID(ctx, childJob.JobID)
+	require.NoError(t, err)
+	assert.Equal(t, "pull_request_opened", retrievedJob.EventMetadata["event_type"])
+	assert.Equal(t, "feature/test", retrievedJob.EventMetadata["branch"])
+	assert.Equal(t, float64(42), retrievedJob.EventMetadata["pr_number"])
+	assert.Equal(t, "abc1234", retrievedJob.EventMetadata["sha"])
+
+	// Verify parent job ID
+	require.NotNil(t, retrievedJob.ParentJobID)
+	assert.Equal(t, parentJob.JobID, *retrievedJob.ParentJobID)
+
+	// Verify a job without event metadata has nil fields
+	plainJob, err := dataUtils.CreateJob(DataSetup{
+		"Name":   "Plain Job",
+		"Status": "submitted",
+	})
+	require.NoError(t, err)
+
+	retrievedPlain, err := store.AppStore.GetJobByID(ctx, plainJob.JobID)
+	require.NoError(t, err)
+	assert.Nil(t, retrievedPlain.EventMetadata)
+	assert.Nil(t, retrievedPlain.ParentJobID)
+}
+
 // API Token operation test implementations
 
 func testCreateAPITokenAndValidateAPIToken(t *testing.T, ctx context.Context, tx *gorm.DB) {
@@ -598,9 +655,7 @@ func testInactiveTokenValidation(t *testing.T, ctx context.Context, tx *gorm.DB)
 // TestStoreErrorHandling tests error handling scenarios
 func TestStoreErrorHandling(t *testing.T) {
 	t.Run("Invalid UUIDs", func(t *testing.T) {
-		RunTransactionalTest(t, func(ctx context.Context, tx *gorm.DB) {
-			testInvalidUUIDs(t, ctx, tx)
-		})
+		testInvalidUUIDs(t)
 	})
 
 	t.Run("Context Cancellation", func(t *testing.T) {
@@ -610,28 +665,36 @@ func TestStoreErrorHandling(t *testing.T) {
 	})
 }
 
-func testInvalidUUIDs(t *testing.T, ctx context.Context, tx *gorm.DB) {
-	// Test each invalid UUID operation in separate sub-transactions to avoid
-	// PostgreSQL transaction abort issues
+func testInvalidUUIDs(t *testing.T) {
+	// Each operation gets its own transaction so a PostgreSQL transaction abort
+	// from one invalid UUID doesn't cascade into subsequent tests.
 
 	t.Run("GetUserByID with invalid UUID", func(t *testing.T) {
-		_, err := store.AppStore.GetUserByID(ctx, "invalid-uuid")
-		assert.ErrorIs(t, err, store.ErrNotFound)
+		RunTransactionalTest(t, func(ctx context.Context, tx *gorm.DB) {
+			_, err := store.AppStore.GetUserByID(ctx, "invalid-uuid")
+			assert.ErrorIs(t, err, store.ErrNotFound)
+		})
 	})
 
 	t.Run("GetJobByID with invalid UUID", func(t *testing.T) {
-		_, err := store.AppStore.GetJobByID(ctx, "invalid-uuid")
-		assert.ErrorIs(t, err, store.ErrNotFound)
+		RunTransactionalTest(t, func(ctx context.Context, tx *gorm.DB) {
+			_, err := store.AppStore.GetJobByID(ctx, "invalid-uuid")
+			assert.ErrorIs(t, err, store.ErrNotFound)
+		})
 	})
 
 	t.Run("DeleteJob with invalid UUID", func(t *testing.T) {
-		err := store.AppStore.DeleteJob(ctx, "invalid-uuid")
-		assert.ErrorIs(t, err, store.ErrNotFound)
+		RunTransactionalTest(t, func(ctx context.Context, tx *gorm.DB) {
+			err := store.AppStore.DeleteJob(ctx, "invalid-uuid")
+			assert.ErrorIs(t, err, store.ErrNotFound)
+		})
 	})
 
 	t.Run("DeleteAPIToken with invalid UUID", func(t *testing.T) {
-		err := store.AppStore.DeleteAPIToken(ctx, "invalid-uuid")
-		assert.ErrorIs(t, err, store.ErrNotFound)
+		RunTransactionalTest(t, func(ctx context.Context, tx *gorm.DB) {
+			err := store.AppStore.DeleteAPIToken(ctx, "invalid-uuid")
+			assert.ErrorIs(t, err, store.ErrNotFound)
+		})
 	})
 }
 

@@ -12,6 +12,7 @@ import (
 	"github.com/catalystcommunity/app-utils-go/logging"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/config"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store/ctxkey"
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v4/log/logrusadapter"
 	"github.com/jackc/pgx/v4/pgxpool"
 	"github.com/sirupsen/logrus"
@@ -137,6 +138,12 @@ func getLogger() logger.Interface {
 			Colorful:                  colorful,                                          // Disable color
 		},
 	)
+}
+
+// isValidUUID returns true if the given string is a valid UUID.
+func isValidUUID(id string) bool {
+	_, err := uuid.Parse(id)
+	return err == nil
 }
 
 func getLogLevel(loglevel string) logger.LogLevel {

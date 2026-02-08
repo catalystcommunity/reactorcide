@@ -27,8 +27,9 @@ type JobResult struct {
 	LogsObjectKey      string
 	ArtifactsObjectKey string
 	Duration           time.Duration
-	RetryCount         int  // Number of retry attempts made
-	Retryable          bool // Whether the failure was retryable
+	RetryCount         int    // Number of retry attempts made
+	Retryable          bool   // Whether the failure was retryable
+	WorkspaceDir       string // Host path to workspace directory; caller must clean up via os.RemoveAll
 }
 
 // HeartbeatFunc is a function that sends a heartbeat
@@ -163,6 +164,10 @@ func (jp *JobProcessor) ProcessJobWithContext(ctx context.Context, job *models.J
 	var retryCount int
 	retryErr := RetryWithBackoffCounter(ctx, jp.retryConfig, fmt.Sprintf("job_%s", job.JobID), func(attempt int) error {
 		retryCount = attempt
+		// Clean up workspace from previous attempt before starting a new one
+		if execResult != nil && execResult.WorkspaceDir != "" {
+			os.RemoveAll(execResult.WorkspaceDir)
+		}
 		execResult = jp.executeWithRunnerlib(ctx, job, execCtx)
 
 		// Check if the result indicates a retryable error
@@ -487,7 +492,8 @@ func (jp *JobProcessor) executeWithRunnerlib(ctx context.Context, job *models.Jo
 			Error:    fmt.Sprintf("Failed to create workspace directory: %v", err),
 		}
 	}
-	defer os.RemoveAll(workspaceDir)
+	// NOTE: Workspace cleanup is the caller's responsibility (via result.WorkspaceDir)
+	// so that trigger processing can read triggers.json after job completion.
 
 	// Change ownership to user 1001:1001 so non-root containers can write to it
 	// This matches the --user 1001:1001 flag used in containerd_runner.go
@@ -519,8 +525,9 @@ func (jp *JobProcessor) executeWithRunnerlib(ctx context.Context, job *models.Jo
 	if err != nil {
 		logger.WithError(err).Error("Failed to resolve secrets in job environment")
 		return &JobResult{
-			ExitCode: 1,
-			Error:    fmt.Sprintf("Failed to resolve secrets: %v", err),
+			ExitCode:     1,
+			Error:        fmt.Sprintf("Failed to resolve secrets: %v", err),
+			WorkspaceDir: workspaceDir,
 		}
 	}
 	if secretResult.Resolved != nil {
@@ -549,8 +556,9 @@ func (jp *JobProcessor) executeWithRunnerlib(ctx context.Context, job *models.Jo
 	if err != nil {
 		logger.WithError(err).Error("Failed to spawn job container")
 		return &JobResult{
-			ExitCode: 1,
-			Error:    fmt.Sprintf("Failed to spawn job container: %v", err),
+			ExitCode:     1,
+			Error:        fmt.Sprintf("Failed to spawn job container: %v", err),
+			WorkspaceDir: workspaceDir,
 		}
 	}
 
@@ -582,8 +590,9 @@ func (jp *JobProcessor) executeWithRunnerlib(ctx context.Context, job *models.Jo
 		if IsPodStartupError(err) {
 			logger.WithError(err).Error("Pod startup failure detected - failing job immediately")
 			return &JobResult{
-				ExitCode: 1,
-				Error:    err.Error(),
+				ExitCode:     1,
+				Error:        err.Error(),
+				WorkspaceDir: workspaceDir,
 			}
 		}
 
@@ -697,7 +706,8 @@ func (jp *JobProcessor) executeWithRunnerlib(ctx context.Context, job *models.Jo
 	logWg.Wait()
 
 	result := &JobResult{
-		ExitCode: exitCode,
+		ExitCode:     exitCode,
+		WorkspaceDir: workspaceDir,
 	}
 
 	// Set log object keys if logs were shipped

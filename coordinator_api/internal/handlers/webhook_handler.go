@@ -9,6 +9,8 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/corndogs"
+	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/metrics"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store/models"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/vcs"
@@ -17,21 +19,23 @@ import (
 
 // WebhookHandler handles VCS webhook events
 type WebhookHandler struct {
-	store         store.Store
-	vcsClients    map[vcs.Provider]vcs.Client
-	webhookSecret string
-	logger        *logrus.Logger
+	store          store.Store
+	corndogsClient corndogs.ClientInterface
+	vcsClients     map[vcs.Provider]vcs.Client
+	webhookSecret  string
+	logger         *logrus.Logger
 }
 
 // NewWebhookHandler creates a new webhook handler
-func NewWebhookHandler(store store.Store) *WebhookHandler {
+func NewWebhookHandler(store store.Store, corndogsClient corndogs.ClientInterface) *WebhookHandler {
 	logger := logrus.New()
 	logger.SetFormatter(&logrus.JSONFormatter{})
 
 	return &WebhookHandler{
-		store:      store,
-		vcsClients: make(map[vcs.Provider]vcs.Client),
-		logger:     logger,
+		store:          store,
+		corndogsClient: corndogsClient,
+		vcsClients:     make(map[vcs.Provider]vcs.Client),
+		logger:         logger,
 	}
 }
 
@@ -104,6 +108,17 @@ func (h *WebhookHandler) handleWebhook(w http.ResponseWriter, r *http.Request, p
 		"repository": event.Repository.FullName,
 	}).Info("Received webhook event")
 
+	// Skip events that don't map to a known generic event type
+	if event.GenericEvent == vcs.EventUnknown {
+		h.logger.WithFields(logrus.Fields{
+			"event_type": event.EventType,
+			"provider":   provider,
+		}).Debug("Ignoring unsupported event type")
+		w.WriteHeader(http.StatusOK)
+		json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
+		return
+	}
+
 	// Process the event based on type
 	switch {
 	case event.PullRequest != nil:
@@ -119,7 +134,7 @@ func (h *WebhookHandler) handleWebhook(w http.ResponseWriter, r *http.Request, p
 			return
 		}
 	default:
-		h.logger.WithField("event_type", event.EventType).Debug("Ignoring unsupported event type")
+		h.logger.WithField("event_type", event.EventType).Debug("Ignoring event with no PR or push info")
 	}
 
 	// Send success response
@@ -130,12 +145,6 @@ func (h *WebhookHandler) handleWebhook(w http.ResponseWriter, r *http.Request, p
 // processPullRequestEvent processes a pull request event
 func (h *WebhookHandler) processPullRequestEvent(event *vcs.WebhookEvent, client vcs.Client) error {
 	pr := event.PullRequest
-
-	// Only process PR opened, reopened, or synchronize events
-	if pr.Action != "opened" && pr.Action != "reopened" && pr.Action != "synchronize" {
-		h.logger.WithField("action", pr.Action).Debug("Ignoring PR action")
-		return nil
-	}
 
 	// Normalize repository URL and look up project
 	normalizedRepoURL := vcs.NormalizeRepoURL(event.Repository.CloneURL)
@@ -149,63 +158,18 @@ func (h *WebhookHandler) processPullRequestEvent(event *vcs.WebhookEvent, client
 		return nil // Not an error - just no project configured
 	}
 
-	// Apply event filtering
-	if !project.ShouldProcessEvent("pull_request", pr.BaseRef) {
+	// Apply event filtering using the generic event type
+	if !project.ShouldProcessEvent(string(event.GenericEvent), pr.BaseRef) {
 		h.logger.WithFields(logrus.Fields{
-			"project":     project.Name,
-			"event_type":  "pull_request",
-			"base_branch": pr.BaseRef,
+			"project":      project.Name,
+			"generic_event": string(event.GenericEvent),
+			"base_branch":  pr.BaseRef,
 		}).Debug("Event filtered out by project configuration")
 		return nil
 	}
 
-	// Prepare source fields (untrusted code being tested)
-	gitURL := event.Repository.CloneURL
-	gitRef := pr.HeadSHA
-	sourceType := models.SourceTypeGit
-
-	// Prepare CI source fields (trusted CI pipeline code)
-	var ciSourceType *models.SourceType
-	var ciSourceURL *string
-	var ciSourceRef *string
-	if project.DefaultCISourceType != "" && project.DefaultCISourceType != models.SourceTypeNone {
-		ciSourceType = &project.DefaultCISourceType
-		if project.DefaultCISourceURL != "" {
-			ciSourceURL = &project.DefaultCISourceURL
-		}
-		if project.DefaultCISourceRef != "" {
-			ciSourceRef = &project.DefaultCISourceRef
-		}
-	}
-
-	// Create a job for the PR
-	job := &models.Job{
-		ProjectID:   &project.ProjectID,
-		Name:        fmt.Sprintf("PR #%d: %s", pr.Number, pr.Title),
-		Description: fmt.Sprintf("CI build for PR #%d", pr.Number),
-		// Source fields (untrusted)
-		SourceURL:  &gitURL,
-		SourceRef:  &gitRef,
-		SourceType: &sourceType,
-		// CI Source fields (trusted)
-		CISourceType: ciSourceType,
-		CISourceURL:  ciSourceURL,
-		CISourceRef:  ciSourceRef,
-		// Job configuration
-		JobCommand:  h.getJobCommand(project),
-		RunnerImage: project.DefaultRunnerImage,
-		JobEnvVars: models.JSONB{
-			"CI":             "true",
-			"CI_PROVIDER":    string(event.Provider),
-			"CI_PR_NUMBER":   fmt.Sprintf("%d", pr.Number),
-			"CI_PR_SHA":      pr.HeadSHA,
-			"CI_PR_REF":      pr.HeadRef,
-			"CI_PR_BASE_REF": pr.BaseRef,
-			"CI_REPO":        event.Repository.FullName,
-		},
-		Priority:  10, // Higher priority for PRs
-		QueueName: project.DefaultQueueName,
-	}
+	// Build eval job using the shared builder
+	job := BuildEvalJob(project, event)
 
 	// Store VCS metadata for status updates
 	job.Notes = fmt.Sprintf(`{"vcs_provider":"%s","repo":"%s","pr_number":%d,"commit_sha":"%s"}`,
@@ -216,6 +180,9 @@ func (h *WebhookHandler) processPullRequestEvent(event *vcs.WebhookEvent, client
 	if err != nil {
 		return fmt.Errorf("creating job: %w", err)
 	}
+
+	// Submit job to Corndogs task queue
+	h.submitJobToCorndogs(job)
 
 	// Update commit status to pending
 	statusUpdate := vcs.StatusUpdate{
@@ -236,7 +203,7 @@ func (h *WebhookHandler) processPullRequestEvent(event *vcs.WebhookEvent, client
 		"project":   project.Name,
 		"pr_number": pr.Number,
 		"sha":       pr.HeadSHA,
-	}).Info("Created job for pull request")
+	}).Info("Created eval job for pull request")
 
 	return nil
 }
@@ -266,62 +233,18 @@ func (h *WebhookHandler) processPushEvent(event *vcs.WebhookEvent, client vcs.Cl
 		return nil // Not an error - just no project configured
 	}
 
-	// Apply event filtering
-	if !project.ShouldProcessEvent("push", branch) {
+	// Apply event filtering using the generic event type
+	if !project.ShouldProcessEvent(string(event.GenericEvent), branch) {
 		h.logger.WithFields(logrus.Fields{
-			"project":    project.Name,
-			"event_type": "push",
-			"branch":     branch,
+			"project":       project.Name,
+			"generic_event": string(event.GenericEvent),
+			"branch":        branch,
 		}).Debug("Event filtered out by project configuration")
 		return nil
 	}
 
-	// Prepare source fields (untrusted code being tested)
-	gitURL := event.Repository.CloneURL
-	gitRef := push.After
-	sourceType := models.SourceTypeGit
-
-	// Prepare CI source fields (trusted CI pipeline code)
-	var ciSourceType *models.SourceType
-	var ciSourceURL *string
-	var ciSourceRef *string
-	if project.DefaultCISourceType != "" && project.DefaultCISourceType != models.SourceTypeNone {
-		ciSourceType = &project.DefaultCISourceType
-		if project.DefaultCISourceURL != "" {
-			ciSourceURL = &project.DefaultCISourceURL
-		}
-		if project.DefaultCISourceRef != "" {
-			ciSourceRef = &project.DefaultCISourceRef
-		}
-	}
-
-	// Create a job for the push
-	job := &models.Job{
-		ProjectID:   &project.ProjectID,
-		Name:        fmt.Sprintf("Push to %s: %.7s", branch, push.After),
-		Description: fmt.Sprintf("CI build for push to %s", branch),
-		// Source fields (untrusted)
-		SourceURL:  &gitURL,
-		SourceRef:  &gitRef,
-		SourceType: &sourceType,
-		// CI Source fields (trusted)
-		CISourceType: ciSourceType,
-		CISourceURL:  ciSourceURL,
-		CISourceRef:  ciSourceRef,
-		// Job configuration
-		JobCommand:  h.getJobCommand(project),
-		RunnerImage: project.DefaultRunnerImage,
-		JobEnvVars: models.JSONB{
-			"CI":                "true",
-			"CI_PROVIDER":       string(event.Provider),
-			"CI_BRANCH":         branch,
-			"CI_SHA":            push.After,
-			"CI_REPO":           event.Repository.FullName,
-			"CI_COMMIT_MESSAGE": h.getFirstCommitMessage(push),
-		},
-		Priority:  5, // Lower priority than PRs
-		QueueName: project.DefaultQueueName,
-	}
+	// Build eval job using the shared builder
+	job := BuildEvalJob(project, event)
 
 	// Store VCS metadata for status updates
 	job.Notes = fmt.Sprintf(`{"vcs_provider":"%s","repo":"%s","branch":"%s","commit_sha":"%s"}`,
@@ -332,6 +255,9 @@ func (h *WebhookHandler) processPushEvent(event *vcs.WebhookEvent, client vcs.Cl
 	if err != nil {
 		return fmt.Errorf("creating job: %w", err)
 	}
+
+	// Submit job to Corndogs task queue
+	h.submitJobToCorndogs(job)
 
 	// Update commit status to pending
 	statusUpdate := vcs.StatusUpdate{
@@ -352,46 +278,91 @@ func (h *WebhookHandler) processPushEvent(event *vcs.WebhookEvent, client vcs.Cl
 		"project": project.Name,
 		"branch":  branch,
 		"sha":     push.After,
-	}).Info("Created job for push")
+	}).Info("Created eval job for push")
 
 	return nil
 }
 
-// getJobCommand returns the job command from project config or default
-func (h *WebhookHandler) getJobCommand(project *models.Project) string {
-	if project.DefaultJobCommand != "" {
-		return project.DefaultJobCommand
+// submitJobToCorndogs submits a job to the Corndogs task queue
+func (h *WebhookHandler) submitJobToCorndogs(job *models.Job) {
+	if h.corndogsClient == nil {
+		return
 	}
 
-	// Default CI script if no project command is configured
-	return `#!/bin/bash
-set -e
-
-# Default CI script
-echo "Running CI for repository: $CI_REPO"
-
-# Try common CI patterns
-if [ -f "Makefile" ]; then
-    make test
-elif [ -f "package.json" ]; then
-    npm install && npm test
-elif [ -f "go.mod" ]; then
-    go test ./...
-elif [ -f "requirements.txt" ]; then
-    pip install -r requirements.txt && python -m pytest
-else
-    echo "No recognized test framework found"
-    exit 0
-fi
-`
-}
-
-// getFirstCommitMessage gets the first commit message from a push
-func (h *WebhookHandler) getFirstCommitMessage(push *vcs.PushInfo) string {
-	if len(push.Commits) > 0 {
-		return push.Commits[0].Message
+	// Dereference pointer fields for payload
+	sourceTypeStr := ""
+	if job.SourceType != nil {
+		sourceTypeStr = string(*job.SourceType)
 	}
-	return ""
+	sourceURL := ""
+	if job.SourceURL != nil {
+		sourceURL = *job.SourceURL
+	}
+	sourceRef := ""
+	if job.SourceRef != nil {
+		sourceRef = *job.SourceRef
+	}
+	sourcePath := ""
+	if job.SourcePath != nil {
+		sourcePath = *job.SourcePath
+	}
+
+	taskPayload := &corndogs.TaskPayload{
+		JobID:   job.JobID,
+		JobType: "run",
+		Config: map[string]interface{}{
+			"image":       job.RunnerImage,
+			"command":     job.JobCommand,
+			"working_dir": job.JobDir,
+			"timeout":     job.TimeoutSeconds,
+			"code_dir":    job.CodeDir,
+			"job_dir":     job.JobDir,
+		},
+		Source: map[string]interface{}{
+			"type":        sourceTypeStr,
+			"url":         sourceURL,
+			"ref":         sourceRef,
+			"source_path": sourcePath,
+		},
+		Metadata: map[string]interface{}{
+			"submitted_at": job.CreatedAt,
+			"name":         job.Name,
+			"description":  job.Description,
+		},
+	}
+
+	// Add environment variables if present
+	if job.JobEnvVars != nil {
+		taskPayload.Config["environment"] = job.JobEnvVars
+	}
+	if job.JobEnvFile != "" {
+		taskPayload.Config["env_file"] = job.JobEnvFile
+	}
+
+	task, err := h.corndogsClient.SubmitTask(context.Background(), taskPayload, int64(job.Priority))
+	if err != nil {
+		h.logger.WithFields(logrus.Fields{
+			"job_id":   job.JobID,
+			"job_name": job.Name,
+			"queue":    job.QueueName,
+			"error":    err.Error(),
+		}).Error("Failed to submit task to Corndogs")
+		job.Status = "failed"
+		metrics.RecordCornDogsTaskSubmission(job.QueueName, false)
+	} else {
+		metrics.RecordCornDogsTaskSubmission(job.QueueName, true)
+		taskID := task.Uuid
+		job.CorndogsTaskID = &taskID
+		job.Status = task.CurrentState
+	}
+
+	// Update job with Corndogs task ID and status
+	if err := h.store.UpdateJob(context.Background(), job); err != nil {
+		h.logger.WithFields(logrus.Fields{
+			"job_id": job.JobID,
+			"error":  err.Error(),
+		}).Error("Failed to update job after Corndogs submission")
+	}
 }
 
 // getJobURL returns the URL for a job

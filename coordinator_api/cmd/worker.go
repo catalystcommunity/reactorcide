@@ -129,6 +129,7 @@ func RunWorker(ctx *cli.Context) error {
 
 	// Start worker in a goroutine
 	workerCtx, workerCancel := context.WithCancel(context.Background())
+	defer workerCancel()
 	workerErrChan := make(chan error, 1)
 
 	// Determine which worker to use based on Corndogs configuration
