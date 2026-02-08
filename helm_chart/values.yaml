@@ -215,6 +215,13 @@ secrets:
   existingSecret: ""  # e.g., "reactorcide-master-keys"
   existingSecretKey: "master-keys"  # Key within the existing secret
 
+# VCS (Version Control System) integration
+vcs:
+  github:
+    # HMAC secret for validating GitHub webhook signatures
+    # IMPORTANT: In production, set this via external secret management, not in values.yaml
+    webhookSecret: ""
+
 imagePullSecrets: []
 nameOverride: ""
 fullnameOverride: ""
