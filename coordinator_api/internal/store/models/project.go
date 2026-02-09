@@ -2,6 +2,8 @@ package models
 
 import (
 	"time"
+
+	"github.com/lib/pq"
 )
 
 // SourceType represents the type of source code preparation
@@ -27,8 +29,8 @@ type Project struct {
 
 	// Event filtering configuration
 	Enabled            bool     `gorm:"default:true;not null" json:"enabled"`
-	TargetBranches     []string `gorm:"type:text[];default:ARRAY['main','master','develop']" json:"target_branches"`
-	AllowedEventTypes  []string `gorm:"type:text[];default:ARRAY['push','pull_request_opened','pull_request_updated','tag_created']" json:"allowed_event_types"`
+	TargetBranches     pq.StringArray `gorm:"type:text[];default:ARRAY['main','master','develop']" json:"target_branches"`
+	AllowedEventTypes  pq.StringArray `gorm:"type:text[];default:ARRAY['push','pull_request_opened','pull_request_updated','tag_created']" json:"allowed_event_types"`
 
 	// Default CI source configuration (trusted CI code)
 	DefaultCISourceType SourceType `gorm:"type:source_type;default:'git'" json:"default_ci_source_type"`
