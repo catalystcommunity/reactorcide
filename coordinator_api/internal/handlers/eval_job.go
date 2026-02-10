@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/config"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store/models"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/vcs"
 )
@@ -84,6 +85,7 @@ func BuildEvalJob(project *models.Project, event *vcs.WebhookEvent) *models.Job 
 	}
 
 	job := &models.Job{
+		UserID:       config.DefaultUserID,
 		ProjectID:    &project.ProjectID,
 		Name:         jobName,
 		Description:  fmt.Sprintf("Eval job for %s event on %s", event.GenericEvent, event.Repository.FullName),
