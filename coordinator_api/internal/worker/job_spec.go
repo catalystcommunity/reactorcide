@@ -189,6 +189,30 @@ func ParseCommandWithPrefix(cmd, prefix string) []string {
 		return []string{"sh", "-c", cmd}
 	}
 
+	// Single-line command with environment variable references needs shell expansion.
+	// Without a shell, $VAR is passed as a literal string by K8s and container runtimes.
+	if containsEnvVarRef(cmd) {
+		// Check if command already starts with a shell invocation
+		cmdLower := strings.ToLower(cmd)
+		alreadyShell := false
+		for _, shellPrefix := range shellPrefixes {
+			if strings.HasPrefix(cmdLower, shellPrefix) {
+				alreadyShell = true
+				break
+			}
+		}
+		if !alreadyShell {
+			if prefix == "" {
+				prefix = "sh -c"
+			}
+			prefixParts := strings.SplitN(prefix, " ", 2)
+			if len(prefixParts) == 2 {
+				return []string{prefixParts[0], prefixParts[1], cmd}
+			}
+			return []string{"sh", "-c", cmd}
+		}
+	}
+
 	// Single-line command: parse normally
 	return parseSimpleCommand(cmd)
 }
@@ -197,6 +221,21 @@ func ParseCommandWithPrefix(cmd, prefix string) []string {
 // Uses default "sh -c" prefix for multiline commands.
 func ParseCommand(cmd string) []string {
 	return ParseCommandWithPrefix(cmd, "")
+}
+
+// containsEnvVarRef checks if a command string contains shell environment variable
+// references like $VAR or ${VAR} that need shell expansion.
+func containsEnvVarRef(cmd string) bool {
+	for i := 0; i < len(cmd)-1; i++ {
+		if cmd[i] == '$' {
+			next := cmd[i+1]
+			// $LETTER or $_ or ${ are env var references
+			if next == '{' || next == '_' || (next >= 'A' && next <= 'Z') || (next >= 'a' && next <= 'z') {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // parseSimpleCommand splits a single-line command on whitespace,
