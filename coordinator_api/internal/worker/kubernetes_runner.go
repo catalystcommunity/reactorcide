@@ -161,12 +161,13 @@ func (kr *KubernetesRunner) SpawnJob(ctx context.Context, config *JobConfig) (st
 		},
 		Containers: []corev1.Container{
 			{
-				Name:       "job",
-				Image:      config.Image,
-				Command:    config.Command,
-				Env:        envVars,
-				WorkingDir: workingDir,
-				Resources:  resources,
+				Name:            "job",
+				Image:           config.Image,
+				ImagePullPolicy: corev1.PullAlways,
+				Command:         config.Command,
+				Env:             envVars,
+				WorkingDir:      workingDir,
+				Resources:       resources,
 				SecurityContext: &corev1.SecurityContext{
 					RunAsUser: runAsUser,
 				},
