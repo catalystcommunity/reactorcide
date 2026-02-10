@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 
 	"github.com/sirupsen/logrus"
@@ -52,6 +53,20 @@ func (c *GitHubClient) ParseWebhook(r *http.Request) (*WebhookEvent, error) {
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
 		return nil, fmt.Errorf("reading request body: %w", err)
+	}
+
+	// Handle form-encoded webhooks (Content-Type: application/x-www-form-urlencoded).
+	// GitHub sends JSON inside a "payload" form field when configured for form encoding.
+	if strings.HasPrefix(r.Header.Get("Content-Type"), "application/x-www-form-urlencoded") {
+		form, err := url.ParseQuery(string(body))
+		if err != nil {
+			return nil, fmt.Errorf("parsing form-encoded body: %w", err)
+		}
+		payload := form.Get("payload")
+		if payload == "" {
+			return nil, fmt.Errorf("missing payload field in form-encoded webhook")
+		}
+		body = []byte(payload)
 	}
 
 	event := &WebhookEvent{

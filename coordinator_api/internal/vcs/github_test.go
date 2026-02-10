@@ -5,6 +5,7 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -295,6 +296,49 @@ func TestGitHubClient_ParseWebhook(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestGitHubClient_ParseWebhook_FormEncoded(t *testing.T) {
+	client, err := NewGitHubClient(Config{Provider: GitHub})
+	require.NoError(t, err)
+
+	jsonPayload := `{
+		"action": "opened",
+		"number": 39,
+		"pull_request": {
+			"number": 39,
+			"title": "Test PR",
+			"body": "",
+			"state": "open",
+			"merged": false,
+			"html_url": "https://github.com/test/repo/pull/39",
+			"head": {"ref": "feature", "sha": "abc123"},
+			"base": {"ref": "main", "sha": "def456"},
+			"user": {"login": "testuser"}
+		},
+		"repository": {
+			"full_name": "test/repo",
+			"clone_url": "https://github.com/test/repo.git",
+			"ssh_url": "git@github.com:test/repo.git",
+			"html_url": "https://github.com/test/repo",
+			"default_branch": "main"
+		}
+	}`
+
+	// Simulate form-encoded body: payload=<url-encoded-json>
+	formBody := "payload=" + url.QueryEscape(jsonPayload)
+	req := httptest.NewRequest("POST", "/webhook", bytes.NewBufferString(formBody))
+	req.Header.Set("X-GitHub-Event", "pull_request")
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+
+	event, err := client.ParseWebhook(req)
+	require.NoError(t, err)
+	assert.Equal(t, GitHub, event.Provider)
+	assert.Equal(t, "pull_request", event.EventType)
+	assert.Equal(t, EventPullRequestOpened, event.GenericEvent)
+	assert.NotNil(t, event.PullRequest)
+	assert.Equal(t, 39, event.PullRequest.Number)
+	assert.Equal(t, "abc123", event.PullRequest.HeadSHA)
 }
 
 func TestGitHubClient_ValidateWebhook(t *testing.T) {
