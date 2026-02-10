@@ -65,6 +65,51 @@ command: echo hello
 			expectError: false,
 			checkImage:  DefaultRunnerImage,
 		},
+		{
+			name: "eval format with nested job block",
+			content: `name: build-job
+description: "Build and deploy"
+triggers:
+  events:
+    - push
+  branches:
+    - main
+job:
+  image: golang:1.22
+  command: "make build"
+  timeout: 3600
+environment:
+  CGO_ENABLED: "0"
+`,
+			filename:    "eval.yaml",
+			expectError: false,
+			checkName:   "build-job",
+			checkImage:  "golang:1.22",
+		},
+		{
+			name: "eval format with no image defaults",
+			content: `name: test-eval
+triggers:
+  events: [push]
+job:
+  command: echo hello
+`,
+			filename:    "eval-default-image.yaml",
+			expectError: false,
+			checkName:   "test-eval",
+			checkImage:  DefaultRunnerImage,
+		},
+		{
+			name: "eval format missing command",
+			content: `name: no-cmd-eval
+triggers:
+  events: [push]
+job:
+  image: alpine:latest
+`,
+			filename:    "eval-nocmd.yaml",
+			expectError: true,
+		},
 	}
 
 	for _, tt := range tests {
@@ -93,6 +138,192 @@ command: echo hello
 			}
 		})
 	}
+}
+
+// TestLoadJobSpec_EvalFormat tests loading eval-format job specs in detail
+func TestLoadJobSpec_EvalFormat(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "eval-format-test-*")
+	if err != nil {
+		t.Fatalf("failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	t.Run("flattens job block fields", func(t *testing.T) {
+		content := `name: build
+description: "Build project"
+triggers:
+  events: [push]
+  branches: [main]
+job:
+  image: golang:1.22
+  command: "make build && make test"
+  timeout: 3600
+environment:
+  CGO_ENABLED: "0"
+  GOOS: "linux"
+`
+		path := filepath.Join(tmpDir, "flatten.yaml")
+		if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+			t.Fatalf("failed to write test file: %v", err)
+		}
+
+		spec, err := LoadJobSpec(path)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		if spec.Name != "build" {
+			t.Errorf("name = %q, want %q", spec.Name, "build")
+		}
+		if spec.Image != "golang:1.22" {
+			t.Errorf("image = %q, want %q", spec.Image, "golang:1.22")
+		}
+		if spec.Command != "make build && make test" {
+			t.Errorf("command = %q, want %q", spec.Command, "make build && make test")
+		}
+		if spec.TimeoutSeconds != 3600 {
+			t.Errorf("timeout_seconds = %d, want 3600", spec.TimeoutSeconds)
+		}
+		if spec.Environment["CGO_ENABLED"] != "0" {
+			t.Errorf("CGO_ENABLED = %q, want %q", spec.Environment["CGO_ENABLED"], "0")
+		}
+		if spec.Environment["GOOS"] != "linux" {
+			t.Errorf("GOOS = %q, want %q", spec.Environment["GOOS"], "linux")
+		}
+	})
+
+	t.Run("priority is ignored", func(t *testing.T) {
+		content := `name: with-priority
+job:
+  image: alpine:latest
+  command: echo hello
+  priority: 10
+`
+		path := filepath.Join(tmpDir, "priority.yaml")
+		if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+			t.Fatalf("failed to write test file: %v", err)
+		}
+
+		spec, err := LoadJobSpec(path)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		if spec.Command != "echo hello" {
+			t.Errorf("command = %q, want %q", spec.Command, "echo hello")
+		}
+	})
+
+	t.Run("eval format json", func(t *testing.T) {
+		content := `{
+  "name": "json-eval",
+  "triggers": {"events": ["push"]},
+  "job": {
+    "image": "ubuntu:22.04",
+    "command": "echo hello",
+    "timeout": 600
+  },
+  "environment": {"CI": "true"}
+}`
+		path := filepath.Join(tmpDir, "eval.json")
+		if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+			t.Fatalf("failed to write test file: %v", err)
+		}
+
+		spec, err := LoadJobSpec(path)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		if spec.Name != "json-eval" {
+			t.Errorf("name = %q, want %q", spec.Name, "json-eval")
+		}
+		if spec.Image != "ubuntu:22.04" {
+			t.Errorf("image = %q, want %q", spec.Image, "ubuntu:22.04")
+		}
+		if spec.TimeoutSeconds != 600 {
+			t.Errorf("timeout_seconds = %d, want 600", spec.TimeoutSeconds)
+		}
+		if spec.Environment["CI"] != "true" {
+			t.Errorf("CI = %q, want %q", spec.Environment["CI"], "true")
+		}
+	})
+
+	t.Run("flat format still works", func(t *testing.T) {
+		content := `name: flat-job
+command: echo hello
+image: alpine:latest
+timeout_seconds: 120
+environment:
+  FOO: bar
+`
+		path := filepath.Join(tmpDir, "flat.yaml")
+		if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+			t.Fatalf("failed to write test file: %v", err)
+		}
+
+		spec, err := LoadJobSpec(path)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		if spec.Name != "flat-job" {
+			t.Errorf("name = %q, want %q", spec.Name, "flat-job")
+		}
+		if spec.Image != "alpine:latest" {
+			t.Errorf("image = %q, want %q", spec.Image, "alpine:latest")
+		}
+		if spec.TimeoutSeconds != 120 {
+			t.Errorf("timeout_seconds = %d, want 120", spec.TimeoutSeconds)
+		}
+	})
+
+	t.Run("eval format with overlays via LoadJobSpecWithOverlays", func(t *testing.T) {
+		baseContent := `name: eval-base
+triggers:
+  events: [push]
+job:
+  image: golang:1.22
+  command: "make build"
+  timeout: 3600
+environment:
+  BUILD_ENV: dev
+`
+		basePath := filepath.Join(tmpDir, "eval-base.yaml")
+		if err := os.WriteFile(basePath, []byte(baseContent), 0644); err != nil {
+			t.Fatalf("failed to write base file: %v", err)
+		}
+
+		overlayContent := `environment:
+  BUILD_ENV: production
+  EXTRA: "yes"
+`
+		overlayPath := filepath.Join(tmpDir, "eval-overlay.yaml")
+		if err := os.WriteFile(overlayPath, []byte(overlayContent), 0644); err != nil {
+			t.Fatalf("failed to write overlay file: %v", err)
+		}
+
+		spec, _, err := LoadJobSpecWithOverlays(basePath, []string{overlayPath})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		if spec.Image != "golang:1.22" {
+			t.Errorf("image = %q, want %q", spec.Image, "golang:1.22")
+		}
+		if spec.Command != "make build" {
+			t.Errorf("command = %q, want %q", spec.Command, "make build")
+		}
+		if spec.TimeoutSeconds != 3600 {
+			t.Errorf("timeout_seconds = %d, want 3600", spec.TimeoutSeconds)
+		}
+		if spec.Environment["BUILD_ENV"] != "production" {
+			t.Errorf("BUILD_ENV = %q, want production", spec.Environment["BUILD_ENV"])
+		}
+		if spec.Environment["EXTRA"] != "yes" {
+			t.Errorf("EXTRA = %q, want yes", spec.Environment["EXTRA"])
+		}
+	})
 }
 
 // TestParseCommand tests command parsing with shell quoting

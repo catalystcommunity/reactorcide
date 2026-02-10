@@ -70,17 +70,81 @@ type SourceSpec struct {
 	Path string `json:"path" yaml:"path"` // for copy type
 }
 
-// LoadJobSpec reads a job specification from a YAML or JSON file
+// normalizeEvalFormat checks if data uses the eval format (nested "job" block
+// with triggers/description at top level) and flattens it to the flat JobSpec
+// format. Returns the original data unchanged if already in flat format.
+func normalizeEvalFormat(data []byte, isYAML bool) []byte {
+	var raw map[string]interface{}
+	var err error
+	if isYAML {
+		err = yaml.Unmarshal(data, &raw)
+	} else {
+		err = json.Unmarshal(data, &raw)
+	}
+	if err != nil || raw == nil {
+		return data
+	}
+
+	jobRaw, hasJob := raw["job"]
+	if !hasJob {
+		return data
+	}
+
+	jobMap, ok := jobRaw.(map[string]interface{})
+	if !ok {
+		return data
+	}
+
+	// Pull fields from job block to top level
+	for key, val := range jobMap {
+		switch key {
+		case "timeout":
+			// Map eval "timeout" to JobSpec "timeout_seconds"
+			raw["timeout_seconds"] = val
+		case "priority":
+			// Not part of JobSpec, skip
+		default:
+			raw[key] = val
+		}
+	}
+
+	// Remove eval-only keys that aren't part of JobSpec
+	delete(raw, "job")
+	delete(raw, "triggers")
+	delete(raw, "description")
+	delete(raw, "paths")
+
+	// Re-marshal to pass through normal parsing
+	var result []byte
+	if isYAML {
+		result, err = yaml.Marshal(raw)
+	} else {
+		result, err = json.Marshal(raw)
+	}
+	if err != nil {
+		return data
+	}
+	return result
+}
+
+// LoadJobSpec reads a job specification from a YAML or JSON file.
+// Supports both flat format (image/command at top level) and eval format
+// (image/command nested under a "job" block with triggers/description).
 func LoadJobSpec(path string) (*JobSpec, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read job file: %w", err)
 	}
 
+	ext := strings.ToLower(filepath.Ext(path))
+	isYAML := ext == ".yaml" || ext == ".yml"
+
+	// Normalize eval format (nested job block) to flat format
+	data = normalizeEvalFormat(data, isYAML)
+
 	var spec JobSpec
 
-	ext := strings.ToLower(filepath.Ext(path))
-	if ext == ".yaml" || ext == ".yml" {
+	if isYAML {
 		if err := yaml.Unmarshal(data, &spec); err != nil {
 			return nil, fmt.Errorf("failed to parse YAML: %w", err)
 		}
