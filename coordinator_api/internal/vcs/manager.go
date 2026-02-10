@@ -117,9 +117,19 @@ func (m *Manager) IsEnabled() bool {
 	return m.enabled
 }
 
-// GetWebhookSecret returns the configured webhook secret
+// GetWebhookSecret returns the configured webhook secret.
+// Falls back to provider-specific secrets if no shared secret is set.
 func (m *Manager) GetWebhookSecret() string {
-	return m.webhookSecret
+	if m.webhookSecret != "" {
+		return m.webhookSecret
+	}
+	if config.VCSGitHubSecret != "" {
+		return config.VCSGitHubSecret
+	}
+	if config.VCSGitLabSecret != "" {
+		return config.VCSGitLabSecret
+	}
+	return ""
 }
 
 // GetClients returns all configured VCS clients
