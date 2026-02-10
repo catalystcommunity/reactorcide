@@ -217,6 +217,8 @@ secrets:
 
 # VCS (Version Control System) integration
 vcs:
+  # Enable VCS integration (required for webhook processing and commit status updates)
+  enabled: false
   github:
     # HMAC secret for validating GitHub webhook signatures
     # IMPORTANT: In production, set this via external secret management, not in values.yaml

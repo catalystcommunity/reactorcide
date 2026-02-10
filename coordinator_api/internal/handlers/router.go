@@ -15,6 +15,7 @@ import (
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/objects"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/secrets"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store"
+	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/vcs"
 
 	"github.com/rs/cors"
 )
@@ -90,6 +91,15 @@ func createAppMux() *http.ServeMux {
 	tokenHandler := NewTokenHandler(store.AppStore)
 	webhookHandler := NewWebhookHandler(store.AppStore, singletoncorndogsClient)
 	projectHandler := NewProjectHandler(store.AppStore)
+
+	// Wire VCS clients into the webhook handler
+	vcsManager := vcs.NewManager()
+	for provider, client := range vcsManager.GetClients() {
+		webhookHandler.AddVCSClient(provider, client)
+	}
+	if secret := vcsManager.GetWebhookSecret(); secret != "" {
+		webhookHandler.SetWebhookSecret(secret)
+	}
 
 	// Create secrets handler - keys are loaded from env, DB, or auto-generated
 	var secretsHandler *SecretsHandler

@@ -41,16 +41,16 @@ func NewManager() *Manager {
 
 // initializeClients initializes VCS clients based on configuration
 func (m *Manager) initializeClients() {
-	// Initialize GitHub client if configured
-	if config.VCSGitHubToken != "" {
+	// Initialize GitHub client if webhook secret is configured (token is per-project)
+	githubWebhookSecret := config.VCSGitHubSecret
+	if githubWebhookSecret == "" {
+		githubWebhookSecret = m.webhookSecret
+	}
+	if githubWebhookSecret != "" {
 		githubConfig := Config{
 			Provider:      GitHub,
-			Token:         config.VCSGitHubToken,
-			WebhookSecret: config.VCSGitHubSecret,
-		}
-
-		if githubConfig.WebhookSecret == "" {
-			githubConfig.WebhookSecret = m.webhookSecret
+			Token:         config.VCSGitHubToken, // may be empty; status updates use per-project tokens
+			WebhookSecret: githubWebhookSecret,
 		}
 
 		client, err := NewGitHubClient(githubConfig)
@@ -63,16 +63,16 @@ func (m *Manager) initializeClients() {
 		}
 	}
 
-	// Initialize GitLab client if configured
-	if config.VCSGitLabToken != "" {
+	// Initialize GitLab client if webhook secret is configured (token is per-project)
+	gitlabWebhookSecret := config.VCSGitLabSecret
+	if gitlabWebhookSecret == "" {
+		gitlabWebhookSecret = m.webhookSecret
+	}
+	if gitlabWebhookSecret != "" {
 		gitlabConfig := Config{
 			Provider:      GitLab,
-			Token:         config.VCSGitLabToken,
-			WebhookSecret: config.VCSGitLabSecret,
-		}
-
-		if gitlabConfig.WebhookSecret == "" {
-			gitlabConfig.WebhookSecret = m.webhookSecret
+			Token:         config.VCSGitLabToken, // may be empty; status updates use per-project tokens
+			WebhookSecret: gitlabWebhookSecret,
 		}
 
 		client, err := NewGitLabClient(gitlabConfig)
