@@ -114,6 +114,10 @@ spec:
                   name: {{ include "app.secretName" . }}
                   key: REACTORCIDE_MASTER_KEYS
             {{- end }}
+            {{- if .Values.vcs.enabled }}
+            - name: REACTORCIDE_VCS_ENABLED
+              value: "true"
+            {{- end }}
             {{- if .Values.vcs.github.webhookSecret }}
             - name: REACTORCIDE_VCS_GITHUB_SECRET
               valueFrom:

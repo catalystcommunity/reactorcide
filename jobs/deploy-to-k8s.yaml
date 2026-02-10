@@ -46,7 +46,8 @@ environment:
     REACTORCIDE_GCS_BUCKET: "${env:REACTORCIDE_GCS_BUCKET}"
     GOOGLE_APPLICATION_CREDENTIALS_JSON: "${env:GOOGLE_APPLICATION_CREDENTIALS_JSON}"
 
-    # VCS webhook secret for GitHub signature validation
+    # VCS integration
+    REACTORCIDE_VCS_ENABLED: "${env:REACTORCIDE_VCS_ENABLED}"
     REACTORCIDE_VCS_GITHUB_SECRET: "${secret:reactorcide/deployment:github_webhook_secret}"
 
     # Gateway API HTTPRoutes
