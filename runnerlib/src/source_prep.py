@@ -341,6 +341,14 @@ def _prepare_git_source(source_url: str, source_ref: Optional[str], target_path:
         log_stderr(f"Failed to checkout repository: {e}")
         raise
 
+    finally:
+        # Restore original working directory if we changed it
+        if original_cwd:
+            try:
+                os.chdir(original_cwd)
+            except OSError:
+                pass  # original cwd may no longer exist
+
 
 def _prepare_copy_source(source_url: str, target_path: Path) -> Path:
     """Prepare source code by copying from a local directory.

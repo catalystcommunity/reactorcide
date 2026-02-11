@@ -744,6 +744,21 @@ def eval_cmd(
     ci_source_path = Path(ci_source_dir)
     source_path = Path(source_dir)
 
+    # Prepare CI source if not already present.
+    # When running as an eval job, the coordinator passes CI source info via env vars
+    # but doesn't pre-clone the repository — the eval command needs to do it.
+    if ci_source_url and not (ci_source_path / ".reactorcide" / "jobs").is_dir():
+        log_stdout(f"CI source not found at {ci_source_path}, cloning from {ci_source_url}")
+        from src.source_prep import _prepare_git_source
+        _prepare_git_source(ci_source_url, ci_source_ref or None, ci_source_path)
+
+    # Prepare regular source if not already present.
+    # Needed for git diff to detect changed files for path-based triggers.
+    if source_url and not (source_path / ".git").is_dir():
+        log_stdout(f"Source not found at {source_path}, cloning from {source_url}")
+        from src.source_prep import _prepare_git_source
+        _prepare_git_source(source_url, source_ref or None, source_path)
+
     # Load job definitions
     log_stdout(f"Loading job definitions from {ci_source_path}")
     definitions = load_job_definitions(ci_source_path)

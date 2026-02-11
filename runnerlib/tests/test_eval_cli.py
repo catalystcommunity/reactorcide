@@ -217,6 +217,9 @@ class TestEvalCommand:
             "environment": {"BUILD_TYPE": "test"},
         })
 
+        # Create .git dir so eval doesn't try to clone from the fake URL
+        (src_dir / ".git").mkdir()
+
         result = runner.invoke(app, [
             "eval",
             "--ci-source-dir", str(ci_dir),
@@ -477,6 +480,125 @@ class TestEvalCommand:
         assert triggers_file.exists()
 
 
+class TestEvalSourcePreparation:
+    """Tests for eval command source preparation (cloning CI/source repos)."""
+
+    def test_eval_clones_ci_source_when_missing(self):
+        """Test that eval clones CI source when the jobs dir doesn't exist."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            base = Path(tmpdir)
+            ci_dir = base / "ci"  # Does not exist yet
+            src_dir = base / "src"
+            src_dir.mkdir()
+            (src_dir / ".git").mkdir()
+            triggers_file = base / "triggers.json"
+
+            # Create a fake "remote" repo with job definitions
+            remote_dir = base / "remote"
+            remote_dir.mkdir()
+            from git import Repo
+            remote_repo = Repo.init(remote_dir)
+            remote_jobs_dir = remote_dir / ".reactorcide" / "jobs"
+            remote_jobs_dir.mkdir(parents=True)
+            _write_yaml(remote_jobs_dir / "test.yaml", {
+                "name": "test",
+                "triggers": {"events": ["push"]},
+                "job": {"image": "alpine:latest", "command": "make test"},
+            })
+            remote_repo.index.add([str(remote_jobs_dir / "test.yaml")])
+            remote_repo.index.commit("Add job def")
+
+            result = runner.invoke(app, [
+                "eval",
+                "--ci-source-dir", str(ci_dir),
+                "--source-dir", str(src_dir),
+                "--event-type", "push",
+                "--branch", "main",
+                "--ci-source-url", str(remote_dir),
+                "--ci-source-ref", "",
+                "--triggers-file", str(triggers_file),
+            ])
+
+            assert result.exit_code == 0
+            assert triggers_file.exists()
+
+            with open(triggers_file) as f:
+                data = json.load(f)
+
+            assert len(data["jobs"]) == 1
+            assert data["jobs"][0]["job_name"] == "test"
+
+    def test_eval_clones_source_when_missing(self):
+        """Test that eval clones source repo when .git dir doesn't exist."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            base = Path(tmpdir)
+            ci_dir = base / "ci"
+            src_dir = base / "src"
+            src_dir.mkdir()  # Exists but no .git (like worker creates)
+            jobs_dir = ci_dir / ".reactorcide" / "jobs"
+            jobs_dir.mkdir(parents=True)
+            triggers_file = base / "triggers.json"
+
+            # Create a fake "remote" source repo
+            remote_dir = base / "remote_src"
+            remote_dir.mkdir()
+            from git import Repo
+            remote_repo = Repo.init(remote_dir)
+            (remote_dir / "main.py").write_text("print('hello')")
+            remote_repo.index.add(["main.py"])
+            remote_repo.index.commit("Initial commit")
+
+            _write_yaml(jobs_dir / "test.yaml", {
+                "name": "test",
+                "triggers": {"events": ["push"]},
+                "job": {"image": "alpine:latest", "command": "make test"},
+            })
+
+            result = runner.invoke(app, [
+                "eval",
+                "--ci-source-dir", str(ci_dir),
+                "--source-dir", str(src_dir),
+                "--event-type", "push",
+                "--branch", "main",
+                "--source-url", str(remote_dir),
+                "--triggers-file", str(triggers_file),
+            ])
+
+            assert result.exit_code == 0
+            # Source should have been cloned
+            assert (src_dir / ".git").is_dir()
+
+    def test_eval_skips_clone_when_dirs_exist(self, temp_dirs):
+        """Test that eval doesn't clone when directories already have content."""
+        ci_dir, src_dir, jobs_dir, triggers_file = temp_dirs
+
+        _write_yaml(jobs_dir / "test.yaml", {
+            "name": "test",
+            "triggers": {"events": ["push"]},
+            "job": {"image": "alpine:latest", "command": "make test"},
+        })
+
+        # CI source has .reactorcide/jobs already, source has .git
+        (src_dir / ".git").mkdir()
+
+        with patch("src.source_prep._prepare_git_source") as mock_clone:
+            result = runner.invoke(app, [
+                "eval",
+                "--ci-source-dir", str(ci_dir),
+                "--source-dir", str(src_dir),
+                "--event-type", "push",
+                "--branch", "main",
+                "--source-url", "https://example.com/repo.git",
+                "--ci-source-url", "https://example.com/ci.git",
+                "--triggers-file", str(triggers_file),
+            ])
+
+            # Should not have called clone since dirs exist
+            mock_clone.assert_not_called()
+
+        assert result.exit_code == 0
+
+
 class TestEvalEndToEnd:
     """Integration tests for the eval CLI command."""
 
@@ -500,6 +622,9 @@ class TestEvalEndToEnd:
             "triggers": {"events": ["push"], "branches": ["main"]},
             "job": {"image": "deploy:latest", "command": "deploy.sh", "priority": 5},
         })
+
+        # Create .git dir so eval doesn't try to clone from the fake URL
+        (src_dir / ".git").mkdir()
 
         result = runner.invoke(app, [
             "eval",
