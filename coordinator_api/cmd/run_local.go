@@ -81,9 +81,11 @@ func runLocalAction(ctx *cli.Context) error {
 		return fmt.Errorf("failed to resolve job directory: %w", err)
 	}
 
-	// Ensure job directory exists
-	if err := os.MkdirAll(absJobDir, 0755); err != nil {
-		return fmt.Errorf("failed to create job directory: %w", err)
+	// Validate job directory exists (don't create it — it's the user's source code)
+	if info, err := os.Stat(absJobDir); err != nil {
+		return fmt.Errorf("job directory does not exist: %s", absJobDir)
+	} else if !info.IsDir() {
+		return fmt.Errorf("job directory is not a directory: %s", absJobDir)
 	}
 
 	// First resolve ${env:VAR_NAME} references from host environment
@@ -111,8 +113,26 @@ func runLocalAction(ctx *cli.Context) error {
 	// Generate a job ID for this execution
 	jobID := uuid.New().String()[:8]
 
-	// Convert spec to JobConfig
-	jobConfig := spec.ToJobConfig(absJobDir, jobID, "local")
+	// Create temp workspace matching production layout: /job/ with src/ subdir
+	// Chmod to 0755 so non-root container users (1001:1001) can traverse it
+	tempWorkspace, err := os.MkdirTemp("/tmp", fmt.Sprintf("reactorcide-local-job-%s-", jobID))
+	if err != nil {
+		return fmt.Errorf("failed to create temp workspace: %w", err)
+	}
+	if err := os.Chmod(tempWorkspace, 0755); err != nil {
+		return fmt.Errorf("failed to chmod temp workspace: %w", err)
+	}
+	defer os.RemoveAll(tempWorkspace)
+
+	// Create src/ subdir in temp workspace (matching production layout)
+	if err := os.MkdirAll(filepath.Join(tempWorkspace, "src"), 0755); err != nil {
+		return fmt.Errorf("failed to create workspace src dir: %w", err)
+	}
+
+	// Convert spec to JobConfig using temp workspace, then set SourceDir
+	// so the runner mounts the user's source at /job/src
+	jobConfig := spec.ToJobConfig(tempWorkspace, jobID, "local")
+	jobConfig.SourceDir = absJobDir
 
 	if dryRun {
 		return performLocalDryRun(spec, jobConfig, masker, absJobDir)
@@ -133,7 +153,8 @@ func performLocalDryRun(spec *worker.JobSpec, config *worker.JobConfig, masker *
 	fmt.Println("\n--- DRY RUN MODE ---")
 	fmt.Printf("Image: %s\n", spec.Image)
 	fmt.Printf("Command: %s\n", spec.Command)
-	fmt.Printf("Job directory: %s -> /job\n", jobDir)
+	fmt.Printf("Source directory: %s -> /job/src\n", jobDir)
+	fmt.Printf("Workspace: %s -> /job\n", config.WorkspaceDir)
 
 	if spec.Source != nil && spec.Source.Type != "" && spec.Source.Type != "none" {
 		fmt.Printf("Source: %s from %s (ref: %s)\n",
@@ -157,6 +178,7 @@ func performLocalDryRun(spec *worker.JobSpec, config *worker.JobConfig, masker *
 	fmt.Printf("  Image: %s\n", config.Image)
 	fmt.Printf("  Command: %v\n", config.Command)
 	fmt.Printf("  WorkspaceDir: %s\n", config.WorkspaceDir)
+	fmt.Printf("  SourceDir: %s\n", config.SourceDir)
 	fmt.Printf("  WorkingDir: %s\n", config.WorkingDir)
 
 	fmt.Println("\n--- END DRY RUN ---")

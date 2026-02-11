@@ -67,30 +67,30 @@ command: |-
     echo ""
     echo ">>> Building runnerbase..."
     echo "----------------------------------------"
-    build_and_push /job/runnerlib Dockerfile.runner "$REGISTRY/public/reactorcide/runnerbase:$TAG"
+    build_and_push /job/src/runnerlib Dockerfile.runner "$REGISTRY/public/reactorcide/runnerbase:$TAG"
 
     # Build Go binary (shared by coordinator and worker)
     echo ""
     echo ">>> Building Go binary..."
     echo "----------------------------------------"
-    cd /job/coordinator_api
+    cd /job/src/coordinator_api
     CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -buildvcs=false -o reactorcide .
-    cp reactorcide /job/deployment/
+    cp reactorcide /job/src/deployment/
 
     # Build coordinator
     echo ""
     echo ">>> Building coordinator..."
     echo "----------------------------------------"
-    build_and_push /job/deployment Dockerfile.coordinator "$REGISTRY/public/reactorcide/coordinator:$TAG"
+    build_and_push /job/src/deployment Dockerfile.coordinator "$REGISTRY/public/reactorcide/coordinator:$TAG"
 
     # Build worker
     echo ""
     echo ">>> Building worker..."
     echo "----------------------------------------"
-    build_and_push /job/deployment Dockerfile.worker "$REGISTRY/public/reactorcide/worker:$TAG"
+    build_and_push /job/src/deployment Dockerfile.worker "$REGISTRY/public/reactorcide/worker:$TAG"
 
     # Cleanup
-    rm -f /job/deployment/reactorcide
+    rm -f /job/src/deployment/reactorcide
 
     echo ""
     echo "========================================"

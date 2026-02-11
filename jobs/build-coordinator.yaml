@@ -17,15 +17,15 @@ command: |-
 
     # Build the Go binary
     echo "Building reactorcide binary..."
-    cd /job/coordinator_api
+    cd /job/src/coordinator_api
     CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o reactorcide .
 
     # Copy binary to deployment directory
-    cp reactorcide /job/deployment/
+    cp reactorcide /job/src/deployment/
 
     # Build container image
     echo "Building container image..."
-    cd /job/deployment
+    cd /job/src/deployment
     nerdctl build -t "$REGISTRY/$IMAGE:$TAG" -f Dockerfile.coordinator .
 
     # Login and push
@@ -33,7 +33,7 @@ command: |-
     nerdctl push "$REGISTRY/$IMAGE:$TAG"
 
     # Cleanup
-    rm -f /job/deployment/reactorcide
+    rm -f /job/src/deployment/reactorcide
 
     echo "Done! Image pushed to $REGISTRY/$IMAGE:$TAG"
   '

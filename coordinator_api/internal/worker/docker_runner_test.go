@@ -325,6 +325,33 @@ func TestGetSupportedBackends(t *testing.T) {
 	}
 }
 
+// TestJobConfig_SourceDir tests that SourceDir field is properly set on JobConfig
+func TestJobConfig_SourceDir(t *testing.T) {
+	config := &JobConfig{
+		Image:        "alpine:latest",
+		Command:      []string{"echo", "hello"},
+		WorkspaceDir: "/tmp/workspace",
+		SourceDir:    "/home/user/project",
+		JobID:        "test-123",
+	}
+
+	if config.SourceDir != "/home/user/project" {
+		t.Errorf("SourceDir = %q, want /home/user/project", config.SourceDir)
+	}
+
+	// Validate that SourceDir doesn't affect normal validation
+	runner := &DockerRunner{}
+	if err := runner.validateConfig(config); err != nil {
+		t.Errorf("unexpected validation error: %v", err)
+	}
+
+	// SourceDir is optional - empty should also pass validation
+	config.SourceDir = ""
+	if err := runner.validateConfig(config); err != nil {
+		t.Errorf("unexpected validation error with empty SourceDir: %v", err)
+	}
+}
+
 // TestContainerdRunner_validateConfig tests the configuration validation for containerd
 func TestContainerdRunner_validateConfig(t *testing.T) {
 	runner := &ContainerdRunner{

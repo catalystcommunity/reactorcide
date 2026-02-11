@@ -190,6 +190,12 @@ func (s *JobSpec) ToJobConfig(workspaceDir, jobID, queueName string) *JobConfig 
 	// Add triggers file path
 	env["REACTORCIDE_TRIGGERS_FILE"] = "/job/triggers.json"
 
+	// Standard container environment: tell runnerlib it's running inside a container
+	// and where source code is mounted. True for both local and production containers.
+	env["REACTORCIDE_IN_CONTAINER"] = "true"
+	env["REACTORCIDE_CODE_DIR"] = "/job/src"
+	env["REACTORCIDE_JOB_DIR"] = "/job/src"
+
 	config := &JobConfig{
 		Image:          s.Image,
 		Command:        command,
