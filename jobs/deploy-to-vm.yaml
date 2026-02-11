@@ -143,7 +143,7 @@ command: |-
 
     echo ""
     echo "Step 3: Copying deployment files"
-    tar -C /job/deployment -czf - docker-compose.prod.yml nginx.conf | ssh "${REACTORCIDE_DEPLOY_USER}@${REACTORCIDE_DEPLOY_HOST}" "tar -C ${REMOTE_DIR} -xzf -"
+    tar -C /job/src/deployment -czf - docker-compose.prod.yml nginx.conf | ssh "${REACTORCIDE_DEPLOY_USER}@${REACTORCIDE_DEPLOY_HOST}" "tar -C ${REMOTE_DIR} -xzf -"
 
     echo ""
     echo "Step 4: Checking environment configuration on VM"

@@ -15,7 +15,7 @@ command: |-
     rm /tmp/nerdctl.tar.gz
 
     # Build image
-    cd /job/runnerlib
+    cd /job/src/runnerlib
     nerdctl build -t "$REGISTRY/$IMAGE:$TAG" -f Dockerfile.runner .
 
     # Login and push

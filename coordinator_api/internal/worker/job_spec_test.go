@@ -794,6 +794,17 @@ func TestToJobConfig(t *testing.T) {
 		t.Errorf("REACTORCIDE_JOB_ID not set")
 	}
 
+	// Check standard container environment variables
+	if config.Env["REACTORCIDE_IN_CONTAINER"] != "true" {
+		t.Errorf("REACTORCIDE_IN_CONTAINER = %q, want true", config.Env["REACTORCIDE_IN_CONTAINER"])
+	}
+	if config.Env["REACTORCIDE_CODE_DIR"] != "/job/src" {
+		t.Errorf("REACTORCIDE_CODE_DIR = %q, want /job/src", config.Env["REACTORCIDE_CODE_DIR"])
+	}
+	if config.Env["REACTORCIDE_JOB_DIR"] != "/job/src" {
+		t.Errorf("REACTORCIDE_JOB_DIR = %q, want /job/src", config.Env["REACTORCIDE_JOB_DIR"])
+	}
+
 	// Check capabilities
 	if len(config.Capabilities) != 2 {
 		t.Errorf("expected 2 capabilities, got %d", len(config.Capabilities))

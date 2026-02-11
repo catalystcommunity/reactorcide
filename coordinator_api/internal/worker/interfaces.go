@@ -69,6 +69,10 @@ type JobConfig struct {
 	// WorkspaceDir is the host directory to mount into the container at /job
 	WorkspaceDir string
 
+	// SourceDir is an optional host directory to mount at /job/src in the container.
+	// Used by run-local to mount user's source into the standard production layout.
+	SourceDir string
+
 	// WorkingDir is the working directory inside the container (default: /job)
 	WorkingDir string
 

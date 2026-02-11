@@ -303,6 +303,17 @@ func TestToJobConfig(t *testing.T) {
 	if config.Env["REACTORCIDE_JOB_ID"] != "job-123" {
 		t.Errorf("expected REACTORCIDE_JOB_ID=job-123, got %q", config.Env["REACTORCIDE_JOB_ID"])
 	}
+
+	// Check standard container environment variables
+	if config.Env["REACTORCIDE_IN_CONTAINER"] != "true" {
+		t.Errorf("expected REACTORCIDE_IN_CONTAINER=true, got %q", config.Env["REACTORCIDE_IN_CONTAINER"])
+	}
+	if config.Env["REACTORCIDE_CODE_DIR"] != "/job/src" {
+		t.Errorf("expected REACTORCIDE_CODE_DIR=/job/src, got %q", config.Env["REACTORCIDE_CODE_DIR"])
+	}
+	if config.Env["REACTORCIDE_JOB_DIR"] != "/job/src" {
+		t.Errorf("expected REACTORCIDE_JOB_DIR=/job/src, got %q", config.Env["REACTORCIDE_JOB_DIR"])
+	}
 }
 
 func TestJobSpec_WithSource(t *testing.T) {
