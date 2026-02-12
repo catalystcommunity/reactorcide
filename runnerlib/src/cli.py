@@ -1,9 +1,11 @@
 """CLI interface for runnerlib."""
 
 import os
+import signal
 import subprocess
 import shlex
 import sys
+import threading
 import getpass
 import typer
 from typing import List, Optional, Dict
@@ -99,7 +101,9 @@ def _run_local(config, command_args):
     # Execute the command using shell
     try:
         # Run command with shell to support complex commands (pipes, redirects, etc.)
-        # Use subprocess.run for simpler cross-platform streaming
+        # start_new_session=True puts the process in its own process group so we
+        # can kill background daemons (buildkitd, dockerd, etc.) when the main
+        # command exits, preventing the job from hanging until timeout.
         process = subprocess.Popen(
             config.job_command,
             shell=True,
@@ -107,18 +111,52 @@ def _run_local(config, command_args):
             stderr=subprocess.STDOUT,  # Merge stderr into stdout for simpler handling
             env=env,
             text=True,
-            bufsize=1  # Line buffered
+            bufsize=1,  # Line buffered
+            start_new_session=True,
         )
 
-        # Stream output in real-time with secret masking
-        for line in iter(process.stdout.readline, ''):
-            if line:
-                # Mask secrets and output
-                masked_line = masker.mask_string(line.rstrip())
-                log_stdout(masked_line)
+        # Read output in a background thread so we can wait on the main process
+        # independently. Without this, readline() blocks until ALL processes
+        # holding the stdout fd exit (including background daemons like buildkitd).
+        def _stream_output():
+            try:
+                for line in iter(process.stdout.readline, ''):
+                    if line:
+                        masked_line = masker.mask_string(line.rstrip())
+                        log_stdout(masked_line)
+            except (ValueError, OSError):
+                pass  # Pipe closed
 
-        # Wait for process to complete
+        reader = threading.Thread(target=_stream_output, daemon=True)
+        reader.start()
+
+        # Wait for the main process (the shell) to exit.
+        # This returns as soon as the shell exits, even if background children
+        # are still running.
         exit_code = process.wait()
+
+        # Kill the process group to clean up background daemons.
+        # Without this, orphaned processes would keep running in the container.
+        pgid = process.pid
+        try:
+            os.killpg(pgid, signal.SIGTERM)
+        except OSError:
+            pass
+
+        # Give processes a moment to handle SIGTERM, then force kill
+        reader.join(timeout=5)
+        if reader.is_alive():
+            try:
+                os.killpg(pgid, signal.SIGKILL)
+            except OSError:
+                pass
+            reader.join(timeout=2)
+
+        # Close the pipe to unblock any remaining reads
+        try:
+            process.stdout.close()
+        except OSError:
+            pass
 
         if exit_code == 0:
             log_stdout(f"✓ Job completed successfully (exit code: {exit_code})")
