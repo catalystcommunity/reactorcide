@@ -128,6 +128,10 @@ services:
       # Secrets management (database storage enabled by default)
       REACTORCIDE_SECRETS_STORAGE_TYPE: ${REACTORCIDE_SECRETS_STORAGE_TYPE:-database}
       REACTORCIDE_MASTER_KEYS: ${REACTORCIDE_MASTER_KEYS:-}
+      # API credentials for job containers to submit triggers via API
+      # REACTORCIDE_JOB_API_URL must be reachable from job containers (host bridge, not compose network)
+      REACTORCIDE_JOB_API_URL: ${REACTORCIDE_JOB_API_URL:-}
+      REACTORCIDE_API_TOKEN: ${REACTORCIDE_WORKER_API_TOKEN:-}
       # Tell nerdctl to use system containerd socket (not rootless)
       CONTAINERD_ADDRESS: /run/containerd/containerd.sock
     # Note: Container socket mount is added via docker-compose.override.yml

@@ -68,43 +68,55 @@ func (tp *TriggerProcessor) ProcessTriggers(ctx context.Context, workspaceDir st
 		return fmt.Errorf("failed to read triggers file: %w", err)
 	}
 
+	_, err = tp.ProcessTriggersFromData(ctx, data, parentJob)
+	return err
+}
+
+// ProcessTriggersFromData processes raw trigger JSON data, creates the triggered jobs
+// in the database, submits them to Corndogs, and returns the created job IDs.
+func (tp *TriggerProcessor) ProcessTriggersFromData(ctx context.Context, data []byte, parentJob *models.Job) ([]string, error) {
 	var tf triggersFile
 	if err := json.Unmarshal(data, &tf); err != nil {
-		return fmt.Errorf("failed to parse triggers file: %w", err)
+		return nil, fmt.Errorf("failed to parse triggers data: %w", err)
 	}
 
 	if tf.Type != "trigger_job" {
-		return fmt.Errorf("unexpected trigger file type: %q", tf.Type)
+		return nil, fmt.Errorf("unexpected trigger type: %q", tf.Type)
 	}
 
 	if len(tf.Jobs) == 0 {
-		logging.Log.WithField("workspace", workspaceDir).Debug("Triggers file contains no jobs")
-		return nil
+		logging.Log.WithField("parent_job_id", parentJob.JobID).Debug("Trigger data contains no jobs")
+		return nil, nil
 	}
 
 	logger := logging.Log.WithField("parent_job_id", parentJob.JobID).WithField("trigger_count", len(tf.Jobs))
 	logger.Info("Processing triggers from eval job")
 
+	var createdJobIDs []string
 	for _, spec := range tf.Jobs {
-		if err := tp.createAndSubmitJob(ctx, spec, parentJob); err != nil {
+		jobID, err := tp.createAndSubmitJob(ctx, spec, parentJob)
+		if err != nil {
 			logger.WithError(err).WithField("job_name", spec.JobName).Error("Failed to create triggered job")
 			// Continue processing remaining triggers
+			continue
 		}
+		createdJobIDs = append(createdJobIDs, jobID)
 	}
 
-	return nil
+	return createdJobIDs, nil
 }
 
 // createAndSubmitJob creates a single job from a trigger spec and submits it to Corndogs.
-func (tp *TriggerProcessor) createAndSubmitJob(ctx context.Context, spec triggerJobSpec, parentJob *models.Job) error {
+// Returns the created job ID on success.
+func (tp *TriggerProcessor) createAndSubmitJob(ctx context.Context, spec triggerJobSpec, parentJob *models.Job) (string, error) {
 	job := tp.buildJobFromTrigger(spec, parentJob)
 
 	if err := tp.store.CreateJob(ctx, job); err != nil {
-		return fmt.Errorf("failed to create job in database: %w", err)
+		return "", fmt.Errorf("failed to create job in database: %w", err)
 	}
 
 	if tp.corndogsClient == nil {
-		return nil
+		return job.JobID, nil
 	}
 
 	taskPayload := tp.buildTaskPayload(job)
@@ -131,7 +143,7 @@ func (tp *TriggerProcessor) createAndSubmitJob(ctx context.Context, spec trigger
 		"status":        job.Status,
 	}).Info("Created triggered job")
 
-	return nil
+	return job.JobID, nil
 }
 
 // buildJobFromTrigger creates a models.Job from a trigger spec and parent job.

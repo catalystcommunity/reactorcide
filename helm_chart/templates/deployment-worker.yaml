@@ -80,6 +80,14 @@ spec:
                   name: {{ include "app.secretName" . }}
                   key: AWS_SECRET_ACCESS_KEY
             {{- end }}
+            {{- /* API token for job containers to submit triggers */ -}}
+            {{- if .Values.worker.apiTokenSecret }}
+            - name: REACTORCIDE_API_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.worker.apiTokenSecret.name }}
+                  key: {{ .Values.worker.apiTokenSecret.key | default "api-token" }}
+            {{- end }}
             {{- /* Secrets management configuration */ -}}
             {{- if .Values.secrets.storageType }}
             - name: REACTORCIDE_SECRETS_STORAGE_TYPE

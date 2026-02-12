@@ -15,6 +15,8 @@ import json
 import os
 import subprocess
 import sys
+import urllib.request
+import urllib.error
 from pathlib import Path
 from typing import Dict, List, Optional, Any, Union
 from dataclasses import dataclass, asdict, field
@@ -143,7 +145,11 @@ class WorkflowContext:
 
     def flush_triggers(self) -> None:
         """
-        Write accumulated triggers to the triggers file.
+        Write accumulated triggers to the triggers file, then attempt
+        to submit them via the coordinator API if credentials are available.
+
+        On successful API submission, the triggers file is deleted to prevent
+        the worker from creating duplicate jobs via the file-based path.
 
         This is called automatically at the end of job execution,
         but can be called manually if needed.
@@ -167,16 +173,69 @@ class WorkflowContext:
         # Append new triggers
         all_triggers = existing_triggers + [t.to_dict() for t in self.triggers]
 
-        # Write to file
+        # Build trigger data
         trigger_data = {
             "type": "trigger_job",
             "jobs": all_triggers
         }
 
+        # Always write to file first (fallback for run-local, VM deployments)
         with open(self.triggers_file, 'w') as f:
             json.dump(trigger_data, f, indent=2)
 
         print(f"✓ Wrote {len(self.triggers)} job trigger(s) to {self.triggers_file}", file=sys.stderr)
+
+        # If API credentials are available, also submit via API
+        if self._submit_triggers_via_api(trigger_data):
+            # API submission succeeded — delete triggers.json to prevent
+            # the worker from creating duplicate jobs via the file-based path
+            try:
+                self.triggers_file.unlink()
+                print("✓ Triggers submitted via API, removed triggers.json", file=sys.stderr)
+            except OSError:
+                pass
+
+    def _submit_triggers_via_api(self, trigger_data: dict) -> bool:
+        """
+        Submit triggers to the coordinator API.
+
+        Returns True on success, False on failure or if credentials are not available.
+        On failure, logs a warning but does not raise — the triggers.json file
+        remains as a fallback for the worker's file-based processing.
+        """
+        if not self._coordinator_url or not self._api_token or not self._job_id:
+            return False
+
+        url = f"{self._coordinator_url}/api/v1/jobs/{self._job_id}/triggers"
+        body = json.dumps(trigger_data).encode("utf-8")
+
+        req = urllib.request.Request(
+            url,
+            data=body,
+            headers={
+                "Content-Type": "application/json",
+                "Authorization": f"Bearer {self._api_token}",
+            },
+            method="POST",
+        )
+
+        try:
+            with urllib.request.urlopen(req, timeout=30) as resp:
+                if resp.status == 201:
+                    return True
+                print(
+                    f"⚠ Trigger API returned status {resp.status}, "
+                    f"falling back to file-based triggers",
+                    file=sys.stderr,
+                )
+                return False
+        except (urllib.error.URLError, urllib.error.HTTPError, OSError) as exc:
+            print(
+                f"⚠ Failed to submit triggers via API: {exc} — "
+                f"falling back to file-based triggers",
+                file=sys.stderr,
+            )
+            return False
 
     def is_job_running(self, job_name: str) -> bool:
         """

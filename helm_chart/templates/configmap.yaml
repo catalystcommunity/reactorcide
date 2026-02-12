@@ -48,3 +48,6 @@ data:
   WORKER_POLL_INTERVAL: {{ .Values.worker.pollInterval | quote }}
   WORKER_CONCURRENCY: {{ .Values.worker.concurrency | quote }}
   WORKER_DRY_RUN: {{ .Values.worker.dryRun | quote }}
+
+  # API URL for job containers to submit triggers (reachable from job pods)
+  REACTORCIDE_JOB_API_URL: "http://{{ include "app.name" . }}-api:{{ .Values.app.service.port }}"
