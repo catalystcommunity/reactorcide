@@ -4,9 +4,76 @@ import os
 import shutil
 from pathlib import Path
 from typing import Optional
-from git import Repo
+from git import Repo, GitCommandError
 from src.logging import log_stdout, log_stderr, logger
 from src.config import RunnerConfig, get_config
+
+
+def _checkout_with_fetch_fallback(repo: Repo, source_ref: str) -> None:
+    """Checkout a git ref, fetching PR refs as fallback if needed.
+
+    For PR events, the source_ref SHA may not exist in the default clone
+    because it lives under refs/pull/<N>/head (GitHub) or
+    refs/merge-requests/<N>/head (GitLab). This function tries a direct
+    checkout first, then falls back to fetching the specific PR ref.
+
+    Args:
+        repo: GitPython Repo instance (already cloned)
+        source_ref: Git reference to checkout (branch, tag, or commit SHA)
+
+    Raises:
+        GitCommandError: If all checkout attempts fail
+    """
+    # Try direct checkout first — works for branches, tags, and commits on fetched branches
+    try:
+        repo.git.checkout(source_ref)
+        return
+    except GitCommandError:
+        logger.debug("Direct checkout failed, trying fetch fallbacks", fields={"ref": source_ref})
+
+    # Try fetching the specific SHA (works if server has uploadpack.allowReachableSHA1InWant)
+    try:
+        repo.git.fetch("origin", source_ref)
+        repo.git.checkout(source_ref)
+        log_stdout(f"Fetched and checked out ref: {source_ref}")
+        return
+    except GitCommandError:
+        logger.debug("Fetch by SHA failed", fields={"ref": source_ref})
+
+    # Try PR-specific refs using REACTORCIDE_PR_NUMBER
+    pr_number = os.getenv("REACTORCIDE_PR_NUMBER", "")
+    if pr_number:
+        # GitHub: refs/pull/<N>/head
+        pr_refs = [
+            f"refs/pull/{pr_number}/head",
+            f"refs/merge-requests/{pr_number}/head",  # GitLab
+        ]
+        for pr_ref in pr_refs:
+            try:
+                log_stdout(f"Fetching PR ref: {pr_ref}")
+                repo.git.fetch("origin", f"{pr_ref}:refs/remotes/origin/pr-head")
+                repo.git.checkout(source_ref)
+                log_stdout(f"Checked out PR ref: {source_ref}")
+                return
+            except GitCommandError:
+                logger.debug("PR ref fetch failed", fields={"pr_ref": pr_ref})
+
+    # Last resort: fetch all remote refs (handles any branch the SHA might be on)
+    try:
+        log_stdout("Fetching all remote refs...")
+        repo.git.fetch("origin", "+refs/heads/*:refs/remotes/origin/*")
+        repo.git.checkout(source_ref)
+        log_stdout(f"Checked out ref after full fetch: {source_ref}")
+        return
+    except GitCommandError:
+        pass
+
+    # Nothing worked — raise with a clear message
+    raise GitCommandError(
+        f"git checkout {source_ref}",
+        128,
+        stderr=f"Could not checkout ref '{source_ref}' after all fetch attempts",
+    )
 
 
 def is_in_container_mode() -> bool:
@@ -151,7 +218,7 @@ def checkout_git_repo(
         if git_ref:
             logger.debug("Checking out git ref", fields={"ref": git_ref})
             log_stdout(f"Checking out ref: {git_ref}")
-            repo.git.checkout(git_ref)
+            _checkout_with_fetch_fallback(repo, git_ref)
 
         logger.info("Repository cloned successfully", fields={"path": str(src_path)})
         log_stdout(f"Repository checked out to: {src_path}")
@@ -330,7 +397,7 @@ def _prepare_git_source(source_url: str, source_ref: Optional[str], target_path:
         if source_ref:
             logger.debug("Checking out git ref", fields={"ref": source_ref})
             log_stdout(f"Checking out ref: {source_ref}")
-            repo.git.checkout(source_ref)
+            _checkout_with_fetch_fallback(repo, source_ref)
 
         logger.info("Git source prepared successfully", fields={"path": str(target_path)})
         log_stdout(f"Repository checked out to: {target_path}")

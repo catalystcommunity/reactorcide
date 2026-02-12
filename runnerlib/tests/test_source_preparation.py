@@ -8,7 +8,7 @@ from pathlib import Path
 from git import Repo
 
 from src.config import get_config
-from src.source_prep import prepare_source, prepare_ci_source
+from src.source_prep import prepare_source, prepare_ci_source, _checkout_with_fetch_fallback
 
 
 class TestSourcePreparation:
@@ -287,3 +287,74 @@ class TestSourcePreparation:
 
         with pytest.raises(FileNotFoundError):
             prepare_source(config)
+
+    def test_checkout_with_fetch_fallback_works_for_branches_and_shas(self):
+        """Test that _checkout_with_fetch_fallback handles branches, tags, and SHAs."""
+        # Create a bare "remote" repo
+        bare_repo_dir = Path(self.temp_dir) / "bare_repo.git"
+        Repo.init(bare_repo_dir, bare=True)
+
+        # Create a working repo, push default + feature branch
+        work_repo_dir = Path(self.temp_dir) / "work_repo"
+        work_repo = Repo.init(work_repo_dir)
+        (work_repo_dir / "file.txt").write_text("initial")
+        work_repo.index.add(["file.txt"])
+        work_repo.index.commit("Initial commit")
+        work_repo.create_remote("origin", str(bare_repo_dir))
+        work_repo.remotes.origin.push("HEAD:refs/heads/main")
+
+        work_repo.git.checkout("-b", "feature-branch")
+        (work_repo_dir / "feature.txt").write_text("feature work")
+        work_repo.index.add(["feature.txt"])
+        feature_commit = work_repo.index.commit("Feature commit")
+        feature_sha = feature_commit.hexsha
+        work_repo.remotes.origin.push("HEAD:refs/heads/feature-branch")
+
+        # Clone the repo
+        clone_dir = Path(self.temp_dir) / "clone"
+        cloned_repo = Repo.clone_from(str(bare_repo_dir), clone_dir)
+
+        # Checkout by SHA via fallback function
+        _checkout_with_fetch_fallback(cloned_repo, feature_sha)
+        assert (clone_dir / "feature.txt").exists()
+
+        # Checkout by branch name via fallback function
+        _checkout_with_fetch_fallback(cloned_repo, "main")
+        assert not (clone_dir / "feature.txt").exists()
+        assert (clone_dir / "file.txt").exists()
+
+    def test_git_source_preparation_with_pr_sha(self):
+        """Test end-to-end: prepare_source checks out a SHA that requires fetch."""
+        # Create a bare "remote" repo
+        bare_repo_dir = Path(self.temp_dir) / "bare_repo.git"
+        Repo.init(bare_repo_dir, bare=True)
+
+        # Create working repo with default + feature branch
+        work_repo_dir = Path(self.temp_dir) / "work_repo"
+        work_repo = Repo.init(work_repo_dir)
+        (work_repo_dir / "file.txt").write_text("initial")
+        work_repo.index.add(["file.txt"])
+        work_repo.index.commit("Initial commit")
+        work_repo.create_remote("origin", str(bare_repo_dir))
+        work_repo.remotes.origin.push("HEAD:refs/heads/main")
+
+        work_repo.git.checkout("-b", "pr-branch")
+        (work_repo_dir / "pr_change.txt").write_text("PR changes")
+        work_repo.index.add(["pr_change.txt"])
+        pr_commit = work_repo.index.commit("PR commit")
+        pr_sha = pr_commit.hexsha
+        work_repo.remotes.origin.push("HEAD:refs/heads/pr-branch")
+
+        # Use prepare_source with the PR SHA — it should clone and then
+        # fetch + checkout even though initial clone is default branch only
+        config = get_config(
+            job_command="cat /job/src/pr_change.txt",
+            source_type="git",
+            source_url=str(bare_repo_dir),
+            source_ref=pr_sha
+        )
+
+        result = prepare_source(config)
+        assert result is not None
+        assert (result / "pr_change.txt").exists()
+        assert (result / "pr_change.txt").read_text() == "PR changes"
