@@ -290,11 +290,19 @@ func (jp *JobProcessor) buildJobEnv(job *models.Job) map[string]string {
 	}
 
 	// Pass API credentials so job containers can submit triggers via API
-	if jobAPIURL := os.Getenv("REACTORCIDE_JOB_API_URL"); jobAPIURL != "" {
+	jobAPIURL := os.Getenv("REACTORCIDE_JOB_API_URL")
+	apiToken := os.Getenv("REACTORCIDE_API_TOKEN")
+	if jobAPIURL != "" {
 		env["REACTORCIDE_COORDINATOR_URL"] = jobAPIURL
 	}
-	if apiToken := os.Getenv("REACTORCIDE_API_TOKEN"); apiToken != "" {
+	if apiToken != "" {
 		env["REACTORCIDE_API_TOKEN"] = apiToken
+	}
+	if jobAPIURL == "" || apiToken == "" {
+		logging.Log.WithFields(map[string]interface{}{
+			"has_api_url":   jobAPIURL != "",
+			"has_api_token": apiToken != "",
+		}).Warn("Job API trigger submission not fully configured — job containers will use file-based triggers only")
 	}
 
 	// Add job-specific environment variables

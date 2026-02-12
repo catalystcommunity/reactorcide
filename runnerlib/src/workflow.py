@@ -204,6 +204,19 @@ class WorkflowContext:
         remains as a fallback for the worker's file-based processing.
         """
         if not self._coordinator_url or not self._api_token or not self._job_id:
+            # Only warn when running inside the coordinator (job_id is set)
+            # but API credentials are missing. For run-local, skip silently.
+            if self._job_id:
+                missing = []
+                if not self._coordinator_url:
+                    missing.append("REACTORCIDE_COORDINATOR_URL")
+                if not self._api_token:
+                    missing.append("REACTORCIDE_API_TOKEN")
+                if missing:
+                    print(
+                        f"⚠ Skipping API trigger submission — missing env vars: {', '.join(missing)}",
+                        file=sys.stderr,
+                    )
             return False
 
         url = f"{self._coordinator_url}/api/v1/jobs/{self._job_id}/triggers"

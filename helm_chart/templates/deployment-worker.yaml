@@ -86,7 +86,8 @@ spec:
               valueFrom:
                 secretKeyRef:
                   name: {{ .Values.worker.apiTokenSecret.name }}
-                  key: {{ .Values.worker.apiTokenSecret.key | default "api-token" }}
+                  key: {{ .Values.worker.apiTokenSecret.key | default "token" }}
+                  optional: true
             {{- end }}
             {{- /* Secrets management configuration */ -}}
             {{- if .Values.secrets.storageType }}

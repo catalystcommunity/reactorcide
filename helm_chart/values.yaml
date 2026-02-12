@@ -111,6 +111,12 @@ worker:
     timeoutSeconds: 5
     successThreshold: 1
     failureThreshold: 3
+  # API token for job containers to submit triggers via the coordinator API.
+  # The deploy script stores the API token in the userSecretName secret (default: base-reactorcide-user).
+  # Set to {} to disable API trigger submission (falls back to file-based triggers).
+  apiTokenSecret:
+    name: "base-reactorcide-user"
+    key: "token"
   resources:
     limits:
       cpu: 2000m
