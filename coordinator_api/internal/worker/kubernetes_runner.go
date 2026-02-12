@@ -39,6 +39,7 @@ type KubernetesRunnerConfig struct {
 	ServiceAccount   string   // Service account for job pods (default: "default")
 	RunnerImage      string   // Default runner image if job doesn't specify one
 	ImagePullSecrets []string // Image pull secrets for private registries
+	NodeName         string   // Node to schedule job pods on (for workspace sharing via HostPath)
 }
 
 // NewKubernetesRunner creates a new Kubernetes-based job runner

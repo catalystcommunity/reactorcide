@@ -20,6 +20,7 @@ import (
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store/models"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/vcs"
+	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/worker"
 )
 
 // LogEntry represents a single log line in JSON format (matches worker.LogEntry)
@@ -33,25 +34,28 @@ type LogEntry struct {
 // JobHandler handles job-related HTTP requests
 type JobHandler struct {
 	BaseHandler
-	store          store.Store
-	corndogsClient corndogs.ClientInterface
-	objectStore    objects.ObjectStore
+	store            store.Store
+	corndogsClient   corndogs.ClientInterface
+	objectStore      objects.ObjectStore
+	triggerProcessor *worker.TriggerProcessor
 }
 
 // NewJobHandler creates a new job handler
 func NewJobHandler(store store.Store, corndogsClient corndogs.ClientInterface) *JobHandler {
 	return &JobHandler{
-		store:          store,
-		corndogsClient: corndogsClient,
+		store:            store,
+		corndogsClient:   corndogsClient,
+		triggerProcessor: worker.NewTriggerProcessor(store, corndogsClient),
 	}
 }
 
 // NewJobHandlerWithObjectStore creates a new job handler with object store support
 func NewJobHandlerWithObjectStore(store store.Store, corndogsClient corndogs.ClientInterface, objectStore objects.ObjectStore) *JobHandler {
 	return &JobHandler{
-		store:          store,
-		corndogsClient: corndogsClient,
-		objectStore:    objectStore,
+		store:            store,
+		corndogsClient:   corndogsClient,
+		objectStore:      objectStore,
+		triggerProcessor: worker.NewTriggerProcessor(store, corndogsClient),
 	}
 }
 
@@ -528,6 +532,62 @@ func (h *JobHandler) GetJobLogs(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Length", fmt.Sprintf("%d", len(logContent)))
 	w.WriteHeader(http.StatusOK)
 	w.Write(logContent)
+}
+
+// SubmitTriggersResponse represents the response for trigger submission
+type SubmitTriggersResponse struct {
+	CreatedJobIDs []string `json:"created_job_ids"`
+	Count         int      `json:"count"`
+}
+
+// SubmitTriggers handles POST /api/v1/jobs/{job_id}/triggers
+func (h *JobHandler) SubmitTriggers(w http.ResponseWriter, r *http.Request) {
+	jobID := h.getID(r, "job_id")
+	if jobID == "" {
+		h.respondWithError(w, http.StatusBadRequest, store.ErrInvalidInput)
+		return
+	}
+
+	parentJob, err := h.store.GetJobByID(r.Context(), jobID)
+	if err != nil {
+		h.respondWithError(w, http.StatusNotFound, err)
+		return
+	}
+
+	// Check if user can access this job
+	user := checkauth.GetUserFromContext(r.Context())
+	if user == nil {
+		h.respondWithError(w, http.StatusUnauthorized, store.ErrUnauthorized)
+		return
+	}
+
+	if !h.canUserAccessJob(user, parentJob) {
+		h.respondWithError(w, http.StatusForbidden, store.ErrForbidden)
+		return
+	}
+
+	// Read request body
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		h.respondWithError(w, http.StatusBadRequest, store.ErrInvalidInput)
+		return
+	}
+
+	// Process triggers via TriggerProcessor
+	createdJobIDs, err := h.triggerProcessor.ProcessTriggersFromData(r.Context(), body, parentJob)
+	if err != nil {
+		h.respondWithError(w, http.StatusBadRequest, store.ErrInvalidInput)
+		return
+	}
+
+	if createdJobIDs == nil {
+		createdJobIDs = []string{}
+	}
+
+	h.respondWithJSON(w, http.StatusCreated, SubmitTriggersResponse{
+		CreatedJobIDs: createdJobIDs,
+		Count:         len(createdJobIDs),
+	})
 }
 
 // fetchLogContent retrieves log content from object storage

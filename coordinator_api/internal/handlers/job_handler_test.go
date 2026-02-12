@@ -1091,6 +1091,151 @@ func TestGetJobLogsWithFilesystemStore(t *testing.T) {
 	})
 }
 
+// TestJobHandler_SubmitTriggers tests the POST /api/v1/jobs/{job_id}/triggers endpoint
+func TestJobHandler_SubmitTriggers(t *testing.T) {
+	parentJobID := "parent-job-123"
+	testUserID := "test-user-id"
+
+	parentJob := &models.Job{
+		JobID:          parentJobID,
+		UserID:         testUserID,
+		QueueName:      "reactorcide-jobs",
+		RunnerImage:    "default:image",
+		TimeoutSeconds: 3600,
+	}
+
+	tests := []struct {
+		name           string
+		jobID          string
+		body           string
+		userID         string
+		setupMockStore func(*MockStore)
+		expectedStatus int
+		checkResponse  func(*testing.T, *httptest.ResponseRecorder)
+	}{
+		{
+			name:   "successful trigger submission",
+			jobID:  parentJobID,
+			body:   `{"type":"trigger_job","jobs":[{"job_name":"test","job_command":"make test","container_image":"alpine:latest"}]}`,
+			userID: testUserID,
+			setupMockStore: func(m *MockStore) {
+				m.GetJobByIDFunc = func(ctx context.Context, jobID string) (*models.Job, error) {
+					if jobID == parentJobID {
+						return parentJob, nil
+					}
+					return nil, store.ErrNotFound
+				}
+				m.CreateJobFunc = func(ctx context.Context, job *models.Job) error {
+					job.JobID = "created-job-id"
+					return nil
+				}
+			},
+			expectedStatus: http.StatusCreated,
+			checkResponse: func(t *testing.T, rr *httptest.ResponseRecorder) {
+				var resp SubmitTriggersResponse
+				err := json.NewDecoder(rr.Body).Decode(&resp)
+				require.NoError(t, err)
+				assert.Equal(t, 1, resp.Count)
+				assert.Len(t, resp.CreatedJobIDs, 1)
+				assert.Equal(t, "created-job-id", resp.CreatedJobIDs[0])
+			},
+		},
+		{
+			name:   "job not found",
+			jobID:  "nonexistent",
+			body:   `{"type":"trigger_job","jobs":[]}`,
+			userID: testUserID,
+			setupMockStore: func(m *MockStore) {
+				m.GetJobByIDFunc = func(ctx context.Context, jobID string) (*models.Job, error) {
+					return nil, store.ErrNotFound
+				}
+			},
+			expectedStatus: http.StatusNotFound,
+		},
+		{
+			name:   "forbidden - different user",
+			jobID:  parentJobID,
+			body:   `{"type":"trigger_job","jobs":[]}`,
+			userID: "other-user-id",
+			setupMockStore: func(m *MockStore) {
+				m.GetJobByIDFunc = func(ctx context.Context, jobID string) (*models.Job, error) {
+					return parentJob, nil
+				}
+			},
+			expectedStatus: http.StatusForbidden,
+		},
+		{
+			name:   "invalid JSON body",
+			jobID:  parentJobID,
+			body:   `not json`,
+			userID: testUserID,
+			setupMockStore: func(m *MockStore) {
+				m.GetJobByIDFunc = func(ctx context.Context, jobID string) (*models.Job, error) {
+					return parentJob, nil
+				}
+			},
+			expectedStatus: http.StatusBadRequest,
+		},
+		{
+			name:   "wrong trigger type",
+			jobID:  parentJobID,
+			body:   `{"type":"unknown_type","jobs":[{"job_name":"test"}]}`,
+			userID: testUserID,
+			setupMockStore: func(m *MockStore) {
+				m.GetJobByIDFunc = func(ctx context.Context, jobID string) (*models.Job, error) {
+					return parentJob, nil
+				}
+			},
+			expectedStatus: http.StatusBadRequest,
+		},
+		{
+			name:   "empty jobs returns 201 with count 0",
+			jobID:  parentJobID,
+			body:   `{"type":"trigger_job","jobs":[]}`,
+			userID: testUserID,
+			setupMockStore: func(m *MockStore) {
+				m.GetJobByIDFunc = func(ctx context.Context, jobID string) (*models.Job, error) {
+					return parentJob, nil
+				}
+			},
+			expectedStatus: http.StatusCreated,
+			checkResponse: func(t *testing.T, rr *httptest.ResponseRecorder) {
+				var resp SubmitTriggersResponse
+				err := json.NewDecoder(rr.Body).Decode(&resp)
+				require.NoError(t, err)
+				assert.Equal(t, 0, resp.Count)
+				assert.Len(t, resp.CreatedJobIDs, 0)
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mockStore := &MockStore{}
+			if tt.setupMockStore != nil {
+				tt.setupMockStore(mockStore)
+			}
+
+			handler := NewJobHandler(mockStore, nil)
+
+			req := httptest.NewRequest("POST", fmt.Sprintf("/api/v1/jobs/%s/triggers", tt.jobID), bytes.NewReader([]byte(tt.body)))
+			user := &models.User{UserID: tt.userID}
+			ctx := checkauth.SetUserContext(req.Context(), user)
+			ctx = context.WithValue(ctx, GetContextKey("job_id"), tt.jobID)
+			req = req.WithContext(ctx)
+
+			rr := httptest.NewRecorder()
+			handler.SubmitTriggers(rr, req)
+
+			assert.Equal(t, tt.expectedStatus, rr.Code, "Response body: %s", rr.Body.String())
+
+			if tt.checkResponse != nil {
+				tt.checkResponse(t, rr)
+			}
+		})
+	}
+}
+
 // TestGetJobLogsObjectStoreNotConfigured tests behavior when object store is nil
 func TestGetJobLogsObjectStoreNotConfigured(t *testing.T) {
 	testJobID := "test-job-no-store"

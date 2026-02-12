@@ -190,6 +190,18 @@ func createAppMux() *http.ServeMux {
 				return
 			}
 
+			// Handle the special case for job_id/triggers
+			if strings.HasSuffix(path, "/triggers") {
+				jobID := strings.TrimSuffix(path, "/triggers")
+				r = r.WithContext(setIDContext(r.Context(), "job_id", jobID))
+				if r.Method == http.MethodPost {
+					jobHandler.SubmitTriggers(w, r)
+					return
+				}
+				http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+				return
+			}
+
 			// Regular job ID routes
 			r = r.WithContext(setIDContext(r.Context(), "job_id", path))
 			switch r.Method {

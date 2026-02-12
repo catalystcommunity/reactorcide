@@ -435,6 +435,149 @@ class TestWorkflowContextManager:
             assert hasattr(ctx, 'flush_triggers')
 
 
+class TestAPITriggerSubmission:
+    """Tests for API-based trigger submission."""
+
+    def test_submit_triggers_via_api_success(self):
+        """Test that successful API submission deletes triggers.json."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            triggers_file = Path(tmpdir) / "triggers.json"
+
+            with patch.dict(os.environ, {
+                "REACTORCIDE_COORDINATOR_URL": "http://coordinator:6080",
+                "REACTORCIDE_API_TOKEN": "test-token",
+                "REACTORCIDE_JOB_ID": "job-123",
+            }):
+                ctx = WorkflowContext(triggers_file=str(triggers_file))
+                ctx.trigger_job("test", env={"KEY": "value"})
+
+                # Mock the API call to succeed
+                mock_response = MagicMock()
+                mock_response.status = 201
+                mock_response.__enter__ = MagicMock(return_value=mock_response)
+                mock_response.__exit__ = MagicMock(return_value=False)
+
+                with patch('urllib.request.urlopen', return_value=mock_response) as mock_urlopen:
+                    ctx.flush_triggers()
+
+                    # Verify API was called
+                    mock_urlopen.assert_called_once()
+                    req = mock_urlopen.call_args[0][0]
+                    assert req.full_url == "http://coordinator:6080/api/v1/jobs/job-123/triggers"
+                    assert req.get_header("Authorization") == "Bearer test-token"
+                    assert req.get_header("Content-type") == "application/json"
+
+                    # Verify body contains trigger data
+                    body = json.loads(req.data.decode("utf-8"))
+                    assert body["type"] == "trigger_job"
+                    assert len(body["jobs"]) == 1
+                    assert body["jobs"][0]["job_name"] == "test"
+
+                # triggers.json should be deleted on API success
+                assert not triggers_file.exists()
+
+    def test_submit_triggers_via_api_failure_leaves_file(self):
+        """Test that API failure leaves triggers.json as fallback."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            triggers_file = Path(tmpdir) / "triggers.json"
+
+            with patch.dict(os.environ, {
+                "REACTORCIDE_COORDINATOR_URL": "http://coordinator:6080",
+                "REACTORCIDE_API_TOKEN": "test-token",
+                "REACTORCIDE_JOB_ID": "job-123",
+            }):
+                ctx = WorkflowContext(triggers_file=str(triggers_file))
+                ctx.trigger_job("test")
+
+                # Mock the API call to fail
+                import urllib.error
+                with patch('urllib.request.urlopen', side_effect=urllib.error.URLError("connection refused")):
+                    ctx.flush_triggers()
+
+                # triggers.json should still exist as fallback
+                assert triggers_file.exists()
+
+                with open(triggers_file) as f:
+                    data = json.load(f)
+                assert data["type"] == "trigger_job"
+                assert len(data["jobs"]) == 1
+
+    def test_no_api_credentials_skips_api_submission(self):
+        """Test that missing credentials skip API call and keep file."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            triggers_file = Path(tmpdir) / "triggers.json"
+
+            # No REACTORCIDE_COORDINATOR_URL or REACTORCIDE_API_TOKEN set
+            with patch.dict(os.environ, {}, clear=False):
+                # Remove any existing env vars
+                env = os.environ.copy()
+                env.pop("REACTORCIDE_COORDINATOR_URL", None)
+                env.pop("REACTORCIDE_API_TOKEN", None)
+                env.pop("REACTORCIDE_JOB_ID", None)
+
+                with patch.dict(os.environ, env, clear=True):
+                    ctx = WorkflowContext(triggers_file=str(triggers_file))
+                    ctx.trigger_job("test")
+
+                    with patch('urllib.request.urlopen') as mock_urlopen:
+                        ctx.flush_triggers()
+
+                        # API should NOT be called
+                        mock_urlopen.assert_not_called()
+
+                    # File should exist
+                    assert triggers_file.exists()
+
+    def test_api_http_error_leaves_file(self):
+        """Test that HTTP errors leave triggers.json as fallback."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            triggers_file = Path(tmpdir) / "triggers.json"
+
+            with patch.dict(os.environ, {
+                "REACTORCIDE_COORDINATOR_URL": "http://coordinator:6080",
+                "REACTORCIDE_API_TOKEN": "test-token",
+                "REACTORCIDE_JOB_ID": "job-123",
+            }):
+                ctx = WorkflowContext(triggers_file=str(triggers_file))
+                ctx.trigger_job("test")
+
+                import urllib.error
+                with patch('urllib.request.urlopen', side_effect=urllib.error.HTTPError(
+                    url="http://coordinator:6080/api/v1/jobs/job-123/triggers",
+                    code=500,
+                    msg="Internal Server Error",
+                    hdrs={},
+                    fp=None,
+                )):
+                    ctx.flush_triggers()
+
+                # triggers.json should still exist
+                assert triggers_file.exists()
+
+    def test_missing_job_id_skips_api(self):
+        """Test that missing job ID skips API submission."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            triggers_file = Path(tmpdir) / "triggers.json"
+
+            with patch.dict(os.environ, {
+                "REACTORCIDE_COORDINATOR_URL": "http://coordinator:6080",
+                "REACTORCIDE_API_TOKEN": "test-token",
+                # No REACTORCIDE_JOB_ID
+            }, clear=False):
+                env = os.environ.copy()
+                env.pop("REACTORCIDE_JOB_ID", None)
+
+                with patch.dict(os.environ, env, clear=True):
+                    ctx = WorkflowContext(triggers_file=str(triggers_file))
+                    ctx.trigger_job("test")
+
+                    with patch('urllib.request.urlopen') as mock_urlopen:
+                        ctx.flush_triggers()
+                        mock_urlopen.assert_not_called()
+
+                    assert triggers_file.exists()
+
+
 class TestIntegrationPatterns:
     """Integration tests for common workflow patterns."""
 

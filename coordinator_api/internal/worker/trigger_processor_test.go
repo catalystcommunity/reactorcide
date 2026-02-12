@@ -591,6 +591,120 @@ func TestProcessTriggers_TaskPayloadStructure(t *testing.T) {
 	}
 }
 
+func TestProcessTriggersFromData_ReturnsJobIDs(t *testing.T) {
+	priority := 5
+	triggersData := triggersFile{
+		Type: "trigger_job",
+		Jobs: []triggerJobSpec{
+			{
+				JobName:        "test",
+				ContainerImage: "alpine:latest",
+				JobCommand:     "make test",
+				Priority:       &priority,
+			},
+			{
+				JobName:        "build",
+				ContainerImage: "golang:1.21",
+				JobCommand:     "make build",
+				Priority:       &priority,
+			},
+		},
+	}
+	data, err := json.Marshal(triggersData)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	mockStore := &MockStore{
+		CreateJobFunc: func(ctx context.Context, job *models.Job) error {
+			job.JobID = fmt.Sprintf("job-%s", job.Name)
+			return nil
+		},
+	}
+	mockCorndogs := corndogs.NewMockClient()
+
+	parentJob := &models.Job{
+		JobID:          "parent-id",
+		UserID:         "user-123",
+		QueueName:      "reactorcide-jobs",
+		RunnerImage:    "default:image",
+		TimeoutSeconds: 3600,
+	}
+
+	tp := NewTriggerProcessor(mockStore, mockCorndogs)
+	jobIDs, err := tp.ProcessTriggersFromData(context.Background(), data, parentJob)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if len(jobIDs) != 2 {
+		t.Fatalf("expected 2 job IDs, got %d", len(jobIDs))
+	}
+	if jobIDs[0] != "job-test" {
+		t.Errorf("expected first job ID 'job-test', got %q", jobIDs[0])
+	}
+	if jobIDs[1] != "job-build" {
+		t.Errorf("expected second job ID 'job-build', got %q", jobIDs[1])
+	}
+}
+
+func TestProcessTriggersFromData_InvalidJSON(t *testing.T) {
+	mockStore := &MockStore{}
+	mockCorndogs := corndogs.NewMockClient()
+	tp := NewTriggerProcessor(mockStore, mockCorndogs)
+
+	_, err := tp.ProcessTriggersFromData(context.Background(), []byte("not json"), &models.Job{})
+	if err == nil {
+		t.Error("expected error for invalid JSON, got nil")
+	}
+}
+
+func TestProcessTriggersFromData_EmptyJobs(t *testing.T) {
+	triggersData := triggersFile{
+		Type: "trigger_job",
+		Jobs: []triggerJobSpec{},
+	}
+	data, err := json.Marshal(triggersData)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	mockStore := &MockStore{}
+	mockCorndogs := corndogs.NewMockClient()
+	tp := NewTriggerProcessor(mockStore, mockCorndogs)
+
+	jobIDs, err := tp.ProcessTriggersFromData(context.Background(), data, &models.Job{})
+	if err != nil {
+		t.Errorf("expected no error for empty jobs, got %v", err)
+	}
+	if len(jobIDs) != 0 {
+		t.Errorf("expected 0 job IDs, got %d", len(jobIDs))
+	}
+	if mockCorndogs.GetSubmitTaskCallCount() != 0 {
+		t.Error("expected no Corndogs calls for empty jobs")
+	}
+}
+
+func TestProcessTriggersFromData_WrongType(t *testing.T) {
+	triggersData := triggersFile{
+		Type: "unknown_type",
+		Jobs: []triggerJobSpec{{JobName: "test"}},
+	}
+	data, err := json.Marshal(triggersData)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	mockStore := &MockStore{}
+	mockCorndogs := corndogs.NewMockClient()
+	tp := NewTriggerProcessor(mockStore, mockCorndogs)
+
+	_, err = tp.ProcessTriggersFromData(context.Background(), data, &models.Job{})
+	if err == nil {
+		t.Error("expected error for wrong type, got nil")
+	}
+}
+
 func TestBuildJobFromTrigger_MinimalSpec(t *testing.T) {
 	mockStore := &MockStore{}
 	tp := NewTriggerProcessor(mockStore, nil)
@@ -622,6 +736,50 @@ func TestBuildJobFromTrigger_MinimalSpec(t *testing.T) {
 	}
 	if job.ParentJobID == nil || *job.ParentJobID != "parent-id" {
 		t.Error("expected parent job ID to be set")
+	}
+}
+
+func TestBuildJobEnv_PassesAPICredentials(t *testing.T) {
+	// Set up environment variables that the worker reads
+	t.Setenv("REACTORCIDE_JOB_API_URL", "http://coordinator:6080")
+	t.Setenv("REACTORCIDE_API_TOKEN", "test-api-token-123")
+
+	jp := NewJobProcessor(&MockStore{}, nil, false)
+
+	job := &models.Job{
+		JobID:     "test-job",
+		QueueName: "reactorcide-jobs",
+	}
+
+	env := jp.buildJobEnv(job)
+
+	if env["REACTORCIDE_COORDINATOR_URL"] != "http://coordinator:6080" {
+		t.Errorf("expected REACTORCIDE_COORDINATOR_URL to be set, got %q", env["REACTORCIDE_COORDINATOR_URL"])
+	}
+	if env["REACTORCIDE_API_TOKEN"] != "test-api-token-123" {
+		t.Errorf("expected REACTORCIDE_API_TOKEN to be set, got %q", env["REACTORCIDE_API_TOKEN"])
+	}
+}
+
+func TestBuildJobEnv_NoAPICredentials(t *testing.T) {
+	// Ensure env vars are not set
+	t.Setenv("REACTORCIDE_JOB_API_URL", "")
+	t.Setenv("REACTORCIDE_API_TOKEN", "")
+
+	jp := NewJobProcessor(&MockStore{}, nil, false)
+
+	job := &models.Job{
+		JobID:     "test-job",
+		QueueName: "reactorcide-jobs",
+	}
+
+	env := jp.buildJobEnv(job)
+
+	if _, ok := env["REACTORCIDE_COORDINATOR_URL"]; ok && env["REACTORCIDE_COORDINATOR_URL"] != "" {
+		t.Errorf("expected REACTORCIDE_COORDINATOR_URL to not be set, got %q", env["REACTORCIDE_COORDINATOR_URL"])
+	}
+	if _, ok := env["REACTORCIDE_API_TOKEN"]; ok && env["REACTORCIDE_API_TOKEN"] != "" {
+		t.Errorf("expected REACTORCIDE_API_TOKEN to not be set, got %q", env["REACTORCIDE_API_TOKEN"])
 	}
 }
 

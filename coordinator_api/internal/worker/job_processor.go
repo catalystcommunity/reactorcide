@@ -289,6 +289,14 @@ func (jp *JobProcessor) buildJobEnv(job *models.Job) map[string]string {
 		}
 	}
 
+	// Pass API credentials so job containers can submit triggers via API
+	if jobAPIURL := os.Getenv("REACTORCIDE_JOB_API_URL"); jobAPIURL != "" {
+		env["REACTORCIDE_COORDINATOR_URL"] = jobAPIURL
+	}
+	if apiToken := os.Getenv("REACTORCIDE_API_TOKEN"); apiToken != "" {
+		env["REACTORCIDE_API_TOKEN"] = apiToken
+	}
+
 	// Add job-specific environment variables
 	if job.JobEnvVars != nil && len(job.JobEnvVars) > 0 {
 		for key, value := range job.JobEnvVars {
@@ -479,6 +487,11 @@ func (jp *JobProcessor) executeWithRunnerlib(ctx context.Context, job *models.Jo
 	// Register all job environment variable VALUES as secrets to mask
 	if job.JobEnvVars != nil && len(job.JobEnvVars) > 0 {
 		masker.RegisterEnvVars(job.JobEnvVars)
+	}
+
+	// Register the API token for secret masking if it will be injected
+	if apiToken := os.Getenv("REACTORCIDE_API_TOKEN"); apiToken != "" {
+		masker.RegisterSecret(apiToken)
 	}
 
 	// Create a temporary workspace directory for this job
