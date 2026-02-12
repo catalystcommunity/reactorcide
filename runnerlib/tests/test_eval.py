@@ -186,6 +186,33 @@ class TestParseJobDefinition:
         assert defn.job.command == ""
         assert defn.job.timeout is None
 
+    def test_raw_command_parsed(self):
+        """Test that raw_command is parsed from job config."""
+        data = {
+            "name": "test",
+            "job": {
+                "image": "alpine:latest",
+                "command": "echo hello",
+                "raw_command": True,
+            },
+        }
+        defn = parse_job_definition(data)
+
+        assert defn.job.raw_command is True
+
+    def test_raw_command_defaults_false(self):
+        """Test that raw_command defaults to False."""
+        data = {
+            "name": "test",
+            "job": {
+                "image": "alpine:latest",
+                "command": "echo hello",
+            },
+        }
+        defn = parse_job_definition(data)
+
+        assert defn.job.raw_command is False
+
 
 # --- Test load_job_definitions ---
 
@@ -586,9 +613,39 @@ class TestGenerateTriggers:
         assert isinstance(triggers[0], JobTrigger)
         assert triggers[0].job_name == "test"
         assert triggers[0].container_image == "alpine:latest"
-        assert triggers[0].job_command == "make test"
+        assert triggers[0].job_command == "runnerlib run --job-command 'make test'"
         assert triggers[0].env["REACTORCIDE_EVENT_TYPE"] == "push"
         assert triggers[0].env["REACTORCIDE_BRANCH"] == "main"
+
+    def test_raw_command_skips_wrapping(self):
+        """Test that raw_command: true prevents runnerlib wrapping."""
+        defs = [
+            JobDefinition(
+                name="test",
+                job=JobConfig(image="alpine:latest", command="echo hello", raw_command=True),
+            ),
+        ]
+        ctx = EventContext(event_type="push", branch="main")
+
+        triggers = generate_triggers(defs, ctx)
+
+        assert len(triggers) == 1
+        assert triggers[0].job_command == "echo hello"
+
+    def test_runnerlib_command_not_double_wrapped(self):
+        """Test that commands already starting with runnerlib are not wrapped again."""
+        defs = [
+            JobDefinition(
+                name="test",
+                job=JobConfig(image="runnerbase:dev", command="runnerlib run --job-command 'make test'"),
+            ),
+        ]
+        ctx = EventContext(event_type="push", branch="main")
+
+        triggers = generate_triggers(defs, ctx)
+
+        assert len(triggers) == 1
+        assert triggers[0].job_command == "runnerlib run --job-command 'make test'"
 
     def test_trigger_with_all_context(self):
         """Test trigger generation with full event context."""
@@ -820,7 +877,7 @@ class TestEndToEnd:
         assert len(triggers) == 1
         assert triggers[0].job_name == "test"
         assert triggers[0].container_image == "python:3.11"
-        assert triggers[0].job_command == "pytest"
+        assert triggers[0].job_command == "runnerlib run --job-command 'pytest'"
         assert triggers[0].timeout == 1800
         assert triggers[0].env["REACTORCIDE_EVENT_TYPE"] == "pull_request_opened"
         assert triggers[0].env["REACTORCIDE_BRANCH"] == "feature/my-feature"

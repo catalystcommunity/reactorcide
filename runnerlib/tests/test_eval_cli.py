@@ -650,7 +650,7 @@ class TestEvalEndToEnd:
         assert data["jobs"][0]["env"]["REACTORCIDE_PR_NUMBER"] == "42"
         assert data["jobs"][0]["env"]["PYTEST_ARGS"] == "-v"
         assert data["jobs"][0]["container_image"] == "python:3.11"
-        assert data["jobs"][0]["job_command"] == "pytest"
+        assert data["jobs"][0]["job_command"] == "runnerlib run --job-command 'pytest'"
         assert data["jobs"][0]["timeout"] == 1800
 
     def test_push_to_main_triggers_deploy(self, temp_dirs):
