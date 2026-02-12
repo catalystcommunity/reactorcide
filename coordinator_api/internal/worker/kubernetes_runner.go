@@ -138,9 +138,10 @@ func (kr *KubernetesRunner) SpawnJob(ctx context.Context, config *JobConfig) (st
 		}
 	}
 
-	// Determine if we need root (for docker capability)
+	// Determine if we need root/privileged (for docker capability)
 	runAsNonRoot := true
 	var runAsUser *int64
+	var privileged *bool
 	userID := int64(1001)
 	runAsUser = &userID
 
@@ -148,7 +149,9 @@ func (kr *KubernetesRunner) SpawnJob(ctx context.Context, config *JobConfig) (st
 		if cap == CapabilityDocker {
 			runAsNonRoot = false
 			runAsUser = nil
-			logger.Info("Docker capability requested: running as root")
+			priv := true
+			privileged = &priv
+			logger.Info("Docker capability requested: running as root with privileged mode")
 			break
 		}
 	}
@@ -170,7 +173,8 @@ func (kr *KubernetesRunner) SpawnJob(ctx context.Context, config *JobConfig) (st
 				WorkingDir:      workingDir,
 				Resources:       resources,
 				SecurityContext: &corev1.SecurityContext{
-					RunAsUser: runAsUser,
+					RunAsUser:  runAsUser,
+					Privileged: privileged,
 				},
 				VolumeMounts: []corev1.VolumeMount{
 					{

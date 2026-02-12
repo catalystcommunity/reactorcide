@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"time"
+
+	"github.com/lib/pq"
 )
 
 // JSONB represents a JSON field that can be stored in PostgreSQL JSONB column
@@ -74,8 +76,9 @@ type Job struct {
 	JobEnvFile  string `gorm:"type:text" json:"job_env_file"`
 
 	// Job execution settings
-	TimeoutSeconds int `gorm:"default:3600" json:"timeout_seconds"`
-	Priority       int `gorm:"default:0" json:"priority"`
+	TimeoutSeconds int            `gorm:"default:3600" json:"timeout_seconds"`
+	Priority       int            `gorm:"default:0" json:"priority"`
+	Capabilities   pq.StringArray `gorm:"type:text[]" json:"capabilities"`
 
 	// Queue integration
 	QueueName       string `gorm:"type:text;not null;default:'reactorcide-jobs'" json:"queue_name"`

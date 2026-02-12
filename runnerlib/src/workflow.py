@@ -57,6 +57,7 @@ class JobTrigger:
     job_command: Optional[str] = None
     priority: Optional[int] = None
     timeout: Optional[int] = None
+    capabilities: Optional[List[str]] = None
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary, excluding None values."""
