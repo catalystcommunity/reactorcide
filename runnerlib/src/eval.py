@@ -68,11 +68,15 @@ class JobConfig:
         command: Command to execute in the container.
         timeout: Job timeout in seconds.
         priority: Job priority (higher = more important).
+        raw_command: If True, run the command as-is without wrapping in runnerlib.
+            By default, eval wraps commands with "runnerlib run --job-command" so
+            that source checkout and other runnerlib features are available.
     """
     image: str = ""
     command: str = ""
     timeout: Optional[int] = None
     priority: Optional[int] = None
+    raw_command: bool = False
 
 
 @dataclass
@@ -150,6 +154,7 @@ def _parse_job_config(data: Any) -> JobConfig:
         command=data.get("command", "") or "",
         timeout=data.get("timeout"),
         priority=data.get("priority"),
+        raw_command=bool(data.get("raw_command", False)),
     )
 
 
@@ -433,11 +438,18 @@ def generate_triggers(
         if event_context.ci_source_ref:
             env["REACTORCIDE_CI_SOURCE_REF"] = event_context.ci_source_ref
 
+        # By default, wrap the command with "runnerlib run --job-command" so that
+        # runnerlib handles source checkout, CI source checkout, secret resolution,
+        # and plugin execution. Job definitions can opt out with raw_command: true.
+        command = defn.job.command or None
+        if command and not defn.job.raw_command and not command.strip().startswith("runnerlib "):
+            command = f"runnerlib run --job-command '{command}'"
+
         trigger = JobTrigger(
             job_name=defn.name,
             env=env,
             container_image=defn.job.image or None,
-            job_command=defn.job.command or None,
+            job_command=command,
             priority=defn.job.priority,
             timeout=defn.job.timeout,
             source_type="git" if event_context.source_url else None,
