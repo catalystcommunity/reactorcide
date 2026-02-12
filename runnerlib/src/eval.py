@@ -77,6 +77,7 @@ class JobConfig:
     timeout: Optional[int] = None
     priority: Optional[int] = None
     raw_command: bool = False
+    capabilities: List[str] = field(default_factory=list)
 
 
 @dataclass
@@ -155,6 +156,7 @@ def _parse_job_config(data: Any) -> JobConfig:
         timeout=data.get("timeout"),
         priority=data.get("priority"),
         raw_command=bool(data.get("raw_command", False)),
+        capabilities=data.get("capabilities") or [],
     )
 
 
@@ -452,6 +454,7 @@ def generate_triggers(
             job_command=command,
             priority=defn.job.priority,
             timeout=defn.job.timeout,
+            capabilities=defn.job.capabilities or None,
             source_type="git" if event_context.source_url else None,
             source_url=event_context.source_url or None,
             source_ref=event_context.source_ref or None,

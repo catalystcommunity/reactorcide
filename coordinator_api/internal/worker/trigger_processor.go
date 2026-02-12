@@ -51,6 +51,7 @@ type triggerJobSpec struct {
 	JobCommand     string            `json:"job_command"`
 	Priority       *int              `json:"priority"`
 	Timeout        *int              `json:"timeout"`
+	Capabilities   []string          `json:"capabilities"`
 }
 
 // ProcessTriggers reads triggers.json from the workspace directory of a completed
@@ -215,6 +216,9 @@ func (tp *TriggerProcessor) buildJobFromTrigger(spec triggerJobSpec, parentJob *
 	}
 	if spec.Priority != nil {
 		job.Priority = *spec.Priority
+	}
+	if len(spec.Capabilities) > 0 {
+		job.Capabilities = spec.Capabilities
 	}
 
 	// Copy event metadata from parent

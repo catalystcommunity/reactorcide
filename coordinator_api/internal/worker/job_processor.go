@@ -473,6 +473,7 @@ func (jp *JobProcessor) buildJobConfig(job *models.Job, workspaceDir string) *Jo
 		WorkingDir:   workingDir,
 		JobID:        job.JobID,
 		QueueName:    job.QueueName,
+		Capabilities: job.Capabilities,
 	}
 
 	// Add timeout if specified
