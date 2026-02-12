@@ -50,4 +50,4 @@ data:
   WORKER_DRY_RUN: {{ .Values.worker.dryRun | quote }}
 
   # API URL for job containers to submit triggers (reachable from job pods)
-  REACTORCIDE_JOB_API_URL: "http://{{ include "app.name" . }}-api:{{ .Values.app.service.port }}"
+  REACTORCIDE_JOB_API_URL: "http://{{ include "app.name" . }}.{{ .Release.Namespace }}.svc.cluster.local:{{ .Values.app.service.port }}"
