@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -12,8 +13,10 @@ import (
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/config"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/corndogs"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/objects"
+	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/secrets"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store/postgres_store"
+	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/vcs"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/worker"
 	"github.com/urfave/cli/v2"
 )
@@ -151,7 +154,33 @@ func RunWorker(ctx *cli.Context) error {
 		}
 		defer corndogsClient.Close()
 
-		w := worker.NewCornDogsWorker(workerConfig, corndogsClient)
+		// Initialize VCS manager for status updates
+		vcsManager := vcs.NewManager()
+		var statusUpdater vcs.JobStatusUpdaterInterface
+		if vcsManager.IsEnabled() {
+			su := vcsManager.GetStatusUpdater()
+
+			// Wire per-project token resolution if secrets are available
+			if config.DefaultUserID != "" {
+				db := store.GetDB()
+				if db != nil {
+					keyManager, err := secrets.LoadOrCreateMasterKeys(db)
+					if err == nil {
+						su.SetProjectLookup(workerConfig.Store.GetProjectByID)
+						su.SetTokenResolver(workerTokenResolver(keyManager))
+						su.SetClientFactory(func(p vcs.Provider, token string) (vcs.Client, error) {
+							return vcsManager.CreateClientWithToken(p, token)
+						})
+						logging.Log.Info("Per-project VCS token resolution enabled for worker")
+					}
+				}
+			}
+
+			statusUpdater = su
+			logging.Log.Info("VCS status updates enabled for worker")
+		}
+
+		w := worker.NewCornDogsWorker(workerConfig, corndogsClient, statusUpdater)
 		go func() {
 			workerErrChan <- w.Start(workerCtx)
 		}()
@@ -194,5 +223,34 @@ func RunWorker(ctx *cli.Context) error {
 		}
 		logging.Log.Info("Worker stopped")
 		return nil
+	}
+}
+
+// workerTokenResolver creates a TokenResolverFunc that resolves "path:key" secret
+// references using the database secrets provider under the default user org.
+func workerTokenResolver(keyManager *secrets.MasterKeyManager) vcs.TokenResolverFunc {
+	return func(ctx context.Context, secretRef string) (string, error) {
+		parts := strings.SplitN(secretRef, ":", 2)
+		if len(parts) != 2 {
+			return "", fmt.Errorf("invalid secret reference %q: expected path:key", secretRef)
+		}
+		path, key := parts[0], parts[1]
+
+		db := store.GetDB()
+		if db == nil {
+			return "", fmt.Errorf("database not available for secret resolution")
+		}
+
+		orgKey, err := keyManager.GetOrgEncryptionKey(db, config.DefaultUserID)
+		if err != nil {
+			return "", fmt.Errorf("resolving org encryption key: %w", err)
+		}
+
+		provider, err := secrets.NewDatabaseProvider(db, config.DefaultUserID, orgKey)
+		if err != nil {
+			return "", fmt.Errorf("creating secrets provider: %w", err)
+		}
+
+		return provider.Get(ctx, path, key)
 	}
 }

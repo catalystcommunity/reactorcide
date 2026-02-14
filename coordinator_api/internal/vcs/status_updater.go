@@ -9,10 +9,27 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
+// JobStatusUpdaterInterface allows the worker to call status updates with a mock in tests.
+type JobStatusUpdaterInterface interface {
+	UpdateJobStatus(ctx context.Context, job *models.Job) error
+}
+
+// TokenResolverFunc resolves a "path:key" secret reference to a plaintext token.
+type TokenResolverFunc func(ctx context.Context, secretRef string) (string, error)
+
+// ClientFactoryFunc creates a VCS client for the given provider using a specific token.
+type ClientFactoryFunc func(provider Provider, token string) (Client, error)
+
+// ProjectLookupFunc retrieves a project by ID.
+type ProjectLookupFunc func(ctx context.Context, projectID string) (*models.Project, error)
+
 // JobStatusUpdater handles updating VCS commit statuses based on job status changes
 type JobStatusUpdater struct {
-	vcsClients map[Provider]Client
-	logger     *logrus.Logger
+	vcsClients    map[Provider]Client
+	projectLookup ProjectLookupFunc // optional: per-project token resolution
+	tokenResolver TokenResolverFunc // optional: per-project secret resolution
+	clientFactory ClientFactoryFunc // optional: create client with per-project token
+	logger        *logrus.Logger
 }
 
 // NewJobStatusUpdater creates a new job status updater
@@ -30,6 +47,21 @@ func NewJobStatusUpdater() *JobStatusUpdater {
 func (u *JobStatusUpdater) AddVCSClient(provider Provider, client Client) {
 	u.vcsClients[provider] = client
 	u.logger.WithField("provider", provider).Info("Added VCS client to status updater")
+}
+
+// SetProjectLookup sets the function used to look up projects by ID.
+func (u *JobStatusUpdater) SetProjectLookup(fn ProjectLookupFunc) {
+	u.projectLookup = fn
+}
+
+// SetTokenResolver sets the function used to resolve secret references.
+func (u *JobStatusUpdater) SetTokenResolver(fn TokenResolverFunc) {
+	u.tokenResolver = fn
+}
+
+// SetClientFactory sets the function used to create per-project VCS clients.
+func (u *JobStatusUpdater) SetClientFactory(fn ClientFactoryFunc) {
+	u.clientFactory = fn
 }
 
 // JobMetadata represents VCS metadata stored in job notes
@@ -55,11 +87,11 @@ func (u *JobStatusUpdater) UpdateJobStatus(ctx context.Context, job *models.Job)
 		return nil
 	}
 
-	// Get the appropriate VCS client
+	// Get the appropriate VCS client (per-project token takes priority)
 	provider := Provider(metadata.VCSProvider)
-	client, ok := u.vcsClients[provider]
-	if !ok {
-		u.logger.WithField("provider", provider).Debug("No VCS client configured for provider")
+	client := u.getClientForJob(ctx, job, provider)
+	if client == nil {
+		u.logger.WithField("provider", provider).Debug("No VCS client available for provider")
 		return nil
 	}
 
@@ -203,6 +235,34 @@ func (u *JobStatusUpdater) generatePRComment(job *models.Job) string {
 	comment += fmt.Sprintf("\n\n[View Full Logs](%s)", u.getJobURL(job.JobID))
 
 	return comment
+}
+
+// getClientForJob returns the best VCS client for the job, trying per-project
+// token first and falling back to the global client.
+func (u *JobStatusUpdater) getClientForJob(ctx context.Context, job *models.Job, provider Provider) Client {
+	// Try per-project token if all dependencies are wired
+	if job.ProjectID != nil && u.projectLookup != nil && u.tokenResolver != nil && u.clientFactory != nil {
+		project, err := u.projectLookup(ctx, *job.ProjectID)
+		if err == nil && project != nil && project.VCSTokenSecret != "" {
+			token, err := u.tokenResolver(ctx, project.VCSTokenSecret)
+			if err != nil {
+				u.logger.WithError(err).WithField("project_id", *job.ProjectID).Warn("Failed to resolve per-project VCS token, falling back to global")
+			} else if token != "" {
+				client, err := u.clientFactory(provider, token)
+				if err != nil {
+					u.logger.WithError(err).Warn("Failed to create per-project VCS client, falling back to global")
+				} else {
+					return client
+				}
+			}
+		}
+	}
+
+	// Fall back to global client
+	if client, ok := u.vcsClients[provider]; ok {
+		return client
+	}
+	return nil
 }
 
 // getJobURL returns the URL for a job

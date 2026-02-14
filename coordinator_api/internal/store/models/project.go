@@ -37,6 +37,9 @@ type Project struct {
 	DefaultCISourceURL  string     `gorm:"type:text" json:"default_ci_source_url"`
 	DefaultCISourceRef  string     `gorm:"type:text;default:'main'" json:"default_ci_source_ref"`
 
+	// VCS integration — stores a "path:key" reference into the secrets store
+	VCSTokenSecret string `gorm:"type:text" json:"vcs_token_secret"`
+
 	// Job defaults
 	DefaultRunnerImage     string `gorm:"type:text;default:'quay.io/catalystcommunity/reactorcide_runner'" json:"default_runner_image"`
 	DefaultJobCommand      string `gorm:"type:text" json:"default_job_command"`

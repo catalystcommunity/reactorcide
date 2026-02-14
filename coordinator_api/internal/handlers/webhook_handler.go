@@ -23,6 +23,8 @@ type WebhookHandler struct {
 	corndogsClient corndogs.ClientInterface
 	vcsClients     map[vcs.Provider]vcs.Client
 	webhookSecret  string
+	tokenResolver  vcs.TokenResolverFunc // optional: per-project secret resolution
+	clientFactory  vcs.ClientFactoryFunc // optional: create client with per-project token
 	logger         *logrus.Logger
 }
 
@@ -48,6 +50,16 @@ func (h *WebhookHandler) AddVCSClient(provider vcs.Provider, client vcs.Client) 
 // SetWebhookSecret sets the webhook secret for validation
 func (h *WebhookHandler) SetWebhookSecret(secret string) {
 	h.webhookSecret = secret
+}
+
+// SetTokenResolver sets the function used to resolve per-project VCS token secrets.
+func (h *WebhookHandler) SetTokenResolver(fn vcs.TokenResolverFunc) {
+	h.tokenResolver = fn
+}
+
+// SetClientFactory sets the function used to create per-project VCS clients.
+func (h *WebhookHandler) SetClientFactory(fn vcs.ClientFactoryFunc) {
+	h.clientFactory = fn
 }
 
 // HandleGitHubWebhook handles GitHub webhook events
@@ -188,7 +200,8 @@ func (h *WebhookHandler) processPullRequestEvent(event *vcs.WebhookEvent, client
 	// Submit job to Corndogs task queue
 	h.submitJobToCorndogs(job)
 
-	// Update commit status to pending
+	// Update commit status to pending (use per-project client if available)
+	statusClient := h.getStatusClient(context.Background(), project, event.Provider, client)
 	statusUpdate := vcs.StatusUpdate{
 		SHA:         pr.HeadSHA,
 		State:       vcs.StatusPending,
@@ -197,7 +210,7 @@ func (h *WebhookHandler) processPullRequestEvent(event *vcs.WebhookEvent, client
 		Context:     "continuous-integration/reactorcide",
 	}
 
-	if err := client.UpdateCommitStatus(context.Background(), event.Repository.FullName, statusUpdate); err != nil {
+	if err := statusClient.UpdateCommitStatus(context.Background(), event.Repository.FullName, statusUpdate); err != nil {
 		h.logger.WithError(err).Warn("Failed to update commit status")
 		// Don't fail the whole operation if status update fails
 	}
@@ -263,7 +276,8 @@ func (h *WebhookHandler) processPushEvent(event *vcs.WebhookEvent, client vcs.Cl
 	// Submit job to Corndogs task queue
 	h.submitJobToCorndogs(job)
 
-	// Update commit status to pending
+	// Update commit status to pending (use per-project client if available)
+	statusClient := h.getStatusClient(context.Background(), project, event.Provider, client)
 	statusUpdate := vcs.StatusUpdate{
 		SHA:         push.After,
 		State:       vcs.StatusPending,
@@ -272,7 +286,7 @@ func (h *WebhookHandler) processPushEvent(event *vcs.WebhookEvent, client vcs.Cl
 		Context:     "continuous-integration/reactorcide",
 	}
 
-	if err := client.UpdateCommitStatus(context.Background(), event.Repository.FullName, statusUpdate); err != nil {
+	if err := statusClient.UpdateCommitStatus(context.Background(), event.Repository.FullName, statusUpdate); err != nil {
 		h.logger.WithError(err).Warn("Failed to update commit status")
 		// Don't fail the whole operation if status update fails
 	}
@@ -285,6 +299,27 @@ func (h *WebhookHandler) processPushEvent(event *vcs.WebhookEvent, client vcs.Cl
 	}).Info("Created eval job for push")
 
 	return nil
+}
+
+// getStatusClient returns a per-project VCS client if a project token is configured,
+// otherwise falls back to the provided global client.
+func (h *WebhookHandler) getStatusClient(ctx context.Context, project *models.Project, provider vcs.Provider, fallback vcs.Client) vcs.Client {
+	if project.VCSTokenSecret != "" && h.tokenResolver != nil && h.clientFactory != nil {
+		token, err := h.tokenResolver(ctx, project.VCSTokenSecret)
+		if err != nil {
+			h.logger.WithError(err).WithField("project", project.Name).Warn("Failed to resolve per-project VCS token, falling back to global")
+			return fallback
+		}
+		if token != "" {
+			client, err := h.clientFactory(provider, token)
+			if err != nil {
+				h.logger.WithError(err).WithField("project", project.Name).Warn("Failed to create per-project VCS client, falling back to global")
+				return fallback
+			}
+			return client
+		}
+	}
+	return fallback
 }
 
 // submitJobToCorndogs submits a job to the Corndogs task queue

@@ -783,6 +783,56 @@ func TestBuildJobEnv_NoAPICredentials(t *testing.T) {
 	}
 }
 
+func TestBuildJobFromTrigger_CopiesNotesFromParent(t *testing.T) {
+	mockStore := &MockStore{}
+	tp := NewTriggerProcessor(mockStore, nil)
+
+	vcsNotes := `{"vcs_provider":"github","repo":"org/repo","commit_sha":"abc123","pr_number":42}`
+
+	spec := triggerJobSpec{
+		JobName:    "child-job",
+		JobCommand: "make test",
+	}
+	parentJob := &models.Job{
+		JobID:          "parent-id",
+		UserID:         "user-123",
+		QueueName:      "reactorcide-jobs",
+		RunnerImage:    "default:runner",
+		TimeoutSeconds: 3600,
+		Notes:          vcsNotes,
+	}
+
+	job := tp.buildJobFromTrigger(spec, parentJob)
+
+	if job.Notes != vcsNotes {
+		t.Errorf("expected Notes to be copied from parent, got %q", job.Notes)
+	}
+}
+
+func TestBuildJobFromTrigger_EmptyNotesNotCopied(t *testing.T) {
+	mockStore := &MockStore{}
+	tp := NewTriggerProcessor(mockStore, nil)
+
+	spec := triggerJobSpec{
+		JobName:    "child-job",
+		JobCommand: "make test",
+	}
+	parentJob := &models.Job{
+		JobID:          "parent-id",
+		UserID:         "user-123",
+		QueueName:      "reactorcide-jobs",
+		RunnerImage:    "default:runner",
+		TimeoutSeconds: 3600,
+		Notes:          "",
+	}
+
+	job := tp.buildJobFromTrigger(spec, parentJob)
+
+	if job.Notes != "" {
+		t.Errorf("expected Notes to be empty when parent has no notes, got %q", job.Notes)
+	}
+}
+
 func writeTriggersFile(t *testing.T, dir string, tf triggersFile) {
 	t.Helper()
 	data, err := json.Marshal(tf)

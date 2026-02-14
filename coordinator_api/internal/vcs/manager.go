@@ -132,6 +132,27 @@ func (m *Manager) GetWebhookSecret() string {
 	return ""
 }
 
+// CreateClientWithToken creates a new VCS client for the given provider
+// using a per-project token instead of the global token.
+func (m *Manager) CreateClientWithToken(provider Provider, token string) (Client, error) {
+	switch provider {
+	case GitHub:
+		return NewGitHubClient(Config{
+			Provider: GitHub,
+			Token:    token,
+			BaseURL:  m.baseURL,
+		})
+	case GitLab:
+		return NewGitLabClient(Config{
+			Provider: GitLab,
+			Token:    token,
+			BaseURL:  m.baseURL,
+		})
+	default:
+		return nil, fmt.Errorf("unsupported provider: %s", provider)
+	}
+}
+
 // GetClients returns all configured VCS clients
 func (m *Manager) GetClients() map[Provider]Client {
 	return m.clients

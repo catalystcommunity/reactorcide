@@ -11,6 +11,7 @@ import (
 	pb "github.com/catalystcommunity/reactorcide/coordinator_api/internal/corndogs/v1alpha1"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store/models"
+	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/vcs"
 )
 
 // MockJobProcessor mocks the JobProcessor for testing
@@ -33,6 +34,23 @@ func (m *MockJobProcessor) ProcessJobWithContext(ctx context.Context, job *model
 		LogsObjectKey: "logs/test.log",
 	}
 }
+
+// MockJobStatusUpdater implements vcs.JobStatusUpdaterInterface for testing
+type MockJobStatusUpdater struct {
+	UpdateJobStatusFunc  func(ctx context.Context, job *models.Job) error
+	UpdateJobStatusCalls []models.Job
+}
+
+func (m *MockJobStatusUpdater) UpdateJobStatus(ctx context.Context, job *models.Job) error {
+	m.UpdateJobStatusCalls = append(m.UpdateJobStatusCalls, *job)
+	if m.UpdateJobStatusFunc != nil {
+		return m.UpdateJobStatusFunc(ctx, job)
+	}
+	return nil
+}
+
+// Ensure MockJobStatusUpdater satisfies vcs.JobStatusUpdaterInterface
+var _ vcs.JobStatusUpdaterInterface = (*MockJobStatusUpdater)(nil)
 
 // MockTriggerProcessor is a test helper that wraps TriggerProcessor to track calls
 type MockTriggerProcessor struct {
@@ -173,7 +191,7 @@ func TestCornDogsWorker_ProcessNextTask_Success(t *testing.T) {
 	}
 
 	// Create worker
-	worker := NewCornDogsWorkerWithProcessor(config, mockCorndogs, mockProcessor, nil)
+	worker := NewCornDogsWorkerWithProcessor(config, mockCorndogs, mockProcessor, nil, nil)
 
 	// Process one task
 	ctx := context.Background()
@@ -281,7 +299,7 @@ func TestCornDogsWorker_ProcessNextTask_JobExecutionFailure(t *testing.T) {
 	}
 
 	// Create worker
-	worker := NewCornDogsWorkerWithProcessor(config, mockCorndogs, mockProcessor, nil)
+	worker := NewCornDogsWorkerWithProcessor(config, mockCorndogs, mockProcessor, nil, nil)
 
 	// Process one task
 	ctx := context.Background()
@@ -528,7 +546,7 @@ func TestCornDogsWorker_Start_GracefulShutdown(t *testing.T) {
 	}
 
 	// Create worker
-	worker := NewCornDogsWorker(config, mockCorndogs)
+	worker := NewCornDogsWorker(config, mockCorndogs, nil)
 
 	// Start worker in goroutine
 	ctx, cancel := context.WithCancel(context.Background())
@@ -640,7 +658,7 @@ func TestCornDogsWorker_ProcessNextTask_TriggersProcessedOnSuccess(t *testing.T)
 	triggerProc := NewTriggerProcessor(mockStore, mockCorndogs)
 
 	// Create worker with trigger processor
-	worker := NewCornDogsWorkerWithProcessor(config, mockCorndogs, mockProcessor, triggerProc)
+	worker := NewCornDogsWorkerWithProcessor(config, mockCorndogs, mockProcessor, triggerProc, nil)
 
 	// Process one task
 	ctx := context.Background()
@@ -743,7 +761,7 @@ func TestCornDogsWorker_ProcessNextTask_NoTriggersOnFailure(t *testing.T) {
 	}
 
 	// Create worker with trigger processor
-	worker := NewCornDogsWorkerWithProcessor(config, mockCorndogs, mockProcessor, triggerProc)
+	worker := NewCornDogsWorkerWithProcessor(config, mockCorndogs, mockProcessor, triggerProc, nil)
 
 	// Process one task
 	ctx := context.Background()
@@ -820,7 +838,7 @@ func TestCornDogsWorker_ProcessNextTask_NoTriggersFile(t *testing.T) {
 		Store:        mockStore,
 	}
 
-	worker := NewCornDogsWorkerWithProcessor(config, mockCorndogs, mockProcessor, triggerProc)
+	worker := NewCornDogsWorkerWithProcessor(config, mockCorndogs, mockProcessor, triggerProc, nil)
 
 	ctx := context.Background()
 	worker.processNextTask(ctx, 0)
@@ -884,7 +902,7 @@ func TestCornDogsWorker_ProcessNextTask_NilTriggerProcessor(t *testing.T) {
 	}
 
 	// Create worker with nil trigger processor
-	worker := NewCornDogsWorkerWithProcessor(config, mockCorndogs, mockProcessor, nil)
+	worker := NewCornDogsWorkerWithProcessor(config, mockCorndogs, mockProcessor, nil, nil)
 
 	ctx := context.Background()
 	worker.processNextTask(ctx, 0)
@@ -897,5 +915,195 @@ func TestCornDogsWorker_ProcessNextTask_NilTriggerProcessor(t *testing.T) {
 	// No CreateJob calls since trigger processor is nil
 	if len(mockStore.CreateJobCalls) != 0 {
 		t.Errorf("expected 0 CreateJob calls with nil trigger processor, got %d", len(mockStore.CreateJobCalls))
+	}
+}
+
+func TestCornDogsWorker_ProcessNextTask_VCSStatusUpdatedOnCompletion(t *testing.T) {
+	mockStore := &MockStore{}
+	mockCorndogs := corndogs.NewMockClient()
+	mockProcessor := &MockJobProcessor{}
+	mockStatusUpdater := &MockJobStatusUpdater{}
+
+	vcsNotes := `{"vcs_provider":"github","repo":"org/repo","commit_sha":"abc123","pr_number":42}`
+
+	taskPayload := &corndogs.TaskPayload{
+		JobID:   "test-job-id",
+		JobType: "run",
+	}
+	payloadBytes, _ := json.Marshal(taskPayload)
+
+	mockCorndogs.GetNextTaskFunc = func(ctx context.Context, state string, timeout int64) (*pb.Task, error) {
+		return &pb.Task{
+			Uuid:            "task-id",
+			CurrentState:    "submitted-working",
+			AutoTargetState: "completed",
+			Payload:         payloadBytes,
+		}, nil
+	}
+
+	mockStore.GetJobByIDFunc = func(ctx context.Context, jobID string) (*models.Job, error) {
+		return &models.Job{
+			JobID:      jobID,
+			Status:     "submitted",
+			JobCommand: "echo hello",
+			Notes:      vcsNotes,
+		}, nil
+	}
+	mockStore.UpdateJobFunc = func(ctx context.Context, job *models.Job) error {
+		return nil
+	}
+
+	mockProcessor.ProcessJobFunc = func(ctx context.Context, job *models.Job) *JobResult {
+		return &JobResult{ExitCode: 0}
+	}
+
+	config := &Config{
+		QueueName:    "test-queue",
+		PollInterval: 100 * time.Millisecond,
+		Concurrency:  1,
+		Store:        mockStore,
+	}
+
+	worker := NewCornDogsWorkerWithProcessor(config, mockCorndogs, mockProcessor, nil, mockStatusUpdater)
+
+	ctx := context.Background()
+	worker.processNextTask(ctx, 0)
+
+	// Verify UpdateJobStatus was called
+	if len(mockStatusUpdater.UpdateJobStatusCalls) != 1 {
+		t.Fatalf("expected 1 UpdateJobStatus call, got %d", len(mockStatusUpdater.UpdateJobStatusCalls))
+	}
+
+	updatedJob := mockStatusUpdater.UpdateJobStatusCalls[0]
+	if updatedJob.Status != "completed" {
+		t.Errorf("expected job status 'completed', got %q", updatedJob.Status)
+	}
+	if updatedJob.Notes != vcsNotes {
+		t.Errorf("expected job notes to contain VCS metadata, got %q", updatedJob.Notes)
+	}
+}
+
+func TestCornDogsWorker_ProcessNextTask_VCSStatusNotCalledWithoutUpdater(t *testing.T) {
+	mockStore := &MockStore{}
+	mockCorndogs := corndogs.NewMockClient()
+	mockProcessor := &MockJobProcessor{}
+
+	taskPayload := &corndogs.TaskPayload{
+		JobID:   "test-job-id",
+		JobType: "run",
+	}
+	payloadBytes, _ := json.Marshal(taskPayload)
+
+	mockCorndogs.GetNextTaskFunc = func(ctx context.Context, state string, timeout int64) (*pb.Task, error) {
+		return &pb.Task{
+			Uuid:            "task-id",
+			CurrentState:    "submitted-working",
+			AutoTargetState: "completed",
+			Payload:         payloadBytes,
+		}, nil
+	}
+
+	mockStore.GetJobByIDFunc = func(ctx context.Context, jobID string) (*models.Job, error) {
+		return &models.Job{
+			JobID:      jobID,
+			Status:     "submitted",
+			JobCommand: "echo hello",
+			Notes:      `{"vcs_provider":"github","repo":"org/repo","commit_sha":"abc123"}`,
+		}, nil
+	}
+	mockStore.UpdateJobFunc = func(ctx context.Context, job *models.Job) error {
+		return nil
+	}
+
+	mockProcessor.ProcessJobFunc = func(ctx context.Context, job *models.Job) *JobResult {
+		return &JobResult{ExitCode: 0}
+	}
+
+	config := &Config{
+		QueueName:    "test-queue",
+		PollInterval: 100 * time.Millisecond,
+		Concurrency:  1,
+		Store:        mockStore,
+	}
+
+	// nil status updater — should complete without error
+	worker := NewCornDogsWorkerWithProcessor(config, mockCorndogs, mockProcessor, nil, nil)
+
+	ctx := context.Background()
+	worker.processNextTask(ctx, 0)
+
+	// Job should still complete successfully
+	if mockCorndogs.GetCompleteTaskCallCount() != 1 {
+		t.Errorf("expected 1 CompleteTask call, got %d", mockCorndogs.GetCompleteTaskCallCount())
+	}
+}
+
+func TestCornDogsWorker_ProcessNextTask_VCSStatusErrorDoesNotFailJob(t *testing.T) {
+	mockStore := &MockStore{}
+	mockCorndogs := corndogs.NewMockClient()
+	mockProcessor := &MockJobProcessor{}
+	mockStatusUpdater := &MockJobStatusUpdater{
+		UpdateJobStatusFunc: func(ctx context.Context, job *models.Job) error {
+			return fmt.Errorf("github API unavailable")
+		},
+	}
+
+	taskPayload := &corndogs.TaskPayload{
+		JobID:   "test-job-id",
+		JobType: "run",
+	}
+	payloadBytes, _ := json.Marshal(taskPayload)
+
+	mockCorndogs.GetNextTaskFunc = func(ctx context.Context, state string, timeout int64) (*pb.Task, error) {
+		return &pb.Task{
+			Uuid:            "task-id",
+			CurrentState:    "submitted-working",
+			AutoTargetState: "completed",
+			Payload:         payloadBytes,
+		}, nil
+	}
+
+	mockStore.GetJobByIDFunc = func(ctx context.Context, jobID string) (*models.Job, error) {
+		return &models.Job{
+			JobID:      jobID,
+			Status:     "submitted",
+			JobCommand: "echo hello",
+			Notes:      `{"vcs_provider":"github","repo":"org/repo","commit_sha":"abc123"}`,
+		}, nil
+	}
+	mockStore.UpdateJobFunc = func(ctx context.Context, job *models.Job) error {
+		return nil
+	}
+
+	mockProcessor.ProcessJobFunc = func(ctx context.Context, job *models.Job) *JobResult {
+		return &JobResult{ExitCode: 0}
+	}
+
+	config := &Config{
+		QueueName:    "test-queue",
+		PollInterval: 100 * time.Millisecond,
+		Concurrency:  1,
+		Store:        mockStore,
+	}
+
+	worker := NewCornDogsWorkerWithProcessor(config, mockCorndogs, mockProcessor, nil, mockStatusUpdater)
+
+	ctx := context.Background()
+	worker.processNextTask(ctx, 0)
+
+	// Status updater was called (and failed)
+	if len(mockStatusUpdater.UpdateJobStatusCalls) != 1 {
+		t.Fatalf("expected 1 UpdateJobStatus call, got %d", len(mockStatusUpdater.UpdateJobStatusCalls))
+	}
+
+	// But the job still completed successfully in Corndogs
+	if mockCorndogs.GetCompleteTaskCallCount() != 1 {
+		t.Errorf("expected 1 CompleteTask call despite status update error, got %d", mockCorndogs.GetCompleteTaskCallCount())
+	}
+
+	// And the job was updated in the DB as completed
+	lastUpdate := mockStore.UpdateJobCalls[len(mockStore.UpdateJobCalls)-1]
+	if lastUpdate.Status != "completed" {
+		t.Errorf("expected final job status 'completed', got %q", lastUpdate.Status)
 	}
 }
