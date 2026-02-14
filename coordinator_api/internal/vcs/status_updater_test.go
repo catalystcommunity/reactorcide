@@ -243,3 +243,126 @@ func TestJobStatusUpdater_IsJobComplete(t *testing.T) {
 		})
 	}
 }
+
+func TestJobStatusUpdater_PerProjectToken(t *testing.T) {
+	projectID := "project-123"
+	perProjectClient := new(MockClient)
+	globalClient := new(MockClient)
+
+	updater := NewJobStatusUpdater()
+	updater.AddVCSClient(GitHub, globalClient)
+
+	// Wire per-project resolution
+	updater.SetProjectLookup(func(ctx context.Context, pid string) (*models.Project, error) {
+		assert.Equal(t, projectID, pid)
+		return &models.Project{
+			ProjectID:      projectID,
+			VCSTokenSecret: "vcs/github:token",
+		}, nil
+	})
+	updater.SetTokenResolver(func(ctx context.Context, secretRef string) (string, error) {
+		assert.Equal(t, "vcs/github:token", secretRef)
+		return "per-project-token-abc", nil
+	})
+	updater.SetClientFactory(func(provider Provider, token string) (Client, error) {
+		assert.Equal(t, GitHub, provider)
+		assert.Equal(t, "per-project-token-abc", token)
+		return perProjectClient, nil
+	})
+
+	job := &models.Job{
+		JobID:     "test-job",
+		Status:    "completed",
+		ProjectID: &projectID,
+		Notes:     `{"vcs_provider":"github","repo":"org/repo","commit_sha":"abc123"}`,
+		ExitCode:  func() *int { i := 0; return &i }(),
+	}
+
+	// Expect per-project client to be called, NOT the global client
+	perProjectClient.On("UpdateCommitStatus", mock.Anything, "org/repo", mock.MatchedBy(func(u StatusUpdate) bool {
+		return u.State == StatusSuccess && u.SHA == "abc123"
+	})).Return(nil).Once()
+
+	err := updater.UpdateJobStatus(context.Background(), job)
+	assert.NoError(t, err)
+
+	perProjectClient.AssertExpectations(t)
+	globalClient.AssertNotCalled(t, "UpdateCommitStatus")
+}
+
+func TestJobStatusUpdater_FallsBackToGlobalWhenNoProjectToken(t *testing.T) {
+	projectID := "project-456"
+	globalClient := new(MockClient)
+
+	updater := NewJobStatusUpdater()
+	updater.AddVCSClient(GitHub, globalClient)
+
+	// Wire per-project resolution that returns empty token
+	updater.SetProjectLookup(func(ctx context.Context, pid string) (*models.Project, error) {
+		return &models.Project{
+			ProjectID:      projectID,
+			VCSTokenSecret: "", // no per-project token
+		}, nil
+	})
+	updater.SetTokenResolver(func(ctx context.Context, secretRef string) (string, error) {
+		return "", nil
+	})
+	updater.SetClientFactory(func(provider Provider, token string) (Client, error) {
+		t.Fatal("client factory should not be called when no token")
+		return nil, nil
+	})
+
+	job := &models.Job{
+		JobID:     "test-job",
+		Status:    "completed",
+		ProjectID: &projectID,
+		Notes:     `{"vcs_provider":"github","repo":"org/repo","commit_sha":"abc123"}`,
+		ExitCode:  func() *int { i := 0; return &i }(),
+	}
+
+	// Global client should be used as fallback
+	globalClient.On("UpdateCommitStatus", mock.Anything, "org/repo", mock.Anything).Return(nil).Once()
+
+	err := updater.UpdateJobStatus(context.Background(), job)
+	assert.NoError(t, err)
+
+	globalClient.AssertExpectations(t)
+}
+
+func TestJobStatusUpdater_FallsBackToGlobalOnResolverError(t *testing.T) {
+	projectID := "project-789"
+	globalClient := new(MockClient)
+
+	updater := NewJobStatusUpdater()
+	updater.AddVCSClient(GitHub, globalClient)
+
+	// Wire per-project resolution that fails
+	updater.SetProjectLookup(func(ctx context.Context, pid string) (*models.Project, error) {
+		return &models.Project{
+			ProjectID:      projectID,
+			VCSTokenSecret: "vcs/github:token",
+		}, nil
+	})
+	updater.SetTokenResolver(func(ctx context.Context, secretRef string) (string, error) {
+		return "", assert.AnError
+	})
+	updater.SetClientFactory(func(provider Provider, token string) (Client, error) {
+		t.Fatal("client factory should not be called on resolver error")
+		return nil, nil
+	})
+
+	job := &models.Job{
+		JobID:     "test-job",
+		Status:    "failed",
+		ProjectID: &projectID,
+		Notes:     `{"vcs_provider":"github","repo":"org/repo","commit_sha":"abc123"}`,
+	}
+
+	// Global client should be used as fallback
+	globalClient.On("UpdateCommitStatus", mock.Anything, "org/repo", mock.Anything).Return(nil).Once()
+
+	err := updater.UpdateJobStatus(context.Background(), job)
+	assert.NoError(t, err)
+
+	globalClient.AssertExpectations(t)
+}

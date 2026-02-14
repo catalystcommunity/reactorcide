@@ -226,6 +226,11 @@ func (tp *TriggerProcessor) buildJobFromTrigger(spec triggerJobSpec, parentJob *
 		job.EventMetadata = parentJob.EventMetadata
 	}
 
+	// Copy VCS metadata (Notes) so child jobs can report commit status
+	if parentJob.Notes != "" {
+		job.Notes = parentJob.Notes
+	}
+
 	return job
 }
 

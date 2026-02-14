@@ -3,6 +3,7 @@ package handlers
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"log"
 	"net/http"
 	"strings"
@@ -101,6 +102,21 @@ func createAppMux() *http.ServeMux {
 		webhookHandler.SetWebhookSecret(secret)
 	}
 
+	// Wire per-project VCS token resolution into webhook handler.
+	// Deferred until after the key manager is initialized below.
+	wireWebhookTokenResolver := func(keyMgr *secrets.MasterKeyManager) {
+		if keyMgr == nil || config.DefaultUserID == "" {
+			return
+		}
+		tokenResolver := makeTokenResolver(keyMgr)
+		clientFactory := func(provider vcs.Provider, token string) (vcs.Client, error) {
+			return vcsManager.CreateClientWithToken(provider, token)
+		}
+		webhookHandler.SetTokenResolver(tokenResolver)
+		webhookHandler.SetClientFactory(clientFactory)
+		log.Println("Per-project VCS token resolution enabled for webhook handler")
+	}
+
 	// Create secrets handler - keys are loaded from env, DB, or auto-generated
 	var secretsHandler *SecretsHandler
 	if singletonKeyManager == nil {
@@ -114,6 +130,7 @@ func createAppMux() *http.ServeMux {
 	}
 	if singletonKeyManager != nil {
 		secretsHandler = NewSecretsHandler(store.AppStore, singletonKeyManager)
+		wireWebhookTokenResolver(singletonKeyManager)
 	}
 
 	// Apply middleware to all handlers
@@ -516,4 +533,33 @@ func healthHandler(w http.ResponseWriter, r *http.Request) {
 
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(response)
+}
+
+// makeTokenResolver creates a TokenResolverFunc that resolves "path:key" secret
+// references using the database secrets provider under the default user org.
+func makeTokenResolver(keyManager *secrets.MasterKeyManager) vcs.TokenResolverFunc {
+	return func(ctx context.Context, secretRef string) (string, error) {
+		parts := strings.SplitN(secretRef, ":", 2)
+		if len(parts) != 2 {
+			return "", fmt.Errorf("invalid secret reference %q: expected path:key", secretRef)
+		}
+		path, key := parts[0], parts[1]
+
+		db := store.GetDB()
+		if db == nil {
+			return "", fmt.Errorf("database not available for secret resolution")
+		}
+
+		orgKey, err := keyManager.GetOrgEncryptionKey(db, config.DefaultUserID)
+		if err != nil {
+			return "", fmt.Errorf("resolving org encryption key: %w", err)
+		}
+
+		provider, err := secrets.NewDatabaseProvider(db, config.DefaultUserID, orgKey)
+		if err != nil {
+			return "", fmt.Errorf("creating secrets provider: %w", err)
+		}
+
+		return provider.Get(ctx, path, key)
+	}
 }

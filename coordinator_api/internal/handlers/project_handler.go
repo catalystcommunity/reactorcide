@@ -40,6 +40,8 @@ type CreateProjectRequest struct {
 	DefaultJobCommand     string `json:"default_job_command,omitempty"`
 	DefaultTimeoutSeconds *int   `json:"default_timeout_seconds,omitempty"`
 	DefaultQueueName      string `json:"default_queue_name,omitempty"`
+
+	VCSTokenSecret string `json:"vcs_token_secret,omitempty"`
 }
 
 // UpdateProjectRequest represents the request body for updating a project
@@ -60,6 +62,8 @@ type UpdateProjectRequest struct {
 	DefaultJobCommand     *string `json:"default_job_command,omitempty"`
 	DefaultTimeoutSeconds *int    `json:"default_timeout_seconds,omitempty"`
 	DefaultQueueName      *string `json:"default_queue_name,omitempty"`
+
+	VCSTokenSecret *string `json:"vcs_token_secret,omitempty"`
 }
 
 // ProjectResponse represents the response body for a project
@@ -83,6 +87,8 @@ type ProjectResponse struct {
 	DefaultJobCommand     string `json:"default_job_command,omitempty"`
 	DefaultTimeoutSeconds int    `json:"default_timeout_seconds"`
 	DefaultQueueName      string `json:"default_queue_name"`
+
+	VCSTokenSecret string `json:"vcs_token_secret,omitempty"`
 }
 
 // ListProjectsResponse represents the response body for listing projects
@@ -111,6 +117,7 @@ func projectToResponse(p *models.Project) ProjectResponse {
 		DefaultJobCommand:     p.DefaultJobCommand,
 		DefaultTimeoutSeconds: p.DefaultTimeoutSeconds,
 		DefaultQueueName:      p.DefaultQueueName,
+		VCSTokenSecret:        p.VCSTokenSecret,
 	}
 }
 
@@ -168,6 +175,9 @@ func (h *ProjectHandler) CreateProject(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.DefaultQueueName != "" {
 		project.DefaultQueueName = req.DefaultQueueName
+	}
+	if req.VCSTokenSecret != "" {
+		project.VCSTokenSecret = req.VCSTokenSecret
 	}
 
 	if err := h.store.CreateProject(r.Context(), project); err != nil {
@@ -302,6 +312,9 @@ func (h *ProjectHandler) UpdateProject(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.DefaultQueueName != nil {
 		project.DefaultQueueName = *req.DefaultQueueName
+	}
+	if req.VCSTokenSecret != nil {
+		project.VCSTokenSecret = *req.VCSTokenSecret
 	}
 
 	if err := h.store.UpdateProject(r.Context(), project); err != nil {

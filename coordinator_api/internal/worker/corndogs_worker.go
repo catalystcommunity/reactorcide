@@ -13,6 +13,7 @@ import (
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/metrics"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/secrets"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store"
+	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/vcs"
 )
 
 // CornDogsWorker represents a job processing worker that uses Corndogs for task management
@@ -21,12 +22,14 @@ type CornDogsWorker struct {
 	corndogsClient     corndogs.ClientInterface
 	processor          JobProcessorInterface
 	triggerProcessor   *TriggerProcessor
+	statusUpdater      vcs.JobStatusUpdaterInterface
 	wg                 sync.WaitGroup
 	workerPool         chan struct{}
 }
 
-// NewCornDogsWorker creates a new worker that uses Corndogs for task management
-func NewCornDogsWorker(config *Config, corndogsClient corndogs.ClientInterface) *CornDogsWorker {
+// NewCornDogsWorker creates a new worker that uses Corndogs for task management.
+// statusUpdater is optional; if nil, VCS status updates are silently skipped.
+func NewCornDogsWorker(config *Config, corndogsClient corndogs.ClientInterface, statusUpdater vcs.JobStatusUpdaterInterface) *CornDogsWorker {
 	// Default container runtime to auto-detect if not specified
 	if config.ContainerRuntime == "" {
 		config.ContainerRuntime = "auto"
@@ -95,17 +98,20 @@ func NewCornDogsWorker(config *Config, corndogsClient corndogs.ClientInterface) 
 		corndogsClient:   corndogsClient,
 		processor:        processor,
 		triggerProcessor: triggerProc,
+		statusUpdater:    statusUpdater,
 		workerPool:       make(chan struct{}, config.Concurrency),
 	}
 }
 
-// NewCornDogsWorkerWithProcessor creates a new worker with a custom processor (for testing)
-func NewCornDogsWorkerWithProcessor(config *Config, corndogsClient corndogs.ClientInterface, processor JobProcessorInterface, triggerProcessor *TriggerProcessor) *CornDogsWorker {
+// NewCornDogsWorkerWithProcessor creates a new worker with a custom processor (for testing).
+// statusUpdater is optional; if nil, VCS status updates are silently skipped.
+func NewCornDogsWorkerWithProcessor(config *Config, corndogsClient corndogs.ClientInterface, processor JobProcessorInterface, triggerProcessor *TriggerProcessor, statusUpdater vcs.JobStatusUpdaterInterface) *CornDogsWorker {
 	return &CornDogsWorker{
 		config:           config,
 		corndogsClient:   corndogsClient,
 		processor:        processor,
 		triggerProcessor: triggerProcessor,
+		statusUpdater:    statusUpdater,
 		workerPool:       make(chan struct{}, config.Concurrency),
 	}
 }
@@ -303,6 +309,13 @@ func (w *CornDogsWorker) processNextTask(ctx context.Context, workerID int) {
 	// Update job in database
 	if err := w.config.Store.UpdateJob(ctx, job); err != nil {
 		logger.WithError(err).Error("Failed to update job result")
+	}
+
+	// Update VCS commit status (best-effort)
+	if w.statusUpdater != nil {
+		if err := w.statusUpdater.UpdateJobStatus(ctx, job); err != nil {
+			logger.WithError(err).Warn("Failed to update VCS commit status")
+		}
 	}
 
 	logger.WithField("status", job.Status).WithField("exit_code", result.ExitCode).Info("Task processing completed")
