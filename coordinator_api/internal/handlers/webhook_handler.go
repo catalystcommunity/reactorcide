@@ -22,7 +22,6 @@ type WebhookHandler struct {
 	store          store.Store
 	corndogsClient corndogs.ClientInterface
 	vcsClients     map[vcs.Provider]vcs.Client
-	webhookSecret  string
 	tokenResolver  vcs.TokenResolverFunc // optional: per-project secret resolution
 	clientFactory  vcs.ClientFactoryFunc // optional: create client with per-project token
 	logger         *logrus.Logger
@@ -47,11 +46,6 @@ func (h *WebhookHandler) AddVCSClient(provider vcs.Provider, client vcs.Client) 
 	h.logger.WithField("provider", provider).Info("Added VCS client")
 }
 
-// SetWebhookSecret sets the webhook secret for validation
-func (h *WebhookHandler) SetWebhookSecret(secret string) {
-	h.webhookSecret = secret
-}
-
 // SetTokenResolver sets the function used to resolve per-project VCS token secrets.
 func (h *WebhookHandler) SetTokenResolver(fn vcs.TokenResolverFunc) {
 	h.tokenResolver = fn
@@ -70,6 +64,50 @@ func (h *WebhookHandler) HandleGitHubWebhook(w http.ResponseWriter, r *http.Requ
 // HandleGitLabWebhook handles GitLab webhook events
 func (h *WebhookHandler) HandleGitLabWebhook(w http.ResponseWriter, r *http.Request) {
 	h.handleWebhook(w, r, vcs.GitLab)
+}
+
+// extractRepoCloneURL extracts the repository clone URL from a raw webhook
+// payload without full parsing. This is used to look up the project before
+// signature validation, enabling per-project webhook secrets.
+func extractRepoCloneURL(body []byte) string {
+	// GitHub and GitLab both include repository info at the top level.
+	// GitHub: {"repository": {"clone_url": "...", "full_name": "..."}}
+	// GitLab: {"project": {"git_http_url": "...", "path_with_namespace": "..."}}
+	var payload struct {
+		Repository struct {
+			CloneURL string `json:"clone_url"`
+		} `json:"repository"`
+		Project struct {
+			GitHTTPURL string `json:"git_http_url"`
+		} `json:"project"`
+	}
+	if err := json.Unmarshal(body, &payload); err != nil {
+		return ""
+	}
+	if payload.Repository.CloneURL != "" {
+		return payload.Repository.CloneURL
+	}
+	return payload.Project.GitHTTPURL
+}
+
+// resolveWebhookSecret returns the per-project webhook secret for validating
+// the incoming request. Each project must have a WebhookSecret field set
+// (a "path:key" reference resolved from the secrets store). Returns empty
+// string if no secret could be resolved.
+func (h *WebhookHandler) resolveWebhookSecret(ctx context.Context, project *models.Project) string {
+	if project == nil || project.WebhookSecret == "" {
+		return ""
+	}
+	if h.tokenResolver == nil {
+		h.logger.WithField("project", project.Name).Warn("Project has webhook_secret configured but no token resolver is available")
+		return ""
+	}
+	secret, err := h.tokenResolver(ctx, project.WebhookSecret)
+	if err != nil {
+		h.logger.WithError(err).WithField("project", project.Name).Error("Failed to resolve per-project webhook secret")
+		return ""
+	}
+	return secret
 }
 
 // handleWebhook processes webhook events from a specific provider
@@ -92,8 +130,20 @@ func (h *WebhookHandler) handleWebhook(w http.ResponseWriter, r *http.Request, p
 	// Replace the body for parsing
 	r.Body = io.NopCloser(bytes.NewReader(body))
 
-	// Validate webhook signature — reject if no secret is configured
-	if h.webhookSecret == "" {
+	// Extract the repo clone URL from the raw payload and look up the project.
+	// This enables per-project webhook secrets: we identify which project the
+	// webhook is for, resolve its secret, then validate the HMAC signature.
+	var project *models.Project
+	if repoCloneURL := extractRepoCloneURL(body); repoCloneURL != "" {
+		normalizedURL := vcs.NormalizeRepoURL(repoCloneURL)
+		if p, err := h.store.GetProjectByRepoURL(context.Background(), normalizedURL); err == nil {
+			project = p
+		}
+	}
+
+	// Resolve webhook secret: per-project first, then global fallback
+	secret := h.resolveWebhookSecret(context.Background(), project)
+	if secret == "" {
 		h.logger.Error("Webhook secret not configured — rejecting request")
 		http.Error(w, "Webhook secret not configured", http.StatusInternalServerError)
 		return
@@ -103,7 +153,7 @@ func (h *WebhookHandler) handleWebhook(w http.ResponseWriter, r *http.Request, p
 	validateReq, _ := http.NewRequest(r.Method, r.URL.String(), bytes.NewReader(body))
 	validateReq.Header = r.Header
 
-	if err := client.ValidateWebhook(validateReq, h.webhookSecret); err != nil {
+	if err := client.ValidateWebhook(validateReq, secret); err != nil {
 		h.logger.WithError(err).Warn("Invalid webhook signature")
 		http.Error(w, "Invalid webhook signature", http.StatusUnauthorized)
 		return
@@ -135,16 +185,17 @@ func (h *WebhookHandler) handleWebhook(w http.ResponseWriter, r *http.Request, p
 		return
 	}
 
-	// Process the event based on type
+	// Process the event based on type, passing the already-fetched project
+	// to avoid a duplicate database lookup.
 	switch {
 	case event.PullRequest != nil:
-		if err := h.processPullRequestEvent(event, client); err != nil {
+		if err := h.processPullRequestEvent(event, client, project); err != nil {
 			h.logger.WithError(err).Error("Failed to process pull request event")
 			http.Error(w, "Failed to process event", http.StatusInternalServerError)
 			return
 		}
 	case event.Push != nil:
-		if err := h.processPushEvent(event, client); err != nil {
+		if err := h.processPushEvent(event, client, project); err != nil {
 			h.logger.WithError(err).Error("Failed to process push event")
 			http.Error(w, "Failed to process event", http.StatusInternalServerError)
 			return
@@ -158,20 +209,25 @@ func (h *WebhookHandler) handleWebhook(w http.ResponseWriter, r *http.Request, p
 	json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
 }
 
-// processPullRequestEvent processes a pull request event
-func (h *WebhookHandler) processPullRequestEvent(event *vcs.WebhookEvent, client vcs.Client) error {
+// processPullRequestEvent processes a pull request event.
+// The project parameter may be non-nil if it was already looked up during
+// webhook secret resolution. If nil, the project is fetched by repo URL.
+func (h *WebhookHandler) processPullRequestEvent(event *vcs.WebhookEvent, client vcs.Client, project *models.Project) error {
 	pr := event.PullRequest
 
-	// Normalize repository URL and look up project
-	normalizedRepoURL := vcs.NormalizeRepoURL(event.Repository.CloneURL)
-	project, err := h.store.GetProjectByRepoURL(context.Background(), normalizedRepoURL)
-	if err != nil {
-		h.logger.WithFields(logrus.Fields{
-			"repo_url":    event.Repository.CloneURL,
-			"normalized":  normalizedRepoURL,
-			"error":       err.Error(),
-		}).Debug("No project found for repository - skipping event")
-		return nil // Not an error - just no project configured
+	// Use the pre-fetched project or look it up now
+	if project == nil {
+		normalizedRepoURL := vcs.NormalizeRepoURL(event.Repository.CloneURL)
+		var err error
+		project, err = h.store.GetProjectByRepoURL(context.Background(), normalizedRepoURL)
+		if err != nil {
+			h.logger.WithFields(logrus.Fields{
+				"repo_url":    event.Repository.CloneURL,
+				"normalized":  normalizedRepoURL,
+				"error":       err.Error(),
+			}).Debug("No project found for repository - skipping event")
+			return nil // Not an error - just no project configured
+		}
 	}
 
 	// Apply event filtering using the generic event type
@@ -192,8 +248,7 @@ func (h *WebhookHandler) processPullRequestEvent(event *vcs.WebhookEvent, client
 		event.Provider, event.Repository.FullName, pr.Number, pr.HeadSHA)
 
 	// Create the job in the database
-	err = h.store.CreateJob(context.Background(), job)
-	if err != nil {
+	if err := h.store.CreateJob(context.Background(), job); err != nil {
 		return fmt.Errorf("creating job: %w", err)
 	}
 
@@ -225,8 +280,10 @@ func (h *WebhookHandler) processPullRequestEvent(event *vcs.WebhookEvent, client
 	return nil
 }
 
-// processPushEvent processes a push event
-func (h *WebhookHandler) processPushEvent(event *vcs.WebhookEvent, client vcs.Client) error {
+// processPushEvent processes a push event.
+// The project parameter may be non-nil if it was already looked up during
+// webhook secret resolution. If nil, the project is fetched by repo URL.
+func (h *WebhookHandler) processPushEvent(event *vcs.WebhookEvent, client vcs.Client, project *models.Project) error {
 	push := event.Push
 
 	// Skip deleted branches
@@ -238,16 +295,19 @@ func (h *WebhookHandler) processPushEvent(event *vcs.WebhookEvent, client vcs.Cl
 	// Extract branch name from ref
 	branch := strings.TrimPrefix(push.Ref, "refs/heads/")
 
-	// Normalize repository URL and look up project
-	normalizedRepoURL := vcs.NormalizeRepoURL(event.Repository.CloneURL)
-	project, err := h.store.GetProjectByRepoURL(context.Background(), normalizedRepoURL)
-	if err != nil {
-		h.logger.WithFields(logrus.Fields{
-			"repo_url":    event.Repository.CloneURL,
-			"normalized":  normalizedRepoURL,
-			"error":       err.Error(),
-		}).Debug("No project found for repository - skipping event")
-		return nil // Not an error - just no project configured
+	// Use the pre-fetched project or look it up now
+	if project == nil {
+		normalizedRepoURL := vcs.NormalizeRepoURL(event.Repository.CloneURL)
+		var err error
+		project, err = h.store.GetProjectByRepoURL(context.Background(), normalizedRepoURL)
+		if err != nil {
+			h.logger.WithFields(logrus.Fields{
+				"repo_url":    event.Repository.CloneURL,
+				"normalized":  normalizedRepoURL,
+				"error":       err.Error(),
+			}).Debug("No project found for repository - skipping event")
+			return nil // Not an error - just no project configured
+		}
 	}
 
 	// Apply event filtering using the generic event type
@@ -268,8 +328,7 @@ func (h *WebhookHandler) processPushEvent(event *vcs.WebhookEvent, client vcs.Cl
 		event.Provider, event.Repository.FullName, branch, push.After)
 
 	// Create the job in the database
-	err = h.store.CreateJob(context.Background(), job)
-	if err != nil {
+	if err := h.store.CreateJob(context.Background(), job); err != nil {
 		return fmt.Errorf("creating job: %w", err)
 	}
 

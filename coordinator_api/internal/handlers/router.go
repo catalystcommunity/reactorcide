@@ -98,9 +98,6 @@ func createAppMux() *http.ServeMux {
 	for provider, client := range vcsManager.GetClients() {
 		webhookHandler.AddVCSClient(provider, client)
 	}
-	if secret := vcsManager.GetWebhookSecret(); secret != "" {
-		webhookHandler.SetWebhookSecret(secret)
-	}
 
 	// Wire per-project VCS token resolution into webhook handler.
 	// Deferred until after the key manager is initialized below.

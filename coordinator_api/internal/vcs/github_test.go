@@ -344,7 +344,6 @@ func TestGitHubClient_ParseWebhook_FormEncoded(t *testing.T) {
 func TestGitHubClient_ValidateWebhook(t *testing.T) {
 	client, err := NewGitHubClient(Config{
 		Provider:      GitHub,
-		WebhookSecret: "test-secret",
 	})
 	require.NoError(t, err)
 

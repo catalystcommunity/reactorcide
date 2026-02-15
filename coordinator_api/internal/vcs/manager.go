@@ -9,12 +9,11 @@ import (
 
 // Manager manages VCS clients and operations
 type Manager struct {
-	clients        map[Provider]Client
-	statusUpdater  *JobStatusUpdater
-	logger         *logrus.Logger
-	baseURL        string
-	webhookSecret  string
-	enabled        bool
+	clients       map[Provider]Client
+	statusUpdater *JobStatusUpdater
+	logger        *logrus.Logger
+	baseURL       string
+	enabled       bool
 }
 
 // NewManager creates a new VCS manager
@@ -23,12 +22,11 @@ func NewManager() *Manager {
 	logger.SetFormatter(&logrus.JSONFormatter{})
 
 	m := &Manager{
-		clients:        make(map[Provider]Client),
-		statusUpdater:  NewJobStatusUpdater(),
-		logger:         logger,
-		baseURL:        config.VCSBaseURL,
-		webhookSecret:  config.VCSWebhookSecret,
-		enabled:        config.VCSEnabled,
+		clients:       make(map[Provider]Client),
+		statusUpdater: NewJobStatusUpdater(),
+		logger:        logger,
+		baseURL:       config.VCSBaseURL,
+		enabled:       config.VCSEnabled,
 	}
 
 	// Initialize VCS clients if enabled
@@ -39,56 +37,42 @@ func NewManager() *Manager {
 	return m
 }
 
-// initializeClients initializes VCS clients based on configuration
+// initializeClients initializes VCS clients based on configuration.
+// Clients are always created when VCS is enabled. Webhook secret validation
+// is handled per-project by the webhook handler, not by the client.
 func (m *Manager) initializeClients() {
-	// Initialize GitHub client if webhook secret is configured (token is per-project)
-	githubWebhookSecret := config.VCSGitHubSecret
-	if githubWebhookSecret == "" {
-		githubWebhookSecret = m.webhookSecret
-	}
-	if githubWebhookSecret != "" {
-		githubConfig := Config{
-			Provider:      GitHub,
-			Token:         config.VCSGitHubToken, // may be empty; status updates use per-project tokens
-			WebhookSecret: githubWebhookSecret,
-		}
-
-		client, err := NewGitHubClient(githubConfig)
-		if err != nil {
-			m.logger.WithError(err).Error("Failed to create GitHub client")
-		} else {
-			m.clients[GitHub] = client
-			m.statusUpdater.AddVCSClient(GitHub, client)
-			m.logger.Info("GitHub VCS client initialized")
-		}
+	// Initialize GitHub client (token may be empty; status updates use per-project tokens)
+	githubConfig := Config{
+		Provider: GitHub,
+		Token:    config.VCSGitHubToken,
 	}
 
-	// Initialize GitLab client if webhook secret is configured (token is per-project)
-	gitlabWebhookSecret := config.VCSGitLabSecret
-	if gitlabWebhookSecret == "" {
-		gitlabWebhookSecret = m.webhookSecret
+	client, err := NewGitHubClient(githubConfig)
+	if err != nil {
+		m.logger.WithError(err).Error("Failed to create GitHub client")
+	} else {
+		m.clients[GitHub] = client
+		m.statusUpdater.AddVCSClient(GitHub, client)
+		m.logger.Info("GitHub VCS client initialized")
 	}
-	if gitlabWebhookSecret != "" {
-		gitlabConfig := Config{
-			Provider:      GitLab,
-			Token:         config.VCSGitLabToken, // may be empty; status updates use per-project tokens
-			WebhookSecret: gitlabWebhookSecret,
-		}
 
-		client, err := NewGitLabClient(gitlabConfig)
-		if err != nil {
-			m.logger.WithError(err).Error("Failed to create GitLab client")
-		} else {
-			m.clients[GitLab] = client
-			m.statusUpdater.AddVCSClient(GitLab, client)
-			m.logger.Info("GitLab VCS client initialized")
-		}
+	// Initialize GitLab client (token may be empty; status updates use per-project tokens)
+	gitlabConfig := Config{
+		Provider: GitLab,
+		Token:    config.VCSGitLabToken,
+	}
+
+	gitlabClient, err := NewGitLabClient(gitlabConfig)
+	if err != nil {
+		m.logger.WithError(err).Error("Failed to create GitLab client")
+	} else {
+		m.clients[GitLab] = gitlabClient
+		m.statusUpdater.AddVCSClient(GitLab, gitlabClient)
+		m.logger.Info("GitLab VCS client initialized")
 	}
 
 	// Configure base URL for status updater
 	if m.baseURL != "" {
-		// Override the default URL in status updater
-		// This would require modifying JobStatusUpdater to accept configurable base URL
 		m.logger.WithField("base_url", m.baseURL).Info("VCS base URL configured")
 	}
 }
@@ -115,21 +99,6 @@ func (m *Manager) GetStatusUpdater() *JobStatusUpdater {
 // IsEnabled returns whether VCS integration is enabled
 func (m *Manager) IsEnabled() bool {
 	return m.enabled
-}
-
-// GetWebhookSecret returns the configured webhook secret.
-// Falls back to provider-specific secrets if no shared secret is set.
-func (m *Manager) GetWebhookSecret() string {
-	if m.webhookSecret != "" {
-		return m.webhookSecret
-	}
-	if config.VCSGitHubSecret != "" {
-		return config.VCSGitHubSecret
-	}
-	if config.VCSGitLabSecret != "" {
-		return config.VCSGitLabSecret
-	}
-	return ""
 }
 
 // CreateClientWithToken creates a new VCS client for the given provider

@@ -130,10 +130,9 @@ type Client interface {
 
 // Config holds VCS configuration
 type Config struct {
-	Provider     Provider
-	Token        string // API token for status updates
-	WebhookSecret string // Secret for webhook validation
-	BaseURL      string // Base URL for Enterprise instances (optional)
+	Provider Provider
+	Token    string // API token for status updates
+	BaseURL  string // Base URL for Enterprise instances (optional)
 }
 
 // NewClient creates a new VCS client based on the provider

@@ -161,6 +161,20 @@ func webhookTestProject() *models.Project {
 		AllowedEventTypes:  []string{"push", "pull_request_opened", "pull_request_updated", "tag_created"},
 		DefaultRunnerImage: "alpine:latest",
 		DefaultQueueName:   "reactorcide-jobs",
+		WebhookSecret:      "test/project:webhook_secret",
+	}
+}
+
+// testTokenResolver returns a TokenResolverFunc that resolves the test project webhook secret
+func testTokenResolver() vcs.TokenResolverFunc {
+	return func(ctx context.Context, secretRef string) (string, error) {
+		if secretRef == "test/project:webhook_secret" {
+			return "test-secret", nil
+		}
+		if secretRef == "org/repo:webhook_secret" {
+			return "per-project-secret", nil
+		}
+		return "", fmt.Errorf("unknown secret: %s", secretRef)
 	}
 }
 
@@ -242,7 +256,7 @@ func TestWebhookHandler_PREvent_SubmitsToCorndogs(t *testing.T) {
 	mockCorndogs := corndogs.NewMockClient()
 
 	handler := NewWebhookHandler(mockStore, mockCorndogs)
-	handler.SetWebhookSecret("test-secret")
+	handler.SetTokenResolver(testTokenResolver())
 
 	// Create a mock VCS client that returns a PR event
 	prEvent := &vcs.WebhookEvent{
@@ -326,7 +340,7 @@ func TestWebhookHandler_PushEvent_SubmitsToCorndogs(t *testing.T) {
 	mockCorndogs := corndogs.NewMockClient()
 
 	handler := NewWebhookHandler(mockStore, mockCorndogs)
-	handler.SetWebhookSecret("test-secret")
+	handler.SetTokenResolver(testTokenResolver())
 
 	pushEvent := &vcs.WebhookEvent{
 		Provider:     vcs.GitHub,
@@ -411,7 +425,7 @@ func TestWebhookHandler_CorndogsSubmissionFailure_JobStillCreated(t *testing.T) 
 	}
 
 	handler := NewWebhookHandler(mockStore, mockCorndogs)
-	handler.SetWebhookSecret("test-secret")
+	handler.SetTokenResolver(testTokenResolver())
 
 	prEvent := &vcs.WebhookEvent{
 		Provider:     vcs.GitHub,
@@ -471,7 +485,7 @@ func TestWebhookHandler_NilCorndogsClient_JobCreatedNoSubmission(t *testing.T) {
 
 	// Pass nil corndogs client
 	handler := NewWebhookHandler(mockStore, nil)
-	handler.SetWebhookSecret("test-secret")
+	handler.SetTokenResolver(testTokenResolver())
 
 	pushEvent := &vcs.WebhookEvent{
 		Provider:     vcs.GitHub,
@@ -515,9 +529,14 @@ func TestWebhookHandler_NilCorndogsClient_JobCreatedNoSubmission(t *testing.T) {
 }
 
 func TestWebhookHandler_UnknownGenericEvent_Ignored(t *testing.T) {
-	mockStore := &WebhookMockStore{}
+	project := webhookTestProject()
+	mockStore := &WebhookMockStore{
+		GetProjectByRepoURLFunc: func(ctx context.Context, repoURL string) (*models.Project, error) {
+			return project, nil
+		},
+	}
 	handler := NewWebhookHandler(mockStore, nil)
-	handler.SetWebhookSecret("test-secret")
+	handler.SetTokenResolver(testTokenResolver())
 
 	// A "labeled" PR action maps to EventUnknown
 	prEvent := &vcs.WebhookEvent{
@@ -539,6 +558,9 @@ func TestWebhookHandler_UnknownGenericEvent_Ignored(t *testing.T) {
 	}
 
 	mockVCS := &MockVCSClient{
+		ValidateWebhookFunc: func(r *http.Request, secret string) error {
+			return nil
+		},
 		ParseWebhookFunc: func(r *http.Request) (*vcs.WebhookEvent, error) {
 			return prEvent, nil
 		},
@@ -568,7 +590,7 @@ func TestWebhookHandler_PRClosed_FilteredByDefaultProject(t *testing.T) {
 		},
 	}
 	handler := NewWebhookHandler(mockStore, nil)
-	handler.SetWebhookSecret("test-secret")
+	handler.SetTokenResolver(testTokenResolver())
 
 	prEvent := &vcs.WebhookEvent{
 		Provider:     vcs.GitHub,
@@ -618,7 +640,7 @@ func TestWebhookHandler_PRMerged_AllowedWhenConfigured(t *testing.T) {
 		},
 	}
 	handler := NewWebhookHandler(mockStore, nil)
-	handler.SetWebhookSecret("test-secret")
+	handler.SetTokenResolver(testTokenResolver())
 
 	prEvent := &vcs.WebhookEvent{
 		Provider:     vcs.GitHub,
@@ -667,7 +689,7 @@ func TestWebhookHandler_TagCreated_AllowedByDefault(t *testing.T) {
 		},
 	}
 	handler := NewWebhookHandler(mockStore, nil)
-	handler.SetWebhookSecret("test-secret")
+	handler.SetTokenResolver(testTokenResolver())
 
 	// Tag pushes are processed through processPushEvent but with GenericEvent = tag_created
 	pushEvent := &vcs.WebhookEvent{
@@ -719,7 +741,7 @@ func TestWebhookHandler_TagCreated_WithEmptyTargetBranches(t *testing.T) {
 		},
 	}
 	handler := NewWebhookHandler(mockStore, nil)
-	handler.SetWebhookSecret("test-secret")
+	handler.SetTokenResolver(testTokenResolver())
 
 	pushEvent := &vcs.WebhookEvent{
 		Provider:     vcs.GitHub,
@@ -766,7 +788,7 @@ func TestWebhookHandler_PRSynchronize_CreatesJob(t *testing.T) {
 		},
 	}
 	handler := NewWebhookHandler(mockStore, nil)
-	handler.SetWebhookSecret("test-secret")
+	handler.SetTokenResolver(testTokenResolver())
 
 	prEvent := &vcs.WebhookEvent{
 		Provider:     vcs.GitHub,
@@ -817,7 +839,7 @@ func TestWebhookHandler_EvalJob_WithDedicatedCISourceRepo(t *testing.T) {
 		},
 	}
 	handler := NewWebhookHandler(mockStore, nil)
-	handler.SetWebhookSecret("test-secret")
+	handler.SetTokenResolver(testTokenResolver())
 
 	prEvent := &vcs.WebhookEvent{
 		Provider:     vcs.GitHub,
@@ -873,9 +895,17 @@ func TestWebhookHandler_EvalJob_WithDedicatedCISourceRepo(t *testing.T) {
 }
 
 func TestWebhookHandler_NoSecret_RejectsRequest(t *testing.T) {
-	mockStore := &WebhookMockStore{}
+	// Project exists but has no WebhookSecret — should reject
+	project := webhookTestProject()
+	project.WebhookSecret = "" // explicitly no secret
+
+	mockStore := &WebhookMockStore{
+		GetProjectByRepoURLFunc: func(ctx context.Context, repoURL string) (*models.Project, error) {
+			return project, nil
+		},
+	}
 	handler := NewWebhookHandler(mockStore, nil)
-	// Deliberately do NOT set webhook secret
+	handler.SetTokenResolver(testTokenResolver())
 
 	mockVCS := &MockVCSClient{}
 	handler.AddVCSClient(vcs.GitHub, mockVCS)
@@ -891,3 +921,88 @@ func TestWebhookHandler_NoSecret_RejectsRequest(t *testing.T) {
 	assert.Contains(t, w.Body.String(), "Webhook secret not configured")
 	assert.Len(t, mockStore.CreateJobCalls, 0)
 }
+
+func TestWebhookHandler_NoProject_RejectsRequest(t *testing.T) {
+	// No project for this repo — should reject (no secret to validate with)
+	mockStore := &WebhookMockStore{} // default returns ErrNotFound
+	handler := NewWebhookHandler(mockStore, nil)
+	handler.SetTokenResolver(testTokenResolver())
+
+	mockVCS := &MockVCSClient{}
+	handler.AddVCSClient(vcs.GitHub, mockVCS)
+
+	body := makePushWebhookBody("unknown-org/unknown-repo", "https://github.com/unknown-org/unknown-repo.git", "sha123", "refs/heads/main")
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/webhooks/github", bytes.NewReader(body))
+	req.Header.Set("X-GitHub-Event", "push")
+	w := httptest.NewRecorder()
+
+	handler.HandleGitHubWebhook(w, req)
+
+	assert.Equal(t, http.StatusInternalServerError, w.Code)
+	assert.Contains(t, w.Body.String(), "Webhook secret not configured")
+	assert.Len(t, mockStore.CreateJobCalls, 0)
+}
+
+func TestWebhookHandler_PerProjectWebhookSecret(t *testing.T) {
+	// Project with a per-project webhook secret configured
+	project := webhookTestProject()
+	project.WebhookSecret = "org/repo:webhook_secret"
+
+	mockStore := &WebhookMockStore{
+		GetProjectByRepoURLFunc: func(ctx context.Context, repoURL string) (*models.Project, error) {
+			return project, nil
+		},
+	}
+
+	handler := NewWebhookHandler(mockStore, nil)
+	// Set up token resolver that returns the per-project secret
+	handler.SetTokenResolver(func(ctx context.Context, secretRef string) (string, error) {
+		if secretRef == "org/repo:webhook_secret" {
+			return "per-project-secret", nil
+		}
+		return "", fmt.Errorf("unknown secret: %s", secretRef)
+	})
+
+	prEvent := &vcs.WebhookEvent{
+		Provider:     vcs.GitHub,
+		EventType:    "pull_request",
+		GenericEvent: vcs.EventPullRequestOpened,
+		Repository: vcs.RepositoryInfo{
+			FullName: "test-org/test-repo",
+			CloneURL: "https://github.com/test-org/test-repo.git",
+		},
+		PullRequest: &vcs.PullRequestInfo{
+			Number:  1,
+			Title:   "Test PR",
+			Action:  "opened",
+			HeadSHA: "sha123",
+			HeadRef: "feature",
+			BaseRef: "main",
+		},
+	}
+
+	// The mock ValidateWebhook verifies the correct secret was used
+	var validatedWithSecret string
+	mockVCS := &MockVCSClient{
+		ValidateWebhookFunc: func(r *http.Request, secret string) error {
+			validatedWithSecret = secret
+			return nil
+		},
+		ParseWebhookFunc: func(r *http.Request) (*vcs.WebhookEvent, error) {
+			return prEvent, nil
+		},
+	}
+	handler.AddVCSClient(vcs.GitHub, mockVCS)
+
+	body := makePRWebhookBody("test-org/test-repo", "https://github.com/test-org/test-repo.git", "sha123", "feature", "main", 1)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/webhooks/github", bytes.NewReader(body))
+	req.Header.Set("X-GitHub-Event", "pull_request")
+	w := httptest.NewRecorder()
+
+	handler.HandleGitHubWebhook(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+	assert.Equal(t, "per-project-secret", validatedWithSecret)
+	require.Len(t, mockStore.CreateJobCalls, 1)
+}
+
