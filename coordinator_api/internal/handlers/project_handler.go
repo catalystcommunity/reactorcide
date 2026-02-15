@@ -42,6 +42,7 @@ type CreateProjectRequest struct {
 	DefaultQueueName      string `json:"default_queue_name,omitempty"`
 
 	VCSTokenSecret string `json:"vcs_token_secret,omitempty"`
+	WebhookSecret  string `json:"webhook_secret,omitempty"`
 }
 
 // UpdateProjectRequest represents the request body for updating a project
@@ -64,6 +65,7 @@ type UpdateProjectRequest struct {
 	DefaultQueueName      *string `json:"default_queue_name,omitempty"`
 
 	VCSTokenSecret *string `json:"vcs_token_secret,omitempty"`
+	WebhookSecret  *string `json:"webhook_secret,omitempty"`
 }
 
 // ProjectResponse represents the response body for a project
@@ -89,6 +91,7 @@ type ProjectResponse struct {
 	DefaultQueueName      string `json:"default_queue_name"`
 
 	VCSTokenSecret string `json:"vcs_token_secret,omitempty"`
+	WebhookSecret  string `json:"webhook_secret,omitempty"`
 }
 
 // ListProjectsResponse represents the response body for listing projects
@@ -118,6 +121,7 @@ func projectToResponse(p *models.Project) ProjectResponse {
 		DefaultTimeoutSeconds: p.DefaultTimeoutSeconds,
 		DefaultQueueName:      p.DefaultQueueName,
 		VCSTokenSecret:        p.VCSTokenSecret,
+		WebhookSecret:         p.WebhookSecret,
 	}
 }
 
@@ -178,6 +182,9 @@ func (h *ProjectHandler) CreateProject(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.VCSTokenSecret != "" {
 		project.VCSTokenSecret = req.VCSTokenSecret
+	}
+	if req.WebhookSecret != "" {
+		project.WebhookSecret = req.WebhookSecret
 	}
 
 	if err := h.store.CreateProject(r.Context(), project); err != nil {
@@ -315,6 +322,9 @@ func (h *ProjectHandler) UpdateProject(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.VCSTokenSecret != nil {
 		project.VCSTokenSecret = *req.VCSTokenSecret
+	}
+	if req.WebhookSecret != nil {
+		project.WebhookSecret = *req.WebhookSecret
 	}
 
 	if err := h.store.UpdateProject(r.Context(), project); err != nil {
