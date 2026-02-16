@@ -76,6 +76,7 @@ type JobMetadata struct {
 	Branch        string `json:"branch,omitempty"`
 	CommitSHA     string `json:"commit_sha"`
 	StatusContext string `json:"status_context,omitempty"`
+	IsEval        bool   `json:"is_eval,omitempty"`
 }
 
 // GetStatusContext returns the status context, falling back to the default.
@@ -97,6 +98,12 @@ func (u *JobStatusUpdater) UpdateJobStatus(ctx context.Context, job *models.Job)
 	var metadata JobMetadata
 	if err := json.Unmarshal([]byte(job.Notes), &metadata); err != nil {
 		u.logger.WithError(err).Debug("Job has no VCS metadata, skipping status update")
+		return nil
+	}
+
+	// Eval jobs should not update commit status — only their child jobs should.
+	if metadata.IsEval {
+		u.logger.WithField("job_id", job.JobID).Debug("Skipping VCS status update for eval job")
 		return nil
 	}
 
