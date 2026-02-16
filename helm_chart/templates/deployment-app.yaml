@@ -118,12 +118,9 @@ spec:
             - name: REACTORCIDE_VCS_ENABLED
               value: "true"
             {{- end }}
-            {{- if .Values.vcs.github.webhookSecret }}
-            - name: REACTORCIDE_VCS_GITHUB_SECRET
-              valueFrom:
-                secretKeyRef:
-                  name: {{ include "app.secretName" . }}
-                  key: REACTORCIDE_VCS_GITHUB_SECRET
+            {{- if .Values.vcs.baseURL }}
+            - name: REACTORCIDE_VCS_BASE_URL
+              value: {{ .Values.vcs.baseURL | quote }}
             {{- end }}
             # Default user ID from generated secret
             - name: REACTORCIDE_DEFAULT_USER_ID

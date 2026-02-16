@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"strings"
 
+	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/config"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/corndogs"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/metrics"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store"
@@ -268,8 +269,16 @@ func (h *WebhookHandler) processPullRequestEvent(event *vcs.WebhookEvent, client
 	job := BuildEvalJob(project, event)
 
 	// Store VCS metadata for status updates
-	job.Notes = fmt.Sprintf(`{"vcs_provider":"%s","repo":"%s","pr_number":%d,"commit_sha":"%s"}`,
-		event.Provider, event.Repository.FullName, pr.Number, pr.HeadSHA)
+	statusContext := vcs.DefaultStatusContext
+	metadata := vcs.JobMetadata{
+		VCSProvider:   string(event.Provider),
+		Repo:          event.Repository.FullName,
+		PRNumber:      pr.Number,
+		CommitSHA:     pr.HeadSHA,
+		StatusContext: statusContext,
+	}
+	metadataJSON, _ := json.Marshal(metadata)
+	job.Notes = string(metadataJSON)
 
 	// Create the job in the database
 	if err := h.store.CreateJob(context.Background(), job); err != nil {
@@ -286,7 +295,7 @@ func (h *WebhookHandler) processPullRequestEvent(event *vcs.WebhookEvent, client
 		State:       vcs.StatusPending,
 		TargetURL:   h.getJobURL(job.JobID),
 		Description: "CI build queued",
-		Context:     "continuous-integration/reactorcide",
+		Context:     statusContext,
 	}
 
 	if err := statusClient.UpdateCommitStatus(context.Background(), event.Repository.FullName, statusUpdate); err != nil {
@@ -348,8 +357,16 @@ func (h *WebhookHandler) processPushEvent(event *vcs.WebhookEvent, client vcs.Cl
 	job := BuildEvalJob(project, event)
 
 	// Store VCS metadata for status updates
-	job.Notes = fmt.Sprintf(`{"vcs_provider":"%s","repo":"%s","branch":"%s","commit_sha":"%s"}`,
-		event.Provider, event.Repository.FullName, branch, push.After)
+	statusContext := vcs.DefaultStatusContext
+	metadata := vcs.JobMetadata{
+		VCSProvider:   string(event.Provider),
+		Repo:          event.Repository.FullName,
+		Branch:        branch,
+		CommitSHA:     push.After,
+		StatusContext: statusContext,
+	}
+	metadataJSON, _ := json.Marshal(metadata)
+	job.Notes = string(metadataJSON)
 
 	// Create the job in the database
 	if err := h.store.CreateJob(context.Background(), job); err != nil {
@@ -366,7 +383,7 @@ func (h *WebhookHandler) processPushEvent(event *vcs.WebhookEvent, client vcs.Cl
 		State:       vcs.StatusPending,
 		TargetURL:   h.getJobURL(job.JobID),
 		Description: "CI build queued",
-		Context:     "continuous-integration/reactorcide",
+		Context:     statusContext,
 	}
 
 	if err := statusClient.UpdateCommitStatus(context.Background(), event.Repository.FullName, statusUpdate); err != nil {
@@ -489,7 +506,8 @@ func (h *WebhookHandler) submitJobToCorndogs(job *models.Job) {
 
 // getJobURL returns the URL for a job
 func (h *WebhookHandler) getJobURL(jobID string) string {
-	// TODO: Make this configurable
-	baseURL := "https://reactorcide.example.com"
-	return fmt.Sprintf("%s/jobs/%s", baseURL, jobID)
+	if config.VCSBaseURL == "" {
+		return ""
+	}
+	return fmt.Sprintf("%s/jobs/%s", config.VCSBaseURL, jobID)
 }

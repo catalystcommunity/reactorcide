@@ -65,13 +65,25 @@ func (u *JobStatusUpdater) SetClientFactory(fn ClientFactoryFunc) {
 	u.clientFactory = fn
 }
 
+// DefaultStatusContext is used when no custom context is configured.
+const DefaultStatusContext = "continuous-integration/reactorcide"
+
 // JobMetadata represents VCS metadata stored in job notes
 type JobMetadata struct {
-	VCSProvider string `json:"vcs_provider"`
-	Repo        string `json:"repo"`
-	PRNumber    int    `json:"pr_number,omitempty"`
-	Branch      string `json:"branch,omitempty"`
-	CommitSHA   string `json:"commit_sha"`
+	VCSProvider   string `json:"vcs_provider"`
+	Repo          string `json:"repo"`
+	PRNumber      int    `json:"pr_number,omitempty"`
+	Branch        string `json:"branch,omitempty"`
+	CommitSHA     string `json:"commit_sha"`
+	StatusContext string `json:"status_context,omitempty"`
+}
+
+// GetStatusContext returns the status context, falling back to the default.
+func (m *JobMetadata) GetStatusContext() string {
+	if m.StatusContext != "" {
+		return m.StatusContext
+	}
+	return DefaultStatusContext
 }
 
 // UpdateJobStatus updates the VCS commit status based on job status
@@ -105,7 +117,7 @@ func (u *JobStatusUpdater) UpdateJobStatus(ctx context.Context, job *models.Job)
 		State:       vcsStatus,
 		TargetURL:   u.getJobURL(job.JobID),
 		Description: u.getStatusDescription(job),
-		Context:     "continuous-integration/reactorcide",
+		Context:     metadata.GetStatusContext(),
 	}
 
 	// Update commit status

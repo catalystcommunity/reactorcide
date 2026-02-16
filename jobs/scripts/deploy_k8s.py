@@ -102,7 +102,7 @@ def read_config() -> Dict[str, Any]:
         # Secret name for default user credentials (matches helm chart defaults.userSecretName)
         'user_secret_name': os.environ.get('REACTORCIDE_USER_SECRET_NAME', 'base-reactorcide-user'),
         'vcs_enabled': os.environ.get('REACTORCIDE_VCS_ENABLED', 'false').lower() == 'true',
-        'vcs_github_secret': os.environ.get('REACTORCIDE_VCS_GITHUB_SECRET', ''),
+        'vcs_base_url': os.environ.get('REACTORCIDE_VCS_BASE_URL', ''),
         'kubeconfig_content': os.environ.get('KUBECONFIG_CONTENT', ''),
     }
 
@@ -379,8 +379,8 @@ def build_helm_values(config: Dict[str, Any], db_uri: str, corndogs_url: str) ->
     # VCS integration
     if config['vcs_enabled']:
         args.extend(["--set", "vcs.enabled=true"])
-    if config['vcs_github_secret']:
-        args.extend(["--set", f"vcs.github.webhookSecret={config['vcs_github_secret']}"])
+    if config['vcs_base_url']:
+        args.extend(["--set", f"vcs.baseURL={config['vcs_base_url']}"])
 
     # Gateway API HTTPRoutes
     if config['gateway_enabled'] and config['gateway_domains']:
