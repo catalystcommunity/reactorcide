@@ -21,9 +21,12 @@ func NewManager() *Manager {
 	logger := logrus.New()
 	logger.SetFormatter(&logrus.JSONFormatter{})
 
+	statusUpdater := NewJobStatusUpdater()
+	statusUpdater.SetBaseURL(config.VCSBaseURL)
+
 	m := &Manager{
 		clients:       make(map[Provider]Client),
-		statusUpdater: NewJobStatusUpdater(),
+		statusUpdater: statusUpdater,
 		logger:        logger,
 		baseURL:       config.VCSBaseURL,
 		enabled:       config.VCSEnabled,
@@ -103,19 +106,20 @@ func (m *Manager) IsEnabled() bool {
 
 // CreateClientWithToken creates a new VCS client for the given provider
 // using a per-project token instead of the global token.
+// BaseURL is left empty so that each provider uses its default API endpoint
+// (e.g., https://api.github.com for GitHub). For GitHub Enterprise or
+// self-hosted GitLab, per-project API URL configuration would be needed.
 func (m *Manager) CreateClientWithToken(provider Provider, token string) (Client, error) {
 	switch provider {
 	case GitHub:
 		return NewGitHubClient(Config{
 			Provider: GitHub,
 			Token:    token,
-			BaseURL:  m.baseURL,
 		})
 	case GitLab:
 		return NewGitLabClient(Config{
 			Provider: GitLab,
 			Token:    token,
-			BaseURL:  m.baseURL,
 		})
 	default:
 		return nil, fmt.Errorf("unsupported provider: %s", provider)
