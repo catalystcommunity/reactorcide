@@ -107,6 +107,20 @@ spec:
                   name: {{ include "app.secretName" . }}
                   key: REACTORCIDE_MASTER_KEYS
             {{- end }}
+            {{- if .Values.vcs.enabled }}
+            - name: REACTORCIDE_VCS_ENABLED
+              value: "true"
+            {{- end }}
+            {{- if .Values.vcs.baseURL }}
+            - name: REACTORCIDE_VCS_BASE_URL
+              value: {{ .Values.vcs.baseURL | quote }}
+            {{- end }}
+            # Default user ID (needed for per-project secret resolution in worker)
+            - name: REACTORCIDE_DEFAULT_USER_ID
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.defaults.userSecretName }}
+                  key: user-id
           volumeMounts:
             - name: work-dir
               mountPath: /tmp/reactorcide-jobs

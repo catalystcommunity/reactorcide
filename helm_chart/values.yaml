@@ -225,10 +225,8 @@ secrets:
 vcs:
   # Enable VCS integration (required for webhook processing and commit status updates)
   enabled: false
-  github:
-    # HMAC secret for validating GitHub webhook signatures
-    # IMPORTANT: In production, set this via external secret management, not in values.yaml
-    webhookSecret: ""
+  # Base URL of this Reactorcide instance, used for job links in commit statuses
+  baseURL: ""
 
 imagePullSecrets: []
 nameOverride: ""
