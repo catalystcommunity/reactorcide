@@ -29,6 +29,7 @@ type JobStatusUpdater struct {
 	projectLookup ProjectLookupFunc // optional: per-project token resolution
 	tokenResolver TokenResolverFunc // optional: per-project secret resolution
 	clientFactory ClientFactoryFunc // optional: create client with per-project token
+	baseURL       string            // base URL for job links in commit statuses
 	logger        *logrus.Logger
 }
 
@@ -265,9 +266,15 @@ func (u *JobStatusUpdater) getClientForJob(ctx context.Context, job *models.Job,
 	return nil
 }
 
+// SetBaseURL sets the base URL used for job links in commit statuses.
+func (u *JobStatusUpdater) SetBaseURL(baseURL string) {
+	u.baseURL = baseURL
+}
+
 // getJobURL returns the URL for a job
 func (u *JobStatusUpdater) getJobURL(jobID string) string {
-	// TODO: Make this configurable
-	baseURL := "https://reactorcide.example.com"
-	return fmt.Sprintf("%s/jobs/%s", baseURL, jobID)
+	if u.baseURL == "" {
+		return ""
+	}
+	return fmt.Sprintf("%s/jobs/%s", u.baseURL, jobID)
 }

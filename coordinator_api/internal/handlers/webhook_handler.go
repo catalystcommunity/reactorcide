@@ -149,21 +149,17 @@ func (h *WebhookHandler) handleWebhook(w http.ResponseWriter, r *http.Request, p
 	// Replace the body for parsing
 	r.Body = io.NopCloser(bytes.NewReader(body))
 
-	h.logger.WithField("body_length", len(body)).WithField("content_type", r.Header.Get("Content-Type")).Info("Webhook body read")
-
 	// Extract the repo clone URL from the raw payload and look up the project.
 	// This enables per-project webhook secrets: we identify which project the
 	// webhook is for, resolve its secret, then validate the HMAC signature.
 	var project *models.Project
 	repoCloneURL, extractErr := extractRepoCloneURL(body, r.Header.Get("Content-Type"))
 	if extractErr != nil {
-		h.logger.WithError(extractErr).WithField("body_length", len(body)).Warn("Could not extract repo clone URL from webhook payload")
+		h.logger.WithError(extractErr).Warn("Could not extract repo clone URL from webhook payload")
 	} else {
 		normalizedURL := vcs.NormalizeRepoURL(repoCloneURL)
-		h.logger.WithField("clone_url", repoCloneURL).WithField("normalized_url", normalizedURL).Info("Extracted repo URL from webhook payload")
 		if p, err := h.store.GetProjectByRepoURL(context.Background(), normalizedURL); err == nil {
 			project = p
-			h.logger.WithField("project", p.Name).WithField("webhook_secret_ref", p.WebhookSecret).Info("Found project for webhook")
 		} else {
 			h.logger.WithError(err).WithField("normalized_url", normalizedURL).Warn("Failed to look up project by repo URL")
 		}
