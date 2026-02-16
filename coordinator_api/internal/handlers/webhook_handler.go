@@ -134,17 +134,24 @@ func (h *WebhookHandler) handleWebhook(w http.ResponseWriter, r *http.Request, p
 	// This enables per-project webhook secrets: we identify which project the
 	// webhook is for, resolve its secret, then validate the HMAC signature.
 	var project *models.Project
-	if repoCloneURL := extractRepoCloneURL(body); repoCloneURL != "" {
+	repoCloneURL := extractRepoCloneURL(body)
+	if repoCloneURL != "" {
 		normalizedURL := vcs.NormalizeRepoURL(repoCloneURL)
+		h.logger.WithField("clone_url", repoCloneURL).WithField("normalized_url", normalizedURL).Info("Extracted repo URL from webhook payload")
 		if p, err := h.store.GetProjectByRepoURL(context.Background(), normalizedURL); err == nil {
 			project = p
+			h.logger.WithField("project", p.Name).WithField("webhook_secret_ref", p.WebhookSecret).Info("Found project for webhook")
+		} else {
+			h.logger.WithError(err).WithField("normalized_url", normalizedURL).Warn("Failed to look up project by repo URL")
 		}
+	} else {
+		h.logger.Warn("Could not extract repo clone URL from webhook payload")
 	}
 
-	// Resolve webhook secret: per-project first, then global fallback
+	// Resolve webhook secret from per-project configuration
 	secret := h.resolveWebhookSecret(context.Background(), project)
 	if secret == "" {
-		h.logger.Error("Webhook secret not configured — rejecting request")
+		h.logger.WithField("project_found", project != nil).Error("Webhook secret not configured — rejecting request")
 		http.Error(w, "Webhook secret not configured", http.StatusInternalServerError)
 		return
 	}
