@@ -12,6 +12,7 @@ import (
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/corndogs"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store/models"
+	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/vcs"
 )
 
 // TriggerProcessor handles reading triggers.json from completed eval jobs
@@ -226,9 +227,20 @@ func (tp *TriggerProcessor) buildJobFromTrigger(spec triggerJobSpec, parentJob *
 		job.EventMetadata = parentJob.EventMetadata
 	}
 
-	// Copy VCS metadata (Notes) so child jobs can report commit status
+	// Copy VCS metadata (Notes) so child jobs can report commit status.
+	// Strip the IsEval flag so child jobs actually update commit status.
 	if parentJob.Notes != "" {
-		job.Notes = parentJob.Notes
+		var metadata vcs.JobMetadata
+		if err := json.Unmarshal([]byte(parentJob.Notes), &metadata); err == nil && metadata.IsEval {
+			metadata.IsEval = false
+			if updated, err := json.Marshal(metadata); err == nil {
+				job.Notes = string(updated)
+			} else {
+				job.Notes = parentJob.Notes
+			}
+		} else {
+			job.Notes = parentJob.Notes
+		}
 	}
 
 	return job

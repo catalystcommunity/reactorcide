@@ -454,7 +454,7 @@ func (kr *KubernetesRunner) waitForPod(ctx context.Context, jobName string) (str
 	ticker := time.NewTicker(500 * time.Millisecond)
 	defer ticker.Stop()
 
-	timeout := time.After(2 * time.Minute)
+	timeout := time.After(5 * time.Minute)
 
 	for {
 		select {

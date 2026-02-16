@@ -268,7 +268,8 @@ func (h *WebhookHandler) processPullRequestEvent(event *vcs.WebhookEvent, client
 	// Build eval job using the shared builder
 	job := BuildEvalJob(project, event)
 
-	// Store VCS metadata for status updates
+	// Store VCS metadata for status updates.
+	// Mark as eval so the status updater skips this job — only child jobs update commit status.
 	statusContext := vcs.DefaultStatusContext
 	metadata := vcs.JobMetadata{
 		VCSProvider:   string(event.Provider),
@@ -276,6 +277,7 @@ func (h *WebhookHandler) processPullRequestEvent(event *vcs.WebhookEvent, client
 		PRNumber:      pr.Number,
 		CommitSHA:     pr.HeadSHA,
 		StatusContext: statusContext,
+		IsEval:        true,
 	}
 	metadataJSON, _ := json.Marshal(metadata)
 	job.Notes = string(metadataJSON)
@@ -356,7 +358,8 @@ func (h *WebhookHandler) processPushEvent(event *vcs.WebhookEvent, client vcs.Cl
 	// Build eval job using the shared builder
 	job := BuildEvalJob(project, event)
 
-	// Store VCS metadata for status updates
+	// Store VCS metadata for status updates.
+	// Mark as eval so the status updater skips this job — only child jobs update commit status.
 	statusContext := vcs.DefaultStatusContext
 	metadata := vcs.JobMetadata{
 		VCSProvider:   string(event.Provider),
@@ -364,6 +367,7 @@ func (h *WebhookHandler) processPushEvent(event *vcs.WebhookEvent, client vcs.Cl
 		Branch:        branch,
 		CommitSHA:     push.After,
 		StatusContext: statusContext,
+		IsEval:        true,
 	}
 	metadataJSON, _ := json.Marshal(metadata)
 	job.Notes = string(metadataJSON)
