@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/corndogs"
@@ -69,7 +70,22 @@ func (h *WebhookHandler) HandleGitLabWebhook(w http.ResponseWriter, r *http.Requ
 // extractRepoCloneURL extracts the repository clone URL from a raw webhook
 // payload without full parsing. This is used to look up the project before
 // signature validation, enabling per-project webhook secrets.
-func extractRepoCloneURL(body []byte) (string, error) {
+func extractRepoCloneURL(body []byte, contentType string) (string, error) {
+	jsonBody := body
+
+	// Handle form-encoded payloads (payload=<url-encoded-json>)
+	if strings.Contains(contentType, "application/x-www-form-urlencoded") {
+		values, err := url.ParseQuery(string(body))
+		if err != nil {
+			return "", fmt.Errorf("parse form: %w", err)
+		}
+		p := values.Get("payload")
+		if p == "" {
+			return "", fmt.Errorf("form-encoded body has no 'payload' field")
+		}
+		jsonBody = []byte(p)
+	}
+
 	// GitHub and GitLab both include repository info at the top level.
 	// GitHub: {"repository": {"clone_url": "...", "full_name": "..."}}
 	// GitLab: {"project": {"git_http_url": "...", "path_with_namespace": "..."}}
@@ -81,7 +97,7 @@ func extractRepoCloneURL(body []byte) (string, error) {
 			GitHTTPURL string `json:"git_http_url"`
 		} `json:"project"`
 	}
-	if err := json.Unmarshal(body, &payload); err != nil {
+	if err := json.Unmarshal(jsonBody, &payload); err != nil {
 		return "", fmt.Errorf("unmarshal: %w", err)
 	}
 	if payload.Repository.CloneURL != "" {
@@ -139,7 +155,7 @@ func (h *WebhookHandler) handleWebhook(w http.ResponseWriter, r *http.Request, p
 	// This enables per-project webhook secrets: we identify which project the
 	// webhook is for, resolve its secret, then validate the HMAC signature.
 	var project *models.Project
-	repoCloneURL, extractErr := extractRepoCloneURL(body)
+	repoCloneURL, extractErr := extractRepoCloneURL(body, r.Header.Get("Content-Type"))
 	if extractErr != nil {
 		h.logger.WithError(extractErr).WithField("body_length", len(body)).Warn("Could not extract repo clone URL from webhook payload")
 	} else {
