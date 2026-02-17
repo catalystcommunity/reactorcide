@@ -103,7 +103,12 @@ func (kr *KubernetesRunner) SpawnJob(ctx context.Context, config *JobConfig) (st
 	workingDir := config.WorkingDir
 
 	// Build environment variables
-	envVars := make([]corev1.EnvVar, 0, len(config.Env))
+	envVars := make([]corev1.EnvVar, 0, len(config.Env)+1)
+	// Set HOME to a writable directory so tools (git, go, etc.) work under UID 1001
+	envVars = append(envVars, corev1.EnvVar{
+		Name:  "HOME",
+		Value: "/home/reactorcide",
+	})
 	for key, value := range config.Env {
 		envVars = append(envVars, corev1.EnvVar{
 			Name:  key,
@@ -178,15 +183,35 @@ func (kr *KubernetesRunner) SpawnJob(ctx context.Context, config *JobConfig) (st
 				},
 				VolumeMounts: []corev1.VolumeMount{
 					{
-						Name:      "workspace",
+						Name:      "job",
 						MountPath: "/job",
+					},
+					{
+						Name:      "workspace",
+						MountPath: "/workspace",
+					},
+					{
+						Name:      "home",
+						MountPath: "/home/reactorcide",
 					},
 				},
 			},
 		},
 		Volumes: []corev1.Volume{
 			{
+				Name: "job",
+				VolumeSource: corev1.VolumeSource{
+					EmptyDir: &corev1.EmptyDirVolumeSource{},
+				},
+			},
+			{
 				Name: "workspace",
+				VolumeSource: corev1.VolumeSource{
+					EmptyDir: &corev1.EmptyDirVolumeSource{},
+				},
+			},
+			{
+				Name: "home",
 				VolumeSource: corev1.VolumeSource{
 					EmptyDir: &corev1.EmptyDirVolumeSource{},
 				},
