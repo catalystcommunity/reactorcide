@@ -36,6 +36,7 @@ func BuildEvalJob(project *models.Project, event *vcs.WebhookEvent) *models.Job 
 		envVars["REACTORCIDE_PR_NUMBER"] = fmt.Sprintf("%d", pr.Number)
 		envVars["REACTORCIDE_PR_REF"] = pr.HeadRef
 		envVars["REACTORCIDE_PR_BASE_REF"] = pr.BaseRef
+		envVars["REACTORCIDE_DIFF_BASE"] = pr.BaseSHA
 	} else if event.Push != nil {
 		push := event.Push
 		sourceRef = push.After

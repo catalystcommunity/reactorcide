@@ -750,6 +750,7 @@ def eval_cmd(
     event_type: str = typer.Option(..., envvar="REACTORCIDE_EVENT_TYPE", help="Generic event type (e.g., push, pull_request_opened)"),
     branch: str = typer.Option("", envvar="REACTORCIDE_BRANCH", help="Branch name"),
     pr_base_ref: str = typer.Option("", envvar="REACTORCIDE_PR_BASE_REF", help="PR base branch reference"),
+    diff_base: str = typer.Option("", envvar="REACTORCIDE_DIFF_BASE", help="Base commit SHA for file change detection"),
     pr_number: str = typer.Option("", envvar="REACTORCIDE_PR_NUMBER", help="Pull request number"),
     source_url: str = typer.Option("", envvar="REACTORCIDE_SOURCE_URL", help="Source repository URL"),
     source_ref: str = typer.Option("", envvar="REACTORCIDE_SHA", help="Source git reference (SHA)"),
@@ -811,7 +812,10 @@ def eval_cmd(
     changed = None
     if source_path.exists() and (source_path / ".git").exists():
         try:
-            if pr_base_ref:
+            if diff_base:
+                # Use the stable base SHA (works correctly even after merge)
+                changed = changed_files(diff_base, "HEAD", str(source_path))
+            elif pr_base_ref:
                 changed = changed_files(f"origin/{pr_base_ref}", "HEAD", str(source_path))
             else:
                 changed = changed_files("HEAD^", "HEAD", str(source_path))
