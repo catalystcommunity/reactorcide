@@ -246,6 +246,33 @@ func makePushWebhookBody(repoFullName, cloneURL, afterSHA, ref string) []byte {
 	return body
 }
 
+func TestWebhookHandler_GitHubPing_ReturnsPong(t *testing.T) {
+	// Ping events are sent when a webhook is first configured on GitHub.
+	// They may have a minimal payload with no repository field, so the handler
+	// must respond 200 before project lookup or HMAC validation.
+	mockStore := &WebhookMockStore{}
+	handler := NewWebhookHandler(mockStore, nil)
+
+	mockVCS := &MockVCSClient{}
+	handler.AddVCSClient(vcs.GitHub, mockVCS)
+
+	body := []byte(`{"zen": "Anything added dilutes everything else.","hook_id": 12345}`)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/webhooks/github", bytes.NewReader(body))
+	req.Header.Set("X-GitHub-Event", "ping")
+	w := httptest.NewRecorder()
+
+	handler.HandleGitHubWebhook(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+
+	var resp map[string]string
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
+	assert.Equal(t, "pong", resp["status"])
+
+	// No jobs should be created for ping events
+	assert.Len(t, mockStore.CreateJobCalls, 0)
+}
+
 func TestWebhookHandler_PREvent_SubmitsToCorndogs(t *testing.T) {
 	project := webhookTestProject()
 	mockStore := &WebhookMockStore{

@@ -12,12 +12,16 @@ const (
 	EventPullRequestMerged  EventType = "pull_request_merged"
 	EventPullRequestClosed  EventType = "pull_request_closed"
 	EventTagCreated         EventType = "tag_created"
+	EventPing               EventType = "ping"
 	EventUnknown            EventType = ""
 )
 
 // GenericEventFromGitHub translates a GitHub webhook event into a generic EventType.
 func GenericEventFromGitHub(eventType, action string, pr *PullRequestInfo, push *PushInfo) EventType {
 	switch eventType {
+	case "ping":
+		return EventPing
+
 	case "push":
 		if push == nil {
 			return EventUnknown
