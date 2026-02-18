@@ -111,12 +111,13 @@ func TestGenericEventFromGitHub(t *testing.T) {
 			want:      EventUnknown,
 		},
 
-		// Unknown event types
+		// Ping event
 		{
 			name:      "ping event",
 			eventType: "ping",
-			want:      EventUnknown,
+			want:      EventPing,
 		},
+		// Unknown event types
 		{
 			name:      "issues event",
 			eventType: "issues",

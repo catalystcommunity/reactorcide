@@ -150,6 +150,16 @@ func (h *WebhookHandler) handleWebhook(w http.ResponseWriter, r *http.Request, p
 	// Replace the body for parsing
 	r.Body = io.NopCloser(bytes.NewReader(body))
 
+	// Handle ping events early. VCS providers send ping events when a webhook
+	// is first configured to verify the endpoint is reachable. These may not
+	// include a repository field, so we respond before project lookup.
+	if isPingEvent(r, provider) {
+		h.logger.WithField("provider", provider).Info("Received webhook ping — endpoint verified")
+		w.WriteHeader(http.StatusOK)
+		json.NewEncoder(w).Encode(map[string]string{"status": "pong"})
+		return
+	}
+
 	// Extract the repo clone URL from the raw payload and look up the project.
 	// This enables per-project webhook secrets: we identify which project the
 	// webhook is for, resolve its secret, then validate the HMAC signature.
@@ -505,6 +515,17 @@ func (h *WebhookHandler) submitJobToCorndogs(job *models.Job) {
 			"job_id": job.JobID,
 			"error":  err.Error(),
 		}).Error("Failed to update job after Corndogs submission")
+	}
+}
+
+// isPingEvent returns true if the incoming request is a connectivity-check ping
+// from the VCS provider. Each provider uses a different mechanism to signal this.
+func isPingEvent(r *http.Request, provider vcs.Provider) bool {
+	switch provider {
+	case vcs.GitHub:
+		return r.Header.Get("X-GitHub-Event") == "ping"
+	default:
+		return false
 	}
 }
 

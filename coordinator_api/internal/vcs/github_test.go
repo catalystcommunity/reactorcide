@@ -275,7 +275,7 @@ func TestGitHubClient_ParseWebhook(t *testing.T) {
 			checkResult: func(t *testing.T, event *WebhookEvent) {
 				assert.Equal(t, GitHub, event.Provider)
 				assert.Equal(t, "ping", event.EventType)
-				assert.Equal(t, EventUnknown, event.GenericEvent)
+				assert.Equal(t, EventPing, event.GenericEvent)
 			},
 		},
 	}
