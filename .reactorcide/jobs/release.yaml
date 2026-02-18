@@ -1,0 +1,24 @@
+name: release
+description: "Build containers, cross-compile CLI, version with semver-tags, and create GitHub release on merge to main"
+triggers:
+  events:
+    - pull_request_merged
+  branches:
+    - main
+job:
+  image: golang:1.25-alpine
+  command: |
+    set -e
+    apk add --no-cache git wget zip
+    git clone "https://x-access-token:${GITHUB_PAT}@github.com/${REACTORCIDE_REPO}.git" /workspace
+    sh /workspace/.reactorcide/jobs/scripts/release.sh
+  timeout: 3600
+  priority: 15
+  raw_command: true
+  capabilities:
+    - docker
+environment:
+  REGISTRY: "containers.catalystsquad.com"
+  GITHUB_PAT: "${secret:reactorcide/ci:githubpat}"
+  REGISTRY_USER: "${secret:reactorcide/ci:registry_user}"
+  REGISTRY_PASSWORD: "${secret:reactorcide/ci:registry_password}"

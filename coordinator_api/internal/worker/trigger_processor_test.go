@@ -11,6 +11,7 @@ import (
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/corndogs"
 	pb "github.com/catalystcommunity/reactorcide/coordinator_api/internal/corndogs/v1alpha1"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store/models"
+	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/vcs"
 )
 
 func TestProcessTriggers_NoTriggersFile(t *testing.T) {
@@ -632,7 +633,7 @@ func TestProcessTriggersFromData_ReturnsJobIDs(t *testing.T) {
 	}
 
 	tp := NewTriggerProcessor(mockStore, mockCorndogs)
-	jobIDs, err := tp.ProcessTriggersFromData(context.Background(), data, parentJob)
+	jobIDs, err := tp.ProcessTriggersFromData(context.Background(), data, "", parentJob)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -653,7 +654,7 @@ func TestProcessTriggersFromData_InvalidJSON(t *testing.T) {
 	mockCorndogs := corndogs.NewMockClient()
 	tp := NewTriggerProcessor(mockStore, mockCorndogs)
 
-	_, err := tp.ProcessTriggersFromData(context.Background(), []byte("not json"), &models.Job{})
+	_, err := tp.ProcessTriggersFromData(context.Background(), []byte("not json"), "", &models.Job{})
 	if err == nil {
 		t.Error("expected error for invalid JSON, got nil")
 	}
@@ -673,7 +674,7 @@ func TestProcessTriggersFromData_EmptyJobs(t *testing.T) {
 	mockCorndogs := corndogs.NewMockClient()
 	tp := NewTriggerProcessor(mockStore, mockCorndogs)
 
-	jobIDs, err := tp.ProcessTriggersFromData(context.Background(), data, &models.Job{})
+	jobIDs, err := tp.ProcessTriggersFromData(context.Background(), data, "", &models.Job{})
 	if err != nil {
 		t.Errorf("expected no error for empty jobs, got %v", err)
 	}
@@ -699,7 +700,7 @@ func TestProcessTriggersFromData_WrongType(t *testing.T) {
 	mockCorndogs := corndogs.NewMockClient()
 	tp := NewTriggerProcessor(mockStore, mockCorndogs)
 
-	_, err = tp.ProcessTriggersFromData(context.Background(), data, &models.Job{})
+	_, err = tp.ProcessTriggersFromData(context.Background(), data, "", &models.Job{})
 	if err == nil {
 		t.Error("expected error for wrong type, got nil")
 	}
@@ -804,8 +805,25 @@ func TestBuildJobFromTrigger_CopiesNotesFromParent(t *testing.T) {
 
 	job := tp.buildJobFromTrigger(spec, parentJob)
 
-	if job.Notes != vcsNotes {
-		t.Errorf("expected Notes to be copied from parent, got %q", job.Notes)
+	// Notes should be updated with StatusContext set to job name and IsEval cleared
+	var metadata vcs.JobMetadata
+	if err := json.Unmarshal([]byte(job.Notes), &metadata); err != nil {
+		t.Fatalf("failed to parse job notes: %v", err)
+	}
+	if metadata.VCSProvider != "github" {
+		t.Errorf("expected vcs_provider 'github', got %q", metadata.VCSProvider)
+	}
+	if metadata.Repo != "org/repo" {
+		t.Errorf("expected repo 'org/repo', got %q", metadata.Repo)
+	}
+	if metadata.CommitSHA != "abc123" {
+		t.Errorf("expected commit_sha 'abc123', got %q", metadata.CommitSHA)
+	}
+	if metadata.StatusContext != "child-job" {
+		t.Errorf("expected status_context 'child-job', got %q", metadata.StatusContext)
+	}
+	if metadata.IsEval {
+		t.Error("expected IsEval to be false")
 	}
 }
 
@@ -830,6 +848,358 @@ func TestBuildJobFromTrigger_EmptyNotesNotCopied(t *testing.T) {
 
 	if job.Notes != "" {
 		t.Errorf("expected Notes to be empty when parent has no notes, got %q", job.Notes)
+	}
+}
+
+func TestProcessTriggers_JobFile(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	// Create workspace with a job definition file
+	jobDir := filepath.Join(tmpDir, "src", ".reactorcide", "jobs")
+	if err := os.MkdirAll(jobDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	timeout := 1800
+	priority := 10
+	jobYAML := `name: test-go
+description: "Run Go tests"
+job:
+  image: golang:1.25-alpine
+  command: |
+    set -e
+    go test ./... -count=1
+  timeout: 1800
+  priority: 10
+  raw_command: true
+`
+	if err := os.WriteFile(filepath.Join(jobDir, "test-go.yaml"), []byte(jobYAML), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Write triggers.json with job_file reference
+	triggersData := triggersFile{
+		Type: "trigger_job",
+		Jobs: []triggerJobSpec{
+			{
+				JobFile: ".reactorcide/jobs/test-go.yaml",
+			},
+		},
+	}
+	writeTriggersFile(t, tmpDir, triggersData)
+
+	var createdJob *models.Job
+	mockStore := &MockStore{
+		CreateJobFunc: func(ctx context.Context, job *models.Job) error {
+			job.JobID = "generated-job-id"
+			createdJob = job
+			return nil
+		},
+	}
+	mockCorndogs := corndogs.NewMockClient()
+
+	parentJob := &models.Job{
+		JobID:          "parent-job-id",
+		UserID:         "user-123",
+		QueueName:      "reactorcide-jobs",
+		RunnerImage:    "default:image",
+		TimeoutSeconds: 3600,
+	}
+
+	tp := NewTriggerProcessor(mockStore, mockCorndogs)
+	err := tp.ProcessTriggers(context.Background(), tmpDir, parentJob)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if createdJob == nil {
+		t.Fatal("expected job to be created")
+	}
+
+	if createdJob.Name != "test-go" {
+		t.Errorf("expected job name 'test-go', got %q", createdJob.Name)
+	}
+	if createdJob.RunnerImage != "golang:1.25-alpine" {
+		t.Errorf("expected runner image 'golang:1.25-alpine', got %q", createdJob.RunnerImage)
+	}
+	if createdJob.TimeoutSeconds != timeout {
+		t.Errorf("expected timeout %d, got %d", timeout, createdJob.TimeoutSeconds)
+	}
+	if createdJob.Priority != priority {
+		t.Errorf("expected priority %d, got %d", priority, createdJob.Priority)
+	}
+	if createdJob.JobCommand == "" {
+		t.Error("expected job command to be set from YAML")
+	}
+}
+
+func TestProcessTriggers_JobFileWithOverrides(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	// Create workspace with a job definition file
+	jobDir := filepath.Join(tmpDir, "src", ".reactorcide", "jobs")
+	if err := os.MkdirAll(jobDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	jobYAML := `name: test-go
+description: "Run Go tests"
+job:
+  image: golang:1.25-alpine
+  command: go test ./...
+  timeout: 1800
+  priority: 10
+environment:
+  GO_ENV: test
+`
+	if err := os.WriteFile(filepath.Join(jobDir, "test-go.yaml"), []byte(jobYAML), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Triggers with inline overrides
+	overrideTimeout := 900
+	triggersData := triggersFile{
+		Type: "trigger_job",
+		Jobs: []triggerJobSpec{
+			{
+				JobFile: ".reactorcide/jobs/test-go.yaml",
+				Timeout: &overrideTimeout,
+				Env: map[string]string{
+					"EXTRA_VAR": "extra_value",
+				},
+			},
+		},
+	}
+	writeTriggersFile(t, tmpDir, triggersData)
+
+	var createdJob *models.Job
+	mockStore := &MockStore{
+		CreateJobFunc: func(ctx context.Context, job *models.Job) error {
+			job.JobID = "generated-job-id"
+			createdJob = job
+			return nil
+		},
+	}
+	mockCorndogs := corndogs.NewMockClient()
+
+	parentJob := &models.Job{
+		JobID:          "parent-job-id",
+		UserID:         "user-123",
+		QueueName:      "reactorcide-jobs",
+		RunnerImage:    "default:image",
+		TimeoutSeconds: 3600,
+		JobEnvVars: models.JSONB{
+			"PARENT_VAR": "parent_value",
+		},
+	}
+
+	tp := NewTriggerProcessor(mockStore, mockCorndogs)
+	err := tp.ProcessTriggers(context.Background(), tmpDir, parentJob)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if createdJob == nil {
+		t.Fatal("expected job to be created")
+	}
+
+	// Name should come from YAML (no override specified)
+	if createdJob.Name != "test-go" {
+		t.Errorf("expected job name 'test-go', got %q", createdJob.Name)
+	}
+	// Image should come from YAML (no override specified)
+	if createdJob.RunnerImage != "golang:1.25-alpine" {
+		t.Errorf("expected runner image 'golang:1.25-alpine', got %q", createdJob.RunnerImage)
+	}
+	// Timeout should be overridden by inline spec
+	if createdJob.TimeoutSeconds != 900 {
+		t.Errorf("expected timeout 900 (overridden), got %d", createdJob.TimeoutSeconds)
+	}
+
+	// Env should merge: parent → YAML → inline trigger spec
+	if createdJob.JobEnvVars["PARENT_VAR"] != "parent_value" {
+		t.Error("expected parent env var 'PARENT_VAR' to be inherited")
+	}
+	if createdJob.JobEnvVars["GO_ENV"] != "test" {
+		t.Error("expected YAML env var 'GO_ENV' to be present")
+	}
+	if createdJob.JobEnvVars["EXTRA_VAR"] != "extra_value" {
+		t.Error("expected inline trigger env var 'EXTRA_VAR' to be present")
+	}
+}
+
+func TestProcessTriggers_JobFileMissing(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	// Create src dir but no job file
+	if err := os.MkdirAll(filepath.Join(tmpDir, "src"), 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	triggersData := triggersFile{
+		Type: "trigger_job",
+		Jobs: []triggerJobSpec{
+			{
+				JobFile: ".reactorcide/jobs/nonexistent.yaml",
+			},
+		},
+	}
+	writeTriggersFile(t, tmpDir, triggersData)
+
+	mockStore := &MockStore{}
+	mockCorndogs := corndogs.NewMockClient()
+
+	parentJob := &models.Job{
+		JobID:          "parent-job-id",
+		UserID:         "user-123",
+		QueueName:      "reactorcide-jobs",
+		RunnerImage:    "default:image",
+		TimeoutSeconds: 3600,
+	}
+
+	tp := NewTriggerProcessor(mockStore, mockCorndogs)
+	err := tp.ProcessTriggers(context.Background(), tmpDir, parentJob)
+	// Should not return error — missing job file is logged and skipped
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// No jobs should be created
+	if mockCorndogs.GetSubmitTaskCallCount() != 0 {
+		t.Error("expected no Corndogs calls when job file is missing")
+	}
+}
+
+func TestProcessTriggers_JobFileInvalidYAML(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	// Create workspace with an invalid YAML job definition
+	jobDir := filepath.Join(tmpDir, "src", ".reactorcide", "jobs")
+	if err := os.MkdirAll(jobDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := os.WriteFile(filepath.Join(jobDir, "bad.yaml"), []byte("not: valid: yaml: [[["), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	triggersData := triggersFile{
+		Type: "trigger_job",
+		Jobs: []triggerJobSpec{
+			{
+				JobFile: ".reactorcide/jobs/bad.yaml",
+			},
+		},
+	}
+	writeTriggersFile(t, tmpDir, triggersData)
+
+	mockStore := &MockStore{}
+	mockCorndogs := corndogs.NewMockClient()
+
+	parentJob := &models.Job{
+		JobID:          "parent-job-id",
+		UserID:         "user-123",
+		QueueName:      "reactorcide-jobs",
+		RunnerImage:    "default:image",
+		TimeoutSeconds: 3600,
+	}
+
+	tp := NewTriggerProcessor(mockStore, mockCorndogs)
+	err := tp.ProcessTriggers(context.Background(), tmpDir, parentJob)
+	// Should not return error — invalid YAML is logged and skipped
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if mockCorndogs.GetSubmitTaskCallCount() != 0 {
+		t.Error("expected no Corndogs calls when job file has invalid YAML")
+	}
+}
+
+func TestProcessTriggers_JobFileEnvMerge(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	// Create workspace with a job definition file that has environment vars
+	jobDir := filepath.Join(tmpDir, "src", ".reactorcide", "jobs")
+	if err := os.MkdirAll(jobDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	jobYAML := `name: test-env
+description: "Test env merging"
+job:
+  image: alpine:latest
+  command: echo test
+  timeout: 600
+environment:
+  YAML_VAR: yaml_value
+  SHARED_VAR: from_yaml
+`
+	if err := os.WriteFile(filepath.Join(jobDir, "test-env.yaml"), []byte(jobYAML), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	triggersData := triggersFile{
+		Type: "trigger_job",
+		Jobs: []triggerJobSpec{
+			{
+				JobFile: ".reactorcide/jobs/test-env.yaml",
+				Env: map[string]string{
+					"INLINE_VAR": "inline_value",
+					"SHARED_VAR": "from_inline", // Should override YAML value
+				},
+			},
+		},
+	}
+	writeTriggersFile(t, tmpDir, triggersData)
+
+	var createdJob *models.Job
+	mockStore := &MockStore{
+		CreateJobFunc: func(ctx context.Context, job *models.Job) error {
+			job.JobID = "generated-job-id"
+			createdJob = job
+			return nil
+		},
+	}
+	mockCorndogs := corndogs.NewMockClient()
+
+	parentJob := &models.Job{
+		JobID:          "parent-job-id",
+		UserID:         "user-123",
+		QueueName:      "reactorcide-jobs",
+		RunnerImage:    "default:image",
+		TimeoutSeconds: 3600,
+		JobEnvVars: models.JSONB{
+			"PARENT_VAR": "parent_value",
+			"SHARED_VAR": "from_parent", // Should be overridden by YAML then by inline
+		},
+	}
+
+	tp := NewTriggerProcessor(mockStore, mockCorndogs)
+	err := tp.ProcessTriggers(context.Background(), tmpDir, parentJob)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if createdJob == nil {
+		t.Fatal("expected job to be created")
+	}
+
+	// Parent env var should be inherited
+	if createdJob.JobEnvVars["PARENT_VAR"] != "parent_value" {
+		t.Errorf("expected PARENT_VAR 'parent_value', got %v", createdJob.JobEnvVars["PARENT_VAR"])
+	}
+	// YAML env var should be present
+	if createdJob.JobEnvVars["YAML_VAR"] != "yaml_value" {
+		t.Errorf("expected YAML_VAR 'yaml_value', got %v", createdJob.JobEnvVars["YAML_VAR"])
+	}
+	// Inline env var should be present
+	if createdJob.JobEnvVars["INLINE_VAR"] != "inline_value" {
+		t.Errorf("expected INLINE_VAR 'inline_value', got %v", createdJob.JobEnvVars["INLINE_VAR"])
+	}
+	// Inline should win over YAML which wins over parent
+	if createdJob.JobEnvVars["SHARED_VAR"] != "from_inline" {
+		t.Errorf("expected SHARED_VAR 'from_inline' (inline wins), got %v", createdJob.JobEnvVars["SHARED_VAR"])
 	}
 }
 
