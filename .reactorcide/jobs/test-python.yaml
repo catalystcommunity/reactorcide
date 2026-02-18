@@ -1,0 +1,15 @@
+name: test-python
+description: "Run Python tests for runnerlib"
+job:
+  image: python:3.13-slim
+  command: |
+    set -e
+    apt-get update && apt-get install -y --no-install-recommends git
+    git clone --branch "${REACTORCIDE_PR_REF}" "${REACTORCIDE_SOURCE_URL}" /workspace
+    cd /workspace/runnerlib
+    pip install uv
+    echo "=== Running Python Tests ==="
+    uv run python -m pytest tests/
+  timeout: 1800
+  priority: 10
+  raw_command: true

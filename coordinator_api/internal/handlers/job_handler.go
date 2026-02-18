@@ -574,7 +574,7 @@ func (h *JobHandler) SubmitTriggers(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Process triggers via TriggerProcessor
-	createdJobIDs, err := h.triggerProcessor.ProcessTriggersFromData(r.Context(), body, parentJob)
+	createdJobIDs, err := h.triggerProcessor.ProcessTriggersFromData(r.Context(), body, "", parentJob)
 	if err != nil {
 		h.respondWithError(w, http.StatusBadRequest, store.ErrInvalidInput)
 		return

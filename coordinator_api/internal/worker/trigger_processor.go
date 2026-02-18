@@ -13,6 +13,7 @@ import (
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store/models"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/vcs"
+	"gopkg.in/yaml.v3"
 )
 
 // TriggerProcessor handles reading triggers.json from completed eval jobs
@@ -38,6 +39,7 @@ type triggersFile struct {
 
 // triggerJobSpec represents a single triggered job from triggers.json.
 type triggerJobSpec struct {
+	JobFile        string            `json:"job_file"` // Path to YAML job definition, relative to source root
 	JobName        string            `json:"job_name"`
 	DependsOn      []string          `json:"depends_on"`
 	Condition      string            `json:"condition"`
@@ -55,6 +57,24 @@ type triggerJobSpec struct {
 	Capabilities   []string          `json:"capabilities"`
 }
 
+// jobDefinitionFile represents a YAML job definition file (e.g., .reactorcide/jobs/*.yaml).
+type jobDefinitionFile struct {
+	Name        string                 `yaml:"name"`
+	Description string                 `yaml:"description"`
+	Job         jobDefinitionJobConfig `yaml:"job"`
+	Environment map[string]string      `yaml:"environment"`
+}
+
+// jobDefinitionJobConfig represents the job configuration within a YAML job definition.
+type jobDefinitionJobConfig struct {
+	Image        string   `yaml:"image"`
+	Command      string   `yaml:"command"`
+	Timeout      *int     `yaml:"timeout"`
+	Priority     *int     `yaml:"priority"`
+	RawCommand   bool     `yaml:"raw_command"`
+	Capabilities []string `yaml:"capabilities"`
+}
+
 // ProcessTriggers reads triggers.json from the workspace directory of a completed
 // eval job, creates the triggered jobs in the database, and submits them to Corndogs.
 func (tp *TriggerProcessor) ProcessTriggers(ctx context.Context, workspaceDir string, parentJob *models.Job) error {
@@ -70,13 +90,14 @@ func (tp *TriggerProcessor) ProcessTriggers(ctx context.Context, workspaceDir st
 		return fmt.Errorf("failed to read triggers file: %w", err)
 	}
 
-	_, err = tp.ProcessTriggersFromData(ctx, data, parentJob)
+	_, err = tp.ProcessTriggersFromData(ctx, data, workspaceDir, parentJob)
 	return err
 }
 
 // ProcessTriggersFromData processes raw trigger JSON data, creates the triggered jobs
 // in the database, submits them to Corndogs, and returns the created job IDs.
-func (tp *TriggerProcessor) ProcessTriggersFromData(ctx context.Context, data []byte, parentJob *models.Job) ([]string, error) {
+// workspaceDir is the host workspace directory used to resolve job_file references.
+func (tp *TriggerProcessor) ProcessTriggersFromData(ctx context.Context, data []byte, workspaceDir string, parentJob *models.Job) ([]string, error) {
 	var tf triggersFile
 	if err := json.Unmarshal(data, &tf); err != nil {
 		return nil, fmt.Errorf("failed to parse triggers data: %w", err)
@@ -96,6 +117,16 @@ func (tp *TriggerProcessor) ProcessTriggersFromData(ctx context.Context, data []
 
 	var createdJobIDs []string
 	for _, spec := range tf.Jobs {
+		// If job_file is specified, load the YAML definition as base and overlay inline fields
+		if spec.JobFile != "" {
+			baseSpec, err := tp.loadJobFile(workspaceDir, spec.JobFile)
+			if err != nil {
+				logger.WithError(err).WithField("job_file", spec.JobFile).Error("Failed to load job file")
+				continue
+			}
+			spec = tp.overlaySpec(baseSpec, spec)
+		}
+
 		jobID, err := tp.createAndSubmitJob(ctx, spec, parentJob)
 		if err != nil {
 			logger.WithError(err).WithField("job_name", spec.JobName).Error("Failed to create triggered job")
@@ -106,6 +137,98 @@ func (tp *TriggerProcessor) ProcessTriggersFromData(ctx context.Context, data []
 	}
 
 	return createdJobIDs, nil
+}
+
+// loadJobFile reads a YAML job definition file from the workspace and converts it to a triggerJobSpec.
+func (tp *TriggerProcessor) loadJobFile(workspaceDir, jobFile string) (triggerJobSpec, error) {
+	filePath := filepath.Join(workspaceDir, "src", jobFile)
+
+	data, err := os.ReadFile(filePath)
+	if err != nil {
+		return triggerJobSpec{}, fmt.Errorf("failed to read job file %q: %w", filePath, err)
+	}
+
+	var def jobDefinitionFile
+	if err := yaml.Unmarshal(data, &def); err != nil {
+		return triggerJobSpec{}, fmt.Errorf("failed to parse job file %q: %w", filePath, err)
+	}
+
+	spec := triggerJobSpec{
+		JobName:        def.Name,
+		ContainerImage: def.Job.Image,
+		JobCommand:     def.Job.Command,
+		Timeout:        def.Job.Timeout,
+		Priority:       def.Job.Priority,
+		Capabilities:   def.Job.Capabilities,
+		Env:            def.Environment,
+	}
+
+	return spec, nil
+}
+
+// overlaySpec overlays non-zero inline fields from the original trigger spec onto the base spec loaded from a job file.
+func (tp *TriggerProcessor) overlaySpec(base, overlay triggerJobSpec) triggerJobSpec {
+	result := base
+
+	// Overlay simple string fields if non-empty
+	if overlay.JobName != "" {
+		result.JobName = overlay.JobName
+	}
+	if overlay.ContainerImage != "" {
+		result.ContainerImage = overlay.ContainerImage
+	}
+	if overlay.JobCommand != "" {
+		result.JobCommand = overlay.JobCommand
+	}
+	if overlay.SourceType != "" {
+		result.SourceType = overlay.SourceType
+	}
+	if overlay.SourceURL != "" {
+		result.SourceURL = overlay.SourceURL
+	}
+	if overlay.SourceRef != "" {
+		result.SourceRef = overlay.SourceRef
+	}
+	if overlay.CISourceType != "" {
+		result.CISourceType = overlay.CISourceType
+	}
+	if overlay.CISourceURL != "" {
+		result.CISourceURL = overlay.CISourceURL
+	}
+	if overlay.CISourceRef != "" {
+		result.CISourceRef = overlay.CISourceRef
+	}
+	if overlay.Condition != "" {
+		result.Condition = overlay.Condition
+	}
+
+	// Overlay pointer fields if non-nil
+	if overlay.Priority != nil {
+		result.Priority = overlay.Priority
+	}
+	if overlay.Timeout != nil {
+		result.Timeout = overlay.Timeout
+	}
+
+	// Overlay slices if non-empty
+	if len(overlay.DependsOn) > 0 {
+		result.DependsOn = overlay.DependsOn
+	}
+	if len(overlay.Capabilities) > 0 {
+		result.Capabilities = overlay.Capabilities
+	}
+
+	// Merge env vars: base first, then overlay on top
+	if len(overlay.Env) > 0 {
+		if result.Env == nil {
+			result.Env = make(map[string]string)
+		}
+		for k, v := range overlay.Env {
+			result.Env[k] = v
+		}
+	}
+
+	return result
 }
 
 // createAndSubmitJob creates a single job from a trigger spec and submits it to Corndogs.
@@ -229,10 +352,12 @@ func (tp *TriggerProcessor) buildJobFromTrigger(spec triggerJobSpec, parentJob *
 
 	// Copy VCS metadata (Notes) so child jobs can report commit status.
 	// Strip the IsEval flag so child jobs actually update commit status.
+	// Set the StatusContext to the job name so each job gets a distinct GitHub status check.
 	if parentJob.Notes != "" {
 		var metadata vcs.JobMetadata
-		if err := json.Unmarshal([]byte(parentJob.Notes), &metadata); err == nil && metadata.IsEval {
+		if err := json.Unmarshal([]byte(parentJob.Notes), &metadata); err == nil {
 			metadata.IsEval = false
+			metadata.StatusContext = spec.JobName
 			if updated, err := json.Marshal(metadata); err == nil {
 				job.Notes = string(updated)
 			} else {

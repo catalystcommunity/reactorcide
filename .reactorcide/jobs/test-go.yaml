@@ -1,0 +1,13 @@
+name: test-go
+description: "Run Go tests for coordinator API"
+job:
+  image: golang:1.25-alpine
+  command: |
+    set -e
+    git clone --branch "${REACTORCIDE_PR_REF}" "${REACTORCIDE_SOURCE_URL}" /workspace
+    cd /workspace/coordinator_api
+    echo "=== Running Go Tests ==="
+    go test ./... -count=1
+  timeout: 1800
+  priority: 10
+  raw_command: true
