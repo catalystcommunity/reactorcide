@@ -18,7 +18,7 @@ import (
 // execution between local development and production.
 var RunLocalCommand = &cli.Command{
 	Name:      "run-local",
-	Usage:     "Execute a job in a container (emulates worker behavior)",
+	Usage:     "Execute a job in a container locally (emulates worker behavior)",
 	ArgsUsage: "<job-file>",
 	Flags: []cli.Flag{
 		&cli.BoolFlag{
@@ -147,7 +147,6 @@ func runLocalAction(ctx *cli.Context) error {
 	// Execute the job
 	return executeLocalJob(context.Background(), runner, jobConfig, masker)
 }
-
 
 func performLocalDryRun(spec *worker.JobSpec, config *worker.JobConfig, masker *secrets.Masker, jobDir string) error {
 	fmt.Println("\n--- DRY RUN MODE ---")
