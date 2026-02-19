@@ -15,7 +15,7 @@ import (
 
 // RunLocalCommand executes a job in a container, emulating worker behavior.
 // This uses the same JobRunner infrastructure as the worker, ensuring consistent
-// execution between local development and production.
+// execution between local development and production. Or in outages of some kind.
 var RunLocalCommand = &cli.Command{
 	Name:      "run-local",
 	Usage:     "Execute a job in a container locally (emulates worker behavior)",
