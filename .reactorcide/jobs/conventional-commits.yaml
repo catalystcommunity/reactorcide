@@ -7,11 +7,9 @@ triggers:
   branches:
     - main
 job:
-  image: alpine:latest
+  image: 10.16.0.1:5000/public/reactorcide/runnerbase:dev
   command: |
     set -e
-    apk add --no-cache git
-
     git clone --branch "${REACTORCIDE_PR_REF}" "${REACTORCIDE_SOURCE_URL}" /job/src
     cd /job/src
 
