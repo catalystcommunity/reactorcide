@@ -279,14 +279,12 @@ func (h *WebhookHandler) processPullRequestEvent(event *vcs.WebhookEvent, client
 	job := BuildEvalJob(project, event)
 
 	// Store VCS metadata for status updates.
-	// Mark as eval so the status updater skips this job — only child jobs update commit status.
-	statusContext := vcs.DefaultStatusContext
 	metadata := vcs.JobMetadata{
 		VCSProvider:   string(event.Provider),
 		Repo:          event.Repository.FullName,
 		PRNumber:      pr.Number,
 		CommitSHA:     pr.HeadSHA,
-		StatusContext: statusContext,
+		StatusContext: "reactorcide/eval",
 		IsEval:        true,
 	}
 	metadataJSON, _ := json.Marshal(metadata)
@@ -307,7 +305,7 @@ func (h *WebhookHandler) processPullRequestEvent(event *vcs.WebhookEvent, client
 		State:       vcs.StatusPending,
 		TargetURL:   h.getJobURL(job.JobID),
 		Description: "CI build queued",
-		Context:     statusContext,
+		Context:     "reactorcide/eval",
 	}
 
 	if err := statusClient.UpdateCommitStatus(context.Background(), event.Repository.FullName, statusUpdate); err != nil {
@@ -369,14 +367,12 @@ func (h *WebhookHandler) processPushEvent(event *vcs.WebhookEvent, client vcs.Cl
 	job := BuildEvalJob(project, event)
 
 	// Store VCS metadata for status updates.
-	// Mark as eval so the status updater skips this job — only child jobs update commit status.
-	statusContext := vcs.DefaultStatusContext
 	metadata := vcs.JobMetadata{
 		VCSProvider:   string(event.Provider),
 		Repo:          event.Repository.FullName,
 		Branch:        branch,
 		CommitSHA:     push.After,
-		StatusContext: statusContext,
+		StatusContext: "reactorcide/eval",
 		IsEval:        true,
 	}
 	metadataJSON, _ := json.Marshal(metadata)
@@ -397,7 +393,7 @@ func (h *WebhookHandler) processPushEvent(event *vcs.WebhookEvent, client vcs.Cl
 		State:       vcs.StatusPending,
 		TargetURL:   h.getJobURL(job.JobID),
 		Description: "CI build queued",
-		Context:     statusContext,
+		Context:     "reactorcide/eval",
 	}
 
 	if err := statusClient.UpdateCommitStatus(context.Background(), event.Repository.FullName, statusUpdate); err != nil {
