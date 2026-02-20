@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"time"
 
@@ -116,19 +115,6 @@ func (tp *TriggerProcessor) ProcessTriggersFromData(ctx context.Context, data []
 	logger := logging.Log.WithField("parent_job_id", parentJob.JobID).WithField("trigger_count", len(tf.Jobs))
 	logger.Info("Processing triggers from eval job")
 
-	// If any job_file references exist and no workspace is available,
-	// clone the parent job's source to a temp dir so we can resolve them.
-	needsJobFiles := workspaceDir == "" && hasJobFileRefs(tf.Jobs)
-	if needsJobFiles {
-		tmpDir, err := tp.cloneSourceForJobFiles(parentJob)
-		if err != nil {
-			logger.WithError(err).Error("Failed to clone source for job_file resolution")
-		} else {
-			workspaceDir = tmpDir
-			defer os.RemoveAll(tmpDir)
-		}
-	}
-
 	var createdJobIDs []string
 	for _, spec := range tf.Jobs {
 		// If job_file is specified, load the YAML definition as base and overlay inline fields
@@ -151,63 +137,6 @@ func (tp *TriggerProcessor) ProcessTriggersFromData(ctx context.Context, data []
 	}
 
 	return createdJobIDs, nil
-}
-
-// hasJobFileRefs returns true if any trigger spec uses a job_file reference.
-func hasJobFileRefs(jobs []triggerJobSpec) bool {
-	for _, j := range jobs {
-		if j.JobFile != "" {
-			return true
-		}
-	}
-	return false
-}
-
-// cloneSourceForJobFiles does a shallow clone of the parent job's source so
-// that job_file references can be resolved when no workspace is available
-// (e.g. when triggers are submitted via the API rather than the file-based path).
-func (tp *TriggerProcessor) cloneSourceForJobFiles(parentJob *models.Job) (string, error) {
-	sourceURL := ""
-	sourceRef := ""
-	if parentJob.CISourceURL != nil && *parentJob.CISourceURL != "" {
-		sourceURL = *parentJob.CISourceURL
-		if parentJob.CISourceRef != nil {
-			sourceRef = *parentJob.CISourceRef
-		}
-	} else if parentJob.SourceURL != nil && *parentJob.SourceURL != "" {
-		sourceURL = *parentJob.SourceURL
-		if parentJob.SourceRef != nil {
-			sourceRef = *parentJob.SourceRef
-		}
-	}
-	if sourceURL == "" {
-		return "", fmt.Errorf("parent job has no source URL for job_file resolution")
-	}
-
-	tmpDir, err := os.MkdirTemp("", "reactorcide-trigger-clone-*")
-	if err != nil {
-		return "", fmt.Errorf("failed to create temp dir: %w", err)
-	}
-
-	cloneDir := filepath.Join(tmpDir, "src")
-
-	// Clone and checkout the specific ref. We avoid --depth/--branch since
-	// the ref may be a commit SHA rather than a branch name.
-	cloneCmd := exec.Command("git", "clone", "--no-checkout", sourceURL, cloneDir)
-	if output, err := cloneCmd.CombinedOutput(); err != nil {
-		os.RemoveAll(tmpDir)
-		return "", fmt.Errorf("git clone failed: %w: %s", err, string(output))
-	}
-
-	if sourceRef != "" {
-		checkoutCmd := exec.Command("git", "-C", cloneDir, "checkout", sourceRef)
-		if output, err := checkoutCmd.CombinedOutput(); err != nil {
-			os.RemoveAll(tmpDir)
-			return "", fmt.Errorf("git checkout %s failed: %w: %s", sourceRef, err, string(output))
-		}
-	}
-
-	return tmpDir, nil
 }
 
 // loadJobFile reads a YAML job definition file from the workspace and converts it to a triggerJobSpec.
