@@ -140,8 +140,8 @@ func (u *JobStatusUpdater) UpdateJobStatus(ctx context.Context, job *models.Job)
 		"sha":      metadata.CommitSHA,
 	}).Info("Updated VCS commit status")
 
-	// If this is a PR and the job completed, add a comment
-	if metadata.PRNumber > 0 && u.isJobComplete(job.Status) {
+	// If this is a PR and the job completed, add a comment (skip eval jobs — only child jobs comment)
+	if metadata.PRNumber > 0 && !metadata.IsEval && u.isJobComplete(job.Status) {
 		comment := u.generatePRComment(job)
 		if err := client.UpdatePRComment(ctx, metadata.Repo, metadata.PRNumber, comment); err != nil {
 			u.logger.WithError(err).Warn("Failed to add PR comment")

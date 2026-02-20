@@ -153,14 +153,20 @@ func (kr *KubernetesRunner) SpawnJob(ctx context.Context, config *JobConfig) (st
 	// Determine if we need root/privileged (for docker capability)
 	runAsNonRoot := true
 	var runAsUser *int64
+	var runAsGroup *int64
+	var fsGroup *int64
 	var privileged *bool
 	userID := int64(1001)
 	runAsUser = &userID
+	runAsGroup = &userID
+	fsGroup = &userID
 
 	for _, cap := range config.Capabilities {
 		if cap == CapabilityDocker {
 			runAsNonRoot = false
 			runAsUser = nil
+			runAsGroup = nil
+			fsGroup = nil
 			priv := true
 			privileged = &priv
 			logger.Info("Docker capability requested: running as root with privileged mode")
@@ -169,11 +175,16 @@ func (kr *KubernetesRunner) SpawnJob(ctx context.Context, config *JobConfig) (st
 	}
 
 	// Build pod spec
+	// When running as a specific user, set FSGroup and RunAsGroup to match
+	// so that emptyDir volumes (and any runtime-created directories like
+	// workingDir) are writable by the running user.
 	podSpec := corev1.PodSpec{
 		RestartPolicy:      corev1.RestartPolicyNever,
 		ServiceAccountName: kr.serviceAccount,
 		SecurityContext: &corev1.PodSecurityContext{
 			RunAsNonRoot: &runAsNonRoot,
+			RunAsGroup:   runAsGroup,
+			FSGroup:      fsGroup,
 		},
 		Containers: []corev1.Container{
 			{
