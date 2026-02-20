@@ -38,16 +38,22 @@ job:
 
     echo "All commits follow conventional commit format."
 
-    # Write triggers.json to kick off test jobs via job_file references
-    cat > /job/triggers.json <<'TRIGGERS_EOF'
-    {
-      "type": "trigger_job",
-      "jobs": [
-        {"job_file": ".reactorcide/jobs/test-go.yaml"},
-        {"job_file": ".reactorcide/jobs/test-python.yaml"}
-      ]
-    }
-    TRIGGERS_EOF
+    # Write triggers to kick off test jobs (file for run-local, API for k8s)
+    TRIGGERS='{"type":"trigger_job","jobs":[{"job_file":".reactorcide/jobs/test-go.yaml"},{"job_file":".reactorcide/jobs/test-python.yaml"}]}'
+    echo "${TRIGGERS}" > /job/triggers.json
+
+    # If API credentials are available, also submit via API and remove the file
+    if [ -n "${REACTORCIDE_COORDINATOR_URL}" ] && [ -n "${REACTORCIDE_API_TOKEN}" ] && [ -n "${REACTORCIDE_JOB_ID}" ]; then
+      if curl -sf -X POST "${REACTORCIDE_COORDINATOR_URL}/api/v1/jobs/${REACTORCIDE_JOB_ID}/triggers" \
+        -H "Authorization: Bearer ${REACTORCIDE_API_TOKEN}" \
+        -H "Content-Type: application/json" \
+        -d "${TRIGGERS}"; then
+        rm -f /job/triggers.json
+        echo "Triggers submitted via API"
+      else
+        echo "API trigger submission failed, falling back to file-based triggers"
+      fi
+    fi
   timeout: 300
   priority: 10
   raw_command: true
