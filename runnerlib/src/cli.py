@@ -859,6 +859,117 @@ def eval_cmd(
     log_stdout(f"Wrote {len(triggers)} trigger(s) to {triggers_file}")
 
 
+@app.command("trigger")
+def trigger_cmd(
+    job_files: List[str] = typer.Argument(..., help="Paths to job definition YAML files"),
+    triggers_file: str = typer.Option("/job/triggers.json", help="Path to write triggers output"),
+):
+    """Read job definition files and submit them as triggers.
+
+    Reads the specified YAML job files, resolves them to inline job specs,
+    and submits them as triggers via both file and API. This allows jobs to
+    trigger other jobs by referencing their YAML definitions directly,
+    without the coordinator needing to access the source repository.
+    """
+    import yaml
+    from pathlib import Path
+    from src.eval import parse_job_definition
+    from src.workflow import WorkflowContext, JobTrigger
+
+    if not job_files:
+        log_stderr("No job files specified")
+        raise typer.Exit(1)
+
+    # Pick up source context from environment (inherited from parent job)
+    source_url = os.environ.get("REACTORCIDE_SOURCE_URL", "")
+    source_ref = os.environ.get("REACTORCIDE_SHA", "")
+    ci_source_url = os.environ.get("REACTORCIDE_CI_SOURCE_URL", "")
+    ci_source_ref = os.environ.get("REACTORCIDE_CI_SOURCE_REF", "")
+
+    # Environment variables to pass through to child jobs
+    pass_through_env_keys = [
+        "REACTORCIDE_EVENT_TYPE",
+        "REACTORCIDE_BRANCH",
+        "REACTORCIDE_SHA",
+        "REACTORCIDE_SOURCE_URL",
+        "REACTORCIDE_PR_BASE_REF",
+        "REACTORCIDE_PR_NUMBER",
+        "REACTORCIDE_PR_REF",
+        "REACTORCIDE_DIFF_BASE",
+        "REACTORCIDE_CI_SOURCE_URL",
+        "REACTORCIDE_CI_SOURCE_REF",
+    ]
+
+    triggers: List[JobTrigger] = []
+
+    for job_file in job_files:
+        path = Path(job_file)
+        if not path.exists():
+            log_stderr(f"Job file not found: {job_file}")
+            raise typer.Exit(1)
+
+        try:
+            with open(path, 'r') as f:
+                data = yaml.safe_load(f)
+        except yaml.YAMLError as e:
+            log_stderr(f"Failed to parse {job_file}: {e}")
+            raise typer.Exit(1)
+
+        if not isinstance(data, dict):
+            log_stderr(f"Invalid YAML in {job_file}: not a mapping")
+            raise typer.Exit(1)
+
+        try:
+            defn = parse_job_definition(data, source_file=str(path))
+        except ValueError as e:
+            log_stderr(f"Invalid job definition: {e}")
+            raise typer.Exit(1)
+
+        # Build environment: definition env + pass-through env vars
+        env = dict(defn.environment)
+        for key in pass_through_env_keys:
+            val = os.environ.get(key)
+            if val:
+                env[key] = val
+
+        # Handle raw_command wrapping (same logic as generate_triggers in eval.py)
+        command = defn.job.command or None
+        if command and not defn.job.raw_command and not command.strip().startswith("runnerlib "):
+            command = f"runnerlib run --job-command '{command}'"
+
+        trigger = JobTrigger(
+            job_name=defn.name,
+            env=env,
+            container_image=defn.job.image or None,
+            job_command=command,
+            priority=defn.job.priority,
+            timeout=defn.job.timeout,
+            capabilities=defn.job.capabilities or None,
+            source_type="git" if source_url else None,
+            source_url=source_url or None,
+            source_ref=source_ref or None,
+            ci_source_type="git" if ci_source_url else None,
+            ci_source_url=ci_source_url or None,
+            ci_source_ref=ci_source_ref or None,
+        )
+        triggers.append(trigger)
+        log_stdout(f"Loaded trigger: {defn.name} (image: {defn.job.image})")
+
+    if not triggers:
+        log_stdout("No triggers to submit")
+        raise typer.Exit(0)
+
+    # Write triggers using WorkflowContext (handles both file and API submission)
+    workflow_ctx = WorkflowContext(triggers_file=triggers_file)
+    workflow_ctx.triggers = triggers
+    workflow_ctx.flush_triggers()
+
+    for trigger in triggers:
+        log_stdout(f"  Triggered: {trigger.job_name}")
+
+    log_stdout(f"Submitted {len(triggers)} trigger(s)")
+
+
 git_app = typer.Typer()
 app.add_typer(git_app, name="git")
 
