@@ -175,14 +175,15 @@ func (kr *KubernetesRunner) SpawnJob(ctx context.Context, config *JobConfig) (st
 	}
 
 	// Build pod spec
-	// When running as a specific user, set FSGroup and RunAsGroup to match
-	// so that emptyDir volumes (and any runtime-created directories like
-	// workingDir) are writable by the running user.
+	// When running as a specific user, set RunAsUser/RunAsGroup/FSGroup at the
+	// pod level so all containers (including the sandbox) run consistently and
+	// emptyDir volumes are writable by the running user.
 	podSpec := corev1.PodSpec{
 		RestartPolicy:      corev1.RestartPolicyNever,
 		ServiceAccountName: kr.serviceAccount,
 		SecurityContext: &corev1.PodSecurityContext{
 			RunAsNonRoot: &runAsNonRoot,
+			RunAsUser:    runAsUser,
 			RunAsGroup:   runAsGroup,
 			FSGroup:      fsGroup,
 		},
@@ -196,7 +197,6 @@ func (kr *KubernetesRunner) SpawnJob(ctx context.Context, config *JobConfig) (st
 				WorkingDir:      workingDir,
 				Resources:       resources,
 				SecurityContext: &corev1.SecurityContext{
-					RunAsUser:  runAsUser,
 					Privileged: privileged,
 				},
 				VolumeMounts: []corev1.VolumeMount{
