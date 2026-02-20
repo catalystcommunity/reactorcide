@@ -227,11 +227,11 @@ func (u *JobStatusUpdater) generatePRComment(job *models.Job) string {
 		status = "Timed Out"
 	}
 
-	comment := fmt.Sprintf(`## %s Reactorcide CI Build %s
+	comment := fmt.Sprintf(`## %s %s — %s
 
 **Job ID:** %s
 **Status:** %s`,
-		emoji, status, job.JobID, job.Status)
+		emoji, job.Name, status, job.JobID, job.Status)
 
 	if job.ExitCode != nil {
 		comment += fmt.Sprintf("\n**Exit Code:** %d", *job.ExitCode)
