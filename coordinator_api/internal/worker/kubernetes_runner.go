@@ -99,8 +99,10 @@ func (kr *KubernetesRunner) SpawnJob(ctx context.Context, config *JobConfig) (st
 	// Generate unique job name
 	jobName := fmt.Sprintf("reactorcide-job-%s-%s", config.JobID, uuid.New().String()[:8])
 
-	// Use working directory if specified, otherwise container uses its image's WORKDIR
-	workingDir := config.WorkingDir
+	// NOTE: We intentionally do NOT set WorkingDir on the k8s container spec.
+	// The container runtime creates it as root before the process starts,
+	// making it unwritable by non-root users when it's a subdirectory of an
+	// emptyDir volume (e.g. /job/src). Job commands handle their own cd.
 
 	// Build environment variables
 	envVars := make([]corev1.EnvVar, 0, len(config.Env)+4)
@@ -153,20 +155,14 @@ func (kr *KubernetesRunner) SpawnJob(ctx context.Context, config *JobConfig) (st
 	// Determine if we need root/privileged (for docker capability)
 	runAsNonRoot := true
 	var runAsUser *int64
-	var runAsGroup *int64
-	var fsGroup *int64
 	var privileged *bool
 	userID := int64(1001)
 	runAsUser = &userID
-	runAsGroup = &userID
-	fsGroup = &userID
 
 	for _, cap := range config.Capabilities {
 		if cap == CapabilityDocker {
 			runAsNonRoot = false
 			runAsUser = nil
-			runAsGroup = nil
-			fsGroup = nil
 			priv := true
 			privileged = &priv
 			logger.Info("Docker capability requested: running as root with privileged mode")
@@ -175,17 +171,11 @@ func (kr *KubernetesRunner) SpawnJob(ctx context.Context, config *JobConfig) (st
 	}
 
 	// Build pod spec
-	// When running as a specific user, set RunAsUser/RunAsGroup/FSGroup at the
-	// pod level so all containers (including the sandbox) run consistently and
-	// emptyDir volumes are writable by the running user.
 	podSpec := corev1.PodSpec{
 		RestartPolicy:      corev1.RestartPolicyNever,
 		ServiceAccountName: kr.serviceAccount,
 		SecurityContext: &corev1.PodSecurityContext{
 			RunAsNonRoot: &runAsNonRoot,
-			RunAsUser:    runAsUser,
-			RunAsGroup:   runAsGroup,
-			FSGroup:      fsGroup,
 		},
 		Containers: []corev1.Container{
 			{
@@ -194,9 +184,9 @@ func (kr *KubernetesRunner) SpawnJob(ctx context.Context, config *JobConfig) (st
 				ImagePullPolicy: corev1.PullAlways,
 				Command:         config.Command,
 				Env:             envVars,
-				WorkingDir:      workingDir,
 				Resources:       resources,
 				SecurityContext: &corev1.SecurityContext{
+					RunAsUser:  runAsUser,
 					Privileged: privileged,
 				},
 				VolumeMounts: []corev1.VolumeMount{
