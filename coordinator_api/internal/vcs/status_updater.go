@@ -101,12 +101,6 @@ func (u *JobStatusUpdater) UpdateJobStatus(ctx context.Context, job *models.Job)
 		return nil
 	}
 
-	// Eval jobs should not update commit status — only their child jobs should.
-	if metadata.IsEval {
-		u.logger.WithField("job_id", job.JobID).Debug("Skipping VCS status update for eval job")
-		return nil
-	}
-
 	// Get the appropriate VCS client (per-project token takes priority)
 	provider := Provider(metadata.VCSProvider)
 	client := u.getClientForJob(ctx, job, provider)
