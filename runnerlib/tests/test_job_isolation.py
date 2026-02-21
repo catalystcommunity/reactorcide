@@ -216,8 +216,9 @@ class TestJobIsolation:
                 server1.stop()
                 server2.stop()
 
+    @patch('shutil.which', return_value='/usr/bin/docker')
     @patch('subprocess.Popen')
-    def test_container_mount_isolation(self, mock_popen):
+    def test_container_mount_isolation(self, mock_popen, mock_which):
         """Test that containers mount only their job's directory."""
         # Mock the Popen object with proper behavior
         mock_process = MagicMock()
