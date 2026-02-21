@@ -86,8 +86,11 @@ def is_in_container_mode() -> bool:
         True if running in container mode
     """
     # Check explicit environment variable
-    if os.getenv("REACTORCIDE_IN_CONTAINER", "").lower() in ("true", "1", "yes"):
+    env_val = os.getenv("REACTORCIDE_IN_CONTAINER", "").lower()
+    if env_val in ("true", "1", "yes"):
         return True
+    if env_val in ("false", "0", "no"):
+        return False
 
     # Auto-detect: if /job exists and we're not at the root filesystem,
     # we're likely inside a container
