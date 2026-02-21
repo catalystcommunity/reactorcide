@@ -10,6 +10,8 @@ cd /workspace
 # 1. Download semver-tags
 # -------------------------------------------------------------------
 echo "=== Installing semver-tags ${SEMVER_TAGS_VERSION} ==="
+# semver-tags is dynamically linked against glibc; Alpine uses musl
+apk add --no-cache gcompat > /dev/null
 wget -q "https://github.com/catalystcommunity/semver-tags/releases/download/${SEMVER_TAGS_VERSION}/semver-tags.tar.gz" -O /tmp/semver-tags.tar.gz
 tar -xzf /tmp/semver-tags.tar.gz -C /tmp
 chmod +x /tmp/semver-tags
@@ -19,7 +21,8 @@ export PATH="/tmp:$PATH"
 # 2. Run semver-tags to determine version bump
 # -------------------------------------------------------------------
 echo "=== Running semver-tags ==="
-OUTPUT=$(semver-tags run --output_json 2>&1 | tail -1)
+semver-tags run --output_json > /tmp/semver-output.txt 2>&1
+OUTPUT=$(tail -1 /tmp/semver-output.txt)
 echo "Output: ${OUTPUT}"
 
 NEW_TAG=$(echo "${OUTPUT}" | grep -o '"New_release_git_tag":"[^"]*"' | cut -d'"' -f4)
