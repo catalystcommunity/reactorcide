@@ -9,8 +9,6 @@ import tempfile
 from pathlib import Path
 from unittest.mock import patch, MagicMock, call
 
-import pytest
-
 from src.workflow import (
     JobTrigger,
     WorkflowContext,
@@ -88,13 +86,6 @@ class TestJobTrigger:
 
 class TestWorkflowContext:
     """Tests for WorkflowContext class."""
-
-    @pytest.fixture(autouse=True)
-    def _block_api_submissions(self, monkeypatch):
-        """Prevent tests from submitting real triggers via API when running in CI."""
-        monkeypatch.delenv("REACTORCIDE_COORDINATOR_URL", raising=False)
-        monkeypatch.delenv("REACTORCIDE_API_TOKEN", raising=False)
-        monkeypatch.delenv("REACTORCIDE_JOB_ID", raising=False)
 
     def test_initialization(self):
         """Test WorkflowContext initialization."""
@@ -236,13 +227,6 @@ class TestWorkflowContext:
 
 class TestModuleLevelFunctions:
     """Tests for module-level convenience functions."""
-
-    @pytest.fixture(autouse=True)
-    def _block_api_submissions(self, monkeypatch):
-        """Prevent tests from submitting real triggers via API when running in CI."""
-        monkeypatch.delenv("REACTORCIDE_COORDINATOR_URL", raising=False)
-        monkeypatch.delenv("REACTORCIDE_API_TOKEN", raising=False)
-        monkeypatch.delenv("REACTORCIDE_JOB_ID", raising=False)
 
     def setUp(self):
         """Reset global context before each test."""
@@ -409,13 +393,6 @@ class TestGitUtilities:
 
 class TestWorkflowContextManager:
     """Tests for workflow_context context manager."""
-
-    @pytest.fixture(autouse=True)
-    def _block_api_submissions(self, monkeypatch):
-        """Prevent tests from submitting real triggers via API when running in CI."""
-        monkeypatch.delenv("REACTORCIDE_COORDINATOR_URL", raising=False)
-        monkeypatch.delenv("REACTORCIDE_API_TOKEN", raising=False)
-        monkeypatch.delenv("REACTORCIDE_JOB_ID", raising=False)
 
     def test_context_manager_success(self):
         """Test context manager flushes on success."""
@@ -601,13 +578,6 @@ class TestAPITriggerSubmission:
 
 class TestIntegrationPatterns:
     """Integration tests for common workflow patterns."""
-
-    @pytest.fixture(autouse=True)
-    def _block_api_submissions(self, monkeypatch):
-        """Prevent tests from submitting real triggers via API when running in CI."""
-        monkeypatch.delenv("REACTORCIDE_COORDINATOR_URL", raising=False)
-        monkeypatch.delenv("REACTORCIDE_API_TOKEN", raising=False)
-        monkeypatch.delenv("REACTORCIDE_JOB_ID", raising=False)
 
     def test_simple_pipeline_pattern(self):
         """Test simple test-then-deploy pattern."""
