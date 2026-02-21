@@ -17,6 +17,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/apimachinery/pkg/watch"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
@@ -30,6 +31,7 @@ type KubernetesRunner struct {
 	namespace        string
 	serviceAccount   string
 	runnerImage      string
+	dindImage        string
 	imagePullSecrets []string
 }
 
@@ -38,6 +40,7 @@ type KubernetesRunnerConfig struct {
 	Namespace        string   // Namespace for job pods (default: current namespace)
 	ServiceAccount   string   // Service account for job pods (default: "default")
 	RunnerImage      string   // Default runner image if job doesn't specify one
+	DindImage        string   // Docker-in-Docker sidecar image (default: "docker:27-dind")
 	ImagePullSecrets []string // Image pull secrets for private registries
 	NodeName         string   // Node to schedule job pods on (for workspace sharing via HostPath)
 }
@@ -78,11 +81,21 @@ func NewKubernetesRunnerWithConfig(cfg KubernetesRunnerConfig) (*KubernetesRunne
 		serviceAccount = "default"
 	}
 
+	dindImage := cfg.DindImage
+	if dindImage == "" {
+		if envImage := os.Getenv("REACTORCIDE_DIND_IMAGE"); envImage != "" {
+			dindImage = envImage
+		} else {
+			dindImage = "docker:27-dind"
+		}
+	}
+
 	return &KubernetesRunner{
 		clientset:        clientset,
 		namespace:        namespace,
 		serviceAccount:   serviceAccount,
 		runnerImage:      cfg.RunnerImage,
+		dindImage:        dindImage,
 		imagePullSecrets: cfg.ImagePullSecrets,
 	}, nil
 }
@@ -152,20 +165,19 @@ func (kr *KubernetesRunner) SpawnJob(ctx context.Context, config *JobConfig) (st
 		}
 	}
 
-	// Determine if we need root/privileged (for docker capability)
+	// Determine if we need root (for docker capability)
 	runAsNonRoot := true
 	var runAsUser *int64
-	var privileged *bool
 	userID := int64(1001)
 	runAsUser = &userID
+	needsDocker := false
 
 	for _, cap := range config.Capabilities {
 		if cap == CapabilityDocker {
 			runAsNonRoot = false
 			runAsUser = nil
-			priv := true
-			privileged = &priv
-			logger.Info("Docker capability requested: running as root with privileged mode")
+			needsDocker = true
+			logger.Info("Docker capability requested: adding DinD sidecar")
 			break
 		}
 	}
@@ -186,8 +198,7 @@ func (kr *KubernetesRunner) SpawnJob(ctx context.Context, config *JobConfig) (st
 				Env:             envVars,
 				Resources:       resources,
 				SecurityContext: &corev1.SecurityContext{
-					RunAsUser:  runAsUser,
-					Privileged: privileged,
+					RunAsUser: runAsUser,
 				},
 				VolumeMounts: []corev1.VolumeMount{
 					{
@@ -243,6 +254,54 @@ func (kr *KubernetesRunner) SpawnJob(ctx context.Context, config *JobConfig) (st
 			podSpec.Containers[0].Resources.Limits["nvidia.com/gpu"] = resource.MustParse("1")
 			logger.Info("GPU capability enabled: requesting nvidia.com/gpu=1")
 		}
+	}
+
+	// Handle Docker capability: inject DinD native sidecar
+	if needsDocker {
+		priv := true
+		always := corev1.ContainerRestartPolicyAlways
+
+		dindSidecar := corev1.Container{
+			Name:  "docker-daemon",
+			Image: kr.dindImage,
+			Args:  []string{"--host=tcp://0.0.0.0:2375"},
+			Env: []corev1.EnvVar{
+				{Name: "DOCKER_TLS_CERTDIR", Value: ""},
+			},
+			SecurityContext: &corev1.SecurityContext{
+				Privileged: &priv,
+			},
+			VolumeMounts: []corev1.VolumeMount{
+				{Name: "docker-storage", MountPath: "/var/lib/docker"},
+			},
+			RestartPolicy: &always,
+			StartupProbe: &corev1.Probe{
+				ProbeHandler: corev1.ProbeHandler{
+					TCPSocket: &corev1.TCPSocketAction{
+						Port: intstr.FromInt32(2375),
+					},
+				},
+				PeriodSeconds:    1,
+				FailureThreshold: 30,
+			},
+		}
+		podSpec.InitContainers = append(podSpec.InitContainers, dindSidecar)
+
+		// Add DOCKER_HOST to main container so docker CLI connects to sidecar
+		podSpec.Containers[0].Env = append(podSpec.Containers[0].Env, corev1.EnvVar{
+			Name:  "DOCKER_HOST",
+			Value: "tcp://localhost:2375",
+		})
+
+		// Add docker-storage volume for DinD overlay data
+		podSpec.Volumes = append(podSpec.Volumes, corev1.Volume{
+			Name: "docker-storage",
+			VolumeSource: corev1.VolumeSource{
+				EmptyDir: &corev1.EmptyDirVolumeSource{},
+			},
+		})
+
+		logger.WithField("dind_image", kr.dindImage).Info("DinD sidecar configured")
 	}
 
 	// TTL for automatic cleanup (1 hour after completion)

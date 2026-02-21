@@ -9,7 +9,7 @@ job:
   image: golang:1.25-alpine
   command: |
     set -e
-    apk add --no-cache git wget zip
+    apk add --no-cache git wget zip docker-cli
     git clone "https://x-access-token:${GITHUB_PAT}@github.com/${REACTORCIDE_REPO}.git" /workspace
     sh /workspace/.reactorcide/jobs/scripts/release.sh
   timeout: 3600
