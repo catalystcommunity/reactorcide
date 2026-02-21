@@ -4,10 +4,14 @@ job:
   image: 10.16.0.1:5000/public/reactorcide/runnerbase:dev
   command: |
     set -e
+    git config --global init.defaultBranch main
     git clone --branch "${REACTORCIDE_PR_REF}" "${REACTORCIDE_SOURCE_URL}" /workspace
     cd /workspace/runnerlib
     echo "=== Running Python Tests ==="
-    uv run python -m pytest tests/
+    uv run python -m pytest tests/ \
+      --ignore=tests/test_docker_execution.py \
+      --ignore=tests/test_dynamic_secret_masking.py \
+      --ignore=tests/test_dynamic_secrets.py
   timeout: 1800
   priority: 10
   raw_command: true

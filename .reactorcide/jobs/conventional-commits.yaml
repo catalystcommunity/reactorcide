@@ -38,22 +38,9 @@ job:
 
     echo "All commits follow conventional commit format."
 
-    # Write triggers to kick off test jobs (file for run-local, API for k8s)
-    TRIGGERS='{"type":"trigger_job","jobs":[{"job_file":".reactorcide/jobs/test-go.yaml"},{"job_file":".reactorcide/jobs/test-python.yaml"}]}'
-    echo "${TRIGGERS}" > /job/triggers.json
-
-    # If API credentials are available, also submit via API and remove the file
-    if [ -n "${REACTORCIDE_COORDINATOR_URL}" ] && [ -n "${REACTORCIDE_API_TOKEN}" ] && [ -n "${REACTORCIDE_JOB_ID}" ]; then
-      if curl -sf -X POST "${REACTORCIDE_COORDINATOR_URL}/api/v1/jobs/${REACTORCIDE_JOB_ID}/triggers" \
-        -H "Authorization: Bearer ${REACTORCIDE_API_TOKEN}" \
-        -H "Content-Type: application/json" \
-        -d "${TRIGGERS}"; then
-        rm -f /job/triggers.json
-        echo "Triggers submitted via API"
-      else
-        echo "API trigger submission failed, falling back to file-based triggers"
-      fi
-    fi
+    # Trigger test jobs — runnerlib reads the YAML files, resolves them to
+    # inline specs, and submits via both file and API (handles run-local and k8s)
+    runnerlib trigger .reactorcide/jobs/test-go.yaml .reactorcide/jobs/test-python.yaml
   timeout: 300
   priority: 10
   raw_command: true

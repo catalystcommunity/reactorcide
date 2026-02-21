@@ -13,7 +13,7 @@ import (
 	"github.com/urfave/cli/v2"
 )
 
-// RunLocalCommand executes a job in a container, emulating worker behavior.
+// RunLocalCommand executes a job in a container, fulfilling worker behavior.
 // This uses the same JobRunner infrastructure as the worker, ensuring consistent
 // execution between local development and production. Or in outages of some kind.
 var RunLocalCommand = &cli.Command{

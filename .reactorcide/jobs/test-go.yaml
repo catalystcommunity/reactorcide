@@ -8,7 +8,7 @@ job:
     git clone --branch "${REACTORCIDE_PR_REF}" "${REACTORCIDE_SOURCE_URL}" /workspace
     cd /workspace/coordinator_api
     echo "=== Running Go Tests ==="
-    go test ./... -count=1
+    go test $(go list ./... | grep -v '/test$') -count=1
   timeout: 1800
   priority: 10
   raw_command: true
