@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{{ pageTitle }}</title>
+    <link href="/style.css" rel="stylesheet" type="text/css">
+</head>
+<body>
+    <header>
+        <div class="container">
+            <h1>Reactorcide</h1>
+            <p class="tagline">Minimalist CI/CD</p>
+        </div>
+    </header>
+    <main>
+        <div class="container">
+            {% block content %}{% endblock %}
+        </div>
+    </main>
+    <footer>
+        <div class="container">
+            <p>Built with <a href="https://github.com/catalystcommunity/pysocha">Pysocha</a> &mdash; Deployed by <a href="https://github.com/catalystcommunity/reactorcide">Reactorcide</a></p>
+        </div>
+    </footer>
+</body>
+</html>

@@ -1,0 +1,74 @@
+name: build-demo-site
+image: golang:1.25-alpine
+source:
+  type: git
+  url: https://github.com/catalystcommunity/reactorcide.git
+  ref: main
+capabilities:
+  - docker
+command: |-
+  sh -c '
+    set -euo pipefail
+
+    echo "========================================"
+    echo "Building demo site container image"
+    echo "========================================"
+
+    # Setup environment
+    export HOME=/root
+    export XDG_RUNTIME_DIR=/tmp/run-root
+    mkdir -p $XDG_RUNTIME_DIR $HOME/.docker
+
+    # Install buildkit and runc
+    apk add --no-cache runc
+
+    BUILDKIT_VERSION=0.17.3
+    wget -q "https://github.com/moby/buildkit/releases/download/v${BUILDKIT_VERSION}/buildkit-v${BUILDKIT_VERSION}.linux-amd64.tar.gz" -O /tmp/buildkit.tar.gz
+    tar -xzf /tmp/buildkit.tar.gz -C /usr/local
+    rm /tmp/buildkit.tar.gz
+
+    # Start buildkitd
+    echo "Starting buildkitd..."
+    buildkitd \
+      --oci-worker=true \
+      --containerd-worker=false \
+      --root=$HOME/.local/share/buildkit \
+      --addr=unix://$XDG_RUNTIME_DIR/buildkit/buildkitd.sock &
+
+    for i in $(seq 1 30); do
+      if buildctl --addr=unix://$XDG_RUNTIME_DIR/buildkit/buildkitd.sock debug info >/dev/null 2>&1; then
+        echo "buildkitd is ready"
+        break
+      fi
+      sleep 1
+    done
+
+    export BUILDKIT_HOST=unix://$XDG_RUNTIME_DIR/buildkit/buildkitd.sock
+
+    # Registry auth
+    echo "Configuring registry authentication..."
+    AUTH=$(printf "%s:%s" "$REGISTRY_USER" "$REGISTRY_PASSWORD" | base64 -w 0)
+    printf "{\"auths\":{\"%s\":{\"auth\":\"%s\"}}}\n" "$REGISTRY" "$AUTH" > $HOME/.docker/config.json
+
+    FULL_IMAGE="$REGISTRY/$IMAGE:$TAG"
+    echo "Building: $FULL_IMAGE"
+
+    buildctl build \
+      --frontend dockerfile.v0 \
+      --local context=/job/src/demo/site \
+      --local dockerfile=/job/src/demo/site \
+      --opt filename=Dockerfile \
+      --no-cache \
+      --output type=image,name="$FULL_IMAGE",push=true
+
+    echo ""
+    echo "========================================"
+    echo "Done! Image pushed: $FULL_IMAGE"
+    echo "========================================"
+  '
+environment:
+  REGISTRY: "${env:DEMO_REGISTRY}"
+  IMAGE: "${env:DEMO_IMAGE}"
+  TAG: "${env:DEMO_TAG}"
+  REGISTRY_USER: "${env:REGISTRY_USER}"
+  REGISTRY_PASSWORD: "${secret:demo/registry:password}"

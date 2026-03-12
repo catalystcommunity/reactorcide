@@ -493,10 +493,10 @@ func (jp *JobProcessor) executeWithRunnerlib(ctx context.Context, job *models.Jo
 	// Create a job-specific secret masker
 	masker := secrets.NewMasker()
 
-	// Register all job environment variable VALUES as secrets to mask
-	if job.JobEnvVars != nil && len(job.JobEnvVars) > 0 {
-		masker.RegisterEnvVars(job.JobEnvVars)
-	}
+	// NOTE: We intentionally do NOT register all env var values for masking here.
+	// Only actual secret values (resolved from ${secret:...} references) are
+	// registered below after secret resolution. Masking all env vars causes
+	// non-secret values like greetings to be redacted in job output.
 
 	// Register the API token for secret masking if it will be injected
 	if apiToken := os.Getenv("REACTORCIDE_API_TOKEN"); apiToken != "" {
