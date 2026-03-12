@@ -40,7 +40,7 @@ command: |-
 
     echo ""
     echo "Step 1: Creating remote directory structure"
-    ssh "${REACTORCIDE_DEPLOY_USER}@${REACTORCIDE_DEPLOY_HOST}" "mkdir -p ${REMOTE_DIR}"
+    ssh "${REACTORCIDE_DEPLOY_USER}@${REACTORCIDE_DEPLOY_HOST}" "mkdir -p ${REMOTE_DIR} /tmp/reactorcide-jobs"
 
     echo ""
     echo "Step 2: Detecting and configuring container runtime"

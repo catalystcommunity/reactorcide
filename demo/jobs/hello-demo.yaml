@@ -1,0 +1,27 @@
+name: hello-demo
+image: alpine:latest
+source:
+  type: git
+  url: https://github.com/catalystcommunity/reactorcide.git
+  ref: main
+command: |-
+  sh -c '
+    echo "========================================"
+    echo "  Hello from Reactorcide!"
+    echo "========================================"
+    echo ""
+    echo "This job is running inside an Alpine container."
+    echo "  Hostname: $(hostname)"
+    echo "  Date:     $(date -u)"
+    echo "  Kernel:   $(uname -r)"
+    echo ""
+    echo "Environment:"
+    echo "  GREETING = $GREETING"
+    echo "  SECRET   = $SECRET_VALUE"
+    echo ""
+    echo "The secret above should be masked in the output."
+    echo "========================================"
+  '
+environment:
+  GREETING: "Hello from the demo!"
+  SECRET_VALUE: "${secret:demo/test:secret}"

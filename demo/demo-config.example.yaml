@@ -1,0 +1,16 @@
+# Reactorcide Demo Configuration
+# Copy this file to demo-config.yaml and fill in your values.
+# demo-config.yaml is gitignored — your settings stay local.
+
+# Coordinator API URL (required for remote steps)
+api_url: "http://your-vm-host:6080"
+
+# Container backend for local job execution: docker, containerd, or auto
+# If omitted, auto-detected from the host (docker daemon > containerd socket)
+# backend: "containerd"
+
+# Container registry settings (required for build steps)
+registry: "docker.io"
+registry_user: "youruser"
+image: "youruser/reactorcide-demo"
+tag: "latest"

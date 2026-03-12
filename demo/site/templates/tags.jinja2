@@ -1,0 +1,8 @@
+{% extends "base.jinja2" %}
+{% block content %}
+	{% for tag, posts in tags.items() %}
+		<div class="tag_list_item">
+			<h3><a href="tag_{{ tag.replace(' ', '_') }}1.html">{{ tag }}: {{ posts|length }} posts</a></h3>
+		</div>
+	{% endfor %}
+{% endblock %}
