@@ -1,0 +1,8 @@
+{{template "head" .}}
+<div class="error-page">
+    <h2>{{.Status}}</h2>
+    <p>{{.Message}}</p>
+    {{if .Detail}}<p class="meta">{{.Detail}}</p>{{end}}
+    <p style="margin-top: 16px;"><a href="/app/jobs">&larr; Back to Jobs</a></p>
+</div>
+{{template "foot" .}}

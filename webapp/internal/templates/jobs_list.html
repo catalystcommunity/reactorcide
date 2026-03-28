@@ -1,0 +1,67 @@
+{{template "head" .}}
+<h2 style="margin-bottom: 16px;">Jobs</h2>
+
+<div class="filter-bar">
+    <span class="meta">Filter:</span>
+    <a href="/app/jobs" {{if eq .StatusFilter ""}}class="active"{{end}}>All</a>
+    <a href="/app/jobs?status=running" {{if eq .StatusFilter "running"}}class="active"{{end}}>Running</a>
+    <a href="/app/jobs?status=queued" {{if eq .StatusFilter "queued"}}class="active"{{end}}>Queued</a>
+    <a href="/app/jobs?status=completed" {{if eq .StatusFilter "completed"}}class="active"{{end}}>Completed</a>
+    <a href="/app/jobs?status=failed" {{if eq .StatusFilter "failed"}}class="active"{{end}}>Failed</a>
+</div>
+
+{{if .Jobs}}
+<table>
+    <thead>
+        <tr>
+            <th>Name</th>
+            <th>Status</th>
+            <th>Created</th>
+            <th>Duration</th>
+            <th>Exit</th>
+            <th>Source</th>
+        </tr>
+    </thead>
+    <tbody>
+        {{range .Jobs}}
+        <tr>
+            <td>
+                <a href="/app/jobs/{{.JobID}}">{{.Name}}</a>
+                {{if .Description}}<br><span class="meta">{{.Description}}</span>{{end}}
+            </td>
+            <td><span class="status-badge {{statusClass .Status}}">{{.Status}}</span></td>
+            <td class="meta">{{formatTime .CreatedAt}}</td>
+            <td class="meta">{{formatDuration .StartedAt .CompletedAt}}</td>
+            <td>
+                {{if .ExitCode}}
+                    <span class="{{exitCodeClass .ExitCode}}">{{derefInt .ExitCode}}</span>
+                {{else}}
+                    <span class="meta">-</span>
+                {{end}}
+            </td>
+            <td class="meta">
+                {{if .SourceRef}}{{.SourceRef}}{{else}}-{{end}}
+            </td>
+        </tr>
+        {{end}}
+    </tbody>
+</table>
+
+<div class="pagination">
+    {{if .HasPrev}}
+        <a href="/app/jobs?offset={{.PrevOffset}}&limit={{.Limit}}{{if .StatusFilter}}&status={{.StatusFilter}}{{end}}">Previous</a>
+    {{else}}
+        <span>Previous</span>
+    {{end}}
+    {{if .HasNext}}
+        <a href="/app/jobs?offset={{.NextOffset}}&limit={{.Limit}}{{if .StatusFilter}}&status={{.StatusFilter}}{{end}}">Next</a>
+    {{else}}
+        <span>Next</span>
+    {{end}}
+</div>
+{{else}}
+<div class="card">
+    <p class="meta">No jobs found.</p>
+</div>
+{{end}}
+{{template "foot" .}}

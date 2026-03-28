@@ -95,7 +95,24 @@ docker push "${REGISTRY}/public/reactorcide/worker:${NEW_TAG}"
 docker push "${REGISTRY}/public/reactorcide/worker:latest"
 
 # -------------------------------------------------------------------
-# 8. Cross-compile CLI for all platforms
+# 8. Build and push web UI image
+# -------------------------------------------------------------------
+echo "=== Building web UI binary ==="
+cd /workspace/webapp
+CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-w -s" -o /tmp/reactorcide-web .
+cd /workspace
+
+echo "=== Building web UI image ==="
+cp /tmp/reactorcide-web deployment/reactorcide-web
+docker build -t "${REGISTRY}/public/reactorcide/web:${NEW_TAG}" \
+             -t "${REGISTRY}/public/reactorcide/web:latest" \
+             -f deployment/Dockerfile.web \
+             deployment/
+docker push "${REGISTRY}/public/reactorcide/web:${NEW_TAG}"
+docker push "${REGISTRY}/public/reactorcide/web:latest"
+
+# -------------------------------------------------------------------
+# 10. Cross-compile CLI for all platforms
 # -------------------------------------------------------------------
 echo "=== Cross-compiling CLI ==="
 RELEASE_DIR="/tmp/release"
@@ -127,7 +144,7 @@ done
 cd /workspace
 
 # -------------------------------------------------------------------
-# 9. Install gh CLI and create GitHub release
+# 11. Install gh CLI and create GitHub release
 # -------------------------------------------------------------------
 echo "=== Creating GitHub release ==="
 GHCLI_VERSION="2.63.2"

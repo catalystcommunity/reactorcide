@@ -55,7 +55,11 @@ web:
   service:
     type: ClusterIP
     port: 4080
-  apiUrl: "http://reactorcide-coordinator-api-service:6080"
+  apiUrl: "http://reactorcideapp:6080"
+  # API token for authenticating with the coordinator API
+  apiTokenSecret:
+    name: "base-reactorcide-user"
+    key: "token"
   # Gateway API HTTPRoute configuration (routes /* to web UI)
   gateway:
     enabled: false

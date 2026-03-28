@@ -1,0 +1,7 @@
+{{if .Logs}}
+{{range .Logs}}
+<div class="log-line {{streamClass .Stream}}"><span class="log-timestamp">{{.Timestamp}}</span>{{.Message}}</div>
+{{end}}
+{{else}}
+<div class="meta">No logs available yet.</div>
+{{end}}

@@ -353,10 +353,16 @@ def build_helm_values(config: Dict[str, Any], db_uri: str, corndogs_url: str) ->
     if corndogs_url:
         args.extend(["--set", f"corndogs.baseUrl={corndogs_url}"])
 
+    # Web UI - enable by default when deploying
+    args.extend(["--set", "web.enabled=true"])
+    args.extend(["--set", "web.apiTokenSecret.name=" + config.get('user_secret_name', 'base-reactorcide-user')])
+    args.extend(["--set", "web.apiTokenSecret.key=token"])
+
     # Image tag
     if config['image_tag']:
         args.extend(["--set", f"app.image.tag={config['image_tag']}"])
         args.extend(["--set", f"worker.image.tag={config['image_tag']}"])
+        args.extend(["--set", f"web.image.tag={config['image_tag']}"])
 
     # Object storage
     args.extend(["--set", f"objectStore.type={config['object_store_type']}"])
@@ -450,6 +456,7 @@ def wait_for_rollout(config: Dict[str, Any], dry_run: bool = False) -> None:
 
     run_cmd(f"kubectl rollout status deployment/{release}app -n {namespace} --timeout=5m || true", dry_run=dry_run)
     run_cmd(f"kubectl rollout status deployment/{release}-worker -n {namespace} --timeout=5m || true", dry_run=dry_run)
+    run_cmd(f"kubectl rollout status deployment/{release}web -n {namespace} --timeout=5m || true", dry_run=dry_run)
 
 
 def run_migrations(config: Dict[str, Any], dry_run: bool = False) -> None:
