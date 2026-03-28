@@ -62,8 +62,15 @@ spec:
           resources:
             {{- toYaml .Values.web.resources | nindent 12 }}
           env:
-            - name: REACT_coordinator_api_URL
-              value: {{ .Values.web.apiUrl | default "http://auth-api-service:5080" | quote }}
+            - name: REACTORCIDE_API_URL
+              value: {{ .Values.web.apiUrl | default "http://reactorcide-coordinator-api-service:6080" | quote }}
+            - name: REACTORCIDE_API_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ ((.Values.web).apiTokenSecret).name | default "base-reactorcide-user" }}
+                  key: {{ ((.Values.web).apiTokenSecret).key | default "token" }}
+            - name: PORT
+              value: {{ .Values.web.service.port | quote }}
       {{- with .Values.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}

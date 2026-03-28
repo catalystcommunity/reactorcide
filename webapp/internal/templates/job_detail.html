@@ -1,0 +1,92 @@
+{{template "head" .}}
+<div style="margin-bottom: 16px;">
+    <a href="/app/jobs" class="meta">&larr; Back to Jobs</a>
+</div>
+
+<div class="card">
+    <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 12px;">
+        <h2>{{.Job.Name}}</h2>
+        <span class="status-badge {{statusClass .Job.Status}}">{{.Job.Status}}</span>
+        {{if .Job.ExitCode}}
+            <span class="meta">exit: <span class="{{exitCodeClass .Job.ExitCode}}">{{derefInt .Job.ExitCode}}</span></span>
+        {{end}}
+    </div>
+    {{if .Job.Description}}<p class="meta" style="margin-bottom: 12px;">{{.Job.Description}}</p>{{end}}
+
+    <dl class="grid">
+        <div>
+            <dt>Job ID</dt>
+            <dd><code>{{.Job.JobID}}</code></dd>
+        </div>
+        <div>
+            <dt>Created</dt>
+            <dd>{{formatTime .Job.CreatedAt}}</dd>
+        </div>
+        <div>
+            <dt>Updated</dt>
+            <dd>{{formatTime .Job.UpdatedAt}}</dd>
+        </div>
+        <div>
+            <dt>Duration</dt>
+            <dd>{{formatDuration .Job.StartedAt .Job.CompletedAt}}</dd>
+        </div>
+        {{if .Job.SourceRef}}
+        <div>
+            <dt>Source Ref</dt>
+            <dd>{{.Job.SourceRef}}</dd>
+        </div>
+        {{end}}
+        {{if .Job.SourceURL}}
+        <div>
+            <dt>Source URL</dt>
+            <dd>{{.Job.SourceURL}}</dd>
+        </div>
+        {{end}}
+        {{if .Job.RunnerImage}}
+        <div>
+            <dt>Runner Image</dt>
+            <dd><code>{{.Job.RunnerImage}}</code></dd>
+        </div>
+        {{end}}
+        {{if .Job.ParentJobID}}
+        <div>
+            <dt>Parent Job</dt>
+            <dd><a href="/app/jobs/{{derefStr .Job.ParentJobID}}">{{derefStr .Job.ParentJobID}}</a></dd>
+        </div>
+        {{end}}
+        <div>
+            <dt>Priority</dt>
+            <dd>{{.Job.Priority}}</dd>
+        </div>
+        <div>
+            <dt>Queue</dt>
+            <dd>{{.Job.QueueName}}</dd>
+        </div>
+    </dl>
+</div>
+
+<div class="card">
+    <h2 style="margin-bottom: 8px;">Logs</h2>
+    <div class="stream-tabs">
+        <a href="/app/jobs/{{.Job.JobID}}?stream=combined" {{if eq .Stream "combined"}}class="active"{{end}}>Combined</a>
+        <a href="/app/jobs/{{.Job.JobID}}?stream=stdout" {{if eq .Stream "stdout"}}class="active"{{end}}>Stdout</a>
+        <a href="/app/jobs/{{.Job.JobID}}?stream=stderr" {{if eq .Stream "stderr"}}class="active"{{end}}>Stderr</a>
+    </div>
+    <div class="log-viewer" id="log-viewer">
+        {{if .Logs}}
+            {{range .Logs}}
+                <div class="log-line {{streamClass .Stream}}"><span class="log-timestamp">{{.Timestamp}}</span>{{.Message}}</div>
+            {{end}}
+        {{else}}
+            <div class="meta">No logs available yet.</div>
+        {{end}}
+    </div>
+</div>
+
+{{if eq .Job.Status "running"}}
+<script>
+    // Auto-refresh logs for running jobs
+    setTimeout(function() { window.location.reload(); }, 5000);
+</script>
+{{end}}
+{{template "foot" .}}

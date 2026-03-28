@@ -40,7 +40,7 @@ job:
 
     # Trigger test jobs — runnerlib reads the YAML files, resolves them to
     # inline specs, and submits via both file and API (handles run-local and k8s)
-    runnerlib trigger .reactorcide/jobs/test-go.yaml .reactorcide/jobs/test-python.yaml
+    runnerlib trigger .reactorcide/jobs/test-go.yaml .reactorcide/jobs/test-python.yaml .reactorcide/jobs/test-web.yaml
   timeout: 300
   priority: 10
   raw_command: true

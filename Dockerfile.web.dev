@@ -1,0 +1,21 @@
+FROM golang:alpine AS builder
+
+RUN apk add --no-cache ca-certificates
+
+WORKDIR /build
+COPY webapp/ ./webapp/
+
+WORKDIR /build/webapp
+RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-w -s" -o /reactorcide-web .
+
+FROM scratch
+
+COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
+COPY --from=builder /reactorcide-web /reactorcide-web
+
+EXPOSE 4080
+
+USER 1000:1000
+
+ENTRYPOINT ["/reactorcide-web"]
+CMD ["serve"]

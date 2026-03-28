@@ -24,7 +24,7 @@ spec:
     - matches:
         - path:
             type: PathPrefix
-            value: /
+            value: /app
       backendRefs:
         - name: {{ include "web.name" $ }}
           port: {{ $.Values.web.service.port }}

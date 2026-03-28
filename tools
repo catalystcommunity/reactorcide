@@ -19,9 +19,10 @@ usage() {
     echo "Commands:"
     echo ""
     echo "  setup              Install all dependencies (Python with uv, Go modules)"
-    echo "  test               Run all tests (Python + Go)"
+    echo "  test               Run all tests (Python + Go + Web)"
     echo "  test-runnerlib     Run Python tests only"
     echo "  test-coordinator   Run Go tests only"
+    echo "  test-web           Run webapp Go tests only"
     echo "  run-api            Start coordinator API locally"
     echo "  run-worker         Start worker locally"
     echo "  build              Build Go binary"
@@ -104,6 +105,8 @@ setup(){
     log_status "Installing Go dependencies"
     cd "${PROJECT_ROOT_DIR}/coordinator_api"
     go mod download
+    cd "${PROJECT_ROOT_DIR}/webapp"
+    go mod download
     cd "${PROJECT_ROOT_DIR}"
 
     echo ""
@@ -126,6 +129,7 @@ test(){
     log_status "Running all tests"
     test_runnerlib
     test_coordinator
+    test_web
     echo "✅ All tests passed!"
 }
 
@@ -140,6 +144,13 @@ test_coordinator(){
     log_status "Running Go tests"
     cd "${PROJECT_ROOT_DIR}/coordinator_api"
     go test -v ./...
+    cd "${PROJECT_ROOT_DIR}"
+}
+
+test_web(){
+    log_status "Running webapp tests"
+    cd "${PROJECT_ROOT_DIR}/webapp"
+    go test -v -short ./internal/...
     cd "${PROJECT_ROOT_DIR}"
 }
 
@@ -160,6 +171,8 @@ build(){
     cd "${PROJECT_ROOT_DIR}/coordinator_api"
     go build -o ../bin/coordinator-api ./cmd/api
     go build -o ../bin/worker ./cmd/worker
+    cd "${PROJECT_ROOT_DIR}/webapp"
+    go build -o ../bin/reactorcide-web .
     cd "${PROJECT_ROOT_DIR}"
     echo "✅ Binaries built in ./bin/"
 }
@@ -183,13 +196,27 @@ docker_build(){
     # Build worker image
     docker build -t reactorcide/worker:latest -f deployment/Dockerfile.worker deployment/
 
-    # Cleanup
+    # Cleanup coordinator/worker binary
     rm -f "${PROJECT_ROOT_DIR}/deployment/reactorcide"
+
+    # Build webapp binary
+    log_status "Building webapp binary"
+    cd "${PROJECT_ROOT_DIR}/webapp"
+    CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-w -s" -o reactorcide-web .
+    cp reactorcide-web "${PROJECT_ROOT_DIR}/deployment/"
+    cd "${PROJECT_ROOT_DIR}"
+
+    # Build web image
+    docker build -t reactorcide/web:latest -f deployment/Dockerfile.web deployment/
+
+    # Cleanup
+    rm -f "${PROJECT_ROOT_DIR}/deployment/reactorcide-web"
 
     echo "✅ Docker images built:"
     echo "   - reactorcide/runnerbase:latest"
     echo "   - reactorcide/coordinator:latest"
     echo "   - reactorcide/worker:latest"
+    echo "   - reactorcide/web:latest"
 }
 
 clean(){
@@ -258,6 +285,10 @@ case "$1" in
     "test-coordinator")
         shift
         test_coordinator "$@"
+        ;;
+    "test-web")
+        shift
+        test_web "$@"
         ;;
     "run-api")
         shift

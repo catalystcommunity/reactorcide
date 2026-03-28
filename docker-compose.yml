@@ -122,6 +122,25 @@ services:
         networks:
             - reactorcide
 
+    # Web UI
+    web:
+        build:
+            context: .
+            dockerfile: Dockerfile.web.dev
+        image: reactorcide/web:dev
+        container_name: reactorcide-web-dev
+        environment:
+            REACTORCIDE_API_URL: "http://coordinator-api:8080"
+            REACTORCIDE_API_TOKEN: "" # Set after creating a token via: docker compose exec coordinator-api /reactorcide token create --name web-ui
+            PORT: "4080"
+        ports:
+            - "4080:4080"
+        depends_on:
+            coordinator-api:
+                condition: service_started
+        networks:
+            - reactorcide
+
 networks:
     reactorcide:
         driver: bridge

@@ -1,0 +1,14 @@
+name: test-web
+description: "Run Go tests for web UI"
+job:
+  image: golang:1.25
+  command: |
+    set -e
+    export HOME=/home/reactorcide
+    git clone --branch "${REACTORCIDE_PR_REF}" "${REACTORCIDE_SOURCE_URL}" /workspace
+    cd /workspace/webapp
+    echo "=== Running Web UI Unit Tests ==="
+    go test ./internal/... -count=1
+  timeout: 1800
+  priority: 10
+  raw_command: true

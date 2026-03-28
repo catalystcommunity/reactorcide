@@ -89,8 +89,22 @@ command: |-
     echo "----------------------------------------"
     build_and_push /job/src/deployment Dockerfile.worker "$REGISTRY/public/reactorcide/worker:$TAG"
 
-    # Cleanup
+    # Cleanup coordinator/worker binary
     rm -f /job/src/deployment/reactorcide
+
+    # Build webapp binary
+    echo ""
+    echo ">>> Building webapp..."
+    echo "----------------------------------------"
+    cd /job/src/webapp
+    CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -buildvcs=false -ldflags="-w -s" -o reactorcide-web .
+    cp reactorcide-web /job/src/deployment/
+
+    # Build web
+    build_and_push /job/src/deployment Dockerfile.web "$REGISTRY/public/reactorcide/web:$TAG"
+
+    # Cleanup
+    rm -f /job/src/deployment/reactorcide-web
 
     echo ""
     echo "========================================"
@@ -101,6 +115,7 @@ command: |-
     echo "  - $REGISTRY/public/reactorcide/runnerbase:$TAG"
     echo "  - $REGISTRY/public/reactorcide/coordinator:$TAG"
     echo "  - $REGISTRY/public/reactorcide/worker:$TAG"
+    echo "  - $REGISTRY/public/reactorcide/web:$TAG"
   '
 environment:
   REGISTRY: containers.catalystsquad.com

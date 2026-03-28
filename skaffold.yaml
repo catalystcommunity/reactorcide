@@ -6,11 +6,10 @@ build:
       context: .
       docker:
         dockerfile: Dockerfile.coordinator.dev
-    # TODO: Uncomment when web_client is ready
-    # - image: web-client
-    #   context: web_client/
-    #   docker:
-    #     dockerfile: Dockerfile
+    - image: reactorcide-web
+      context: .
+      docker:
+        dockerfile: Dockerfile.web.dev
   local:
     useDockerCLI: false
     useBuildkit: true
@@ -36,9 +35,8 @@ deploy:
           app.image.tag: "{{.IMAGE_TAG_coordinator_api}}"
           worker.image.repository: "{{.IMAGE_REPO_coordinator_api}}"
           worker.image.tag: "{{.IMAGE_TAG_coordinator_api}}"
-          # TODO: Uncomment when web_client is ready
-          # web.image.repository: "{{.IMAGE_REPO_web_client}}"
-          # web.image.tag: "{{.IMAGE_TAG_web_client}}"
+          web.image.repository: "{{.IMAGE_REPO_reactorcide_web}}"
+          web.image.tag: "{{.IMAGE_TAG_reactorcide_web}}"
         valuesFiles:
           - values-skaffold-local.yaml
         recreatePods: true
@@ -63,12 +61,12 @@ portForward:
     namespace: skaffoldreactorcide
     port: 9000
     localPort: 9000
-  # pf for web app (disabled - web not deployed in local dev)
-  # - resourceType: service
-  #   resourceName: reactorcideweb
-  #   namespace: skaffoldreactorcide
-  #   port: 4080
-  #   localPort: 4080
+  # pf for web app
+  - resourceType: service
+    resourceName: reactorcideweb
+    namespace: skaffoldreactorcide
+    port: 4080
+    localPort: 4080
   # pf for corndogs
   - resourceType: service
     resourceName: reactorcide-corndogs
@@ -129,4 +127,10 @@ profiles:
         value: reactorcidetest
       - op: replace
         path: /portForward/3/namespace
+        value: reactorcidetest
+      - op: replace
+        path: /portForward/4/namespace
+        value: reactorcidetest
+      - op: replace
+        path: /portForward/5/namespace
         value: reactorcidetest
