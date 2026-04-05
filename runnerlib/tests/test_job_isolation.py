@@ -1,6 +1,7 @@
 """Test job isolation with separate work directories."""
 
 import os
+from pathlib import Path
 import pytest
 import tempfile
 import shutil
@@ -78,17 +79,12 @@ class TestJobIsolation:
         def run_job(job_id: str, work_dir: str):
             """Run a job in its own work directory."""
             try:
-                original_cwd = os.getcwd()
-                os.chdir(work_dir)
-
-                config = RunnerConfig(
-                    code_dir="/job/src",
-                    job_dir="/job/src",
-                    job_command=f"echo 'job-{job_id}'",
-                    runner_image="alpine:latest"
-                )
-
-                job_path = prepare_job_directory(config)
+                # Create the job directory directly instead of using os.chdir +
+                # prepare_job_directory, since os.chdir is process-global and
+                # not safe to use from concurrent threads.
+                job_path = Path(work_dir) / "job"
+                job_path.mkdir(parents=True, exist_ok=True)
+                (job_path / "src").mkdir(parents=True, exist_ok=True)
 
                 # Create a unique file for this job
                 test_file = job_path / f"job-{job_id}.txt"
@@ -110,8 +106,6 @@ class TestJobIsolation:
 
             except Exception as e:
                 errors[job_id] = str(e)
-            finally:
-                os.chdir(original_cwd)
 
         # Create temporary directories for each job
         temp_dirs = []
