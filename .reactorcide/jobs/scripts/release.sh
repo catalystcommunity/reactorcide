@@ -45,7 +45,7 @@ cat > /home/reactorcide/.docker/config.json <<DOCKEREOF
 {
   "auths": {
     "${REGISTRY}": {
-      "auth": "$(echo -n "${REGISTRY_USER}:${REGISTRY_PASSWORD}" | base64)"
+      "auth": "$(echo -n "${REGISTRY_USER}:${REGISTRY_PASSWORD}" | base64 -w 0)"
     }
   }
 }
