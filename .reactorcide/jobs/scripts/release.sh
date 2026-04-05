@@ -41,12 +41,11 @@ VERSION="${NEW_TAG#v}"
 # -------------------------------------------------------------------
 echo "=== Setting up registry auth ==="
 mkdir -p /home/reactorcide/.docker
+AUTH=$(printf "%s:%s" "$REGISTRY_USER" "$REGISTRY_PASSWORD" | base64 -w 0)
 cat > /home/reactorcide/.docker/config.json <<DOCKEREOF
 {
   "auths": {
-    "${REGISTRY}": {
-      "auth": "$(echo -n "${REGISTRY_USER}:${REGISTRY_PASSWORD}" | base64 -w 0)"
-    }
+    "${REGISTRY_INTERNAL}": {"auth": "${AUTH}"}
   }
 }
 DOCKEREOF
@@ -56,12 +55,12 @@ export DOCKER_CONFIG=/home/reactorcide/.docker
 # 4. Build and push runnerbase image
 # -------------------------------------------------------------------
 echo "=== Building runnerbase image ==="
-docker build -t "${REGISTRY}/public/reactorcide/runnerbase:${NEW_TAG}" \
-             -t "${REGISTRY}/public/reactorcide/runnerbase:latest" \
+docker build -t "${REGISTRY_INTERNAL}/public/reactorcide/runnerbase:${NEW_TAG}" \
+             -t "${REGISTRY_INTERNAL}/public/reactorcide/runnerbase:latest" \
              -f runnerlib/Dockerfile.runner \
              runnerlib/
-docker push "${REGISTRY}/public/reactorcide/runnerbase:${NEW_TAG}"
-docker push "${REGISTRY}/public/reactorcide/runnerbase:latest"
+docker push "${REGISTRY_INTERNAL}/public/reactorcide/runnerbase:${NEW_TAG}"
+docker push "${REGISTRY_INTERNAL}/public/reactorcide/runnerbase:latest"
 
 # -------------------------------------------------------------------
 # 5. Build Go binary for coordinator/worker containers
@@ -76,23 +75,23 @@ cd /workspace
 # -------------------------------------------------------------------
 echo "=== Building coordinator image ==="
 cp /tmp/reactorcide deployment/reactorcide
-docker build -t "${REGISTRY}/public/reactorcide/coordinator:${NEW_TAG}" \
-             -t "${REGISTRY}/public/reactorcide/coordinator:latest" \
+docker build -t "${REGISTRY_INTERNAL}/public/reactorcide/coordinator:${NEW_TAG}" \
+             -t "${REGISTRY_INTERNAL}/public/reactorcide/coordinator:latest" \
              -f deployment/Dockerfile.coordinator \
              deployment/
-docker push "${REGISTRY}/public/reactorcide/coordinator:${NEW_TAG}"
-docker push "${REGISTRY}/public/reactorcide/coordinator:latest"
+docker push "${REGISTRY_INTERNAL}/public/reactorcide/coordinator:${NEW_TAG}"
+docker push "${REGISTRY_INTERNAL}/public/reactorcide/coordinator:latest"
 
 # -------------------------------------------------------------------
 # 7. Build and push worker image
 # -------------------------------------------------------------------
 echo "=== Building worker image ==="
-docker build -t "${REGISTRY}/public/reactorcide/worker:${NEW_TAG}" \
-             -t "${REGISTRY}/public/reactorcide/worker:latest" \
+docker build -t "${REGISTRY_INTERNAL}/public/reactorcide/worker:${NEW_TAG}" \
+             -t "${REGISTRY_INTERNAL}/public/reactorcide/worker:latest" \
              -f deployment/Dockerfile.worker \
              deployment/
-docker push "${REGISTRY}/public/reactorcide/worker:${NEW_TAG}"
-docker push "${REGISTRY}/public/reactorcide/worker:latest"
+docker push "${REGISTRY_INTERNAL}/public/reactorcide/worker:${NEW_TAG}"
+docker push "${REGISTRY_INTERNAL}/public/reactorcide/worker:latest"
 
 # -------------------------------------------------------------------
 # 8. Build and push web UI image
@@ -104,12 +103,12 @@ cd /workspace
 
 echo "=== Building web UI image ==="
 cp /tmp/reactorcide-web deployment/reactorcide-web
-docker build -t "${REGISTRY}/public/reactorcide/web:${NEW_TAG}" \
-             -t "${REGISTRY}/public/reactorcide/web:latest" \
+docker build -t "${REGISTRY_INTERNAL}/public/reactorcide/web:${NEW_TAG}" \
+             -t "${REGISTRY_INTERNAL}/public/reactorcide/web:latest" \
              -f deployment/Dockerfile.web \
              deployment/
-docker push "${REGISTRY}/public/reactorcide/web:${NEW_TAG}"
-docker push "${REGISTRY}/public/reactorcide/web:latest"
+docker push "${REGISTRY_INTERNAL}/public/reactorcide/web:${NEW_TAG}"
+docker push "${REGISTRY_INTERNAL}/public/reactorcide/web:latest"
 
 # -------------------------------------------------------------------
 # 10. Cross-compile CLI for all platforms

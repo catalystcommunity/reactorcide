@@ -18,7 +18,8 @@ job:
   capabilities:
     - docker
 environment:
-  REGISTRY: "containers.catalystsquad.com"
+  REGISTRY_INTERNAL: "10.16.0.1:5000"
+  REGISTRY_EXTERNAL: "containers.catalystsquad.com"
   GITHUB_PAT: "${secret:catalystcommunity/ci:githubpat}"
   REGISTRY_USER: "${secret:catalystcommunity/ci:registry_user}"
   REGISTRY_PASSWORD: "${secret:catalystcommunity/ci:registry_password}"
