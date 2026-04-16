@@ -6,12 +6,33 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/secrets"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/worker"
 	"github.com/google/uuid"
 	"github.com/urfave/cli/v2"
 )
+
+// hostRunAsUser returns the uid and gid the container should run as for
+// run-local. When invoked via sudo, SUDO_UID/SUDO_GID point at the real user
+// so the container doesn't end up running as root and writing root-owned
+// files through the bind mount.
+func hostRunAsUser() (uid, gid int) {
+	uid = os.Getuid()
+	gid = os.Getgid()
+	if s := os.Getenv("SUDO_UID"); s != "" {
+		if v, err := strconv.Atoi(s); err == nil {
+			uid = v
+		}
+	}
+	if s := os.Getenv("SUDO_GID"); s != "" {
+		if v, err := strconv.Atoi(s); err == nil {
+			gid = v
+		}
+	}
+	return uid, gid
+}
 
 // RunLocalCommand executes a job in a container, fulfilling worker behavior.
 // This uses the same JobRunner infrastructure as the worker, ensuring consistent
@@ -113,8 +134,12 @@ func runLocalAction(ctx *cli.Context) error {
 	// Generate a job ID for this execution
 	jobID := uuid.New().String()[:8]
 
-	// Create temp workspace matching production layout: /job/ with src/ subdir
-	// Chmod to 0755 so non-root container users (1001:1001) can traverse it
+	// Create temp workspace matching production layout: /job/ with src/ subdir.
+	// The container runs as the host user (see hostRunAsUser below), so chown
+	// the workspace and its src/ to match — otherwise, when run-local is
+	// invoked via sudo, the tmpdir is root-owned and the container can't write
+	// triggers.json, logs, etc.
+	uid, gid := hostRunAsUser()
 	tempWorkspace, err := os.MkdirTemp("/tmp", fmt.Sprintf("reactorcide-local-job-%s-", jobID))
 	if err != nil {
 		return fmt.Errorf("failed to create temp workspace: %w", err)
@@ -122,17 +147,25 @@ func runLocalAction(ctx *cli.Context) error {
 	if err := os.Chmod(tempWorkspace, 0755); err != nil {
 		return fmt.Errorf("failed to chmod temp workspace: %w", err)
 	}
+	if err := os.Chown(tempWorkspace, uid, gid); err != nil {
+		return fmt.Errorf("failed to chown temp workspace: %w", err)
+	}
 	defer os.RemoveAll(tempWorkspace)
 
 	// Create src/ subdir in temp workspace (matching production layout)
-	if err := os.MkdirAll(filepath.Join(tempWorkspace, "src"), 0755); err != nil {
+	srcSubdir := filepath.Join(tempWorkspace, "src")
+	if err := os.MkdirAll(srcSubdir, 0755); err != nil {
 		return fmt.Errorf("failed to create workspace src dir: %w", err)
+	}
+	if err := os.Chown(srcSubdir, uid, gid); err != nil {
+		return fmt.Errorf("failed to chown workspace src dir: %w", err)
 	}
 
 	// Convert spec to JobConfig using temp workspace, then set SourceDir
 	// so the runner mounts the user's source at /job/src
 	jobConfig := spec.ToJobConfig(tempWorkspace, jobID, "local")
 	jobConfig.SourceDir = absJobDir
+	jobConfig.RunAsUser = fmt.Sprintf("%d:%d", uid, gid)
 
 	if dryRun {
 		return performLocalDryRun(spec, jobConfig, masker, absJobDir)
@@ -179,6 +212,7 @@ func performLocalDryRun(spec *worker.JobSpec, config *worker.JobConfig, masker *
 	fmt.Printf("  WorkspaceDir: %s\n", config.WorkspaceDir)
 	fmt.Printf("  SourceDir: %s\n", config.SourceDir)
 	fmt.Printf("  WorkingDir: %s\n", config.WorkingDir)
+	fmt.Printf("  RunAsUser: %s\n", config.RunAsUser)
 
 	fmt.Println("\n--- END DRY RUN ---")
 	return nil

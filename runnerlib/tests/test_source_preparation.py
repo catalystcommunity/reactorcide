@@ -11,6 +11,16 @@ from src.config import get_config
 from src.source_prep import prepare_source, prepare_ci_source, _checkout_with_fetch_fallback
 
 
+def _init_repo_with_main(path):
+    """Init a git repo with 'main' as the default branch, independent of the
+    system's init.defaultBranch setting. Point HEAD at refs/heads/main before
+    the first commit so the commit lands on main regardless of git version.
+    """
+    repo = Repo.init(path)
+    repo.git.symbolic_ref("HEAD", "refs/heads/main")
+    return repo
+
+
 class TestSourcePreparation:
     """Test cases for source preparation strategies."""
 
@@ -93,7 +103,7 @@ class TestSourcePreparation:
         # Create a test git repository
         test_repo_dir = Path(self.temp_dir) / "test_repo"
         test_repo_dir.mkdir()
-        repo = Repo.init(test_repo_dir)
+        repo = _init_repo_with_main(test_repo_dir)
 
         # Add a test file
         test_file = test_repo_dir / "test.txt"
@@ -142,7 +152,7 @@ class TestSourcePreparation:
         # Create source repo (untrusted code)
         source_repo_dir = Path(self.temp_dir) / "source_repo"
         source_repo_dir.mkdir()
-        source_repo = Repo.init(source_repo_dir)
+        source_repo = _init_repo_with_main(source_repo_dir)
         (source_repo_dir / "app.py").write_text("print('hello from PR')")
         source_repo.index.add(["app.py"])
         source_repo.index.commit("PR commit")
@@ -150,7 +160,7 @@ class TestSourcePreparation:
         # Create CI repo (trusted code)
         ci_repo_dir = Path(self.temp_dir) / "ci_repo"
         ci_repo_dir.mkdir()
-        ci_repo = Repo.init(ci_repo_dir)
+        ci_repo = _init_repo_with_main(ci_repo_dir)
         (ci_repo_dir / "pipeline.py").write_text("print('running tests')")
         ci_repo.index.add(["pipeline.py"])
         ci_repo.index.commit("CI commit")
@@ -189,7 +199,7 @@ class TestSourcePreparation:
         # Create CI repo
         ci_repo_dir = Path(self.temp_dir) / "ci_repo"
         ci_repo_dir.mkdir()
-        ci_repo = Repo.init(ci_repo_dir)
+        ci_repo = _init_repo_with_main(ci_repo_dir)
         (ci_repo_dir / "deploy.sh").write_text("#!/bin/bash\necho deploying")
         ci_repo.index.add(["deploy.sh"])
         ci_repo.index.commit("CI commit")

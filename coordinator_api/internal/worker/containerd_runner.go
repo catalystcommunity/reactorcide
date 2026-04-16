@@ -101,8 +101,12 @@ func (cr *ContainerdRunner) SpawnJob(ctx context.Context, config *JobConfig) (st
 		}
 	}
 	if !needsRoot {
-		args = append(args, "--user", "1001:1001")
-		logger.Info("Running container as non-root user 1001:1001")
+		user := "1001:1001"
+		if config.RunAsUser != "" {
+			user = config.RunAsUser
+		}
+		args = append(args, "--user", user)
+		logger.WithField("user", user).Info("Running container as non-root user")
 	} else {
 		logger.Info("Running container as root (docker capability requested)")
 	}

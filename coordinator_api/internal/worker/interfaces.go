@@ -81,6 +81,11 @@ type JobConfig struct {
 	// See CapabilityDocker, CapabilityGPU constants.
 	Capabilities []string
 
+	// RunAsUser optionally overrides the container user ("uid:gid"). When
+	// empty, runners default to 1001:1001 (unless a capability forces root).
+	// run-local sets this to the host uid so bind-mounted sources are writable.
+	RunAsUser string
+
 	// Timeout for the job execution (0 = no timeout)
 	TimeoutSeconds int
 

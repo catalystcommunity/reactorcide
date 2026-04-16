@@ -553,6 +553,26 @@ def prepare_source(config: RunnerConfig) -> Optional[Path]:
     # Source code goes in /job/src/ by default
     target_path = job_path / "src"
 
+    # When running inside a container and /job/src is already populated, the
+    # source has been bind-mounted by the caller (e.g. run-local) and we must
+    # not rmtree/clone over it. CI mounts an empty /job/src, so it falls
+    # through to the normal clone path.
+    if is_in_container_mode() and target_path.exists():
+        try:
+            already_populated = any(target_path.iterdir())
+        except (OSError, PermissionError):
+            already_populated = False
+        if already_populated:
+            logger.info(
+                "Source already present — skipping source preparation (pre-mounted)",
+                fields={"path": str(target_path), "configured_type": config.source_type},
+            )
+            log_stdout(
+                f"ℹ️  Source already present at {target_path} — using pre-mounted source "
+                f"(skipping {config.source_type} prep)"
+            )
+            return target_path
+
     logger.info("Preparing source", fields={
         "type": config.source_type,
         "url": config.source_url or "none",
