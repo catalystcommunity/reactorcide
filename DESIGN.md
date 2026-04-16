@@ -6,7 +6,7 @@
 
 **The goal of any CI/CD system is to run a job.** Some systems have workflow definitions, events, or other capabilities, but at the core, a CI/CD job is a script you can run against a repo at a given point and have things happen. The rest is gluing up those extra bits.
 
-Reactorcide starts from this fundamental truth: if you have a repo at a given point, you should be able to run the job on your laptop with the repo you have currently. This is the core concept everything else builds upon.
+Reactorcide starts from this fundamental truth: if you have a repo at a given point, you should be able to run the job on your laptop with the repo you have currently just as it would in CI/CD. This is the core concept everything else builds upon.
 
 ### Why Reactorcide Exists
 
