@@ -86,6 +86,9 @@ func (cr *ContainerdRunner) SpawnJob(ctx context.Context, config *JobConfig) (st
 	if config.SourceDir != "" {
 		args = append(args, "-v", fmt.Sprintf("%s:/job/src", config.SourceDir))
 	}
+	for _, m := range config.ExtraMounts {
+		args = append(args, "-v", m)
+	}
 
 	// Add environment variables
 	for key, value := range config.Env {

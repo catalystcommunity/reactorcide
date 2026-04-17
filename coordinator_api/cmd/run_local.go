@@ -167,6 +167,50 @@ func runLocalAction(ctx *cli.Context) error {
 	jobConfig.SourceDir = absJobDir
 	jobConfig.RunAsUser = fmt.Sprintf("%d:%d", uid, gid)
 
+	// Synthesize a minimal /etc/passwd and /etc/group so tools that require a
+	// passwd entry (ssh, sudo, id, etc.) work when the container runs as the
+	// host uid — which rarely matches any user baked into the image. We keep
+	// entries for root and for the image's conventional uid 1001 so references
+	// to /home/reactorcide still resolve.
+	controlDir, err := os.MkdirTemp("/tmp", fmt.Sprintf("reactorcide-local-ctl-%s-", jobID))
+	if err != nil {
+		return fmt.Errorf("failed to create control dir: %w", err)
+	}
+	defer os.RemoveAll(controlDir)
+
+	passwdFile := filepath.Join(controlDir, "passwd")
+	groupFile := filepath.Join(controlDir, "group")
+	passwdContents := fmt.Sprintf(
+		"root:x:0:0:root:/root:/bin/sh\n"+
+			"reactorcide:x:1001:1001:reactorcide:/home/reactorcide:/bin/sh\n"+
+			"local:x:%d:%d:local user:/job:/bin/sh\n",
+		uid, gid,
+	)
+	groupContents := fmt.Sprintf(
+		"root:x:0:\n"+
+			"reactorcide:x:1001:\n"+
+			"local:x:%d:\n",
+		gid,
+	)
+	if err := os.WriteFile(passwdFile, []byte(passwdContents), 0644); err != nil {
+		return fmt.Errorf("failed to write synthetic passwd: %w", err)
+	}
+	if err := os.WriteFile(groupFile, []byte(groupContents), 0644); err != nil {
+		return fmt.Errorf("failed to write synthetic group: %w", err)
+	}
+	jobConfig.ExtraMounts = append(jobConfig.ExtraMounts,
+		fmt.Sprintf("%s:/etc/passwd:ro", passwdFile),
+		fmt.Sprintf("%s:/etc/group:ro", groupFile),
+	)
+
+	// Default HOME to /job so jobs that touch ~ (e.g. mkdir ~/.ssh) work even
+	// when the host uid's passwd entry points at /job (see above). CI runs as
+	// uid 1001 which has /home/reactorcide; local runs as an arbitrary uid so
+	// we anchor ~ to the workspace root.
+	if _, ok := jobConfig.Env["HOME"]; !ok {
+		jobConfig.Env["HOME"] = "/job"
+	}
+
 	if dryRun {
 		return performLocalDryRun(spec, jobConfig, masker, absJobDir)
 	}

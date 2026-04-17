@@ -103,6 +103,7 @@ func (dr *DockerRunner) SpawnJob(ctx context.Context, config *JobConfig) (string
 	if config.SourceDir != "" {
 		binds = append(binds, fmt.Sprintf("%s:/job/src", config.SourceDir))
 	}
+	binds = append(binds, config.ExtraMounts...)
 
 	// Handle capabilities
 	privileged := false

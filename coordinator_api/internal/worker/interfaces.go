@@ -86,6 +86,11 @@ type JobConfig struct {
 	// run-local sets this to the host uid so bind-mounted sources are writable.
 	RunAsUser string
 
+	// ExtraMounts are additional bind mounts in "hostpath:containerpath[:ro]"
+	// format. Used by run-local to inject a synthetic /etc/passwd and
+	// /etc/group for the host uid so tools like ssh find a valid user entry.
+	ExtraMounts []string
+
 	// Timeout for the job execution (0 = no timeout)
 	TimeoutSeconds int
 
