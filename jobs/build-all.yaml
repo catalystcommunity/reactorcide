@@ -1,7 +1,7 @@
 name: build-all-images
 image: golang:1.25-alpine
 capabilities:
-  - docker
+  - builder
 command: |-
   sh -c '
     set -euo pipefail
@@ -10,37 +10,27 @@ command: |-
     echo "Building all Reactorcide images (tag: $TAG)"
     echo "========================================"
 
-    # Setup environment
+    # Setup environment. BUILDKIT_HOST is injected by the builder capability —
+    # the sidecar runs buildkitd, we only need the buildctl client here.
     export HOME=/root
-    export XDG_RUNTIME_DIR=/tmp/run-root
-    mkdir -p $XDG_RUNTIME_DIR $HOME/.docker
+    mkdir -p $HOME/.docker
 
-    # Install buildkit, runc, and git
-    apk add --no-cache git runc
+    apk add --no-cache git
 
     BUILDKIT_VERSION=0.17.3
     wget -q "https://github.com/moby/buildkit/releases/download/v${BUILDKIT_VERSION}/buildkit-v${BUILDKIT_VERSION}.linux-amd64.tar.gz" -O /tmp/buildkit.tar.gz
-    tar -xzf /tmp/buildkit.tar.gz -C /usr/local
+    tar -xzf /tmp/buildkit.tar.gz -C /usr/local bin/buildctl
     rm /tmp/buildkit.tar.gz
 
-    # Start buildkitd with OCI worker
-    echo "Starting buildkitd..."
-    buildkitd \
-      --oci-worker=true \
-      --containerd-worker=false \
-      --root=$HOME/.local/share/buildkit \
-      --addr=unix://$XDG_RUNTIME_DIR/buildkit/buildkitd.sock &
-
-    # Wait for buildkitd to be ready
+    # Wait until the sidecar is serving (normally ~instant, but the job can
+    # race startup on a cold-pulled image).
     for i in $(seq 1 30); do
-      if buildctl --addr=unix://$XDG_RUNTIME_DIR/buildkit/buildkitd.sock debug info >/dev/null 2>&1; then
-        echo "buildkitd is ready"
+      if buildctl debug info >/dev/null 2>&1; then
+        echo "builder sidecar is ready"
         break
       fi
       sleep 1
     done
-
-    export BUILDKIT_HOST=unix://$XDG_RUNTIME_DIR/buildkit/buildkitd.sock
 
     # Setup registry auth for buildkit
     echo "Configuring registry authentication..."

@@ -39,10 +39,20 @@ type JobRunner interface {
 
 // Capability constants for job requirements
 const (
-	// CapabilityDocker provides access to build/push container images.
-	// DockerRunner: mounts /var/run/docker.sock
-	// KubernetesRunner: uses DinD sidecar or hostPath mount
+	// CapabilityDocker provides access to a docker CLI for running ad-hoc
+	// containers (e.g. integration tests). Implementations historically
+	// privilege the job container and expose a runtime socket. Prefer
+	// CapabilityBuilder for building images — that leaves the job container
+	// unprivileged.
 	CapabilityDocker = "docker"
+
+	// CapabilityBuilder provisions a buildkitd sidecar and injects
+	// BUILDKIT_HOST=tcp://localhost:1234 into the job, so jobs can build and
+	// push container images without privileged access or host runtime
+	// coupling. The sidecar's registry policy (insecure registries, CA
+	// bundles, etc.) comes from operator-provided buildkitd.toml, not from
+	// the job.
+	CapabilityBuilder = "builder"
 
 	// CapabilityGPU provides access to GPU resources.
 	// NOT YET IMPLEMENTED - placeholder for future development.
@@ -50,6 +60,29 @@ const (
 	// KubernetesRunner: would add nvidia.com/gpu resource request
 	CapabilityGPU = "gpu"
 )
+
+// BuilderSidecarPort is the TCP port buildkitd listens on inside its sidecar
+// container. Jobs reach it via BUILDKIT_HOST=tcp://localhost:1234 when they
+// share netns with the sidecar.
+const BuilderSidecarPort = 1234
+
+// BuilderHostEnv is the env var set on the job container when
+// CapabilityBuilder is present, pointing buildctl at the sidecar.
+const BuilderHostEnv = "BUILDKIT_HOST"
+
+// DefaultBuilderImage is the buildkitd image used for builder sidecars when
+// REACTORCIDE_BUILDER_IMAGE is not set.
+const DefaultBuilderImage = "moby/buildkit:v0.17.3"
+
+// HasCapability returns true if caps contains the given capability.
+func HasCapability(caps []string, want string) bool {
+	for _, c := range caps {
+		if c == want {
+			return true
+		}
+	}
+	return false
+}
 
 // JobConfig contains all the configuration needed to spawn a job container.
 // The container's entrypoint is always cleared - the Command field contains

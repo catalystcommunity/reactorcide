@@ -16,7 +16,7 @@ job:
   priority: 15
   raw_command: true
   capabilities:
-    - docker
+    - builder
 environment:
   REGISTRY_INTERNAL: "10.16.0.1:5000"
   REGISTRY_EXTERNAL: "containers.catalystsquad.com"

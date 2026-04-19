@@ -129,6 +129,27 @@ worker:
       cpu: 500m
       memory: 512Mi
 
+# Builder sidecar configuration. Applied to any job that declares
+# `capabilities: [builder]`. The sidecar runs buildkitd and the job container
+# talks to it via BUILDKIT_HOST=tcp://localhost:1234, so jobs can build images
+# without privileged mode or host socket access.
+#
+# Under KubernetesRunner:
+#   - configMap: name of a ConfigMap whose "buildkitd.toml" key is mounted at
+#     /etc/buildkit/buildkitd.toml inside the sidecar. Empty disables the mount.
+#   - authSecret: name of a Secret whose "config.json" key is mounted at
+#     /root/.docker/config.json (docker-format registry auth).
+#   - cachePvc: name of a PVC mounted at /var/lib/buildkit for cross-job cache.
+#     Empty means each sidecar starts fresh.
+#
+# Under DockerRunner / ContainerdRunner (docker-compose deploy), the same env
+# vars point at HOST paths instead of k8s resource names.
+builder:
+  image: "moby/buildkit:v0.17.3"
+  configMap: ""
+  authSecret: ""
+  cachePvc: ""
+
 grpc:
   maxMessageSizeBytes: "1000000000"
 

@@ -121,6 +121,25 @@ spec:
                 secretKeyRef:
                   name: {{ .Values.defaults.userSecretName }}
                   key: user-id
+            {{- /* Builder sidecar config — applied to jobs with `capabilities: [builder]` */ -}}
+            {{- if .Values.builder }}
+            {{- if .Values.builder.image }}
+            - name: REACTORCIDE_BUILDER_IMAGE
+              value: {{ .Values.builder.image | quote }}
+            {{- end }}
+            {{- if .Values.builder.configMap }}
+            - name: REACTORCIDE_BUILDER_CONFIG_PATH
+              value: {{ .Values.builder.configMap | quote }}
+            {{- end }}
+            {{- if .Values.builder.authSecret }}
+            - name: REACTORCIDE_BUILDER_REGISTRY_AUTH_PATH
+              value: {{ .Values.builder.authSecret | quote }}
+            {{- end }}
+            {{- if .Values.builder.cachePvc }}
+            - name: REACTORCIDE_BUILDER_CACHE_VOLUME
+              value: {{ .Values.builder.cachePvc | quote }}
+            {{- end }}
+            {{- end }}
           volumeMounts:
             - name: work-dir
               mountPath: /tmp/reactorcide-jobs

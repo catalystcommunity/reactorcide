@@ -1,0 +1,26 @@
+# Example buildkitd.toml for the reactorcide builder sidecar.
+#
+# Mount this at /etc/buildkit/buildkitd.toml in the sidecar. Jobs declaring
+# `capabilities: [builder]` get a buildkitd instance started with this config,
+# reachable at BUILDKIT_HOST=tcp://localhost:1234. Jobs cannot override these
+# settings — registry policy is operator-controlled.
+#
+# Wiring:
+#   docker-compose: set REACTORCIDE_BUILDER_CONFIG_PATH to the absolute host
+#     path of this file before bringing up the worker container.
+#   k8s: put the contents in a ConfigMap and set builder.configMap (helm) /
+#     REACTORCIDE_BUILDER_CONFIG_PATH (env) to the ConfigMap name.
+
+# Plaintext-HTTP internal registry. Remove the block entirely if all registries
+# you push to use HTTPS with valid certs.
+[registry."10.16.0.1:5000"]
+  http = true
+  insecure = true
+
+# Example of a self-signed HTTPS registry (skip cert verification but keep TLS):
+# [registry."registry.example.internal"]
+#   insecure = true
+
+# Example of a registry that requires a private CA bundle:
+# [registry."registry.corp.example.com"]
+#   ca = ["/etc/buildkit/certs/corp-root.crt"]

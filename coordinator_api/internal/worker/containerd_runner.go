@@ -38,6 +38,13 @@ type ContainerdRunner struct {
 	// containers stores running container processes by container ID
 	containers map[string]*containerProcess
 	mu         sync.RWMutex
+
+	builder BuilderConfig
+
+	// sidecars maps a job container ID (the nerdctl container name we use)
+	// to its builder sidecar container name, so Cleanup can remove both.
+	sidecars   map[string]string
+	sidecarsMu sync.Mutex
 }
 
 // NewContainerdRunner creates a new nerdctl-based job runner
@@ -50,9 +57,45 @@ func NewContainerdRunner() (*ContainerdRunner, error) {
 
 	logging.Log.Info("nerdctl runner initialized")
 
-	return &ContainerdRunner{
+	cr := &ContainerdRunner{
 		containers: make(map[string]*containerProcess),
-	}, nil
+		builder:    LoadBuilderConfig(),
+		sidecars:   make(map[string]string),
+	}
+	cr.sweepLeaked(context.Background())
+	return cr, nil
+}
+
+// sweepLeaked removes any job/sidecar containers left behind by a previous
+// worker run. Same assumptions as DockerRunner.sweepLeaked.
+func (cr *ContainerdRunner) sweepLeaked(ctx context.Context) {
+	logger := logging.Log
+	for _, component := range []string{"builder-sidecar", "job-container"} {
+		out, err := exec.CommandContext(ctx, nerdctlBinary,
+			"--namespace", containerdNamespace,
+			"ps", "-a", "-q",
+			"--filter", "label=reactorcide.component="+component,
+		).Output()
+		if err != nil {
+			logger.WithError(err).Warn("Failed to list leaked containers for sweep")
+			continue
+		}
+		for _, id := range strings.Fields(string(out)) {
+			rmOut, rmErr := exec.CommandContext(ctx, nerdctlBinary,
+				"--namespace", containerdNamespace, "rm", "-f", id,
+			).CombinedOutput()
+			if rmErr != nil {
+				if !strings.Contains(string(rmOut), "not found") && !strings.Contains(string(rmOut), "No such container") {
+					logger.WithError(rmErr).WithField("container_id", id).Warn("Failed to sweep leaked container")
+					continue
+				}
+			}
+			logger.WithFields(map[string]interface{}{
+				"container_id": id,
+				"component":    component,
+			}).Info("Swept leaked container from prior worker run")
+		}
+	}
 }
 
 // SpawnJob creates and starts a container using nerdctl
@@ -66,14 +109,32 @@ func (cr *ContainerdRunner) SpawnJob(ctx context.Context, config *JobConfig) (st
 
 	containerID := fmt.Sprintf("reactorcide-job-%s", config.JobID)
 
+	// If the job requested the builder capability, spawn the buildkitd
+	// sidecar first and have the job container share its netns.
+	wantsBuilder := HasCapability(config.Capabilities, CapabilityBuilder)
+	var sidecarName string
+	if wantsBuilder {
+		name, err := cr.startBuilderSidecar(ctx, config)
+		if err != nil {
+			return "", fmt.Errorf("failed to start builder sidecar: %w", err)
+		}
+		sidecarName = name
+	}
+
 	// Build nerdctl run command
 	args := []string{
 		"--namespace", containerdNamespace,
 		"run",
 		"--name", containerID,
-		"--rm=false",      // Don't auto-remove so we can get logs and exit code
-		"--net", "bridge", // Use bridge networking with CNI
+		"--rm=false",       // Don't auto-remove so we can get logs and exit code
 		"--pull", "always", // Always pull to get latest image
+	}
+	if wantsBuilder {
+		// Share the sidecar's netns so BUILDKIT_HOST=tcp://localhost:1234 works
+		// without any per-job network plumbing — mirrors k8s pod semantics.
+		args = append(args, "--net", "container:"+sidecarName)
+	} else {
+		args = append(args, "--net", "bridge")
 	}
 
 	// Set working directory only if specified, otherwise use container's default
@@ -94,15 +155,14 @@ func (cr *ContainerdRunner) SpawnJob(ctx context.Context, config *JobConfig) (st
 	for key, value := range config.Env {
 		args = append(args, "-e", fmt.Sprintf("%s=%s", key, value))
 	}
-
-	// Handle user - run as non-root unless docker capability is requested
-	needsRoot := false
-	for _, cap := range config.Capabilities {
-		if cap == CapabilityDocker {
-			needsRoot = true
-			break
-		}
+	if wantsBuilder {
+		args = append(args, "-e", fmt.Sprintf("%s=tcp://localhost:%d", BuilderHostEnv, BuilderSidecarPort))
 	}
+
+	// Default non-root; docker and builder both imply root uid inside the
+	// container (see DockerRunner for rationale).
+	needsRoot := HasCapability(config.Capabilities, CapabilityDocker) ||
+		HasCapability(config.Capabilities, CapabilityBuilder)
 	if !needsRoot {
 		user := "1001:1001"
 		if config.RunAsUser != "" {
@@ -111,7 +171,7 @@ func (cr *ContainerdRunner) SpawnJob(ctx context.Context, config *JobConfig) (st
 		args = append(args, "--user", user)
 		logger.WithField("user", user).Info("Running container as non-root user")
 	} else {
-		logger.Info("Running container as root (docker capability requested)")
+		logger.Info("Running container as root (build/docker capability requested)")
 	}
 
 	// Handle capabilities
@@ -120,6 +180,9 @@ func (cr *ContainerdRunner) SpawnJob(ctx context.Context, config *JobConfig) (st
 		case CapabilityDocker:
 			args = append(args, "--privileged")
 			logger.Info("Docker capability enabled: running in privileged mode")
+		case CapabilityBuilder:
+			// Handled upstream: sidecar spawn + shared netns. Job container
+			// itself stays unprivileged.
 		case CapabilityGPU:
 			// TODO: GPU support requires NVIDIA container runtime integration
 			logger.Warn("GPU capability requested but not yet implemented")
@@ -154,21 +217,47 @@ func (cr *ContainerdRunner) SpawnJob(ctx context.Context, config *JobConfig) (st
 		"command":      config.Command,
 	}).Info("Creating nerdctl container")
 
-	// Create pipes for stdout/stderr
+	// Create pipes returned to the caller; both job and sidecar output flow
+	// through line-tagging writers so writes are atomic per line and sidecar
+	// lines are clearly prefixed for the operator — and both streams pass
+	// through the caller's secret masker identically.
 	stdoutReader, stdoutWriter := io.Pipe()
 	stderrReader, stderrWriter := io.Pipe()
 
-	// Create and start the nerdctl command
+	var stdoutMu, stderrMu sync.Mutex
+	jobStdoutTag := &taggingWriter{dest: stdoutWriter, mu: &stdoutMu}
+	jobStderrTag := &taggingWriter{dest: stderrWriter, mu: &stderrMu}
+
 	cmd := exec.CommandContext(ctx, nerdctlBinary, args...)
-	cmd.Stdout = stdoutWriter
-	cmd.Stderr = stderrWriter
+	cmd.Stdout = jobStdoutTag
+	cmd.Stderr = jobStderrTag
 
 	if err := cmd.Start(); err != nil {
 		stdoutWriter.Close()
 		stderrWriter.Close()
 		stdoutReader.Close()
 		stderrReader.Close()
+		if sidecarName != "" {
+			cr.removeSidecar(context.Background(), sidecarName)
+		}
 		return "", fmt.Errorf("failed to start nerdctl: %w", err)
+	}
+
+	// Optional sidecar log pump. `nerdctl logs -f` keeps running as long as
+	// the sidecar container lives; we'll kill it explicitly when the job
+	// exits so output pipes can close.
+	var sidecarLogsCmd *exec.Cmd
+	var sidecarStdoutTag, sidecarStderrTag *taggingWriter
+	if sidecarName != "" {
+		sidecarStdoutTag = &taggingWriter{dest: stdoutWriter, mu: &stdoutMu, prefix: []byte(BuilderLogPrefix)}
+		sidecarStderrTag = &taggingWriter{dest: stderrWriter, mu: &stderrMu, prefix: []byte(BuilderLogPrefix)}
+		sidecarLogsCmd = exec.Command(nerdctlBinary, "--namespace", containerdNamespace, "logs", "-f", sidecarName)
+		sidecarLogsCmd.Stdout = sidecarStdoutTag
+		sidecarLogsCmd.Stderr = sidecarStderrTag
+		if err := sidecarLogsCmd.Start(); err != nil {
+			logger.WithError(err).Warn("Failed to start builder sidecar log pump; continuing without sidecar logs")
+			sidecarLogsCmd = nil
+		}
 	}
 
 	// Store the container process
@@ -186,11 +275,16 @@ func (cr *ContainerdRunner) SpawnJob(ctx context.Context, config *JobConfig) (st
 	cr.containers[containerID] = proc
 	cr.mu.Unlock()
 
-	// Start a goroutine to wait for process exit and close writers
+	if sidecarName != "" {
+		cr.sidecarsMu.Lock()
+		cr.sidecars[containerID] = sidecarName
+		cr.sidecarsMu.Unlock()
+	}
+
+	// Wait for job exit, flush taggers, tear down sidecar log pump, close pipes.
 	go func() {
 		err := cmd.Wait()
 
-		// Store exit information
 		if err != nil {
 			if exitErr, ok := err.(*exec.ExitError); ok {
 				proc.exitCode = exitErr.ExitCode()
@@ -200,16 +294,91 @@ func (cr *ContainerdRunner) SpawnJob(ctx context.Context, config *JobConfig) (st
 			}
 		}
 
-		// Close writers to unblock any readers
+		// Flush any partial trailing lines from the job before tearing down.
+		jobStdoutTag.Flush()
+		jobStderrTag.Flush()
+
+		// Stop the sidecar log pump so its reader unblocks.
+		if sidecarLogsCmd != nil && sidecarLogsCmd.Process != nil {
+			_ = sidecarLogsCmd.Process.Kill()
+			_ = sidecarLogsCmd.Wait()
+		}
+		if sidecarStdoutTag != nil {
+			sidecarStdoutTag.Flush()
+		}
+		if sidecarStderrTag != nil {
+			sidecarStderrTag.Flush()
+		}
+
 		stdoutWriter.Close()
 		stderrWriter.Close()
 
-		// Signal completion
 		close(proc.done)
 	}()
 
 	logger.WithField("container_id", containerID).Info("nerdctl container started successfully")
 	return containerID, nil
+}
+
+// startBuilderSidecar launches a buildkitd sidecar container detached. The
+// returned name is what --net=container:<name> attaches the job container to.
+func (cr *ContainerdRunner) startBuilderSidecar(ctx context.Context, config *JobConfig) (string, error) {
+	logger := logging.Log.WithField("job_id", config.JobID)
+
+	image := cr.builder.Image
+	if image == "" {
+		image = DefaultBuilderImage
+	}
+	name := BuilderSidecarName(config.JobID)
+
+	args := []string{
+		"--namespace", containerdNamespace,
+		"run", "-d",
+		"--name", name,
+		"--rm=false",
+		"--privileged",
+		"--net", "bridge",
+		"--pull", "always",
+		"--label", "reactorcide.job_id=" + config.JobID,
+		"--label", "reactorcide.component=builder-sidecar",
+	}
+	if cr.builder.ConfigPath != "" {
+		args = append(args, "-v", fmt.Sprintf("%s:/etc/buildkit/buildkitd.toml:ro", cr.builder.ConfigPath))
+	}
+	if cr.builder.RegistryAuthPath != "" {
+		args = append(args, "-v", fmt.Sprintf("%s:/root/.docker/config.json:ro", cr.builder.RegistryAuthPath))
+	}
+	if cr.builder.CacheVolume != "" {
+		args = append(args, "-v", fmt.Sprintf("%s:/var/lib/buildkit", cr.builder.CacheVolume))
+	}
+	args = append(args, image,
+		"--addr", fmt.Sprintf("tcp://0.0.0.0:%d", BuilderSidecarPort),
+		"--oci-worker=true",
+	)
+	if cr.builder.ConfigPath != "" {
+		args = append(args, "--config", "/etc/buildkit/buildkitd.toml")
+	}
+
+	out, err := exec.CommandContext(ctx, nerdctlBinary, args...).CombinedOutput()
+	if err != nil {
+		return "", fmt.Errorf("nerdctl run buildkit sidecar: %w (%s)", err, strings.TrimSpace(string(out)))
+	}
+
+	logger.WithField("sidecar_name", name).Info("Builder sidecar started")
+	return name, nil
+}
+
+// removeSidecar best-effort cleanup: stops and removes a sidecar by name.
+func (cr *ContainerdRunner) removeSidecar(ctx context.Context, name string) {
+	logger := logging.Log.WithField("sidecar_name", name)
+	cmd := exec.CommandContext(ctx, nerdctlBinary, "--namespace", containerdNamespace, "rm", "-f", name)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		if !strings.Contains(string(out), "not found") && !strings.Contains(string(out), "No such container") {
+			logger.WithError(err).WithField("output", string(out)).Warn("Failed to remove builder sidecar")
+			return
+		}
+	}
+	logger.Info("Builder sidecar cleaned up")
 }
 
 // StreamLogs returns stdout and stderr readers for a container
@@ -282,6 +451,15 @@ func (cr *ContainerdRunner) Cleanup(ctx context.Context, containerID string) err
 		if !strings.Contains(string(output), "not found") && !strings.Contains(string(output), "No such container") {
 			logger.WithError(err).WithField("output", string(output)).Warn("Failed to remove container")
 		}
+	}
+
+	// Tear down the builder sidecar, if any.
+	cr.sidecarsMu.Lock()
+	sidecarName, hadSidecar := cr.sidecars[containerID]
+	delete(cr.sidecars, containerID)
+	cr.sidecarsMu.Unlock()
+	if hadSidecar {
+		cr.removeSidecar(ctx, sidecarName)
 	}
 
 	logger.Info("nerdctl container cleaned up successfully")

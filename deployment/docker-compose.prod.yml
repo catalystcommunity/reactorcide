@@ -132,6 +132,13 @@ services:
       # REACTORCIDE_JOB_API_URL must be reachable from job containers (host bridge, not compose network)
       REACTORCIDE_JOB_API_URL: ${REACTORCIDE_JOB_API_URL:-}
       REACTORCIDE_API_TOKEN: ${REACTORCIDE_WORKER_API_TOKEN:-}
+      # Builder sidecar config — applied to jobs with `capabilities: [builder]`.
+      # These point at host paths (buildkitd.toml, docker config.json, named volume).
+      # Leave unset to use defaults (no mounts, moby/buildkit:v0.17.3).
+      REACTORCIDE_BUILDER_IMAGE: ${REACTORCIDE_BUILDER_IMAGE:-}
+      REACTORCIDE_BUILDER_CONFIG_PATH: ${REACTORCIDE_BUILDER_CONFIG_PATH:-}
+      REACTORCIDE_BUILDER_REGISTRY_AUTH_PATH: ${REACTORCIDE_BUILDER_REGISTRY_AUTH_PATH:-}
+      REACTORCIDE_BUILDER_CACHE_VOLUME: ${REACTORCIDE_BUILDER_CACHE_VOLUME:-}
       # Tell nerdctl to use system containerd socket (not rootless)
       CONTAINERD_ADDRESS: /run/containerd/containerd.sock
     # Note: Container socket mount is added via docker-compose.override.yml

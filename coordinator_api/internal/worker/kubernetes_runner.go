@@ -9,6 +9,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/catalystcommunity/app-utils-go/logging"
@@ -33,6 +34,7 @@ type KubernetesRunner struct {
 	runnerImage      string
 	dindImage        string
 	imagePullSecrets []string
+	builder          BuilderConfig
 }
 
 // KubernetesRunnerConfig holds configuration for the K8s runner
@@ -97,6 +99,7 @@ func NewKubernetesRunnerWithConfig(cfg KubernetesRunnerConfig) (*KubernetesRunne
 		runnerImage:      cfg.RunnerImage,
 		dindImage:        dindImage,
 		imagePullSecrets: cfg.ImagePullSecrets,
+		builder:          LoadBuilderConfig(),
 	}, nil
 }
 
@@ -165,20 +168,21 @@ func (kr *KubernetesRunner) SpawnJob(ctx context.Context, config *JobConfig) (st
 		}
 	}
 
-	// Determine if we need root (for docker capability)
+	// Determine if we need root. Both docker and builder run the job as root
+	// inside the container (host privilege is separately gated).
 	runAsNonRoot := true
 	var runAsUser *int64
 	userID := int64(1001)
 	runAsUser = &userID
-	needsDocker := false
-
-	for _, cap := range config.Capabilities {
-		if cap == CapabilityDocker {
-			runAsNonRoot = false
-			runAsUser = nil
-			needsDocker = true
+	needsDocker := HasCapability(config.Capabilities, CapabilityDocker)
+	needsRoot := needsDocker || HasCapability(config.Capabilities, CapabilityBuilder)
+	if needsRoot {
+		runAsNonRoot = false
+		runAsUser = nil
+		if needsDocker {
 			logger.Info("Docker capability requested: adding DinD sidecar")
-			break
+		} else {
+			logger.Info("Builder capability requested: job runs as root, sidecar added separately")
 		}
 	}
 
@@ -254,6 +258,109 @@ func (kr *KubernetesRunner) SpawnJob(ctx context.Context, config *JobConfig) (st
 			podSpec.Containers[0].Resources.Limits["nvidia.com/gpu"] = resource.MustParse("1")
 			logger.Info("GPU capability enabled: requesting nvidia.com/gpu=1")
 		}
+	}
+
+	// Handle Builder capability: inject buildkitd native sidecar. The job
+	// container stays unprivileged; the privilege lives on the sidecar only.
+	if HasCapability(config.Capabilities, CapabilityBuilder) {
+		priv := true
+		always := corev1.ContainerRestartPolicyAlways
+
+		image := kr.builder.Image
+		if image == "" {
+			image = DefaultBuilderImage
+		}
+
+		sidecarArgs := []string{
+			"--addr", fmt.Sprintf("tcp://0.0.0.0:%d", BuilderSidecarPort),
+			"--oci-worker=true",
+		}
+
+		var sidecarMounts []corev1.VolumeMount
+		var sidecarVolumes []corev1.Volume
+
+		// ConfigMap name in ConfigPath when running under k8s.
+		if kr.builder.ConfigPath != "" {
+			sidecarArgs = append(sidecarArgs, "--config", "/etc/buildkit/buildkitd.toml")
+			sidecarMounts = append(sidecarMounts, corev1.VolumeMount{
+				Name:      "builder-config",
+				MountPath: "/etc/buildkit",
+				ReadOnly:  true,
+			})
+			sidecarVolumes = append(sidecarVolumes, corev1.Volume{
+				Name: "builder-config",
+				VolumeSource: corev1.VolumeSource{
+					ConfigMap: &corev1.ConfigMapVolumeSource{
+						LocalObjectReference: corev1.LocalObjectReference{
+							Name: kr.builder.ConfigPath,
+						},
+					},
+				},
+			})
+		}
+
+		// Secret name in RegistryAuthPath when running under k8s.
+		if kr.builder.RegistryAuthPath != "" {
+			sidecarMounts = append(sidecarMounts, corev1.VolumeMount{
+				Name:      "builder-auth",
+				MountPath: "/root/.docker",
+				ReadOnly:  true,
+			})
+			sidecarVolumes = append(sidecarVolumes, corev1.Volume{
+				Name: "builder-auth",
+				VolumeSource: corev1.VolumeSource{
+					Secret: &corev1.SecretVolumeSource{
+						SecretName: kr.builder.RegistryAuthPath,
+					},
+				},
+			})
+		}
+
+		// PVC name in CacheVolume when running under k8s.
+		if kr.builder.CacheVolume != "" {
+			sidecarMounts = append(sidecarMounts, corev1.VolumeMount{
+				Name:      "builder-cache",
+				MountPath: "/var/lib/buildkit",
+			})
+			sidecarVolumes = append(sidecarVolumes, corev1.Volume{
+				Name: "builder-cache",
+				VolumeSource: corev1.VolumeSource{
+					PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{
+						ClaimName: kr.builder.CacheVolume,
+					},
+				},
+			})
+		}
+
+		builderSidecar := corev1.Container{
+			Name:  "builder",
+			Image: image,
+			Args:  sidecarArgs,
+			SecurityContext: &corev1.SecurityContext{
+				Privileged: &priv,
+			},
+			VolumeMounts:  sidecarMounts,
+			RestartPolicy: &always,
+			StartupProbe: &corev1.Probe{
+				ProbeHandler: corev1.ProbeHandler{
+					TCPSocket: &corev1.TCPSocketAction{
+						Port: intstr.FromInt32(int32(BuilderSidecarPort)),
+					},
+				},
+				PeriodSeconds:    1,
+				FailureThreshold: 30,
+			},
+		}
+		podSpec.InitContainers = append(podSpec.InitContainers, builderSidecar)
+		podSpec.Volumes = append(podSpec.Volumes, sidecarVolumes...)
+
+		// Point the job at the sidecar — same env var across runners.
+		podSpec.Containers[0].Env = append(podSpec.Containers[0].Env, corev1.EnvVar{
+			Name:  BuilderHostEnv,
+			Value: fmt.Sprintf("tcp://localhost:%d", BuilderSidecarPort),
+		})
+
+		logger.WithField("builder_image", image).Info("Builder sidecar configured")
 	}
 
 	// Handle Docker capability: inject DinD native sidecar
@@ -402,35 +509,78 @@ func (kr *KubernetesRunner) StreamLogs(ctx context.Context, jobName string) (std
 
 	logger.WithField("pod_name", podName).Info("Streaming logs from pod")
 
-	// Get logs from the pod
-	// K8s API returns a single stream with both stdout and stderr combined
-	// We'll return the same stream for both since K8s doesn't separate them
-	logOpts := &corev1.PodLogOptions{
-		Container:  "job",
-		Follow:     true,
-		Timestamps: false,
-	}
-
-	req := kr.clientset.CoreV1().Pods(kr.namespace).GetLogs(podName, logOpts)
-	logStream, err := req.Stream(ctx)
+	// Job container logs
+	jobStream, err := kr.clientset.CoreV1().Pods(kr.namespace).
+		GetLogs(podName, &corev1.PodLogOptions{
+			Container:  "job",
+			Follow:     true,
+			Timestamps: false,
+		}).
+		Stream(ctx)
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to stream pod logs: %w", err)
+		return nil, nil, fmt.Errorf("failed to stream job logs: %w", err)
 	}
 
-	// K8s combines stdout/stderr into a single stream
-	// Create a pipe to allow reading while the stream is still open
-	stdoutReader, stdoutWriter := io.Pipe()
+	// Builder sidecar logs (if the pod has one). Errors here are non-fatal
+	// — we still stream the job.
+	var builderStream io.ReadCloser
+	if pod, gerr := kr.clientset.CoreV1().Pods(kr.namespace).Get(ctx, podName, metav1.GetOptions{}); gerr == nil {
+		for _, ic := range pod.Spec.InitContainers {
+			if ic.Name == "builder" {
+				bs, berr := kr.clientset.CoreV1().Pods(kr.namespace).
+					GetLogs(podName, &corev1.PodLogOptions{
+						Container:  "builder",
+						Follow:     true,
+						Timestamps: false,
+					}).
+					Stream(ctx)
+				if berr != nil {
+					logger.WithError(berr).Warn("Failed to open builder sidecar logs")
+				} else {
+					builderStream = bs
+				}
+				break
+			}
+		}
+	}
 
-	// Empty stderr reader (K8s doesn't separate streams)
+	stdoutReader, stdoutWriter := io.Pipe()
 	stderrReader := io.NopCloser(bytes.NewReader(nil))
 
-	go func() {
-		defer logStream.Close()
-		defer stdoutWriter.Close()
+	// K8s combines stdout/stderr into a single stream per container, so we
+	// only tag+merge into stdout. The caller's masker operates on a single
+	// stream of lines, which is exactly what we're producing.
+	var mu sync.Mutex
+	jobTag := &taggingWriter{dest: stdoutWriter, mu: &mu}
 
-		_, err := io.Copy(stdoutWriter, logStream)
-		if err != nil && err != io.EOF {
-			logger.WithError(err).Error("Error copying pod logs")
+	jobDone := make(chan struct{})
+	go func() {
+		defer close(jobDone)
+		defer jobStream.Close()
+		if _, cerr := io.Copy(jobTag, jobStream); cerr != nil && cerr != io.EOF {
+			logger.WithError(cerr).Error("Error copying pod logs")
+		}
+		jobTag.Flush()
+	}()
+
+	if builderStream != nil {
+		builderTag := &taggingWriter{dest: stdoutWriter, mu: &mu, prefix: []byte(BuilderLogPrefix)}
+		go func() {
+			defer builderStream.Close()
+			if _, cerr := io.Copy(builderTag, builderStream); cerr != nil && cerr != io.EOF && cerr != io.ErrClosedPipe {
+				logger.WithError(cerr).Warn("Error copying builder sidecar logs")
+			}
+			builderTag.Flush()
+		}()
+	}
+
+	// Close the stdout pipe when the job finishes, and close the builder
+	// stream so its goroutine can exit (same pattern as DockerRunner).
+	go func() {
+		<-jobDone
+		stdoutWriter.Close()
+		if builderStream != nil {
+			builderStream.Close()
 		}
 	}()
 
