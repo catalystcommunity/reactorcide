@@ -8,7 +8,7 @@ This sub-project should contain tests that use an actual postgres db but the onl
 
 ## Testing
 
-To run tests, you'll need a PostgreSQL database running. You can start one using Docker:
+To run tests, you'll need a PostgreSQL database running. You can start one using Docker as an example:
 
 ```bash
 docker run -d --rm --name postgres-test -e POSTGRES_USER=devuser -e POSTGRES_PASSWORD=devpass -e POSTGRES_DB=testpg -p 5432:5432 postgres:17
