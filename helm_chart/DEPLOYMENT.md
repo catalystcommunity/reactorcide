@@ -7,7 +7,7 @@ This guide covers deploying Reactorcide to Kubernetes using Helm, including inte
 - Kubernetes cluster (v1.25+)
 - Helm 3.x installed
 - kubectl configured to access your cluster
-- Docker registry access for container images
+- Container registry access for container images
 
 ## Architecture Overview
 
