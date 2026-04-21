@@ -19,4 +19,4 @@ Then run tests with:
 go test ./test -v
 ```
 
-The test suite automatically runs migrations and uses transactional rollback for isolation.
+The test suite automatically runs migrations and uses transactional rollback for isolation, using the DataUtils pattern.
