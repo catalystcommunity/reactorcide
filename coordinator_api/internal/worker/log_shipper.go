@@ -12,6 +12,7 @@ import (
 
 	"github.com/catalystcommunity/app-utils-go/logging"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/objects"
+	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/pubsub"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/secrets"
 )
 
@@ -30,6 +31,7 @@ type LogShipperConfig struct {
 	StreamType     string // "stdout" or "stderr"
 	ChunkInterval  time.Duration
 	OnChunkUploaded func(objectKey string, bytesWritten int64) error // Callback for chunk uploads
+	Publisher      *pubsub.Publisher // optional: NOTIFY WS clients when a chunk is flushed
 }
 
 // LogShipper handles streaming logs to object storage in chunks
@@ -238,6 +240,13 @@ func (ls *LogShipper) uploadChunk(ctx context.Context) error {
 		if err := ls.config.OnChunkUploaded(ls.objectKey, ls.totalBytes); err != nil {
 			logger.WithError(err).Warn("Chunk upload callback failed")
 		}
+	}
+
+	// Notify WS subscribers that a new log chunk is ready. The payload is a
+	// lightweight ping — clients re-fetch via REST rather than receiving
+	// bytes over NOTIFY (which has an 8KB payload limit).
+	if ls.config.Publisher != nil {
+		ls.config.Publisher.PublishLogAvailable(ctx, ls.config.JobID, ls.config.StreamType, 0, ls.totalBytes)
 	}
 
 	return nil

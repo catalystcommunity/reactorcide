@@ -100,6 +100,21 @@ func (m *ProjectMockStore) ListJobs(ctx context.Context, filters map[string]inte
 func (m *ProjectMockStore) GetJobsByUser(ctx context.Context, userID string, limit, offset int) ([]models.Job, error) {
 	return nil, nil
 }
+func (m *ProjectMockStore) ListJobsForPRCommit(ctx context.Context, repo string, prNumber int, commitSHA string) ([]models.Job, error) {
+	return nil, nil
+}
+func (m *ProjectMockStore) ListJobsForPR(ctx context.Context, repo string, prNumber int) ([]models.Job, error) {
+	return nil, nil
+}
+func (m *ProjectMockStore) ForPRCommit(ctx context.Context, repo string, prNumber int, commitSHA string, fn func(ctx context.Context) error) error {
+	return fn(ctx)
+}
+func (m *ProjectMockStore) IsPRMerged(ctx context.Context, repo string, prNumber int) (bool, error) {
+	return false, nil
+}
+func (m *ProjectMockStore) MarkPRMerged(ctx context.Context, repo string, prNumber int) error {
+	return nil
+}
 func (m *ProjectMockStore) ValidateAPIToken(ctx context.Context, token string) (*models.APIToken, *models.User, error) {
 	return nil, nil, nil
 }

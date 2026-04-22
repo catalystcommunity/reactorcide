@@ -188,6 +188,91 @@ func (c *GitLabClient) UpdatePRComment(ctx context.Context, repo string, prNumbe
 	return nil
 }
 
+// UpsertPRCommentByMarker scans existing MR notes for one containing marker
+// and PUTs an updated body to that note; otherwise POSTs a new note.
+func (c *GitLabClient) UpsertPRCommentByMarker(ctx context.Context, repo string, prNumber int, marker, body string) error {
+	projectPath := strings.ReplaceAll(repo, "/", "%2F")
+
+	existingID, err := c.findNoteIDByMarker(ctx, projectPath, prNumber, marker)
+	if err != nil {
+		return fmt.Errorf("searching for existing note: %w", err)
+	}
+
+	if existingID != 0 {
+		return c.putMergeRequestNote(ctx, projectPath, prNumber, existingID, body)
+	}
+	return c.UpdatePRComment(ctx, repo, prNumber, body)
+}
+
+// findNoteIDByMarker pages through MR notes looking for one whose body
+// contains marker. Returns 0 if none found.
+func (c *GitLabClient) findNoteIDByMarker(ctx context.Context, projectPath string, prNumber int, marker string) (int64, error) {
+	page := 1
+	for {
+		url := fmt.Sprintf("%s/projects/%s/merge_requests/%d/notes?per_page=100&page=%d", c.config.BaseURL, projectPath, prNumber, page)
+		req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+		if err != nil {
+			return 0, fmt.Errorf("creating request: %w", err)
+		}
+		req.Header.Set("PRIVATE-TOKEN", c.config.Token)
+
+		resp, err := c.client.Do(req)
+		if err != nil {
+			return 0, fmt.Errorf("sending request: %w", err)
+		}
+
+		var notes []struct {
+			ID   int64  `json:"id"`
+			Body string `json:"body"`
+		}
+		if err := json.NewDecoder(resp.Body).Decode(&notes); err != nil {
+			resp.Body.Close()
+			return 0, fmt.Errorf("decoding notes: %w", err)
+		}
+		nextPage := resp.Header.Get("X-Next-Page")
+		resp.Body.Close()
+
+		for _, n := range notes {
+			if strings.Contains(n.Body, marker) {
+				return n.ID, nil
+			}
+		}
+
+		if nextPage == "" || len(notes) == 0 {
+			return 0, nil
+		}
+		page++
+	}
+}
+
+// putMergeRequestNote replaces the body of an existing note.
+func (c *GitLabClient) putMergeRequestNote(ctx context.Context, projectPath string, prNumber int, noteID int64, body string) error {
+	payload, err := json.Marshal(map[string]string{"body": body})
+	if err != nil {
+		return fmt.Errorf("marshaling note payload: %w", err)
+	}
+
+	url := fmt.Sprintf("%s/projects/%s/merge_requests/%d/notes/%d", c.config.BaseURL, projectPath, prNumber, noteID)
+	req, err := http.NewRequestWithContext(ctx, "PUT", url, strings.NewReader(string(payload)))
+	if err != nil {
+		return fmt.Errorf("creating request: %w", err)
+	}
+	req.Header.Set("PRIVATE-TOKEN", c.config.Token)
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := c.client.Do(req)
+	if err != nil {
+		return fmt.Errorf("sending request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		respBody, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("unexpected status code %d: %s", resp.StatusCode, string(respBody))
+	}
+	return nil
+}
+
 // GetPRInfo gets information about a GitLab merge request
 func (c *GitLabClient) GetPRInfo(ctx context.Context, repo string, prNumber int) (*PullRequestInfo, error) {
 	// GitLab uses project ID or URL-encoded path

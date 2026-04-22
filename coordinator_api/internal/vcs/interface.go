@@ -112,8 +112,16 @@ type StatusUpdater interface {
 	// UpdateCommitStatus updates the status of a commit
 	UpdateCommitStatus(ctx context.Context, repo string, update StatusUpdate) error
 
-	// UpdatePRComment adds or updates a comment on a pull request
+	// UpdatePRComment creates a new comment on a pull request. Prefer
+	// UpsertPRCommentByMarker for any comment we expect to update later.
 	UpdatePRComment(ctx context.Context, repo string, prNumber int, comment string) error
+
+	// UpsertPRCommentByMarker locates an existing comment on the PR whose
+	// body contains marker and replaces it with body; if no such comment
+	// exists, posts a new one. The marker should be an HTML comment like
+	// "<!-- reactorcide:pr-status:abc123 -->" embedded in body so both the
+	// lookup and the future update find the same comment.
+	UpsertPRCommentByMarker(ctx context.Context, repo string, prNumber int, marker, body string) error
 
 	// GetPRInfo gets information about a pull request
 	GetPRInfo(ctx context.Context, repo string, prNumber int) (*PullRequestInfo, error)

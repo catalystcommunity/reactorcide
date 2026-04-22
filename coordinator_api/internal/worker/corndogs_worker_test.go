@@ -99,6 +99,19 @@ func (m *MockStore) CreateJob(ctx context.Context, job *models.Job) error {
 func (m *MockStore) ListJobs(ctx context.Context, filters map[string]interface{}, limit, offset int) ([]models.Job, error) {
 	return nil, nil
 }
+func (m *MockStore) ListJobsForPRCommit(ctx context.Context, repo string, prNumber int, commitSHA string) ([]models.Job, error) {
+	return nil, nil
+}
+func (m *MockStore) ListJobsForPR(ctx context.Context, repo string, prNumber int) ([]models.Job, error) {
+	return nil, nil
+}
+func (m *MockStore) ForPRCommit(ctx context.Context, repo string, prNumber int, commitSHA string, fn func(ctx context.Context) error) error {
+	return fn(ctx)
+}
+func (m *MockStore) IsPRMerged(ctx context.Context, repo string, prNumber int) (bool, error) {
+	return false, nil
+}
+func (m *MockStore) MarkPRMerged(ctx context.Context, repo string, prNumber int) error { return nil }
 func (m *MockStore) DeleteJob(ctx context.Context, jobID string) error { return nil }
 func (m *MockStore) GetJobsByUser(ctx context.Context, userID string, limit, offset int) ([]models.Job, error) {
 	return nil, nil

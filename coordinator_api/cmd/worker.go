@@ -13,6 +13,7 @@ import (
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/config"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/corndogs"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/objects"
+	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/pubsub"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/secrets"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store/postgres_store"
@@ -181,6 +182,14 @@ func RunWorker(ctx *cli.Context) error {
 		}
 
 		w := worker.NewCornDogsWorker(workerConfig, corndogsClient, statusUpdater)
+
+		// Wire a pubsub.Publisher into the worker so status transitions and
+		// log chunk flushes NOTIFY WebSocket subscribers across replicas.
+		if pool := postgres_store.PgxPool(); pool != nil {
+			w.SetPublisher(pubsub.NewPublisher(pool))
+			logging.Log.Info("Pub/sub publisher wired into worker")
+		}
+
 		go func() {
 			workerErrChan <- w.Start(workerCtx)
 		}()

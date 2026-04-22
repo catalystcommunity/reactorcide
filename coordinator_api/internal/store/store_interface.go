@@ -50,6 +50,26 @@ type Store interface {
 	DeleteJob(ctx context.Context, jobID string) error
 	ListJobs(ctx context.Context, filters map[string]interface{}, limit, offset int) ([]models.Job, error)
 
+	// ListJobsForPRCommit returns every job whose denormalized VCS metadata
+	// matches (repo, prNumber, commitSHA). Used to regenerate the rolling
+	// pre-merge PR-status comment.
+	ListJobsForPRCommit(ctx context.Context, repo string, prNumber int, commitSHA string) ([]models.Job, error)
+
+	// ListJobsForPR returns every job matching (repo, prNumber) across all
+	// commits. Used on merge to nudge in-flight jobs toward the per-job
+	// comment flow.
+	ListJobsForPR(ctx context.Context, repo string, prNumber int) ([]models.Job, error)
+
+	// ForPRCommit runs fn inside a transaction that holds a Postgres
+	// advisory lock keyed on (repo, prNumber, commitSHA). Serializes
+	// concurrent rolling-comment updates so two job-completion events don't
+	// race each other into a torn comment body.
+	ForPRCommit(ctx context.Context, repo string, prNumber int, commitSHA string, fn func(ctx context.Context) error) error
+
+	// PR merge tracking
+	IsPRMerged(ctx context.Context, repo string, prNumber int) (bool, error)
+	MarkPRMerged(ctx context.Context, repo string, prNumber int) error
+
 	// API Token operations
 	ValidateAPIToken(ctx context.Context, token string) (*models.APIToken, *models.User, error)
 	CreateAPIToken(ctx context.Context, apiToken *models.APIToken) error

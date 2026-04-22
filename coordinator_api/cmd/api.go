@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"time"
@@ -10,9 +11,11 @@ import (
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/config"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/corndogs"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/handlers"
+	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/pubsub"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store/postgres_store"
 	"github.com/gammazero/workerpool"
+	"github.com/sirupsen/logrus"
 )
 
 var Server *http.ServeMux
@@ -52,6 +55,21 @@ func Serve() error {
 		}
 	} else {
 		logging.Log.Warn("Corndogs not configured - jobs will not be queued")
+	}
+
+	// Wire the pub/sub bus and start the Postgres LISTEN bridge. Each
+	// coordinator replica holds one dedicated connection; notifications
+	// fan out to every local WebSocket subscriber. On a single-replica
+	// deployment this is still correct — the replica receives its own
+	// notifications.
+	if pool := postgres_store.PgxPool(); pool != nil {
+		bus := pubsub.NewBus(logrus.StandardLogger(), 256)
+		listener := pubsub.NewNotifyListener(pool, bus, logrus.StandardLogger())
+		listener.Start(context.Background())
+		handlers.SetPubSubBus(bus)
+		logging.Log.Info("Pub/sub bus initialized; WebSocket streams enabled")
+	} else {
+		logging.Log.Warn("No pgx pool available; WebSocket streams disabled")
 	}
 
 	// Create the handler with routes
