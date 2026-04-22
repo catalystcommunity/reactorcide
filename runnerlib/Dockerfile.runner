@@ -12,8 +12,21 @@ RUN apt-get update && \
         openssh-client \
         rsync \
         curl \
-        sudo && \
+        sudo \
+        podman \
+        fuse-overlayfs \
+        uidmap && \
     rm -rf /var/lib/apt/lists/*
+
+# Podman default storage driver for this image: vfs. Overlay/fuse-overlayfs
+# needs /dev/fuse access we can't rely on in an unprivileged container,
+# and podman does not auto-fall-back — it errors out if the configured
+# driver can't initialize. vfs works anywhere but trades off speed and
+# disk usage (no CoW between layers); fine for bounded CI jobs that spin
+# up a stack and tear it down. Users with a more capable runtime can
+# override this with ~/.config/containers/storage.conf.
+RUN mkdir -p /etc/containers && \
+    printf '[storage]\ndriver = "vfs"\n' > /etc/containers/storage.conf
 
 # Create non-root user with home directory
 # UID 1001 matches what the worker uses when running containers

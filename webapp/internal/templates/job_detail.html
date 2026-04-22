@@ -99,8 +99,8 @@
     };
     function classFor(s) { return statusClasses[s] || 'status-unknown'; }
 
-    var jobID = {{.Job.JobID | printf "%q"}};
-    var stream = {{.Stream | printf "%q"}};
+    var jobID = {{.Job.JobID}};
+    var stream = {{.Stream}};
     var statusBadge = document.getElementById('job-status');
     var viewer = document.getElementById('log-viewer');
 
