@@ -14,6 +14,7 @@ import (
 	"github.com/catalystcommunity/app-utils-go/logging"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/metrics"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/objects"
+	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/pubsub"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/secrets"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store/models"
@@ -43,6 +44,10 @@ type JobProcessorConfig struct {
 	HeartbeatInterval time.Duration
 	HeartbeatTimeout  time.Duration
 	RetryConfig       *RetryConfig
+
+	// Publisher, if non-nil, is threaded into each LogShipper so chunk
+	// flushes trigger NOTIFY events to WebSocket subscribers.
+	Publisher *pubsub.Publisher
 
 	// Optional: Callbacks for log updates and heartbeats
 	OnLogUpdate func(jobID, objectKey string, bytesWritten int64) error
@@ -112,6 +117,12 @@ func NewJobProcessorWithRetryConfig(store store.Store, runner JobRunner, dryRun 
 		retryConfig: retryConfig,
 		config:      &JobProcessorConfig{RetryConfig: retryConfig},
 	}
+}
+
+// SetPublisher threads a pubsub.Publisher through the processor's config
+// so per-job log shippers can emit log_available NOTIFYs.
+func (jp *JobProcessor) SetPublisher(p *pubsub.Publisher) {
+	jp.config.Publisher = p
 }
 
 // ProcessJob executes a job using runnerlib
@@ -645,6 +656,7 @@ func (jp *JobProcessor) executeWithRunnerlib(ctx context.Context, job *models.Jo
 				StreamType:      "stdout",
 				ChunkInterval:   jp.config.LogChunkInterval,
 				OnChunkUploaded: onChunkUploaded,
+				Publisher:       jp.config.Publisher,
 			}, masker)
 
 			logWg.Add(1)
@@ -669,6 +681,7 @@ func (jp *JobProcessor) executeWithRunnerlib(ctx context.Context, job *models.Jo
 				StreamType:      "stderr",
 				ChunkInterval:   jp.config.LogChunkInterval,
 				OnChunkUploaded: onChunkUploaded,
+				Publisher:       jp.config.Publisher,
 			}, masker)
 
 			logWg.Add(1)

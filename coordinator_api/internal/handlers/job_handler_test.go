@@ -120,6 +120,19 @@ func (m *MockStore) GetAPITokensByUser(ctx context.Context, userID string) ([]mo
 func (m *MockStore) GetJobsByUser(ctx context.Context, userID string, limit, offset int) ([]models.Job, error) {
 	return nil, nil
 }
+func (m *MockStore) ListJobsForPRCommit(ctx context.Context, repo string, prNumber int, commitSHA string) ([]models.Job, error) {
+	return nil, nil
+}
+func (m *MockStore) ListJobsForPR(ctx context.Context, repo string, prNumber int) ([]models.Job, error) {
+	return nil, nil
+}
+func (m *MockStore) ForPRCommit(ctx context.Context, repo string, prNumber int, commitSHA string, fn func(ctx context.Context) error) error {
+	return fn(ctx)
+}
+func (m *MockStore) IsPRMerged(ctx context.Context, repo string, prNumber int) (bool, error) {
+	return false, nil
+}
+func (m *MockStore) MarkPRMerged(ctx context.Context, repo string, prNumber int) error { return nil }
 
 // Project operations (stubs for interface compliance)
 func (m *MockStore) CreateProject(ctx context.Context, project *models.Project) error { return nil }

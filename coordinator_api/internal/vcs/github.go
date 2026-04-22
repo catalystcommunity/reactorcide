@@ -218,6 +218,111 @@ func (c *GitHubClient) UpdatePRComment(ctx context.Context, repo string, prNumbe
 	return nil
 }
 
+// UpsertPRCommentByMarker scans existing PR comments for one containing the
+// given marker string. If found, PATCHes its body; otherwise POSTs a new
+// comment. Callers are expected to embed the marker in body so subsequent
+// calls locate the same comment.
+func (c *GitHubClient) UpsertPRCommentByMarker(ctx context.Context, repo string, prNumber int, marker, body string) error {
+	listURL := fmt.Sprintf("%s/repos/%s/issues/%d/comments?per_page=100", c.config.BaseURL, repo, prNumber)
+
+	existingID, err := c.findCommentIDByMarker(ctx, listURL, marker)
+	if err != nil {
+		return fmt.Errorf("searching for existing comment: %w", err)
+	}
+
+	if existingID != 0 {
+		return c.patchIssueComment(ctx, repo, existingID, body)
+	}
+	return c.UpdatePRComment(ctx, repo, prNumber, body)
+}
+
+// findCommentIDByMarker walks paginated issue-comment results and returns
+// the ID of the first comment whose body contains marker, or 0 if none found.
+func (c *GitHubClient) findCommentIDByMarker(ctx context.Context, startURL, marker string) (int64, error) {
+	next := startURL
+	for next != "" {
+		req, err := http.NewRequestWithContext(ctx, "GET", next, nil)
+		if err != nil {
+			return 0, fmt.Errorf("creating request: %w", err)
+		}
+		req.Header.Set("Authorization", "token "+c.config.Token)
+		req.Header.Set("Accept", "application/vnd.github.v3+json")
+
+		resp, err := c.client.Do(req)
+		if err != nil {
+			return 0, fmt.Errorf("sending request: %w", err)
+		}
+
+		var comments []struct {
+			ID   int64  `json:"id"`
+			Body string `json:"body"`
+		}
+		if err := json.NewDecoder(resp.Body).Decode(&comments); err != nil {
+			resp.Body.Close()
+			return 0, fmt.Errorf("decoding comments: %w", err)
+		}
+		next = parseGitHubNextLink(resp.Header.Get("Link"))
+		resp.Body.Close()
+
+		for _, cm := range comments {
+			if strings.Contains(cm.Body, marker) {
+				return cm.ID, nil
+			}
+		}
+	}
+	return 0, nil
+}
+
+// patchIssueComment replaces the body of an existing issue comment.
+func (c *GitHubClient) patchIssueComment(ctx context.Context, repo string, commentID int64, body string) error {
+	payload, err := json.Marshal(map[string]string{"body": body})
+	if err != nil {
+		return fmt.Errorf("marshaling comment payload: %w", err)
+	}
+
+	url := fmt.Sprintf("%s/repos/%s/issues/comments/%d", c.config.BaseURL, repo, commentID)
+	req, err := http.NewRequestWithContext(ctx, "PATCH", url, strings.NewReader(string(payload)))
+	if err != nil {
+		return fmt.Errorf("creating request: %w", err)
+	}
+	req.Header.Set("Authorization", "token "+c.config.Token)
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/vnd.github.v3+json")
+
+	resp, err := c.client.Do(req)
+	if err != nil {
+		return fmt.Errorf("sending request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		respBody, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("unexpected status code %d: %s", resp.StatusCode, string(respBody))
+	}
+	return nil
+}
+
+// parseGitHubNextLink extracts the URL for rel="next" from a Link header.
+func parseGitHubNextLink(header string) string {
+	if header == "" {
+		return ""
+	}
+	for _, part := range strings.Split(header, ",") {
+		part = strings.TrimSpace(part)
+		sections := strings.Split(part, ";")
+		if len(sections) < 2 {
+			continue
+		}
+		urlPart := strings.Trim(strings.TrimSpace(sections[0]), "<>")
+		for _, s := range sections[1:] {
+			if strings.TrimSpace(s) == `rel="next"` {
+				return urlPart
+			}
+		}
+	}
+	return ""
+}
+
 // GetPRInfo gets information about a GitHub pull request
 func (c *GitHubClient) GetPRInfo(ctx context.Context, repo string, prNumber int) (*PullRequestInfo, error) {
 	url := fmt.Sprintf("%s/repos/%s/pulls/%d", c.config.BaseURL, repo, prNumber)

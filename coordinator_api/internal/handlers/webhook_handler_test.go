@@ -87,6 +87,21 @@ func (m *WebhookMockStore) DeleteJob(ctx context.Context, jobID string) error { 
 func (m *WebhookMockStore) ListJobs(ctx context.Context, filters map[string]interface{}, limit, offset int) ([]models.Job, error) {
 	return nil, nil
 }
+func (m *WebhookMockStore) ListJobsForPRCommit(ctx context.Context, repo string, prNumber int, commitSHA string) ([]models.Job, error) {
+	return nil, nil
+}
+func (m *WebhookMockStore) ListJobsForPR(ctx context.Context, repo string, prNumber int) ([]models.Job, error) {
+	return nil, nil
+}
+func (m *WebhookMockStore) ForPRCommit(ctx context.Context, repo string, prNumber int, commitSHA string, fn func(ctx context.Context) error) error {
+	return fn(ctx)
+}
+func (m *WebhookMockStore) IsPRMerged(ctx context.Context, repo string, prNumber int) (bool, error) {
+	return false, nil
+}
+func (m *WebhookMockStore) MarkPRMerged(ctx context.Context, repo string, prNumber int) error {
+	return nil
+}
 func (m *WebhookMockStore) GetJobsByUser(ctx context.Context, userID string, limit, offset int) ([]models.Job, error) {
 	return nil, nil
 }
@@ -106,11 +121,12 @@ func (m *WebhookMockStore) DeleteAPIToken(ctx context.Context, tokenID string) e
 
 // MockVCSClient implements vcs.Client for testing
 type MockVCSClient struct {
-	ParseWebhookFunc        func(r *http.Request) (*vcs.WebhookEvent, error)
-	ValidateWebhookFunc     func(r *http.Request, secret string) error
-	UpdateCommitStatusFunc  func(ctx context.Context, repo string, update vcs.StatusUpdate) error
-	UpdatePRCommentFunc     func(ctx context.Context, repo string, prNumber int, comment string) error
-	GetPRInfoFunc           func(ctx context.Context, repo string, prNumber int) (*vcs.PullRequestInfo, error)
+	ParseWebhookFunc             func(r *http.Request) (*vcs.WebhookEvent, error)
+	ValidateWebhookFunc          func(r *http.Request, secret string) error
+	UpdateCommitStatusFunc       func(ctx context.Context, repo string, update vcs.StatusUpdate) error
+	UpdatePRCommentFunc          func(ctx context.Context, repo string, prNumber int, comment string) error
+	UpsertPRCommentByMarkerFunc  func(ctx context.Context, repo string, prNumber int, marker, body string) error
+	GetPRInfoFunc                func(ctx context.Context, repo string, prNumber int) (*vcs.PullRequestInfo, error)
 }
 
 func (m *MockVCSClient) GetProvider() vcs.Provider { return vcs.GitHub }
@@ -139,6 +155,13 @@ func (m *MockVCSClient) UpdateCommitStatus(ctx context.Context, repo string, upd
 func (m *MockVCSClient) UpdatePRComment(ctx context.Context, repo string, prNumber int, comment string) error {
 	if m.UpdatePRCommentFunc != nil {
 		return m.UpdatePRCommentFunc(ctx, repo, prNumber, comment)
+	}
+	return nil
+}
+
+func (m *MockVCSClient) UpsertPRCommentByMarker(ctx context.Context, repo string, prNumber int, marker, body string) error {
+	if m.UpsertPRCommentByMarkerFunc != nil {
+		return m.UpsertPRCommentByMarkerFunc(ctx, repo, prNumber, marker, body)
 	}
 	return nil
 }

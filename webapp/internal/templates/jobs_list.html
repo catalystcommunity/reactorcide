@@ -22,17 +22,17 @@
             <th>Source</th>
         </tr>
     </thead>
-    <tbody>
+    <tbody id="jobs-tbody">
         {{range .Jobs}}
-        <tr>
+        <tr data-job-id="{{.JobID}}">
             <td>
                 <a href="/app/jobs/{{.JobID}}">{{.Name}}</a>
                 {{if .Description}}<br><span class="meta">{{.Description}}</span>{{end}}
             </td>
-            <td><span class="status-badge {{statusClass .Status}}">{{.Status}}</span></td>
+            <td data-col="status"><span class="status-badge {{statusClass .Status}}">{{.Status}}</span></td>
             <td class="meta">{{formatTime .CreatedAt}}</td>
-            <td class="meta">{{formatDuration .StartedAt .CompletedAt}}</td>
-            <td>
+            <td class="meta" data-col="duration">{{formatDuration .StartedAt .CompletedAt}}</td>
+            <td data-col="exit">
                 {{if .ExitCode}}
                     <span class="{{exitCodeClass .ExitCode}}">{{derefInt .ExitCode}}</span>
                 {{else}}
@@ -46,6 +46,52 @@
         {{end}}
     </tbody>
 </table>
+
+<script>
+// Live-update jobs list via WebSocket. Updates status and duration cells in
+// place as status_update events stream in from the coordinator. Falls back
+// silently to a stale-at-load view if the WS fails to connect — the page
+// still works, just without live updates.
+(function() {
+    var statusClasses = {
+        completed: 'status-completed',
+        failed: 'status-failed', timeout: 'status-failed',
+        running: 'status-running',
+        queued: 'status-queued', submitted: 'status-queued',
+        cancelled: 'status-cancelled'
+    };
+    function classFor(s) { return statusClasses[s] || 'status-unknown'; }
+
+    function applyUpdate(evt) {
+        if (evt.type !== 'job_update' || !evt.job_id) return;
+        var row = document.querySelector('tr[data-job-id="' + CSS.escape(evt.job_id) + '"]');
+        if (!row) return; // Job not in the current page; ignore (page controls what's listed).
+
+        var statusCell = row.querySelector('td[data-col="status"]');
+        if (statusCell) {
+            statusCell.innerHTML = '<span class="status-badge ' + classFor(evt.status) + '">' + evt.status + '</span>';
+        }
+    }
+
+    var protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    var wsURL = protocol + '//' + window.location.host + '/app/ws/jobs';
+    var backoff = 1000;
+
+    function connect() {
+        var ws = new WebSocket(wsURL);
+        ws.onopen = function() { backoff = 1000; };
+        ws.onmessage = function(e) {
+            try { applyUpdate(JSON.parse(e.data)); } catch (_) {}
+        };
+        ws.onclose = function() {
+            setTimeout(connect, backoff);
+            backoff = Math.min(backoff * 2, 30000);
+        };
+        ws.onerror = function() { ws.close(); };
+    }
+    connect();
+})();
+</script>
 
 <div class="pagination">
     {{if .HasPrev}}

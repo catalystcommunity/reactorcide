@@ -26,6 +26,7 @@ type WebhookHandler struct {
 	vcsClients     map[vcs.Provider]vcs.Client
 	tokenResolver  vcs.TokenResolverFunc // optional: per-project secret resolution
 	clientFactory  vcs.ClientFactoryFunc // optional: create client with per-project token
+	statusUpdater  vcs.JobStatusUpdaterInterface // optional: used to refresh comments for in-flight jobs on merge
 	logger         *logrus.Logger
 }
 
@@ -56,6 +57,12 @@ func (h *WebhookHandler) SetTokenResolver(fn vcs.TokenResolverFunc) {
 // SetClientFactory sets the function used to create per-project VCS clients.
 func (h *WebhookHandler) SetClientFactory(fn vcs.ClientFactoryFunc) {
 	h.clientFactory = fn
+}
+
+// SetStatusUpdater wires a VCS status updater so that on a PR-merge webhook,
+// in-flight jobs for that PR can be nudged to the per-job-comment flow.
+func (h *WebhookHandler) SetStatusUpdater(u vcs.JobStatusUpdaterInterface) {
+	h.statusUpdater = u
 }
 
 // HandleGitHubWebhook handles GitHub webhook events
@@ -248,6 +255,14 @@ func (h *WebhookHandler) handleWebhook(w http.ResponseWriter, r *http.Request, p
 // The project parameter may be non-nil if it was already looked up during
 // webhook secret resolution. If nil, the project is fetched by repo URL.
 func (h *WebhookHandler) processPullRequestEvent(event *vcs.WebhookEvent, client vcs.Client, project *models.Project) error {
+	// On merge, record the merge state and refresh any in-flight jobs so
+	// their next status change uses the per-job comment flow. This runs
+	// alongside (not instead of) normal event processing — projects that
+	// opt into pull_request_merged as a trigger still get their job created.
+	if event.GenericEvent == vcs.EventPullRequestMerged {
+		h.handlePRMerged(event)
+	}
+
 	pr := event.PullRequest
 
 	// Use the pre-fetched project or look it up now
@@ -287,8 +302,9 @@ func (h *WebhookHandler) processPullRequestEvent(event *vcs.WebhookEvent, client
 		StatusContext: "reactorcide/eval",
 		IsEval:        true,
 	}
-	metadataJSON, _ := json.Marshal(metadata)
-	job.Notes = string(metadataJSON)
+	if err := metadata.ApplyToJob(job); err != nil {
+		return fmt.Errorf("applying VCS metadata: %w", err)
+	}
 
 	// Create the job in the database
 	if err := h.store.CreateJob(context.Background(), job); err != nil {
@@ -298,7 +314,8 @@ func (h *WebhookHandler) processPullRequestEvent(event *vcs.WebhookEvent, client
 	// Submit job to Corndogs task queue
 	h.submitJobToCorndogs(job)
 
-	// Update commit status to pending (use per-project client if available)
+	// Register the job as a pending check on the commit so branch protection
+	// sees it immediately — don't wait for the worker to pick it up.
 	statusClient := h.getStatusClient(context.Background(), project, event.Provider, client)
 	statusUpdate := vcs.StatusUpdate{
 		SHA:         pr.HeadSHA,
@@ -375,8 +392,9 @@ func (h *WebhookHandler) processPushEvent(event *vcs.WebhookEvent, client vcs.Cl
 		StatusContext: "reactorcide/eval",
 		IsEval:        true,
 	}
-	metadataJSON, _ := json.Marshal(metadata)
-	job.Notes = string(metadataJSON)
+	if err := metadata.ApplyToJob(job); err != nil {
+		return fmt.Errorf("applying VCS metadata: %w", err)
+	}
 
 	// Create the job in the database
 	if err := h.store.CreateJob(context.Background(), job); err != nil {
@@ -409,6 +427,43 @@ func (h *WebhookHandler) processPushEvent(event *vcs.WebhookEvent, client vcs.Cl
 	}).Info("Created eval job for push")
 
 	return nil
+}
+
+// handlePRMerged records the merge in pr_merged and nudges any still-in-flight
+// jobs for that PR into the per-job comment flow, so jobs that straddle the
+// merge event don't get orphaned mid-transition. Runs as a side-effect on
+// merge webhooks; the caller continues with normal event processing.
+func (h *WebhookHandler) handlePRMerged(event *vcs.WebhookEvent) {
+	ctx := context.Background()
+	repo := event.Repository.FullName
+	prNumber := event.PullRequest.Number
+
+	if err := h.store.MarkPRMerged(ctx, repo, prNumber); err != nil {
+		h.logger.WithError(err).WithFields(logrus.Fields{
+			"repo":      repo,
+			"pr_number": prNumber,
+		}).Warn("Failed to mark PR merged")
+	}
+
+	if h.statusUpdater == nil {
+		return
+	}
+
+	jobs, err := h.store.ListJobsForPR(ctx, repo, prNumber)
+	if err != nil {
+		h.logger.WithError(err).Warn("Failed to list jobs for merged PR")
+		return
+	}
+
+	for i := range jobs {
+		job := &jobs[i]
+		if job.IsCompleted() {
+			continue
+		}
+		if err := h.statusUpdater.UpdateJobStatus(ctx, job); err != nil {
+			h.logger.WithError(err).WithField("job_id", job.JobID).Warn("Failed to refresh job status after PR merge")
+		}
+	}
 }
 
 // getStatusClient returns a per-project VCS client if a project token is configured,
@@ -530,5 +585,5 @@ func (h *WebhookHandler) getJobURL(jobID string) string {
 	if config.VCSBaseURL == "" {
 		return ""
 	}
-	return fmt.Sprintf("%s/jobs/%s", config.VCSBaseURL, jobID)
+	return fmt.Sprintf("%s/app/jobs/%s", config.VCSBaseURL, jobID)
 }

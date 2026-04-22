@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 
+	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store/models"
 	"github.com/sirupsen/logrus"
 )
@@ -30,7 +31,15 @@ type JobStatusUpdater struct {
 	tokenResolver TokenResolverFunc // optional: per-project secret resolution
 	clientFactory ClientFactoryFunc // optional: create client with per-project token
 	baseURL       string            // base URL for job links in commit statuses
+	store         store.Store       // optional: used for rolling PR comment coordination
 	logger        *logrus.Logger
+}
+
+// SetStore wires the data store used to look up sibling jobs for a PR and
+// to coordinate concurrent rolling-comment updates. Without a store, the
+// updater still updates commit statuses but skips PR comments entirely.
+func (u *JobStatusUpdater) SetStore(s store.Store) {
+	u.store = s
 }
 
 // NewJobStatusUpdater creates a new job status updater
@@ -87,6 +96,47 @@ func (m *JobMetadata) GetStatusContext() string {
 	return DefaultStatusContext
 }
 
+// ApplyToJob writes the metadata as Notes JSON and also populates the
+// denormalized VCS columns used for fast (repo, pr, commit) lookups.
+// Single writer per job — Notes stays authoritative, columns mirror it.
+func (m *JobMetadata) ApplyToJob(job *models.Job) error {
+	b, err := json.Marshal(m)
+	if err != nil {
+		return fmt.Errorf("marshal VCS metadata: %w", err)
+	}
+	job.Notes = string(b)
+
+	if m.Repo != "" {
+		repo := m.Repo
+		job.VCSRepo = &repo
+	}
+	if m.PRNumber > 0 {
+		pr := m.PRNumber
+		job.PRNumber = &pr
+	}
+	if m.CommitSHA != "" {
+		sha := m.CommitSHA
+		job.CommitSHA = &sha
+	}
+	return nil
+}
+
+// MetadataFromJob extracts VCS metadata from job.Notes. Returns nil and no
+// error if the job has no metadata (not every job is a VCS job).
+func MetadataFromJob(job *models.Job) (*JobMetadata, error) {
+	if job.Notes == "" {
+		return nil, nil
+	}
+	var m JobMetadata
+	if err := json.Unmarshal([]byte(job.Notes), &m); err != nil {
+		return nil, err
+	}
+	if m.CommitSHA == "" && m.Repo == "" {
+		return nil, nil
+	}
+	return &m, nil
+}
+
 // UpdateJobStatus updates the VCS commit status based on job status
 func (u *JobStatusUpdater) UpdateJobStatus(ctx context.Context, job *models.Job) error {
 	// Parse VCS metadata from job notes
@@ -140,13 +190,13 @@ func (u *JobStatusUpdater) UpdateJobStatus(ctx context.Context, job *models.Job)
 		"sha":      metadata.CommitSHA,
 	}).Info("Updated VCS commit status")
 
-	// If this is a PR and the job completed, add a comment (skip eval jobs — only child jobs comment)
-	if metadata.PRNumber > 0 && !metadata.IsEval && u.isJobComplete(job.Status) {
-		comment := u.generatePRComment(job)
-		if err := client.UpdatePRComment(ctx, metadata.Repo, metadata.PRNumber, comment); err != nil {
-			u.logger.WithError(err).Warn("Failed to add PR comment")
-			// Don't fail the whole operation if comment fails
-		}
+	// Update the PR comment (rolling pre-merge, or per-job post-merge).
+	// Eval jobs don't comment — the rolling comment shows the eval job as a
+	// row alongside its children, so a separate eval-only comment would be
+	// redundant. Runs on every status change, not just completions, so the
+	// PR reflects live progress.
+	if metadata.PRNumber > 0 && !metadata.IsEval {
+		u.updatePRCommentForJob(ctx, client, job, &metadata)
 	}
 
 	return nil
@@ -211,46 +261,6 @@ func (u *JobStatusUpdater) isJobComplete(status string) bool {
 	return status == "completed" || status == "failed" || status == "cancelled" || status == "timeout"
 }
 
-// generatePRComment generates a comment for a PR based on job results
-func (u *JobStatusUpdater) generatePRComment(job *models.Job) string {
-	emoji := "❌"
-	status := "Failed"
-
-	if job.Status == "completed" && job.ExitCode != nil && *job.ExitCode == 0 {
-		emoji = "✅"
-		status = "Passed"
-	} else if job.Status == "cancelled" {
-		emoji = "⚠️"
-		status = "Cancelled"
-	} else if job.Status == "timeout" {
-		emoji = "⏱️"
-		status = "Timed Out"
-	}
-
-	comment := fmt.Sprintf(`## %s %s — %s
-
-**Job ID:** %s
-**Status:** %s`,
-		emoji, job.Name, status, job.JobID, job.Status)
-
-	if job.ExitCode != nil {
-		comment += fmt.Sprintf("\n**Exit Code:** %d", *job.ExitCode)
-	}
-
-	if job.StartedAt != nil && job.CompletedAt != nil {
-		duration := job.CompletedAt.Sub(*job.StartedAt)
-		comment += fmt.Sprintf("\n**Duration:** %s", duration.Round(1).String())
-	}
-
-	if job.LastError != "" && job.Status == "failed" {
-		comment += fmt.Sprintf("\n\n### Error Details\n```\n%s\n```", job.LastError)
-	}
-
-	comment += fmt.Sprintf("\n\n[View Full Logs](%s)", u.getJobURL(job.JobID))
-
-	return comment
-}
-
 // getClientForJob returns the best VCS client for the job, trying per-project
 // token first and falling back to the global client.
 func (u *JobStatusUpdater) getClientForJob(ctx context.Context, job *models.Job, provider Provider) Client {
@@ -289,5 +299,5 @@ func (u *JobStatusUpdater) getJobURL(jobID string) string {
 	if u.baseURL == "" {
 		return ""
 	}
-	return fmt.Sprintf("%s/jobs/%s", u.baseURL, jobID)
+	return fmt.Sprintf("%s/app/jobs/%s", u.baseURL, jobID)
 }
