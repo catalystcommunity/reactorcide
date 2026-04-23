@@ -14,6 +14,7 @@ import (
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/metrics"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/middleware"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/objects"
+	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/pubsub"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/secrets"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/vcs"
@@ -30,7 +31,15 @@ var (
 	singletonKeyManager *secrets.MasterKeyManager
 	// Object store for logs and artifacts (singleton)
 	singletonObjectStore objects.ObjectStore
+	// Pub/sub bus for live updates — optional; nil disables the WS endpoints.
+	singletonBus *pubsub.Bus
 )
+
+// SetPubSubBus sets the bus used by the WebSocket endpoints. Must be called
+// before GetAppMux if WS routes should be registered.
+func SetPubSubBus(b *pubsub.Bus) {
+	singletonBus = b
+}
 
 // GetAppMux returns the application's HTTP ServeMux for both API and tests
 // This ensures all tests use the same router configuration as the actual application
@@ -64,6 +73,7 @@ func ResetAppMux() {
 	singletoncorndogsClient = nil
 	singletonObjectStore = nil
 	singletonKeyManager = nil
+	singletonBus = nil
 }
 
 // createAppMux creates and configures the application ServeMux with all routes
@@ -93,11 +103,15 @@ func createAppMux() *http.ServeMux {
 	webhookHandler := NewWebhookHandler(store.AppStore, singletoncorndogsClient)
 	projectHandler := NewProjectHandler(store.AppStore)
 
-	// Wire VCS clients into the webhook handler
+	// Wire VCS clients into the webhook handler and the job handler's trigger
+	// processor, so jobs submitted via /api/v1/jobs/{id}/triggers register as
+	// pending checks on their commit at creation time.
 	vcsManager := vcs.NewManager()
 	for provider, client := range vcsManager.GetClients() {
 		webhookHandler.AddVCSClient(provider, client)
 	}
+	jobHandler.SetStatusUpdater(vcsManager.GetStatusUpdater())
+	webhookHandler.SetStatusUpdater(vcsManager.GetStatusUpdater())
 
 	// Wire per-project VCS token resolution into webhook handler.
 	// Deferred until after the key manager is initialized below.
@@ -264,6 +278,36 @@ func createAppMux() *http.ServeMux {
 		})))
 		handler.ServeHTTP(w, r)
 	})
+
+	// WebSocket streams for live job/log updates. Auth same as REST. The
+	// upgrade handshake itself runs through the standard middleware stack;
+	// everything after the upgrade is long-lived.
+	if singletonBus != nil {
+		wsHandler := NewWSHandler(singletonBus, store.AppStore)
+
+		mux.HandleFunc("/api/v1/jobs/stream", func(w http.ResponseWriter, r *http.Request) {
+			if r.Method != http.MethodGet {
+				http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+				return
+			}
+			authMiddleware(http.HandlerFunc(wsHandler.StreamAllJobs)).ServeHTTP(w, r)
+		})
+
+		mux.HandleFunc("/api/v1/jobs/stream/", func(w http.ResponseWriter, r *http.Request) {
+			// /api/v1/jobs/stream/{job_id}
+			if r.Method != http.MethodGet {
+				http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+				return
+			}
+			jobID := strings.TrimPrefix(r.URL.Path, "/api/v1/jobs/stream/")
+			if jobID == "" {
+				http.Error(w, "Invalid path", http.StatusBadRequest)
+				return
+			}
+			r = r.WithContext(setIDContext(r.Context(), "job_id", jobID))
+			authMiddleware(http.HandlerFunc(wsHandler.StreamJob)).ServeHTTP(w, r)
+		})
+	}
 
 	// Webhook routes (no auth required but validated by signature)
 	mux.HandleFunc("/api/v1/webhooks/github", func(w http.ResponseWriter, r *http.Request) {

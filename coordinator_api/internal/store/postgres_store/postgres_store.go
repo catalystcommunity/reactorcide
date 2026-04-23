@@ -57,6 +57,13 @@ func (s PostgresDbStore) GetDB() *gorm.DB {
 	return db
 }
 
+// PgxPool returns the pgx connection pool. Used by the pubsub package to
+// hold a dedicated LISTEN connection and to emit NOTIFYs — features GORM
+// doesn't expose natively.
+func PgxPool() *pgxpool.Pool {
+	return pgxPool
+}
+
 // getDB returns either the transaction from the context or the global DB
 func (ps PostgresDbStore) getDB(ctx context.Context) *gorm.DB {
 	return GetDBFromContext(ctx)

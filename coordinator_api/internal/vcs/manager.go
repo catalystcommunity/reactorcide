@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/config"
+	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store"
 	"github.com/sirupsen/logrus"
 )
 
@@ -23,6 +24,9 @@ func NewManager() *Manager {
 
 	statusUpdater := NewJobStatusUpdater()
 	statusUpdater.SetBaseURL(config.VCSBaseURL)
+	if store.AppStore != nil {
+		statusUpdater.SetStore(store.AppStore)
+	}
 
 	m := &Manager{
 		clients:       make(map[Provider]Client),

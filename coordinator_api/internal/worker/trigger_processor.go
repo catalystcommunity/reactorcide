@@ -21,6 +21,7 @@ import (
 type TriggerProcessor struct {
 	store          store.Store
 	corndogsClient corndogs.ClientInterface
+	statusUpdater  vcs.JobStatusUpdaterInterface
 }
 
 // NewTriggerProcessor creates a new TriggerProcessor.
@@ -29,6 +30,13 @@ func NewTriggerProcessor(store store.Store, corndogsClient corndogs.ClientInterf
 		store:          store,
 		corndogsClient: corndogsClient,
 	}
+}
+
+// SetStatusUpdater wires a VCS status updater so that newly-created child
+// jobs get registered as pending checks on their commit the moment they
+// exist in the database, before the worker picks them up.
+func (tp *TriggerProcessor) SetStatusUpdater(u vcs.JobStatusUpdaterInterface) {
+	tp.statusUpdater = u
 }
 
 // triggersFile represents the top-level structure of triggers.json.
@@ -240,6 +248,15 @@ func (tp *TriggerProcessor) createAndSubmitJob(ctx context.Context, spec trigger
 		return "", fmt.Errorf("failed to create job in database: %w", err)
 	}
 
+	// Register as a pending check on the commit immediately, before Corndogs
+	// submission, so branch protection sees every child as a required check
+	// without waiting for a worker to pick it up.
+	if tp.statusUpdater != nil {
+		if err := tp.statusUpdater.UpdateJobStatus(ctx, job); err != nil {
+			logging.Log.WithError(err).WithField("job_id", job.JobID).Warn("Failed to register pending check for triggered job")
+		}
+	}
+
 	if tp.corndogsClient == nil {
 		return job.JobID, nil
 	}
@@ -358,9 +375,7 @@ func (tp *TriggerProcessor) buildJobFromTrigger(spec triggerJobSpec, parentJob *
 		if err := json.Unmarshal([]byte(parentJob.Notes), &metadata); err == nil {
 			metadata.IsEval = false
 			metadata.StatusContext = spec.JobName
-			if updated, err := json.Marshal(metadata); err == nil {
-				job.Notes = string(updated)
-			} else {
+			if err := metadata.ApplyToJob(job); err != nil {
 				job.Notes = parentJob.Notes
 			}
 		} else {

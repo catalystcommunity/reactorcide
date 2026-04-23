@@ -105,6 +105,12 @@ type Job struct {
 	EventMetadata JSONB   `gorm:"type:jsonb" json:"event_metadata"`
 	ParentJobID   *string `gorm:"type:uuid" json:"parent_job_id"`
 
+	// Denormalized VCS metadata for fast lookup by (repo, pr, commit).
+	// Populated at job-creation time from Notes JSON; Notes remains authoritative.
+	VCSRepo   *string `gorm:"type:text" json:"vcs_repo,omitempty"`
+	PRNumber  *int    `gorm:"type:integer" json:"pr_number,omitempty"`
+	CommitSHA *string `gorm:"type:text" json:"commit_sha,omitempty"`
+
 	// Relationships
 	User      User     `gorm:"foreignKey:UserID" json:"user,omitempty"`
 	Project   *Project `gorm:"foreignKey:ProjectID" json:"project,omitempty"`

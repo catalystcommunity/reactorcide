@@ -40,6 +40,11 @@ func (m *MockClient) UpdatePRComment(ctx context.Context, repo string, prNumber 
 	return args.Error(0)
 }
 
+func (m *MockClient) UpsertPRCommentByMarker(ctx context.Context, repo string, prNumber int, marker, body string) error {
+	args := m.Called(ctx, repo, prNumber, marker, body)
+	return args.Error(0)
+}
+
 func (m *MockClient) GetPRInfo(ctx context.Context, repo string, prNumber int) (*PullRequestInfo, error) {
 	args := m.Called(ctx, repo, prNumber)
 	if info, ok := args.Get(0).(*PullRequestInfo); ok {
@@ -122,10 +127,10 @@ func TestJobStatusUpdater_UpdateJobStatus(t *testing.T) {
 				mockClient.On("UpdateCommitStatus", mock.Anything, metadata.Repo, mock.MatchedBy(func(update StatusUpdate) bool {
 					return update.State == tt.expectedStatus && update.SHA == metadata.CommitSHA
 				})).Return(nil).Once()
-
-				if metadata.PRNumber > 0 && updater.isJobComplete(tt.job.Status) {
-					mockClient.On("UpdatePRComment", mock.Anything, metadata.Repo, metadata.PRNumber, mock.AnythingOfType("string")).Return(nil).Once()
-				}
+				// PR comment handling now requires a store on the updater (for
+				// rolling-comment coordination). This test doesn't wire one, so
+				// no comment call is expected. Rolling-comment behavior is
+				// covered by TestJobStatusUpdater_RollingComment below.
 			}
 
 			err := updater.UpdateJobStatus(context.Background(), tt.job)

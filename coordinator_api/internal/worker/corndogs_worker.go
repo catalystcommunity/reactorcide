@@ -11,6 +11,7 @@ import (
 	"github.com/catalystcommunity/app-utils-go/logging"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/corndogs"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/metrics"
+	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/pubsub"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/secrets"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/vcs"
@@ -18,13 +19,24 @@ import (
 
 // CornDogsWorker represents a job processing worker that uses Corndogs for task management
 type CornDogsWorker struct {
-	config             *Config
-	corndogsClient     corndogs.ClientInterface
-	processor          JobProcessorInterface
-	triggerProcessor   *TriggerProcessor
-	statusUpdater      vcs.JobStatusUpdaterInterface
-	wg                 sync.WaitGroup
-	workerPool         chan struct{}
+	config           *Config
+	corndogsClient   corndogs.ClientInterface
+	processor        JobProcessorInterface
+	triggerProcessor *TriggerProcessor
+	statusUpdater    vcs.JobStatusUpdaterInterface
+	publisher        *pubsub.Publisher
+	wg               sync.WaitGroup
+	workerPool       chan struct{}
+}
+
+// SetPublisher wires a pubsub.Publisher so job-status transitions and log
+// chunk flushes get broadcast to WebSocket subscribers across replicas.
+// Safe to call with nil (disables live broadcasts).
+func (w *CornDogsWorker) SetPublisher(p *pubsub.Publisher) {
+	w.publisher = p
+	if jp, ok := w.processor.(*JobProcessor); ok {
+		jp.SetPublisher(p)
+	}
 }
 
 // NewCornDogsWorker creates a new worker that uses Corndogs for task management.
@@ -80,7 +92,9 @@ func NewCornDogsWorker(config *Config, corndogsClient corndogs.ClientInterface, 
 		}
 	}
 
-	// Create job processor with configuration
+	// Create job processor with configuration. Publisher is wired in after
+	// construction via SetPublisher, so callers that don't want WS live
+	// updates can still use the worker unchanged.
 	processor := NewJobProcessorWithConfig(config.Store, runner, config.DryRun, &JobProcessorConfig{
 		ObjectStore:        config.ObjectStore,
 		LogChunkInterval:   config.LogChunkInterval,
@@ -92,6 +106,9 @@ func NewCornDogsWorker(config *Config, corndogsClient corndogs.ClientInterface, 
 
 	// Create trigger processor for handling eval job output
 	triggerProc := NewTriggerProcessor(config.Store, corndogsClient)
+	if statusUpdater != nil {
+		triggerProc.SetStatusUpdater(statusUpdater)
+	}
 
 	return &CornDogsWorker{
 		config:           config,
@@ -237,6 +254,7 @@ func (w *CornDogsWorker) processNextTask(ctx context.Context, workerID int) {
 		w.updateTaskFailed(ctx, task.Uuid, task.CurrentState, "Failed to update job status")
 		return
 	}
+	w.publisher.PublishJobUpdate(ctx, job.JobID, job.Status, now.Format(time.RFC3339Nano))
 
 	// Update Corndogs task state to indicate we're processing
 	_, err = w.corndogsClient.UpdateTask(ctx, task.Uuid, task.CurrentState, "processing", nil)
@@ -310,6 +328,7 @@ func (w *CornDogsWorker) processNextTask(ctx context.Context, workerID int) {
 	if err := w.config.Store.UpdateJob(ctx, job); err != nil {
 		logger.WithError(err).Error("Failed to update job result")
 	}
+	w.publisher.PublishJobUpdate(ctx, job.JobID, job.Status, completedAt.Format(time.RFC3339Nano))
 
 	// Update VCS commit status (best-effort)
 	if w.statusUpdater != nil {

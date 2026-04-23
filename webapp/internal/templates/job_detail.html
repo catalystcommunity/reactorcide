@@ -3,10 +3,10 @@
     <a href="/app/jobs" class="meta">&larr; Back to Jobs</a>
 </div>
 
-<div class="card">
+<div class="card" data-job-id="{{.Job.JobID}}">
     <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 12px;">
         <h2>{{.Job.Name}}</h2>
-        <span class="status-badge {{statusClass .Job.Status}}">{{.Job.Status}}</span>
+        <span id="job-status" class="status-badge {{statusClass .Job.Status}}">{{.Job.Status}}</span>
         {{if .Job.ExitCode}}
             <span class="meta">exit: <span class="{{exitCodeClass .Job.ExitCode}}">{{derefInt .Job.ExitCode}}</span></span>
         {{end}}
@@ -72,7 +72,7 @@
         <a href="/app/jobs/{{.Job.JobID}}?stream=stdout" {{if eq .Stream "stdout"}}class="active"{{end}}>Stdout</a>
         <a href="/app/jobs/{{.Job.JobID}}?stream=stderr" {{if eq .Stream "stderr"}}class="active"{{end}}>Stderr</a>
     </div>
-    <div class="log-viewer" id="log-viewer">
+    <div class="log-viewer" id="log-viewer" data-stream="{{.Stream}}">
         {{if .Logs}}
             {{range .Logs}}
                 <div class="log-line {{streamClass .Stream}}"><span class="log-timestamp">{{.Timestamp}}</span>{{.Message}}</div>
@@ -83,10 +83,76 @@
     </div>
 </div>
 
-{{if eq .Job.Status "running"}}
 <script>
-    // Auto-refresh logs for running jobs
-    setTimeout(function() { window.location.reload(); }, 5000);
+// Live-update this job's status and logs over a single WebSocket. The
+// coordinator pushes job_update frames on state changes and log_available
+// frames when a new log chunk has been flushed to object storage. We
+// refetch the full log on each log_available (cheap) and replace the
+// viewer content, then preserve auto-scroll.
+(function() {
+    var statusClasses = {
+        completed: 'status-completed',
+        failed: 'status-failed', timeout: 'status-failed',
+        running: 'status-running',
+        queued: 'status-queued', submitted: 'status-queued',
+        cancelled: 'status-cancelled'
+    };
+    function classFor(s) { return statusClasses[s] || 'status-unknown'; }
+
+    var jobID = {{.Job.JobID}};
+    var stream = {{.Stream}};
+    var statusBadge = document.getElementById('job-status');
+    var viewer = document.getElementById('log-viewer');
+
+    function atBottom(el) {
+        return el.scrollHeight - el.scrollTop - el.clientHeight < 40;
+    }
+
+    function refreshLogs() {
+        var url = '/app/jobs/' + encodeURIComponent(jobID) + '/logs?stream=' + encodeURIComponent(stream);
+        fetch(url, { headers: { 'Accept': 'text/html' } }).then(function(r) {
+            if (!r.ok) return;
+            return r.text();
+        }).then(function(html) {
+            if (!html) return;
+            var wasAtBottom = atBottom(viewer);
+            viewer.innerHTML = html;
+            if (wasAtBottom) { viewer.scrollTop = viewer.scrollHeight; }
+        }).catch(function() {});
+    }
+
+    function applyEvent(evt) {
+        if (evt.type === 'job_update' && evt.job_id === jobID) {
+            if (statusBadge) {
+                statusBadge.className = 'status-badge ' + classFor(evt.status);
+                statusBadge.textContent = evt.status;
+            }
+            // Terminal states mean no more logs will arrive — one final refresh.
+            if (evt.status === 'completed' || evt.status === 'failed' || evt.status === 'cancelled' || evt.status === 'timeout') {
+                refreshLogs();
+            }
+        } else if (evt.type === 'log_available' && evt.job_id === jobID) {
+            refreshLogs();
+        }
+    }
+
+    var protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    var wsURL = protocol + '//' + window.location.host + '/app/ws/jobs/' + encodeURIComponent(jobID);
+    var backoff = 1000;
+
+    function connect() {
+        var ws = new WebSocket(wsURL);
+        ws.onopen = function() { backoff = 1000; };
+        ws.onmessage = function(e) {
+            try { applyEvent(JSON.parse(e.data)); } catch (_) {}
+        };
+        ws.onclose = function() {
+            setTimeout(connect, backoff);
+            backoff = Math.min(backoff * 2, 30000);
+        };
+        ws.onerror = function() { ws.close(); };
+    }
+    connect();
+})();
 </script>
-{{end}}
 {{template "foot" .}}

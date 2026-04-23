@@ -59,6 +59,15 @@ func NewJobHandlerWithObjectStore(store store.Store, corndogsClient corndogs.Cli
 	}
 }
 
+// SetStatusUpdater wires a VCS status updater so that child jobs created via
+// the /api/v1/jobs/{id}/triggers callback register as pending checks on
+// their commit immediately.
+func (h *JobHandler) SetStatusUpdater(u vcs.JobStatusUpdaterInterface) {
+	if h.triggerProcessor != nil {
+		h.triggerProcessor.SetStatusUpdater(u)
+	}
+}
+
 // CreateJobRequest represents the request payload for creating a job
 type CreateJobRequest struct {
 	Name        string `json:"name" validate:"required,max=255"`
