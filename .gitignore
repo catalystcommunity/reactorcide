@@ -182,6 +182,7 @@ id_ed25519*
 .ssh/
 coordinator_api/reactorcide
 reactorcide
+webapp/reactorcide-web
 
 # Demo config (contains user-specific values)
 demo/demo-config.yaml
