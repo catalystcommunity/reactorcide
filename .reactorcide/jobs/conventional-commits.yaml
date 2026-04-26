@@ -44,3 +44,4 @@ job:
   timeout: 300
   priority: 10
   raw_command: true
+  disable_run_local: true

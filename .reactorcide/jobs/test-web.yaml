@@ -5,8 +5,12 @@ job:
   command: |
     set -e
     export HOME=/home/reactorcide
-    git clone --branch "${REACTORCIDE_PR_REF}" "${REACTORCIDE_SOURCE_URL}" /workspace
-    cd /workspace/webapp
+    if [ "${REACTORCIDE_WORKER_MODE:-remote}" = "local" ]; then
+      cd /job/src/webapp
+    else
+      git clone --branch "${REACTORCIDE_PR_REF}" "${REACTORCIDE_SOURCE_URL}" /workspace
+      cd /workspace/webapp
+    fi
     echo "=== Running Web UI Unit Tests ==="
     go test ./internal/... -count=1
   timeout: 1800

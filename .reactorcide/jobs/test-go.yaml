@@ -5,8 +5,12 @@ job:
   command: |
     set -e
     export HOME=/home/reactorcide
-    git clone --branch "${REACTORCIDE_PR_REF}" "${REACTORCIDE_SOURCE_URL}" /workspace
-    cd /workspace/coordinator_api
+    if [ "${REACTORCIDE_WORKER_MODE:-remote}" = "local" ]; then
+      cd /job/src/coordinator_api
+    else
+      git clone --branch "${REACTORCIDE_PR_REF}" "${REACTORCIDE_SOURCE_URL}" /workspace
+      cd /workspace/coordinator_api
+    fi
     echo "=== Running Go Tests ==="
     go test $(go list ./... | grep -v '/test$') -count=1
   timeout: 1800

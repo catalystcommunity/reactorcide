@@ -4,9 +4,13 @@ job:
   image: 10.16.0.1:5000/public/reactorcide/runnerbase:dev
   command: |
     set -e
-    git config --global init.defaultBranch main
-    git clone --branch "${REACTORCIDE_PR_REF}" "${REACTORCIDE_SOURCE_URL}" /workspace
-    cd /workspace/runnerlib
+    if [ "${REACTORCIDE_WORKER_MODE:-remote}" = "local" ]; then
+      cd /job/src/runnerlib
+    else
+      git config --global init.defaultBranch main
+      git clone --branch "${REACTORCIDE_PR_REF}" "${REACTORCIDE_SOURCE_URL}" /workspace
+      cd /workspace/runnerlib
+    fi
     echo "=== Running Python Tests ==="
     uv run python -m pytest tests/ \
       --ignore=tests/test_docker_execution.py \

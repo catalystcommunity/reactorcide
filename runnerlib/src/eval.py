@@ -71,12 +71,18 @@ class JobConfig:
         raw_command: If True, run the command as-is without wrapping in runnerlib.
             By default, eval wraps commands with "runnerlib run --job-command" so
             that source checkout and other runnerlib features are available.
+        disable_run_local: If True, the reactorcide CLI's run-local command
+            refuses to execute this job. Used for jobs that fundamentally need
+            CI-only state (PR diff base, push back to remote, etc.). Has no
+            effect in CI — eval/trigger generation ignores it.
+        capabilities: Runtime capabilities the job needs (e.g. "builder").
     """
     image: str = ""
     command: str = ""
     timeout: Optional[int] = None
     priority: Optional[int] = None
     raw_command: bool = False
+    disable_run_local: bool = False
     capabilities: List[str] = field(default_factory=list)
 
 
@@ -156,6 +162,7 @@ def _parse_job_config(data: Any) -> JobConfig:
         timeout=data.get("timeout"),
         priority=data.get("priority"),
         raw_command=bool(data.get("raw_command", False)),
+        disable_run_local=bool(data.get("disable_run_local", False)),
         capabilities=data.get("capabilities") or [],
     )
 
