@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strconv"
 
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/secrets"
@@ -13,6 +14,32 @@ import (
 	"github.com/google/uuid"
 	"github.com/urfave/cli/v2"
 )
+
+// remoteOnlyOpPatterns flags shell snippets that typically depend on CI-only
+// state (auth, remote refs, PR context). Matched against the job command at
+// run-local startup to advise authors that the operation may not behave the
+// same locally.
+var remoteOnlyOpPatterns = []*regexp.Regexp{
+	regexp.MustCompile(`\bgit\s+push\b`),
+	regexp.MustCompile(`\bgit\s+tag\b`),
+	regexp.MustCompile(`\bgit\s+commit\b`),
+	regexp.MustCompile(`\bgh\s+pr\b`),
+	regexp.MustCompile(`\bgh\s+release\b`),
+	regexp.MustCompile(`\bgh\s+issue\b`),
+	regexp.MustCompile(`\bgh\s+api\b`),
+}
+
+// scanRemoteOnlyOps returns the ops detected in cmd that typically depend on
+// CI-only state. Empty result means the command looks local-safe.
+func scanRemoteOnlyOps(cmd string) []string {
+	var hits []string
+	for _, p := range remoteOnlyOpPatterns {
+		if m := p.FindString(cmd); m != "" {
+			hits = append(hits, m)
+		}
+	}
+	return hits
+}
 
 // hostRunAsUser returns the uid and gid the container should run as for
 // run-local. When invoked via sudo, SUDO_UID/SUDO_GID point at the real user
@@ -87,9 +114,39 @@ func runLocalAction(ctx *cli.Context) error {
 		return err
 	}
 
+	// Refuse to execute jobs explicitly marked as remote-only.
+	if spec.DisableRunLocal {
+		return fmt.Errorf(
+			"job %q is marked disable_run_local: true and cannot be executed via run-local "+
+				"(it depends on CI-only state — e.g. PR diff base, push back to remote)",
+			spec.Name,
+		)
+	}
+
 	// Check for secret overrides
 	if err := checkSecretOverrides(secretOverrides, allowSecretOverrides); err != nil {
 		return err
+	}
+
+	// Mark this run as local so the job (and runnerlib, when wrapped) can
+	// branch on it — e.g. to skip an in-job git clone in favor of the
+	// bind-mounted /job/src.
+	if spec.Environment == nil {
+		spec.Environment = map[string]string{}
+	}
+	spec.Environment["REACTORCIDE_WORKER_MODE"] = "local"
+
+	// Advisory: warn if the command contains operations that typically need
+	// CI state (push, tag, commit, gh write ops). Non-blocking — the author
+	// may already gate these on REACTORCIDE_WORKER_MODE.
+	if hits := scanRemoteOnlyOps(spec.Command); len(hits) > 0 {
+		fmt.Fprintf(os.Stderr,
+			"WARNING: job command contains remote-only operations (%v). "+
+				"These may not behave the same locally — auth, remote refs, or PR context "+
+				"may be missing. Consider gating on $REACTORCIDE_WORKER_MODE, or marking the "+
+				"job disable_run_local: true if it cannot run locally at all.\n",
+			hits,
+		)
 	}
 
 	fmt.Printf("Job: %s\n", spec.Name)

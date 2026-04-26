@@ -15,6 +15,7 @@ job:
   timeout: 3600
   priority: 15
   raw_command: true
+  disable_run_local: true
   capabilities:
     - builder
 environment:

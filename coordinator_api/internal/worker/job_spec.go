@@ -60,6 +60,11 @@ type JobSpec struct {
 	// Resource limits
 	CPULimit    string `json:"cpu_limit" yaml:"cpu_limit"`
 	MemoryLimit string `json:"memory_limit" yaml:"memory_limit"`
+
+	// DisableRunLocal marks this job as remote-only. run-local refuses to
+	// execute jobs with this set — used for jobs that fundamentally need CI
+	// state (PR diff base, push-back-to-remote with a PAT, etc.).
+	DisableRunLocal bool `json:"disable_run_local" yaml:"disable_run_local"`
 }
 
 // SourceSpec defines source code preparation
