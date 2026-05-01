@@ -525,8 +525,8 @@ func TestCornDogsWorker_ProcessNextTask_JobNotFoundInDatabase(t *testing.T) {
 			var payload map[string]interface{}
 			if err := json.Unmarshal(call.Payload, &payload); err == nil {
 				if errorMsg, ok := payload["error"].(string); ok {
-					if errorMsg != "Job not found in database" {
-						t.Errorf("expected error message about job not found, got %s", errorMsg)
+					if errorMsg != "Failed to load job from database" {
+						t.Errorf("expected error message about DB load failure, got %s", errorMsg)
 					}
 				}
 			}
@@ -1052,6 +1052,12 @@ func TestCornDogsWorker_ProcessNextTask_VCSStatusNotCalledWithoutUpdater(t *test
 }
 
 func TestCornDogsWorker_ProcessNextTask_VCSStatusErrorDoesNotFailJob(t *testing.T) {
+	// Keep this test fast: zero out the retry backoff so the bounded retry
+	// loop completes in microseconds. The retry count itself is unchanged.
+	origBackoff := vcsStatusUpdateBackoff
+	vcsStatusUpdateBackoff = 0
+	defer func() { vcsStatusUpdateBackoff = origBackoff }()
+
 	mockStore := &MockStore{}
 	mockCorndogs := corndogs.NewMockClient()
 	mockProcessor := &MockJobProcessor{}
@@ -1104,9 +1110,9 @@ func TestCornDogsWorker_ProcessNextTask_VCSStatusErrorDoesNotFailJob(t *testing.
 	ctx := context.Background()
 	worker.processNextTask(ctx, 0)
 
-	// Status updater was called (and failed)
-	if len(mockStatusUpdater.UpdateJobStatusCalls) != 1 {
-		t.Fatalf("expected 1 UpdateJobStatus call, got %d", len(mockStatusUpdater.UpdateJobStatusCalls))
+	// Status updater was called the full retry budget and every attempt failed.
+	if len(mockStatusUpdater.UpdateJobStatusCalls) != vcsStatusUpdateAttempts {
+		t.Fatalf("expected %d UpdateJobStatus calls (full retry budget), got %d", vcsStatusUpdateAttempts, len(mockStatusUpdater.UpdateJobStatusCalls))
 	}
 
 	// But the job still completed successfully in Corndogs
@@ -1118,5 +1124,206 @@ func TestCornDogsWorker_ProcessNextTask_VCSStatusErrorDoesNotFailJob(t *testing.
 	lastUpdate := mockStore.UpdateJobCalls[len(mockStore.UpdateJobCalls)-1]
 	if lastUpdate.Status != "completed" {
 		t.Errorf("expected final job status 'completed', got %q", lastUpdate.Status)
+	}
+}
+
+// TestCornDogsWorker_ProcessNextTask_RaceWithJobInsert reproduces the
+// dual-write race documented in job-contention-fixes.md: the worker
+// dequeues a corndogs task before the API's INSERT has propagated, so the
+// first GetJobByID returns ErrNotFound. The retry loop should paper over
+// this and let the job run normally.
+func TestCornDogsWorker_ProcessNextTask_RaceWithJobInsert(t *testing.T) {
+	// Make retries instant so the test stays fast.
+	origBackoff := getJobLookupBackoff
+	getJobLookupBackoff = 0
+	defer func() { getJobLookupBackoff = origBackoff }()
+
+	mockStore := &MockStore{}
+	mockCorndogs := corndogs.NewMockClient()
+	mockProcessor := &MockJobProcessor{}
+
+	taskPayload := &corndogs.TaskPayload{JobID: "racy-job-id", JobType: "run"}
+	payloadBytes, _ := json.Marshal(taskPayload)
+
+	mockCorndogs.GetNextTaskFunc = func(ctx context.Context, state string, timeout int64) (*pb.Task, error) {
+		return &pb.Task{
+			Uuid:            "task-id",
+			CurrentState:    "submitted-working",
+			AutoTargetState: "completed",
+			Payload:         payloadBytes,
+		}, nil
+	}
+
+	// First lookup races the INSERT and gets ErrNotFound; second succeeds.
+	var lookupCount int
+	mockStore.GetJobByIDFunc = func(ctx context.Context, jobID string) (*models.Job, error) {
+		lookupCount++
+		if lookupCount == 1 {
+			return nil, store.ErrNotFound
+		}
+		return &models.Job{JobID: jobID, Status: "submitted", JobCommand: "echo hi"}, nil
+	}
+
+	mockProcessor.ProcessJobFunc = func(ctx context.Context, job *models.Job) *JobResult {
+		return &JobResult{ExitCode: 0, LogsObjectKey: "logs/race.log"}
+	}
+
+	config := &Config{
+		QueueName:    "test-queue",
+		PollInterval: 100 * time.Millisecond,
+		Concurrency:  1,
+		Store:        mockStore,
+	}
+
+	worker := NewCornDogsWorkerWithProcessor(config, mockCorndogs, mockProcessor, nil, nil)
+
+	ctx := context.Background()
+	worker.processNextTask(ctx, 0)
+
+	// We retried at least once and ultimately found the row.
+	if lookupCount < 2 {
+		t.Errorf("expected at least 2 GetJobByID calls (retry then success), got %d", lookupCount)
+	}
+
+	// The job ran to completion — no terminal-fail, no requeue.
+	if mockCorndogs.GetCompleteTaskCallCount() != 1 {
+		t.Errorf("expected 1 CompleteTask call (job ran), got %d", mockCorndogs.GetCompleteTaskCallCount())
+	}
+	for _, call := range mockCorndogs.UpdateTaskCalls {
+		if call.NewState == "failed" {
+			t.Errorf("did not expect any UpdateTask -> failed; got %+v", call)
+		}
+	}
+}
+
+// TestCornDogsWorker_ProcessNextTask_PersistentNotFoundRequeues verifies
+// that when the job row truly never appears, the corndogs task is requeued
+// to "submitted" rather than terminally failed. Terminal-fail in this case
+// silently drops a job the API thinks is queued.
+func TestCornDogsWorker_ProcessNextTask_PersistentNotFoundRequeues(t *testing.T) {
+	origBackoff := getJobLookupBackoff
+	getJobLookupBackoff = 0
+	defer func() { getJobLookupBackoff = origBackoff }()
+
+	mockStore := &MockStore{}
+	mockCorndogs := corndogs.NewMockClient()
+	mockProcessor := &MockJobProcessor{}
+
+	taskPayload := &corndogs.TaskPayload{JobID: "ghost-job-id", JobType: "run"}
+	payloadBytes, _ := json.Marshal(taskPayload)
+
+	mockCorndogs.GetNextTaskFunc = func(ctx context.Context, state string, timeout int64) (*pb.Task, error) {
+		return &pb.Task{
+			Uuid:            "task-id",
+			CurrentState:    "submitted-working",
+			AutoTargetState: "completed",
+			Payload:         payloadBytes,
+		}, nil
+	}
+
+	mockStore.GetJobByIDFunc = func(ctx context.Context, jobID string) (*models.Job, error) {
+		return nil, store.ErrNotFound
+	}
+
+	config := &Config{
+		QueueName:    "test-queue",
+		PollInterval: 100 * time.Millisecond,
+		Concurrency:  1,
+		Store:        mockStore,
+	}
+
+	worker := NewCornDogsWorkerWithProcessor(config, mockCorndogs, mockProcessor, nil, nil)
+
+	ctx := context.Background()
+	worker.processNextTask(ctx, 0)
+
+	// Full retry budget exhausted.
+	if len(mockStore.GetJobByIDCalls) != getJobLookupAttempts {
+		t.Errorf("expected %d GetJobByID calls (full retry budget), got %d", getJobLookupAttempts, len(mockStore.GetJobByIDCalls))
+	}
+
+	// Task should be requeued to "submitted", not terminally failed.
+	requeued := false
+	for _, call := range mockCorndogs.UpdateTaskCalls {
+		if call.NewState == "failed" {
+			t.Errorf("expected requeue, got terminal failed: %+v", call)
+		}
+		if call.NewState == "submitted" {
+			requeued = true
+		}
+	}
+	if !requeued {
+		t.Error("expected task to be requeued (UpdateTask -> submitted), but it wasn't")
+	}
+
+	// Job processor never ran.
+	if len(mockProcessor.ProcessJobCalls) != 0 {
+		t.Errorf("expected 0 ProcessJob calls when job row never appears, got %d", len(mockProcessor.ProcessJobCalls))
+	}
+}
+
+// TestCornDogsWorker_ProcessNextTask_VCSStatusRetriedOnTransientFailure
+// verifies the post-completion VCS status push retries until it succeeds,
+// so a single transient GitHub failure doesn't drop the terminal status.
+func TestCornDogsWorker_ProcessNextTask_VCSStatusRetriedOnTransientFailure(t *testing.T) {
+	origBackoff := vcsStatusUpdateBackoff
+	vcsStatusUpdateBackoff = 0
+	defer func() { vcsStatusUpdateBackoff = origBackoff }()
+
+	mockStore := &MockStore{}
+	mockCorndogs := corndogs.NewMockClient()
+	mockProcessor := &MockJobProcessor{}
+
+	// Fail the first two calls, succeed on the third.
+	var statusCalls int
+	mockStatusUpdater := &MockJobStatusUpdater{
+		UpdateJobStatusFunc: func(ctx context.Context, job *models.Job) error {
+			statusCalls++
+			if statusCalls < 3 {
+				return fmt.Errorf("transient github 502")
+			}
+			return nil
+		},
+	}
+
+	taskPayload := &corndogs.TaskPayload{JobID: "test-job-id", JobType: "run"}
+	payloadBytes, _ := json.Marshal(taskPayload)
+
+	mockCorndogs.GetNextTaskFunc = func(ctx context.Context, state string, timeout int64) (*pb.Task, error) {
+		return &pb.Task{
+			Uuid:            "task-id",
+			CurrentState:    "submitted-working",
+			AutoTargetState: "completed",
+			Payload:         payloadBytes,
+		}, nil
+	}
+
+	mockStore.GetJobByIDFunc = func(ctx context.Context, jobID string) (*models.Job, error) {
+		return &models.Job{
+			JobID:      jobID,
+			Status:     "submitted",
+			JobCommand: "echo hello",
+			Notes:      `{"vcs_provider":"github","repo":"org/repo","commit_sha":"abc123"}`,
+		}, nil
+	}
+
+	mockProcessor.ProcessJobFunc = func(ctx context.Context, job *models.Job) *JobResult {
+		return &JobResult{ExitCode: 0}
+	}
+
+	config := &Config{
+		QueueName:    "test-queue",
+		PollInterval: 100 * time.Millisecond,
+		Concurrency:  1,
+		Store:        mockStore,
+	}
+
+	worker := NewCornDogsWorkerWithProcessor(config, mockCorndogs, mockProcessor, nil, mockStatusUpdater)
+
+	ctx := context.Background()
+	worker.processNextTask(ctx, 0)
+
+	if statusCalls != 3 {
+		t.Errorf("expected 3 UpdateJobStatus calls (2 transient failures + 1 success), got %d", statusCalls)
 	}
 }
