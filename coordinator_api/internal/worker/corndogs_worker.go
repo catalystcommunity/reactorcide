@@ -3,6 +3,7 @@ package worker
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"sync"
@@ -14,7 +15,30 @@ import (
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/pubsub"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/secrets"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store"
+	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store/models"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/vcs"
+)
+
+// getJobLookupAttempts and getJobLookupBackoff bound the retry loop that
+// papers over the dual-write race between TriggerProcessor.createAndSubmitJob
+// (INSERT job, then enqueue corndogs task) and CornDogsWorker.processNextTask
+// (dequeue task, then GetJobByID). On a fast worker the corndogs task can
+// become visible to a long-poll before the job INSERT has propagated to a
+// fresh DB connection. 5 × 200ms exponential backoff covers ~6.2s, far more
+// than any window we have observed. Vars (not consts) so tests can override
+// the backoff to keep the suite fast.
+var (
+	getJobLookupAttempts = 5
+	getJobLookupBackoff  = 200 * time.Millisecond
+)
+
+// vcsStatusUpdateAttempts and vcsStatusUpdateBackoff bound retry of the
+// post-completion VCS commit-status push. Without retry, a single GitHub
+// blip silently leaves the PR check stuck on "running" until reactorcide
+// posts another status (which may never happen for a one-shot job).
+var (
+	vcsStatusUpdateAttempts = 4
+	vcsStatusUpdateBackoff  = 500 * time.Millisecond
 )
 
 // CornDogsWorker represents a job processing worker that uses Corndogs for task management
@@ -237,11 +261,23 @@ func (w *CornDogsWorker) processNextTask(ctx context.Context, workerID int) {
 	metrics.SetWorkerJobsActive(workerIDStr, 1)
 	defer metrics.SetWorkerJobsActive(workerIDStr, 0)
 
-	// Get the job from the database
-	job, err := w.config.Store.GetJobByID(ctx, payload.JobID)
+	// Get the job from the database, retrying transient ErrNotFound to handle
+	// the dual-write race where the corndogs task is visible to this worker
+	// before the API's INSERT has propagated to a fresh DB connection.
+	job, err := w.getJobWithRetry(ctx, payload.JobID, getJobLookupAttempts, getJobLookupBackoff)
 	if err != nil {
+		if errors.Is(err, store.ErrNotFound) {
+			// Either the API really lost the row, or the race window is wider
+			// than our retry budget. Requeue rather than terminal-fail so the
+			// task gets another shot from another poll cycle. If the job truly
+			// doesn't exist this will loop until corndogs's own retry budget
+			// or timeout terminates it — preferable to silently dropping work.
+			logger.WithError(err).Warn("Job not visible after retries; requeueing corndogs task")
+			w.requeueTask(ctx, task.Uuid, task.CurrentState)
+			return
+		}
 		logger.WithError(err).Error("Failed to get job from database")
-		w.updateTaskFailed(ctx, task.Uuid, task.CurrentState, "Job not found in database")
+		w.updateTaskFailed(ctx, task.Uuid, task.CurrentState, "Failed to load job from database")
 		return
 	}
 
@@ -330,11 +366,14 @@ func (w *CornDogsWorker) processNextTask(ctx context.Context, workerID int) {
 	}
 	w.publisher.PublishJobUpdate(ctx, job.JobID, job.Status, completedAt.Format(time.RFC3339Nano))
 
-	// Update VCS commit status (best-effort)
+	// Update VCS commit status with bounded retry. Transient GitHub failures
+	// (network blips, rate limits, 5xx) shouldn't drop the terminal status —
+	// without retry the PR check sits on "running" until something else
+	// triggers a status push. After exhausting retries we still log-and-
+	// continue: an unhealthy PAT or repo permission issue is a config bug
+	// the operator needs to fix, not something to crash the worker over.
 	if w.statusUpdater != nil {
-		if err := w.statusUpdater.UpdateJobStatus(ctx, job); err != nil {
-			logger.WithError(err).Warn("Failed to update VCS commit status")
-		}
+		w.updateVCSStatusWithRetry(ctx, job)
 	}
 
 	logger.WithField("status", job.Status).WithField("exit_code", result.ExitCode).Info("Task processing completed")
@@ -352,4 +391,74 @@ func (w *CornDogsWorker) updateTaskFailed(ctx context.Context, taskID, currentSt
 	if err != nil {
 		logging.Log.WithError(err).WithField("task_id", taskID).Error("Failed to update task to failed state")
 	}
+}
+
+// getJobWithRetry fetches a job by ID, retrying on store.ErrNotFound with
+// exponential backoff. Non-NotFound errors return immediately. Returns the
+// last error (always ErrNotFound when retries are exhausted on missing rows).
+func (w *CornDogsWorker) getJobWithRetry(ctx context.Context, jobID string, attempts int, backoff time.Duration) (*models.Job, error) {
+	var lastErr error
+	for i := 0; i < attempts; i++ {
+		job, err := w.config.Store.GetJobByID(ctx, jobID)
+		if err == nil {
+			return job, nil
+		}
+		if !errors.Is(err, store.ErrNotFound) {
+			return nil, err
+		}
+		lastErr = err
+		if i == attempts-1 {
+			break
+		}
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-time.After(backoff):
+		}
+		backoff *= 2
+	}
+	return nil, lastErr
+}
+
+// requeueTask transitions a corndogs task back to "submitted" so another
+// worker can pick it up. Used when a job lookup races the API's INSERT and
+// the row truly hasn't appeared yet — terminal-failing in that case would
+// drop work that the API thinks is queued.
+func (w *CornDogsWorker) requeueTask(ctx context.Context, taskID, currentState string) {
+	_, err := w.corndogsClient.UpdateTask(ctx, taskID, currentState, "submitted", nil)
+	if err != nil {
+		logging.Log.WithError(err).WithField("task_id", taskID).Error("Failed to requeue task")
+	}
+}
+
+// updateVCSStatusWithRetry pushes the final VCS commit status with bounded
+// exponential backoff. All errors are retried — distinguishing transient
+// (5xx, network) from permanent (401, 403) at this layer would require
+// per-provider error introspection that the status-updater interface
+// doesn't expose. Bounded attempts cap the cost of repeatedly retrying a
+// genuinely-broken PAT to a few seconds.
+func (w *CornDogsWorker) updateVCSStatusWithRetry(ctx context.Context, job *models.Job) {
+	backoff := vcsStatusUpdateBackoff
+	var lastErr error
+	for i := 0; i < vcsStatusUpdateAttempts; i++ {
+		err := w.statusUpdater.UpdateJobStatus(ctx, job)
+		if err == nil {
+			return
+		}
+		lastErr = err
+		if i == vcsStatusUpdateAttempts-1 {
+			break
+		}
+		logging.Log.WithError(err).WithFields(map[string]interface{}{
+			"job_id":  job.JobID,
+			"attempt": i + 1,
+		}).Warn("VCS status update failed; retrying")
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(backoff):
+		}
+		backoff *= 2
+	}
+	logging.Log.WithError(lastErr).WithField("job_id", job.JobID).Error("Failed to update VCS commit status after retries")
 }
