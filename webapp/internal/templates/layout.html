@@ -68,7 +68,12 @@
         .card h2 { font-size: 16px; margin-bottom: 8px; }
         .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 8px; }
         .grid dt { color: var(--text-muted); font-size: 12px; }
-        .grid dd { font-size: 14px; margin-bottom: 8px; }
+        .grid dd {
+            font-size: 14px;
+            margin-bottom: 8px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
         .log-viewer {
             background: #010409;
             border: 1px solid var(--border);
@@ -120,6 +125,10 @@
             background: var(--bg-secondary);
             text-decoration: none;
             border-bottom-color: var(--bg-secondary);
+        }
+        .truncate {
+            overflow: hidden;
+            text-overflow: ellipsis;
         }
         .exit-success { color: var(--green); }
         .exit-failure { color: var(--red); }
