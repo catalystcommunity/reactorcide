@@ -756,6 +756,11 @@ def eval_cmd(
     source_ref: str = typer.Option("", envvar="REACTORCIDE_SHA", help="Source git reference (SHA)"),
     ci_source_url: str = typer.Option("", envvar="REACTORCIDE_CI_SOURCE_URL", help="CI source repository URL"),
     ci_source_ref: str = typer.Option("", envvar="REACTORCIDE_CI_SOURCE_REF", help="CI source git reference"),
+    head_url: str = typer.Option("", envvar="REACTORCIDE_HEAD_URL", help="PR head repository URL (fork URL for cross-repo PRs)"),
+    head_ref: str = typer.Option("", envvar="REACTORCIDE_HEAD_REF", help="PR head branch name"),
+    base_url: str = typer.Option("", envvar="REACTORCIDE_BASE_URL", help="PR base/upstream repository URL"),
+    base_ref: str = typer.Option("", envvar="REACTORCIDE_BASE_REF", help="PR base branch name"),
+    is_fork_pr: str = typer.Option("", envvar="REACTORCIDE_IS_FORK_PR", help="Set to 'true' when PR is cross-repository"),
     triggers_file: str = typer.Option("/job/triggers.json", help="Path to write triggers output"),
 ):
     """Evaluate job definitions against an event and generate triggers.
@@ -843,6 +848,11 @@ def eval_cmd(
         ci_source_ref=ci_source_ref,
         pr_base_ref=pr_base_ref,
         pr_number=pr_number,
+        head_url=head_url,
+        head_ref=head_ref,
+        base_url=base_url,
+        base_ref=base_ref,
+        is_fork_pr=is_fork_pr,
     )
 
     # Generate triggers
@@ -898,6 +908,11 @@ def trigger_cmd(
         "REACTORCIDE_DIFF_BASE",
         "REACTORCIDE_CI_SOURCE_URL",
         "REACTORCIDE_CI_SOURCE_REF",
+        "REACTORCIDE_HEAD_URL",
+        "REACTORCIDE_HEAD_REF",
+        "REACTORCIDE_BASE_URL",
+        "REACTORCIDE_BASE_REF",
+        "REACTORCIDE_IS_FORK_PR",
     ]
 
     triggers: List[JobTrigger] = []

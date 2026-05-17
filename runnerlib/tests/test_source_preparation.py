@@ -368,3 +368,70 @@ class TestSourcePreparation:
         assert result is not None
         assert (result / "pr_change.txt").exists()
         assert (result / "pr_change.txt").read_text() == "PR changes"
+
+    def test_checkout_with_fetch_fallback_adds_upstream_remote(self):
+        """When base_url is provided and differs from origin, upstream remote
+        is added and base_ref is fetched. This is the fork-PR scenario where
+        the clone is the fork and base operations need the upstream remote.
+        """
+        # Simulate: upstream has 'main', fork has 'main' + 'feature-branch'
+        upstream_bare = Path(self.temp_dir) / "upstream.git"
+        Repo.init(upstream_bare, bare=True)
+        fork_bare = Path(self.temp_dir) / "fork.git"
+        Repo.init(fork_bare, bare=True)
+
+        # Seed both with a main commit
+        seed_dir = Path(self.temp_dir) / "seed"
+        seed = _init_repo_with_main(seed_dir)
+        (seed_dir / "main.txt").write_text("base")
+        seed.index.add(["main.txt"])
+        seed.index.commit("base")
+        seed.create_remote("upstream", str(upstream_bare))
+        seed.create_remote("fork", str(fork_bare))
+        seed.remotes.upstream.push("HEAD:refs/heads/main")
+        seed.remotes.fork.push("HEAD:refs/heads/main")
+
+        # Add a fork-only feature branch on the fork
+        seed.git.checkout("-b", "feature")
+        (seed_dir / "feature.txt").write_text("fork work")
+        seed.index.add(["feature.txt"])
+        seed.index.commit("feature")
+        seed.remotes.fork.push("HEAD:refs/heads/feature")
+
+        # Clone the fork (origin = fork)
+        clone_dir = Path(self.temp_dir) / "clone"
+        cloned = Repo.clone_from(str(fork_bare), clone_dir)
+
+        # Checkout the feature branch with upstream as base.
+        _checkout_with_fetch_fallback(
+            cloned,
+            "feature",
+            base_url=str(upstream_bare),
+            base_ref="main",
+        )
+
+        # The 'upstream' remote should now exist, and upstream/main should be
+        # fetched so `git log upstream/main..HEAD` works.
+        remote_names = [r.name for r in cloned.remotes]
+        assert "upstream" in remote_names
+        assert "upstream/main" in [str(ref) for ref in cloned.refs]
+
+    def test_checkout_with_fetch_fallback_skips_upstream_when_same_url(self):
+        """When base_url matches origin URL (same-repo PR), no upstream remote."""
+        bare = Path(self.temp_dir) / "bare.git"
+        Repo.init(bare, bare=True)
+        seed_dir = Path(self.temp_dir) / "seed"
+        seed = _init_repo_with_main(seed_dir)
+        (seed_dir / "f.txt").write_text("x")
+        seed.index.add(["f.txt"])
+        seed.index.commit("init")
+        seed.create_remote("origin", str(bare))
+        seed.remotes.origin.push("HEAD:refs/heads/main")
+
+        clone_dir = Path(self.temp_dir) / "clone"
+        cloned = Repo.clone_from(str(bare), clone_dir)
+        _checkout_with_fetch_fallback(cloned, "main", base_url=str(bare), base_ref="main")
+
+        # No upstream remote added when base_url == origin url.
+        remote_names = [r.name for r in cloned.remotes]
+        assert "upstream" not in remote_names

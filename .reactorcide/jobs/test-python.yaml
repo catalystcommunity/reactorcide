@@ -8,7 +8,9 @@ job:
       cd /job/src/runnerlib
     else
       git config --global init.defaultBranch main
-      git clone --branch "${REACTORCIDE_PR_REF}" "${REACTORCIDE_SOURCE_URL}" /workspace
+      # HEAD_URL points at the fork for cross-repo PRs; falls back to
+      # SOURCE_URL for back-compat with older worker versions.
+      git clone --branch "${REACTORCIDE_HEAD_REF:-$REACTORCIDE_PR_REF}" "${REACTORCIDE_HEAD_URL:-$REACTORCIDE_SOURCE_URL}" /workspace
       cd /workspace/runnerlib
     fi
     echo "=== Running Python Tests ==="

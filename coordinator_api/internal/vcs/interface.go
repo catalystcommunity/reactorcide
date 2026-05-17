@@ -48,6 +48,13 @@ type PullRequestInfo struct {
 	HTMLURL     string
 	AuthorLogin string
 	AuthorEmail string
+
+	// HeadRepository is set only for cross-repository PRs (forks).
+	// When nil, the PR's head branch lives on the same repository as Repository
+	// in the enclosing WebhookEvent. When non-nil, this is the fork where the
+	// branch actually lives — clone from HeadRepository.CloneURL to reach
+	// HeadRef.
+	HeadRepository *RepositoryInfo
 }
 
 // PushInfo contains push event information

@@ -687,6 +687,62 @@ class TestGenerateTriggers:
         assert t.ci_source_url == "https://github.com/org/ci.git"
         assert t.ci_source_ref == "def456"
 
+    def test_trigger_propagates_fork_pr_env(self):
+        """Fork PR context: head/base URLs + IS_FORK_PR must reach trigger env."""
+        defs = [
+            JobDefinition(
+                name="test",
+                job=JobConfig(image="alpine:latest", command="make test"),
+            ),
+        ]
+        ctx = EventContext(
+            event_type="pull_request_opened",
+            branch="main",
+            source_url="https://github.com/fork-owner/repo.git",
+            source_ref="forkheadsha",
+            ci_source_url="https://github.com/upstream/repo.git",
+            ci_source_ref="upstreambaseSHA",
+            pr_base_ref="main",
+            pr_number="60",
+            head_url="https://github.com/fork-owner/repo.git",
+            head_ref="lilac/text-overflow",
+            base_url="https://github.com/upstream/repo.git",
+            base_ref="main",
+            is_fork_pr="true",
+        )
+
+        triggers = generate_triggers(defs, ctx)
+
+        assert len(triggers) == 1
+        t = triggers[0]
+        # SOURCE_URL points at the fork (where the branch lives).
+        assert t.env["REACTORCIDE_SOURCE_URL"] == "https://github.com/fork-owner/repo.git"
+        # Explicit head/base pair lets jobs set up two remotes.
+        assert t.env["REACTORCIDE_HEAD_URL"] == "https://github.com/fork-owner/repo.git"
+        assert t.env["REACTORCIDE_HEAD_REF"] == "lilac/text-overflow"
+        assert t.env["REACTORCIDE_BASE_URL"] == "https://github.com/upstream/repo.git"
+        assert t.env["REACTORCIDE_BASE_REF"] == "main"
+        assert t.env["REACTORCIDE_IS_FORK_PR"] == "true"
+        # CI source comes from upstream — never the fork.
+        assert t.env["REACTORCIDE_CI_SOURCE_URL"] == "https://github.com/upstream/repo.git"
+
+    def test_trigger_omits_fork_env_when_unset(self):
+        """Non-fork contexts should not leak HEAD/BASE/IS_FORK_PR vars."""
+        defs = [
+            JobDefinition(
+                name="test",
+                job=JobConfig(image="alpine:latest", command="make test"),
+            ),
+        ]
+        ctx = EventContext(event_type="push", branch="main", source_url="https://github.com/org/repo.git")
+
+        triggers = generate_triggers(defs, ctx)
+
+        t = triggers[0]
+        assert "REACTORCIDE_HEAD_URL" not in t.env
+        assert "REACTORCIDE_BASE_URL" not in t.env
+        assert "REACTORCIDE_IS_FORK_PR" not in t.env
+
     def test_trigger_with_priority_and_timeout(self):
         """Test that priority and timeout are passed through."""
         defs = [

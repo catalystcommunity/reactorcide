@@ -115,12 +115,18 @@ class EventContext:
     Attributes:
         event_type: The generic event type (e.g. "push", "pull_request_opened").
         branch: The branch name.
-        source_url: URL of the source code repository.
+        source_url: URL of the source code repository (fork URL for cross-repo PRs).
         source_ref: Git ref (SHA) of the source code.
-        ci_source_url: URL of the CI source repository.
+        ci_source_url: URL of the CI source repository (always trusted upstream).
         ci_source_ref: Git ref of the CI source.
         pr_base_ref: Base branch for pull requests.
         pr_number: Pull request number.
+        head_url: Explicit head repo URL for PRs (== source_url; convenience).
+        head_ref: PR head branch name (== pr ref for PRs).
+        base_url: Upstream/base repo URL for PRs — useful when jobs need a
+            second remote (e.g. for `git log base..head` operations).
+        base_ref: Target branch for PRs (== pr_base_ref; convenience).
+        is_fork_pr: "true" when the PR head is on a different repo than base.
     """
     event_type: str = ""
     branch: str = ""
@@ -130,6 +136,11 @@ class EventContext:
     ci_source_ref: str = ""
     pr_base_ref: str = ""
     pr_number: str = ""
+    head_url: str = ""
+    head_ref: str = ""
+    base_url: str = ""
+    base_ref: str = ""
+    is_fork_pr: str = ""
 
 
 def _parse_triggers_config(data: Any) -> TriggersConfig:
@@ -446,6 +457,16 @@ def generate_triggers(
             env["REACTORCIDE_CI_SOURCE_URL"] = event_context.ci_source_url
         if event_context.ci_source_ref:
             env["REACTORCIDE_CI_SOURCE_REF"] = event_context.ci_source_ref
+        if event_context.head_url:
+            env["REACTORCIDE_HEAD_URL"] = event_context.head_url
+        if event_context.head_ref:
+            env["REACTORCIDE_HEAD_REF"] = event_context.head_ref
+        if event_context.base_url:
+            env["REACTORCIDE_BASE_URL"] = event_context.base_url
+        if event_context.base_ref:
+            env["REACTORCIDE_BASE_REF"] = event_context.base_ref
+        if event_context.is_fork_pr:
+            env["REACTORCIDE_IS_FORK_PR"] = event_context.is_fork_pr
 
         # By default, wrap the command with "runnerlib run --job-command" so that
         # runnerlib handles source checkout, CI source checkout, secret resolution,

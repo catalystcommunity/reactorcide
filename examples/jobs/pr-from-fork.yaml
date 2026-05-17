@@ -1,0 +1,49 @@
+name: pr-from-fork-example
+description: |
+  Example raw-command job that handles both fork PRs and same-repo PRs
+  correctly. Clones from the head repo (the fork for cross-repo PRs) and
+  optionally adds the upstream as a second remote so diff-base operations
+  work even when the fork doesn't have the upstream's tip.
+
+  Run locally against a fork PR:
+    reactorcide run-local --pr 60 examples/jobs/pr-from-fork.yaml
+  Or with explicit URL + ref:
+    reactorcide run-local \
+      --code-url https://github.com/fork-owner/repo.git \
+      --code-ref some-feature-branch \
+      examples/jobs/pr-from-fork.yaml
+
+job:
+  image: alpine/git:latest
+  raw_command: true
+  command: |
+    set -e
+    # HEAD_URL points at the fork for cross-repo PRs; falls back to
+    # SOURCE_URL for back-compat with older worker versions. Same for HEAD_REF
+    # vs PR_REF and BASE_URL/BASE_REF.
+    HEAD_URL="${REACTORCIDE_HEAD_URL:-$REACTORCIDE_SOURCE_URL}"
+    HEAD_REF="${REACTORCIDE_HEAD_REF:-$REACTORCIDE_PR_REF}"
+    BASE_URL="${REACTORCIDE_BASE_URL}"
+    BASE_REF="${REACTORCIDE_BASE_REF:-$REACTORCIDE_PR_BASE_REF}"
+
+    echo "Cloning code source: ${HEAD_URL} @ ${HEAD_REF}"
+    git clone --branch "${HEAD_REF}" "${HEAD_URL}" /job/src
+    cd /job/src
+
+    # Add upstream as a second remote for diff-base ops (only if it differs).
+    if [ -n "${BASE_URL}" ] && [ "${BASE_URL}" != "${HEAD_URL}" ]; then
+      echo "Adding upstream remote: ${BASE_URL}"
+      git remote add upstream "${BASE_URL}"
+      git fetch upstream "${BASE_REF}"
+      echo "Commits added by this PR:"
+      git log "upstream/${BASE_REF}..HEAD" --oneline
+    elif [ -n "${REACTORCIDE_DIFF_BASE}" ]; then
+      echo "Same-repo PR — diffing against base SHA ${REACTORCIDE_DIFF_BASE}"
+      git log "${REACTORCIDE_DIFF_BASE}..HEAD" --oneline
+    fi
+
+    if [ "${REACTORCIDE_IS_FORK_PR:-}" = "true" ]; then
+      echo "This is a fork PR."
+    fi
+  timeout: 300
+  priority: 5

@@ -3,8 +3,10 @@ package cmd
 import (
 	"bufio"
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strconv"
@@ -92,8 +94,181 @@ var RunLocalCommand = &cli.Command{
 			Name:  "allow-secret-overrides",
 			Usage: "Allow overlays to override secret references with plaintext values",
 		},
+		&cli.StringFlag{
+			Name:  "code-url",
+			Usage: "Git URL to clone into /job/src instead of bind-mounting --job-dir. Used together with --code-ref to test arbitrary code (e.g. a fork branch) locally.",
+		},
+		&cli.StringFlag{
+			Name:  "code-ref",
+			Usage: "Git ref (branch, tag, or SHA) to checkout from --code-url. Defaults to the remote's default branch.",
+		},
+		&cli.IntFlag{
+			Name:  "pr",
+			Usage: "GitHub PR number to test. Resolves the head repo and branch via `gh pr view`, then behaves like --code-url / --code-ref. Requires `gh` on PATH and the cwd to be inside a github checkout. Mutually exclusive with --code-url.",
+		},
 	},
 	Action: runLocalAction,
+}
+
+// resolvedCodeSource holds what --code-url / --code-ref / --pr resolve to. A
+// nil value means run-local should fall back to its default behavior of
+// bind-mounting --job-dir at /job/src.
+type resolvedCodeSource struct {
+	URL       string
+	Ref       string
+	HeadRef   string // branch name (== Ref when Ref is a branch; used for HEAD_REF env)
+	BaseURL   string // upstream URL when PR is cross-repo, empty otherwise
+	BaseRef   string // base branch when known
+	PRNumber  int    // 0 when not from --pr
+	IsForkPR  bool
+}
+
+// resolveCodeSource turns the user's --code-url / --code-ref / --pr flags
+// into a resolvedCodeSource, or returns nil when none were set. Errors on
+// mutually-exclusive combinations or when --pr resolution fails.
+func resolveCodeSource(ctx *cli.Context) (*resolvedCodeSource, error) {
+	return resolveCodeSourceFromArgs(ctx.String("code-url"), ctx.String("code-ref"), ctx.Int("pr"))
+}
+
+// resolveCodeSourceFromArgs is the pure-function core of resolveCodeSource,
+// extracted so it can be unit tested without constructing a cli.Context.
+func resolveCodeSourceFromArgs(codeURL, codeRef string, prNum int) (*resolvedCodeSource, error) {
+	if prNum != 0 && codeURL != "" {
+		return nil, fmt.Errorf("--pr and --code-url are mutually exclusive")
+	}
+
+	if codeURL != "" {
+		return &resolvedCodeSource{
+			URL:     codeURL,
+			Ref:     codeRef,
+			HeadRef: codeRef,
+		}, nil
+	}
+
+	if prNum != 0 {
+		return resolvePRViaGH(prNum)
+	}
+
+	return nil, nil
+}
+
+// resolvePRViaGH shells out to `gh pr view` from the cwd to discover the
+// PR's head/base repos and branches. Returns a friendly error if `gh` is
+// missing or the cwd isn't a recognizable GitHub checkout.
+func resolvePRViaGH(prNum int) (*resolvedCodeSource, error) {
+	if _, err := exec.LookPath("gh"); err != nil {
+		return nil, fmt.Errorf("--pr requires the `gh` CLI on PATH; install it from https://cli.github.com or use --code-url instead")
+	}
+
+	cmd := exec.Command("gh", "pr", "view", strconv.Itoa(prNum),
+		"--json", "headRefName,headRefOid,baseRefName,isCrossRepository,headRepository,headRepositoryOwner,baseRepository")
+	out, err := cmd.Output()
+	if err != nil {
+		stderr := ""
+		if ee, ok := err.(*exec.ExitError); ok {
+			stderr = string(ee.Stderr)
+		}
+		return nil, fmt.Errorf("`gh pr view %d` failed: %w (stderr: %s) — run from inside a checkout of the PR's target repo, or use --code-url", prNum, err, stderr)
+	}
+
+	var pr struct {
+		HeadRefName         string `json:"headRefName"`
+		HeadRefOid          string `json:"headRefOid"`
+		BaseRefName         string `json:"baseRefName"`
+		IsCrossRepository   bool   `json:"isCrossRepository"`
+		HeadRepository      struct {
+			Name          string `json:"name"`
+			NameWithOwner string `json:"nameWithOwner"`
+		} `json:"headRepository"`
+		HeadRepositoryOwner struct {
+			Login string `json:"login"`
+		} `json:"headRepositoryOwner"`
+		BaseRepository struct {
+			Name          string `json:"name"`
+			NameWithOwner string `json:"nameWithOwner"`
+		} `json:"baseRepository"`
+	}
+	if err := json.Unmarshal(out, &pr); err != nil {
+		return nil, fmt.Errorf("could not parse `gh pr view` output: %w", err)
+	}
+
+	// `gh pr view` returns Name for head/base repos but not always a full
+	// nameWithOwner; fall back to combining owner + name when needed.
+	headOwner := pr.HeadRepositoryOwner.Login
+	headNameWithOwner := pr.HeadRepository.NameWithOwner
+	if headNameWithOwner == "" && headOwner != "" && pr.HeadRepository.Name != "" {
+		headNameWithOwner = headOwner + "/" + pr.HeadRepository.Name
+	}
+	if headNameWithOwner == "" {
+		return nil, fmt.Errorf("`gh pr view %d` returned no head repository info", prNum)
+	}
+	baseNameWithOwner := pr.BaseRepository.NameWithOwner
+	if baseNameWithOwner == "" {
+		// Best effort: derive from `gh repo view`.
+		if rc, err := exec.Command("gh", "repo", "view", "--json", "nameWithOwner").Output(); err == nil {
+			var rv struct {
+				NameWithOwner string `json:"nameWithOwner"`
+			}
+			_ = json.Unmarshal(rc, &rv)
+			baseNameWithOwner = rv.NameWithOwner
+		}
+	}
+
+	src := &resolvedCodeSource{
+		URL:      fmt.Sprintf("https://github.com/%s.git", headNameWithOwner),
+		Ref:      pr.HeadRefName,
+		HeadRef:  pr.HeadRefName,
+		BaseRef:  pr.BaseRefName,
+		PRNumber: prNum,
+		IsForkPR: pr.IsCrossRepository,
+	}
+	if baseNameWithOwner != "" {
+		src.BaseURL = fmt.Sprintf("https://github.com/%s.git", baseNameWithOwner)
+	}
+	return src, nil
+}
+
+// cloneCodeSource clones src.URL@src.Ref into a fresh tempdir and returns the
+// tempdir path plus a cleanup func the caller must defer.
+func cloneCodeSource(src *resolvedCodeSource, uid, gid int) (string, func(), error) {
+	tmp, err := os.MkdirTemp("/tmp", "reactorcide-local-code-")
+	if err != nil {
+		return "", func() {}, fmt.Errorf("failed to create temp dir for --code-url checkout: %w", err)
+	}
+	cleanup := func() { os.RemoveAll(tmp) }
+
+	args := []string{"clone"}
+	if src.Ref != "" {
+		args = append(args, "--branch", src.Ref)
+	}
+	args = append(args, src.URL, tmp)
+	cmd := exec.Command("git", args...)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	if err := cmd.Run(); err != nil {
+		cleanup()
+		return "", func() {}, fmt.Errorf("git clone failed for %s @ %s: %w", src.URL, src.Ref, err)
+	}
+
+	// If a base URL was supplied (cross-repo PR) and it differs from the
+	// cloned URL, add it as `upstream` and fetch the base ref. This mirrors
+	// what runnerlib's _checkout_with_fetch_fallback does for the worker.
+	if src.BaseURL != "" && src.BaseURL != src.URL {
+		if err := exec.Command("git", "-C", tmp, "remote", "add", "upstream", src.BaseURL).Run(); err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: failed to add upstream remote %s: %v\n", src.BaseURL, err)
+		} else if src.BaseRef != "" {
+			if err := exec.Command("git", "-C", tmp, "fetch", "upstream", src.BaseRef).Run(); err != nil {
+				fmt.Fprintf(os.Stderr, "Warning: failed to fetch upstream/%s: %v\n", src.BaseRef, err)
+			}
+		}
+	}
+
+	// Match ownership to the container's run-as user.
+	_ = filepath.Walk(tmp, func(path string, _ os.FileInfo, _ error) error {
+		_ = os.Chown(path, uid, gid)
+		return nil
+	})
+	return tmp, cleanup, nil
 }
 
 func runLocalAction(ctx *cli.Context) error {
@@ -107,6 +282,11 @@ func runLocalAction(ctx *cli.Context) error {
 	backend := ctx.String("backend")
 	inputFiles := ctx.StringSlice("input")
 	allowSecretOverrides := ctx.Bool("allow-secret-overrides")
+
+	codeSource, err := resolveCodeSource(ctx)
+	if err != nil {
+		return err
+	}
 
 	// Load job specification with overlays
 	spec, secretOverrides, err := worker.LoadJobSpecWithOverlays(jobFile, inputFiles)
@@ -218,10 +398,52 @@ func runLocalAction(ctx *cli.Context) error {
 		return fmt.Errorf("failed to chown workspace src dir: %w", err)
 	}
 
+	// Resolve what to mount at /job/src:
+	//   - default: --job-dir (the user's local working copy)
+	//   - --code-url / --pr: clone into a tempdir, mount that instead
+	srcMount := absJobDir
+	if codeSource != nil {
+		fmt.Printf("Code source: cloning %s @ %s\n", codeSource.URL, codeSource.Ref)
+		if spec.Source != nil && spec.Source.Type != "" && spec.Source.Type != "none" {
+			fmt.Fprintf(os.Stderr,
+				"Notice: job spec declares source.%s but --code-url/--pr overrides it.\n",
+				spec.Source.Type,
+			)
+		}
+		codeDir, cleanup, err := cloneCodeSource(codeSource, uid, gid)
+		if err != nil {
+			return err
+		}
+		defer cleanup()
+		srcMount = codeDir
+
+		// Populate the same env vars the worker would set so the job
+		// behaves identically whether run locally or remotely.
+		spec.Environment["REACTORCIDE_SOURCE_URL"] = codeSource.URL
+		spec.Environment["REACTORCIDE_HEAD_URL"] = codeSource.URL
+		if codeSource.HeadRef != "" {
+			spec.Environment["REACTORCIDE_HEAD_REF"] = codeSource.HeadRef
+			spec.Environment["REACTORCIDE_PR_REF"] = codeSource.HeadRef
+		}
+		if codeSource.BaseURL != "" {
+			spec.Environment["REACTORCIDE_BASE_URL"] = codeSource.BaseURL
+		}
+		if codeSource.BaseRef != "" {
+			spec.Environment["REACTORCIDE_BASE_REF"] = codeSource.BaseRef
+			spec.Environment["REACTORCIDE_PR_BASE_REF"] = codeSource.BaseRef
+		}
+		if codeSource.IsForkPR {
+			spec.Environment["REACTORCIDE_IS_FORK_PR"] = "true"
+		}
+		if codeSource.PRNumber > 0 {
+			spec.Environment["REACTORCIDE_PR_NUMBER"] = strconv.Itoa(codeSource.PRNumber)
+		}
+	}
+
 	// Convert spec to JobConfig using temp workspace, then set SourceDir
-	// so the runner mounts the user's source at /job/src
+	// so the runner mounts the resolved source at /job/src.
 	jobConfig := spec.ToJobConfig(tempWorkspace, jobID, "local")
-	jobConfig.SourceDir = absJobDir
+	jobConfig.SourceDir = srcMount
 	jobConfig.RunAsUser = fmt.Sprintf("%d:%d", uid, gid)
 
 	// Synthesize a minimal /etc/passwd and /etc/group so tools that require a
@@ -269,7 +491,7 @@ func runLocalAction(ctx *cli.Context) error {
 	}
 
 	if dryRun {
-		return performLocalDryRun(spec, jobConfig, masker, absJobDir)
+		return performLocalDryRun(spec, jobConfig, masker, srcMount)
 	}
 
 	// Create the job runner

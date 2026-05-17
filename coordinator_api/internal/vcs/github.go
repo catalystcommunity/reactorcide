@@ -384,6 +384,21 @@ func (c *GitHubClient) parsePullRequestEvent(body []byte, event *WebhookEvent) e
 		AuthorEmail: "", // Not provided in webhook
 	}
 
+	// Cross-repo (fork) PR: the head branch lives on a different repository
+	// than the base. Capture the head repository so downstream code can clone
+	// from the fork to reach HeadRef.
+	headFullName := payload.PullRequest.Head.Repo.FullName
+	baseFullName := payload.PullRequest.Base.Repo.FullName
+	if headFullName != "" && baseFullName != "" && headFullName != baseFullName {
+		event.PullRequest.HeadRepository = &RepositoryInfo{
+			FullName:      payload.PullRequest.Head.Repo.FullName,
+			CloneURL:      payload.PullRequest.Head.Repo.CloneURL,
+			SSHURL:        payload.PullRequest.Head.Repo.SSHURL,
+			HTMLURL:       payload.PullRequest.Head.Repo.HTMLURL,
+			DefaultBranch: payload.PullRequest.Head.Repo.DefaultBranch,
+		}
+	}
+
 	return nil
 }
 
