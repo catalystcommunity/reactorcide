@@ -10,8 +10,16 @@ job:
   image: 10.16.0.1:5000/public/reactorcide/runnerbase:dev
   command: |
     set -e
-    git clone --branch "${REACTORCIDE_PR_REF}" "${REACTORCIDE_SOURCE_URL}" /job/src
+    # SOURCE_URL points at the fork for cross-repo PRs (where the branch
+    # actually lives); HEAD_URL is the same value, named for clarity. BASE_URL
+    # is the upstream — we add it as a second remote so `git log base..HEAD`
+    # works even when the fork doesn't have the upstream's tip.
+    git clone --branch "${REACTORCIDE_HEAD_REF:-$REACTORCIDE_PR_REF}" "${REACTORCIDE_HEAD_URL:-$REACTORCIDE_SOURCE_URL}" /job/src
     cd /job/src
+    if [ -n "${REACTORCIDE_BASE_URL}" ] && [ "${REACTORCIDE_BASE_URL}" != "${REACTORCIDE_HEAD_URL:-$REACTORCIDE_SOURCE_URL}" ]; then
+      git remote add upstream "${REACTORCIDE_BASE_URL}"
+      git fetch upstream "${REACTORCIDE_BASE_REF:-$REACTORCIDE_PR_BASE_REF}"
+    fi
 
     echo "=== Validating Conventional Commits ==="
     PATTERN='^(feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert)(\(.+\))?!?: .+'

@@ -91,6 +91,111 @@ func TestBuildEvalJob_PROpened(t *testing.T) {
 	assert.Equal(t, "main", job.JobEnvVars["REACTORCIDE_CI_SOURCE_REF"])
 }
 
+func TestBuildEvalJob_PRFromFork(t *testing.T) {
+	// Cross-repo PR: head branch lives on a fork, base lives on upstream.
+	// Code source (SourceURL) must be the fork; CI source must be upstream.
+	project := evalTestProject()
+	// Clear project's DefaultCISourceURL so we exercise the same-repo CI
+	// fallback path and verify it correctly anchors on the upstream + base SHA.
+	project.DefaultCISourceURL = ""
+	project.DefaultCISourceRef = ""
+
+	event := &vcs.WebhookEvent{
+		Provider:     vcs.GitHub,
+		EventType:    "pull_request",
+		GenericEvent: vcs.EventPullRequestOpened,
+		Repository: vcs.RepositoryInfo{
+			FullName: "upstream/repo",
+			CloneURL: "https://github.com/upstream/repo.git",
+		},
+		PullRequest: &vcs.PullRequestInfo{
+			Number:  60,
+			Action:  "opened",
+			HeadSHA: "forkheadsha",
+			HeadRef: "lilac/text-overflow",
+			BaseSHA: "upstreambaseSHA",
+			BaseRef: "main",
+			HeadRepository: &vcs.RepositoryInfo{
+				FullName: "fork-owner/repo",
+				CloneURL: "https://github.com/fork-owner/repo.git",
+			},
+		},
+	}
+
+	job := BuildEvalJob(project, event)
+
+	// Code source: must point at the FORK so `git clone` reaches the branch.
+	require.NotNil(t, job.SourceURL)
+	assert.Equal(t, "https://github.com/fork-owner/repo.git", *job.SourceURL)
+	require.NotNil(t, job.SourceRef)
+	assert.Equal(t, "forkheadsha", *job.SourceRef)
+
+	// CI source: must point at UPSTREAM at the BASE SHA — not the fork,
+	// not the head SHA. This is the security boundary: fork content must
+	// never be loaded as CI definitions.
+	require.NotNil(t, job.CISourceURL)
+	assert.Equal(t, "https://github.com/upstream/repo.git", *job.CISourceURL)
+	require.NotNil(t, job.CISourceRef)
+	assert.Equal(t, "upstreambaseSHA", *job.CISourceRef)
+
+	// Env vars: SOURCE_URL == HEAD_URL == fork. BASE_URL == upstream.
+	assert.Equal(t, "https://github.com/fork-owner/repo.git", job.JobEnvVars["REACTORCIDE_SOURCE_URL"])
+	assert.Equal(t, "https://github.com/fork-owner/repo.git", job.JobEnvVars["REACTORCIDE_HEAD_URL"])
+	assert.Equal(t, "lilac/text-overflow", job.JobEnvVars["REACTORCIDE_HEAD_REF"])
+	assert.Equal(t, "https://github.com/upstream/repo.git", job.JobEnvVars["REACTORCIDE_BASE_URL"])
+	assert.Equal(t, "main", job.JobEnvVars["REACTORCIDE_BASE_REF"])
+	assert.Equal(t, "true", job.JobEnvVars["REACTORCIDE_IS_FORK_PR"])
+	assert.Equal(t, "https://github.com/upstream/repo.git", job.JobEnvVars["REACTORCIDE_CI_SOURCE_URL"])
+	assert.Equal(t, "upstreambaseSHA", job.JobEnvVars["REACTORCIDE_CI_SOURCE_REF"])
+
+	// Back-compat env vars must still be set.
+	assert.Equal(t, "lilac/text-overflow", job.JobEnvVars["REACTORCIDE_PR_REF"])
+	assert.Equal(t, "main", job.JobEnvVars["REACTORCIDE_PR_BASE_REF"])
+}
+
+func TestBuildEvalJob_SameRepoPR_CISourceUsesBaseSHA(t *testing.T) {
+	// Security: even for same-repo PRs, if the project hasn't configured a
+	// trusted DefaultCISourceURL, CI definitions must come from the base
+	// branch's SHA — not the PR head — so an untrusted contributor cannot
+	// modify CI by pushing to their PR branch.
+	project := evalTestProject()
+	project.DefaultCISourceURL = ""
+	project.DefaultCISourceRef = ""
+
+	event := &vcs.WebhookEvent{
+		Provider:     vcs.GitHub,
+		EventType:    "pull_request",
+		GenericEvent: vcs.EventPullRequestOpened,
+		Repository: vcs.RepositoryInfo{
+			FullName: "org/repo",
+			CloneURL: "https://github.com/org/repo.git",
+		},
+		PullRequest: &vcs.PullRequestInfo{
+			Number:  7,
+			Action:  "opened",
+			HeadSHA: "untrustedHEADsha",
+			HeadRef: "contributor-branch",
+			BaseSHA: "trustedBASEsha",
+			BaseRef: "main",
+		},
+	}
+
+	job := BuildEvalJob(project, event)
+
+	// Code source: same-repo PR, so upstream URL with the head SHA.
+	require.NotNil(t, job.SourceURL)
+	assert.Equal(t, "https://github.com/org/repo.git", *job.SourceURL)
+	assert.Equal(t, "untrustedHEADsha", *job.SourceRef)
+
+	// CI source: BaseSHA, NOT HeadSHA. This is the security fix.
+	require.NotNil(t, job.CISourceRef)
+	assert.Equal(t, "trustedBASEsha", *job.CISourceRef)
+	assert.Equal(t, "https://github.com/org/repo.git", *job.CISourceURL)
+
+	// IS_FORK_PR must not be set for same-repo PRs.
+	assert.Nil(t, job.JobEnvVars["REACTORCIDE_IS_FORK_PR"])
+}
+
 func TestBuildEvalJob_PRUpdated(t *testing.T) {
 	project := evalTestProject()
 	event := &vcs.WebhookEvent{

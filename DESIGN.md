@@ -49,10 +49,14 @@ This separation enables flexibility in deployment models: from running jobs loca
 ### 1. Decoupled Job Definition and Execution
 **Critical Distinction**: The code that **defines the CI/CD job** is separate from the code being **tested/built**.
 
-- **Job Code**: Scripts, configuration, pipeline definitions (can be in separate repo)
-- **Source Code**: The application code being tested (PR code, branch code, etc.)
+- **Job Code** (`CISourceURL`/`CISourceRef`): Scripts, configuration, pipeline definitions (can be in separate repo)
+- **Source Code** (`SourceURL`/`SourceRef`): The application code being tested (PR code, branch code, fork code, etc.)
 - **Default**: By default, job and source are the same repo (simple path)
-- **Security Model**: For untrusted contributions, job code comes from a trusted repo while source code comes from the PR
+- **Security Model**: For untrusted contributions, job code comes from a trusted location while source code can come from anywhere — including a PR opened from a fork.
+
+**Fork PR specifics.** When a PR is opened from a fork, `SourceURL` points at the **fork** (where the branch lives) and `CISourceURL` points at the **upstream** at the trusted base SHA. Fork content is never executed as a CI definition. A malicious PR cannot ship a modified `.reactorcide/jobs/*.yaml` and have it run — the eval job loads CI from the base branch's last trusted commit. Run-local mirrors this model: `--code-url` / `--pr` clone an arbitrary code source into `/job/src`, while the CI definitions remain whatever YAML the user explicitly passed on the command line.
+
+**Unified run-local / worker model.** Run-local is the canonical execution path: a job declares what code it needs, and the executor provides it. Locally that means either bind-mounting your working copy (default) or cloning the requested source. Remotely, the worker performs the same bootstrap before invoking the job. The same `REACTORCIDE_HEAD_URL` / `BASE_URL` env vars are populated in both modes so job scripts behave identically.
 
 This enables secure execution of CI/CD jobs against untrusted code contributions.
 

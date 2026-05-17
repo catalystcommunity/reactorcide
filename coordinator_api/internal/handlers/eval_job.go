@@ -11,9 +11,27 @@ import (
 
 // BuildEvalJob constructs an eval job from a project and webhook event.
 // The eval job runs runnerlib eval to determine which CI jobs should be triggered.
+//
+// Code source vs CI source: the code under test (SourceURL/SourceRef) may live
+// on a fork for cross-repository PRs; the CI definitions (CISourceURL/
+// CISourceRef) must always come from a trusted location — the project's
+// configured DefaultCISource, or the upstream repository's base ref. Fork
+// content is NEVER used as a CI source: a malicious PR could otherwise ship
+// .reactorcide/jobs/*.yaml that would be executed by the eval job.
 func BuildEvalJob(project *models.Project, event *vcs.WebhookEvent) *models.Job {
 	sourceType := models.SourceTypeGit
-	sourceURL := event.Repository.CloneURL
+
+	// Code source URL: for fork PRs, points at the fork; otherwise upstream.
+	// Existing job YAMLs that do `git clone $REACTORCIDE_SOURCE_URL` keep
+	// working unchanged for fork PRs because SOURCE_URL now resolves to the
+	// repo where the branch actually lives.
+	upstreamURL := event.Repository.CloneURL
+	sourceURL := upstreamURL
+	isForkPR := false
+	if event.PullRequest != nil && event.PullRequest.HeadRepository != nil {
+		sourceURL = event.PullRequest.HeadRepository.CloneURL
+		isForkPR = true
+	}
 
 	// Determine source ref, branch, and job name based on event type
 	var sourceRef, branch, jobName string
@@ -22,7 +40,7 @@ func BuildEvalJob(project *models.Project, event *vcs.WebhookEvent) *models.Job 
 		"REACTORCIDE_PROVIDER":   string(event.Provider),
 		"REACTORCIDE_EVENT_TYPE": string(event.GenericEvent),
 		"REACTORCIDE_REPO":       event.Repository.FullName,
-		"REACTORCIDE_SOURCE_URL": event.Repository.CloneURL,
+		"REACTORCIDE_SOURCE_URL": sourceURL,
 	}
 
 	if event.PullRequest != nil {
@@ -37,6 +55,16 @@ func BuildEvalJob(project *models.Project, event *vcs.WebhookEvent) *models.Job 
 		envVars["REACTORCIDE_PR_REF"] = pr.HeadRef
 		envVars["REACTORCIDE_PR_BASE_REF"] = pr.BaseRef
 		envVars["REACTORCIDE_DIFF_BASE"] = pr.BaseSHA
+
+		// Explicit head/base URL pair lets job authors set up both remotes
+		// (e.g. for `git log base..head`) without overloading SOURCE_URL.
+		envVars["REACTORCIDE_HEAD_URL"] = sourceURL
+		envVars["REACTORCIDE_HEAD_REF"] = pr.HeadRef
+		envVars["REACTORCIDE_BASE_URL"] = upstreamURL
+		envVars["REACTORCIDE_BASE_REF"] = pr.BaseRef
+		if isForkPR {
+			envVars["REACTORCIDE_IS_FORK_PR"] = "true"
+		}
 	} else if event.Push != nil {
 		push := event.Push
 		sourceRef = push.After
@@ -64,13 +92,24 @@ func BuildEvalJob(project *models.Project, event *vcs.WebhookEvent) *models.Job 
 		envVars["REACTORCIDE_CI_SOURCE_URL"] = project.DefaultCISourceURL
 		envVars["REACTORCIDE_CI_SOURCE_REF"] = project.DefaultCISourceRef
 	} else {
-		// Same-repo mode: use the source repo for job definitions
+		// Same-repo mode: use the upstream repo for job definitions. For PR
+		// events, anchor at the base branch's SHA (trusted state of the
+		// target) rather than the PR head — otherwise a fork PR could ship
+		// malicious .reactorcide/jobs/*.yaml that the eval job would execute.
+		// For push events, the push has already passed the project's commit
+		// gates, so the pushed SHA is trusted.
 		st := models.SourceTypeGit
 		ciSourceType = &st
-		ciSourceURL = &sourceURL
-		ciSourceRef = &sourceRef
-		envVars["REACTORCIDE_CI_SOURCE_URL"] = sourceURL
-		envVars["REACTORCIDE_CI_SOURCE_REF"] = sourceRef
+		ciSourceURL = &upstreamURL
+		var ciRef string
+		if event.PullRequest != nil {
+			ciRef = event.PullRequest.BaseSHA
+		} else {
+			ciRef = sourceRef
+		}
+		ciSourceRef = &ciRef
+		envVars["REACTORCIDE_CI_SOURCE_URL"] = upstreamURL
+		envVars["REACTORCIDE_CI_SOURCE_REF"] = ciRef
 	}
 
 	// Determine job command

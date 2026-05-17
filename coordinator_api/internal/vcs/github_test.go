@@ -68,6 +68,65 @@ func TestGitHubClient_ParseWebhook(t *testing.T) {
 				assert.False(t, event.PullRequest.Merged)
 				assert.Equal(t, "abc123", event.PullRequest.HeadSHA)
 				assert.Equal(t, "test/repo", event.Repository.FullName)
+				// Same-repo PR: HeadRepository must be nil.
+				assert.Nil(t, event.PullRequest.HeadRepository)
+			},
+		},
+		{
+			name:      "pull_request_from_fork",
+			eventType: "pull_request",
+			payload: `{
+				"action": "opened",
+				"number": 60,
+				"pull_request": {
+					"number": 60,
+					"title": "Fork PR",
+					"body": "From a fork",
+					"state": "open",
+					"merged": false,
+					"html_url": "https://github.com/upstream/repo/pull/60",
+					"head": {
+						"ref": "lilac/text-overflow",
+						"sha": "c9fbf58330",
+						"repo": {
+							"full_name": "fork-owner/repo",
+							"clone_url": "https://github.com/fork-owner/repo.git",
+							"ssh_url": "git@github.com:fork-owner/repo.git",
+							"html_url": "https://github.com/fork-owner/repo",
+							"default_branch": "main"
+						}
+					},
+					"base": {
+						"ref": "main",
+						"sha": "basesha789",
+						"repo": {
+							"full_name": "upstream/repo",
+							"clone_url": "https://github.com/upstream/repo.git",
+							"ssh_url": "git@github.com:upstream/repo.git",
+							"html_url": "https://github.com/upstream/repo",
+							"default_branch": "main"
+						}
+					},
+					"user": {
+						"login": "forkowner"
+					}
+				},
+				"repository": {
+					"full_name": "upstream/repo",
+					"clone_url": "https://github.com/upstream/repo.git",
+					"ssh_url": "git@github.com:upstream/repo.git",
+					"html_url": "https://github.com/upstream/repo",
+					"default_branch": "main"
+				}
+			}`,
+			wantErr: false,
+			checkResult: func(t *testing.T, event *WebhookEvent) {
+				assert.Equal(t, "upstream/repo", event.Repository.FullName)
+				assert.Equal(t, "https://github.com/upstream/repo.git", event.Repository.CloneURL)
+				assert.Equal(t, "lilac/text-overflow", event.PullRequest.HeadRef)
+				require.NotNil(t, event.PullRequest.HeadRepository)
+				assert.Equal(t, "fork-owner/repo", event.PullRequest.HeadRepository.FullName)
+				assert.Equal(t, "https://github.com/fork-owner/repo.git", event.PullRequest.HeadRepository.CloneURL)
 			},
 		},
 		{

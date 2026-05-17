@@ -350,6 +350,79 @@ source:
 	}
 }
 
+func TestResolveCodeSourceFromArgs(t *testing.T) {
+	tests := []struct {
+		name        string
+		codeURL     string
+		codeRef     string
+		prNum       int
+		wantNil     bool
+		wantErr     bool
+		wantURL     string
+		wantRef     string
+		wantHeadRef string
+	}{
+		{
+			name:    "no flags returns nil",
+			wantNil: true,
+		},
+		{
+			name:        "code-url alone resolves",
+			codeURL:     "https://github.com/fork-owner/repo.git",
+			codeRef:     "lilac/text-overflow",
+			wantURL:     "https://github.com/fork-owner/repo.git",
+			wantRef:     "lilac/text-overflow",
+			wantHeadRef: "lilac/text-overflow",
+		},
+		{
+			name:        "code-url without ref",
+			codeURL:     "https://github.com/owner/repo.git",
+			wantURL:     "https://github.com/owner/repo.git",
+			wantRef:     "",
+			wantHeadRef: "",
+		},
+		{
+			name:    "pr and code-url are mutually exclusive",
+			codeURL: "https://github.com/owner/repo.git",
+			prNum:   60,
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := resolveCodeSourceFromArgs(tt.codeURL, tt.codeRef, tt.prNum)
+			if tt.wantErr {
+				if err == nil {
+					t.Fatal("expected error, got nil")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if tt.wantNil {
+				if got != nil {
+					t.Fatalf("expected nil result, got %+v", got)
+				}
+				return
+			}
+			if got == nil {
+				t.Fatal("expected resolved source, got nil")
+			}
+			if got.URL != tt.wantURL {
+				t.Errorf("URL = %q, want %q", got.URL, tt.wantURL)
+			}
+			if got.Ref != tt.wantRef {
+				t.Errorf("Ref = %q, want %q", got.Ref, tt.wantRef)
+			}
+			if got.HeadRef != tt.wantHeadRef {
+				t.Errorf("HeadRef = %q, want %q", got.HeadRef, tt.wantHeadRef)
+			}
+		})
+	}
+}
+
 func TestIsSensitiveKey(t *testing.T) {
 	tests := []struct {
 		key      string

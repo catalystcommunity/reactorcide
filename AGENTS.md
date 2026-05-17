@@ -270,6 +270,56 @@ Use cases:
 | Environment | Passed directly | Managed by runnerlib with secret resolution |
 | Output handling | Basic stdout/stderr | Structured logs with masking |
 
+### Fork PRs and Cross-Repo Code Sources
+
+Reactorcide distinguishes two sources for a job:
+
+- **Code source** (`SourceURL`/`SourceRef`): the code being checked out at `/job/src`. For a PR opened from a fork, this points at the **fork** — that's where the branch lives.
+- **CI source** (`CISourceURL`/`CISourceRef`): the trusted location of CI definitions (`.reactorcide/jobs/*.yaml`). Always upstream — never the fork. Fork content is never executed as a CI definition.
+
+Environment variables made available to jobs:
+
+| Variable | Meaning |
+|---|---|
+| `REACTORCIDE_SOURCE_URL` | Code-source URL. For fork PRs, this is the fork's clone URL. |
+| `REACTORCIDE_HEAD_URL` | Explicit head repo URL (same as `SOURCE_URL` for PRs; convenience). |
+| `REACTORCIDE_HEAD_REF` | PR head branch name. |
+| `REACTORCIDE_BASE_URL` | Upstream/base repo URL. Useful for jobs that need both remotes (e.g. `git log base..head`). |
+| `REACTORCIDE_BASE_REF` | PR target branch. |
+| `REACTORCIDE_IS_FORK_PR` | `"true"` when the PR head lives on a different repo than the base. |
+| `REACTORCIDE_CI_SOURCE_URL` | Always upstream (or `project.DefaultCISourceURL`). Never the fork. |
+| `REACTORCIDE_CI_SOURCE_REF` | For PRs, the base branch SHA. For pushes, the pushed SHA. |
+| `REACTORCIDE_PR_REF`, `REACTORCIDE_PR_BASE_REF`, `REACTORCIDE_PR_NUMBER` | Back-compat: kept for older job YAMLs. |
+
+For a raw-command job that needs both remotes (e.g. to inspect commits added by the PR), the recommended pattern is:
+
+```bash
+git clone --branch "${REACTORCIDE_HEAD_REF}" "${REACTORCIDE_HEAD_URL}" /job/src
+cd /job/src
+git remote add upstream "${REACTORCIDE_BASE_URL}"
+git fetch upstream "${REACTORCIDE_BASE_REF}"
+# Now `git log upstream/${REACTORCIDE_BASE_REF}..HEAD` works for fork PRs too.
+```
+
+Jobs that wrap their command with `runnerlib run` automatically get both remotes set up — runnerlib reads `REACTORCIDE_BASE_URL`/`BASE_REF` during source preparation and adds `upstream` to the clone when the base differs from the cloned origin.
+
+#### Testing a fork PR locally
+
+Run-local supports cloning an arbitrary code source instead of bind-mounting your working copy:
+
+```bash
+# Test a specific URL + ref
+./coordinator_api/reactorcide run-local \
+  --code-url https://github.com/fork-owner/repo.git \
+  --code-ref lilac/text-overflow \
+  .reactorcide/jobs/conventional-commits.yaml
+
+# Resolve a PR via the GitHub CLI (requires `gh` and a cwd inside the target repo)
+./coordinator_api/reactorcide run-local --pr 60 .reactorcide/jobs/conventional-commits.yaml
+```
+
+Both flags clone into a tempdir, mount it at `/job/src`, and set the same `REACTORCIDE_*` env vars the worker would set for a fork PR — so jobs behave identically locally and remotely. When neither flag is set, run-local bind-mounts `--job-dir` (your local working copy) as before.
+
 ## Project Status
 
 The system is actively being developed with the core runnerlib functionality complete and the coordinator API providing job management capabilities. Join the [Catalyst Community Discord](https://discord.gg/sfNb9xRjPn) to discuss and contribute.
