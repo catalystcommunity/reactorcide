@@ -88,8 +88,14 @@ func (u *JobStatusUpdater) postPerJobComment(ctx context.Context, client Client,
 
 // renderRollingCommentBody produces the markdown table summarizing every
 // job registered against (repo, PR, commit). Rows are rendered in job
-// creation order so the eval job shows first.
+// creation order so the eval job shows first. When the same job name has
+// been run multiple times (e.g. a webhook retry), only the most recent run
+// is shown — older runs would otherwise mislead readers into thinking a
+// long-since-fixed failure is current. Jobs are assumed to arrive in
+// ascending CreatedAt order (that's the contract of ListJobsForPRCommit).
 func (u *JobStatusUpdater) renderRollingCommentBody(jobs []models.Job, commitSHA, marker string) string {
+	deduped := dedupeJobsByName(jobs)
+
 	var b strings.Builder
 	shortSHA := commitSHA
 	if len(shortSHA) > 7 {
@@ -100,8 +106,8 @@ func (u *JobStatusUpdater) renderRollingCommentBody(jobs []models.Job, commitSHA
 	b.WriteString("| Job | Status | Duration | Link |\n")
 	b.WriteString("|-----|--------|----------|------|\n")
 
-	for i := range jobs {
-		job := &jobs[i]
+	for i := range deduped {
+		job := &deduped[i]
 		statusEmoji, statusText := renderStatus(job)
 		duration := renderDuration(job)
 		link := u.getJobURL(job.JobID)
@@ -120,6 +126,41 @@ func (u *JobStatusUpdater) renderRollingCommentBody(jobs []models.Job, commitSHA
 
 	fmt.Fprintf(&b, "\n<sub>Updated %s · %s</sub>\n", time.Now().UTC().Format(time.RFC3339), marker)
 	return b.String()
+}
+
+// dedupeJobsByName keeps only the most-recent job per Name from an ASC-by-
+// CreatedAt input. The returned slice preserves the original relative order
+// of kept jobs (so an eval registered first still renders first; a retried
+// child slots into its first appearance position with the newer job's
+// content). Jobs with an empty Name fall back to JobID as the dedup key so
+// they're never collapsed with one another.
+func dedupeJobsByName(jobs []models.Job) []models.Job {
+	if len(jobs) <= 1 {
+		return jobs
+	}
+	// keyOf collapses retries of the same job; pulling it out keeps the
+	// fallback rule (no-name → JobID) in one place.
+	keyOf := func(j *models.Job) string {
+		if j.Name != "" {
+			return j.Name
+		}
+		return j.JobID
+	}
+	latestIdx := make(map[string]int, len(jobs))
+	for i := range jobs {
+		latestIdx[keyOf(&jobs[i])] = i
+	}
+	keep := make(map[int]bool, len(latestIdx))
+	for _, idx := range latestIdx {
+		keep[idx] = true
+	}
+	out := make([]models.Job, 0, len(latestIdx))
+	for i := range jobs {
+		if keep[i] {
+			out = append(out, jobs[i])
+		}
+	}
+	return out
 }
 
 // renderPerJobCommentBody produces the body for a post-merge single-job
