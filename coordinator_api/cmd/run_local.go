@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strconv"
+	"strings"
 
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/secrets"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/worker"
@@ -63,6 +64,101 @@ func hostRunAsUser() (uid, gid int) {
 	return uid, gid
 }
 
+// parseUserGroup parses a user spec into numeric ids. It accepts a numeric
+// "uid[:gid]" (gid defaults to the uid when omitted), or the symbolic names
+// "runner" (the image's conventional runner uid, 1001:1001) and "host" (the
+// invoking host user). Symbolic names let a job YAML say `run_local: { user:
+// runner }` without hard-coding 1001.
+func parseUserGroup(s string) (uid, gid int, err error) {
+	switch strings.ToLower(strings.TrimSpace(s)) {
+	case "runner":
+		return runnerUID, runnerGID, nil
+	case "host":
+		uid, gid = hostRunAsUser()
+		return uid, gid, nil
+	}
+	parts := strings.SplitN(strings.TrimSpace(s), ":", 2)
+	uid, err = strconv.Atoi(strings.TrimSpace(parts[0]))
+	if err != nil {
+		return 0, 0, fmt.Errorf("invalid user %q: uid must be an integer", s)
+	}
+	gid = uid
+	if len(parts) == 2 && strings.TrimSpace(parts[1]) != "" {
+		gid, err = strconv.Atoi(strings.TrimSpace(parts[1]))
+		if err != nil {
+			return 0, 0, fmt.Errorf("invalid user %q: gid must be an integer", s)
+		}
+	}
+	return uid, gid, nil
+}
+
+// resolveRunAsUser determines the uid/gid the job container runs as, and
+// whether that uid is the image's conventional runner user (1001). Resolution
+// order, highest priority first:
+//
+//  1. --user <uid:gid>      (CLI)
+//  2. --as-runner           (CLI)
+//  3. run_local.user        (job YAML)
+//  4. run_local.as_runner   (job YAML)
+//  5. host uid              (default, legacy behavior)
+//
+// CLI flags override the job YAML so a single invocation can deviate, while the
+// YAML block keeps every flag-less run-local of that job consistent. When the
+// resolved id is the runner uid, asRunner is true and run-local relies on the
+// image's own /etc/passwd and sudoers instead of synthesizing them.
+func resolveRunAsUser(ctx *cli.Context, spec *worker.JobSpec) (uid, gid int, asRunner bool, err error) {
+	var specUser string
+	var specAsRunner bool
+	if spec != nil && spec.RunLocal != nil {
+		specUser = spec.RunLocal.User
+		specAsRunner = spec.RunLocal.AsRunner
+	}
+	return resolveRunAsUserFromArgs(ctx.String("user"), ctx.Bool("as-runner"), specUser, specAsRunner)
+}
+
+// resolveRunAsUserFromArgs is the pure-function core of resolveRunAsUser,
+// extracted so the precedence logic can be unit tested without a cli.Context.
+// When nothing pins a uid it falls back to the host user.
+func resolveRunAsUserFromArgs(userFlag string, asRunnerFlag bool, specUser string, specAsRunner bool) (uid, gid int, asRunner bool, err error) {
+	if asRunnerFlag && userFlag != "" {
+		return 0, 0, false, fmt.Errorf("--as-runner and --user are mutually exclusive")
+	}
+
+	switch {
+	case userFlag != "":
+		uid, gid, err = parseUserGroup(userFlag)
+	case asRunnerFlag:
+		uid, gid = runnerUID, runnerGID
+	case specUser != "":
+		uid, gid, err = parseUserGroup(specUser)
+	case specAsRunner:
+		uid, gid = runnerUID, runnerGID
+	default:
+		uid, gid = hostRunAsUser()
+	}
+	if err != nil {
+		return 0, 0, false, err
+	}
+
+	asRunner = uid == runnerUID && gid == runnerGID
+	return uid, gid, asRunner, nil
+}
+
+// makeWritableFor ensures the container's run-as user can write to a run-local
+// scratch path. It first tries to chown to the target uid/gid — which works
+// when run-local runs as root (e.g. via sudo) or when the target is the host
+// uid. When that fails (an unprivileged run-local can't chown to a foreign uid
+// such as 1001 for --as-runner) it falls back to a world-writable mode so the
+// foreign uid can still write to this throwaway /tmp path.
+func makeWritableFor(path string, uid, gid int) error {
+	if err := os.Chown(path, uid, gid); err != nil {
+		if chmodErr := os.Chmod(path, 0777); chmodErr != nil {
+			return fmt.Errorf("could not chown %s to %d:%d (%v) nor make it world-writable: %w", path, uid, gid, err, chmodErr)
+		}
+	}
+	return nil
+}
+
 // RunLocalCommand executes a job in a container, fulfilling worker behavior.
 // This uses the same JobRunner infrastructure as the worker, ensuring consistent
 // execution between local development and production. Or in outages of some kind.
@@ -106,21 +202,39 @@ var RunLocalCommand = &cli.Command{
 			Name:  "pr",
 			Usage: "GitHub PR number to test. Resolves the head repo and branch via `gh pr view`, then behaves like --code-url / --code-ref. Requires `gh` on PATH and the cwd to be inside a github checkout. Mutually exclusive with --code-url.",
 		},
+		&cli.BoolFlag{
+			Name:  "as-runner",
+			Usage: "Run the job container as the image's runner uid (1001:1001), matching the worker, instead of the host uid. Gives sudo/HOME parity for jobs that rely on the image's runner user (e.g. `sudo apt-get`). Writes to /job are made world-writable since an unprivileged run-local can't chown to 1001. Can also be set per-job via the job YAML's run_local block.",
+		},
+		&cli.StringFlag{
+			Name:  "user",
+			Usage: "User to run the job container as: a numeric uid[:gid] (e.g. \"1001:1001\"), or the symbolic name \"runner\" (image runner uid 1001) or \"host\" (the invoking user). Overrides the host-uid default. Mutually exclusive with --as-runner.",
+		},
 	},
 	Action: runLocalAction,
 }
+
+// runnerUID/runnerGID are the image's conventional runner user. The worker
+// runs jobs as this uid by default (see docker_runner.go), and the runnerbase
+// image creates a `runner` user with this uid plus its sudoers entry. When
+// run-local targets this uid it can lean on the image's own /etc/passwd and
+// sudoers instead of synthesizing them.
+const (
+	runnerUID = 1001
+	runnerGID = 1001
+)
 
 // resolvedCodeSource holds what --code-url / --code-ref / --pr resolve to. A
 // nil value means run-local should fall back to its default behavior of
 // bind-mounting --job-dir at /job/src.
 type resolvedCodeSource struct {
-	URL       string
-	Ref       string
-	HeadRef   string // branch name (== Ref when Ref is a branch; used for HEAD_REF env)
-	BaseURL   string // upstream URL when PR is cross-repo, empty otherwise
-	BaseRef   string // base branch when known
-	PRNumber  int    // 0 when not from --pr
-	IsForkPR  bool
+	URL      string
+	Ref      string
+	HeadRef  string // branch name (== Ref when Ref is a branch; used for HEAD_REF env)
+	BaseURL  string // upstream URL when PR is cross-repo, empty otherwise
+	BaseRef  string // base branch when known
+	PRNumber int    // 0 when not from --pr
+	IsForkPR bool
 }
 
 // resolveCodeSource turns the user's --code-url / --code-ref / --pr flags
@@ -172,11 +286,11 @@ func resolvePRViaGH(prNum int) (*resolvedCodeSource, error) {
 	}
 
 	var pr struct {
-		HeadRefName         string `json:"headRefName"`
-		HeadRefOid          string `json:"headRefOid"`
-		BaseRefName         string `json:"baseRefName"`
-		IsCrossRepository   bool   `json:"isCrossRepository"`
-		HeadRepository      struct {
+		HeadRefName       string `json:"headRefName"`
+		HeadRefOid        string `json:"headRefOid"`
+		BaseRefName       string `json:"baseRefName"`
+		IsCrossRepository bool   `json:"isCrossRepository"`
+		HeadRepository    struct {
 			Name          string `json:"name"`
 			NameWithOwner string `json:"nameWithOwner"`
 		} `json:"headRepository"`
@@ -263,9 +377,21 @@ func cloneCodeSource(src *resolvedCodeSource, uid, gid int) (string, func(), err
 		}
 	}
 
-	// Match ownership to the container's run-as user.
-	_ = filepath.Walk(tmp, func(path string, _ os.FileInfo, _ error) error {
-		_ = os.Chown(path, uid, gid)
+	// Match ownership to the container's run-as user. When run-local is
+	// unprivileged it can't chown to a foreign uid (e.g. 1001 for --as-runner);
+	// in that case add group/other write bits so that uid can still write to
+	// this throwaway clone, preserving existing exec bits (scripts, binaries).
+	_ = filepath.Walk(tmp, func(path string, info os.FileInfo, walkErr error) error {
+		if walkErr != nil || info == nil {
+			return nil
+		}
+		if err := os.Chown(path, uid, gid); err != nil {
+			add := os.FileMode(0066)
+			if info.IsDir() {
+				add = 0077
+			}
+			_ = os.Chmod(path, info.Mode()|add)
+		}
 		return nil
 	})
 	return tmp, cleanup, nil
@@ -371,12 +497,24 @@ func runLocalAction(ctx *cli.Context) error {
 	// Generate a job ID for this execution
 	jobID := uuid.New().String()[:8]
 
+	// Resolve the uid/gid the job container runs as. Default is the host user
+	// (legacy run-local behavior); --as-runner / --user or the job's run_local
+	// block can pin the worker's runner uid (1001) for sudo/HOME parity.
+	uid, gid, asRunner, err := resolveRunAsUser(ctx, spec)
+	if err != nil {
+		return err
+	}
+	if asRunner {
+		fmt.Printf("Run-as user: %d:%d (image runner — worker parity)\n", uid, gid)
+	} else {
+		fmt.Printf("Run-as user: %d:%d (host)\n", uid, gid)
+	}
+
 	// Create temp workspace matching production layout: /job/ with src/ subdir.
-	// The container runs as the host user (see hostRunAsUser below), so chown
-	// the workspace and its src/ to match — otherwise, when run-local is
-	// invoked via sudo, the tmpdir is root-owned and the container can't write
-	// triggers.json, logs, etc.
-	uid, gid := hostRunAsUser()
+	// The container runs as the resolved uid, so make the workspace and its
+	// src/ writable by that uid — otherwise the container can't write
+	// triggers.json, logs, etc. (e.g. when run-local is invoked via sudo, or
+	// when --as-runner pins a uid that doesn't own this tmpdir).
 	tempWorkspace, err := os.MkdirTemp("/tmp", fmt.Sprintf("reactorcide-local-job-%s-", jobID))
 	if err != nil {
 		return fmt.Errorf("failed to create temp workspace: %w", err)
@@ -384,8 +522,8 @@ func runLocalAction(ctx *cli.Context) error {
 	if err := os.Chmod(tempWorkspace, 0755); err != nil {
 		return fmt.Errorf("failed to chmod temp workspace: %w", err)
 	}
-	if err := os.Chown(tempWorkspace, uid, gid); err != nil {
-		return fmt.Errorf("failed to chown temp workspace: %w", err)
+	if err := makeWritableFor(tempWorkspace, uid, gid); err != nil {
+		return fmt.Errorf("failed to prepare temp workspace: %w", err)
 	}
 	defer os.RemoveAll(tempWorkspace)
 
@@ -394,8 +532,8 @@ func runLocalAction(ctx *cli.Context) error {
 	if err := os.MkdirAll(srcSubdir, 0755); err != nil {
 		return fmt.Errorf("failed to create workspace src dir: %w", err)
 	}
-	if err := os.Chown(srcSubdir, uid, gid); err != nil {
-		return fmt.Errorf("failed to chown workspace src dir: %w", err)
+	if err := makeWritableFor(srcSubdir, uid, gid); err != nil {
+		return fmt.Errorf("failed to prepare workspace src dir: %w", err)
 	}
 
 	// Resolve what to mount at /job/src:
@@ -446,48 +584,66 @@ func runLocalAction(ctx *cli.Context) error {
 	jobConfig.SourceDir = srcMount
 	jobConfig.RunAsUser = fmt.Sprintf("%d:%d", uid, gid)
 
-	// Synthesize a minimal /etc/passwd and /etc/group so tools that require a
-	// passwd entry (ssh, sudo, id, etc.) work when the container runs as the
-	// host uid — which rarely matches any user baked into the image. We keep
-	// entries for root and for the image's conventional uid 1001 so references
-	// to /home/reactorcide still resolve.
-	controlDir, err := os.MkdirTemp("/tmp", fmt.Sprintf("reactorcide-local-ctl-%s-", jobID))
-	if err != nil {
-		return fmt.Errorf("failed to create control dir: %w", err)
-	}
-	defer os.RemoveAll(controlDir)
+	// When running as the image's runner uid (--as-runner / --user 1001:1001),
+	// the container already has a real /etc/passwd entry (`runner`, home
+	// /home/runner, owned by 1001 and writable) and the matching sudoers entry,
+	// so we leave them alone and let HOME resolve from the image — exactly what
+	// the worker does. Otherwise we synthesize a minimal /etc/passwd and
+	// /etc/group so tools that require a passwd entry (ssh, sudo, id, etc.)
+	// work when the container runs as a uid that doesn't match any user baked
+	// into the image, plus a writable HOME scratch at /home/runner so ~ is both
+	// writable and the same path the worker uses.
+	if !asRunner {
+		controlDir, err := os.MkdirTemp("/tmp", fmt.Sprintf("reactorcide-local-ctl-%s-", jobID))
+		if err != nil {
+			return fmt.Errorf("failed to create control dir: %w", err)
+		}
+		defer os.RemoveAll(controlDir)
 
-	passwdFile := filepath.Join(controlDir, "passwd")
-	groupFile := filepath.Join(controlDir, "group")
-	passwdContents := fmt.Sprintf(
-		"root:x:0:0:root:/root:/bin/sh\n"+
-			"reactorcide:x:1001:1001:reactorcide:/home/reactorcide:/bin/sh\n"+
-			"local:x:%d:%d:local user:/job:/bin/sh\n",
-		uid, gid,
-	)
-	groupContents := fmt.Sprintf(
-		"root:x:0:\n"+
-			"reactorcide:x:1001:\n"+
-			"local:x:%d:\n",
-		gid,
-	)
-	if err := os.WriteFile(passwdFile, []byte(passwdContents), 0644); err != nil {
-		return fmt.Errorf("failed to write synthetic passwd: %w", err)
-	}
-	if err := os.WriteFile(groupFile, []byte(groupContents), 0644); err != nil {
-		return fmt.Errorf("failed to write synthetic group: %w", err)
-	}
-	jobConfig.ExtraMounts = append(jobConfig.ExtraMounts,
-		fmt.Sprintf("%s:/etc/passwd:ro", passwdFile),
-		fmt.Sprintf("%s:/etc/group:ro", groupFile),
-	)
+		// Writable HOME scratch owned by the run-as (host) uid, mounted at
+		// /home/runner. The image's own /home/runner is owned by 1001 and so
+		// isn't writable by the host uid; this gives a fresh, run-as-uid-owned
+		// HOME the way each container starts with an empty ephemeral home on a
+		// worker.
+		homeDir := filepath.Join(controlDir, "home")
+		if err := os.MkdirAll(homeDir, 0755); err != nil {
+			return fmt.Errorf("failed to create home scratch dir: %w", err)
+		}
+		if err := makeWritableFor(homeDir, uid, gid); err != nil {
+			return fmt.Errorf("failed to prepare home scratch dir: %w", err)
+		}
 
-	// Default HOME to /job so jobs that touch ~ (e.g. mkdir ~/.ssh) work even
-	// when the host uid's passwd entry points at /job (see above). CI runs as
-	// uid 1001 which has /home/reactorcide; local runs as an arbitrary uid so
-	// we anchor ~ to the workspace root.
-	if _, ok := jobConfig.Env["HOME"]; !ok {
-		jobConfig.Env["HOME"] = "/job"
+		passwdFile := filepath.Join(controlDir, "passwd")
+		groupFile := filepath.Join(controlDir, "group")
+		passwdContents := fmt.Sprintf(
+			"root:x:0:0:root:/root:/bin/sh\n"+
+				"reactorcide:x:1001:1001:reactorcide:/home/reactorcide:/bin/sh\n"+
+				"local:x:%d:%d:local user:/home/runner:/bin/sh\n",
+			uid, gid,
+		)
+		groupContents := fmt.Sprintf(
+			"root:x:0:\n"+
+				"reactorcide:x:1001:\n"+
+				"local:x:%d:\n",
+			gid,
+		)
+		if err := os.WriteFile(passwdFile, []byte(passwdContents), 0644); err != nil {
+			return fmt.Errorf("failed to write synthetic passwd: %w", err)
+		}
+		if err := os.WriteFile(groupFile, []byte(groupContents), 0644); err != nil {
+			return fmt.Errorf("failed to write synthetic group: %w", err)
+		}
+		jobConfig.ExtraMounts = append(jobConfig.ExtraMounts,
+			fmt.Sprintf("%s:/etc/passwd:ro", passwdFile),
+			fmt.Sprintf("%s:/etc/group:ro", groupFile),
+			fmt.Sprintf("%s:/home/runner", homeDir),
+		)
+
+		// Default HOME to the writable scratch (matches the worker's
+		// /home/runner). A job that sets HOME explicitly still wins.
+		if _, ok := jobConfig.Env["HOME"]; !ok {
+			jobConfig.Env["HOME"] = "/home/runner"
+		}
 	}
 
 	if dryRun {
@@ -536,6 +692,13 @@ func performLocalDryRun(spec *worker.JobSpec, config *worker.JobConfig, masker *
 	fmt.Printf("  SourceDir: %s\n", config.SourceDir)
 	fmt.Printf("  WorkingDir: %s\n", config.WorkingDir)
 	fmt.Printf("  RunAsUser: %s\n", config.RunAsUser)
+	fmt.Printf("  HOME: %s\n", config.Env["HOME"])
+	if len(config.ExtraMounts) > 0 {
+		fmt.Println("  ExtraMounts:")
+		for _, m := range config.ExtraMounts {
+			fmt.Printf("    - %s\n", m)
+		}
+	}
 
 	fmt.Println("\n--- END DRY RUN ---")
 	return nil

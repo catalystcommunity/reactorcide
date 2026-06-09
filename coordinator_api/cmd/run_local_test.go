@@ -350,6 +350,59 @@ source:
 	}
 }
 
+func TestJobSpec_RunLocalBlock(t *testing.T) {
+	tempDir := t.TempDir()
+	jobFile := filepath.Join(tempDir, "test.yaml")
+
+	content := `name: test-job
+command: echo hello
+run_local:
+  as_runner: true
+  user: "1001:1001"
+`
+	if err := os.WriteFile(jobFile, []byte(content), 0644); err != nil {
+		t.Fatalf("failed to write test file: %v", err)
+	}
+
+	spec, err := worker.LoadJobSpec(jobFile)
+	if err != nil {
+		t.Fatalf("LoadJobSpec failed: %v", err)
+	}
+	if spec.RunLocal == nil {
+		t.Fatal("expected run_local block to be parsed")
+	}
+	if !spec.RunLocal.AsRunner {
+		t.Error("expected run_local.as_runner=true")
+	}
+	if spec.RunLocal.User != "1001:1001" {
+		t.Errorf("expected run_local.user '1001:1001', got %q", spec.RunLocal.User)
+	}
+}
+
+func TestMergeJobSpecs_RunLocalOverlay(t *testing.T) {
+	base := &worker.JobSpec{
+		Name:     "base",
+		Command:  "echo hi",
+		RunLocal: &worker.RunLocalSpec{AsRunner: true},
+	}
+	overlay := &worker.JobSpec{
+		RunLocal: &worker.RunLocalSpec{User: "5000:5000"},
+	}
+
+	merged, _ := worker.MergeJobSpecs(base, []*worker.JobSpec{overlay}, []string{"overlay.yaml"})
+	if merged.RunLocal == nil {
+		t.Fatal("expected run_local to survive merge")
+	}
+	if merged.RunLocal.User != "5000:5000" {
+		t.Errorf("expected overlay to override user, got %q", merged.RunLocal.User)
+	}
+	// Base run_local with no overlay should pass through unchanged.
+	mergedNoOverlay, _ := worker.MergeJobSpecs(base, nil, nil)
+	if mergedNoOverlay.RunLocal == nil || !mergedNoOverlay.RunLocal.AsRunner {
+		t.Error("expected base run_local.as_runner to pass through merge")
+	}
+}
+
 func TestResolveCodeSourceFromArgs(t *testing.T) {
 	tests := []struct {
 		name        string
@@ -418,6 +471,130 @@ func TestResolveCodeSourceFromArgs(t *testing.T) {
 			}
 			if got.HeadRef != tt.wantHeadRef {
 				t.Errorf("HeadRef = %q, want %q", got.HeadRef, tt.wantHeadRef)
+			}
+		})
+	}
+}
+
+func TestParseUserGroup(t *testing.T) {
+	tests := []struct {
+		input   string
+		wantUID int
+		wantGID int
+		wantErr bool
+	}{
+		{"1001:1001", 1001, 1001, false},
+		{"1001", 1001, 1001, false},
+		{"5000:6000", 5000, 6000, false},
+		{" 1001 : 1001 ", 1001, 1001, false},
+		{"1001:", 1001, 1001, false},
+		{"runner", runnerUID, runnerGID, false},
+		{"RUNNER", runnerUID, runnerGID, false},
+		{"abc", 0, 0, true},
+		{"1001:xyz", 0, 0, true},
+		{"", 0, 0, true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.input, func(t *testing.T) {
+			uid, gid, err := parseUserGroup(tt.input)
+			if tt.wantErr {
+				if err == nil {
+					t.Fatalf("expected error for %q", tt.input)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if uid != tt.wantUID || gid != tt.wantGID {
+				t.Errorf("parseUserGroup(%q) = %d:%d, want %d:%d", tt.input, uid, gid, tt.wantUID, tt.wantGID)
+			}
+		})
+	}
+}
+
+func TestResolveRunAsUserFromArgs(t *testing.T) {
+	hostUID, hostGID := hostRunAsUser()
+
+	tests := []struct {
+		name         string
+		userFlag     string
+		asRunnerFlag bool
+		specUser     string
+		specAsRunner bool
+		wantUID      int
+		wantGID      int
+		wantAsRunner bool
+		wantErr      bool
+	}{
+		{
+			name:    "default falls back to host uid",
+			wantUID: hostUID, wantGID: hostGID, wantAsRunner: false,
+		},
+		{
+			name: "as-runner flag pins 1001", asRunnerFlag: true,
+			wantUID: runnerUID, wantGID: runnerGID, wantAsRunner: true,
+		},
+		{
+			name: "user flag pins explicit uid", userFlag: "5000:6000",
+			wantUID: 5000, wantGID: 6000, wantAsRunner: false,
+		},
+		{
+			name: "user flag 1001 is treated as runner", userFlag: "1001:1001",
+			wantUID: runnerUID, wantGID: runnerGID, wantAsRunner: true,
+		},
+		{
+			name: "yaml as_runner applies when no flags", specAsRunner: true,
+			wantUID: runnerUID, wantGID: runnerGID, wantAsRunner: true,
+		},
+		{
+			name: "yaml user applies when no flags", specUser: "1001:1001",
+			wantUID: runnerUID, wantGID: runnerGID, wantAsRunner: true,
+		},
+		{
+			name: "yaml symbolic user runner", specUser: "runner",
+			wantUID: runnerUID, wantGID: runnerGID, wantAsRunner: true,
+		},
+		{
+			name: "symbolic user host resolves to host uid", userFlag: "host",
+			wantUID: hostUID, wantGID: hostGID, wantAsRunner: false,
+		},
+		{
+			name: "cli user overrides yaml", userFlag: "5000:5000", specAsRunner: true,
+			wantUID: 5000, wantGID: 5000, wantAsRunner: false,
+		},
+		{
+			name: "cli as-runner overrides yaml user", asRunnerFlag: true, specUser: "5000:5000",
+			wantUID: runnerUID, wantGID: runnerGID, wantAsRunner: true,
+		},
+		{
+			name: "as-runner and user together error", asRunnerFlag: true, userFlag: "1001:1001",
+			wantErr: true,
+		},
+		{
+			name: "invalid user flag errors", userFlag: "nope",
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			uid, gid, asRunner, err := resolveRunAsUserFromArgs(tt.userFlag, tt.asRunnerFlag, tt.specUser, tt.specAsRunner)
+			if tt.wantErr {
+				if err == nil {
+					t.Fatal("expected error, got nil")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if uid != tt.wantUID || gid != tt.wantGID {
+				t.Errorf("uid:gid = %d:%d, want %d:%d", uid, gid, tt.wantUID, tt.wantGID)
+			}
+			if asRunner != tt.wantAsRunner {
+				t.Errorf("asRunner = %v, want %v", asRunner, tt.wantAsRunner)
 			}
 		})
 	}
