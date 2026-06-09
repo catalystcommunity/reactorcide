@@ -65,6 +65,26 @@ type JobSpec struct {
 	// execute jobs with this set — used for jobs that fundamentally need CI
 	// state (PR diff base, push-back-to-remote with a PAT, etc.).
 	DisableRunLocal bool `json:"disable_run_local" yaml:"disable_run_local"`
+
+	// RunLocal holds settings that only affect `reactorcide run-local`. The
+	// worker ignores this block entirely (ToJobConfig never reads it), so it's
+	// the place to pin local-only behavior — e.g. the container uid — without
+	// changing how the job runs in CI. Defining it here makes a job behave
+	// consistently across local invocations without per-command flags.
+	RunLocal *RunLocalSpec `json:"run_local" yaml:"run_local"`
+}
+
+// RunLocalSpec holds run-local-only overrides. The worker never reads this;
+// it exists so a job can declare how it should be executed on a laptop.
+type RunLocalSpec struct {
+	// AsRunner runs the job container as the image's conventional runner uid
+	// (1001:1001), matching the worker, instead of the host uid. This gives
+	// sudo and HOME parity for jobs that rely on the image's runner user.
+	AsRunner bool `json:"as_runner" yaml:"as_runner"`
+
+	// User pins an explicit uid[:gid] for the job container (e.g. "1001:1001").
+	// Takes precedence over AsRunner when both are set. Empty means unset.
+	User string `json:"user" yaml:"user"`
 }
 
 // SourceSpec defines source code preparation
@@ -556,6 +576,14 @@ func MergeJobSpecs(base *JobSpec, overlays []*JobSpec, overlayFiles []string) (*
 		}
 	}
 
+	// Deep copy run-local block
+	if base.RunLocal != nil {
+		result.RunLocal = &RunLocalSpec{
+			AsRunner: base.RunLocal.AsRunner,
+			User:     base.RunLocal.User,
+		}
+	}
+
 	var secretOverrides []SecretOverride
 
 	// Apply each overlay in order
@@ -619,6 +647,14 @@ func MergeJobSpecs(base *JobSpec, overlays []*JobSpec, overlayFiles []string) (*
 				URL:  overlay.Source.URL,
 				Ref:  overlay.Source.Ref,
 				Path: overlay.Source.Path,
+			}
+		}
+
+		// Override run-local block if set in overlay
+		if overlay.RunLocal != nil {
+			result.RunLocal = &RunLocalSpec{
+				AsRunner: overlay.RunLocal.AsRunner,
+				User:     overlay.RunLocal.User,
 			}
 		}
 	}

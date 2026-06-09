@@ -58,6 +58,8 @@ This separation enables flexibility in deployment models: from running jobs loca
 
 **Unified run-local / worker model.** Run-local is the canonical execution path: a job declares what code it needs, and the executor provides it. Locally that means either bind-mounting your working copy (default) or cloning the requested source. Remotely, the worker performs the same bootstrap before invoking the job. The same `REACTORCIDE_HEAD_URL` / `BASE_URL` env vars are populated in both modes so job scripts behave identically.
 
+One deliberate divergence: **container uid**. The worker runs jobs as the image's runner uid (`1001`), while run-local defaults to the **host uid** — because it bind-mounts the operator's working copy, and running as that user lets jobs write back into the tree without a chown dance. The cost is that uid-sensitive behavior (the image's `NOPASSWD: apt-get` sudoers entry, file ownership) differs from the worker. Jobs that need worker parity opt in per-invocation (`run-local --as-runner` / `--user <uid:gid>`) or declare it once in a `run_local` block in the job YAML — a run-local-only block the worker ignores. In parity mode run-local uses the image's real `/etc/passwd`/sudoers instead of synthesizing them. `HOME` is a writable `/home/runner` in both modes (image-provided under parity, a run-as-uid-owned scratch mount under the host-uid default), so `~`-reading tools behave identically. run-local does **not** chown the bind-mounted working copy to a foreign uid — a parity job that needs a writable checkout clones one (`--code-url`/`--pr`) or handles ownership itself. See AGENTS.md for the full contract.
+
 This enables secure execution of CI/CD jobs against untrusted code contributions.
 
 ### 2. Environment Isolation First

@@ -320,6 +320,34 @@ Run-local supports cloning an arbitrary code source instead of bind-mounting you
 
 Both flags clone into a tempdir, mount it at `/job/src`, and set the same `REACTORCIDE_*` env vars the worker would set for a fork PR — so jobs behave identically locally and remotely. When neither flag is set, run-local bind-mounts `--job-dir` (your local working copy) as before.
 
+#### Matching the worker's runner uid (sudo / HOME parity)
+
+By default `run-local` runs the job container as the **host uid** — the right choice when the job writes back into your bind-mounted working copy (compilers emitting into the tree, codegen, `helm dependency update`, anything you then `git diff`). The worker, however, runs jobs as the image's runner uid **1001** (`runner`, HOME `/home/runner`, with the image's `NOPASSWD: apt-get` sudoers entry). So a job doing `sudo apt-get install …` passes on a worker but fails under run-local as the host uid.
+
+When you need that parity, opt in:
+
+```bash
+# Run as the image's runner uid 1001:1001, like the worker
+./coordinator_api/reactorcide run-local --as-runner .reactorcide/jobs/test-postgres.yaml
+
+# Or pin an explicit uid[:gid]
+./coordinator_api/reactorcide run-local --user 1001:1001 ./jobs/my-job.yaml
+```
+
+A job can also declare this once in its YAML so every flag-less `run-local` is consistent. The `run_local` block is **run-local-only — the worker ignores it entirely**:
+
+```yaml
+run_local:
+  as_runner: true      # run as 1001:1001 locally; or:
+  user: runner         # symbolic; also accepts "host" or "1001:1001"
+```
+
+`--user` / `run_local.user` accept a numeric `uid[:gid]` or the symbolic names `runner` (the image runner uid 1001) and `host` (the invoking user).
+
+Precedence (highest first): `--user` → `--as-runner` → `run_local.user` → `run_local.as_runner` → host uid (default). In parity mode run-local uses the image's real `/etc/passwd`/sudoers and lets HOME resolve from the image, matching the worker. **HOME is `/home/runner` and writable in both modes** — parity mode gets it from the image; the host-uid default mounts a fresh run-as-uid-owned scratch dir there — so `~`-reading tools (git, go, docker config) behave the same locally and remotely without `export HOME=…` boilerplate.
+
+**Caveat (by design):** in parity mode the bind-mounted `--job-dir` at `/job/src` is still host-owned, so a parity job can't *write into the source tree*. run-local deliberately has no plumbing to chown your working copy to the parity uid — a job that needs a writable checkout as the runner uid should use `--code-url`/`--pr` (cloned into a writable tempdir), or do its own cloning/ownership inside the job.
+
 ## Project Status
 
 The system is actively being developed with the core runnerlib functionality complete and the coordinator API providing job management capabilities. Join the [Catalyst Community Discord](https://discord.gg/sfNb9xRjPn) to discuss and contribute.
