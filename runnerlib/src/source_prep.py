@@ -597,15 +597,15 @@ def prepare_source(config: RunnerConfig) -> Optional[Path]:
         return None
 
     # Ensure we have a job directory
-    job_path = prepare_job_directory(config)
+    prepare_job_directory(config)
 
-    # Determine target path for source code
-    # Source code goes in /job/src/ by default
-    target_path = job_path / "src"
+    # Determine target path for source code from the configured code_dir.
+    # Defaults to /job/src, but jobs may move it with REACTORCIDE_CODE_DIR.
+    target_path = get_code_directory_path(config)
 
-    # When running inside a container and /job/src is already populated, the
+    # When running inside a container and the code directory is already populated, the
     # source has been bind-mounted by the caller (e.g. run-local) and we must
-    # not rmtree/clone over it. CI mounts an empty /job/src, so it falls
+    # not rmtree/clone over it. CI mounts an empty code directory, so it falls
     # through to the normal clone path.
     if is_in_container_mode() and target_path.exists():
         try:

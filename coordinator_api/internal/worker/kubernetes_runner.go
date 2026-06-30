@@ -50,7 +50,20 @@ type KubernetesRunnerConfig struct {
 // NewKubernetesRunner creates a new Kubernetes-based job runner
 // It automatically detects if running in-cluster and uses the appropriate config
 func NewKubernetesRunner() (*KubernetesRunner, error) {
-	return NewKubernetesRunnerWithConfig(KubernetesRunnerConfig{})
+	cfg := KubernetesRunnerConfig{
+		Namespace:      os.Getenv("REACTORCIDE_K8S_JOB_NAMESPACE"),
+		ServiceAccount: os.Getenv("REACTORCIDE_K8S_JOB_SERVICE_ACCOUNT"),
+		DindImage:      os.Getenv("REACTORCIDE_DIND_IMAGE"),
+	}
+	if secrets := strings.TrimSpace(os.Getenv("REACTORCIDE_K8S_JOB_IMAGE_PULL_SECRETS")); secrets != "" {
+		for _, secret := range strings.Split(secrets, ",") {
+			secret = strings.TrimSpace(secret)
+			if secret != "" {
+				cfg.ImagePullSecrets = append(cfg.ImagePullSecrets, secret)
+			}
+		}
+	}
+	return NewKubernetesRunnerWithConfig(cfg)
 }
 
 // NewKubernetesRunnerWithConfig creates a KubernetesRunner with custom configuration
@@ -85,11 +98,7 @@ func NewKubernetesRunnerWithConfig(cfg KubernetesRunnerConfig) (*KubernetesRunne
 
 	dindImage := cfg.DindImage
 	if dindImage == "" {
-		if envImage := os.Getenv("REACTORCIDE_DIND_IMAGE"); envImage != "" {
-			dindImage = envImage
-		} else {
-			dindImage = "docker:27-dind"
-		}
+		dindImage = "docker:27-dind"
 	}
 
 	return &KubernetesRunner{
@@ -115,18 +124,15 @@ func (kr *KubernetesRunner) SpawnJob(ctx context.Context, config *JobConfig) (st
 	// Generate unique job name
 	jobName := fmt.Sprintf("reactorcide-job-%s-%s", config.JobID, uuid.New().String()[:8])
 
-	// NOTE: We intentionally do NOT set WorkingDir on the k8s container spec.
-	// The container runtime creates it as root before the process starts,
-	// making it unwritable by non-root users when it's a subdirectory of an
-	// emptyDir volume (e.g. /job/src). Job commands handle their own cd.
-
 	// Build environment variables
 	envVars := make([]corev1.EnvVar, 0, len(config.Env)+4)
-	// Set HOME to a writable directory so tools (git, go, etc.) work under UID 1001
-	envVars = append(envVars, corev1.EnvVar{
-		Name:  "HOME",
-		Value: "/home/reactorcide",
-	})
+	if _, ok := config.Env["HOME"]; !ok {
+		// Set HOME to a writable directory so tools (git, go, etc.) work under UID 1001
+		envVars = append(envVars, corev1.EnvVar{
+			Name:  "HOME",
+			Value: "/home/reactorcide",
+		})
+	}
 	// Mark all directories as git safe.directory so git works when emptyDir
 	// mount points are root-owned but the process runs as UID 1001
 	envVars = append(envVars,
@@ -168,37 +174,66 @@ func (kr *KubernetesRunner) SpawnJob(ctx context.Context, config *JobConfig) (st
 		}
 	}
 
-	// Determine if we need root. Both docker and builder run the job as root
-	// inside the container (host privilege is separately gated).
-	runAsNonRoot := true
-	var runAsUser *int64
-	userID := int64(1001)
-	runAsUser = &userID
-	needsDocker := HasCapability(config.Capabilities, CapabilityDocker)
-	needsRoot := needsDocker || HasCapability(config.Capabilities, CapabilityBuilder)
-	if needsRoot {
-		runAsNonRoot = false
-		runAsUser = nil
-		if needsDocker {
-			logger.Info("Docker capability requested: adding DinD sidecar")
-		} else {
-			logger.Info("Builder capability requested: job runs as root, sidecar added separately")
-		}
+	user, err := DefaultRunAsUser(config.RunAsUser)
+	if err != nil {
+		return "", fmt.Errorf("invalid run-as user: %w", err)
 	}
+	uidPart := strings.SplitN(user, ":", 2)[0]
+	userID, err := strconv.ParseInt(uidPart, 10, 64)
+	if err != nil {
+		return "", fmt.Errorf("invalid run-as user %q: %w", user, err)
+	}
+	runAsNonRoot := userID != 0
+	runAsUser := &userID
+	needsDocker := HasCapability(config.Capabilities, CapabilityDocker)
+	if needsDocker {
+		logger.Info("Docker capability requested: adding DinD sidecar")
+	}
+	if HasCapability(config.Capabilities, CapabilityBuilder) {
+		logger.Info("Builder capability requested: adding buildkit sidecar")
+	}
+	logger.WithField("user", user).Info("Running container with configured user")
 
 	// Build pod spec
+	prepareEnv := []corev1.EnvVar{
+		{Name: "REACTORCIDE_CODE_DIR", Value: defaultJobCodeDir(config.Env["REACTORCIDE_CODE_DIR"])},
+		{Name: "REACTORCIDE_JOB_DIR", Value: defaultJobDir(config.Env["REACTORCIDE_CODE_DIR"], config.Env["REACTORCIDE_JOB_DIR"])},
+		{Name: "REACTORCIDE_WORKING_DIR", Value: config.WorkingDir},
+	}
+	prepareWorkspace := corev1.Container{
+		Name:    "prepare-workspace",
+		Image:   "busybox:1.36",
+		Command: []string{"sh", "-c", `set -eu; mkdir -p "$REACTORCIDE_CODE_DIR" "$REACTORCIDE_JOB_DIR"; if [ -n "$REACTORCIDE_WORKING_DIR" ]; then mkdir -p "$REACTORCIDE_WORKING_DIR"; fi; chmod -R 0777 /job /workspace /home/reactorcide`},
+		Env:     prepareEnv,
+		VolumeMounts: []corev1.VolumeMount{
+			{
+				Name:      "job",
+				MountPath: "/job",
+			},
+			{
+				Name:      "workspace",
+				MountPath: "/workspace",
+			},
+			{
+				Name:      "home",
+				MountPath: "/home/reactorcide",
+			},
+		},
+	}
 	podSpec := corev1.PodSpec{
 		RestartPolicy:      corev1.RestartPolicyNever,
 		ServiceAccountName: kr.serviceAccount,
 		SecurityContext: &corev1.PodSecurityContext{
 			RunAsNonRoot: &runAsNonRoot,
 		},
+		InitContainers: []corev1.Container{prepareWorkspace},
 		Containers: []corev1.Container{
 			{
 				Name:            "job",
 				Image:           config.Image,
 				ImagePullPolicy: corev1.PullAlways,
 				Command:         config.Command,
+				WorkingDir:      config.WorkingDir,
 				Env:             envVars,
 				Resources:       resources,
 				SecurityContext: &corev1.SecurityContext{
@@ -467,12 +502,12 @@ func (kr *KubernetesRunner) SpawnJob(ctx context.Context, config *JobConfig) (st
 					},
 					Annotations: map[string]string{
 						// Same log exclusion annotations on pod template
-						"fluentbit.io/exclude":              "true",
-						"fluentd.kubernetes.io/exclude":     "true",
-						"promtail.io/ignore":                "true",
-						"co.elastic.logs/enabled":           "false",
-						"vector.dev/exclude":                "true",
-						"reactorcide.io/original-job-id":    config.JobID,
+						"fluentbit.io/exclude":           "true",
+						"fluentd.kubernetes.io/exclude":  "true",
+						"promtail.io/ignore":             "true",
+						"co.elastic.logs/enabled":        "false",
+						"vector.dev/exclude":             "true",
+						"reactorcide.io/original-job-id": config.JobID,
 					},
 				},
 				Spec: podSpec,

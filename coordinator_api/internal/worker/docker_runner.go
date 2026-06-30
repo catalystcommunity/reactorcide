@@ -130,24 +130,12 @@ func (dr *DockerRunner) SpawnJob(ctx context.Context, config *JobConfig) (string
 		},
 	}
 
-	// Default to non-root 1001:1001. CapabilityDocker and CapabilityBuilder
-	// both run the job container as root — builder jobs typically need to
-	// install build deps (apk add, apt-get) and write to filesystem roots
-	// like /workspace. Root uid inside an isolated container is not a host
-	// privilege escalation; --privileged and socket mounts (the actual host
-	// escalations) are still gated on CapabilityDocker alone.
-	needsRoot := HasCapability(config.Capabilities, CapabilityDocker) ||
-		HasCapability(config.Capabilities, CapabilityBuilder)
-	if !needsRoot {
-		user := "1001:1001"
-		if config.RunAsUser != "" {
-			user = config.RunAsUser
-		}
-		containerConfig.User = user
-		logger.WithField("user", user).Info("Running container as non-root user")
-	} else {
-		logger.Info("Running container as root (build/docker capability requested)")
+	user, err := DefaultRunAsUser(config.RunAsUser)
+	if err != nil {
+		return "", fmt.Errorf("invalid run-as user: %w", err)
 	}
+	containerConfig.User = user
+	logger.WithField("user", user).Info("Running container with configured user")
 
 	// Always clear the entrypoint so Command runs directly.
 	// Users specify the full command in JobConfig.Command.
@@ -158,7 +146,11 @@ func (dr *DockerRunner) SpawnJob(ctx context.Context, config *JobConfig) (string
 		fmt.Sprintf("%s:/job", config.WorkspaceDir),
 	}
 	if config.SourceDir != "" {
-		binds = append(binds, fmt.Sprintf("%s:/job/src", config.SourceDir))
+		sourceMountPath := config.SourceMountPath
+		if sourceMountPath == "" {
+			sourceMountPath = defaultCodeDir
+		}
+		binds = append(binds, fmt.Sprintf("%s:%s", config.SourceDir, sourceMountPath))
 	}
 	binds = append(binds, config.ExtraMounts...)
 

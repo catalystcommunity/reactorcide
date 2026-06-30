@@ -37,6 +37,8 @@ This approach gives you **maximum flexibility** - workflows are just Python code
 
 Jobs trigger follow-up jobs by writing to `/job/triggers.json`. The worker reads this file after job completion and submits the triggered jobs to the queue.
 
+Source code is available at `REACTORCIDE_CODE_DIR` (default `/job/src`). The job working directory is `REACTORCIDE_JOB_DIR` (defaulting to the code directory). Prefer these environment variables in reusable pipeline scripts so jobs continue to work when a definition customizes `code_dir` or `job_dir`.
+
 **Trigger File Format**:
 ```json
 {
@@ -746,7 +748,7 @@ ctx.trigger_job("deploy", depends_on=["test", "build"], condition="all_success")
 
 **Solutions**:
 1. Ensure git is installed in the container
-2. Verify `/job/src` contains a git repository
+2. Verify `REACTORCIDE_CODE_DIR` points at a git repository (default `/job/src`)
 3. Check that the refs exist: `git rev-parse origin/main`
 
 ### Context Properties Are None

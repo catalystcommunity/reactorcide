@@ -272,8 +272,8 @@ func (jp *JobProcessor) buildJobEnv(job *models.Job) map[string]string {
 
 	// Set the code and job directories for runnerlib
 	// These absolute paths ensure runnerlib uses the correct paths in container mode
-	env["REACTORCIDE_CODE_DIR"] = "/job/src"
-	env["REACTORCIDE_JOB_DIR"] = "/job/src"
+	env["REACTORCIDE_CODE_DIR"] = defaultJobCodeDir(job.CodeDir)
+	env["REACTORCIDE_JOB_DIR"] = defaultJobDir(job.CodeDir, job.JobDir)
 
 	// Add source configuration if present
 	if job.SourceType != nil {
@@ -439,9 +439,9 @@ func (jp *JobProcessor) resolveJobSecrets(ctx context.Context, job *models.Job, 
 // buildJobConfig creates a JobConfig from a models.Job
 // The job command is executed directly with the entrypoint cleared.
 // Users can either:
-// 1. Run their own commands directly (e.g., "sh -c 'make build'")
-// 2. Use runnerlib as a command for source prep and lifecycle hooks
-//    (e.g., "runnerlib run --source-url ... --job-command 'make build'")
+//  1. Run their own commands directly (e.g., "sh -c 'make build'")
+//  2. Use runnerlib as a command for source prep and lifecycle hooks
+//     (e.g., "runnerlib run --source-url ... --job-command 'make build'")
 func (jp *JobProcessor) buildJobConfig(job *models.Job, workspaceDir string) *JobConfig {
 	// Determine container image (use job-specific or default)
 	image := DefaultRunnerImage
@@ -471,20 +471,21 @@ func (jp *JobProcessor) buildJobConfig(job *models.Job, workspaceDir string) *Jo
 	// Build environment variables
 	env := jp.buildJobEnv(job)
 
-	// Use code_dir as working directory if specified
-	// If not specified, leave empty so container uses its own WORKDIR
-	workingDir := job.CodeDir
+	// Use job_dir as working directory. If not specified, it defaults to code_dir.
+	workingDir := defaultJobDir(job.CodeDir, job.JobDir)
 
 	// Create job config
 	config := &JobConfig{
-		Image:        image,
-		Command:      command,
-		Env:          env,
-		WorkspaceDir: workspaceDir,
-		WorkingDir:   workingDir,
-		JobID:        job.JobID,
-		QueueName:    job.QueueName,
-		Capabilities: job.Capabilities,
+		Image:           image,
+		Command:         command,
+		Env:             env,
+		WorkspaceDir:    workspaceDir,
+		SourceMountPath: defaultJobCodeDir(job.CodeDir),
+		WorkingDir:      workingDir,
+		JobID:           job.JobID,
+		QueueName:       job.QueueName,
+		Capabilities:    job.Capabilities,
+		RunAsUser:       job.RunAsUser,
 	}
 
 	// Add timeout if specified
@@ -538,14 +539,14 @@ func (jp *JobProcessor) executeWithRunnerlib(ctx context.Context, job *models.Jo
 		logger.WithError(err).Warn("Failed to chmod workspace directory")
 	}
 
-	// Create the src subdirectory with proper permissions
-	// This is where source code will be checked out (REACTORCIDE_CODE_DIR=/job/src)
-	srcDir := filepath.Join(workspaceDir, "src")
-	if err := os.MkdirAll(srcDir, 0777); err != nil {
-		logger.WithError(err).Warn("Failed to create src directory")
+	// Create the configured code directory with proper permissions.
+	codeDir := containerPathInsideJob(defaultJobCodeDir(job.CodeDir))
+	hostCodeDir := filepath.Join(workspaceDir, codeDir)
+	if err := os.MkdirAll(hostCodeDir, 0777); err != nil {
+		logger.WithError(err).WithField("code_dir", hostCodeDir).Warn("Failed to create code directory")
 	}
-	if err := os.Chown(srcDir, 1001, 1001); err != nil {
-		logger.WithError(err).Warn("Failed to chown src directory")
+	if err := os.Chown(hostCodeDir, 1001, 1001); err != nil {
+		logger.WithError(err).WithField("code_dir", hostCodeDir).Warn("Failed to chown code directory")
 	}
 
 	logger.WithField("workspace_dir", workspaceDir).Info("Created workspace directory")

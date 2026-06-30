@@ -99,6 +99,7 @@ type CreateJobRequest struct {
 	// Execution settings
 	TimeoutSeconds *int   `json:"timeout_seconds,omitempty"`
 	Priority       *int   `json:"priority,omitempty"`
+	RunAsUser      string `json:"run_as_user,omitempty"`
 	QueueName      string `json:"queue_name,omitempty"`
 }
 
@@ -129,6 +130,7 @@ type JobResponse struct {
 	RunnerImage string            `json:"runner_image"`
 	JobEnvVars  map[string]string `json:"job_env_vars,omitempty"`
 	JobEnvFile  string            `json:"job_env_file,omitempty"`
+	RunAsUser   string            `json:"run_as_user,omitempty"`
 
 	// Execution info
 	TimeoutSeconds int        `json:"timeout_seconds"`
@@ -673,6 +675,9 @@ func (h *JobHandler) validateCreateJobRequest(req *CreateJobRequest) error {
 	if req.SourceType == "copy" && req.SourcePath == "" {
 		return store.ErrInvalidInput
 	}
+	if _, err := worker.NormalizeRunAsUser(req.RunAsUser); err != nil {
+		return store.ErrInvalidInput
+	}
 
 	// Validate CI source fields if provided
 	if req.CISourceType != "" {
@@ -762,10 +767,11 @@ func (h *JobHandler) createJobFromRequest(req *CreateJobRequest, userID string) 
 		SourcePath: &req.SourcePath,
 
 		JobCommand:  req.JobCommand,
-		CodeDir:     req.CodeDir,
-		JobDir:      req.JobDir,
+		CodeDir:     worker.DefaultJobCodeDir(req.CodeDir),
+		JobDir:      worker.DefaultJobDir(req.CodeDir, req.JobDir),
 		RunnerImage: req.RunnerImage,
 		JobEnvFile:  req.JobEnvFile,
+		RunAsUser:   req.RunAsUser,
 
 		QueueName: req.QueueName,
 	}
@@ -890,6 +896,7 @@ func (h *JobHandler) jobToResponse(job *models.Job) JobResponse {
 		JobCommand:     job.JobCommand,
 		RunnerImage:    job.RunnerImage,
 		JobEnvFile:     job.JobEnvFile,
+		RunAsUser:      job.RunAsUser,
 		TimeoutSeconds: job.TimeoutSeconds,
 		Priority:       job.Priority,
 		QueueName:      job.QueueName,

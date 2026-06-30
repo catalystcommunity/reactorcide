@@ -2,6 +2,8 @@ name: build-coordinator
 image: golang:1.23-alpine
 capabilities:
   - docker
+run_as:
+  user: root
 command: |-
   sh -c '
     set -euo pipefail

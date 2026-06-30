@@ -33,6 +33,7 @@ usage() {
     echo "  check-deps         Check for required tools"
     echo "  test-e2e           Run end-to-end tests"
     echo "  test-e2e-quick     Run quick E2E tests"
+    echo "  test-run-local-paths Run run-local path contract smoke test"
     echo ""
     exit 0
 }
@@ -59,13 +60,13 @@ check_deps(){
         echo "✅ Go ${go_version} found"
     fi
 
-    # Check Docker
-    if ! command -v docker 2>&1 >/dev/null; then
-        echo "❌ Docker is required but not found"
-        missing_deps=1
+    # Check container runtime. Prefer containerd/nerdctl when usable, but
+    # Docker is still supported for local development.
+    if container_cmd >/dev/null 2>&1; then
+        echo "✅ Container runtime found: $(container_cmd)"
     else
-        docker_version=$(docker --version | cut -d' ' -f3 | tr -d ',')
-        echo "✅ Docker ${docker_version} found"
+        echo "❌ A usable container runtime is required: nerdctl/containerd or docker"
+        missing_deps=1
     fi
 
     # Check uv
@@ -125,6 +126,34 @@ log_status() {
   echo "${GREEN}---------------------------------  ${1}  ---------------------------------${NC}"
 }
 
+container_cmd(){
+    if command -v nerdctl >/dev/null 2>&1 && nerdctl ps >/dev/null 2>&1; then
+        echo "nerdctl"
+        return 0
+    fi
+    if command -v docker >/dev/null 2>&1 && docker version >/dev/null 2>&1; then
+        echo "docker"
+        return 0
+    fi
+    return 1
+}
+
+compose_cmd(){
+    if command -v nerdctl >/dev/null 2>&1 && nerdctl ps >/dev/null 2>&1 && nerdctl compose version >/dev/null 2>&1; then
+        echo "nerdctl compose"
+        return 0
+    fi
+    if command -v docker >/dev/null 2>&1 && docker version >/dev/null 2>&1 && docker compose version >/dev/null 2>&1; then
+        echo "docker compose"
+        return 0
+    fi
+    if command -v docker-compose >/dev/null 2>&1 && docker-compose version >/dev/null 2>&1; then
+        echo "docker-compose"
+        return 0
+    fi
+    return 1
+}
+
 test(){
     log_status "Running all tests"
     test_runnerlib
@@ -179,9 +208,15 @@ build(){
 
 docker_build(){
     log_status "Building Docker images"
+    local runtime
+    runtime="$(container_cmd)" || {
+        echo "❌ No usable container runtime found. Tried nerdctl first, then docker."
+        exit 1
+    }
+    echo "Using container runtime: ${runtime}"
 
     # Build runnerbase image
-    docker build -t reactorcide/runnerbase:latest -f runnerlib/Dockerfile.runner runnerlib/
+    ${runtime} build -t reactorcide/runnerbase:latest -f runnerlib/Dockerfile.runner runnerlib/
 
     # Build Go binary for coordinator and worker
     log_status "Building Go binary"
@@ -191,10 +226,10 @@ docker_build(){
     cd "${PROJECT_ROOT_DIR}"
 
     # Build coordinator image
-    docker build -t reactorcide/coordinator:latest -f deployment/Dockerfile.coordinator deployment/
+    ${runtime} build -t reactorcide/coordinator:latest -f deployment/Dockerfile.coordinator deployment/
 
     # Build worker image
-    docker build -t reactorcide/worker:latest -f deployment/Dockerfile.worker deployment/
+    ${runtime} build -t reactorcide/worker:latest -f deployment/Dockerfile.worker deployment/
 
     # Cleanup coordinator/worker binary
     rm -f "${PROJECT_ROOT_DIR}/deployment/reactorcide"
@@ -207,7 +242,7 @@ docker_build(){
     cd "${PROJECT_ROOT_DIR}"
 
     # Build web image
-    docker build -t reactorcide/web:latest -f deployment/Dockerfile.web deployment/
+    ${runtime} build -t reactorcide/web:latest -f deployment/Dockerfile.web deployment/
 
     # Cleanup
     rm -f "${PROJECT_ROOT_DIR}/deployment/reactorcide-web"
@@ -237,9 +272,15 @@ dev(){
         echo "Please create it first or run from the project root"
         exit 1
     fi
-    docker-compose up -d
+    local compose
+    compose="$(compose_cmd)" || {
+        echo "❌ No usable compose command found. Tried nerdctl compose, docker compose, then docker-compose."
+        exit 1
+    }
+    echo "Using compose command: ${compose}"
+    ${compose} up -d
     echo "✅ Development stack started"
-    echo "Run 'docker-compose logs -f' to see logs"
+    echo "Run '${compose} logs -f' to see logs"
 }
 
 test_e2e(){
@@ -266,6 +307,11 @@ test_e2e_quick(){
 
     # Run quick tests
     bash "${PROJECT_ROOT_DIR}/examples/e2e_test.sh" quick
+}
+
+test_run_local_paths(){
+    log_status "Running run-local path contract test"
+    bash "${PROJECT_ROOT_DIR}/scripts/test-run-local-paths.sh" "$@"
 }
 
 # This should be last in the script, all other functions are named beforehand.
@@ -329,6 +375,10 @@ case "$1" in
     "test-e2e-quick")
         shift
         test_e2e_quick "$@"
+        ;;
+    "test-run-local-paths")
+        shift
+        test_run_local_paths "$@"
         ;;
     *)
         usage

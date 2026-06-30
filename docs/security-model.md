@@ -41,11 +41,13 @@ curl -X POST https://reactorcide.example.com/api/v1/jobs \
 ```
 
 This creates a job with:
-- `/job/src/` - Contains the PR code (untrusted)
-- `/job/ci/` - Contains your CI scripts from an approved repo (trusted)
+- `/job/src/` - Contains the PR code (untrusted) by default. Jobs can move this with `code_dir`.
+- `/job/ci/` - Contains your CI scripts from an approved repo (trusted), when the job uses a separate CI checkout.
 - Executes: `bash /job/ci/build-and-test.sh`
 
 The PR can modify application code, but **cannot** modify the build/test/deploy scripts.
+
+Runtime identity is a separate control. Jobs run as the image runner uid by default on deployed workers, and can opt into root with `run_as.user: root` or API `run_as_user: "root"`. Docker/build capabilities do not implicitly switch a job to root.
 
 ## Composability Options
 

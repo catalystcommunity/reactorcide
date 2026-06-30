@@ -2,6 +2,8 @@ name: build-web
 image: golang:1.25-alpine
 capabilities:
   - docker
+run_as:
+  user: root
 command: |-
   sh -c '
     set -euo pipefail

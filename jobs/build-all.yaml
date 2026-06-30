@@ -2,6 +2,8 @@ name: build-all-images
 image: golang:1.25-alpine
 capabilities:
   - builder
+run_as:
+  user: root
 command: |-
   sh -c '
     set -euo pipefail

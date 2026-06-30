@@ -102,6 +102,11 @@ worker:
   pollInterval: 5  # seconds
   concurrency: 2    # concurrent jobs per worker pod
   dryRun: false
+  containerRuntime: "auto"
+  # Settings used by KubernetesRunner for the per-Reactorcide-job Kubernetes Jobs.
+  jobNamespace: ""
+  jobServiceAccount: ""
+  jobImagePullSecrets: []
   autoscaling:
     enabled: false
     minReplicas: 1

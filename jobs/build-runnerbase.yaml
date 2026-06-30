@@ -2,6 +2,8 @@ name: build-runnerbase
 image: alpine:3.19
 capabilities:
   - docker
+run_as:
+  user: root
 command: |-
   sh -c '
     set -euo pipefail

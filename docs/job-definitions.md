@@ -49,6 +49,12 @@ paths:
 job:
   image: "alpine:latest"       # Container image to run
   command: "make test"          # Command to execute
+  code_dir: "/job/src"          # Optional: source checkout/mount path
+  job_dir: "/job/src"           # Optional: runnerlib/job working directory
+  working_dir: "/job/src"       # Optional: raw process working directory
+  capabilities: []              # Optional: runtime services such as docker or builder
+  run_as:
+    user: runner                # Optional: runner, root, or numeric uid[:gid]
   timeout: 1800                # Optional: timeout in seconds
   priority: 10                 # Optional: scheduling priority (higher = more urgent)
 
@@ -129,8 +135,27 @@ paths:
 |---|---|---|
 | `job.image` | string | Container image to use. Falls back to the project's `default_runner_image` if not set. |
 | `job.command` | string | Command to execute inside the container. Falls back to the project's `default_job_command` if not set. |
+| `job.code_dir` | string | Container path where source code is mounted or checked out. Defaults to `/job/src`. |
+| `job.job_dir` | string | Container path runnerlib treats as the job directory. Defaults to `code_dir`. |
+| `job.working_dir` | string | Raw process working directory. Defaults to `job_dir`. |
+| `job.capabilities` | list | Runtime services the job needs, such as `docker` or `builder`. Capabilities do not imply root. |
+| `job.run_as.user` | string | Container user for deployed workers: `runner`, `root`, or numeric `uid[:gid]`. Defaults to `runner`. |
 | `job.timeout` | integer | Timeout in seconds. Falls back to the project's `default_timeout_seconds` if not set. |
 | `job.priority` | integer | Scheduling priority. Higher values are scheduled first. |
+
+For the path and run identity contract across local, VM, and Kubernetes execution, see [Runtime Behavior](./runtime-behavior.md).
+
+### Local-only Run Settings
+
+Flat job files used with `reactorcide run-local` can also include a top-level `run_local` block:
+
+```yaml
+run_local:
+  user: host       # host, runner, root, or numeric uid[:gid]
+  as_runner: false
+```
+
+`run_local` is ignored by deployed workers. It exists so local execution can bind-mount a working tree and still choose the uid that writes into that tree. `run-local` defaults to the host uid; use `run_as.user: root` or `--user root` when a local job must run as root.
 
 ## Environment Variables
 

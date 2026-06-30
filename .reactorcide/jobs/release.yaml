@@ -18,6 +18,8 @@ job:
   disable_run_local: true
   capabilities:
     - builder
+  run_as:
+    user: root
 environment:
   REGISTRY_INTERNAL: "10.16.0.1:5000"
   REGISTRY_EXTERNAL: "containers.catalystsquad.com"
