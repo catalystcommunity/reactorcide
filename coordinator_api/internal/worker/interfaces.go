@@ -106,6 +106,10 @@ type JobConfig struct {
 	// Used by run-local to mount user's source into the standard production layout.
 	SourceDir string
 
+	// SourceMountPath is the container path where SourceDir is mounted. Defaults
+	// to /job/src when empty.
+	SourceMountPath string
+
 	// WorkingDir is the working directory inside the container (default: /job)
 	WorkingDir string
 
@@ -115,7 +119,8 @@ type JobConfig struct {
 	Capabilities []string
 
 	// RunAsUser optionally overrides the container user ("uid:gid"). When
-	// empty, runners default to 1001:1001 (unless a capability forces root).
+	// empty, runners default to RunnerUser. Capabilities provision runtime
+	// services/privileges but do not implicitly change the job user.
 	// run-local sets this to the host uid so bind-mounted sources are writable.
 	RunAsUser string
 

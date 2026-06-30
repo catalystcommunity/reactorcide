@@ -126,6 +126,30 @@ class TestSourcePreparation:
         assert (result / "test.txt").exists()
         assert (result / "test.txt").read_text() == "test content"
 
+    def test_git_source_preparation_uses_configured_code_dir(self):
+        """Test prepare_source checks out into code_dir, not job_dir/src."""
+        test_repo_dir = Path(self.temp_dir) / "test_repo"
+        test_repo_dir.mkdir()
+        repo = _init_repo_with_main(test_repo_dir)
+        (test_repo_dir / "custom.txt").write_text("custom code dir")
+        repo.index.add(["custom.txt"])
+        repo.index.commit("Initial commit")
+
+        config = get_config(
+            code_dir="/job/custom-code",
+            job_dir="/job/custom-job",
+            job_command="cat /job/custom-code/custom.txt",
+            source_type="git",
+            source_url=str(test_repo_dir),
+            source_ref="main",
+        )
+
+        result = prepare_source(config)
+        assert result is not None
+        assert str(result).endswith("custom-code")
+        assert (result / "custom.txt").read_text() == "custom code dir"
+        assert not (Path("./job/custom-job/src") / "custom.txt").exists()
+
     def test_copy_source_preparation(self):
         """Test copy source preparation."""
         # Create a source directory

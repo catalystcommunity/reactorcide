@@ -44,6 +44,14 @@ type JobSpec struct {
 	// WorkingDir is the working directory inside the container (default: /job)
 	WorkingDir string `json:"working_dir" yaml:"working_dir"`
 
+	// CodeDir is where source code is expected inside the job container.
+	// run-local mounts local code here; runnerlib checks out remote source here.
+	CodeDir string `json:"code_dir" yaml:"code_dir"`
+
+	// JobDir is the directory runnerlib treats as the job working directory.
+	// Defaults to CodeDir when empty.
+	JobDir string `json:"job_dir" yaml:"job_dir"`
+
 	// Capabilities declares what the job needs from the runtime environment.
 	// The runner interprets these based on its environment:
 	//   - "docker": Access to build/push container images
@@ -61,6 +69,10 @@ type JobSpec struct {
 	CPULimit    string `json:"cpu_limit" yaml:"cpu_limit"`
 	MemoryLimit string `json:"memory_limit" yaml:"memory_limit"`
 
+	// RunAs controls the container user for deployed workers. run-local uses
+	// this only as a fallback after run_local and CLI overrides.
+	RunAs *RunAsSpec `json:"run_as" yaml:"run_as"`
+
 	// DisableRunLocal marks this job as remote-only. run-local refuses to
 	// execute jobs with this set — used for jobs that fundamentally need CI
 	// state (PR diff base, push-back-to-remote with a PAT, etc.).
@@ -72,6 +84,13 @@ type JobSpec struct {
 	// changing how the job runs in CI. Defining it here makes a job behave
 	// consistently across local invocations without per-command flags.
 	RunLocal *RunLocalSpec `json:"run_local" yaml:"run_local"`
+}
+
+// RunAsSpec controls the user identity for deployed job containers.
+type RunAsSpec struct {
+	// User accepts "runner", "root", or numeric "uid[:gid]". "host" is
+	// intentionally run-local-only and is not accepted by deployed workers.
+	User string `json:"user" yaml:"user"`
 }
 
 // RunLocalSpec holds run-local-only overrides. The worker never reads this;
@@ -193,6 +212,45 @@ func LoadJobSpec(path string) (*JobSpec, error) {
 	return &spec, nil
 }
 
+const defaultCodeDir = "/job/src"
+
+func defaultJobCodeDir(codeDir string) string {
+	if codeDir == "" {
+		return defaultCodeDir
+	}
+	return codeDir
+}
+
+func DefaultJobCodeDir(codeDir string) string {
+	return defaultJobCodeDir(codeDir)
+}
+
+func defaultJobDir(codeDir, jobDir string) string {
+	if jobDir != "" {
+		return jobDir
+	}
+	return defaultJobCodeDir(codeDir)
+}
+
+func DefaultJobDir(codeDir, jobDir string) string {
+	return defaultJobDir(codeDir, jobDir)
+}
+
+func containerPathInsideJob(path string) string {
+	path = strings.TrimSpace(path)
+	if path == "" || path == "/job" {
+		return "."
+	}
+	if strings.HasPrefix(path, "/job/") {
+		return strings.TrimPrefix(path, "/job/")
+	}
+	return strings.TrimPrefix(path, "/")
+}
+
+func ContainerPathInsideJob(path string) string {
+	return containerPathInsideJob(path)
+}
+
 // ToJobConfig converts a JobSpec to a JobConfig for execution
 // workspaceDir is the host directory to mount into the container
 // jobID is a unique identifier for this job execution
@@ -212,27 +270,40 @@ func (s *JobSpec) ToJobConfig(workspaceDir, jobID, queueName string) *JobConfig 
 		env["REACTORCIDE_QUEUE"] = queueName
 	}
 
+	codeDir := defaultJobCodeDir(s.CodeDir)
+	jobDir := defaultJobDir(s.CodeDir, s.JobDir)
+	workingDir := jobDir
+	if s.WorkingDir != "" {
+		workingDir = s.WorkingDir
+	}
+	runAsUser := ""
+	if s.RunAs != nil {
+		runAsUser, _ = NormalizeRunAsUser(s.RunAs.User)
+	}
+
 	// Add triggers file path
 	env["REACTORCIDE_TRIGGERS_FILE"] = "/job/triggers.json"
 
 	// Standard container environment: tell runnerlib it's running inside a container
 	// and where source code is mounted. True for both local and production containers.
 	env["REACTORCIDE_IN_CONTAINER"] = "true"
-	env["REACTORCIDE_CODE_DIR"] = "/job/src"
-	env["REACTORCIDE_JOB_DIR"] = "/job/src"
+	env["REACTORCIDE_CODE_DIR"] = codeDir
+	env["REACTORCIDE_JOB_DIR"] = jobDir
 
 	config := &JobConfig{
-		Image:          s.Image,
-		Command:        command,
-		Env:            env,
-		WorkspaceDir:   workspaceDir,
-		WorkingDir:     s.WorkingDir,
-		Capabilities:   s.Capabilities,
-		TimeoutSeconds: s.TimeoutSeconds,
-		CPULimit:       s.CPULimit,
-		MemoryLimit:    s.MemoryLimit,
-		JobID:          jobID,
-		QueueName:      queueName,
+		Image:           s.Image,
+		Command:         command,
+		Env:             env,
+		WorkspaceDir:    workspaceDir,
+		SourceMountPath: codeDir,
+		WorkingDir:      workingDir,
+		Capabilities:    s.Capabilities,
+		TimeoutSeconds:  s.TimeoutSeconds,
+		CPULimit:        s.CPULimit,
+		MemoryLimit:     s.MemoryLimit,
+		JobID:           jobID,
+		QueueName:       queueName,
+		RunAsUser:       runAsUser,
 	}
 
 	return config
@@ -549,6 +620,8 @@ func MergeJobSpecs(base *JobSpec, overlays []*JobSpec, overlayFiles []string) (*
 		CommandPrefix:  base.CommandPrefix,
 		Image:          base.Image,
 		WorkingDir:     base.WorkingDir,
+		CodeDir:        base.CodeDir,
+		JobDir:         base.JobDir,
 		TimeoutSeconds: base.TimeoutSeconds,
 		CPULimit:       base.CPULimit,
 		MemoryLimit:    base.MemoryLimit,
@@ -583,6 +656,11 @@ func MergeJobSpecs(base *JobSpec, overlays []*JobSpec, overlayFiles []string) (*
 			User:     base.RunLocal.User,
 		}
 	}
+	if base.RunAs != nil {
+		result.RunAs = &RunAsSpec{
+			User: base.RunAs.User,
+		}
+	}
 
 	var secretOverrides []SecretOverride
 
@@ -609,6 +687,12 @@ func MergeJobSpecs(base *JobSpec, overlays []*JobSpec, overlayFiles []string) (*
 		if overlay.WorkingDir != "" {
 			result.WorkingDir = overlay.WorkingDir
 		}
+		if overlay.CodeDir != "" {
+			result.CodeDir = overlay.CodeDir
+		}
+		if overlay.JobDir != "" {
+			result.JobDir = overlay.JobDir
+		}
 		if overlay.TimeoutSeconds != 0 {
 			result.TimeoutSeconds = overlay.TimeoutSeconds
 		}
@@ -617,6 +701,11 @@ func MergeJobSpecs(base *JobSpec, overlays []*JobSpec, overlayFiles []string) (*
 		}
 		if overlay.MemoryLimit != "" {
 			result.MemoryLimit = overlay.MemoryLimit
+		}
+		if overlay.RunAs != nil {
+			result.RunAs = &RunAsSpec{
+				User: overlay.RunAs.User,
+			}
 		}
 
 		// Merge environment (overlay values take precedence)

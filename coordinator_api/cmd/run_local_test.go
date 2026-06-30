@@ -316,6 +316,32 @@ func TestToJobConfig(t *testing.T) {
 	}
 }
 
+func TestToJobConfig_CustomCodeAndJobDirs(t *testing.T) {
+	spec := &worker.JobSpec{
+		Name:       "custom-paths",
+		Command:    "pwd",
+		Image:      "alpine:latest",
+		CodeDir:    "/job/code",
+		JobDir:     "/job/code/subdir",
+		WorkingDir: "/job/code/subdir",
+	}
+
+	config := spec.ToJobConfig("/tmp/workspace", "job-123", "test-queue")
+
+	if config.SourceMountPath != "/job/code" {
+		t.Errorf("expected source mount path '/job/code', got %q", config.SourceMountPath)
+	}
+	if config.WorkingDir != "/job/code/subdir" {
+		t.Errorf("expected working dir '/job/code/subdir', got %q", config.WorkingDir)
+	}
+	if config.Env["REACTORCIDE_CODE_DIR"] != "/job/code" {
+		t.Errorf("expected REACTORCIDE_CODE_DIR=/job/code, got %q", config.Env["REACTORCIDE_CODE_DIR"])
+	}
+	if config.Env["REACTORCIDE_JOB_DIR"] != "/job/code/subdir" {
+		t.Errorf("expected REACTORCIDE_JOB_DIR=/job/code/subdir, got %q", config.Env["REACTORCIDE_JOB_DIR"])
+	}
+}
+
 func TestJobSpec_WithSource(t *testing.T) {
 	tempDir := t.TempDir()
 	jobFile := filepath.Join(tempDir, "test.yaml")
@@ -523,6 +549,7 @@ func TestResolveRunAsUserFromArgs(t *testing.T) {
 		asRunnerFlag bool
 		specUser     string
 		specAsRunner bool
+		runAsUser    string
 		wantUID      int
 		wantGID      int
 		wantAsRunner bool
@@ -561,6 +588,18 @@ func TestResolveRunAsUserFromArgs(t *testing.T) {
 			wantUID: hostUID, wantGID: hostGID, wantAsRunner: false,
 		},
 		{
+			name: "symbolic user root resolves to zero", userFlag: "root",
+			wantUID: 0, wantGID: 0, wantAsRunner: false,
+		},
+		{
+			name: "run_as user applies when no local override", runAsUser: "root",
+			wantUID: 0, wantGID: 0, wantAsRunner: false,
+		},
+		{
+			name: "run_local user overrides run_as user", specUser: "host", runAsUser: "root",
+			wantUID: hostUID, wantGID: hostGID, wantAsRunner: false,
+		},
+		{
 			name: "cli user overrides yaml", userFlag: "5000:5000", specAsRunner: true,
 			wantUID: 5000, wantGID: 5000, wantAsRunner: false,
 		},
@@ -580,7 +619,7 @@ func TestResolveRunAsUserFromArgs(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			uid, gid, asRunner, err := resolveRunAsUserFromArgs(tt.userFlag, tt.asRunnerFlag, tt.specUser, tt.specAsRunner)
+			uid, gid, asRunner, err := resolveRunAsUserFromArgs(tt.userFlag, tt.asRunnerFlag, tt.specUser, tt.specAsRunner, tt.runAsUser)
 			if tt.wantErr {
 				if err == nil {
 					t.Fatal("expected error, got nil")

@@ -54,11 +54,11 @@ This separation enables flexibility in deployment models: from running jobs loca
 - **Default**: By default, job and source are the same repo (simple path)
 - **Security Model**: For untrusted contributions, job code comes from a trusted location while source code can come from anywhere — including a PR opened from a fork.
 
-**Fork PR specifics.** When a PR is opened from a fork, `SourceURL` points at the **fork** (where the branch lives) and `CISourceURL` points at the **upstream** at the trusted base SHA. Fork content is never executed as a CI definition. A malicious PR cannot ship a modified `.reactorcide/jobs/*.yaml` and have it run — the eval job loads CI from the base branch's last trusted commit. Run-local mirrors this model: `--code-url` / `--pr` clone an arbitrary code source into `/job/src`, while the CI definitions remain whatever YAML the user explicitly passed on the command line.
+**Fork PR specifics.** When a PR is opened from a fork, `SourceURL` points at the **fork** (where the branch lives) and `CISourceURL` points at the **upstream** at the trusted base SHA. Fork content is never executed as a CI definition. A malicious PR cannot ship a modified `.reactorcide/jobs/*.yaml` and have it run — the eval job loads CI from the base branch's last trusted commit. Run-local mirrors this model: `--code-url` / `--pr` clone an arbitrary code source into the configured `code_dir` (default `/job/src`), while the CI definitions remain whatever YAML the user explicitly passed on the command line.
 
 **Unified run-local / worker model.** Run-local is the canonical execution path: a job declares what code it needs, and the executor provides it. Locally that means either bind-mounting your working copy (default) or cloning the requested source. Remotely, the worker performs the same bootstrap before invoking the job. The same `REACTORCIDE_HEAD_URL` / `BASE_URL` env vars are populated in both modes so job scripts behave identically.
 
-One deliberate divergence: **container uid**. The worker runs jobs as the image's runner uid (`1001`), while run-local defaults to the **host uid** — because it bind-mounts the operator's working copy, and running as that user lets jobs write back into the tree without a chown dance. The cost is that uid-sensitive behavior (the image's `NOPASSWD: apt-get` sudoers entry, file ownership) differs from the worker. Jobs that need worker parity opt in per-invocation (`run-local --as-runner` / `--user <uid:gid>`) or declare it once in a `run_local` block in the job YAML — a run-local-only block the worker ignores. In parity mode run-local uses the image's real `/etc/passwd`/sudoers instead of synthesizing them. `HOME` is a writable `/home/runner` in both modes (image-provided under parity, a run-as-uid-owned scratch mount under the host-uid default), so `~`-reading tools behave identically. run-local does **not** chown the bind-mounted working copy to a foreign uid — a parity job that needs a writable checkout clones one (`--code-url`/`--pr`) or handles ownership itself. See AGENTS.md for the full contract.
+One deliberate divergence: **local default container uid**. Deployed workers run as the image runner uid (`1001:1001`) unless the job explicitly sets `run_as.user` to `root` or a numeric uid. Run-local defaults to the **host uid** because it bind-mounts the operator's working copy and should write files back as that user. Jobs that need worker parity opt in per invocation (`run-local --as-runner` / `--user <uid:gid>`) or declare a `run_local` block. Jobs that need root say so directly with `run_as.user: root` or `--user root`; no Docker/build capability implicitly changes the uid. See `docs/runtime-behavior.md` for the full contract.
 
 This enables secure execution of CI/CD jobs against untrusted code contributions.
 
@@ -598,15 +598,15 @@ The worker interacts with the Kubernetes API to create these Job resources inste
 **Key Features**:
 - **Simple Binary**: No Python dependency, minimal resource footprint
 - **Concurrent Jobs**: Handle multiple jobs in parallel
-- **Runtime Agnostic**: Supports Docker, nerdctl, or Kubernetes Jobs
+- **Runtime Agnostic**: Supports Docker, containerd/nerdctl, or Kubernetes Jobs
 - **Resource Limits**: Enforce CPU/memory limits on containers
 - **Error Handling**: Robust error handling with detailed logging
 - **Health Monitoring**: Report worker health to Coordinator
 - **Workflow Support**: Handle chained job execution
 
 **Container Runtime Modes**:
-1. **Docker**: Direct docker socket access (VM/laptop deployments)
-2. **Nerdctl**: Containerd-based execution (rootless, more secure)
+1. **Docker**: Docker daemon execution (VM/laptop deployments)
+2. **Containerd/Nerdctl**: Containerd-based execution; preferred when available
 3. **Kubernetes**: Spawn Kubernetes Job resources via K8s API (K8s deployments)
 
 The worker abstracts these differences - the same Go binary works in all three modes based on configuration.
@@ -615,8 +615,8 @@ The worker abstracts these differences - the same Go binary works in all three m
 - **Corndogs Connection**: gRPC endpoint for task queue
 - **Coordinator API**: REST endpoint for status updates
 - **Worker Pool**: Number of concurrent job slots
-- **Workspace Root**: Where to create job directories (for Docker/nerdctl)
-- **Container Runtime**: Execution mode - docker, nerdctl, or kubernetes
+- **Workspace Root**: Where to create job directories (for Docker or containerd/nerdctl)
+- **Container Runtime**: Execution mode - docker, containerd/nerdctl, or kubernetes
 - **Kubernetes Config** (when runtime=kubernetes):
   - Kubeconfig path or in-cluster authentication
   - Job namespace
@@ -665,7 +665,7 @@ The worker abstracts these differences - the same Go binary works in all three m
    ▼
 6. Job Container (runnerlib inside container):
    - Runs: python -m runnerlib.cli run
-   - Checks out source code: git clone to /job/src/
+   - Checks out source code: git clone to `code_dir` (default `/job/src`)
    - Executes job steps: npm test
    - Streams logs to stdout (worker captures)
    - Masks secrets in output
@@ -1142,7 +1142,7 @@ coordinator:
 worker:
   pool_size: 5
   workspace_root: /tmp/reactorcide-jobs
-  container_runtime: docker  # or nerdctl
+  container_runtime: containerd  # or docker
   docker_socket: /var/run/docker.sock
 
 logging:

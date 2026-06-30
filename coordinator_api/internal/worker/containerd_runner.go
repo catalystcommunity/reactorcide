@@ -145,7 +145,11 @@ func (cr *ContainerdRunner) SpawnJob(ctx context.Context, config *JobConfig) (st
 	// Mount workspace directory
 	args = append(args, "-v", fmt.Sprintf("%s:/job", config.WorkspaceDir))
 	if config.SourceDir != "" {
-		args = append(args, "-v", fmt.Sprintf("%s:/job/src", config.SourceDir))
+		sourceMountPath := config.SourceMountPath
+		if sourceMountPath == "" {
+			sourceMountPath = defaultCodeDir
+		}
+		args = append(args, "-v", fmt.Sprintf("%s:%s", config.SourceDir, sourceMountPath))
 	}
 	for _, m := range config.ExtraMounts {
 		args = append(args, "-v", m)
@@ -159,20 +163,12 @@ func (cr *ContainerdRunner) SpawnJob(ctx context.Context, config *JobConfig) (st
 		args = append(args, "-e", fmt.Sprintf("%s=tcp://localhost:%d", BuilderHostEnv, BuilderSidecarPort))
 	}
 
-	// Default non-root; docker and builder both imply root uid inside the
-	// container (see DockerRunner for rationale).
-	needsRoot := HasCapability(config.Capabilities, CapabilityDocker) ||
-		HasCapability(config.Capabilities, CapabilityBuilder)
-	if !needsRoot {
-		user := "1001:1001"
-		if config.RunAsUser != "" {
-			user = config.RunAsUser
-		}
-		args = append(args, "--user", user)
-		logger.WithField("user", user).Info("Running container as non-root user")
-	} else {
-		logger.Info("Running container as root (build/docker capability requested)")
+	user, err := DefaultRunAsUser(config.RunAsUser)
+	if err != nil {
+		return "", fmt.Errorf("invalid run-as user: %w", err)
 	}
+	args = append(args, "--user", user)
+	logger.WithField("user", user).Info("Running container with configured user")
 
 	// Handle capabilities
 	for _, cap := range config.Capabilities {

@@ -75,7 +75,7 @@ curl -H "Authorization: Bearer <your-token>" \
 
 ```bash
 # Start local dev stack
-docker compose up -d
+./tools dev
 
 # Run tests
 ./tools test
@@ -91,10 +91,13 @@ REACTORCIDE_SECRETS_PASSWORD="<your-secrets-password>" \
   reactorcide run-local --job-dir ./ ./jobs/build-all.yaml
 ```
 
+`run-local` bind-mounts `--job-dir` by default and runs as your host uid so generated files remain writable. Jobs can opt into root with `run_as.user: root` or worker parity with `run_local.user: runner` / `--as-runner`.
+
 ## Documentation
 
 - **[DESIGN.md](./DESIGN.md)** - Complete system architecture and design principles
 - **[AGENTS.md](./AGENTS.md)** - Implementation guidance for AI assistants and contributors
+- **[docs/runtime-behavior.md](./docs/runtime-behavior.md)** - Local, VM, Kubernetes, path, and run identity behavior
 - **[runnerlib/DESIGN.md](./runnerlib/DESIGN.md)** - Detailed runnerlib architecture and API
 - **[docs/](./docs/)** - Additional documentation
 

@@ -10,9 +10,9 @@ This guide covers deploying Reactorcide to a VM with a single command.
 - rsync
 
 ### Target VM
-- Docker and Docker Compose v2
+- containerd with nerdctl, or Docker with Docker Compose v2
 - SSH access (key-based authentication)
-- User with docker group membership (to run containers without sudo)
+- Runtime access for the deployment user. Prefer nerdctl/containerd where available; Docker remains supported.
 
 ## Deployment
 
@@ -49,7 +49,7 @@ bash deployment/deploy-vm.sh
 The script will:
 1. Build the coordinator binary locally
 2. Copy all deployment files to the VM
-3. Build Docker images on the VM
+3. Build container images on the VM
 4. Start all services
 5. Run database migrations
 6. Verify the deployment
@@ -86,7 +86,7 @@ After deployment, these services will be running:
 
 ## Submitting a Job
 
-With your API token, submit a job:
+With your API token, submit a job. `code_dir` defaults to `/job/src`, `job_dir` defaults to `code_dir`, and deployed workers run as the image runner uid unless `run_as_user` is set.
 
 ```bash
 curl -X POST http://your-vm:6080/api/v1/jobs \
@@ -96,7 +96,9 @@ curl -X POST http://your-vm:6080/api/v1/jobs \
     "name": "test-job",
     "source_url": "https://github.com/your-org/your-repo.git",
     "source_ref": "main",
-    "job_command": "echo Hello from Reactorcide"
+    "source_type": "git",
+    "job_command": "echo Hello from Reactorcide",
+    "run_as_user": "runner"
   }'
 ```
 
@@ -131,5 +133,5 @@ docker compose -f docker-compose.prod.yml restart
 
 ### View all running containers
 ```bash
-docker ps
+nerdctl ps || docker ps
 ```

@@ -763,6 +763,7 @@ func TestToJobConfig(t *testing.T) {
 		TimeoutSeconds: 300,
 		CPULimit:       "2",
 		MemoryLimit:    "512Mi",
+		RunAs:          &RunAsSpec{User: "root"},
 	}
 
 	config := spec.ToJobConfig("/workspace", "job-123", "default")
@@ -784,6 +785,9 @@ func TestToJobConfig(t *testing.T) {
 	}
 	if config.QueueName != "default" {
 		t.Errorf("queueName = %q, want default", config.QueueName)
+	}
+	if config.RunAsUser != RootUser {
+		t.Errorf("runAsUser = %q, want %q", config.RunAsUser, RootUser)
 	}
 
 	// Check environment includes both user vars and job metadata
@@ -808,6 +812,32 @@ func TestToJobConfig(t *testing.T) {
 	// Check capabilities
 	if len(config.Capabilities) != 2 {
 		t.Errorf("expected 2 capabilities, got %d", len(config.Capabilities))
+	}
+}
+
+func TestToJobConfig_CustomCodeAndJobDirs(t *testing.T) {
+	spec := &JobSpec{
+		Name:       "custom-paths",
+		Command:    "pwd",
+		Image:      "alpine:latest",
+		CodeDir:    "/job/code",
+		JobDir:     "/job/code/subdir",
+		WorkingDir: "/job/code/subdir",
+	}
+
+	config := spec.ToJobConfig("/workspace", "job-123", "default")
+
+	if config.SourceMountPath != "/job/code" {
+		t.Errorf("SourceMountPath = %q, want /job/code", config.SourceMountPath)
+	}
+	if config.WorkingDir != "/job/code/subdir" {
+		t.Errorf("WorkingDir = %q, want /job/code/subdir", config.WorkingDir)
+	}
+	if config.Env["REACTORCIDE_CODE_DIR"] != "/job/code" {
+		t.Errorf("REACTORCIDE_CODE_DIR = %q, want /job/code", config.Env["REACTORCIDE_CODE_DIR"])
+	}
+	if config.Env["REACTORCIDE_JOB_DIR"] != "/job/code/subdir" {
+		t.Errorf("REACTORCIDE_JOB_DIR = %q, want /job/code/subdir", config.Env["REACTORCIDE_JOB_DIR"])
 	}
 }
 
@@ -902,10 +932,10 @@ func TestResolveSecretsInEnv(t *testing.T) {
 
 	t.Run("resolves secrets and returns values for masking", func(t *testing.T) {
 		env := map[string]string{
-			"API_KEY":      "${secret:vault/prod:api_key}",
-			"DB_PASSWORD":  "${secret:vault/prod:db_password}",
-			"PLAIN_VALUE":  "no-secret-here",
-			"MIXED_VALUE":  "prefix-${secret:vault/prod:api_key}-suffix",
+			"API_KEY":     "${secret:vault/prod:api_key}",
+			"DB_PASSWORD": "${secret:vault/prod:db_password}",
+			"PLAIN_VALUE": "no-secret-here",
+			"MIXED_VALUE": "prefix-${secret:vault/prod:api_key}-suffix",
 		}
 
 		resolved, secretValues, err := ResolveSecretsInEnv(env, getSecret)

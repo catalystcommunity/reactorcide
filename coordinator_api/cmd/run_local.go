@@ -66,13 +66,15 @@ func hostRunAsUser() (uid, gid int) {
 
 // parseUserGroup parses a user spec into numeric ids. It accepts a numeric
 // "uid[:gid]" (gid defaults to the uid when omitted), or the symbolic names
-// "runner" (the image's conventional runner uid, 1001:1001) and "host" (the
+// "runner" (the image's conventional runner uid, 1001:1001), "root", and "host" (the
 // invoking host user). Symbolic names let a job YAML say `run_local: { user:
 // runner }` without hard-coding 1001.
 func parseUserGroup(s string) (uid, gid int, err error) {
 	switch strings.ToLower(strings.TrimSpace(s)) {
 	case "runner":
 		return runnerUID, runnerGID, nil
+	case "root":
+		return 0, 0, nil
 	case "host":
 		uid, gid = hostRunAsUser()
 		return uid, gid, nil
@@ -100,7 +102,8 @@ func parseUserGroup(s string) (uid, gid int, err error) {
 //  2. --as-runner           (CLI)
 //  3. run_local.user        (job YAML)
 //  4. run_local.as_runner   (job YAML)
-//  5. host uid              (default, legacy behavior)
+//  5. run_as.user           (job YAML)
+//  6. host uid              (default, legacy behavior)
 //
 // CLI flags override the job YAML so a single invocation can deviate, while the
 // YAML block keeps every flag-less run-local of that job consistent. When the
@@ -113,13 +116,17 @@ func resolveRunAsUser(ctx *cli.Context, spec *worker.JobSpec) (uid, gid int, asR
 		specUser = spec.RunLocal.User
 		specAsRunner = spec.RunLocal.AsRunner
 	}
-	return resolveRunAsUserFromArgs(ctx.String("user"), ctx.Bool("as-runner"), specUser, specAsRunner)
+	var runAsUser string
+	if spec != nil && spec.RunAs != nil {
+		runAsUser = spec.RunAs.User
+	}
+	return resolveRunAsUserFromArgs(ctx.String("user"), ctx.Bool("as-runner"), specUser, specAsRunner, runAsUser)
 }
 
 // resolveRunAsUserFromArgs is the pure-function core of resolveRunAsUser,
 // extracted so the precedence logic can be unit tested without a cli.Context.
 // When nothing pins a uid it falls back to the host user.
-func resolveRunAsUserFromArgs(userFlag string, asRunnerFlag bool, specUser string, specAsRunner bool) (uid, gid int, asRunner bool, err error) {
+func resolveRunAsUserFromArgs(userFlag string, asRunnerFlag bool, specUser string, specAsRunner bool, runAsUser string) (uid, gid int, asRunner bool, err error) {
 	if asRunnerFlag && userFlag != "" {
 		return 0, 0, false, fmt.Errorf("--as-runner and --user are mutually exclusive")
 	}
@@ -133,6 +140,8 @@ func resolveRunAsUserFromArgs(userFlag string, asRunnerFlag bool, specUser strin
 		uid, gid, err = parseUserGroup(specUser)
 	case specAsRunner:
 		uid, gid = runnerUID, runnerGID
+	case runAsUser != "":
+		uid, gid, err = parseUserGroup(runAsUser)
 	default:
 		uid, gid = hostRunAsUser()
 	}
@@ -208,7 +217,7 @@ var RunLocalCommand = &cli.Command{
 		},
 		&cli.StringFlag{
 			Name:  "user",
-			Usage: "User to run the job container as: a numeric uid[:gid] (e.g. \"1001:1001\"), or the symbolic name \"runner\" (image runner uid 1001) or \"host\" (the invoking user). Overrides the host-uid default. Mutually exclusive with --as-runner.",
+			Usage: "User to run the job container as: a numeric uid[:gid] (e.g. \"1001:1001\"), or the symbolic name \"runner\" (image runner uid 1001), \"root\", or \"host\" (the invoking user). Overrides the host-uid default. Mutually exclusive with --as-runner.",
 		},
 	},
 	Action: runLocalAction,
@@ -506,6 +515,8 @@ func runLocalAction(ctx *cli.Context) error {
 	}
 	if asRunner {
 		fmt.Printf("Run-as user: %d:%d (image runner — worker parity)\n", uid, gid)
+	} else if uid == 0 && gid == 0 {
+		fmt.Printf("Run-as user: %d:%d (root)\n", uid, gid)
 	} else {
 		fmt.Printf("Run-as user: %d:%d (host)\n", uid, gid)
 	}
@@ -527,16 +538,19 @@ func runLocalAction(ctx *cli.Context) error {
 	}
 	defer os.RemoveAll(tempWorkspace)
 
-	// Create src/ subdir in temp workspace (matching production layout)
-	srcSubdir := filepath.Join(tempWorkspace, "src")
-	if err := os.MkdirAll(srcSubdir, 0755); err != nil {
-		return fmt.Errorf("failed to create workspace src dir: %w", err)
+	codeDir := worker.ContainerPathInsideJob(worker.DefaultJobCodeDir(spec.CodeDir))
+	if codeDir == "." {
+		codeDir = "src"
 	}
-	if err := makeWritableFor(srcSubdir, uid, gid); err != nil {
-		return fmt.Errorf("failed to prepare workspace src dir: %w", err)
+	codeSubdir := filepath.Join(tempWorkspace, codeDir)
+	if err := os.MkdirAll(codeSubdir, 0755); err != nil {
+		return fmt.Errorf("failed to create workspace code dir: %w", err)
+	}
+	if err := makeWritableFor(codeSubdir, uid, gid); err != nil {
+		return fmt.Errorf("failed to prepare workspace code dir: %w", err)
 	}
 
-	// Resolve what to mount at /job/src:
+	// Resolve what to mount at the configured code directory:
 	//   - default: --job-dir (the user's local working copy)
 	//   - --code-url / --pr: clone into a tempdir, mount that instead
 	srcMount := absJobDir
@@ -579,7 +593,7 @@ func runLocalAction(ctx *cli.Context) error {
 	}
 
 	// Convert spec to JobConfig using temp workspace, then set SourceDir
-	// so the runner mounts the resolved source at /job/src.
+	// so the runner mounts the resolved source at the configured code dir.
 	jobConfig := spec.ToJobConfig(tempWorkspace, jobID, "local")
 	jobConfig.SourceDir = srcMount
 	jobConfig.RunAsUser = fmt.Sprintf("%d:%d", uid, gid)
@@ -664,7 +678,11 @@ func performLocalDryRun(spec *worker.JobSpec, config *worker.JobConfig, masker *
 	fmt.Println("\n--- DRY RUN MODE ---")
 	fmt.Printf("Image: %s\n", spec.Image)
 	fmt.Printf("Command: %s\n", spec.Command)
-	fmt.Printf("Source directory: %s -> /job/src\n", jobDir)
+	sourceMountPath := config.SourceMountPath
+	if sourceMountPath == "" {
+		sourceMountPath = "/job/src"
+	}
+	fmt.Printf("Source directory: %s -> %s\n", jobDir, sourceMountPath)
 	fmt.Printf("Workspace: %s -> /job\n", config.WorkspaceDir)
 
 	if spec.Source != nil && spec.Source.Type != "" && spec.Source.Type != "none" {

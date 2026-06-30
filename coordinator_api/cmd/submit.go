@@ -84,6 +84,7 @@ type CreateJobRequest struct {
 	// Execution settings
 	TimeoutSeconds *int   `json:"timeout_seconds,omitempty"`
 	Priority       *int   `json:"priority,omitempty"`
+	RunAsUser      string `json:"run_as_user,omitempty"`
 	QueueName      string `json:"queue_name,omitempty"`
 }
 
@@ -105,6 +106,7 @@ type JobResponse struct {
 	// Execution info
 	TimeoutSeconds int        `json:"timeout_seconds"`
 	Priority       int        `json:"priority"`
+	RunAsUser      string     `json:"run_as_user,omitempty"`
 	QueueName      string     `json:"queue_name"`
 	StartedAt      *time.Time `json:"started_at,omitempty"`
 	CompletedAt    *time.Time `json:"completed_at,omitempty"`
@@ -232,7 +234,11 @@ func specToCreateJobRequest(spec *worker.JobSpec) *CreateJobRequest {
 		JobCommand:  spec.Command,
 		RunnerImage: spec.Image,
 		JobEnvVars:  spec.Environment,
-		JobDir:      spec.WorkingDir,
+		CodeDir:     worker.DefaultJobCodeDir(spec.CodeDir),
+		JobDir:      worker.DefaultJobDir(spec.CodeDir, spec.JobDir),
+	}
+	if spec.RunAs != nil {
+		req.RunAsUser = spec.RunAs.User
 	}
 
 	// Set timeout if specified

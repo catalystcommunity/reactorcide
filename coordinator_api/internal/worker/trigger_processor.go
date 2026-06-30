@@ -42,7 +42,7 @@ func (tp *TriggerProcessor) SetStatusUpdater(u vcs.JobStatusUpdaterInterface) {
 // triggersFile represents the top-level structure of triggers.json.
 type triggersFile struct {
 	Type string           `json:"type"`
-	Jobs []triggerJobSpec  `json:"jobs"`
+	Jobs []triggerJobSpec `json:"jobs"`
 }
 
 // triggerJobSpec represents a single triggered job from triggers.json.
@@ -60,6 +60,10 @@ type triggerJobSpec struct {
 	CISourceRef    string            `json:"ci_source_ref"`
 	ContainerImage string            `json:"container_image"`
 	JobCommand     string            `json:"job_command"`
+	CodeDir        string            `json:"code_dir"`
+	JobDir         string            `json:"job_dir"`
+	WorkingDir     string            `json:"working_dir"`
+	RunAsUser      string            `json:"run_as_user"`
 	Priority       *int              `json:"priority"`
 	Timeout        *int              `json:"timeout"`
 	Capabilities   []string          `json:"capabilities"`
@@ -75,12 +79,23 @@ type jobDefinitionFile struct {
 
 // jobDefinitionJobConfig represents the job configuration within a YAML job definition.
 type jobDefinitionJobConfig struct {
-	Image        string   `yaml:"image"`
-	Command      string   `yaml:"command"`
-	Timeout      *int     `yaml:"timeout"`
-	Priority     *int     `yaml:"priority"`
-	RawCommand   bool     `yaml:"raw_command"`
-	Capabilities []string `yaml:"capabilities"`
+	Image        string     `yaml:"image"`
+	Command      string     `yaml:"command"`
+	CodeDir      string     `yaml:"code_dir"`
+	JobDir       string     `yaml:"job_dir"`
+	WorkingDir   string     `yaml:"working_dir"`
+	RunAs        *RunAsSpec `yaml:"run_as"`
+	Timeout      *int       `yaml:"timeout"`
+	Priority     *int       `yaml:"priority"`
+	RawCommand   bool       `yaml:"raw_command"`
+	Capabilities []string   `yaml:"capabilities"`
+}
+
+func runAsUserFromSpec(spec *RunAsSpec) string {
+	if spec == nil {
+		return ""
+	}
+	return spec.User
 }
 
 // ProcessTriggers reads triggers.json from the workspace directory of a completed
@@ -165,6 +180,10 @@ func (tp *TriggerProcessor) loadJobFile(workspaceDir, jobFile string) (triggerJo
 		JobName:        def.Name,
 		ContainerImage: def.Job.Image,
 		JobCommand:     def.Job.Command,
+		CodeDir:        def.Job.CodeDir,
+		JobDir:         def.Job.JobDir,
+		WorkingDir:     def.Job.WorkingDir,
+		RunAsUser:      runAsUserFromSpec(def.Job.RunAs),
 		Timeout:        def.Job.Timeout,
 		Priority:       def.Job.Priority,
 		Capabilities:   def.Job.Capabilities,
@@ -208,6 +227,18 @@ func (tp *TriggerProcessor) overlaySpec(base, overlay triggerJobSpec) triggerJob
 	}
 	if overlay.Condition != "" {
 		result.Condition = overlay.Condition
+	}
+	if overlay.CodeDir != "" {
+		result.CodeDir = overlay.CodeDir
+	}
+	if overlay.JobDir != "" {
+		result.JobDir = overlay.JobDir
+	}
+	if overlay.WorkingDir != "" {
+		result.WorkingDir = overlay.WorkingDir
+	}
+	if overlay.RunAsUser != "" {
+		result.RunAsUser = overlay.RunAsUser
 	}
 
 	// Overlay pointer fields if non-nil
@@ -315,6 +346,8 @@ func (tp *TriggerProcessor) buildJobFromTrigger(spec triggerJobSpec, parentJob *
 		Status:      "submitted",
 		QueueName:   parentJob.QueueName,
 		JobEnvVars:  envVars,
+		CodeDir:     DefaultJobCodeDir(parentJob.CodeDir),
+		JobDir:      DefaultJobDir(parentJob.CodeDir, parentJob.JobDir),
 	}
 
 	// Source configuration
@@ -349,6 +382,21 @@ func (tp *TriggerProcessor) buildJobFromTrigger(spec triggerJobSpec, parentJob *
 	}
 	if spec.JobCommand != "" {
 		job.JobCommand = spec.JobCommand
+	}
+	if spec.CodeDir != "" {
+		job.CodeDir = DefaultJobCodeDir(spec.CodeDir)
+		if spec.JobDir == "" && spec.WorkingDir == "" {
+			job.JobDir = DefaultJobDir(job.CodeDir, "")
+		}
+	}
+	if spec.JobDir != "" {
+		job.JobDir = DefaultJobDir(job.CodeDir, spec.JobDir)
+	}
+	if spec.WorkingDir != "" {
+		job.JobDir = spec.WorkingDir
+	}
+	if spec.RunAsUser != "" {
+		job.RunAsUser = spec.RunAsUser
 	}
 	if spec.Timeout != nil {
 		job.TimeoutSeconds = *spec.Timeout
@@ -415,6 +463,7 @@ func (tp *TriggerProcessor) buildTaskPayload(job *models.Job) *corndogs.TaskPayl
 			"timeout":     job.TimeoutSeconds,
 			"code_dir":    job.CodeDir,
 			"job_dir":     job.JobDir,
+			"run_as_user": job.RunAsUser,
 		},
 		Source: map[string]interface{}{
 			"type":        sourceTypeStr,

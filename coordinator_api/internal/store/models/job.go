@@ -79,6 +79,7 @@ type Job struct {
 	TimeoutSeconds int            `gorm:"default:3600" json:"timeout_seconds"`
 	Priority       int            `gorm:"default:0" json:"priority"`
 	Capabilities   pq.StringArray `gorm:"type:text[]" json:"capabilities"`
+	RunAsUser      string         `gorm:"type:text" json:"run_as_user"`
 
 	// Queue integration
 	QueueName       string `gorm:"type:text;not null;default:'reactorcide-jobs'" json:"queue_name"`
