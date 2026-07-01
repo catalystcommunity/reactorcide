@@ -4,6 +4,8 @@ A minimalist CI/CD system for serious engineering teams. Works with open source 
 
 Run jobs from your laptop just as easily as from the full system. If your VCS provider is down, fine - it's just building blocks.
 
+Reactorcide runs isolated jobs locally, on single-VM workers, or as Kubernetes Jobs. Workflow-triggered jobs are grouped under a single workflow view, PR comment, and VCS status such as `Reactorcide Jobs`.
+
 ## Quick Start
 
 ### 1. Build the CLI
@@ -22,7 +24,7 @@ sudo cp coordinator_api/reactorcide /usr/local/bin/
 reactorcide secrets init
 
 # Add secrets (e.g., for VM deployment)
-reactorcide secrets set reactorcide/deploy ssh_private_key "$(cat ~/.ssh/id_rsa)"
+reactorcide secrets set reactorcide/deploy ssh_private_key "$(cat ~/.ssh/id_ed25519)"
 ```
 
 ### 3. Deploy to a VM
@@ -51,11 +53,11 @@ REACTORCIDE_SECRETS_PASSWORD="<your-secrets-password>" \
 After deployment, create a token to authenticate with the API:
 
 ```bash
-# For Docker Compose deployment
-ssh your-vm-hostname "docker exec reactorcide-coordinator /reactorcide token create --name my-token"
+# For VM deployment
+ssh your-vm-hostname "cd ~/reactorcide && docker compose -f docker-compose.prod.yml exec coordinator-api /reactorcide token create --name my-token"
 
 # For Kubernetes deployment
-kubectl exec -it deploy/reactorcide-coordinator -- /reactorcide token create --name my-token
+kubectl exec -n reactorcide deploy/reactorcideapp -- /reactorcide token create --name my-token
 ```
 
 Save the returned token - it cannot be retrieved again.
@@ -91,13 +93,14 @@ REACTORCIDE_SECRETS_PASSWORD="<your-secrets-password>" \
   reactorcide run-local --job-dir ./ ./jobs/build-all.yaml
 ```
 
-`run-local` bind-mounts `--job-dir` by default and runs as your host uid so generated files remain writable. Jobs can opt into root with `run_as.user: root` or worker parity with `run_local.user: runner` / `--as-runner`.
+`run-local` bind-mounts `--job-dir` by default and runs as your host uid so generated files remain writable. Jobs can opt into root with `run_as.user: root` or worker parity with `run_local.user: runner` / `--as-runner`. Tooling prefers containerd/nerdctl when available and falls back to Docker.
 
 ## Documentation
 
 - **[DESIGN.md](./DESIGN.md)** - Complete system architecture and design principles
 - **[AGENTS.md](./AGENTS.md)** - Implementation guidance for AI assistants and contributors
 - **[docs/runtime-behavior.md](./docs/runtime-behavior.md)** - Local, VM, Kubernetes, path, and run identity behavior
+- **[docs/workflow-design.md](./docs/workflow-design.md)** - Workflow DAGs, dependency handling, workflow vars, and PR status/comment behavior
 - **[runnerlib/DESIGN.md](./runnerlib/DESIGN.md)** - Detailed runnerlib architecture and API
 - **[docs/](./docs/)** - Additional documentation
 
@@ -115,7 +118,7 @@ REACTORCIDE_SECRETS_PASSWORD="<your-secrets-password>" \
 - **reactorcide CLI** - Main binary for running jobs, managing secrets, serving API
 - **runnerlib** - Python library for job execution inside containers
 - **Coordinator API** - REST API for job management and orchestration
-- **Worker** - Distributed job processing with Corndogs task queue
+- **Worker** - Distributed job processing with Corndogs task queue; supports Docker, containerd/nerdctl, and Kubernetes Jobs
 
 ## Project Status
 
