@@ -42,6 +42,10 @@ class JobTrigger:
         job_command: Command to run in the job
         priority: Job priority (higher = more important)
         timeout: Job timeout in seconds
+        code_dir: Container path where source code is mounted or checked out
+        job_dir: Container path runnerlib treats as the job directory
+        working_dir: Raw process working directory
+        run_as_user: Container user for deployed workers
         for_each: Values that expand this trigger into one job per value
         item_var: Environment variable name for the current for_each value
     """
@@ -60,6 +64,10 @@ class JobTrigger:
     priority: Optional[int] = None
     timeout: Optional[int] = None
     capabilities: Optional[List[str]] = None
+    code_dir: Optional[str] = None
+    job_dir: Optional[str] = None
+    working_dir: Optional[str] = None
+    run_as_user: Optional[str] = None
     for_each: Optional[List[Any]] = None
     item_var: Optional[str] = None
 

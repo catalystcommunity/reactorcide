@@ -216,7 +216,7 @@ The workflow status updater writes one rolling PR comment per commit:
 | report-failure | skipped | - | condition any_failed(needs) is false |
 ```
 
-Estimated time comes from the last successful duration currently stored on the workflow node. Historical lookup across prior workflow instances is future work.
+Estimated time comes from the most recent successful matching workflow node for the same workflow name, node name, and project/repo context. When no previous duration exists, the comment shows `-`.
 
 ## UI Implications
 
@@ -236,4 +236,4 @@ Existing job pages remain useful, but workflow-triggered jobs should clearly sho
 - Static workflow definition files if they prove useful.
 - Expression-based `for_each`.
 - Named condition predicates such as `success("node")`.
-- Historical duration lookup keyed by workflow/node/item.
+- Item-aware historical duration lookup for expanded `for_each` nodes.

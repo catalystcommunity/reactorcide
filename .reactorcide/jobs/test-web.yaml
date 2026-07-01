@@ -4,17 +4,20 @@ job:
   image: golang:1.25
   command: |
     set -e
-    export HOME=/home/reactorcide
-    if [ "${REACTORCIDE_WORKER_MODE:-remote}" = "local" ]; then
-      cd /job/src/webapp
-    else
-      # HEAD_URL points at the fork for cross-repo PRs; falls back to
-      # SOURCE_URL for back-compat with older worker versions.
-      git clone --branch "${REACTORCIDE_HEAD_REF:-$REACTORCIDE_PR_REF}" "${REACTORCIDE_HEAD_URL:-$REACTORCIDE_SOURCE_URL}" /workspace
-      cd /workspace/webapp
+    export HOME="${HOME:-/tmp/reactorcide-home}"
+    mkdir -p "$HOME"
+    CODE_DIR="${REACTORCIDE_CODE_DIR:-/job/src}"
+    if [ ! -d "${CODE_DIR}/.git" ]; then
+      rm -rf "${CODE_DIR}"
+      git clone "${REACTORCIDE_HEAD_URL:-$REACTORCIDE_SOURCE_URL}" "${CODE_DIR}"
+      cd "${CODE_DIR}"
+      git checkout "${REACTORCIDE_SHA:-${REACTORCIDE_HEAD_REF:-${REACTORCIDE_SOURCE_REF:-HEAD}}}"
     fi
+    cd "${CODE_DIR}/webapp"
     echo "=== Running Web UI Unit Tests ==="
     go test ./internal/... -count=1
   timeout: 1800
   priority: 10
   raw_command: true
+run_local:
+  user: host

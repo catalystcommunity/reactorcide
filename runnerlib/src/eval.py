@@ -76,6 +76,14 @@ class JobConfig:
             CI-only state (PR diff base, push back to remote, etc.). Has no
             effect in CI — eval/trigger generation ignores it.
         capabilities: Runtime capabilities the job needs (e.g. "builder").
+        depends_on: Workflow node names that must finish before this job.
+        condition: Workflow condition evaluated after dependencies finish.
+        for_each: Literal values used to expand one trigger into many nodes.
+        item_var: Env var name for the current for_each value.
+        code_dir: Container path where source code is mounted or checked out.
+        job_dir: Container path runnerlib treats as the job directory.
+        working_dir: Raw process working directory.
+        run_as_user: Container user for deployed workers.
     """
     image: str = ""
     command: str = ""
@@ -84,6 +92,14 @@ class JobConfig:
     raw_command: bool = False
     disable_run_local: bool = False
     capabilities: List[str] = field(default_factory=list)
+    depends_on: List[str] = field(default_factory=list)
+    condition: str = "all_success"
+    for_each: List[Any] = field(default_factory=list)
+    item_var: str = ""
+    code_dir: str = ""
+    job_dir: str = ""
+    working_dir: str = ""
+    run_as_user: str = ""
 
 
 @dataclass
@@ -167,6 +183,10 @@ def _parse_job_config(data: Any) -> JobConfig:
     """Parse job config from YAML data."""
     if not isinstance(data, dict):
         return JobConfig()
+    run_as = data.get("run_as") or {}
+    run_as_user = ""
+    if isinstance(run_as, dict):
+        run_as_user = str(run_as.get("user", "") or "")
     return JobConfig(
         image=data.get("image", "") or "",
         command=data.get("command", "") or "",
@@ -175,6 +195,14 @@ def _parse_job_config(data: Any) -> JobConfig:
         raw_command=bool(data.get("raw_command", False)),
         disable_run_local=bool(data.get("disable_run_local", False)),
         capabilities=data.get("capabilities") or [],
+        depends_on=data.get("depends_on") or [],
+        condition=data.get("condition", "all_success") or "all_success",
+        for_each=data.get("for_each") or [],
+        item_var=data.get("item_var", "") or "",
+        code_dir=data.get("code_dir", "") or "",
+        job_dir=data.get("job_dir", "") or "",
+        working_dir=data.get("working_dir", "") or "",
+        run_as_user=run_as_user,
     )
 
 
@@ -477,12 +505,20 @@ def generate_triggers(
 
         trigger = JobTrigger(
             job_name=defn.name,
+            depends_on=defn.job.depends_on,
+            condition=defn.job.condition,
             env=env,
             container_image=defn.job.image or None,
             job_command=command,
             priority=defn.job.priority,
             timeout=defn.job.timeout,
             capabilities=defn.job.capabilities or None,
+            code_dir=defn.job.code_dir or None,
+            job_dir=defn.job.job_dir or None,
+            working_dir=defn.job.working_dir or None,
+            run_as_user=defn.job.run_as_user or None,
+            for_each=defn.job.for_each or None,
+            item_var=defn.job.item_var or None,
             source_type="git" if event_context.source_url else None,
             source_url=event_context.source_url or None,
             source_ref=event_context.source_ref or None,
