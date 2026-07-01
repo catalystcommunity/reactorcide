@@ -202,7 +202,12 @@ func (w *CornDogsWorker) worker(ctx context.Context, workerID int) {
 			w.processNextTask(ctx, workerID)
 
 			// Small delay between polls to avoid hammering Corndogs
-			time.Sleep(w.config.PollInterval)
+			select {
+			case <-ctx.Done():
+				logger.Info("Worker stopping due to context cancellation")
+				return
+			case <-time.After(w.config.PollInterval):
+			}
 		}
 	}
 }
@@ -252,6 +257,11 @@ func (w *CornDogsWorker) processNextTask(ctx context.Context, workerID int) {
 	logger = logger.WithField("job_id", payload.JobID).WithField("task_id", task.Uuid)
 	logger.Info("Processing task from Corndogs")
 
+	// Once a task is claimed, worker shutdown should stop intake but let the
+	// active job finish. Kubernetes and compose deployments provide the outer
+	// grace-period bound; do not pass the intake cancellation into the job.
+	jobCtx := context.WithoutCancel(ctx)
+
 	// Acquire worker slot
 	w.workerPool <- struct{}{}
 	defer func() { <-w.workerPool }()
@@ -264,7 +274,7 @@ func (w *CornDogsWorker) processNextTask(ctx context.Context, workerID int) {
 	// Get the job from the database, retrying transient ErrNotFound to handle
 	// the dual-write race where the corndogs task is visible to this worker
 	// before the API's INSERT has propagated to a fresh DB connection.
-	job, err := w.getJobWithRetry(ctx, payload.JobID, getJobLookupAttempts, getJobLookupBackoff)
+	job, err := w.getJobWithRetry(jobCtx, payload.JobID, getJobLookupAttempts, getJobLookupBackoff)
 	if err != nil {
 		if errors.Is(err, store.ErrNotFound) {
 			// Either the API really lost the row, or the race window is wider
@@ -273,11 +283,11 @@ func (w *CornDogsWorker) processNextTask(ctx context.Context, workerID int) {
 			// doesn't exist this will loop until corndogs's own retry budget
 			// or timeout terminates it — preferable to silently dropping work.
 			logger.WithError(err).Warn("Job not visible after retries; requeueing corndogs task")
-			w.requeueTask(ctx, task.Uuid, task.CurrentState)
+			w.requeueTask(jobCtx, task.Uuid, task.CurrentState)
 			return
 		}
 		logger.WithError(err).Error("Failed to get job from database")
-		w.updateTaskFailed(ctx, task.Uuid, task.CurrentState, "Failed to load job from database")
+		w.updateTaskFailed(jobCtx, task.Uuid, task.CurrentState, "Failed to load job from database")
 		return
 	}
 
@@ -285,20 +295,20 @@ func (w *CornDogsWorker) processNextTask(ctx context.Context, workerID int) {
 	now := time.Now().UTC()
 	job.Status = "running"
 	job.StartedAt = &now
-	if err := w.config.Store.UpdateJob(ctx, job); err != nil {
+	if err := w.config.Store.UpdateJob(jobCtx, job); err != nil {
 		logger.WithError(err).Error("Failed to update job status to running")
-		w.updateTaskFailed(ctx, task.Uuid, task.CurrentState, "Failed to update job status")
+		w.updateTaskFailed(jobCtx, task.Uuid, task.CurrentState, "Failed to update job status")
 		return
 	}
-	w.publisher.PublishJobUpdate(ctx, job.JobID, job.Status, now.Format(time.RFC3339Nano))
+	w.publisher.PublishJobUpdate(jobCtx, job.JobID, job.Status, now.Format(time.RFC3339Nano))
 	if w.triggerProcessor != nil {
-		if workflowErr := w.triggerProcessor.ProcessWorkflowJobStarted(ctx, job); workflowErr != nil {
+		if workflowErr := w.triggerProcessor.ProcessWorkflowJobStarted(jobCtx, job); workflowErr != nil {
 			logger.WithError(workflowErr).Error("Failed to process workflow job start")
 		}
 	}
 
 	// Update Corndogs task state to indicate we're processing
-	_, err = w.corndogsClient.UpdateTask(ctx, task.Uuid, task.CurrentState, "processing", nil)
+	_, err = w.corndogsClient.UpdateTask(jobCtx, task.Uuid, task.CurrentState, "processing", nil)
 	if err != nil {
 		logger.WithError(err).Warn("Failed to update task state to processing")
 	}
@@ -316,7 +326,7 @@ func (w *CornDogsWorker) processNextTask(ctx context.Context, workerID int) {
 	}
 
 	startTime := time.Now()
-	result := w.processor.ProcessJobWithContext(ctx, job, execCtx)
+	result := w.processor.ProcessJobWithContext(jobCtx, job, execCtx)
 	duration := time.Since(startTime).Seconds()
 
 	// Ensure workspace cleanup happens after trigger processing
@@ -340,14 +350,14 @@ func (w *CornDogsWorker) processNextTask(ctx context.Context, workerID int) {
 		job.Status = "completed"
 
 		// Complete the task in Corndogs
-		_, err = w.corndogsClient.CompleteTask(ctx, task.Uuid, "processing")
+		_, err = w.corndogsClient.CompleteTask(jobCtx, task.Uuid, "processing")
 		if err != nil {
 			logger.WithError(err).Error("Failed to complete task in Corndogs")
 		}
 	} else {
 		job.Status = "failed"
 		// Update task state to failed
-		w.updateTaskFailed(ctx, task.Uuid, "processing", "Job execution failed")
+		w.updateTaskFailed(jobCtx, task.Uuid, "processing", "Job execution failed")
 	}
 
 	// Set object store keys if available
@@ -359,19 +369,19 @@ func (w *CornDogsWorker) processNextTask(ctx context.Context, workerID int) {
 	}
 
 	// Update job in database
-	if err := w.config.Store.UpdateJob(ctx, job); err != nil {
+	if err := w.config.Store.UpdateJob(jobCtx, job); err != nil {
 		logger.WithError(err).Error("Failed to update job result")
 	}
-	w.publisher.PublishJobUpdate(ctx, job.JobID, job.Status, completedAt.Format(time.RFC3339Nano))
+	w.publisher.PublishJobUpdate(jobCtx, job.JobID, job.Status, completedAt.Format(time.RFC3339Nano))
 
 	if w.triggerProcessor != nil && result.WorkspaceDir != "" {
 		workflowOK := true
-		if workflowErr := w.triggerProcessor.ProcessWorkflowCompletion(ctx, result.WorkspaceDir, job); workflowErr != nil {
+		if workflowErr := w.triggerProcessor.ProcessWorkflowCompletion(jobCtx, result.WorkspaceDir, job); workflowErr != nil {
 			logger.WithError(workflowErr).Error("Failed to process workflow completion")
 			workflowOK = false
 		}
 		if workflowOK && job.Status == "completed" {
-			if triggerErr := w.triggerProcessor.ProcessTriggers(ctx, result.WorkspaceDir, job); triggerErr != nil {
+			if triggerErr := w.triggerProcessor.ProcessTriggers(jobCtx, result.WorkspaceDir, job); triggerErr != nil {
 				logger.WithError(triggerErr).Error("Failed to process triggers")
 			}
 		}
@@ -384,7 +394,7 @@ func (w *CornDogsWorker) processNextTask(ctx context.Context, workerID int) {
 	// continue: an unhealthy PAT or repo permission issue is a config bug
 	// the operator needs to fix, not something to crash the worker over.
 	if w.statusUpdater != nil && (job.WorkflowID == nil || *job.WorkflowID == "") {
-		w.updateVCSStatusWithRetry(ctx, job)
+		w.updateVCSStatusWithRetry(jobCtx, job)
 	}
 
 	logger.WithField("status", job.Status).WithField("exit_code", result.ExitCode).Info("Task processing completed")

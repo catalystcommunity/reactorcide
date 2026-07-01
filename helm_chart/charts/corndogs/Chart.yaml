@@ -1,0 +1,18 @@
+apiVersion: v2
+name: corndogs
+description: A Helm chart for corndogs, the cloud-native task-state service
+keywords:
+  - corndogs
+  - task-queue
+  - task-state
+
+type: application
+version: "0.5.0"
+appVersion: "0.6.0"
+
+
+dependencies:
+  - name: postgresql
+    version: ~12.1.6
+    repository: https://charts.bitnami.com/bitnami/
+    condition: postgresql.enabled

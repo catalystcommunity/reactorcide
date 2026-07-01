@@ -1,0 +1,200 @@
+# Default values for corndogs.
+# This is a YAML-formatted file.
+# Declare variables to be passed into your templates.
+
+replicaCount: 1
+namespace: corndogs
+
+image:
+  repository: containers.catalystsquad.com/public/catalystcommunity/corndogs
+  pullPolicy: IfNotPresent
+  # Overrides the image tag whose default is the chart appVersion.
+  tag: ""
+
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+
+serviceAccount:
+  # Specifies whether a service account should be created
+  create: true
+  # Annotations to add to the service account
+  annotations: {}
+  # The name of the service account to use.
+  # If not set and create is true, a name is generated using the fullname template
+  name: ""
+
+podAnnotations: {}
+
+podSecurityContext: {}
+  # fsGroup: 2000
+
+securityContext: {}
+  # capabilities:
+  #   drop:
+  #   - ALL
+  # readOnlyRootFilesystem: true
+  # runAsNonRoot: true
+  # runAsUser: 1000
+
+service:
+  type: ClusterIP
+  port: 5080
+
+ingress:
+  enabled: false
+  className: ""
+  annotations: {}
+    # kubernetes.io/ingress.class: nginx
+    # kubernetes.io/tls-acme: "true"
+  hosts:
+    - host: chart-example.local
+      paths:
+        - path: /
+          pathType: ImplementationSpecific
+  tls: []
+  #  - secretName: chart-example-tls
+  #    hosts:
+  #      - chart-example.local
+
+resources: {}
+  # We usually recommend not to specify default resources and to leave this as a conscious
+  # choice for the user. This also increases chances charts run on environments with little
+  # resources, such as Minikube. If you do want to specify resources, uncomment the following
+  # lines, adjust them as necessary, and remove the curly braces after 'resources:'.
+  # limits:
+  #   cpu: 100m
+  #   memory: 128Mi
+  # requests:
+  #   cpu: 100m
+  #   memory: 128Mi
+
+autoscaling:
+  enabled: false
+  minReplicas: 1
+  maxReplicas: 100
+  targetCPUUtilizationPercentage: 80
+  # targetMemoryUtilizationPercentage: 80
+
+nodeSelector: {}
+
+tolerations: []
+
+affinity: {}
+
+appconfig:
+  loglevel: "error"
+  prometheusEnabled: false
+
+# timeoutCron optionally creates a cronjob to send CleanUpTimedOut requests using the cli
+timeoutCron:
+  enabled: false
+  # schedule uses the typical cronjob schedule syntax
+  # schedule:
+  
+  # address is the address to the corndogs service. Defaults to corndogs.fullname
+  # address: corndogs
+
+  # port is the port for the corndogs service. Defualts to the service port.
+  # port: 5080
+
+  # queue is optional and sets the queue in the CleanUpTimedOut request to limit what it affects.
+  # queue: example
+
+  # restartPolicy for the job created. Defaults to Never.
+  # restartPolicy: Never
+
+
+# storage selects the backend:
+#   postgres (default) : the shared, horizontally-scalable backend.
+#   file               : an embedded, single-process bbolt backend, with no
+#                        separate database to operate.
+#
+# The file backend is SINGLE-REPLICA ONLY (the data file is owned by one
+# process). The chart refuses to install when backend is "file" together with
+# replicaCount > 1 or autoscaling enabled. When using "file", also set
+# postgresql.enabled=false (and zalando_postgres.enabled=false) so no database
+# is deployed alongside it.
+storage:
+  backend: postgres
+  file:
+    # dir       : where the embedded data file lives (a PVC is mounted here).
+    dir: /data
+    # auditDir  : where the append-only audit log is written. Empty => same as
+    #             dir. Set to a separate path (with persistence.audit.enabled)
+    #             to put the audit log on its own volume.
+    auditDir: ""
+    # auditChunkMB : roll the audit log to a new segment file (audit-NNNNNN.log)
+    #               once the active one reaches this many MB ("0" = never roll).
+    auditChunkMB: "250"
+    # sync      : durability mode.
+    #               group    (default) durable + fast, via group commit
+    #               always   durable, one fsync per write
+    #               interval ~1s window, may lose the last second on crash
+    #               never    no fsync, durability left to the OS
+    sync: group
+    # groupMaxBatch : cap on writes coalesced per fsync (0 = unbounded).
+    groupMaxBatch: "0"
+    # groupMaxDelay : linger to widen batches, e.g. "200us" (0 = off).
+    groupMaxDelay: "0s"
+    persistence:
+      enabled: true
+      size: 10Gi
+      storageClass: ""
+      accessMode: ReadWriteOnce
+      # audit : optionally put the audit log on its own PVC. When enabled, set
+      #         file.auditDir to its mountPath (default /audit).
+      audit:
+        enabled: false
+        mountPath: /audit
+        size: 10Gi
+        storageClass: ""
+        accessMode: ReadWriteOnce
+
+database:
+  dbname: "postgres"
+  host: "corndogs-postgresql"
+  user: "postgres"
+  password: "postgres"
+  maxIdleConns: "10"
+  maxOpenConns: "10"
+  connMaxLifetimeSeconds: "3600"
+  tls:
+    enabled: false
+
+postgresql:
+  fullnameOverride: corndogs-postgresql
+  enabled: true
+  # this makes local dev and default installation smooth, but don't run this in production
+  auth:
+    enablePostgresUser: true
+    postgresPassword: postgres
+  tls:
+    enabled: false
+  # disable persistence by default
+  primary:
+    persistence:
+      enabled: false
+
+zalando_postgres:
+  enabled: false
+  spec:
+    teamId: "postgres"
+    numberOfInstances: 1
+    volume:
+      size: 100Mb
+    postgresql:
+      version: "15"
+      parameters:
+        max_connections: "250"
+    enableLogicalBackup: false
+    logicalBackupSchedule: "00 05 * * *"
+
+serviceMonitor:
+  enabled: false
+  namespaceSelector: {}
+  annotations: {}
+  labels: {}
+  interval: null
+  scrapeTimeout: null
+  relabelings: []

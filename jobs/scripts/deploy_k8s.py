@@ -82,10 +82,6 @@ def read_config() -> Dict[str, Any]:
         'postgres_instances': os.environ.get('REACTORCIDE_POSTGRES_INSTANCES', '1'),
         'deploy_corndogs': os.environ.get('REACTORCIDE_DEPLOY_CORNDOGS', 'false').lower() == 'true',
         'corndogs_url': os.environ.get('REACTORCIDE_CORNDOGS_URL', ''),
-        'corndogs_db_host': os.environ.get('REACTORCIDE_CORNDOGS_DB_HOST', ''),
-        'corndogs_db_name': os.environ.get('REACTORCIDE_CORNDOGS_DB_NAME', 'corndogs'),
-        'corndogs_db_user': os.environ.get('REACTORCIDE_CORNDOGS_DB_USER', 'corndogs'),
-        'corndogs_db_password': os.environ.get('REACTORCIDE_CORNDOGS_DB_PASSWORD', ''),
         'object_store_type': os.environ.get('REACTORCIDE_OBJECT_STORE_TYPE', 's3'),
         's3_endpoint': os.environ.get('REACTORCIDE_S3_ENDPOINT', 'http://seaweedfs-s3.seaweedfs.svc.cluster.local:8333'),
         's3_bucket': os.environ.get('REACTORCIDE_S3_BUCKET', 'reactorcide'),
@@ -136,11 +132,11 @@ def create_namespace(namespace: str, dry_run: bool = False) -> None:
     run_cmd(f"kubectl create namespace {namespace} --dry-run=client -o yaml | kubectl apply -f -", dry_run=dry_run)
 
 
-def provision_postgres(config: Dict[str, Any], dry_run: bool = False) -> tuple:
+def provision_postgres(config: Dict[str, Any], dry_run: bool = False) -> str:
     """Provision PostgreSQL via Zalando operator.
 
     Returns:
-        Tuple of (db_uri, corndogs_db_config) where corndogs_db_config is a dict if corndogs is enabled.
+        The Reactorcide database URI.
     """
     log("Provisioning PostgreSQL via Zalando operator")
 
@@ -152,14 +148,6 @@ def provision_postgres(config: Dict[str, Any], dry_run: bool = False) -> tuple:
       - superuser
       - createdb"""
     databases_spec = """    reactorcide: reactorcide"""
-
-    if config['deploy_corndogs']:
-        users_spec += """
-    corndogs:
-      - superuser
-      - createdb"""
-        databases_spec += """
-    corndogs: corndogs"""
 
     manifest = f"""apiVersion: acid.zalan.do/v1
 kind: postgresql
@@ -243,48 +231,10 @@ spec:
 
     log("Database URI configured from Zalando PostgreSQL")
 
-    # Get corndogs credentials if deploying corndogs
-    corndogs_db_config = None
-    if config['deploy_corndogs']:
-        corndogs_pg_secret = f"corndogs.{release}-postgres.credentials.postgresql.acid.zalan.do"
-        log(f"Retrieving corndogs credentials from secret: {corndogs_pg_secret}")
-
-        if not dry_run:
-            for i in range(1, 31):
-                try:
-                    run_cmd(f"kubectl get secret {corndogs_pg_secret} -n {namespace}", check=True, capture=True)
-                    break
-                except subprocess.CalledProcessError:
-                    log(f"Waiting for corndogs credentials secret... ({i}/30)")
-                    time.sleep(2)
-
-            corndogs_db_user = run_cmd_output(
-                f"kubectl get secret {corndogs_pg_secret} -n {namespace} -o jsonpath='{{.data.username}}' | base64 -d"
-            )
-            corndogs_db_pass = run_cmd_output(
-                f"kubectl get secret {corndogs_pg_secret} -n {namespace} -o jsonpath='{{.data.password}}' | base64 -d"
-            )
-
-            corndogs_db_config = {
-                'host': pg_host,
-                'name': 'corndogs',
-                'user': corndogs_db_user,
-                'password': corndogs_db_pass,
-            }
-
-            register_secret(corndogs_db_pass)
-        else:
-            corndogs_db_config = {
-                'host': pg_host,
-                'name': 'corndogs',
-                'user': 'corndogs',
-                'password': '***',
-            }
-
-    return db_uri, corndogs_db_config
+    return db_uri
 
 
-def deploy_corndogs(config: Dict[str, Any], corndogs_db_config: Optional[Dict], dry_run: bool = False) -> str:
+def deploy_corndogs(config: Dict[str, Any], dry_run: bool = False) -> str:
     """Deploy Corndogs to the cluster.
 
     Returns:
@@ -294,20 +244,6 @@ def deploy_corndogs(config: Dict[str, Any], corndogs_db_config: Optional[Dict], 
 
     namespace = config['namespace']
 
-    # Determine corndogs DB config
-    if corndogs_db_config:
-        db_host = corndogs_db_config['host']
-        db_name = corndogs_db_config['name']
-        db_user = corndogs_db_config['user']
-        db_pass = corndogs_db_config['password']
-    else:
-        if not config['corndogs_db_host']:
-            raise RuntimeError("REACTORCIDE_CORNDOGS_DB_HOST required when deploying Corndogs without PROVISION_POSTGRES")
-        db_host = config['corndogs_db_host']
-        db_name = config['corndogs_db_name']
-        db_user = config['corndogs_db_user']
-        db_pass = config['corndogs_db_password']
-
     # Add helm repo
     run_cmd("helm repo add catalystcommunity https://raw.githubusercontent.com/catalystcommunity/charts/main || true", dry_run=dry_run)
     run_cmd("helm repo update", dry_run=dry_run)
@@ -316,17 +252,14 @@ def deploy_corndogs(config: Dict[str, Any], corndogs_db_config: Optional[Dict], 
     cmd = (
         f"helm upgrade --install corndogs catalystcommunity/corndogs "
         f"--namespace {namespace} "
+        f"--set replicaCount=1 "
+        f"--set storage.backend=file "
         f"--set postgresql.enabled=false "
-        f"--set database.host={db_host} "
-        f"--set database.dbname={db_name} "
-        f"--set database.user={db_user} "
-        f"--set database.password={db_pass} "
-        f"--set database.tls.enabled=require "
         f"--wait --timeout 5m"
     )
     run_cmd(cmd, dry_run=dry_run)
 
-    corndogs_url = f"corndogs.{namespace}.svc.cluster.local:5080"
+    corndogs_url = f"http://corndogs.{namespace}.svc.cluster.local:5080"
     log(f"Corndogs deployed: {corndogs_url}")
     return corndogs_url
 
@@ -658,12 +591,11 @@ def deploy(config: Dict[str, Any], dry_run: bool = False) -> int:
 
     # Step 5a: Provision PostgreSQL or use provided URI
     db_uri = config['db_uri']
-    corndogs_db_config = None
 
     if config['provision_postgres']:
         log("")
         log("Step 5a: Provisioning PostgreSQL via Zalando operator")
-        db_uri, corndogs_db_config = provision_postgres(config, dry_run=dry_run)
+        db_uri = provision_postgres(config, dry_run=dry_run)
     else:
         log("")
         log("Step 5a: Using provided database URI")
@@ -673,7 +605,7 @@ def deploy(config: Dict[str, Any], dry_run: bool = False) -> int:
     if config['deploy_corndogs']:
         log("")
         log("Step 5b: Deploying Corndogs")
-        corndogs_url = deploy_corndogs(config, corndogs_db_config, dry_run=dry_run)
+        corndogs_url = deploy_corndogs(config, dry_run=dry_run)
     else:
         log("")
         log("Step 5b: Skipping Corndogs deployment")

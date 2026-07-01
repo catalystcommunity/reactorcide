@@ -28,7 +28,7 @@ import (
 // It creates K8s Job resources and streams logs directly via the K8s API
 // to ensure secret masking is applied before logs reach any aggregator.
 type KubernetesRunner struct {
-	clientset        *kubernetes.Clientset
+	clientset        kubernetes.Interface
 	namespace        string
 	serviceAccount   string
 	runnerImage      string
@@ -205,6 +205,10 @@ func (kr *KubernetesRunner) SpawnJob(ctx context.Context, config *JobConfig) (st
 		Image:   "busybox:1.36",
 		Command: []string{"sh", "-c", `set -eu; mkdir -p "$REACTORCIDE_CODE_DIR" "$REACTORCIDE_JOB_DIR"; if [ -n "$REACTORCIDE_WORKING_DIR" ]; then mkdir -p "$REACTORCIDE_WORKING_DIR"; fi; chmod -R 0777 /job /workspace /home/reactorcide`},
 		Env:     prepareEnv,
+		SecurityContext: &corev1.SecurityContext{
+			RunAsUser:    int64Ptr(0),
+			RunAsNonRoot: boolPtr(false),
+		},
 		VolumeMounts: []corev1.VolumeMount{
 			{
 				Name:      "job",
@@ -880,9 +884,17 @@ func IsKubernetesEnvironment() bool {
 	return err == nil
 }
 
-// Helper function for int32 pointers
+// Helper functions for Kubernetes pointer fields.
 func int32Ptr(i int32) *int32 {
 	return &i
+}
+
+func int64Ptr(i int64) *int64 {
+	return &i
+}
+
+func boolPtr(b bool) *bool {
+	return &b
 }
 
 // envMapToSlice converts an environment variable map to K8s EnvVar slice

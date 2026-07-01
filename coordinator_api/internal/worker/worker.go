@@ -19,8 +19,8 @@ type Config struct {
 	Concurrency      int
 	DryRun           bool
 	Store            store.Store
-	WorkerID         string        // Unique identifier for this worker instance
-	ContainerRuntime string        // Container runtime backend: "docker", "containerd", or "kubernetes"
+	WorkerID         string // Unique identifier for this worker instance
+	ContainerRuntime string // Container runtime backend: "docker", "containerd", or "kubernetes"
 
 	// Log shipping configuration
 	ObjectStore      objects.ObjectStore // Object store for logs and artifacts
@@ -105,10 +105,9 @@ func New(config *Config) *Worker {
 func (w *Worker) Start(ctx context.Context) error {
 	logging.Log.WithField("worker_id", w.config.WorkerID).Info("Worker starting...")
 
-	// Set up signal handlers for graceful shutdown
+	// The CLI owns OS signal handling; this context stops intake on shutdown.
 	workerCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
-	w.lifecycle.SetupSignalHandlers(workerCtx, cancel)
 
 	// Start resource monitoring if available
 	if w.monitor != nil {
@@ -139,7 +138,7 @@ func (w *Worker) Start(ctx context.Context) error {
 	w.wg.Wait()
 
 	// Perform final cleanup
-	if err := w.lifecycle.GracefulShutdown(workerCtx); err != nil {
+	if err := w.lifecycle.GracefulShutdown(context.WithoutCancel(workerCtx)); err != nil {
 		logging.Log.WithError(err).Error("Error during final cleanup")
 	}
 
@@ -226,7 +225,8 @@ func (w *Worker) jobWorker(ctx context.Context, workerID int) {
 			// Acquire worker slot
 			w.workerPool <- struct{}{}
 
-			// Process the job
+			// Process the job. Shutdown stops intake, but claimed jobs get a
+			// detached context so they can drain within the process grace period.
 			w.processJob(ctx, job, workerID)
 
 			// Release worker slot
@@ -252,7 +252,7 @@ func (w *Worker) processJob(ctx context.Context, job *models.Job, workerID int) 
 	}
 
 	// Create a cancellable context for this job
-	jobCtx, cancel := context.WithCancel(ctx)
+	jobCtx, cancel := context.WithCancel(context.WithoutCancel(ctx))
 	defer cancel()
 
 	// Register job with lifecycle manager
@@ -274,7 +274,7 @@ func (w *Worker) processJob(ctx context.Context, job *models.Job, workerID int) 
 	}
 
 	// Update job status based on result
-	if err := w.updateJobResult(ctx, job, result); err != nil {
+	if err := w.updateJobResult(jobCtx, job, result); err != nil {
 		logger.WithError(err).Error("Failed to update job result")
 	}
 

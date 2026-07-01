@@ -22,44 +22,17 @@ services:
         networks:
             - reactorcide
 
-    # PostgreSQL database for Corndogs
-    postgres-corndogs:
-        image: postgres:17
-        container_name: reactorcide-postgres-corndogs-dev
-        environment:
-            POSTGRES_USER: reactorcide
-            POSTGRES_PASSWORD: devpass123
-            POSTGRES_DB: corndogs_db
-        ports:
-            - "5433:5432"
-        volumes:
-            - postgres_corndogs_data:/var/lib/postgresql/data
-        healthcheck:
-            test: ["CMD-SHELL", "pg_isready -U reactorcide"]
-            interval: 10s
-            timeout: 5s
-            retries: 5
-        networks:
-            - reactorcide
-
     # Corndogs Task Queue
     corndogs:
-        image: quay.io/catalystcommunity/corndogs:latest
+        image: containers.catalystsquad.com/public/catalystcommunity/corndogs:0.6.0
         container_name: reactorcide-corndogs-dev
+        user: "0:0"
         environment:
-            DATABASE_HOST: postgres-corndogs
-            DATABASE_PORT: "5432"
-            DATABASE_NAME: corndogs_db
-            DATABASE_USER: reactorcide
-            DATABASE_PASSWORD: devpass123
-            DATABASE_SSL_MODE: disable
-            GRPC_PORT: 5080
-            GRPC_BIND_ADDRESS: 0.0.0.0
-        ports:
-            - "5080:5080"
-        depends_on:
-            postgres-corndogs:
-                condition: service_healthy
+            STORAGE_BACKEND: file
+            CORNDOGS_FILESTORE_DIR: /data
+            CORNDOGS_FILESTORE_SYNC: group
+        volumes:
+            - corndogs_data:/data
         networks:
             - reactorcide
         command: ["run"]
@@ -106,6 +79,7 @@ services:
             REACTORCIDE_WORKER_QUEUE: reactorcide-jobs
             REACTORCIDE_WORKER_CONCURRENCY: "2"
             REACTORCIDE_WORKER_POLL_INTERVAL: "5"
+            REACTORCIDE_WORKER_SHUTDOWN_TIMEOUT: 1h
             REACTORCIDE_CONTAINER_RUNTIME: docker
             REACTORCIDE_OBJECT_STORE_TYPE: filesystem
             REACTORCIDE_OBJECT_STORE_BASE_PATH: /var/lib/reactorcide
@@ -119,6 +93,7 @@ services:
                 condition: service_started
             corndogs:
                 condition: service_started
+        stop_grace_period: 1h
         networks:
             - reactorcide
 
@@ -147,5 +122,5 @@ networks:
 
 volumes:
     postgres_data:
-    postgres_corndogs_data:
+    corndogs_data:
     reactorcide_data:

@@ -67,6 +67,12 @@ var workerFlags = []cli.Flag{
 		Usage:   "Container runtime backend: docker, containerd, kubernetes, or auto",
 		EnvVars: []string{"REACTORCIDE_CONTAINER_RUNTIME", "CONTAINER_RUNTIME"},
 	},
+	&cli.DurationFlag{
+		Name:    "shutdown-timeout",
+		Value:   time.Hour,
+		Usage:   "Maximum time to wait for in-flight jobs to finish after SIGINT/SIGTERM",
+		EnvVars: []string{"REACTORCIDE_WORKER_SHUTDOWN_TIMEOUT", "WORKER_SHUTDOWN_TIMEOUT"},
+	},
 }
 
 func RunWorker(ctx *cli.Context) error {
@@ -91,6 +97,7 @@ func RunWorker(ctx *cli.Context) error {
 	concurrency := ctx.Int("concurrency")
 	dryRun := ctx.Bool("dry-run")
 	containerRuntime := ctx.String("container-runtime")
+	shutdownTimeout := ctx.Duration("shutdown-timeout")
 
 	// Log startup information
 	logging.Log.Infof("Starting worker for queue: %s", queueName)
@@ -98,6 +105,7 @@ func RunWorker(ctx *cli.Context) error {
 	logging.Log.Infof("Concurrency: %d", concurrency)
 	logging.Log.Infof("Dry run mode: %t", dryRun)
 	logging.Log.Infof("Container runtime: %s", containerRuntime)
+	logging.Log.Infof("Shutdown timeout: %v", shutdownTimeout)
 
 	// Initialize object store for log shipping
 	var objectStore objects.ObjectStore
@@ -206,11 +214,11 @@ func RunWorker(ctx *cli.Context) error {
 	// Wait for shutdown signal or worker error
 	select {
 	case sig := <-sigChan:
-		logging.Log.Infof("Received signal %v, shutting down gracefully...", sig)
+		logging.Log.Infof("Received signal %v, stopping intake and waiting for active jobs...", sig)
 		workerCancel()
 
 		// Wait for worker to finish with timeout
-		shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 30*time.Second)
+		shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), shutdownTimeout)
 		defer shutdownCancel()
 
 		select {

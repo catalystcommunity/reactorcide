@@ -1,6 +1,6 @@
 dependencies:
-- name: postgresql
-  repository: https://charts.bitnami.com/bitnami
-  version: 16.4.5
-digest: sha256:be5a20e28e67d1efb73e51584c0995af15923aa9a4d1ec7571e5102ea9c60621
-generated: "2025-02-03T21:05:23.901654328-07:00"
+- name: corndogs
+  repository: file://charts/corndogs
+  version: 0.5.0
+digest: sha256:70ac6f4d9c1b3b307f6ccc91a0ad2896c34388666288962f0f19411eb37ce646
+generated: "2026-07-01T14:21:17.205398329-06:00"

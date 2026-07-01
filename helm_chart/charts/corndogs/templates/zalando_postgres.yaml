@@ -1,0 +1,10 @@
+{{- if .Values.zalando_postgres.enabled }}
+apiVersion: "acid.zalan.do/v1"
+kind: postgresql
+metadata:
+  name: {{ include "corndogs.zalando.posgresql.name" . }}
+spec:
+  {{- with .Values.zalando_postgres.spec }}
+  {{- toYaml . | nindent 2 }}
+  {{- end }}
+  {{- end }}

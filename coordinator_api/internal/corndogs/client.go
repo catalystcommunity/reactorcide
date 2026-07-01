@@ -4,17 +4,16 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
+	csil "github.com/catalystcommunity/reactorcide/coordinator_api/internal/corndogs/csilapi"
 	pb "github.com/catalystcommunity/reactorcide/coordinator_api/internal/corndogs/v1alpha1"
-	"google.golang.org/grpc"
-	"google.golang.org/grpc/credentials/insecure"
 )
 
-// Client wraps the Corndogs gRPC client
+// Client wraps the Corndogs CSIL-RPC client.
 type Client struct {
-	conn   *grpc.ClientConn
-	client pb.CorndogsServiceClient
+	client *csil.CorndogsClient
 	config Config
 }
 
@@ -43,24 +42,21 @@ func NewClient(config Config) (*Client, error) {
 		config.RetryBackoff = time.Second
 	}
 
-	// Create gRPC connection
-	conn, err := grpc.Dial(config.BaseURL, grpc.WithTransportCredentials(insecure.NewCredentials()))
-	if err != nil {
-		return nil, fmt.Errorf("failed to connect to Corndogs: %w", err)
-	}
-
 	return &Client{
-		conn:   conn,
-		client: pb.NewCorndogsServiceClient(conn),
+		client: csil.New(normalizeBaseURL(config.BaseURL)),
 		config: config,
 	}, nil
 }
 
-// Close closes the gRPC connection
-func (c *Client) Close() error {
-	if c.conn != nil {
-		return c.conn.Close()
+func normalizeBaseURL(baseURL string) string {
+	if strings.Contains(baseURL, "://") {
+		return baseURL
 	}
+	return "http://" + baseURL
+}
+
+// Close is retained for the client interface; CSIL-RPC uses per-request HTTP.
+func (c *Client) Close() error {
 	return nil
 }
 
@@ -80,7 +76,7 @@ func (c *Client) SubmitTask(ctx context.Context, payload *TaskPayload, priority 
 		return nil, fmt.Errorf("failed to marshal payload: %w", err)
 	}
 
-	req := &pb.SubmitTaskRequest{
+	req := csil.SubmitTaskRequest{
 		Queue:           c.config.QueueName,
 		CurrentState:    "submitted",
 		AutoTargetState: "submitted-working",
@@ -94,7 +90,7 @@ func (c *Client) SubmitTask(ctx context.Context, payload *TaskPayload, priority 
 		return nil, fmt.Errorf("failed to submit task: %w", err)
 	}
 
-	return resp.Task, nil
+	return toPBTask(resp.Task), nil
 }
 
 // GetNextTask gets the next available task from the queue
@@ -103,7 +99,7 @@ func (c *Client) GetNextTask(ctx context.Context, state string, timeout int64) (
 		state = "submitted"
 	}
 
-	req := &pb.GetNextTaskRequest{
+	req := csil.GetNextTaskRequest{
 		Queue:           c.config.QueueName,
 		CurrentState:    state,
 		OverrideTimeout: timeout,
@@ -114,12 +110,12 @@ func (c *Client) GetNextTask(ctx context.Context, state string, timeout int64) (
 		return nil, fmt.Errorf("failed to get next task: %w", err)
 	}
 
-	return resp.Task, nil
+	return toPBTask(resp.Task), nil
 }
 
 // UpdateTask updates the state of a task
 func (c *Client) UpdateTask(ctx context.Context, taskID string, currentState string, newState string, payload []byte) (*pb.Task, error) {
-	req := &pb.UpdateTaskRequest{
+	req := csil.UpdateTaskRequest{
 		Uuid:         taskID,
 		Queue:        c.config.QueueName,
 		CurrentState: currentState,
@@ -132,12 +128,12 @@ func (c *Client) UpdateTask(ctx context.Context, taskID string, currentState str
 		return nil, fmt.Errorf("failed to update task: %w", err)
 	}
 
-	return resp.Task, nil
+	return toPBTask(resp.Task), nil
 }
 
 // CompleteTask marks a task as completed
 func (c *Client) CompleteTask(ctx context.Context, taskID string, currentState string) (*pb.Task, error) {
-	req := &pb.CompleteTaskRequest{
+	req := csil.CompleteTaskRequest{
 		Uuid:         taskID,
 		Queue:        c.config.QueueName,
 		CurrentState: currentState,
@@ -148,12 +144,12 @@ func (c *Client) CompleteTask(ctx context.Context, taskID string, currentState s
 		return nil, fmt.Errorf("failed to complete task: %w", err)
 	}
 
-	return resp.Task, nil
+	return toPBTask(resp.Task), nil
 }
 
 // CancelTask cancels a task
 func (c *Client) CancelTask(ctx context.Context, taskID string, currentState string) (*pb.Task, error) {
-	req := &pb.CancelTaskRequest{
+	req := csil.CancelTaskRequest{
 		Uuid:         taskID,
 		Queue:        c.config.QueueName,
 		CurrentState: currentState,
@@ -164,12 +160,12 @@ func (c *Client) CancelTask(ctx context.Context, taskID string, currentState str
 		return nil, fmt.Errorf("failed to cancel task: %w", err)
 	}
 
-	return resp.Task, nil
+	return toPBTask(resp.Task), nil
 }
 
 // GetTaskByID gets a task by its ID
 func (c *Client) GetTaskByID(ctx context.Context, taskID string) (*pb.Task, error) {
-	req := &pb.GetTaskStateByIDRequest{
+	req := csil.GetTaskStateByIDRequest{
 		Uuid:  taskID,
 		Queue: c.config.QueueName,
 	}
@@ -179,12 +175,12 @@ func (c *Client) GetTaskByID(ctx context.Context, taskID string) (*pb.Task, erro
 		return nil, fmt.Errorf("failed to get task by ID: %w", err)
 	}
 
-	return resp.Task, nil
+	return toPBTask(resp.Task), nil
 }
 
 // CleanUpTimedOut cleans up timed out tasks
 func (c *Client) CleanUpTimedOut(ctx context.Context) (int64, error) {
-	req := &pb.CleanUpTimedOutRequest{
+	req := csil.CleanUpTimedOutRequest{
 		AtTime: time.Now().Unix(),
 		Queue:  c.config.QueueName,
 	}
@@ -199,7 +195,7 @@ func (c *Client) CleanUpTimedOut(ctx context.Context) (int64, error) {
 
 // GetQueues gets all queues
 func (c *Client) GetQueues(ctx context.Context) ([]string, int64, error) {
-	req := &pb.GetQueuesRequest{}
+	req := csil.GetQueuesRequest{}
 
 	resp, err := c.client.GetQueues(ctx, req)
 	if err != nil {
@@ -211,7 +207,7 @@ func (c *Client) GetQueues(ctx context.Context) ([]string, int64, error) {
 
 // GetQueueTaskCounts gets task counts per queue
 func (c *Client) GetQueueTaskCounts(ctx context.Context) (map[string]int64, int64, error) {
-	req := &pb.GetQueueTaskCountsRequest{}
+	req := csil.GetQueueTaskCountsRequest{}
 
 	resp, err := c.client.GetQueueTaskCounts(ctx, req)
 	if err != nil {
@@ -223,7 +219,7 @@ func (c *Client) GetQueueTaskCounts(ctx context.Context) (map[string]int64, int6
 
 // GetTaskStateCounts gets task counts per state for a queue
 func (c *Client) GetTaskStateCounts(ctx context.Context) (int64, map[string]int64, error) {
-	req := &pb.GetTaskStateCountsRequest{
+	req := csil.GetTaskStateCountsRequest{
 		Queue: c.config.QueueName,
 	}
 
@@ -240,7 +236,7 @@ func (c *Client) GetTaskStateCounts(ctx context.Context) (int64, map[string]int6
 func (c *Client) SendHeartbeat(ctx context.Context, taskID string, currentState string, timeoutExtensionSeconds int64) (*pb.Task, error) {
 	// Use UpdateTask to extend the timeout
 	// We keep the same state and just update the timeout
-	req := &pb.UpdateTaskRequest{
+	req := csil.UpdateTaskRequest{
 		Uuid:         taskID,
 		Queue:        c.config.QueueName,
 		CurrentState: currentState,
@@ -254,7 +250,24 @@ func (c *Client) SendHeartbeat(ctx context.Context, taskID string, currentState 
 		return nil, fmt.Errorf("failed to send heartbeat: %w", err)
 	}
 
-	return resp.Task, nil
+	return toPBTask(resp.Task), nil
+}
+
+func toPBTask(task *csil.Task) *pb.Task {
+	if task == nil {
+		return nil
+	}
+	return &pb.Task{
+		Uuid:            task.Uuid,
+		Queue:           task.Queue,
+		CurrentState:    task.CurrentState,
+		AutoTargetState: task.AutoTargetState,
+		SubmitTime:      task.SubmitTime,
+		UpdateTime:      task.UpdateTime,
+		Timeout:         task.Timeout,
+		Payload:         task.Payload,
+		Priority:        task.Priority,
+	}
 }
 
 // ParseTaskPayload parses a task payload into a TaskPayload struct

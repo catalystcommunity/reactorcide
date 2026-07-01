@@ -101,6 +101,8 @@ worker:
   queue: "reactorcide-jobs"
   pollInterval: 5  # seconds
   concurrency: 2    # concurrent jobs per worker pod
+  shutdownTimeout: "1h"
+  terminationGracePeriodSeconds: 3600
   dryRun: false
   containerRuntime: "auto"
   # Settings used by KubernetesRunner for the per-Reactorcide-job Kubernetes Jobs.
@@ -167,38 +169,36 @@ corndogs:
   enabled: false  # Set to true to deploy Corndogs subchart
   # External Corndogs URL - used when subchart is disabled but you have external Corndogs
   baseUrl: ""  # e.g., "http://corndogs.example.com:5080"
-  # Disable bitnami postgresql in corndogs subchart
+  replicaCount: 1
+  podSecurityContext:
+    fsGroup: 65532
+    fsGroupChangePolicy: OnRootMismatch
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 65532
+    runAsGroup: 65532
+  storage:
+    backend: file
+    file:
+      dir: /data
+      auditDir: ""
+      auditChunkMB: "250"
+      sync: group
+      groupMaxBatch: "0"
+      groupMaxDelay: "0s"
+      persistence:
+        enabled: true
+        size: 10Gi
+        storageClass: ""
+        accessMode: ReadWriteOnce
+        audit:
+          enabled: false
+          mountPath: /audit
+          size: 10Gi
+          storageClass: ""
+          accessMode: ReadWriteOnce
   postgresql:
     enabled: false
-  # Our custom postgres:18 deployment for Corndogs (separate from bitnami)
-  customPostgresql:
-    enabled: false  # Disabled by default
-    image:
-      repository: postgres
-      tag: "18"
-      pullPolicy: IfNotPresent
-    auth:
-      username: "corndogs"
-      password: "corndogs"
-      database: "corndogs"
-    persistence:
-      enabled: false
-      size: 10Gi
-      storageClass: ""
-    resources:
-      limits:
-        cpu: 500m
-        memory: 512Mi
-      requests:
-        cpu: 100m
-        memory: 128Mi
-  # Database connection for Corndogs (points to our postgres deployment)
-  # Uses 'database' key to match corndogs chart expectations
-  database:
-    dbname: "corndogs"
-    host: "reactorcide-corndogs-postgresql"
-    user: "corndogs"
-    password: "corndogs"
   # Service configuration
   service:
     port: 5080

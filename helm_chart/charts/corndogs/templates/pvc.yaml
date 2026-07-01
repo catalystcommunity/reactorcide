@@ -1,0 +1,35 @@
+{{- if and (eq .Values.storage.backend "file") .Values.storage.file.persistence.enabled }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "corndogs.fullname" . }}-data
+  labels:
+    {{- include "corndogs.labels" . | nindent 4 }}
+spec:
+  accessModes:
+    - {{ .Values.storage.file.persistence.accessMode }}
+  resources:
+    requests:
+      storage: {{ .Values.storage.file.persistence.size }}
+  {{- if .Values.storage.file.persistence.storageClass }}
+  storageClassName: {{ .Values.storage.file.persistence.storageClass }}
+  {{- end }}
+{{- if .Values.storage.file.persistence.audit.enabled }}
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "corndogs.fullname" . }}-audit
+  labels:
+    {{- include "corndogs.labels" . | nindent 4 }}
+spec:
+  accessModes:
+    - {{ .Values.storage.file.persistence.audit.accessMode }}
+  resources:
+    requests:
+      storage: {{ .Values.storage.file.persistence.audit.size }}
+  {{- if .Values.storage.file.persistence.audit.storageClass }}
+  storageClassName: {{ .Values.storage.file.persistence.audit.storageClass }}
+  {{- end }}
+{{- end }}
+{{- end }}

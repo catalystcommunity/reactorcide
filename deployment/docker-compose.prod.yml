@@ -23,49 +23,19 @@ services:
     networks:
       - reactorcide
 
-  # PostgreSQL for Corndogs
-  postgres-corndogs:
-    image: postgres:18-alpine
-    container_name: reactorcide-postgres-corndogs
-    security_opt:
-      - apparmor=unconfined
-    environment:
-      POSTGRES_USER: ${POSTGRES_USER}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-      POSTGRES_DB: ${CORNDOGS_DB_NAME}
-    volumes:
-      - postgres_corndogs_data:/var/lib/postgresql
-    ports:
-      - "5433:5432"
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER}"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-    restart: unless-stopped
-    networks:
-      - reactorcide
-
   # Corndogs Task Queue
   corndogs:
-    image: quay.io/catalystcommunity/corndogs:latest
+    image: ${CORNDOGS_IMAGE:-containers.catalystsquad.com/public/catalystcommunity/corndogs:0.6.0}
     container_name: reactorcide-corndogs
+    user: "0:0"
     security_opt:
       - apparmor=unconfined
     environment:
-      DATABASE_HOST: postgres-corndogs
-      DATABASE_PORT: 5432
-      DATABASE_NAME: ${CORNDOGS_DB_NAME}
-      DATABASE_USER: ${POSTGRES_USER}
-      DATABASE_PASSWORD: ${POSTGRES_PASSWORD}
-      DATABASE_SSL_MODE: disable
-      GRPC_PORT: 5080
-      GRPC_BIND_ADDRESS: 0.0.0.0
-    ports:
-      - "5080:5080"
-    depends_on:
-      postgres-corndogs:
-        condition: service_healthy
+      STORAGE_BACKEND: file
+      CORNDOGS_FILESTORE_DIR: /data
+      CORNDOGS_FILESTORE_SYNC: ${CORNDOGS_FILESTORE_SYNC:-group}
+    volumes:
+      - corndogs_data:/data
     restart: unless-stopped
     networks:
       - reactorcide
@@ -121,6 +91,7 @@ services:
       REACTORCIDE_WORKER_QUEUE: reactorcide-jobs
       REACTORCIDE_WORKER_CONCURRENCY: ${REACTORCIDE_WORKER_CONCURRENCY}
       REACTORCIDE_WORKER_POLL_INTERVAL: ${REACTORCIDE_WORKER_POLL_INTERVAL}
+      REACTORCIDE_WORKER_SHUTDOWN_TIMEOUT: ${REACTORCIDE_WORKER_SHUTDOWN_TIMEOUT:-1h}
       REACTORCIDE_CONTAINER_RUNTIME: ${REACTORCIDE_CONTAINER_RUNTIME}
       REACTORCIDE_OBJECT_STORE_TYPE: ${REACTORCIDE_OBJECT_STORE_TYPE}
       REACTORCIDE_OBJECT_STORE_BASE_PATH: ${REACTORCIDE_OBJECT_STORE_BASE_PATH}
@@ -152,6 +123,7 @@ services:
       corndogs:
         condition: service_started
     restart: unless-stopped
+    stop_grace_period: ${REACTORCIDE_WORKER_STOP_GRACE_PERIOD:-1h}
     networks:
       - reactorcide
 
@@ -161,7 +133,7 @@ networks:
 
 volumes:
   postgres_data:
-  postgres_corndogs_data:
+  corndogs_data:
   # Job logs are stored in this volume. If you remove this volume, all job logs will be lost.
   # For production deployments, consider using S3/GCS object storage instead of filesystem.
   # See REACTORCIDE_OBJECT_STORE_TYPE in .env to configure object storage type.

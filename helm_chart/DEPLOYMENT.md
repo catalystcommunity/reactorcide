@@ -16,7 +16,7 @@ The complete Reactorcide deployment consists of:
 - **Coordinator API**: REST API for job submission and management
 - **Workers**: Process jobs from the queue using Docker-in-Docker
 - **PostgreSQL**: Database for job metadata and state
-- **Corndogs**: Distributed task queue system (deployed separately)
+- **Corndogs**: Distributed task queue system (bundled subchart or external service)
 - **Object Storage**: MinIO, S3, or GCS for artifacts and logs
 
 ## Quick Start
@@ -52,34 +52,23 @@ kubectl get svc -n reactorcide
 
 ## Corndogs Integration
 
-Reactorcide requires Corndogs for distributed job queueing. You have two options:
+Reactorcide requires Corndogs for distributed job queueing. The bundled chart
+uses Corndogs' CSIL-RPC HTTP transport on port `5080` and defaults to the
+single-replica file backend, so no separate Corndogs Postgres database is
+deployed.
 
 ### Option 1: Deploy Corndogs in Same Namespace
 
 ```yaml
-# corndogs-values.yaml
-service:
-  type: ClusterIP
-  port: 8080
-
-queues:
-  - name: reactorcide-jobs
-    maxRetries: 3
-    timeout: 3600
-```
-
-Deploy Corndogs:
-```bash
-helm install corndogs <corndogs-chart> \
-  --namespace reactorcide \
-  -f corndogs-values.yaml
-```
-
-Then update Reactorcide values:
-```yaml
 corndogs:
   enabled: true
-  baseUrl: "corndogs:8080"
+  replicaCount: 1
+  storage:
+    backend: file
+    file:
+      persistence:
+        enabled: true
+        size: 10Gi
 ```
 
 ### Option 2: Use External Corndogs
@@ -88,9 +77,8 @@ If Corndogs is deployed in another namespace or cluster:
 
 ```yaml
 corndogs:
-  enabled: true
-  baseUrl: "http://corndogs.other-namespace.svc.cluster.local:8080"
-  apiKey: "your-api-key"  # If authentication is required
+  enabled: false
+  baseUrl: "http://corndogs.other-namespace.svc.cluster.local:5080"
 ```
 
 ## Configuration
@@ -220,9 +208,6 @@ app:
 
 ```yaml
 # Use secrets for sensitive data
-corndogs:
-  apiKey: ""  # Set via --set-string or external secret
-
 objectStore:
   s3:
     accessKeyId: ""  # Set via --set-string
@@ -248,6 +233,8 @@ app:
 worker:
   replicaCount: 10
   concurrency: 4
+  shutdownTimeout: "1h"
+  terminationGracePeriodSeconds: 3600
   resources:
     limits:
       cpu: 4000m
@@ -268,7 +255,13 @@ objectStore:
 
 corndogs:
   enabled: true
-  baseUrl: "corndogs.prod.svc.cluster.local:8080"
+  replicaCount: 1
+  storage:
+    backend: file
+    file:
+      persistence:
+        enabled: true
+        size: 10Gi
 ```
 
 ### 2. Deploy with Secrets

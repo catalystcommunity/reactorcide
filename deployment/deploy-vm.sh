@@ -93,7 +93,6 @@ cat > .env <<'ENVFILE'
 POSTGRES_USER=reactorcide
 POSTGRES_PASSWORD=${REACTORCIDE_DB_PASSWORD}
 POSTGRES_DB=reactorcide_db
-CORNDOGS_DB_NAME=corndogs_db
 
 # Reactorcide Configuration (all prefixed for clean separation)
 REACTORCIDE_DB_URI=postgresql://reactorcide:${REACTORCIDE_DB_PASSWORD}@postgres:5432/reactorcide_db?sslmode=disable
@@ -102,6 +101,8 @@ REACTORCIDE_OBJECT_STORE_TYPE=filesystem
 REACTORCIDE_OBJECT_STORE_BASE_PATH=/data/reactorcide
 REACTORCIDE_WORKER_CONCURRENCY=${REACTORCIDE_WORKER_CONCURRENCY:-2}
 REACTORCIDE_WORKER_POLL_INTERVAL=${REACTORCIDE_WORKER_POLL_INTERVAL:-5}
+REACTORCIDE_WORKER_SHUTDOWN_TIMEOUT=${REACTORCIDE_WORKER_SHUTDOWN_TIMEOUT:-1h}
+REACTORCIDE_WORKER_STOP_GRACE_PERIOD=${REACTORCIDE_WORKER_STOP_GRACE_PERIOD:-1h}
 REACTORCIDE_CONTAINER_RUNTIME=docker
 REACTORCIDE_LOG_LEVEL=${REACTORCIDE_LOG_LEVEL:-info}
 
@@ -147,7 +148,7 @@ cd ${REMOTE_DIR}
 
 # Stop existing services
 echo "Stopping existing services..."
-docker compose -f docker-compose.prod.yml down || true
+docker compose -f docker-compose.prod.yml down --remove-orphans || true
 
 # Start services
 echo "Starting services..."

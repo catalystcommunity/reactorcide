@@ -79,9 +79,8 @@ After deployment, these services will be running:
 | Service | Port | Description |
 |---------|------|-------------|
 | coordinator-api | 6080 | REST API for job management |
-| corndogs | 5080 | gRPC task queue |
+| corndogs | 5080 | CSIL-RPC task queue |
 | postgres | 5432 | Main database |
-| postgres-corndogs | 5433 | Task queue database |
 | worker | - | Job processor |
 
 ## Submitting a Job

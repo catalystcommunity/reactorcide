@@ -1,0 +1,177 @@
+{{- include "corndogs.validateStorage" . -}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "corndogs.fullname" . }}
+  labels:
+    {{- include "corndogs.labels" . | nindent 4 }}
+spec:
+  {{- if eq .Values.storage.backend "file" }}
+  # File backend is single-replica only; Recreate avoids two pods contending for
+  # the ReadWriteOnce data volume during rollouts.
+  replicas: 1
+  strategy:
+    type: Recreate
+  {{- else if not .Values.autoscaling.enabled }}
+  replicas: {{ .Values.replicaCount }}
+  {{- end }}
+  selector:
+    matchLabels:
+      {{- include "corndogs.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      annotations:
+        {{- with .Values.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+        {{- if .Values.appconfig.prometheusEnabled }}
+        prometheus.io/scrape: "true"
+        prometheus.io/path: /metrics
+        prometheus.io/port: "8080"
+        {{- end}}
+      labels:
+        {{- include "corndogs.selectorLabels" . | nindent 8 }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "corndogs.serviceAccountName" . }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: {{ .Chart.Name }}
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          #image: {{ if .Values.imageName }}{{ .Values.imageName }}{{ else }}"{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"{{ end }}
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          env:
+            - name: LOGLEVEL
+              value: {{ .Values.appconfig.loglevel }}
+            - name: PROMETHEUS_ENABLED
+              value: {{ .Values.appconfig.prometheusEnabled | quote }}
+            - name: STORAGE_BACKEND
+              value: {{ .Values.storage.backend | quote }}
+            {{- if eq .Values.storage.backend "file" }}
+            - name: CORNDOGS_FILESTORE_DIR
+              value: {{ .Values.storage.file.dir | quote }}
+            {{- if .Values.storage.file.auditDir }}
+            - name: CORNDOGS_FILESTORE_AUDIT_DIR
+              value: {{ .Values.storage.file.auditDir | quote }}
+            {{- end }}
+            # Always emitted so an explicit 0 (disable rolling) is honored; a
+            # falsy-0 would otherwise be dropped and fall back to the app default.
+            - name: CORNDOGS_FILESTORE_AUDIT_CHUNK_MB
+              value: {{ .Values.storage.file.auditChunkMB | quote }}
+            - name: CORNDOGS_FILESTORE_SYNC
+              value: {{ .Values.storage.file.sync | quote }}
+            {{- if .Values.storage.file.groupMaxBatch }}
+            - name: CORNDOGS_FILESTORE_GROUP_MAX_BATCH
+              value: {{ .Values.storage.file.groupMaxBatch | quote }}
+            {{- end }}
+            {{- if .Values.storage.file.groupMaxDelay }}
+            - name: CORNDOGS_FILESTORE_GROUP_MAX_DELAY
+              value: {{ .Values.storage.file.groupMaxDelay | quote }}
+            {{- end }}
+            {{- else }}
+            {{- if .Values.database.dbname }}
+            - name: DATABASE_NAME
+              value: {{ .Values.database.dbname }}
+            {{- end }}
+            {{- if .Values.database.host }}
+            - name: DATABASE_HOST
+              value: {{ .Values.database.host }}
+            {{- end }}
+            {{- if and (not .Values.zalando_postgres.enabled) .Values.database.user }}
+            - name: DATABASE_USER
+              value: {{ .Values.database.user }}
+            {{- end }}
+            {{- if and (not .Values.zalando_postgres.enabled) .Values.database.password }}
+            - name: DATABASE_PASSWORD
+              value: {{ .Values.database.password }}
+            {{- end }}
+            {{- if .Values.database.tls.enabled }}
+            - name: DATABASE_SSL_MODE
+              value: {{ .Values.database.tls.enabled | quote }}
+            {{- end }}
+            {{- if .Values.database.connMaxLifetimeSeconds }}
+            - name: DATABASE_CONN_MAX_LIFETIME_SECONDS
+              value: {{ .Values.database.connMaxLifetimeSeconds | quote }}
+            {{- end }}
+            {{- if .Values.database.maxOpenConns }}
+            - name: DATABASE_MAX_OPEN_CONNS
+              value: {{ .Values.database.maxOpenConns | quote }}
+            {{- end }}
+            {{- if .Values.database.maxIdleConns }}
+            - name: DATABASE_MAX_IDLE_CONNS
+              value: {{ .Values.database.maxIdleConns | quote }}
+            {{- end }}
+            {{- if .Values.zalando_postgres.enabled }}
+            - name: DATABASE_USER
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "corndogs.zalando.posgresql.credentials.secret.name" . }}
+                  key: username
+            - name: DATABASE_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "corndogs.zalando.posgresql.credentials.secret.name" . }}
+                  key: password
+            {{- end }}
+            {{- end }}
+          ports:
+            - name: corndogshttp
+              containerPort: 5080
+              protocol: TCP
+            {{- if .Values.appconfig.prometheusEnabled }}
+            - name: corndogsmetrics
+              containerPort: 8080
+              protocol: TCP
+            {{- end }}
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 5080
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 5080
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          {{- if eq .Values.storage.backend "file" }}
+          volumeMounts:
+            - name: data
+              mountPath: {{ .Values.storage.file.dir }}
+            {{- if .Values.storage.file.persistence.audit.enabled }}
+            - name: audit
+              mountPath: {{ .Values.storage.file.persistence.audit.mountPath }}
+            {{- end }}
+          {{- end }}
+      {{- if eq .Values.storage.backend "file" }}
+      volumes:
+        - name: data
+          {{- if .Values.storage.file.persistence.enabled }}
+          persistentVolumeClaim:
+            claimName: {{ include "corndogs.fullname" . }}-data
+          {{- else }}
+          emptyDir: {}
+          {{- end }}
+        {{- if .Values.storage.file.persistence.audit.enabled }}
+        - name: audit
+          persistentVolumeClaim:
+            claimName: {{ include "corndogs.fullname" . }}-audit
+        {{- end }}
+      {{- end }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
