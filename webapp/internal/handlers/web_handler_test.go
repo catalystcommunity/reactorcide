@@ -47,15 +47,18 @@ func TestFormatTime(t *testing.T) {
 
 func TestTemplatesParse(t *testing.T) {
 	funcMap := template.FuncMap{
-		"statusClass":    statusClass,
-		"formatTime":     formatTime,
-		"formatDuration": func(start, end *time.Time) string { return "1m 30s" },
-		"exitCodeClass":  func(code *int) string { return "" },
-		"derefInt":       func(p *int) int { return 0 },
-		"derefStr":       func(p *string) string { return "" },
-		"add":            func(a, b int) int { return a + b },
-		"sub":            func(a, b int) int { return a - b },
-		"streamClass":    func(stream string) string { return "" },
+		"statusClass":            statusClass,
+		"formatTime":             formatTime,
+		"formatDuration":         func(start, end *time.Time) string { return "1m 30s" },
+		"formatWorkflowDuration": func(start time.Time, end *time.Time) string { return "1m 30s" },
+		"exitCodeClass":          func(code *int) string { return "" },
+		"derefInt":               func(p *int) int { return 0 },
+		"derefStr":               func(p *string) string { return "" },
+		"add":                    func(a, b int) int { return a + b },
+		"sub":                    func(a, b int) int { return a - b },
+		"streamClass":            func(stream string) string { return "" },
+		"workflowLink":           workflowLink,
+		"shortSHA":               shortSHA,
 	}
 
 	tmpl, err := template.New("").Funcs(funcMap).ParseFS(templates.FS, "*.html")
@@ -63,7 +66,7 @@ func TestTemplatesParse(t *testing.T) {
 		t.Fatalf("Failed to parse templates: %v", err)
 	}
 
-	expectedTemplates := []string{"head", "foot", "jobs_list.html", "job_detail.html", "error.html", "logs_fragment.html"}
+	expectedTemplates := []string{"head", "foot", "jobs_list.html", "job_detail.html", "workflow_detail.html", "error.html", "logs_fragment.html"}
 	for _, name := range expectedTemplates {
 		if tmpl.Lookup(name) == nil {
 			t.Errorf("Template %q not found", name)
@@ -77,25 +80,31 @@ func TestJobsListTemplate(t *testing.T) {
 	var buf strings.Builder
 	exitCode := 0
 	data := map[string]interface{}{
-		"Title":        "Jobs",
-		"Jobs": []JobResponse{
+		"Title": "Workflows",
+		"Workflows": []WorkflowSummary{
 			{
-				JobID:     "test-123",
-				Name:      "test-job",
-				Status:    "completed",
-				CreatedAt: time.Date(2026, 3, 15, 14, 0, 0, 0, time.UTC),
-				ExitCode:  &exitCode,
-				SourceRef: "main",
+				WorkflowID:     "test-123",
+				Kind:           "job",
+				Name:           "test-job",
+				Status:         "completed",
+				CreatedAt:      time.Date(2026, 3, 15, 14, 0, 0, 0, time.UTC),
+				CompletedAt:    ptrTime(time.Date(2026, 3, 15, 14, 1, 0, 0, time.UTC)),
+				JobCount:       1,
+				CompletedCount: 1,
+				LooseJobID:     ptrString("test-123"),
+				LooseJobExit:   &exitCode,
 			},
 		},
-		"Total":        1,
-		"Limit":        50,
-		"Offset":       0,
-		"StatusFilter": "",
-		"HasPrev":      false,
-		"HasNext":      false,
-		"PrevOffset":   0,
-		"NextOffset":   50,
+		"Projects":        []ProjectResponse{},
+		"SelectedProject": "",
+		"Total":           1,
+		"Limit":           50,
+		"Offset":          0,
+		"StatusFilter":    "",
+		"HasPrev":         false,
+		"HasNext":         false,
+		"PrevOffset":      0,
+		"NextOffset":      50,
 	}
 
 	err := handler.templates.ExecuteTemplate(&buf, "jobs_list.html", data)
@@ -105,10 +114,10 @@ func TestJobsListTemplate(t *testing.T) {
 
 	html := buf.String()
 	if !strings.Contains(html, "test-job") {
-		t.Error("jobs_list.html should contain job name")
+		t.Error("jobs_list.html should contain workflow name")
 	}
 	if !strings.Contains(html, "test-123") {
-		t.Error("jobs_list.html should contain job ID in link")
+		t.Error("jobs_list.html should contain loose job ID in link")
 	}
 	if !strings.Contains(html, "status-completed") {
 		t.Error("jobs_list.html should contain status class")
@@ -190,16 +199,18 @@ func TestEmptyJobsList(t *testing.T) {
 
 	var buf strings.Builder
 	data := map[string]interface{}{
-		"Title":        "Jobs",
-		"Jobs":         []JobResponse{},
-		"Total":        0,
-		"Limit":        50,
-		"Offset":       0,
-		"StatusFilter": "",
-		"HasPrev":      false,
-		"HasNext":      false,
-		"PrevOffset":   0,
-		"NextOffset":   50,
+		"Title":           "Workflows",
+		"Workflows":       []WorkflowSummary{},
+		"Projects":        []ProjectResponse{},
+		"SelectedProject": "",
+		"Total":           0,
+		"Limit":           50,
+		"Offset":          0,
+		"StatusFilter":    "",
+		"HasPrev":         false,
+		"HasNext":         false,
+		"PrevOffset":      0,
+		"NextOffset":      50,
 	}
 
 	err := handler.templates.ExecuteTemplate(&buf, "jobs_list.html", data)
@@ -207,7 +218,15 @@ func TestEmptyJobsList(t *testing.T) {
 		t.Fatalf("Failed to render empty jobs_list.html: %v", err)
 	}
 
-	if !strings.Contains(buf.String(), "No jobs found") {
-		t.Error("Empty jobs list should show 'No jobs found'")
+	if !strings.Contains(buf.String(), "No workflows found") {
+		t.Error("Empty workflows list should show 'No workflows found'")
 	}
+}
+
+func ptrString(s string) *string {
+	return &s
+}
+
+func ptrTime(t time.Time) *time.Time {
+	return &t
 }

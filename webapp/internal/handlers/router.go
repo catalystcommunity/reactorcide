@@ -16,7 +16,9 @@ func NewRouter() http.Handler {
 
 	// Web UI routes under /app/
 	mux.HandleFunc("GET /app/", webHandler.JobsList)
-	mux.HandleFunc("GET /app/jobs", webHandler.JobsList)
+	mux.HandleFunc("GET /app/jobs", webHandler.RedirectToAppRoot)
+	mux.HandleFunc("GET /app/jobs/", webHandler.RedirectToAppRoot)
+	mux.HandleFunc("GET /app/workflows/{id}", webHandler.WorkflowDetail)
 	mux.HandleFunc("GET /app/jobs/{id}", webHandler.JobDetail)
 	mux.HandleFunc("GET /app/jobs/{id}/logs", webHandler.JobLogs)
 

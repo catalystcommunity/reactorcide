@@ -291,6 +291,11 @@ func (w *CornDogsWorker) processNextTask(ctx context.Context, workerID int) {
 		return
 	}
 	w.publisher.PublishJobUpdate(ctx, job.JobID, job.Status, now.Format(time.RFC3339Nano))
+	if w.triggerProcessor != nil {
+		if workflowErr := w.triggerProcessor.ProcessWorkflowJobStarted(ctx, job); workflowErr != nil {
+			logger.WithError(workflowErr).Error("Failed to process workflow job start")
+		}
+	}
 
 	// Update Corndogs task state to indicate we're processing
 	_, err = w.corndogsClient.UpdateTask(ctx, task.Uuid, task.CurrentState, "processing", nil)
@@ -334,13 +339,6 @@ func (w *CornDogsWorker) processNextTask(ctx context.Context, workerID int) {
 	if result.ExitCode == 0 {
 		job.Status = "completed"
 
-		// Process triggers from eval jobs before completing the task
-		if w.triggerProcessor != nil && result.WorkspaceDir != "" {
-			if triggerErr := w.triggerProcessor.ProcessTriggers(ctx, result.WorkspaceDir, job); triggerErr != nil {
-				logger.WithError(triggerErr).Error("Failed to process triggers")
-			}
-		}
-
 		// Complete the task in Corndogs
 		_, err = w.corndogsClient.CompleteTask(ctx, task.Uuid, "processing")
 		if err != nil {
@@ -366,13 +364,24 @@ func (w *CornDogsWorker) processNextTask(ctx context.Context, workerID int) {
 	}
 	w.publisher.PublishJobUpdate(ctx, job.JobID, job.Status, completedAt.Format(time.RFC3339Nano))
 
+	if w.triggerProcessor != nil && result.WorkspaceDir != "" {
+		if workflowErr := w.triggerProcessor.ProcessWorkflowCompletion(ctx, result.WorkspaceDir, job); workflowErr != nil {
+			logger.WithError(workflowErr).Error("Failed to process workflow completion")
+		}
+		if job.Status == "completed" {
+			if triggerErr := w.triggerProcessor.ProcessTriggers(ctx, result.WorkspaceDir, job); triggerErr != nil {
+				logger.WithError(triggerErr).Error("Failed to process triggers")
+			}
+		}
+	}
+
 	// Update VCS commit status with bounded retry. Transient GitHub failures
 	// (network blips, rate limits, 5xx) shouldn't drop the terminal status —
 	// without retry the PR check sits on "running" until something else
 	// triggers a status push. After exhausting retries we still log-and-
 	// continue: an unhealthy PAT or repo permission issue is a config bug
 	// the operator needs to fix, not something to crash the worker over.
-	if w.statusUpdater != nil {
+	if w.statusUpdater != nil && (job.WorkflowID == nil || *job.WorkflowID == "") {
 		w.updateVCSStatusWithRetry(ctx, job)
 	}
 

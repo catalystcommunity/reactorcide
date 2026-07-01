@@ -275,6 +275,21 @@ func (jp *JobProcessor) buildJobEnv(job *models.Job) map[string]string {
 	env["REACTORCIDE_CODE_DIR"] = defaultJobCodeDir(job.CodeDir)
 	env["REACTORCIDE_JOB_DIR"] = defaultJobDir(job.CodeDir, job.JobDir)
 
+	if job.WorkflowID != nil && *job.WorkflowID != "" {
+		env["RC_WF_ID"] = *job.WorkflowID
+		env["RC_WF_VARS_FILE"] = "/job/workflow-vars.json"
+		env["RC_WF_OUTPUT_FILE"] = "/job/workflow-output.json"
+	}
+	if job.WorkflowNodeID != nil && *job.WorkflowNodeID != "" {
+		env["RC_WF_NODE_ID"] = *job.WorkflowNodeID
+	}
+	if job.WorkflowRunID != nil && *job.WorkflowRunID != "" {
+		env["RC_WF_RUN_ID"] = *job.WorkflowRunID
+	}
+	if job.WorkflowNodeName != "" {
+		env["RC_WF_NODE_NAME"] = job.WorkflowNodeName
+	}
+
 	// Add source configuration if present
 	if job.SourceType != nil {
 		env["REACTORCIDE_SOURCE_TYPE"] = string(*job.SourceType)
@@ -339,6 +354,36 @@ func (jp *JobProcessor) buildJobEnv(job *models.Job) map[string]string {
 	}
 
 	return env
+}
+
+func (jp *JobProcessor) prepareWorkflowVars(ctx context.Context, job *models.Job, workspaceDir string) error {
+	if job.WorkflowID == nil || *job.WorkflowID == "" {
+		return nil
+	}
+	ws, ok := jp.store.(workflowStore)
+	if !ok {
+		return nil
+	}
+	vars, err := ws.GetWorkflowVars(ctx, *job.WorkflowID)
+	if err != nil {
+		return err
+	}
+	structured := make(map[string]interface{}, len(vars))
+	if job.JobEnvVars == nil {
+		job.JobEnvVars = models.JSONB{}
+	}
+	for key, value := range vars {
+		unwrapped := unwrapWorkflowJSONB(value)
+		structured[key] = unwrapped
+		if valueStr, ok := workflowScalarString(unwrapped); ok {
+			job.JobEnvVars[workflowUserEnvName(key)] = valueStr
+		}
+	}
+	data, err := json.MarshalIndent(structured, "", "  ")
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(filepath.Join(workspaceDir, "workflow-vars.json"), data, 0644)
 }
 
 // getSecretsProvider returns a secrets provider for the given job's user.
@@ -547,6 +592,15 @@ func (jp *JobProcessor) executeWithRunnerlib(ctx context.Context, job *models.Jo
 	}
 	if err := os.Chown(hostCodeDir, 1001, 1001); err != nil {
 		logger.WithError(err).WithField("code_dir", hostCodeDir).Warn("Failed to chown code directory")
+	}
+
+	if err := jp.prepareWorkflowVars(ctx, job, workspaceDir); err != nil {
+		logger.WithError(err).Error("Failed to prepare workflow variables")
+		return &JobResult{
+			ExitCode:     1,
+			Error:        fmt.Sprintf("Failed to prepare workflow variables: %v", err),
+			WorkspaceDir: workspaceDir,
+		}
 	}
 
 	logger.WithField("workspace_dir", workspaceDir).Info("Created workspace directory")

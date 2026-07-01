@@ -1,6 +1,10 @@
 {{template "head" .}}
 <div style="margin-bottom: 16px;">
-    <a href="/app/jobs" class="meta">&larr; Back to Jobs</a>
+    {{if .Job.WorkflowID}}
+        <a href="/app/workflows/{{derefStr .Job.WorkflowID}}" class="meta">&larr; Back to Workflow</a>
+    {{else}}
+        <a href="/app/" class="meta">&larr; Back to Workflows</a>
+    {{end}}
 </div>
 
 <div class="card" data-job-id="{{.Job.JobID}}">
@@ -52,6 +56,12 @@
         <div>
             <dt>Parent Job</dt>
             <dd><a href="/app/jobs/{{derefStr .Job.ParentJobID}}">{{derefStr .Job.ParentJobID}}</a></dd>
+        </div>
+        {{end}}
+        {{if .Job.WorkflowID}}
+        <div>
+            <dt>Workflow</dt>
+            <dd><a href="/app/workflows/{{derefStr .Job.WorkflowID}}">{{derefStr .Job.WorkflowID}}</a></dd>
         </div>
         {{end}}
         <div>

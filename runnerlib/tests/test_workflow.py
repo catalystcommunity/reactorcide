@@ -18,8 +18,11 @@ from src.workflow import (
     is_job_running,
     get_job_result,
     log_next_job,
+    set_workflow_output,
+    set_workflow_var,
     changed_files,
     git_info,
+    workflow_vars,
     workflow_context,
     _get_context,
 )
@@ -62,6 +65,19 @@ class TestJobTrigger:
         assert trigger.source_type == "git"
         assert trigger.priority == 10
         assert trigger.timeout == 1800
+
+    def test_trigger_for_each_fields(self):
+        """Test trigger metadata for for_each expansion."""
+        trigger = JobTrigger(
+            job_name="test-one",
+            for_each=["py310", "py311"],
+            item_var="PYTHON_VERSION",
+        )
+
+        result = trigger.to_dict()
+
+        assert result["for_each"] == ["py310", "py311"]
+        assert result["item_var"] == "PYTHON_VERSION"
 
     def test_to_dict_excludes_none(self):
         """Test that to_dict() excludes None values."""
@@ -224,6 +240,32 @@ class TestWorkflowContext:
         # Should not raise exception
         ctx.log_next_job("deploy", reason="tests passed")
 
+    def test_workflow_vars_loads_json_file(self):
+        """Test loading workflow variables from RC_WF_VARS_FILE."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            vars_file = Path(tmpdir) / "workflow-vars.json"
+            vars_file.write_text(json.dumps({"targets": ["linux"], "flag": True}))
+            with patch.dict(os.environ, {"RC_WF_VARS_FILE": str(vars_file)}):
+                ctx = WorkflowContext()
+
+                assert ctx.workflow_vars() == {"targets": ["linux"], "flag": True}
+
+    def test_set_workflow_var_and_output(self):
+        """Test writing workflow variables and outputs."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output_file = Path(tmpdir) / "workflow-output.json"
+            with patch.dict(os.environ, {"RC_WF_OUTPUT_FILE": str(output_file)}):
+                ctx = WorkflowContext()
+
+                ctx.set_workflow_var("targets", ["linux", "darwin"])
+                ctx.set_workflow_output("artifact", "dist/app.tar.gz")
+
+                with open(output_file) as f:
+                    data = json.load(f)
+
+                assert data["vars"]["targets"] == ["linux", "darwin"]
+                assert data["outputs"]["artifact"] == "dist/app.tar.gz"
+
 
 class TestModuleLevelFunctions:
     """Tests for module-level convenience functions."""
@@ -292,6 +334,38 @@ class TestModuleLevelFunctions:
 
         # Should not raise exception
         log_next_job("deploy", reason="tests passed")
+
+    def test_workflow_output_convenience(self):
+        """Test module-level workflow output functions."""
+        self.setUp()
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output_file = Path(tmpdir) / "workflow-output.json"
+            os.environ["RC_WF_OUTPUT_FILE"] = str(output_file)
+
+            set_workflow_var("matrix", ["linux"])
+            set_workflow_output("result", "ok")
+
+            with open(output_file) as f:
+                data = json.load(f)
+
+            assert data["vars"]["matrix"] == ["linux"]
+            assert data["outputs"]["result"] == "ok"
+
+            del os.environ["RC_WF_OUTPUT_FILE"]
+
+    def test_workflow_vars_convenience(self):
+        """Test module-level workflow_vars function."""
+        self.setUp()
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            vars_file = Path(tmpdir) / "workflow-vars.json"
+            vars_file.write_text(json.dumps({"foo": "bar"}))
+            os.environ["RC_WF_VARS_FILE"] = str(vars_file)
+
+            assert workflow_vars() == {"foo": "bar"}
+
+            del os.environ["RC_WF_VARS_FILE"]
 
 
 class TestGitUtilities:

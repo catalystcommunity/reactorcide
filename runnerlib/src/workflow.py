@@ -30,7 +30,7 @@ class JobTrigger:
     Attributes:
         job_name: Name of the job to trigger
         depends_on: List of job names this job depends on (optional)
-        condition: Condition for triggering ("all_success", "any_success", "always")
+        condition: Condition for triggering ("all_success", "any_failed", "always")
         env: Environment variables to pass to the job
         source_type: Source type (git, copy, none)
         source_url: URL of source code (for git)
@@ -42,6 +42,8 @@ class JobTrigger:
         job_command: Command to run in the job
         priority: Job priority (higher = more important)
         timeout: Job timeout in seconds
+        for_each: Values that expand this trigger into one job per value
+        item_var: Environment variable name for the current for_each value
     """
     job_name: str
     depends_on: List[str] = field(default_factory=list)
@@ -58,6 +60,8 @@ class JobTrigger:
     priority: Optional[int] = None
     timeout: Optional[int] = None
     capabilities: Optional[List[str]] = None
+    for_each: Optional[List[Any]] = None
+    item_var: Optional[str] = None
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary, excluding None values."""
@@ -72,10 +76,13 @@ class WorkflowContext:
 
     def __init__(self, triggers_file: str = "/job/triggers.json"):
         self.triggers_file = Path(triggers_file)
+        self.output_file = Path(os.getenv("RC_WF_OUTPUT_FILE", "/job/workflow-output.json"))
+        self.vars_file = Path(os.getenv("RC_WF_VARS_FILE", "/job/workflow-vars.json"))
         self.triggers: List[JobTrigger] = []
         self._coordinator_url = os.getenv("REACTORCIDE_COORDINATOR_URL")
         self._api_token = os.getenv("REACTORCIDE_API_TOKEN")
         self._job_id = os.getenv("REACTORCIDE_JOB_ID")
+        self._workflow_id = os.getenv("RC_WF_ID")
 
     @property
     def job_id(self) -> Optional[str]:
@@ -97,6 +104,22 @@ class WorkflowContext:
         """Get current git ref from environment."""
         return os.getenv("REACTORCIDE_GIT_REF")
 
+    @property
+    def workflow_id(self) -> Optional[str]:
+        """Get current workflow ID from environment."""
+        return self._workflow_id
+
+    def workflow_vars(self) -> Dict[str, Any]:
+        """Load current workflow variables from RC_WF_VARS_FILE."""
+        if not self.vars_file.exists():
+            return {}
+        try:
+            with open(self.vars_file, "r") as f:
+                data = json.load(f)
+            return data if isinstance(data, dict) else {}
+        except (OSError, json.JSONDecodeError):
+            return {}
+
     def trigger_job(
         self,
         job_name: str,
@@ -112,7 +135,7 @@ class WorkflowContext:
             job_name: Name of the job to trigger
             env: Environment variables to pass to the job
             depends_on: List of job names this job depends on
-            condition: Condition for triggering ("all_success", "any_success", "always")
+            condition: Condition for triggering ("all_success", "any_failed", "always")
             **kwargs: Additional job parameters (source_url, source_ref, container_image, etc.)
 
         Example:
@@ -127,6 +150,43 @@ class WorkflowContext:
         )
         self.triggers.append(trigger)
         print(f"✓ Scheduled job: {job_name}", file=sys.stderr)
+
+    def set_workflow_var(self, key: str, value: Any) -> None:
+        """
+        Set a workflow variable for future jobs.
+
+        The coordinator merges variables after this job completes. If two jobs
+        set the same key to different values, the workflow fails instead of
+        choosing a winner implicitly.
+        """
+        self._write_workflow_output("vars", key, value)
+
+    def set_workflow_output(self, key: str, value: Any) -> None:
+        """
+        Set a node-scoped workflow output.
+
+        The coordinator stores this as "<job_name>.<key>" for future jobs.
+        """
+        self._write_workflow_output("outputs", key, value)
+
+    def _write_workflow_output(self, section: str, key: str, value: Any) -> None:
+        if not key:
+            raise ValueError("workflow output key is required")
+        self.output_file.parent.mkdir(parents=True, exist_ok=True)
+        data: Dict[str, Dict[str, Any]] = {"vars": {}, "outputs": {}}
+        if self.output_file.exists():
+            try:
+                with open(self.output_file, "r") as f:
+                    existing = json.load(f)
+                if isinstance(existing, dict):
+                    for name in ("vars", "outputs"):
+                        if isinstance(existing.get(name), dict):
+                            data[name] = existing[name]
+            except (OSError, json.JSONDecodeError):
+                pass
+        data[section][key] = value
+        with open(self.output_file, "w") as f:
+            json.dump(data, f, indent=2)
 
     def submit_job(
         self,
@@ -341,7 +401,7 @@ def trigger_job(
         job_name: Name of the job to trigger
         env: Environment variables to pass to the job
         depends_on: List of job names this job depends on
-        condition: Condition for triggering ("all_success", "any_success", "always")
+        condition: Condition for triggering ("all_success", "any_failed", "always")
         **kwargs: Additional job parameters (source_url, source_ref, container_image, etc.)
 
     Example:
@@ -412,6 +472,24 @@ def log_next_job(job_name: str, reason: str = "") -> None:
     """
     ctx = _get_context()
     ctx.log_next_job(job_name, reason)
+
+
+def set_workflow_var(key: str, value: Any) -> None:
+    """Set a workflow variable for future jobs."""
+    ctx = _get_context()
+    ctx.set_workflow_var(key, value)
+
+
+def set_workflow_output(key: str, value: Any) -> None:
+    """Set a node-scoped workflow output for future jobs."""
+    ctx = _get_context()
+    ctx.set_workflow_output(key, value)
+
+
+def workflow_vars() -> Dict[str, Any]:
+    """Load current workflow variables from RC_WF_VARS_FILE."""
+    ctx = _get_context()
+    return ctx.workflow_vars()
 
 
 # Git utility functions

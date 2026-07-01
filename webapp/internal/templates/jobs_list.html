@@ -1,46 +1,57 @@
 {{template "head" .}}
-<h2 style="margin-bottom: 16px;">Jobs</h2>
+<h2 style="margin-bottom: 16px;">Workflows</h2>
 
 <div class="filter-bar">
-    <span class="meta">Filter:</span>
-    <a href="/app/jobs" {{if eq .StatusFilter ""}}class="active"{{end}}>All</a>
-    <a href="/app/jobs?status=running" {{if eq .StatusFilter "running"}}class="active"{{end}}>Running</a>
-    <a href="/app/jobs?status=queued" {{if eq .StatusFilter "queued"}}class="active"{{end}}>Queued</a>
-    <a href="/app/jobs?status=completed" {{if eq .StatusFilter "completed"}}class="active"{{end}}>Completed</a>
-    <a href="/app/jobs?status=failed" {{if eq .StatusFilter "failed"}}class="active"{{end}}>Failed</a>
+    <span class="meta">Status:</span>
+    <a href="/app/{{if .SelectedProject}}?project_id={{.SelectedProject}}{{end}}" {{if eq .StatusFilter ""}}class="active"{{end}}>All</a>
+    <a href="/app/?status=running{{if .SelectedProject}}&project_id={{.SelectedProject}}{{end}}" {{if eq .StatusFilter "running"}}class="active"{{end}}>Running</a>
+    <a href="/app/?status=success{{if .SelectedProject}}&project_id={{.SelectedProject}}{{end}}" {{if eq .StatusFilter "success"}}class="active"{{end}}>Succeeded</a>
+    <a href="/app/?status=failed{{if .SelectedProject}}&project_id={{.SelectedProject}}{{end}}" {{if eq .StatusFilter "failed"}}class="active"{{end}}>Failed</a>
+    <a href="/app/?status=skipped{{if .SelectedProject}}&project_id={{.SelectedProject}}{{end}}" {{if eq .StatusFilter "skipped"}}class="active"{{end}}>Skipped</a>
+
+    <form method="get" action="/app/" style="display: flex; gap: 8px; align-items: center; margin-left: auto;">
+        {{if .StatusFilter}}<input type="hidden" name="status" value="{{.StatusFilter}}">{{end}}
+        <label class="meta" for="project-filter">Project</label>
+        <select id="project-filter" name="project_id" onchange="this.form.submit()">
+            <option value="">All projects</option>
+            {{range .Projects}}
+                <option value="{{.ProjectID}}" {{if eq $.SelectedProject .ProjectID}}selected{{end}}>{{.Name}}</option>
+            {{end}}
+        </select>
+    </form>
 </div>
 
-{{if .Jobs}}
+{{if .Workflows}}
 <table>
     <thead>
         <tr>
             <th>Name</th>
             <th>Status</th>
+            <th>Jobs</th>
             <th>Created</th>
             <th>Duration</th>
-            <th>Exit</th>
             <th>Source</th>
         </tr>
     </thead>
-    <tbody id="jobs-tbody">
-        {{range .Jobs}}
-        <tr data-job-id="{{.JobID}}">
+    <tbody id="workflows-tbody">
+        {{range .Workflows}}
+        <tr data-workflow-id="{{.WorkflowID}}" {{if .LooseJobID}}data-job-id="{{derefStr .LooseJobID}}"{{end}}>
             <td>
-                <a href="/app/jobs/{{.JobID}}">{{.Name}}</a>
-                {{if .Description}}<br><span class="meta">{{.Description}}</span>{{end}}
+                <a href="{{workflowLink .}}">{{.Name}}</a>
+                {{if eq .Kind "job"}}<br><span class="meta">single job</span>{{end}}
+                {{if .DecisionSummary}}<br><span class="meta">{{.DecisionSummary}}</span>{{end}}
             </td>
             <td data-col="status"><span class="status-badge {{statusClass .Status}}">{{.Status}}</span></td>
-            <td class="meta">{{formatTime .CreatedAt}}</td>
-            <td class="meta" data-col="duration">{{formatDuration .StartedAt .CompletedAt}}</td>
-            <td data-col="exit">
-                {{if .ExitCode}}
-                    <span class="{{exitCodeClass .ExitCode}}">{{derefInt .ExitCode}}</span>
-                {{else}}
-                    <span class="meta">-</span>
-                {{end}}
+            <td class="meta">
+                {{.CompletedCount}}/{{.JobCount}} done
+                {{if .RunningCount}} · {{.RunningCount}} running{{end}}
+                {{if .FailedCount}} · {{.FailedCount}} failed{{end}}
+                {{if .SkippedCount}} · {{.SkippedCount}} skipped{{end}}
             </td>
+            <td class="meta">{{formatTime .CreatedAt}}</td>
+            <td class="meta">{{formatWorkflowDuration .CreatedAt .CompletedAt}}</td>
             <td class="meta truncate">
-                {{if .SourceRef}}{{.SourceRef}}{{else}}-{{end}}
+                {{if .VCSRepo}}{{.VCSRepo}}{{if .CommitSHA}} @ {{shortSHA .CommitSHA}}{{end}}{{else}}-{{end}}
             </td>
         </tr>
         {{end}}
@@ -48,15 +59,11 @@
 </table>
 
 <script>
-// Live-update jobs list via WebSocket. Updates status and duration cells in
-// place as status_update events stream in from the coordinator. Falls back
-// silently to a stale-at-load view if the WS fails to connect — the page
-// still works, just without live updates.
 (function() {
     var statusClasses = {
-        completed: 'status-completed',
+        completed: 'status-completed', success: 'status-completed', skipped: 'status-completed',
         failed: 'status-failed', timeout: 'status-failed',
-        running: 'status-running',
+        running: 'status-running', evaluating: 'status-running',
         queued: 'status-queued', submitted: 'status-queued',
         cancelled: 'status-cancelled'
     };
@@ -65,7 +72,7 @@
     function applyUpdate(evt) {
         if (evt.type !== 'job_update' || !evt.job_id) return;
         var row = document.querySelector('tr[data-job-id="' + CSS.escape(evt.job_id) + '"]');
-        if (!row) return; // Job not in the current page; ignore (page controls what's listed).
+        if (!row) return;
 
         var statusCell = row.querySelector('td[data-col="status"]');
         if (statusCell) {
@@ -95,19 +102,19 @@
 
 <div class="pagination">
     {{if .HasPrev}}
-        <a href="/app/jobs?offset={{.PrevOffset}}&limit={{.Limit}}{{if .StatusFilter}}&status={{.StatusFilter}}{{end}}">Previous</a>
+        <a href="/app/?offset={{.PrevOffset}}&limit={{.Limit}}{{if .StatusFilter}}&status={{.StatusFilter}}{{end}}{{if .SelectedProject}}&project_id={{.SelectedProject}}{{end}}">Previous</a>
     {{else}}
         <span>Previous</span>
     {{end}}
     {{if .HasNext}}
-        <a href="/app/jobs?offset={{.NextOffset}}&limit={{.Limit}}{{if .StatusFilter}}&status={{.StatusFilter}}{{end}}">Next</a>
+        <a href="/app/?offset={{.NextOffset}}&limit={{.Limit}}{{if .StatusFilter}}&status={{.StatusFilter}}{{end}}{{if .SelectedProject}}&project_id={{.SelectedProject}}{{end}}">Next</a>
     {{else}}
         <span>Next</span>
     {{end}}
 </div>
 {{else}}
 <div class="card">
-    <p class="meta">No jobs found.</p>
+    <p class="meta">No workflows found.</p>
 </div>
 {{end}}
 {{template "foot" .}}

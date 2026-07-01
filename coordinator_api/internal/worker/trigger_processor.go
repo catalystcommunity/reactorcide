@@ -41,8 +41,14 @@ func (tp *TriggerProcessor) SetStatusUpdater(u vcs.JobStatusUpdaterInterface) {
 
 // triggersFile represents the top-level structure of triggers.json.
 type triggersFile struct {
-	Type string           `json:"type"`
-	Jobs []triggerJobSpec `json:"jobs"`
+	Type     string               `json:"type"`
+	Workflow *triggerWorkflowSpec `json:"workflow,omitempty"`
+	Jobs     []triggerJobSpec     `json:"jobs"`
+}
+
+type triggerWorkflowSpec struct {
+	Name string                 `json:"name"`
+	Vars map[string]interface{} `json:"vars"`
 }
 
 // triggerJobSpec represents a single triggered job from triggers.json.
@@ -67,6 +73,8 @@ type triggerJobSpec struct {
 	Priority       *int              `json:"priority"`
 	Timeout        *int              `json:"timeout"`
 	Capabilities   []string          `json:"capabilities"`
+	ForEach        []interface{}     `json:"for_each"`
+	ItemVar        string            `json:"item_var"`
 }
 
 // jobDefinitionFile represents a YAML job definition file (e.g., .reactorcide/jobs/*.yaml).
@@ -138,7 +146,7 @@ func (tp *TriggerProcessor) ProcessTriggersFromData(ctx context.Context, data []
 	logger := logging.Log.WithField("parent_job_id", parentJob.JobID).WithField("trigger_count", len(tf.Jobs))
 	logger.Info("Processing triggers from eval job")
 
-	var createdJobIDs []string
+	specs := make([]triggerJobSpec, 0, len(tf.Jobs))
 	for _, spec := range tf.Jobs {
 		// If job_file is specified, load the YAML definition as base and overlay inline fields
 		if spec.JobFile != "" {
@@ -149,17 +157,36 @@ func (tp *TriggerProcessor) ProcessTriggersFromData(ctx context.Context, data []
 			}
 			spec = tp.overlaySpec(baseSpec, spec)
 		}
-
-		jobID, err := tp.createAndSubmitJob(ctx, spec, parentJob)
-		if err != nil {
-			logger.WithError(err).WithField("job_name", spec.JobName).Error("Failed to create triggered job")
-			// Continue processing remaining triggers
-			continue
-		}
-		createdJobIDs = append(createdJobIDs, jobID)
+		specs = append(specs, spec)
 	}
 
-	return createdJobIDs, nil
+	if _, err := tp.workflowStore(); err != nil {
+		var createdJobIDs []string
+		for _, spec := range specs {
+			jobID, err := tp.createAndSubmitJob(ctx, spec, parentJob)
+			if err != nil {
+				logger.WithError(err).WithField("job_name", spec.JobName).Error("Failed to create triggered job")
+				continue
+			}
+			createdJobIDs = append(createdJobIDs, jobID)
+		}
+		return createdJobIDs, nil
+	}
+
+	wf, err := tp.ensureWorkflow(ctx, parentJob, tf.Workflow)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create workflow: %w", err)
+	}
+	if tf.Workflow != nil && len(tf.Workflow.Vars) > 0 {
+		if err := tp.addWorkflowVars(ctx, wf, tf.Workflow.Vars, nil, &parentJob.JobID); err != nil {
+			return nil, fmt.Errorf("failed to add workflow vars: %w", err)
+		}
+	}
+	if err := tp.createWorkflowNodes(ctx, wf, specs); err != nil {
+		return nil, fmt.Errorf("failed to create workflow nodes: %w", err)
+	}
+
+	return tp.evaluateWorkflow(ctx, wf)
 }
 
 // loadJobFile reads a YAML job definition file from the workspace and converts it to a triggerJobSpec.
@@ -255,6 +282,12 @@ func (tp *TriggerProcessor) overlaySpec(base, overlay triggerJobSpec) triggerJob
 	}
 	if len(overlay.Capabilities) > 0 {
 		result.Capabilities = overlay.Capabilities
+	}
+	if len(overlay.ForEach) > 0 {
+		result.ForEach = overlay.ForEach
+	}
+	if overlay.ItemVar != "" {
+		result.ItemVar = overlay.ItemVar
 	}
 
 	// Merge env vars: base first, then overlay on top
