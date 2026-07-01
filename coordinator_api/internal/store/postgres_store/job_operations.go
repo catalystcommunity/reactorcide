@@ -96,6 +96,10 @@ func (ps PostgresDbStore) ListJobs(ctx context.Context, filters map[string]inter
 			query = query.Where("queue_name = ?", value)
 		case "source_type":
 			query = query.Where("source_type = ?", value)
+		case "project_id":
+			query = query.Where("project_id = ?", value)
+		case "workflow_id":
+			query = query.Where("workflow_id = ?", value)
 		}
 	}
 

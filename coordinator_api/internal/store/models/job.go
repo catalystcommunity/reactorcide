@@ -103,8 +103,12 @@ type Job struct {
 	ArtifactsObjectKey string `gorm:"type:text" json:"artifacts_object_key"`
 
 	// Event metadata for webhook-triggered jobs
-	EventMetadata JSONB   `gorm:"type:jsonb" json:"event_metadata"`
-	ParentJobID   *string `gorm:"type:uuid" json:"parent_job_id"`
+	EventMetadata    JSONB   `gorm:"type:jsonb" json:"event_metadata"`
+	ParentJobID      *string `gorm:"type:uuid" json:"parent_job_id"`
+	WorkflowID       *string `gorm:"type:uuid" json:"workflow_id"`
+	WorkflowNodeID   *string `gorm:"type:uuid" json:"workflow_node_id"`
+	WorkflowRunID    *string `gorm:"type:uuid" json:"workflow_run_id"`
+	WorkflowNodeName string  `gorm:"type:text" json:"workflow_node_name"`
 
 	// Denormalized VCS metadata for fast lookup by (repo, pr, commit).
 	// Populated at job-creation time from Notes JSON; Notes remains authoritative.

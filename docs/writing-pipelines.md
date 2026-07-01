@@ -25,17 +25,19 @@ Reactorcide uses an **ingest pipeline pattern** where:
 
 This approach gives you **maximum flexibility** - workflows are just Python code, so you can use any logic, external APIs, or state checks to determine what runs next.
 
+The workflow model is described in [Workflow Design](./workflow-design.md). It keeps `triggers.json`, but moves dependency waiting, state merging, skip reasons, and VCS reporting into coordinator-owned workflow records.
+
 ## Core Concepts
 
 ### Jobs vs Workflows
 
 - **Job**: A single container execution with steps that share environment/filesystem
-- **Workflow**: Multiple jobs with dependencies, orchestrated by runnerlib
+- **Workflow**: Multiple jobs with dependencies, evaluated by the coordinator from `triggers.json`
 - **Ingest Job**: The initial job that analyzes triggers and schedules follow-up jobs
 
 ### Job Triggering
 
-Jobs trigger follow-up jobs by writing to `/job/triggers.json`. The worker reads this file after job completion and submits the triggered jobs to the queue.
+Jobs trigger follow-up jobs by writing to `/job/triggers.json`. The worker reads this file after job completion, records workflow nodes, submits ready jobs to the queue, and leaves blocked jobs waiting in the coordinator without occupying worker slots.
 
 Source code is available at `REACTORCIDE_CODE_DIR` (default `/job/src`). The job working directory is `REACTORCIDE_JOB_DIR` (defaulting to the code directory). Prefer these environment variables in reusable pipeline scripts so jobs continue to work when a definition customizes `code_dir` or `job_dir`.
 
@@ -57,7 +59,9 @@ Source code is available at `REACTORCIDE_CODE_DIR` (default `/job/src`). The job
       "container_image": "reactorcide/runner:latest",
       "job_command": "make deploy",
       "priority": 10,
-      "timeout": 1800
+      "timeout": 1800,
+      "for_each": ["us-east", "us-west"],
+      "item_var": "REGION"
     }
   ]
 }
@@ -68,8 +72,10 @@ Source code is available at `REACTORCIDE_CODE_DIR` (default `/job/src`). The job
 - **depends_on**: List of job names that must complete first
 - **condition**: When to run the job
   - `all_success` - Run only if all dependencies succeeded (default)
-  - `any_success` - Run if at least one dependency succeeded
+  - `any_failed` - Run if at least one dependency failed, timed out, or was cancelled
   - `always` - Run regardless of dependency results
+- **for_each**: Literal list of values that expands one trigger into multiple workflow nodes
+- **item_var**: Environment variable name for the current `for_each` value
 
 ## Quick Start
 
@@ -143,7 +149,7 @@ Trigger a follow-up job.
 - `job_name` (str): Name of the job to trigger
 - `env` (dict): Environment variables for the job
 - `depends_on` (list): Job names this job depends on
-- `condition` (str): Triggering condition ("all_success", "any_success", "always")
+- `condition` (str): Triggering condition (`all_success`, `any_failed`, or `always`)
 - `**kwargs`: Additional job configuration (source_url, container_image, etc.)
 
 **Example**:
@@ -156,7 +162,9 @@ trigger_job(
     container_image="reactorcide/runner:latest",
     job_command="python deploy.py",
     priority=5,
-    timeout=1800
+    timeout=1800,
+    for_each=["us-east", "us-west"],
+    item_var="REGION",
 )
 ```
 
@@ -175,6 +183,41 @@ Write accumulated triggers to `/job/triggers.json`.
 trigger_job("test")
 trigger_job("lint")
 flush_triggers()  # Writes both triggers to file
+```
+
+### Workflow State
+
+#### `set_workflow_var(key, value)`
+
+Publish a workflow variable for later jobs. The coordinator merges the value after the current job completes.
+
+```python
+from workflow import set_workflow_var
+
+set_workflow_var("image_tag", "abc123")
+```
+
+If two jobs write the same key with different JSON values, the workflow fails instead of choosing a winner implicitly.
+
+#### `set_workflow_output(key, value)`
+
+Publish a node-scoped output. The coordinator stores it as `<job_name>.<key>`.
+
+```python
+from workflow import set_workflow_output
+
+set_workflow_output("image_digest", "sha256:...")
+```
+
+#### `workflow_vars()`
+
+Load current workflow variables from `RC_WF_VARS_FILE`.
+
+```python
+from workflow import workflow_vars
+
+vars = workflow_vars()
+image_tag = vars.get("image_tag")
 ```
 
 ### Git Utilities
@@ -781,7 +824,7 @@ When triggering jobs, these fields are available:
 
 - `job_name` (required) - Name of the job
 - `depends_on` - List of job names this depends on
-- `condition` - Triggering condition ("all_success", "any_success", "always")
+- `condition` - Triggering condition (`all_success`, `any_failed`, or `always`)
 - `env` - Environment variables dict
 - `source_type` - Source type ("git", "copy", "none")
 - `source_url` - Source URL

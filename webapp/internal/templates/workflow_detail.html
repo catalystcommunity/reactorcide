@@ -1,0 +1,83 @@
+{{template "head" .}}
+<div style="margin-bottom: 12px;">
+    <a href="/app/" class="meta">&larr; Back to Workflows</a>
+</div>
+
+<div class="card">
+    <div style="display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 12px;">
+        <h2>{{.Workflow.Name}}</h2>
+        <span class="status-badge {{statusClass .Workflow.Status}}">{{.Workflow.Status}}</span>
+    </div>
+    <dl class="grid">
+        <div>
+            <dt>Workflow ID</dt>
+            <dd><code>{{.Workflow.WorkflowID}}</code></dd>
+        </div>
+        <div>
+            <dt>Jobs</dt>
+            <dd>{{.Workflow.CompletedCount}}/{{.Workflow.JobCount}} done</dd>
+        </div>
+        <div>
+            <dt>Created</dt>
+            <dd>{{formatTime .Workflow.CreatedAt}}</dd>
+        </div>
+        <div>
+            <dt>Duration</dt>
+            <dd>{{formatWorkflowDuration .Workflow.CreatedAt .Workflow.CompletedAt}}</dd>
+        </div>
+        {{if .Workflow.VCSRepo}}
+        <div>
+            <dt>Repository</dt>
+            <dd>{{.Workflow.VCSRepo}}</dd>
+        </div>
+        {{end}}
+        {{if .Workflow.CommitSHA}}
+        <div>
+            <dt>Commit</dt>
+            <dd><code>{{shortSHA .Workflow.CommitSHA}}</code></dd>
+        </div>
+        {{end}}
+    </dl>
+</div>
+
+{{if .Jobs}}
+<table>
+    <thead>
+        <tr>
+            <th>Job</th>
+            <th>Status</th>
+            <th>Created</th>
+            <th>Duration</th>
+            <th>Exit</th>
+            <th>Node</th>
+        </tr>
+    </thead>
+    <tbody>
+        {{range .Jobs}}
+        <tr data-job-id="{{.JobID}}">
+            <td>
+                <a href="/app/jobs/{{.JobID}}">{{.Name}}</a>
+                {{if .Description}}<br><span class="meta">{{.Description}}</span>{{end}}
+            </td>
+            <td><span class="status-badge {{statusClass .Status}}">{{.Status}}</span></td>
+            <td class="meta">{{formatTime .CreatedAt}}</td>
+            <td class="meta">{{formatDuration .StartedAt .CompletedAt}}</td>
+            <td>
+                {{if .ExitCode}}
+                    <span class="{{exitCodeClass .ExitCode}}">{{derefInt .ExitCode}}</span>
+                {{else}}
+                    <span class="meta">-</span>
+                {{end}}
+            </td>
+            <td class="meta">{{if .WorkflowNodeName}}{{.WorkflowNodeName}}{{else}}-{{end}}</td>
+        </tr>
+        {{end}}
+    </tbody>
+</table>
+{{else}}
+<div class="card">
+    <p class="meta">No jobs found for this workflow.</p>
+</div>
+{{end}}
+
+{{template "foot" .}}

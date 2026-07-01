@@ -27,7 +27,7 @@ func TestHealthCheck(t *testing.T) {
 func TestJobsListPage(t *testing.T) {
 	jobID := insertTestJob(t, "integration-test-list")
 
-	resp, err := http.Get(webBaseURL + "/app/jobs")
+	resp, err := http.Get(webBaseURL + "/app/")
 	if err != nil {
 		t.Fatalf("Request failed: %v", err)
 	}
@@ -65,6 +65,26 @@ func TestJobsListPageAtAppRoot(t *testing.T) {
 	body, _ := io.ReadAll(resp.Body)
 	if !strings.Contains(string(body), "Jobs") {
 		t.Error("/app/ should show jobs list page")
+	}
+}
+
+func TestJobsCollectionRedirectsToAppRoot(t *testing.T) {
+	client := &http.Client{
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			return http.ErrUseLastResponse
+		},
+	}
+	resp, err := client.Get(webBaseURL + "/app/jobs?status=running")
+	if err != nil {
+		t.Fatalf("Request failed: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusMovedPermanently {
+		t.Errorf("Expected 301, got %d", resp.StatusCode)
+	}
+	if loc := resp.Header.Get("Location"); loc != "/app/?status=running" {
+		t.Errorf("Expected redirect to /app/?status=running, got %q", loc)
 	}
 }
 
@@ -115,7 +135,7 @@ func TestJobDetailNotFound(t *testing.T) {
 func TestJobsListWithStatusFilter(t *testing.T) {
 	insertTestJob(t, "integration-test-filter")
 
-	resp, err := http.Get(webBaseURL + "/app/jobs?status=submitted")
+	resp, err := http.Get(webBaseURL + "/app/?status=submitted")
 	if err != nil {
 		t.Fatalf("Request failed: %v", err)
 	}
@@ -131,7 +151,7 @@ func TestJobsListPagination(t *testing.T) {
 		insertTestJob(t, "integration-test-page")
 	}
 
-	resp, err := http.Get(webBaseURL + "/app/jobs?limit=1&offset=0")
+	resp, err := http.Get(webBaseURL + "/app/?limit=1&offset=0")
 	if err != nil {
 		t.Fatalf("Request failed: %v", err)
 	}

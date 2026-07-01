@@ -102,6 +102,7 @@ func createAppMux() *http.ServeMux {
 	tokenHandler := NewTokenHandler(store.AppStore)
 	webhookHandler := NewWebhookHandler(store.AppStore, singletoncorndogsClient)
 	projectHandler := NewProjectHandler(store.AppStore)
+	workflowHandler := NewWorkflowHandler(store.AppStore)
 
 	// Wire VCS clients into the webhook handler and the job handler's trigger
 	// processor, so jobs submitted via /api/v1/jobs/{id}/triggers register as
@@ -158,6 +159,37 @@ func createAppMux() *http.ServeMux {
 	})
 
 	// API v1 routes with API token authentication
+
+	// Workflow routes (require auth)
+	mux.HandleFunc("/api/v1/workflows", func(w http.ResponseWriter, r *http.Request) {
+		handler := transactionMiddleware(authMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			switch r.Method {
+			case http.MethodGet:
+				workflowHandler.ListWorkflows(w, r)
+			default:
+				http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+			}
+		})))
+		handler.ServeHTTP(w, r)
+	})
+
+	mux.HandleFunc("/api/v1/workflows/", func(w http.ResponseWriter, r *http.Request) {
+		path := strings.TrimPrefix(r.URL.Path, "/api/v1/workflows/")
+		if path == "" {
+			http.Error(w, "Invalid path", http.StatusBadRequest)
+			return
+		}
+		r = r.WithContext(setIDContext(r.Context(), "workflow_id", path))
+		handler := transactionMiddleware(authMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			switch r.Method {
+			case http.MethodGet:
+				workflowHandler.GetWorkflow(w, r)
+			default:
+				http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+			}
+		})))
+		handler.ServeHTTP(w, r)
+	})
 
 	// Health check endpoint (v1, no auth required)
 	mux.HandleFunc("/api/v1/health", func(w http.ResponseWriter, r *http.Request) {

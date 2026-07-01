@@ -143,6 +143,13 @@ type JobResponse struct {
 	// Object store references
 	LogsObjectKey      string `json:"logs_object_key,omitempty"`
 	ArtifactsObjectKey string `json:"artifacts_object_key,omitempty"`
+
+	ProjectID        *string `json:"project_id,omitempty"`
+	ParentJobID      *string `json:"parent_job_id,omitempty"`
+	WorkflowID       *string `json:"workflow_id,omitempty"`
+	WorkflowNodeID   *string `json:"workflow_node_id,omitempty"`
+	WorkflowRunID    *string `json:"workflow_run_id,omitempty"`
+	WorkflowNodeName string  `json:"workflow_node_name,omitempty"`
 }
 
 // ListJobsResponse represents the response for listing jobs
@@ -907,6 +914,13 @@ func (h *JobHandler) jobToResponse(job *models.Job) JobResponse {
 
 		LogsObjectKey:      job.LogsObjectKey,
 		ArtifactsObjectKey: job.ArtifactsObjectKey,
+
+		ProjectID:        job.ProjectID,
+		ParentJobID:      job.ParentJobID,
+		WorkflowID:       job.WorkflowID,
+		WorkflowNodeID:   job.WorkflowNodeID,
+		WorkflowRunID:    job.WorkflowRunID,
+		WorkflowNodeName: job.WorkflowNodeName,
 	}
 
 	// Convert env vars
@@ -994,6 +1008,13 @@ func (h *JobHandler) parseFilters(r *http.Request, user *models.User) map[string
 		if sourceType == "git" || sourceType == "copy" {
 			filters["source_type"] = sourceType
 		}
+	}
+
+	if projectID := r.URL.Query().Get("project_id"); projectID != "" {
+		filters["project_id"] = projectID
+	}
+	if workflowID := r.URL.Query().Get("workflow_id"); workflowID != "" {
+		filters["workflow_id"] = workflowID
 	}
 
 	return filters
