@@ -1,9 +1,13 @@
 package worker
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"testing"
+
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/kubernetes/fake"
 )
 
 func TestPodStartupError(t *testing.T) {
@@ -44,6 +48,62 @@ func TestPodStartupError(t *testing.T) {
 				t.Errorf("expected error string %q, got %q", tt.expectedString, err.Error())
 			}
 		})
+	}
+}
+
+func TestKubernetesRunnerPrepareWorkspaceRunsAsRootForNonRootJobs(t *testing.T) {
+	clientset := fake.NewSimpleClientset()
+	runner := &KubernetesRunner{
+		clientset:      clientset,
+		namespace:      "reactorcide",
+		serviceAccount: "default",
+		dindImage:      "docker:27-dind",
+	}
+
+	_, err := runner.SpawnJob(context.Background(), &JobConfig{
+		JobID:      "test-job",
+		Image:      "reactorcide/runnerbase:test",
+		Command:    []string{"sh", "-c", "echo ok"},
+		Env:        map[string]string{},
+		WorkingDir: "/job",
+	})
+	if err != nil {
+		t.Fatalf("SpawnJob failed: %v", err)
+	}
+
+	jobs, err := clientset.BatchV1().Jobs("reactorcide").List(context.Background(), metav1.ListOptions{})
+	if err != nil {
+		t.Fatalf("listing jobs failed: %v", err)
+	}
+	if len(jobs.Items) != 1 {
+		t.Fatalf("expected 1 Kubernetes Job, got %d", len(jobs.Items))
+	}
+
+	podSpec := jobs.Items[0].Spec.Template.Spec
+	if podSpec.SecurityContext == nil || podSpec.SecurityContext.RunAsNonRoot == nil || !*podSpec.SecurityContext.RunAsNonRoot {
+		t.Fatalf("expected pod to default to runAsNonRoot=true")
+	}
+	if len(podSpec.InitContainers) != 1 {
+		t.Fatalf("expected 1 init container, got %d", len(podSpec.InitContainers))
+	}
+
+	prepare := podSpec.InitContainers[0]
+	if prepare.Name != "prepare-workspace" {
+		t.Fatalf("expected prepare-workspace init container, got %q", prepare.Name)
+	}
+	if prepare.SecurityContext == nil {
+		t.Fatalf("prepare-workspace should have an explicit security context")
+	}
+	if prepare.SecurityContext.RunAsUser == nil || *prepare.SecurityContext.RunAsUser != 0 {
+		t.Fatalf("prepare-workspace should run as uid 0, got %v", prepare.SecurityContext.RunAsUser)
+	}
+	if prepare.SecurityContext.RunAsNonRoot == nil || *prepare.SecurityContext.RunAsNonRoot {
+		t.Fatalf("prepare-workspace should override pod runAsNonRoot=false")
+	}
+
+	job := podSpec.Containers[0]
+	if job.SecurityContext == nil || job.SecurityContext.RunAsUser == nil || *job.SecurityContext.RunAsUser != 1001 {
+		t.Fatalf("job container should run as uid 1001, got %v", job.SecurityContext)
 	}
 }
 

@@ -88,7 +88,7 @@ func (m *MockStore) UpdateJob(ctx context.Context, job *models.Job) error {
 }
 
 // Implement other required store.Store methods with minimal functionality
-func (m *MockStore) Initialize() (func(), error)                          { return nil, nil }
+func (m *MockStore) Initialize() (func(), error) { return nil, nil }
 func (m *MockStore) CreateJob(ctx context.Context, job *models.Job) error {
 	m.CreateJobCalls = append(m.CreateJobCalls, *job)
 	if m.CreateJobFunc != nil {
@@ -112,7 +112,7 @@ func (m *MockStore) IsPRMerged(ctx context.Context, repo string, prNumber int) (
 	return false, nil
 }
 func (m *MockStore) MarkPRMerged(ctx context.Context, repo string, prNumber int) error { return nil }
-func (m *MockStore) DeleteJob(ctx context.Context, jobID string) error { return nil }
+func (m *MockStore) DeleteJob(ctx context.Context, jobID string) error                 { return nil }
 func (m *MockStore) GetJobsByUser(ctx context.Context, userID string, limit, offset int) ([]models.Job, error) {
 	return nil, nil
 }
@@ -588,6 +588,89 @@ func TestCornDogsWorker_Start_GracefulShutdown(t *testing.T) {
 	// Verify some GetNextTask calls were made
 	if len(mockCorndogs.GetNextTaskCalls) < 2 {
 		t.Errorf("expected at least 2 GetNextTask calls from 2 workers, got %d", len(mockCorndogs.GetNextTaskCalls))
+	}
+}
+
+func TestCornDogsWorker_Start_DrainsActiveJobOnShutdown(t *testing.T) {
+	mockStore := &MockStore{}
+	mockCorndogs := corndogs.NewMockClient()
+	mockProcessor := &MockJobProcessor{}
+
+	taskPayload := &corndogs.TaskPayload{JobID: "drain-job-id", JobType: "run"}
+	payloadBytes, _ := json.Marshal(taskPayload)
+	gaveTask := false
+	mockCorndogs.GetNextTaskFunc = func(ctx context.Context, state string, timeout int64) (*pb.Task, error) {
+		if gaveTask {
+			return nil, fmt.Errorf("failed to get next task: rpc error: code = NotFound")
+		}
+		gaveTask = true
+		return &pb.Task{
+			Uuid:            "drain-task-id",
+			CurrentState:    "submitted-working",
+			AutoTargetState: "completed",
+			Payload:         payloadBytes,
+		}, nil
+	}
+
+	mockStore.GetJobByIDFunc = func(ctx context.Context, jobID string) (*models.Job, error) {
+		return &models.Job{JobID: jobID, Status: "submitted", JobCommand: "echo hello"}, nil
+	}
+	mockStore.UpdateJobFunc = func(ctx context.Context, job *models.Job) error {
+		return nil
+	}
+
+	started := make(chan struct{})
+	allowFinish := make(chan struct{})
+	mockProcessor.ProcessJobFunc = func(ctx context.Context, job *models.Job) *JobResult {
+		close(started)
+		<-allowFinish
+		if err := ctx.Err(); err != nil {
+			t.Errorf("active job context was canceled during worker shutdown: %v", err)
+		}
+		return &JobResult{ExitCode: 0, LogsObjectKey: "logs/drain.log"}
+	}
+
+	config := &Config{
+		QueueName:    "test-queue",
+		PollInterval: 10 * time.Millisecond,
+		Concurrency:  1,
+		DryRun:       false,
+		Store:        mockStore,
+	}
+	worker := NewCornDogsWorkerWithProcessor(config, mockCorndogs, mockProcessor, nil, nil)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() {
+		done <- worker.Start(ctx)
+	}()
+
+	select {
+	case <-started:
+	case <-time.After(time.Second):
+		t.Fatal("worker did not start processing task")
+	}
+
+	cancel()
+	select {
+	case err := <-done:
+		t.Fatalf("worker stopped before active job drained: %v", err)
+	case <-time.After(50 * time.Millisecond):
+	}
+
+	close(allowFinish)
+
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("expected nil error from Start, got %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("worker did not stop after active job finished")
+	}
+
+	if mockCorndogs.GetCompleteTaskCallCount() != 1 {
+		t.Fatalf("expected task completion after drain, got %d", mockCorndogs.GetCompleteTaskCallCount())
 	}
 }
 

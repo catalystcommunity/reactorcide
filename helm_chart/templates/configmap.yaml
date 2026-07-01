@@ -16,7 +16,7 @@ data:
   PROMETHEUS_PORT: {{ .Values.app.prometheus.port | quote }}
   PROMETHEUS_LATENCY_HISTOGRAMS_ENABLED: {{ .Values.app.prometheus.latencyHistogramsEnabled | quote }}
 
-  # Corndogs configuration (gRPC - no http:// prefix)
+  # Corndogs configuration (CSIL-RPC over HTTP)
   {{- if .Values.corndogs.enabled }}
   # Corndogs subchart is deployed - use internal service
   REACTORCIDE_CORNDOGS_BASE_URL: "{{ .Release.Name }}-corndogs:{{ .Values.corndogs.service.port }}"
@@ -47,6 +47,7 @@ data:
   WORKER_QUEUE: {{ .Values.worker.queue | quote }}
   WORKER_POLL_INTERVAL: {{ .Values.worker.pollInterval | quote }}
   WORKER_CONCURRENCY: {{ .Values.worker.concurrency | quote }}
+  REACTORCIDE_WORKER_SHUTDOWN_TIMEOUT: {{ .Values.worker.shutdownTimeout | quote }}
   WORKER_DRY_RUN: {{ .Values.worker.dryRun | quote }}
   REACTORCIDE_CONTAINER_RUNTIME: {{ .Values.worker.containerRuntime | quote }}
   {{- if .Values.worker.jobNamespace }}

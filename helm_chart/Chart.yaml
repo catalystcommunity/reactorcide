@@ -21,6 +21,6 @@ appVersion: 0.1.0
 
 dependencies:
   - name: corndogs
-    version: "0.1.10"
-    repository: "https://raw.githubusercontent.com/catalystcommunity/charts/main"
+    version: "0.5.0"
+    repository: "file://charts/corndogs"
     condition: corndogs.enabled

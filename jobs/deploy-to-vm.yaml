@@ -176,6 +176,9 @@ command: |-
       else
         echo "REACTORCIDE_CONTAINER_RUNTIME=${CONTAINER_RUNTIME}" >> .env
       fi
+      sed -i '/^CORNDOGS_DB_NAME=/d' .env
+      grep -q "^REACTORCIDE_WORKER_SHUTDOWN_TIMEOUT=" .env || echo "REACTORCIDE_WORKER_SHUTDOWN_TIMEOUT=1h" >> .env
+      grep -q "^REACTORCIDE_WORKER_STOP_GRACE_PERIOD=" .env || echo "REACTORCIDE_WORKER_STOP_GRACE_PERIOD=1h" >> .env
       echo "Updated REACTORCIDE_CONTAINER_RUNTIME=${CONTAINER_RUNTIME}"
     else
       echo "No existing .env found - creating new configuration"
@@ -187,7 +190,6 @@ command: |-
     POSTGRES_USER=reactorcide
     POSTGRES_PASSWORD=${DB_PASSWORD}
     POSTGRES_DB=reactorcide_db
-    CORNDOGS_DB_NAME=corndogs_db
 
     # Reactorcide Configuration
     REACTORCIDE_DB_URI=postgresql://reactorcide:${DB_PASSWORD}@postgres:5432/reactorcide_db?sslmode=disable
@@ -204,6 +206,8 @@ command: |-
     # Worker Configuration
     REACTORCIDE_WORKER_CONCURRENCY=2
     REACTORCIDE_WORKER_POLL_INTERVAL=5
+    REACTORCIDE_WORKER_SHUTDOWN_TIMEOUT=1h
+    REACTORCIDE_WORKER_STOP_GRACE_PERIOD=1h
     REACTORCIDE_CONTAINER_RUNTIME=${CONTAINER_RUNTIME}
     REACTORCIDE_LOG_LEVEL=info
     ENVFILE
@@ -307,7 +311,7 @@ command: |-
 
     # Stop existing services
     echo "Stopping existing services..."
-    $DOCKER_CMD compose -f docker-compose.prod.yml -f docker-compose.override.yml down || true
+    $DOCKER_CMD compose -f docker-compose.prod.yml -f docker-compose.override.yml down --remove-orphans || true
 
     # Start services
     echo "Starting services..."
