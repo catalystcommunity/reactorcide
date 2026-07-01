@@ -150,6 +150,9 @@ func (tp *TriggerProcessor) ProcessTriggersFromData(ctx context.Context, data []
 	for _, spec := range tf.Jobs {
 		// If job_file is specified, load the YAML definition as base and overlay inline fields
 		if spec.JobFile != "" {
+			if workspaceDir == "" {
+				return nil, fmt.Errorf("job_file %q requires workspace-backed trigger processing", spec.JobFile)
+			}
 			baseSpec, err := tp.loadJobFile(workspaceDir, spec.JobFile)
 			if err != nil {
 				logger.WithError(err).WithField("job_file", spec.JobFile).Error("Failed to load job file")

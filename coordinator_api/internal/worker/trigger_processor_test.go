@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/corndogs"
@@ -106,7 +107,7 @@ func TestProcessTriggers_SingleJob(t *testing.T) {
 				Timeout:        &timeout,
 				Env: map[string]string{
 					"REACTORCIDE_EVENT_TYPE": "push",
-					"REACTORCIDE_BRANCH":    "main",
+					"REACTORCIDE_BRANCH":     "main",
 				},
 			},
 		},
@@ -278,7 +279,7 @@ func TestProcessTriggers_EnvVarOverride(t *testing.T) {
 				JobCommand: "echo test",
 				Env: map[string]string{
 					"REACTORCIDE_EVENT_TYPE": "pull_request_opened",
-					"CUSTOM_VAR":            "custom_value",
+					"CUSTOM_VAR":             "custom_value",
 				},
 			},
 		},
@@ -930,6 +931,41 @@ job:
 	}
 	if createdJob.JobCommand == "" {
 		t.Error("expected job command to be set from YAML")
+	}
+}
+
+func TestProcessTriggersFromData_JobFileRequiresWorkspace(t *testing.T) {
+	triggersData := triggersFile{
+		Type: "trigger_job",
+		Jobs: []triggerJobSpec{
+			{JobFile: ".reactorcide/jobs/test-go.yaml"},
+		},
+	}
+	data, err := json.Marshal(triggersData)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	mockStore := &MockStore{}
+	mockCorndogs := corndogs.NewMockClient()
+	parentJob := &models.Job{
+		JobID:          "parent-job-id",
+		UserID:         "user-123",
+		QueueName:      "reactorcide-jobs",
+		RunnerImage:    "default:image",
+		TimeoutSeconds: 3600,
+	}
+
+	tp := NewTriggerProcessor(mockStore, mockCorndogs)
+	_, err = tp.ProcessTriggersFromData(context.Background(), data, "", parentJob)
+	if err == nil {
+		t.Fatal("expected job_file without workspace to fail")
+	}
+	if !strings.Contains(err.Error(), "requires workspace-backed trigger processing") {
+		t.Fatalf("expected workspace-backed error, got %v", err)
+	}
+	if mockCorndogs.GetSubmitTaskCallCount() != 0 {
+		t.Error("expected no Corndogs calls when job_file cannot be resolved")
 	}
 }
 

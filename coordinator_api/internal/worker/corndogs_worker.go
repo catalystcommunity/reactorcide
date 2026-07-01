@@ -365,10 +365,12 @@ func (w *CornDogsWorker) processNextTask(ctx context.Context, workerID int) {
 	w.publisher.PublishJobUpdate(ctx, job.JobID, job.Status, completedAt.Format(time.RFC3339Nano))
 
 	if w.triggerProcessor != nil && result.WorkspaceDir != "" {
+		workflowOK := true
 		if workflowErr := w.triggerProcessor.ProcessWorkflowCompletion(ctx, result.WorkspaceDir, job); workflowErr != nil {
 			logger.WithError(workflowErr).Error("Failed to process workflow completion")
+			workflowOK = false
 		}
-		if job.Status == "completed" {
+		if workflowOK && job.Status == "completed" {
 			if triggerErr := w.triggerProcessor.ProcessTriggers(ctx, result.WorkspaceDir, job); triggerErr != nil {
 				logger.WithError(triggerErr).Error("Failed to process triggers")
 			}

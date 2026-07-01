@@ -2,6 +2,7 @@ package postgres_store
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"strings"
 
@@ -131,6 +132,41 @@ func (ps PostgresDbStore) ListWorkflowEvents(ctx context.Context, workflowID str
 		return nil, fmt.Errorf("failed to list workflow events: %w", err)
 	}
 	return events, nil
+}
+
+func (ps PostgresDbStore) GetLastSuccessfulWorkflowNodeDuration(ctx context.Context, wf *models.WorkflowInstance, nodeName string) (*int64, error) {
+	if wf == nil || strings.TrimSpace(wf.Name) == "" || strings.TrimSpace(nodeName) == "" {
+		return nil, nil
+	}
+
+	query := ps.getDB(ctx).
+		Table("workflow_nodes wn").
+		Select("wn.last_successful_duration_ms").
+		Joins("JOIN workflow_instances wi ON wi.workflow_id = wn.workflow_id").
+		Where("wi.workflow_id <> ?", wf.WorkflowID).
+		Where("wi.name = ?", wf.Name).
+		Where("wi.status = ?", "success").
+		Where("wn.name = ?", nodeName).
+		Where("wn.status = ?", "completed").
+		Where("wn.last_successful_duration_ms IS NOT NULL")
+
+	if wf.ProjectID != nil && *wf.ProjectID != "" {
+		query = query.Where("wi.project_id = ?", *wf.ProjectID)
+	} else {
+		query = query.Where("wi.project_id IS NULL")
+	}
+	if wf.VCSRepo != "" {
+		query = query.Where("wi.vcs_repo = ?", wf.VCSRepo)
+	}
+
+	var duration sql.NullInt64
+	if err := query.Order("wn.completed_at DESC NULLS LAST, wn.updated_at DESC").Limit(1).Scan(&duration).Error; err != nil {
+		return nil, fmt.Errorf("failed to get previous workflow node duration: %w", err)
+	}
+	if !duration.Valid {
+		return nil, nil
+	}
+	return &duration.Int64, nil
 }
 
 func (ps PostgresDbStore) ListWorkflowSummaries(ctx context.Context, filters map[string]interface{}, limit, offset int) ([]models.WorkflowSummary, error) {
