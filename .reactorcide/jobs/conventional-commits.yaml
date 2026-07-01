@@ -53,5 +53,6 @@ job:
     runnerlib trigger .reactorcide/jobs/test-go.yaml .reactorcide/jobs/test-python.yaml .reactorcide/jobs/test-web.yaml
   timeout: 300
   priority: 10
+  working_dir: /job
   raw_command: true
   disable_run_local: true
