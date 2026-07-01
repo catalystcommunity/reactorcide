@@ -44,6 +44,10 @@ type workflowStore interface {
 	ListWorkflowEvents(ctx context.Context, workflowID string, limit, offset int) ([]models.WorkflowEvent, error)
 }
 
+type workflowHistoryStore interface {
+	GetLastSuccessfulWorkflowNodeDuration(ctx context.Context, wf *models.WorkflowInstance, nodeName string) (*int64, error)
+}
+
 type workflowOutputFile struct {
 	Vars    map[string]interface{} `json:"vars"`
 	Outputs map[string]interface{} `json:"outputs"`
@@ -228,6 +232,17 @@ func (tp *TriggerProcessor) createWorkflowNode(ctx context.Context, wf *models.W
 		ItemValue:   itemValue,
 		ItemVar:     spec.ItemVar,
 	}
+	if history, ok := tp.store.(workflowHistoryStore); ok {
+		duration, err := history.GetLastSuccessfulWorkflowNodeDuration(ctx, wf, name)
+		if err != nil {
+			logging.Log.WithError(err).WithFields(map[string]interface{}{
+				"workflow_id": wf.WorkflowID,
+				"node_name":   name,
+			}).Warn("Failed to load previous workflow node duration")
+		} else if duration != nil {
+			node.LastSuccessfulDurationMs = duration
+		}
+	}
 	if err := ws.CreateWorkflowNode(ctx, node); err != nil {
 		return err
 	}
@@ -367,10 +382,7 @@ func (tp *TriggerProcessor) ProcessWorkflowCompletion(ctx context.Context, works
 	}
 	if workspaceDir != "" {
 		if err := tp.mergeWorkflowOutputFile(ctx, workspaceDir, wf, node, job); err != nil {
-			wf.Status = "failed"
-			wf.LastError = err.Error()
-			_ = ws.UpdateWorkflowInstance(ctx, wf)
-			return err
+			return tp.failWorkflowNode(ctx, ws, wf, node, job, err)
 		}
 	}
 	now := time.Now().UTC()
@@ -390,6 +402,28 @@ func (tp *TriggerProcessor) ProcessWorkflowCompletion(ctx context.Context, works
 	})
 	_, err = tp.evaluateWorkflow(ctx, wf)
 	return err
+}
+
+func (tp *TriggerProcessor) failWorkflowNode(ctx context.Context, ws workflowStore, wf *models.WorkflowInstance, node *models.WorkflowNode, job *models.Job, cause error) error {
+	now := time.Now().UTC()
+	node.Status = "failed"
+	node.CompletedAt = &now
+	node.DecisionReason = cause.Error()
+	if err := ws.UpdateWorkflowNode(ctx, node); err != nil {
+		return err
+	}
+	wf.LastError = cause.Error()
+	if err := ws.UpdateWorkflowInstance(ctx, wf); err != nil {
+		return err
+	}
+	tp.recordWorkflowEvent(ctx, wf.WorkflowID, &node.NodeID, &job.JobID, "node_completed", node.DecisionReason, models.JSONB{
+		"status": job.Status,
+		"error":  cause.Error(),
+	})
+	if err := tp.refreshWorkflowStatus(ctx, wf); err != nil {
+		return err
+	}
+	return cause
 }
 
 func (tp *TriggerProcessor) ProcessWorkflowJobStarted(ctx context.Context, job *models.Job) error {
