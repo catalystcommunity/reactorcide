@@ -19,15 +19,26 @@ import uuid
 from pathlib import Path
 from typing import Optional, Dict, Any
 
+_SECRET_VALUES = set()
+
 
 def log(msg: str) -> None:
     """Print log message."""
     print(f"[deploy] {msg}", flush=True)
 
 
+def redact(value: str) -> str:
+    """Redact known secret values from log output."""
+    redacted = value
+    for secret in sorted(_SECRET_VALUES, key=len, reverse=True):
+        if secret:
+            redacted = redacted.replace(secret, "***")
+    return redacted
+
+
 def run_cmd(cmd: str, check: bool = True, capture: bool = False, dry_run: bool = False) -> subprocess.CompletedProcess:
     """Run a shell command."""
-    log(f"Running: {cmd}")
+    log(f"Running: {redact(cmd)}")
     if dry_run:
         log("  (dry-run - not executed)")
         return subprocess.CompletedProcess(args=cmd, returncode=0, stdout="", stderr="")
@@ -45,6 +56,9 @@ def run_cmd_output(cmd: str, dry_run: bool = False) -> str:
 
 def register_secret(secret: str) -> None:
     """Register a secret value for masking via the runnerlib secrets socket."""
+    if secret:
+        _SECRET_VALUES.add(secret)
+
     socket_path = os.environ.get('REACTORCIDE_SECRETS_SOCKET')
     if not socket_path or not secret:
         return
@@ -226,6 +240,7 @@ spec:
         db_uri = f"postgresql://{pg_user}:{pg_pass}@{pg_host}:5432/reactorcide?sslmode=require"
 
         register_secret(pg_pass)
+        register_secret(db_uri)
     else:
         db_uri = f"postgresql://reactorcide:***@{pg_host}:5432/reactorcide?sslmode=require"
 
@@ -243,18 +258,26 @@ def deploy_corndogs(config: Dict[str, Any], dry_run: bool = False) -> str:
     log("Deploying Corndogs")
 
     namespace = config['namespace']
+    repo_root = Path(__file__).resolve().parents[2]
+    chart_path = repo_root / "helm_chart" / "charts" / "corndogs"
+    if not chart_path.exists():
+        raise RuntimeError(f"Corndogs chart not found: {chart_path}")
 
-    # Add helm repo
-    run_cmd("helm repo add catalystcommunity https://raw.githubusercontent.com/catalystcommunity/charts/main || true", dry_run=dry_run)
-    run_cmd("helm repo update", dry_run=dry_run)
+    run_cmd(
+        f"kubectl delete deployment corndogs -n {namespace} --ignore-not-found --wait=true",
+        dry_run=dry_run,
+    )
 
-    # Install corndogs
     cmd = (
-        f"helm upgrade --install corndogs catalystcommunity/corndogs "
+        f"helm upgrade --install corndogs {chart_path} "
         f"--namespace {namespace} "
         f"--set replicaCount=1 "
         f"--set storage.backend=file "
         f"--set postgresql.enabled=false "
+        f"--set podSecurityContext.fsGroup=10001 "
+        f"--set securityContext.runAsNonRoot=true "
+        f"--set securityContext.runAsUser=10001 "
+        f"--set securityContext.runAsGroup=10001 "
         f"--wait --timeout 5m"
     )
     run_cmd(cmd, dry_run=dry_run)
@@ -276,6 +299,7 @@ def build_helm_values(config: Dict[str, Any], db_uri: str, corndogs_url: str) ->
         args.extend(["-f", str(values_file)])
 
     # Database
+    register_secret(db_uri)
     args.extend(["--set", f"postgres.uri={db_uri}"])
 
     # Subcharts always disabled in production
@@ -301,6 +325,8 @@ def build_helm_values(config: Dict[str, Any], db_uri: str, corndogs_url: str) ->
     args.extend(["--set", f"objectStore.type={config['object_store_type']}"])
 
     if config['object_store_type'] == 's3':
+        register_secret(config['s3_access_key'])
+        register_secret(config['s3_secret_key'])
         args.extend(["--set", f"objectStore.bucket={config['s3_bucket']}"])
         args.extend(["--set", f"objectStore.s3.endpoint={config['s3_endpoint']}"])
         args.extend(["--set", f"objectStore.s3.region={config['s3_region']}"])

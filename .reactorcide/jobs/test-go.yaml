@@ -18,6 +18,7 @@ job:
     go test $(go list ./... | grep -v '/test$') -count=1
   timeout: 1800
   priority: 10
+  working_dir: /job
   raw_command: true
 run_local:
   user: host

@@ -14,6 +14,7 @@ job:
     sh /job/src/.reactorcide/jobs/scripts/release.sh
   timeout: 3600
   priority: 15
+  working_dir: /job
   raw_command: true
   disable_run_local: true
   capabilities:

@@ -126,6 +126,10 @@ func createAppMux() *http.ServeMux {
 		}
 		webhookHandler.SetTokenResolver(tokenResolver)
 		webhookHandler.SetClientFactory(clientFactory)
+		statusUpdater := vcsManager.GetStatusUpdater()
+		statusUpdater.SetProjectLookup(store.AppStore.GetProjectByID)
+		statusUpdater.SetTokenResolver(tokenResolver)
+		statusUpdater.SetClientFactory(clientFactory)
 		log.Println("Per-project VCS token resolution enabled for webhook handler")
 	}
 
