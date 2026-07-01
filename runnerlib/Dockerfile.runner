@@ -1,6 +1,15 @@
 # Minimal base image for Reactorcide job execution
 # This image contains runnerlib and is spawned by the worker for each job
-FROM python:3.13-slim-trixie
+FROM python:3.14-slim-trixie
+
+ARG TARGETARCH
+ARG GO_VERSION=1.26.4
+
+ENV GOPATH=/go \
+    GOROOT=/usr/local/go \
+    RUSTUP_HOME=/usr/local/rustup \
+    CARGO_HOME=/usr/local/cargo \
+    PATH=/usr/local/go/bin:/go/bin:/usr/local/cargo/bin:$PATH
 
 # Install system dependencies
 # - Common tools needed for most CI/CD jobs
@@ -13,10 +22,36 @@ RUN apt-get update && \
         rsync \
         curl \
         sudo \
+        build-essential \
+        pkg-config \
         podman \
         fuse-overlayfs \
         uidmap && \
     rm -rf /var/lib/apt/lists/*
+
+# Install the current stable Go toolchain from official release tarballs.
+RUN set -eux; \
+    case "${TARGETARCH:-amd64}" in \
+        amd64) go_arch=amd64; go_sha256=1153d3d50e0ac764b447adfe05c2bcf08e889d42a02e0fe0259bd47f6733ad7f ;; \
+        arm64) go_arch=arm64; go_sha256=ef758ae7c6cf9267c9c0ef080b8965f453d89ab2d25d9eb22de4405925238768 ;; \
+        *) echo "unsupported TARGETARCH for Go: ${TARGETARCH:-amd64}" >&2; exit 1 ;; \
+    esac; \
+    curl -fsSLo /tmp/go.tgz "https://go.dev/dl/go${GO_VERSION}.linux-${go_arch}.tar.gz"; \
+    echo "${go_sha256}  /tmp/go.tgz" | sha256sum -c -; \
+    rm -rf /usr/local/go; \
+    tar -C /usr/local -xzf /tmp/go.tgz; \
+    rm /tmp/go.tgz; \
+    mkdir -p "${GOPATH}/bin"; \
+    go version
+
+# Install the current stable Rust toolchain with rustup.
+RUN set -eux; \
+    curl --proto '=https' --tlsv1.2 -fsSLo /tmp/rustup-init https://sh.rustup.rs; \
+    sh /tmp/rustup-init -y --no-modify-path --profile minimal --default-toolchain stable; \
+    rm /tmp/rustup-init; \
+    chmod -R a+w "${RUSTUP_HOME}" "${CARGO_HOME}"; \
+    rustc --version; \
+    cargo --version
 
 # Podman default storage driver for this image: vfs. Overlay/fuse-overlayfs
 # needs /dev/fuse access we can't rely on in an unprivileged container,
