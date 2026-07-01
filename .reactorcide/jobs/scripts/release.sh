@@ -4,8 +4,8 @@ set -e
 SEMVER_TAGS_VERSION="v0.4.0"
 BUILDKIT_VERSION="0.17.3"
 
-# /workspace is cloned by the job command.
-cd /workspace
+# /job/src is cloned by the job command.
+cd /job/src
 
 # -------------------------------------------------------------------
 # 1. Install tooling
@@ -102,7 +102,7 @@ build_and_push runnerlib Dockerfile.runner \
 echo "=== Building Go binary ==="
 cd coordinator_api
 CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o /tmp/reactorcide .
-cd /workspace
+cd /job/src
 
 cp /tmp/reactorcide deployment/reactorcide
 build_and_push deployment Dockerfile.coordinator \
@@ -112,9 +112,9 @@ build_and_push deployment Dockerfile.worker \
 rm -f deployment/reactorcide
 
 echo "=== Building web UI binary ==="
-cd /workspace/webapp
+cd /job/src/webapp
 CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-w -s" -o /tmp/reactorcide-web .
-cd /workspace
+cd /job/src
 
 cp /tmp/reactorcide-web deployment/reactorcide-web
 build_and_push deployment Dockerfile.web \
@@ -127,7 +127,7 @@ rm -f deployment/reactorcide-web
 echo "=== Cross-compiling CLI ==="
 RELEASE_DIR="/tmp/release"
 mkdir -p "${RELEASE_DIR}"
-cd /workspace/coordinator_api
+cd /job/src/coordinator_api
 
 PLATFORMS="linux/amd64 linux/arm64 darwin/amd64 darwin/arm64 windows/amd64 windows/arm64"
 for PLATFORM in ${PLATFORMS}; do
@@ -143,14 +143,14 @@ for PLATFORM in ${PLATFORMS}; do
 
   ARCHIVE_NAME="reactorcide-${VERSION}-${OS}-${ARCH}"
   if [ "${OS}" = "windows" ]; then
-    cd /tmp && zip "${RELEASE_DIR}/${ARCHIVE_NAME}.zip" "${BINARY}" && cd /workspace/coordinator_api
+    cd /tmp && zip "${RELEASE_DIR}/${ARCHIVE_NAME}.zip" "${BINARY}" && cd /job/src/coordinator_api
   else
     tar -czf "${RELEASE_DIR}/${ARCHIVE_NAME}.tar.gz" -C /tmp "${BINARY}"
   fi
   rm -f "/tmp/${BINARY}"
 done
 
-cd /workspace
+cd /job/src
 
 # -------------------------------------------------------------------
 # 8. GitHub release

@@ -1,7 +1,7 @@
 name: build-runnerbase
 image: alpine:3.19
 capabilities:
-  - docker
+  - builder
 run_as:
   user: root
 command: |-
@@ -10,19 +10,30 @@ command: |-
 
     echo "Building runnerbase image: $REGISTRY/$IMAGE:$TAG"
 
-    # Install nerdctl (containerd CLI)
-    NERDCTL_VERSION=2.1.3
-    wget -q "https://github.com/containerd/nerdctl/releases/download/v${NERDCTL_VERSION}/nerdctl-${NERDCTL_VERSION}-linux-amd64.tar.gz" -O /tmp/nerdctl.tar.gz
-    tar -xzf /tmp/nerdctl.tar.gz -C /usr/local/bin nerdctl
-    rm /tmp/nerdctl.tar.gz
+    BUILDKIT_VERSION=0.17.3
+    wget -q "https://github.com/moby/buildkit/releases/download/v${BUILDKIT_VERSION}/buildkit-v${BUILDKIT_VERSION}.linux-amd64.tar.gz" -O /tmp/buildkit.tar.gz
+    tar -xzf /tmp/buildkit.tar.gz -C /usr/local bin/buildctl
+    rm /tmp/buildkit.tar.gz
+    for i in $(seq 1 30); do
+      if buildctl debug info >/dev/null 2>&1; then
+        break
+      fi
+      sleep 1
+    done
+    export HOME=/root
+    mkdir -p "$HOME/.docker"
+    AUTH=$(printf "%s:%s" "$REGISTRY_USER" "$REGISTRY_PASSWORD" | base64 -w 0)
+    printf "{\"auths\":{\"%s\":{\"auth\":\"%s\"}}}\n" "$REGISTRY" "$AUTH" > "$HOME/.docker/config.json"
 
     # Build image
     cd /job/src/runnerlib
-    nerdctl build -t "$REGISTRY/$IMAGE:$TAG" -f Dockerfile.runner .
-
-    # Login and push
-    echo "$REGISTRY_PASSWORD" | nerdctl login "$REGISTRY" -u "$REGISTRY_USER" --password-stdin
-    nerdctl push "$REGISTRY/$IMAGE:$TAG"
+    buildctl build \
+      --frontend dockerfile.v0 \
+      --local context=. \
+      --local dockerfile=. \
+      --opt filename=Dockerfile.runner \
+      --opt build-arg:CACHEBUST=$(date +%s) \
+      --output type=image,name="$REGISTRY/$IMAGE:$TAG",push=true
 
     echo "Done! Image pushed to $REGISTRY/$IMAGE:$TAG"
   '

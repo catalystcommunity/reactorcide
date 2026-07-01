@@ -87,6 +87,15 @@ class TestParseJobDefinition:
                 "command": "make test",
                 "timeout": 1800,
                 "priority": 10,
+                "depends_on": ["lint"],
+                "condition": "always",
+                "for_each": ["unit", "integration"],
+                "item_var": "SUITE",
+                "code_dir": "/job/code",
+                "job_dir": "/job/code/subdir",
+                "working_dir": "/job/code/subdir",
+                "run_as": {"user": "root"},
+                "capabilities": ["builder"],
             },
             "environment": {
                 "BUILD_TYPE": "test",
@@ -105,6 +114,15 @@ class TestParseJobDefinition:
         assert defn.job.command == "make test"
         assert defn.job.timeout == 1800
         assert defn.job.priority == 10
+        assert defn.job.depends_on == ["lint"]
+        assert defn.job.condition == "always"
+        assert defn.job.for_each == ["unit", "integration"]
+        assert defn.job.item_var == "SUITE"
+        assert defn.job.code_dir == "/job/code"
+        assert defn.job.job_dir == "/job/code/subdir"
+        assert defn.job.working_dir == "/job/code/subdir"
+        assert defn.job.run_as_user == "root"
+        assert defn.job.capabilities == ["builder"]
         assert defn.environment == {"BUILD_TYPE": "test", "VERBOSE": "true"}
         assert defn.source_file == "/path/to/test.yaml"
 
@@ -757,6 +775,41 @@ class TestGenerateTriggers:
 
         assert triggers[0].priority == 20
         assert triggers[0].timeout == 3600
+
+    def test_trigger_with_workflow_and_runtime_fields(self):
+        """Test workflow dependency and runtime fields are passed through."""
+        defs = [
+            JobDefinition(
+                name="integration",
+                job=JobConfig(
+                    image="alpine:latest",
+                    command="make integration",
+                    depends_on=["unit"],
+                    condition="always",
+                    for_each=["postgres", "mysql"],
+                    item_var="DB",
+                    code_dir="/job/code",
+                    job_dir="/job/code/app",
+                    working_dir="/job/code/app",
+                    run_as_user="root",
+                    capabilities=["builder"],
+                ),
+            ),
+        ]
+        ctx = EventContext(event_type="push")
+
+        triggers = generate_triggers(defs, ctx)
+
+        trigger = triggers[0]
+        assert trigger.depends_on == ["unit"]
+        assert trigger.condition == "always"
+        assert trigger.for_each == ["postgres", "mysql"]
+        assert trigger.item_var == "DB"
+        assert trigger.code_dir == "/job/code"
+        assert trigger.job_dir == "/job/code/app"
+        assert trigger.working_dir == "/job/code/app"
+        assert trigger.run_as_user == "root"
+        assert trigger.capabilities == ["builder"]
 
     def test_trigger_without_sources(self):
         """Test trigger when no source URLs are in context."""

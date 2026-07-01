@@ -10,8 +10,8 @@ job:
   command: |
     set -e
     apk add --no-cache git wget zip
-    git clone "https://x-access-token:${GITHUB_PAT}@github.com/${REACTORCIDE_REPO}.git" /workspace
-    sh /workspace/.reactorcide/jobs/scripts/release.sh
+    git clone "https://x-access-token:${GITHUB_PAT}@github.com/${REACTORCIDE_REPO}.git" /job/src
+    sh /job/src/.reactorcide/jobs/scripts/release.sh
   timeout: 3600
   priority: 15
   raw_command: true
