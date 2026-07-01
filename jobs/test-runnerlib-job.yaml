@@ -16,6 +16,13 @@ command: |
     echo 'Python version:'
     python --version
     echo ''
+    echo 'Go version:'
+    go version
+    echo ''
+    echo 'Rust version:'
+    rustc --version
+    cargo --version
+    echo ''
     echo 'Runnerlib installed:'
     pip show runnerlib 2>/dev/null | head -3 || echo 'runnerlib not installed as package'
     echo ''

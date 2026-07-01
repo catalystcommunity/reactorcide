@@ -1,5 +1,7 @@
 name: deploy-reactorcide-vm
 image: containers.catalystsquad.com/public/reactorcide/runnerbase:dev
+run_local:
+    user: root
 command: |-
     set -euo pipefail
 
@@ -13,14 +15,25 @@ command: |-
     # Setup SSH from environment variable
     mkdir -p ~/.ssh
     chmod 700 ~/.ssh
+    cat > ~/.ssh/config <<'SSH_CONFIG'
+    Host *
+      StrictHostKeyChecking no
+      UserKnownHostsFile /dev/null
+    SSH_CONFIG
+    sed -i 's/^    //' ~/.ssh/config
+    chmod 600 ~/.ssh/config
+    SSH_KEY_PATH=/tmp/reactorcide_deploy_ssh_key
+    ssh() {
+      command ssh -i "${SSH_KEY_PATH}" -o IdentitiesOnly=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null "$@"
+    }
 
     if [ -z "${SSH_PRIVATE_KEY:-}" ]; then
       echo "ERROR: SSH_PRIVATE_KEY environment variable not set"
       exit 1
     fi
 
-    echo "${SSH_PRIVATE_KEY}" > ~/.ssh/id_rsa
-    chmod 600 ~/.ssh/id_rsa
+    printf '%s\n' "${SSH_PRIVATE_KEY}" > "${SSH_KEY_PATH}"
+    chmod 600 "${SSH_KEY_PATH}"
     echo "SSH key configured"
 
     # Add host to known_hosts to avoid prompt
