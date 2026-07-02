@@ -107,6 +107,72 @@ func TestKubernetesRunnerPrepareWorkspaceRunsAsRootForNonRootJobs(t *testing.T) 
 	}
 }
 
+func TestKubernetesRunnerBuilderSidecarOverridesPodNonRootPolicy(t *testing.T) {
+	clientset := fake.NewSimpleClientset()
+	runner := &KubernetesRunner{
+		clientset:      clientset,
+		namespace:      "reactorcide",
+		serviceAccount: "default",
+		dindImage:      "docker:27-dind",
+	}
+
+	_, err := runner.SpawnJob(context.Background(), &JobConfig{
+		JobID:        "test-job",
+		Image:        "reactorcide/runnerbase:test",
+		Command:      []string{"sh", "-c", "buildctl debug info"},
+		Env:          map[string]string{},
+		WorkingDir:   "/job",
+		Capabilities: []string{CapabilityBuilder},
+		RunAsUser:    "runner",
+	})
+	if err != nil {
+		t.Fatalf("SpawnJob failed: %v", err)
+	}
+
+	jobs, err := clientset.BatchV1().Jobs("reactorcide").List(context.Background(), metav1.ListOptions{})
+	if err != nil {
+		t.Fatalf("listing jobs failed: %v", err)
+	}
+	if len(jobs.Items) != 1 {
+		t.Fatalf("expected 1 Kubernetes Job, got %d", len(jobs.Items))
+	}
+
+	podSpec := jobs.Items[0].Spec.Template.Spec
+	if podSpec.SecurityContext == nil || podSpec.SecurityContext.RunAsNonRoot == nil || !*podSpec.SecurityContext.RunAsNonRoot {
+		t.Fatalf("expected pod to default to runAsNonRoot=true")
+	}
+
+	var builder *int
+	for i := range podSpec.InitContainers {
+		if podSpec.InitContainers[i].Name == "builder" {
+			builder = &i
+			break
+		}
+	}
+	if builder == nil {
+		t.Fatalf("expected builder sidecar init container")
+	}
+
+	builderSecurity := podSpec.InitContainers[*builder].SecurityContext
+	if builderSecurity == nil {
+		t.Fatalf("builder sidecar should have an explicit security context")
+	}
+	if builderSecurity.Privileged == nil || !*builderSecurity.Privileged {
+		t.Fatalf("builder sidecar should be privileged")
+	}
+	if builderSecurity.RunAsUser == nil || *builderSecurity.RunAsUser != 0 {
+		t.Fatalf("builder sidecar should run as uid 0, got %v", builderSecurity.RunAsUser)
+	}
+	if builderSecurity.RunAsNonRoot == nil || *builderSecurity.RunAsNonRoot {
+		t.Fatalf("builder sidecar should override pod runAsNonRoot=false")
+	}
+
+	job := podSpec.Containers[0]
+	if job.SecurityContext == nil || job.SecurityContext.RunAsUser == nil || *job.SecurityContext.RunAsUser != 1001 {
+		t.Fatalf("job container should still run as uid 1001, got %v", job.SecurityContext)
+	}
+}
+
 func TestKubernetesRunnerMountsVCSAuthAsWritableRuntimeFiles(t *testing.T) {
 	clientset := fake.NewSimpleClientset()
 	runner := &KubernetesRunner{
