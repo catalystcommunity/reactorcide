@@ -427,7 +427,9 @@ func (kr *KubernetesRunner) SpawnJob(ctx context.Context, config *JobConfig) (st
 			Image: image,
 			Args:  sidecarArgs,
 			SecurityContext: &corev1.SecurityContext{
-				Privileged: &priv,
+				Privileged:   &priv,
+				RunAsUser:    int64Ptr(0),
+				RunAsNonRoot: boolPtr(false),
 			},
 			VolumeMounts:  sidecarMounts,
 			RestartPolicy: &always,
