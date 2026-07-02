@@ -424,38 +424,13 @@ def run_migrations(config: Dict[str, Any], dry_run: bool = False) -> None:
 
     namespace = config['namespace']
     release = config['release']
+    coordinator_deployment = f"deployment/{release}app"
 
     if dry_run:
         log("(would run migrations)")
         return
 
-    # Find coordinator pod
-    coordinator_pod = ""
-    try:
-        coordinator_pod = run_cmd_output(
-            f"kubectl get pods -n {namespace} "
-            f"-l 'app.kubernetes.io/name=reactorcide,app.kubernetes.io/component=app' "
-            f"-o jsonpath='{{.items[0].metadata.name}}'"
-        )
-    except subprocess.CalledProcessError:
-        pass
-
-    if not coordinator_pod:
-        try:
-            coordinator_pod = run_cmd_output(
-                f"kubectl get pods -n {namespace} "
-                f"-l 'app.kubernetes.io/instance={release}' "
-                f"-o jsonpath='{{.items[0].metadata.name}}'"
-            )
-        except subprocess.CalledProcessError:
-            pass
-
-    if not coordinator_pod:
-        log("ERROR: Could not find coordinator pod")
-        run_cmd(f"kubectl get pods -n {namespace}")
-        raise RuntimeError("Could not find coordinator pod")
-
-    run_cmd(f"kubectl exec -n {namespace} {coordinator_pod} -- /reactorcide migrate")
+    run_cmd(f"kubectl exec -n {namespace} {coordinator_deployment} -- /reactorcide migrate")
 
 
 def create_api_token(config: Dict[str, Any], dry_run: bool = False) -> None:
@@ -503,31 +478,13 @@ def create_api_token(config: Dict[str, Any], dry_run: bool = False) -> None:
         log(f"WARNING: Failed to get user-id from secret {user_secret_name}: {e}")
         return
 
-    # Find coordinator pod (app pod, not worker)
-    coordinator_pod = run_cmd_output(
-        f"kubectl get pods -n {namespace} "
-        f"-l 'app.kubernetes.io/name={release}app' "
-        f"-o jsonpath='{{.items[0].metadata.name}}'"
-    )
-
-    if not coordinator_pod:
-        # Fallback: try with component label
-        coordinator_pod = run_cmd_output(
-            f"kubectl get pods -n {namespace} "
-            f"-l 'app.kubernetes.io/instance={release},app.kubernetes.io/component=app' "
-            f"-o jsonpath='{{.items[0].metadata.name}}'"
-        )
-
-    if not coordinator_pod:
-        log("WARNING: Could not find coordinator pod for token creation")
-        return
-
+    coordinator_deployment = f"deployment/{release}app"
     from datetime import datetime
     token_name = f"deploy-{datetime.now().strftime('%Y%m%d-%H%M%S')}"
 
     try:
         token_output = run_cmd_output(
-            f"kubectl exec -n {namespace} {coordinator_pod} -- "
+            f"kubectl exec -n {namespace} {coordinator_deployment} -- "
             f"/reactorcide token create --name {token_name} --user-id {default_user_id}"
         )
 
