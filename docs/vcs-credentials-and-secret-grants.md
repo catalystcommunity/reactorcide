@@ -49,11 +49,21 @@ Worker execution allows:
 - Project job-file secrets under `projects/<project_id>/jobs/<job_file>`.
 - Additional project/org paths only when a matching secret grant exists.
 
-Grant matching includes the secret path prefix plus optional job identity
-constraints. Job identity is both `job_name` and `job_file`; use `job_file`
-when the same job name can appear in more than one context.
+Grant matching includes a secret path matcher plus an optional job-name
+matcher. Grants are named so they can be managed idempotently by CLI/API.
+
+Supported secret path matchers are `exact`, `prefix`, `glob`, and `regex`.
+Supported job name matchers are `any`, `exact`, `prefix`, `glob`, and `regex`.
+Use scoped job names or prefixes when the same workflow/job name appears in
+more than one context.
 
 ## Project Secret Grant API
+
+Org/global grants live at `/api/v1/secret-grants`. Project-scoped grants can
+be addressed either by query parameter or the project route:
+
+- `/api/v1/secret-grants?project=<project_id_or_name_or_repo_url>`
+- `/api/v1/projects/<project_id>/secret-grants`
 
 List grants:
 
@@ -70,11 +80,23 @@ curl -X POST \
   -H "Content-Type: application/json" \
   https://reactorcide.example.com/api/v1/projects/<project_id>/secret-grants \
   -d '{
-    "secret_path_prefix": "deploy/production",
-    "job_name": "deploy",
-    "job_file": ".reactorcide/jobs/deploy.yaml",
+    "name": "deploy-production",
+    "secret_path_match": "prefix",
+    "secret_path_pattern": "deploy/production",
+    "job_name_match": "prefix",
+    "job_name_pattern": "github.com/example/repo:deploy",
     "description": "Allow the deploy job to read production deploy secrets"
   }'
+```
+
+Update a grant by name or id:
+
+```bash
+curl -X PATCH \
+  -H "Authorization: Bearer <token>" \
+  -H "Content-Type: application/json" \
+  https://reactorcide.example.com/api/v1/secret-grants/deploy-production?project=<project_id> \
+  -d '{"job_name_match":"glob","job_name_pattern":"github.com/example/repo:deploy*"}'
 ```
 
 Delete a grant:
@@ -82,10 +104,59 @@ Delete a grant:
 ```bash
 curl -X DELETE \
   -H "Authorization: Bearer <token>" \
-  https://reactorcide.example.com/api/v1/projects/<project_id>/secret-grants/<grant_id>
+  https://reactorcide.example.com/api/v1/projects/<project_id>/secret-grants/deploy-production
 ```
 
 Grant APIs return metadata only. They never return secret values.
+
+## Secret Grant CLI
+
+The CLI uses `REACTORCIDE_API_URL` and `REACTORCIDE_API_TOKEN`, or matching
+`--api-url` and `--token` flags.
+
+```bash
+reactorcide secret-grants list --project github.com/example/repo
+
+reactorcide secret-grants set deploy-production \
+  --project github.com/example/repo \
+  --secret-path deploy/production \
+  --secret-match prefix \
+  --job-name "github.com/example/repo:deploy" \
+  --job-match exact
+
+reactorcide secret-grants delete deploy-production --project github.com/example/repo
+```
+
+Bulk apply accepts a CSIL-style YAML file:
+
+```yaml
+apiVersion: reactorcide.catalystcommunity.io/v1alpha1
+kind: SecretGrantList
+items:
+  - metadata:
+      name: deploy-production
+    spec:
+      scope:
+        project: github.com/example/repo
+      secret:
+        path: deploy/production
+        match: prefix
+      subject:
+        jobName:
+          value: github.com/example/repo:deploy
+          match: exact
+      description: Allow deploy jobs to read production deploy secrets
+```
+
+Apply it:
+
+```bash
+reactorcide secret-grants apply --file secret-grants.yaml --dry-run
+reactorcide secret-grants apply --file secret-grants.yaml
+```
+
+Set `spec.state: absent` on an item to delete it. Use `--prune` only when the
+file is the complete desired grant list for every scope it mentions.
 
 ## Audit Behavior
 

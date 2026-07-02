@@ -13,7 +13,7 @@ type secretGrantMockStore struct {
 	grants []models.SecretGrant
 }
 
-func (s *secretGrantMockStore) ListSecretGrantsForJob(ctx context.Context, userID string, projectID *string, jobName, jobFile string) ([]models.SecretGrant, error) {
+func (s *secretGrantMockStore) ListSecretGrantsForJob(ctx context.Context, userID string, projectID *string, jobName string) ([]models.SecretGrant, error) {
 	return s.grants, nil
 }
 
@@ -43,15 +43,44 @@ func TestAuthorizeSecretAccess_RequiresMatchingGrantForSharedSecrets(t *testing.
 	}
 	jp := &JobProcessor{store: &secretGrantMockStore{
 		grants: []models.SecretGrant{{
-			GrantID:          "grant-1",
-			UserID:           "user-1",
-			ProjectID:        &projectID,
-			SecretPathPrefix: "deploy/production",
-			JobName:          "deploy",
-			JobFile:          ".reactorcide/jobs/deploy.yaml",
+			GrantID:           "grant-1",
+			Name:              "deploy-production",
+			UserID:            "user-1",
+			ProjectID:         &projectID,
+			SecretPathMatch:   models.SecretGrantMatchPrefix,
+			SecretPathPattern: "deploy/production",
+			JobNameMatch:      models.SecretGrantMatchExact,
+			JobNamePattern:    "deploy",
 		}},
 	}}
 
 	require.NoError(t, jp.authorizeSecretAccess(context.Background(), job, "deploy/production/db", "password"))
 	require.Error(t, jp.authorizeSecretAccess(context.Background(), job, "deploy/staging/db", "password"))
+}
+
+func TestAuthorizeSecretAccess_SupportsGrantPatterns(t *testing.T) {
+	projectID := "project-1"
+	job := &models.Job{
+		JobID:     "job-1",
+		UserID:    "user-1",
+		ProjectID: &projectID,
+		Name:      "release-linux-amd64",
+	}
+	jp := &JobProcessor{store: &secretGrantMockStore{
+		grants: []models.SecretGrant{{
+			GrantID:           "grant-1",
+			Name:              "release-registry",
+			UserID:            "user-1",
+			ProjectID:         &projectID,
+			SecretPathMatch:   models.SecretGrantMatchGlob,
+			SecretPathPattern: "catalystcommunity/*",
+			JobNameMatch:      models.SecretGrantMatchPrefix,
+			JobNamePattern:    "release-",
+		}},
+	}}
+
+	require.NoError(t, jp.authorizeSecretAccess(context.Background(), job, "catalystcommunity/registry", "password"))
+
+	job.Name = "test-linux-amd64"
+	require.Error(t, jp.authorizeSecretAccess(context.Background(), job, "catalystcommunity/registry", "password"))
 }

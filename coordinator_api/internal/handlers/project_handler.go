@@ -22,7 +22,9 @@ type ProjectHandler struct {
 type projectSecretGrantStore interface {
 	CreateSecretGrant(ctx context.Context, grant *models.SecretGrant) error
 	ListSecretGrants(ctx context.Context, userID string, projectID *string) ([]models.SecretGrant, error)
-	DeleteSecretGrant(ctx context.Context, grantID string, projectID *string) error
+	GetSecretGrant(ctx context.Context, userID string, projectID *string, ref string) (*models.SecretGrant, error)
+	UpdateSecretGrant(ctx context.Context, grant *models.SecretGrant) error
+	DeleteSecretGrant(ctx context.Context, userID string, projectID *string, ref string) error
 }
 
 // NewProjectHandler creates a new ProjectHandler
@@ -117,16 +119,37 @@ type ListProjectsResponse struct {
 	Offset   int               `json:"offset"`
 }
 
-type CreateSecretGrantRequest struct {
-	SecretPathPrefix string `json:"secret_path_prefix"`
-	JobName          string `json:"job_name,omitempty"`
-	JobFile          string `json:"job_file,omitempty"`
-	Description      string `json:"description,omitempty"`
+type SecretGrantRequest struct {
+	Name              string `json:"name,omitempty"`
+	ProjectID         string `json:"project_id,omitempty"`
+	Project           string `json:"project,omitempty"`
+	SecretPathMatch   string `json:"secret_path_match,omitempty"`
+	SecretPathPattern string `json:"secret_path_pattern,omitempty"`
+	SecretPathPrefix  string `json:"secret_path_prefix,omitempty"`
+	JobNameMatch      string `json:"job_name_match,omitempty"`
+	JobNamePattern    string `json:"job_name_pattern,omitempty"`
+	JobName           string `json:"job_name,omitempty"`
+	Description       string `json:"description,omitempty"`
+	State             string `json:"state,omitempty"`
 }
 
 type ListSecretGrantsResponse struct {
 	Grants []models.SecretGrant `json:"grants"`
 	Total  int                  `json:"total"`
+}
+
+type SecretGrantApplyRequest struct {
+	DryRun bool                 `json:"dry_run,omitempty"`
+	Prune  bool                 `json:"prune,omitempty"`
+	Grants []SecretGrantRequest `json:"grants"`
+}
+
+type SecretGrantApplyResponse struct {
+	DryRun    bool                 `json:"dry_run"`
+	Created   []models.SecretGrant `json:"created,omitempty"`
+	Updated   []models.SecretGrant `json:"updated,omitempty"`
+	Deleted   []models.SecretGrant `json:"deleted,omitempty"`
+	Unchanged []models.SecretGrant `json:"unchanged,omitempty"`
 }
 
 func projectToResponse(p *models.Project) ProjectResponse {
@@ -451,6 +474,10 @@ func (h *ProjectHandler) ListSecretGrants(w http.ResponseWriter, r *http.Request
 }
 
 func (h *ProjectHandler) CreateSecretGrant(w http.ResponseWriter, r *http.Request) {
+	h.createSecretGrantWithScope(w, r, true)
+}
+
+func (h *ProjectHandler) GetSecretGrant(w http.ResponseWriter, r *http.Request) {
 	user := checkauth.GetUserFromContext(r.Context())
 	if user == nil {
 		h.respondWithError(w, http.StatusUnauthorized, store.ErrUnauthorized)
@@ -465,28 +492,58 @@ func (h *ProjectHandler) CreateSecretGrant(w http.ResponseWriter, r *http.Reques
 	if !ok {
 		return
 	}
-	var req CreateSecretGrantRequest
+	ref := h.getID(r, "grant_id")
+	if ref == "" {
+		h.respondWithError(w, http.StatusBadRequest, store.ErrInvalidInput)
+		return
+	}
+	grant, err := grantStore.GetSecretGrant(r.Context(), ownerID, &project.ProjectID, ref)
+	if err != nil {
+		h.respondWithError(w, http.StatusNotFound, err)
+		return
+	}
+	h.respondWithJSON(w, http.StatusOK, grant)
+}
+
+func (h *ProjectHandler) UpdateSecretGrant(w http.ResponseWriter, r *http.Request) {
+	user := checkauth.GetUserFromContext(r.Context())
+	if user == nil {
+		h.respondWithError(w, http.StatusUnauthorized, store.ErrUnauthorized)
+		return
+	}
+	grantStore, ok := h.store.(projectSecretGrantStore)
+	if !ok {
+		h.respondWithError(w, http.StatusNotImplemented, errors.New("secret grant store not available"))
+		return
+	}
+	project, ownerID, ok := h.projectAndOwner(w, r, user.UserID)
+	if !ok {
+		return
+	}
+	ref := h.getID(r, "grant_id")
+	if ref == "" {
+		h.respondWithError(w, http.StatusBadRequest, store.ErrInvalidInput)
+		return
+	}
+	var req SecretGrantRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		h.respondWithError(w, http.StatusBadRequest, store.ErrInvalidInput)
 		return
 	}
-	if req.SecretPathPrefix == "" {
-		h.respondWithError(w, http.StatusBadRequest, store.ErrInvalidInput)
+	grant, err := grantStore.GetSecretGrant(r.Context(), ownerID, &project.ProjectID, ref)
+	if err != nil {
+		h.respondWithError(w, http.StatusNotFound, err)
 		return
 	}
-	grant := &models.SecretGrant{
-		UserID:           ownerID,
-		ProjectID:        &project.ProjectID,
-		SecretPathPrefix: req.SecretPathPrefix,
-		JobName:          req.JobName,
-		JobFile:          req.JobFile,
-		Description:      req.Description,
+	if err := applySecretGrantRequest(grant, req); err != nil {
+		h.respondWithError(w, http.StatusBadRequest, err)
+		return
 	}
-	if err := grantStore.CreateSecretGrant(r.Context(), grant); err != nil {
+	if err := grantStore.UpdateSecretGrant(r.Context(), grant); err != nil {
 		h.respondWithError(w, http.StatusInternalServerError, err)
 		return
 	}
-	h.respondWithJSON(w, http.StatusCreated, grant)
+	h.respondWithJSON(w, http.StatusOK, grant)
 }
 
 func (h *ProjectHandler) DeleteSecretGrant(w http.ResponseWriter, r *http.Request) {
@@ -500,7 +557,7 @@ func (h *ProjectHandler) DeleteSecretGrant(w http.ResponseWriter, r *http.Reques
 		h.respondWithError(w, http.StatusNotImplemented, errors.New("secret grant store not available"))
 		return
 	}
-	project, _, ok := h.projectAndOwner(w, r, user.UserID)
+	project, ownerID, ok := h.projectAndOwner(w, r, user.UserID)
 	if !ok {
 		return
 	}
@@ -509,7 +566,7 @@ func (h *ProjectHandler) DeleteSecretGrant(w http.ResponseWriter, r *http.Reques
 		h.respondWithError(w, http.StatusBadRequest, store.ErrInvalidInput)
 		return
 	}
-	if err := grantStore.DeleteSecretGrant(r.Context(), grantID, &project.ProjectID); err != nil {
+	if err := grantStore.DeleteSecretGrant(r.Context(), ownerID, &project.ProjectID, grantID); err != nil {
 		h.respondWithError(w, http.StatusNotFound, err)
 		return
 	}

@@ -19,6 +19,7 @@ func main() {
 			cmd.HealthCheckCommand,
 			cmd.TokenCommand,
 			cmd.SecretsCommand,
+			cmd.SecretGrantsCommand,
 			cmd.RunLocalCommand,
 			cmd.SubmitCommand,
 			cmd.LogsCommand,
