@@ -185,7 +185,7 @@ Workflow state uses dedicated workflow tables plus workflow foreign keys on `job
 
 ## VCS Status
 
-Individual workflow jobs do not publish their own commit statuses. V1 publishes one aggregate context:
+Individual workflow jobs do not publish their own commit statuses. V1 publishes one aggregate context named after the workflow, defaulting to:
 
 ```text
 Reactorcide Jobs

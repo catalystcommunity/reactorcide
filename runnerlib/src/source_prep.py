@@ -9,6 +9,23 @@ from src.logging import log_stdout, log_stderr, logger
 from src.config import RunnerConfig, get_config
 
 
+def cleanup_vcs_auth() -> None:
+    """Remove transient VCS checkout auth files after source preparation."""
+    cleanup = os.getenv("REACTORCIDE_VCS_AUTH_CLEANUP", "true").lower()
+    if cleanup in ("0", "false", "no"):
+        return
+    auth_dir = os.getenv("REACTORCIDE_VCS_AUTH_DIR")
+    if not auth_dir:
+        return
+    try:
+        path = Path(auth_dir)
+        if path.exists():
+            shutil.rmtree(path)
+            logger.info("Removed VCS checkout auth directory", fields={"path": auth_dir})
+    except Exception as e:
+        logger.warning("Failed to remove VCS checkout auth directory", fields={"path": auth_dir, "error": str(e)})
+
+
 def _checkout_with_fetch_fallback(
     repo: Repo,
     source_ref: str,

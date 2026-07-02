@@ -107,6 +107,61 @@ func TestKubernetesRunnerPrepareWorkspaceRunsAsRootForNonRootJobs(t *testing.T) 
 	}
 }
 
+func TestKubernetesRunnerMountsVCSAuthAsWritableRuntimeFiles(t *testing.T) {
+	clientset := fake.NewSimpleClientset()
+	runner := &KubernetesRunner{
+		clientset:      clientset,
+		namespace:      "reactorcide",
+		serviceAccount: "default",
+		dindImage:      "docker:27-dind",
+	}
+
+	jobName, err := runner.SpawnJob(context.Background(), &JobConfig{
+		JobID:      "test-job",
+		Image:      "reactorcide/runnerbase:test",
+		Command:    []string{"sh", "-c", "echo ok"},
+		Env:        map[string]string{"GIT_CONFIG_GLOBAL": "/job/.reactorcide/vcs-auth/gitconfig"},
+		WorkingDir: "/job",
+		VCSAuth: &VCSAuthConfig{
+			ContainerDir: "/job/.reactorcide/vcs-auth",
+			GitConfig:    "[credential]\n\thelper = store --file /job/.reactorcide/vcs-auth/credentials\n",
+			Credentials:  "https://x-access-token:test-token-123@github.com/example/repo.git\n",
+		},
+	})
+	if err != nil {
+		t.Fatalf("SpawnJob failed: %v", err)
+	}
+
+	secret, err := clientset.CoreV1().Secrets("reactorcide").Get(context.Background(), jobName+"-vcs-auth", metav1.GetOptions{})
+	if err != nil {
+		t.Fatalf("expected VCS auth secret: %v", err)
+	}
+	if string(secret.Data["gitconfig"]) == "" || string(secret.Data["credentials"]) == "" {
+		t.Fatalf("secret missing git auth data")
+	}
+
+	jobs, err := clientset.BatchV1().Jobs("reactorcide").List(context.Background(), metav1.ListOptions{})
+	if err != nil {
+		t.Fatalf("listing jobs failed: %v", err)
+	}
+	podSpec := jobs.Items[0].Spec.Template.Spec
+	if len(podSpec.InitContainers) != 2 {
+		t.Fatalf("expected prepare and copy auth init containers, got %d", len(podSpec.InitContainers))
+	}
+	if podSpec.InitContainers[1].Name != "copy-vcs-auth" {
+		t.Fatalf("expected copy-vcs-auth init container, got %q", podSpec.InitContainers[1].Name)
+	}
+	foundAuthMount := false
+	for _, mount := range podSpec.Containers[0].VolumeMounts {
+		if mount.Name == "vcs-auth" && mount.MountPath == "/job/.reactorcide/vcs-auth" && !mount.ReadOnly {
+			foundAuthMount = true
+		}
+	}
+	if !foundAuthMount {
+		t.Fatalf("expected writable vcs-auth emptyDir mount on job container")
+	}
+}
+
 func TestIsPodStartupError(t *testing.T) {
 	tests := []struct {
 		name     string

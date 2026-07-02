@@ -129,6 +129,11 @@ type JobConfig struct {
 	// /etc/group for the host uid so tools like ssh find a valid user entry.
 	ExtraMounts []string
 
+	// VCSAuth contains per-job checkout credential files. Docker/containerd
+	// jobs read these from WorkspaceDir; Kubernetes jobs materialize them as
+	// a short-lived Secret copied into an emptyDir.
+	VCSAuth *VCSAuthConfig
+
 	// Timeout for the job execution (0 = no timeout)
 	TimeoutSeconds int
 
@@ -139,4 +144,13 @@ type JobConfig struct {
 	// Job metadata (for labeling/tagging)
 	JobID     string
 	QueueName string
+}
+
+// VCSAuthConfig contains runtime Git auth material for source preparation.
+// Secret values must not be logged or exposed as environment values.
+type VCSAuthConfig struct {
+	ContainerDir string
+	GitConfig    string
+	Credentials  string
+	SecretValues []string
 }

@@ -8,7 +8,7 @@ from pathlib import Path
 from git import Repo
 
 from src.config import get_config
-from src.source_prep import prepare_source, prepare_ci_source, _checkout_with_fetch_fallback
+from src.source_prep import prepare_source, prepare_ci_source, _checkout_with_fetch_fallback, cleanup_vcs_auth
 
 
 def _init_repo_with_main(path):
@@ -97,6 +97,19 @@ class TestSourcePreparation:
         # Prepare source should return None
         result = prepare_source(config)
         assert result is None
+
+    def test_cleanup_vcs_auth_removes_runtime_auth_dir(self, monkeypatch):
+        """Test transient checkout auth cleanup removes the configured auth directory."""
+        auth_dir = Path(self.temp_dir) / "vcs-auth"
+        auth_dir.mkdir()
+        (auth_dir / "gitconfig").write_text("[credential]\n")
+        (auth_dir / "credentials").write_text("https://x-access-token:test-token@example.com/repo.git\n")
+        monkeypatch.setenv("REACTORCIDE_VCS_AUTH_DIR", str(auth_dir))
+        monkeypatch.setenv("REACTORCIDE_VCS_AUTH_CLEANUP", "true")
+
+        cleanup_vcs_auth()
+
+        assert not auth_dir.exists()
 
     def test_git_source_preparation(self):
         """Test git source preparation."""

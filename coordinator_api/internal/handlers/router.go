@@ -128,6 +128,7 @@ func createAppMux() *http.ServeMux {
 		webhookHandler.SetClientFactory(clientFactory)
 		statusUpdater := vcsManager.GetStatusUpdater()
 		statusUpdater.SetProjectLookup(store.AppStore.GetProjectByID)
+		statusUpdater.SetUserLookup(store.AppStore.GetUserByID)
 		statusUpdater.SetTokenResolver(tokenResolver)
 		statusUpdater.SetClientFactory(clientFactory)
 		log.Println("Per-project VCS token resolution enabled for webhook handler")
@@ -384,7 +385,34 @@ func createAppMux() *http.ServeMux {
 			return
 		}
 
-		r = r.WithContext(setIDContext(r.Context(), "project_id", path))
+		parts := strings.Split(strings.Trim(path, "/"), "/")
+		if len(parts) >= 2 && parts[1] == "secret-grants" {
+			r = r.WithContext(setIDContext(r.Context(), "project_id", parts[0]))
+			if len(parts) == 3 {
+				r = r.WithContext(setIDContext(r.Context(), "grant_id", parts[2]))
+			}
+			handler := transactionMiddleware(authMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				switch {
+				case len(parts) == 2 && r.Method == http.MethodGet:
+					projectHandler.ListSecretGrants(w, r)
+				case len(parts) == 2 && r.Method == http.MethodPost:
+					projectHandler.CreateSecretGrant(w, r)
+				case len(parts) == 3 && r.Method == http.MethodDelete:
+					projectHandler.DeleteSecretGrant(w, r)
+				default:
+					http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+				}
+			})))
+			handler.ServeHTTP(w, r)
+			return
+		}
+
+		if len(parts) != 1 {
+			http.Error(w, "Invalid path", http.StatusBadRequest)
+			return
+		}
+
+		r = r.WithContext(setIDContext(r.Context(), "project_id", parts[0]))
 
 		handler := transactionMiddleware(authMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			switch r.Method {

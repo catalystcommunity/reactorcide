@@ -37,10 +37,13 @@ var (
 	ObjectStorePrefix   = env.GetEnvOrDefault("REACTORCIDE_OBJECT_STORE_PREFIX", "reactorcide/") // for s3/gcs
 
 	// VCS Integration configuration
-	VCSGitHubToken = env.GetEnvOrDefault("REACTORCIDE_VCS_GITHUB_TOKEN", "")
-	VCSGitLabToken = env.GetEnvOrDefault("REACTORCIDE_VCS_GITLAB_TOKEN", "")
-	VCSEnabled     = env.GetEnvAsBoolOrDefault("REACTORCIDE_VCS_ENABLED", "false")
-	VCSBaseURL     = env.GetEnvOrDefault("REACTORCIDE_VCS_BASE_URL", "https://reactorcide.example.com") // Base URL for status links
+	VCSGitHubToken   = env.GetEnvOrDefault("REACTORCIDE_VCS_GITHUB_TOKEN", "")
+	VCSGitLabToken   = env.GetEnvOrDefault("REACTORCIDE_VCS_GITLAB_TOKEN", "")
+	VCSGitHubSecret  = env.GetEnvOrDefault("REACTORCIDE_VCS_GITHUB_SECRET", "")
+	VCSGitLabSecret  = env.GetEnvOrDefault("REACTORCIDE_VCS_GITLAB_SECRET", "")
+	VCSWebhookSecret = env.GetEnvOrDefault("REACTORCIDE_VCS_WEBHOOK_SECRET", "")
+	VCSEnabled       = env.GetEnvAsBoolOrDefault("REACTORCIDE_VCS_ENABLED", "false")
+	VCSBaseURL       = env.GetEnvOrDefault("REACTORCIDE_VCS_BASE_URL", "https://reactorcide.example.com") // Base URL for status links
 
 	// CI Code Security configuration
 	CiCodeAllowlist = env.GetEnvOrDefault("REACTORCIDE_CI_CODE_ALLOWLIST", "")

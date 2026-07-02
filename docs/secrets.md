@@ -176,6 +176,11 @@ environment:
 
 All resolved secret values are automatically registered for log masking — any occurrence in stdout or stderr is replaced with `***`.
 
+Worker jobs can always read their own job-scoped secrets. Access to shared
+project or organization secret paths requires a matching secret grant unless
+the job is running through the unrestricted local path. See
+[VCS Credentials and Secret Grants](./vcs-credentials-and-secret-grants.md).
+
 ## Path and Key Naming
 
 | Rule | Path | Key |

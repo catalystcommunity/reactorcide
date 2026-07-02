@@ -22,8 +22,7 @@ import (
 )
 
 const (
-	defaultWorkflowName          = "Reactorcide Jobs"
-	defaultWorkflowStatusContext = "Reactorcide Jobs"
+	defaultWorkflowName = "Reactorcide Jobs"
 )
 
 type workflowStatusUpdater interface {
@@ -83,7 +82,7 @@ func (tp *TriggerProcessor) ensureWorkflow(ctx context.Context, parentJob *model
 		Name:          name,
 		Status:        "evaluating",
 		QueueName:     parentJob.QueueName,
-		StatusContext: defaultWorkflowStatusContext,
+		StatusContext: name,
 	}
 
 	if metadata, err := vcs.MetadataFromJob(parentJob); err == nil && metadata != nil {

@@ -4,7 +4,7 @@ A minimalist CI/CD system for serious engineering teams. Works with open source 
 
 Run jobs from your laptop just as easily as from the full system. If your VCS provider is down, fine - it's just building blocks.
 
-Reactorcide runs isolated jobs locally, on single-VM workers, or as Kubernetes Jobs. Workflow-triggered jobs are grouped under a single workflow view, PR comment, and VCS status such as `Reactorcide Jobs`.
+Reactorcide runs isolated jobs locally, on single-VM workers, or as Kubernetes Jobs. Workflow-triggered jobs are grouped under a single workflow view, PR comment, and workflow-named VCS status.
 
 ## Quick Start
 
@@ -101,6 +101,7 @@ REACTORCIDE_SECRETS_PASSWORD="<your-secrets-password>" \
 - **[AGENTS.md](./AGENTS.md)** - Implementation guidance for AI assistants and contributors
 - **[docs/runtime-behavior.md](./docs/runtime-behavior.md)** - Local, VM, Kubernetes, path, and run identity behavior
 - **[docs/workflow-design.md](./docs/workflow-design.md)** - Workflow DAGs, dependency handling, workflow vars, and PR status/comment behavior
+- **[docs/vcs-credentials-and-secret-grants.md](./docs/vcs-credentials-and-secret-grants.md)** - Project/org VCS credentials, webhook secrets, and job secret grants
 - **[runnerlib/DESIGN.md](./runnerlib/DESIGN.md)** - Detailed runnerlib architecture and API
 - **[docs/](./docs/)** - Additional documentation
 
