@@ -76,12 +76,14 @@ GitHub will send a ping event to verify the endpoint is reachable.
 
 ### Webhook Secret Configuration
 
-The Reactorcide Coordinator API validates webhook signatures using HMAC-SHA256. Set the secret on the server using one of these environment variables:
+The Reactorcide Coordinator API validates webhook signatures using HMAC-SHA256. Prefer project or org `webhook_secrets` references when managing projects through the API. Global fallback can be configured with:
 
-- `VCS_GITHUB_SECRET` - GitHub-specific secret
-- `VCS_WEBHOOK_SECRET` - Shared secret used for any provider
+- `REACTORCIDE_VCS_GITHUB_SECRET` - GitHub-specific secret
+- `REACTORCIDE_VCS_WEBHOOK_SECRET` - Shared secret used for any provider
 
 The secret configured in GitHub's webhook settings must match exactly.
+
+See [VCS Credentials and Secret Grants](./vcs-credentials-and-secret-grants.md) for project/org lookup order.
 
 ## Step 3: Create Job Definitions
 

@@ -51,6 +51,7 @@ type Job struct {
 	// Job metadata
 	Name        string `gorm:"type:text;not null" json:"name"`
 	Description string `gorm:"type:text" json:"description"`
+	JobFile     string `gorm:"type:text" json:"job_file,omitempty"`
 
 	// Source configuration (untrusted code being tested - optional)
 	// VCS-agnostic fields: works with git, mercurial, svn, or any source control

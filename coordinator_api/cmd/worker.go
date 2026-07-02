@@ -176,6 +176,7 @@ func RunWorker(ctx *cli.Context) error {
 					keyManager, err := secrets.LoadOrCreateMasterKeys(db)
 					if err == nil {
 						su.SetProjectLookup(workerConfig.Store.GetProjectByID)
+						su.SetUserLookup(workerConfig.Store.GetUserByID)
 						su.SetTokenResolver(workerTokenResolver(keyManager))
 						su.SetClientFactory(func(p vcs.Provider, token string) (vcs.Client, error) {
 							return vcsManager.CreateClientWithToken(p, token)

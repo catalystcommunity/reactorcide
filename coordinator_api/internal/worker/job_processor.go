@@ -469,6 +469,9 @@ func (jp *JobProcessor) resolveJobSecrets(ctx context.Context, job *models.Job, 
 
 	// Create getter function for ResolveSecretsInEnvFull
 	getSecret := func(path, key string) (string, error) {
+		if err := jp.authorizeSecretAccess(ctx, job, path, key); err != nil {
+			return "", err
+		}
 		return provider.Get(ctx, path, key)
 	}
 
@@ -630,6 +633,27 @@ func (jp *JobProcessor) executeWithRunnerlib(ctx context.Context, job *models.Jo
 	// Set REACTORCIDE_SECRET_ENV_NAMES so runnerlib knows which env vars contain secrets
 	if len(secretResult.SecretEnvNames) > 0 {
 		jobConfig.Env["REACTORCIDE_SECRET_ENV_NAMES"] = strings.Join(secretResult.SecretEnvNames, ",")
+	}
+
+	vcsAuth, err := jp.prepareVCSCheckoutAuth(ctx, job, jobConfig.Env, workspaceDir)
+	if err != nil {
+		logger.WithError(err).Error("Failed to prepare VCS checkout auth")
+		return &JobResult{
+			ExitCode:     1,
+			Error:        fmt.Sprintf("Failed to prepare VCS checkout auth: %v", err),
+			WorkspaceDir: workspaceDir,
+		}
+	}
+	if vcsAuth != nil {
+		jobConfig.VCSAuth = vcsAuth
+		jobConfig.Env["REACTORCIDE_VCS_AUTH_DIR"] = vcsAuth.ContainerDir
+		jobConfig.Env["REACTORCIDE_VCS_AUTH_CLEANUP"] = "true"
+		jobConfig.Env["GIT_CONFIG_GLOBAL"] = filepath.Join(vcsAuth.ContainerDir, "gitconfig")
+		jobConfig.Env["GIT_TERMINAL_PROMPT"] = "0"
+		for _, secretValue := range vcsAuth.SecretValues {
+			masker.RegisterSecret(secretValue)
+		}
+		defer cleanupVCSCheckoutAuth(workspaceDir)
 	}
 
 	// Mask command for logging

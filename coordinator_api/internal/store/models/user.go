@@ -26,6 +26,8 @@ type User struct {
 	Salt                 []byte         `gorm:"type:bytea;not null" json:"-"`
 	Roles                pq.StringArray `gorm:"type:user_role[];default:ARRAY['user'::user_role];not null" json:"roles"`
 	SecretsInitializedAt *time.Time     `json:"secrets_initialized_at,omitempty"`
+	VCSCredentialSecrets JSONB          `gorm:"column:vcs_token_secrets;type:jsonb;default:'{}'" json:"vcs_token_secrets,omitempty"`
+	WebhookSecrets       JSONB          `gorm:"type:jsonb;default:'{}'" json:"webhook_secrets,omitempty"`
 }
 
 // TableName specifies the table name for the model

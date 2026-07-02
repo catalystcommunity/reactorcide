@@ -72,6 +72,7 @@ func (h *JobHandler) SetStatusUpdater(u vcs.JobStatusUpdaterInterface) {
 type CreateJobRequest struct {
 	Name        string `json:"name" validate:"required,max=255"`
 	Description string `json:"description,omitempty"`
+	JobFile     string `json:"job_file,omitempty"`
 
 	// Source configuration (VCS-agnostic: works with git, mercurial, svn, etc.)
 	// This is the untrusted source code being tested (e.g., PR code)
@@ -108,6 +109,7 @@ type JobResponse struct {
 	JobID       string    `json:"job_id"`
 	Name        string    `json:"name"`
 	Description string    `json:"description"`
+	JobFile     string    `json:"job_file,omitempty"`
 	Status      string    `json:"status"`
 	CreatedAt   time.Time `json:"created_at"`
 	UpdatedAt   time.Time `json:"updated_at"`
@@ -766,6 +768,7 @@ func (h *JobHandler) createJobFromRequest(req *CreateJobRequest, userID string) 
 		UserID:      userID,
 		Name:        req.Name,
 		Description: req.Description,
+		JobFile:     req.JobFile,
 		Status:      "submitted",
 
 		SourceURL:  &req.SourceURL,
@@ -885,6 +888,7 @@ func (h *JobHandler) jobToResponse(job *models.Job) JobResponse {
 		JobID:       job.JobID,
 		Name:        job.Name,
 		Description: job.Description,
+		JobFile:     job.JobFile,
 		Status:      job.Status,
 		CreatedAt:   job.CreatedAt,
 		UpdatedAt:   job.UpdatedAt,

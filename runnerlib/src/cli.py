@@ -283,17 +283,20 @@ def run(
         # NOTE: We don't execute PRE_SOURCE_PREP plugins yet because plugins haven't been loaded.
         # Plugins are loaded from the source after checkout.
 
-        from src.source_prep import prepare_source, prepare_ci_source
+        from src.source_prep import prepare_source, prepare_ci_source, cleanup_vcs_auth
 
-        # Prepare CI source first (trusted code)
-        ci_source_path = prepare_ci_source(config)
-        if ci_source_path:
-            plugin_context.metadata['ci_source_path'] = str(ci_source_path)
+        try:
+            # Prepare CI source first (trusted code)
+            ci_source_path = prepare_ci_source(config)
+            if ci_source_path:
+                plugin_context.metadata['ci_source_path'] = str(ci_source_path)
 
-        # Prepare regular source (potentially untrusted)
-        source_path = prepare_source(config)
-        if source_path:
-            plugin_context.metadata['source_path'] = str(source_path)
+            # Prepare regular source (potentially untrusted)
+            source_path = prepare_source(config)
+            if source_path:
+                plugin_context.metadata['source_path'] = str(source_path)
+        finally:
+            cleanup_vcs_auth()
 
         # Now load plugins from standard locations AFTER source checkout
         # This allows plugins to be part of the checked-out repository
@@ -396,7 +399,11 @@ def checkout(
         if git_ref:
             log_stdout(f"Using git reference: {git_ref}")
         
-        checkout_git_repo(git_url, git_ref, config)
+        from src.source_prep import cleanup_vcs_auth
+        try:
+            checkout_git_repo(git_url, git_ref, config)
+        finally:
+            cleanup_vcs_auth()
         log_stdout("✅ Repository checkout complete")
         
         # Show what was created

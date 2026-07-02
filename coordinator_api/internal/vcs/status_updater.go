@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 
+	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/config"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store/models"
 	"github.com/sirupsen/logrus"
@@ -24,10 +25,14 @@ type ClientFactoryFunc func(provider Provider, token string) (Client, error)
 // ProjectLookupFunc retrieves a project by ID.
 type ProjectLookupFunc func(ctx context.Context, projectID string) (*models.Project, error)
 
+// UserLookupFunc retrieves a user/org by ID.
+type UserLookupFunc func(ctx context.Context, userID string) (*models.User, error)
+
 // JobStatusUpdater handles updating VCS commit statuses based on job status changes
 type JobStatusUpdater struct {
 	vcsClients    map[Provider]Client
 	projectLookup ProjectLookupFunc // optional: per-project token resolution
+	userLookup    UserLookupFunc    // optional: per-owner/org token resolution
 	tokenResolver TokenResolverFunc // optional: per-project secret resolution
 	clientFactory ClientFactoryFunc // optional: create client with per-project token
 	baseURL       string            // base URL for job links in commit statuses
@@ -62,6 +67,11 @@ func (u *JobStatusUpdater) AddVCSClient(provider Provider, client Client) {
 // SetProjectLookup sets the function used to look up projects by ID.
 func (u *JobStatusUpdater) SetProjectLookup(fn ProjectLookupFunc) {
 	u.projectLookup = fn
+}
+
+// SetUserLookup sets the function used to look up users/orgs by ID.
+func (u *JobStatusUpdater) SetUserLookup(fn UserLookupFunc) {
+	u.userLookup = fn
 }
 
 // SetTokenResolver sets the function used to resolve secret references.
@@ -183,11 +193,11 @@ func (u *JobStatusUpdater) UpdateJobStatus(ctx context.Context, job *models.Job)
 	}
 
 	u.logger.WithFields(logrus.Fields{
-		"job_id":   job.JobID,
+		"job_id":     job.JobID,
 		"job_status": job.Status,
 		"vcs_status": vcsStatus,
-		"repo":     metadata.Repo,
-		"sha":      metadata.CommitSHA,
+		"repo":       metadata.Repo,
+		"sha":        metadata.CommitSHA,
 	}).Info("Updated VCS commit status")
 
 	// Update the PR comment (rolling pre-merge, or per-job post-merge).
@@ -264,21 +274,23 @@ func (u *JobStatusUpdater) isJobComplete(status string) bool {
 // getClientForJob returns the best VCS client for the job, trying per-project
 // token first and falling back to the global client.
 func (u *JobStatusUpdater) getClientForJob(ctx context.Context, job *models.Job, provider Provider) Client {
-	// Try per-project token if all dependencies are wired
-	if job.ProjectID != nil && u.projectLookup != nil && u.tokenResolver != nil && u.clientFactory != nil {
+	if job.ProjectID != nil && u.projectLookup != nil {
 		project, err := u.projectLookup(ctx, *job.ProjectID)
-		if err == nil && project != nil && project.VCSTokenSecret != "" {
-			token, err := u.tokenResolver(ctx, project.VCSTokenSecret)
-			if err != nil {
-				u.logger.WithError(err).WithField("project_id", *job.ProjectID).Warn("Failed to resolve per-project VCS token, falling back to global")
-			} else if token != "" {
-				client, err := u.clientFactory(provider, token)
-				if err != nil {
-					u.logger.WithError(err).Warn("Failed to create per-project VCS client, falling back to global")
-				} else {
+		if err == nil && project != nil {
+			if ref := ProjectVCSCredentialSecretRef(project, provider); ref != "" {
+				if client := u.clientForSecretRef(ctx, provider, ref, "project"); client != nil {
 					return client
 				}
 			}
+			if owner := u.projectOwner(ctx, project); owner != nil {
+				if ref := UserVCSCredentialSecretRef(owner, provider); ref != "" {
+					if client := u.clientForSecretRef(ctx, provider, ref, "org"); client != nil {
+						return client
+					}
+				}
+			}
+		} else if err != nil {
+			u.logger.WithError(err).WithField("project_id", *job.ProjectID).Debug("Failed to load project for VCS token lookup")
 		}
 	}
 
@@ -287,6 +299,86 @@ func (u *JobStatusUpdater) getClientForJob(ctx context.Context, job *models.Job,
 		return client
 	}
 	return nil
+}
+
+func (u *JobStatusUpdater) getProjectClient(ctx context.Context, projectID *string, provider Provider) Client {
+	if projectID == nil || u.projectLookup == nil {
+		return nil
+	}
+	project, err := u.projectLookup(ctx, *projectID)
+	if err != nil || project == nil {
+		if err != nil {
+			u.logger.WithError(err).WithField("project_id", *projectID).Debug("Failed to load project for VCS token lookup")
+		}
+		return nil
+	}
+	if ref := ProjectVCSCredentialSecretRef(project, provider); ref != "" {
+		if client := u.clientForSecretRef(ctx, provider, ref, "project"); client != nil {
+			return client
+		}
+	}
+	if owner := u.projectOwner(ctx, project); owner != nil {
+		if ref := UserVCSCredentialSecretRef(owner, provider); ref != "" {
+			return u.clientForSecretRef(ctx, provider, ref, "org")
+		}
+	}
+	return nil
+}
+
+func (u *JobStatusUpdater) projectOwner(ctx context.Context, project *models.Project) *models.User {
+	if u.userLookup == nil {
+		return nil
+	}
+	ownerID := ""
+	if project != nil && project.UserID != nil {
+		ownerID = *project.UserID
+	}
+	if ownerID == "" {
+		ownerID = config.DefaultUserID
+	}
+	if ownerID == "" {
+		return nil
+	}
+	user, err := u.userLookup(ctx, ownerID)
+	if err != nil {
+		u.logger.WithError(err).WithField("owner_id", ownerID).Debug("Failed to load project owner for VCS token lookup")
+		return nil
+	}
+	return user
+}
+
+func (u *JobStatusUpdater) clientForSecretRef(ctx context.Context, provider Provider, secretRef, scope string) Client {
+	if u.tokenResolver == nil || u.clientFactory == nil {
+		u.logger.WithFields(logrus.Fields{
+			"provider": provider,
+			"scope":    scope,
+		}).Warn("VCS token reference configured but token resolver or client factory is unavailable")
+		return nil
+	}
+	token, err := u.tokenResolver(ctx, secretRef)
+	if err != nil {
+		u.logger.WithError(err).WithFields(logrus.Fields{
+			"provider": provider,
+			"scope":    scope,
+		}).Warn("Failed to resolve VCS token, falling back to global")
+		return nil
+	}
+	if token == "" {
+		return nil
+	}
+	client, err := u.clientFactory(provider, token)
+	if err != nil {
+		u.logger.WithError(err).WithFields(logrus.Fields{
+			"provider": provider,
+			"scope":    scope,
+		}).Warn("Failed to create scoped VCS client, falling back to global")
+		return nil
+	}
+	u.logger.WithFields(logrus.Fields{
+		"provider": provider,
+		"scope":    scope,
+	}).Info("Using scoped VCS client")
+	return client
 }
 
 // SetBaseURL sets the base URL used for job links in commit statuses.

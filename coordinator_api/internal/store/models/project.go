@@ -20,6 +20,7 @@ type Project struct {
 	ProjectID   string    `gorm:"primaryKey;type:uuid;default:generate_ulid()" json:"project_id"`
 	CreatedAt   time.Time `gorm:"autoCreateTime:false;default:timezone('utc', now())" json:"created_at"`
 	UpdatedAt   time.Time `gorm:"autoUpdateTime:false;default:timezone('utc', now())" json:"updated_at"`
+	UserID      *string   `gorm:"type:uuid" json:"user_id,omitempty"`
 
 	// Project identification
 	Name        string `gorm:"type:text;not null" json:"name"`
@@ -39,10 +40,15 @@ type Project struct {
 
 	// VCS integration — stores "path:key" references into the secrets store
 	VCSTokenSecret string `gorm:"type:text" json:"vcs_token_secret"`
+	// VCSCredentialSecrets maps provider names (for example "github") to
+	// "path:key" secret refs. VCSTokenSecret remains as legacy/default fallback.
+	VCSCredentialSecrets JSONB `gorm:"column:vcs_token_secrets;type:jsonb;default:'{}'" json:"vcs_token_secrets,omitempty"`
 	// WebhookSecret stores a "path:key" reference to the webhook signing secret
 	// for this project. When set, incoming webhooks are validated using this
 	// per-project secret instead of the global REACTORCIDE_VCS_GITHUB_SECRET.
 	WebhookSecret string `gorm:"type:text" json:"webhook_secret"`
+	// WebhookSecrets maps provider names to "path:key" secret refs.
+	WebhookSecrets JSONB `gorm:"type:jsonb;default:'{}'" json:"webhook_secrets,omitempty"`
 
 	// Job defaults
 	DefaultRunnerImage     string `gorm:"type:text;default:'quay.io/catalystcommunity/reactorcide_runner'" json:"default_runner_image"`
@@ -54,6 +60,26 @@ type Project struct {
 // TableName specifies the table name for the model
 func (Project) TableName() string {
 	return "projects"
+}
+
+// SecretGrant allows an API/worker job to resolve secrets under a path prefix.
+type SecretGrant struct {
+	GrantID          string    `gorm:"primaryKey;type:uuid;default:generate_ulid()" json:"grant_id"`
+	CreatedAt        time.Time `gorm:"autoCreateTime:false;default:timezone('utc', now())" json:"created_at"`
+	UpdatedAt        time.Time `gorm:"autoUpdateTime:false;default:timezone('utc', now())" json:"updated_at"`
+	UserID           string    `gorm:"type:uuid;not null" json:"user_id"`
+	ProjectID        *string   `gorm:"type:uuid" json:"project_id,omitempty"`
+	SecretPathPrefix string    `gorm:"type:text;not null" json:"secret_path_prefix"`
+	JobName          string    `gorm:"type:text" json:"job_name,omitempty"`
+	JobFile          string    `gorm:"type:text" json:"job_file,omitempty"`
+	Description      string    `gorm:"type:text" json:"description,omitempty"`
+
+	User    User     `gorm:"foreignKey:UserID" json:"user,omitempty"`
+	Project *Project `gorm:"foreignKey:ProjectID" json:"project,omitempty"`
+}
+
+func (SecretGrant) TableName() string {
+	return "secret_grants"
 }
 
 // ShouldProcessEvent checks if an event should trigger CI based on filtering rules

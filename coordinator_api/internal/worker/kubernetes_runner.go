@@ -16,6 +16,7 @@ import (
 	"github.com/google/uuid"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
@@ -183,6 +184,10 @@ func (kr *KubernetesRunner) SpawnJob(ctx context.Context, config *JobConfig) (st
 	if err != nil {
 		return "", fmt.Errorf("invalid run-as user %q: %w", user, err)
 	}
+	gidPart := uidPart
+	if parts := strings.SplitN(user, ":", 2); len(parts) == 2 && parts[1] != "" {
+		gidPart = parts[1]
+	}
 	runAsNonRoot := userID != 0
 	runAsUser := &userID
 	needsDocker := HasCapability(config.Capabilities, CapabilityDocker)
@@ -279,6 +284,52 @@ func (kr *KubernetesRunner) SpawnJob(ctx context.Context, config *JobConfig) (st
 				},
 			},
 		},
+	}
+
+	var vcsAuthSecretName string
+	if config.VCSAuth != nil {
+		vcsAuthSecretName = jobName + "-vcs-auth"
+		if err := kr.createVCSAuthSecret(ctx, vcsAuthSecretName, config); err != nil {
+			return "", err
+		}
+		copyVCSAuth := corev1.Container{
+			Name:  "copy-vcs-auth",
+			Image: "busybox:1.36",
+			Command: []string{"sh", "-c", fmt.Sprintf(
+				`set -eu; mkdir -p /auth; cp /auth-src/gitconfig /auth/gitconfig; cp /auth-src/credentials /auth/credentials; chmod 0700 /auth; chmod 0600 /auth/gitconfig /auth/credentials; chown %s:%s /auth /auth/gitconfig /auth/credentials`,
+				uidPart,
+				gidPart,
+			)},
+			SecurityContext: &corev1.SecurityContext{
+				RunAsUser:    int64Ptr(0),
+				RunAsNonRoot: boolPtr(false),
+			},
+			VolumeMounts: []corev1.VolumeMount{
+				{Name: "vcs-auth-src", MountPath: "/auth-src", ReadOnly: true},
+				{Name: "vcs-auth", MountPath: "/auth"},
+			},
+		}
+		podSpec.InitContainers = append(podSpec.InitContainers, copyVCSAuth)
+		podSpec.Volumes = append(podSpec.Volumes,
+			corev1.Volume{
+				Name: "vcs-auth-src",
+				VolumeSource: corev1.VolumeSource{
+					Secret: &corev1.SecretVolumeSource{
+						SecretName: vcsAuthSecretName,
+					},
+				},
+			},
+			corev1.Volume{
+				Name: "vcs-auth",
+				VolumeSource: corev1.VolumeSource{
+					EmptyDir: &corev1.EmptyDirVolumeSource{},
+				},
+			},
+		)
+		podSpec.Containers[0].VolumeMounts = append(podSpec.Containers[0].VolumeMounts, corev1.VolumeMount{
+			Name:      "vcs-auth",
+			MountPath: config.VCSAuth.ContainerDir,
+		})
 	}
 
 	// Add image pull secrets if configured
@@ -528,6 +579,9 @@ func (kr *KubernetesRunner) SpawnJob(ctx context.Context, config *JobConfig) (st
 
 	createdJob, err := kr.clientset.BatchV1().Jobs(kr.namespace).Create(ctx, job, metav1.CreateOptions{})
 	if err != nil {
+		if vcsAuthSecretName != "" {
+			_ = kr.deleteVCSAuthSecret(context.Background(), vcsAuthSecretName)
+		}
 		return "", fmt.Errorf("failed to create Kubernetes Job: %w", err)
 	}
 
@@ -687,9 +741,42 @@ func (kr *KubernetesRunner) Cleanup(ctx context.Context, jobName string) error {
 	if err != nil {
 		return fmt.Errorf("failed to delete job: %w", err)
 	}
+	if err := kr.deleteVCSAuthSecret(ctx, jobName+"-vcs-auth"); err != nil {
+		logger.WithError(err).Warn("Failed to delete VCS auth secret")
+	}
 
 	logger.Info("Kubernetes Job cleaned up successfully")
 	return nil
+}
+
+func (kr *KubernetesRunner) createVCSAuthSecret(ctx context.Context, secretName string, config *JobConfig) error {
+	secret := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      secretName,
+			Namespace: kr.namespace,
+			Labels: map[string]string{
+				"reactorcide.io/job-id":    config.JobID,
+				"reactorcide.io/component": "vcs-auth",
+			},
+		},
+		Type: corev1.SecretTypeOpaque,
+		Data: map[string][]byte{
+			"gitconfig":   []byte(config.VCSAuth.GitConfig),
+			"credentials": []byte(config.VCSAuth.Credentials),
+		},
+	}
+	if _, err := kr.clientset.CoreV1().Secrets(kr.namespace).Create(ctx, secret, metav1.CreateOptions{}); err != nil {
+		return fmt.Errorf("failed to create VCS auth secret: %w", err)
+	}
+	return nil
+}
+
+func (kr *KubernetesRunner) deleteVCSAuthSecret(ctx context.Context, secretName string) error {
+	err := kr.clientset.CoreV1().Secrets(kr.namespace).Delete(ctx, secretName, metav1.DeleteOptions{})
+	if apierrors.IsNotFound(err) {
+		return nil
+	}
+	return err
 }
 
 // validateConfig validates the job configuration

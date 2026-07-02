@@ -24,8 +24,8 @@ type WebhookHandler struct {
 	store          store.Store
 	corndogsClient corndogs.ClientInterface
 	vcsClients     map[vcs.Provider]vcs.Client
-	tokenResolver  vcs.TokenResolverFunc // optional: per-project secret resolution
-	clientFactory  vcs.ClientFactoryFunc // optional: create client with per-project token
+	tokenResolver  vcs.TokenResolverFunc         // optional: per-project secret resolution
+	clientFactory  vcs.ClientFactoryFunc         // optional: create client with per-project token
 	statusUpdater  vcs.JobStatusUpdaterInterface // optional: used to refresh comments for in-flight jobs on merge
 	logger         *logrus.Logger
 }
@@ -117,24 +117,22 @@ func extractRepoCloneURL(body []byte, contentType string) (string, error) {
 	return "", fmt.Errorf("no clone URL found in payload")
 }
 
-// resolveWebhookSecret returns the per-project webhook secret for validating
-// the incoming request. Each project must have a WebhookSecret field set
-// (a "path:key" reference resolved from the secrets store). Returns empty
-// string if no secret could be resolved.
-func (h *WebhookHandler) resolveWebhookSecret(ctx context.Context, project *models.Project) string {
-	if project == nil || project.WebhookSecret == "" {
-		return ""
+// resolveWebhookSecret returns the webhook secret using project, owner/org, then
+// global config fallback. Secret values are never logged.
+func (h *WebhookHandler) resolveWebhookSecret(ctx context.Context, project *models.Project, provider vcs.Provider) string {
+	if ref := vcs.ProjectWebhookSecretRef(project, provider); ref != "" {
+		return h.resolveSecretRef(ctx, ref, "project", provider, project)
 	}
-	if h.tokenResolver == nil {
-		h.logger.WithField("project", project.Name).Warn("Project has webhook_secret configured but no token resolver is available")
-		return ""
+	if owner := h.projectOwner(ctx, project); owner != nil {
+		if ref := vcs.UserWebhookSecretRef(owner, provider); ref != "" {
+			return h.resolveSecretRef(ctx, ref, "org", provider, project)
+		}
 	}
-	secret, err := h.tokenResolver(ctx, project.WebhookSecret)
-	if err != nil {
-		h.logger.WithError(err).WithField("project", project.Name).Error("Failed to resolve per-project webhook secret")
-		return ""
+	if secret := globalWebhookSecret(provider); secret != "" {
+		h.logger.WithField("provider", provider).Info("Using global webhook secret")
+		return secret
 	}
-	return secret
+	return ""
 }
 
 // handleWebhook processes webhook events from a specific provider
@@ -183,8 +181,8 @@ func (h *WebhookHandler) handleWebhook(w http.ResponseWriter, r *http.Request, p
 		}
 	}
 
-	// Resolve webhook secret from per-project configuration
-	secret := h.resolveWebhookSecret(context.Background(), project)
+	// Resolve webhook secret from project, owner/org, or global configuration.
+	secret := h.resolveWebhookSecret(context.Background(), project, provider)
 	if secret == "" {
 		h.logger.WithField("project_found", project != nil).Error("Webhook secret not configured — rejecting request")
 		http.Error(w, "Webhook secret not configured", http.StatusInternalServerError)
@@ -272,9 +270,9 @@ func (h *WebhookHandler) processPullRequestEvent(event *vcs.WebhookEvent, client
 		project, err = h.store.GetProjectByRepoURL(context.Background(), normalizedRepoURL)
 		if err != nil {
 			h.logger.WithFields(logrus.Fields{
-				"repo_url":    event.Repository.CloneURL,
-				"normalized":  normalizedRepoURL,
-				"error":       err.Error(),
+				"repo_url":   event.Repository.CloneURL,
+				"normalized": normalizedRepoURL,
+				"error":      err.Error(),
 			}).Debug("No project found for repository - skipping event")
 			return nil // Not an error - just no project configured
 		}
@@ -283,9 +281,9 @@ func (h *WebhookHandler) processPullRequestEvent(event *vcs.WebhookEvent, client
 	// Apply event filtering using the generic event type
 	if !project.ShouldProcessEvent(string(event.GenericEvent), pr.BaseRef) {
 		h.logger.WithFields(logrus.Fields{
-			"project":      project.Name,
+			"project":       project.Name,
 			"generic_event": string(event.GenericEvent),
-			"base_branch":  pr.BaseRef,
+			"base_branch":   pr.BaseRef,
 		}).Debug("Event filtered out by project configuration")
 		return nil
 	}
@@ -362,9 +360,9 @@ func (h *WebhookHandler) processPushEvent(event *vcs.WebhookEvent, client vcs.Cl
 		project, err = h.store.GetProjectByRepoURL(context.Background(), normalizedRepoURL)
 		if err != nil {
 			h.logger.WithFields(logrus.Fields{
-				"repo_url":    event.Repository.CloneURL,
-				"normalized":  normalizedRepoURL,
-				"error":       err.Error(),
+				"repo_url":   event.Repository.CloneURL,
+				"normalized": normalizedRepoURL,
+				"error":      err.Error(),
 			}).Debug("No project found for repository - skipping event")
 			return nil // Not an error - just no project configured
 		}
@@ -469,22 +467,111 @@ func (h *WebhookHandler) handlePRMerged(event *vcs.WebhookEvent) {
 // getStatusClient returns a per-project VCS client if a project token is configured,
 // otherwise falls back to the provided global client.
 func (h *WebhookHandler) getStatusClient(ctx context.Context, project *models.Project, provider vcs.Provider, fallback vcs.Client) vcs.Client {
-	if project.VCSTokenSecret != "" && h.tokenResolver != nil && h.clientFactory != nil {
-		token, err := h.tokenResolver(ctx, project.VCSTokenSecret)
-		if err != nil {
-			h.logger.WithError(err).WithField("project", project.Name).Warn("Failed to resolve per-project VCS token, falling back to global")
-			return fallback
-		}
-		if token != "" {
-			client, err := h.clientFactory(provider, token)
-			if err != nil {
-				h.logger.WithError(err).WithField("project", project.Name).Warn("Failed to create per-project VCS client, falling back to global")
-				return fallback
-			}
+	if ref := vcs.ProjectVCSCredentialSecretRef(project, provider); ref != "" {
+		if client := h.clientForSecretRef(ctx, ref, provider, "project", project); client != nil {
 			return client
 		}
 	}
+	if owner := h.projectOwner(ctx, project); owner != nil {
+		if ref := vcs.UserVCSCredentialSecretRef(owner, provider); ref != "" {
+			if client := h.clientForSecretRef(ctx, ref, provider, "org", project); client != nil {
+				return client
+			}
+		}
+	}
 	return fallback
+}
+
+func (h *WebhookHandler) resolveSecretRef(ctx context.Context, secretRef, scope string, provider vcs.Provider, project *models.Project) string {
+	if h.tokenResolver == nil {
+		h.logger.WithFields(logrus.Fields{
+			"provider": provider,
+			"scope":    scope,
+		}).Warn("Secret reference configured but no token resolver is available")
+		return ""
+	}
+	secret, err := h.tokenResolver(ctx, secretRef)
+	if err != nil {
+		fields := logrus.Fields{"provider": provider, "scope": scope}
+		if project != nil {
+			fields["project"] = project.Name
+		}
+		h.logger.WithError(err).WithFields(fields).Error("Failed to resolve secret reference")
+		return ""
+	}
+	h.logger.WithFields(logrus.Fields{
+		"provider": provider,
+		"scope":    scope,
+	}).Info("Resolved VCS secret reference")
+	return secret
+}
+
+func (h *WebhookHandler) clientForSecretRef(ctx context.Context, secretRef string, provider vcs.Provider, scope string, project *models.Project) vcs.Client {
+	if h.tokenResolver == nil || h.clientFactory == nil {
+		h.logger.WithFields(logrus.Fields{
+			"provider": provider,
+			"scope":    scope,
+		}).Warn("VCS token reference configured but token resolver or client factory is unavailable")
+		return nil
+	}
+	token, err := h.tokenResolver(ctx, secretRef)
+	if err != nil {
+		fields := logrus.Fields{"provider": provider, "scope": scope}
+		if project != nil {
+			fields["project"] = project.Name
+		}
+		h.logger.WithError(err).WithFields(fields).Warn("Failed to resolve VCS token, falling back")
+		return nil
+	}
+	if token == "" {
+		return nil
+	}
+	client, err := h.clientFactory(provider, token)
+	if err != nil {
+		h.logger.WithError(err).WithFields(logrus.Fields{
+			"provider": provider,
+			"scope":    scope,
+		}).Warn("Failed to create scoped VCS client, falling back")
+		return nil
+	}
+	h.logger.WithFields(logrus.Fields{
+		"provider": provider,
+		"scope":    scope,
+	}).Info("Using scoped VCS client")
+	return client
+}
+
+func (h *WebhookHandler) projectOwner(ctx context.Context, project *models.Project) *models.User {
+	ownerID := ""
+	if project != nil && project.UserID != nil {
+		ownerID = *project.UserID
+	}
+	if ownerID == "" {
+		ownerID = config.DefaultUserID
+	}
+	if ownerID == "" {
+		return nil
+	}
+	user, err := h.store.GetUserByID(ctx, ownerID)
+	if err != nil {
+		h.logger.WithError(err).WithField("owner_id", ownerID).Debug("Could not load project owner for VCS secret lookup")
+		return nil
+	}
+	return user
+}
+
+func globalWebhookSecret(provider vcs.Provider) string {
+	switch provider {
+	case vcs.GitHub:
+		if config.VCSGitHubSecret != "" {
+			return config.VCSGitHubSecret
+		}
+	case vcs.GitLab:
+		if config.VCSGitLabSecret != "" {
+			return config.VCSGitLabSecret
+		}
+	}
+	return config.VCSWebhookSecret
 }
 
 // submitJobToCorndogs submits a job to the Corndogs task queue

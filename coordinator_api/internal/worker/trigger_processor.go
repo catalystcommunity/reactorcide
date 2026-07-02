@@ -150,15 +150,17 @@ func (tp *TriggerProcessor) ProcessTriggersFromData(ctx context.Context, data []
 	for _, spec := range tf.Jobs {
 		// If job_file is specified, load the YAML definition as base and overlay inline fields
 		if spec.JobFile != "" {
+			jobFile := spec.JobFile
 			if workspaceDir == "" {
-				return nil, fmt.Errorf("job_file %q requires workspace-backed trigger processing", spec.JobFile)
+				return nil, fmt.Errorf("job_file %q requires workspace-backed trigger processing", jobFile)
 			}
-			baseSpec, err := tp.loadJobFile(workspaceDir, spec.JobFile)
+			baseSpec, err := tp.loadJobFile(workspaceDir, jobFile)
 			if err != nil {
-				logger.WithError(err).WithField("job_file", spec.JobFile).Error("Failed to load job file")
+				logger.WithError(err).WithField("job_file", jobFile).Error("Failed to load job file")
 				continue
 			}
 			spec = tp.overlaySpec(baseSpec, spec)
+			spec.JobFile = jobFile
 		}
 		specs = append(specs, spec)
 	}
@@ -230,6 +232,9 @@ func (tp *TriggerProcessor) overlaySpec(base, overlay triggerJobSpec) triggerJob
 	// Overlay simple string fields if non-empty
 	if overlay.JobName != "" {
 		result.JobName = overlay.JobName
+	}
+	if overlay.JobFile != "" {
+		result.JobFile = overlay.JobFile
 	}
 	if overlay.ContainerImage != "" {
 		result.ContainerImage = overlay.ContainerImage
@@ -378,6 +383,7 @@ func (tp *TriggerProcessor) buildJobFromTrigger(spec triggerJobSpec, parentJob *
 		ProjectID:   parentJob.ProjectID,
 		ParentJobID: &parentJobID,
 		Name:        spec.JobName,
+		JobFile:     spec.JobFile,
 		Description: fmt.Sprintf("Triggered by eval job %s", parentJob.JobID),
 		Status:      "submitted",
 		QueueName:   parentJob.QueueName,

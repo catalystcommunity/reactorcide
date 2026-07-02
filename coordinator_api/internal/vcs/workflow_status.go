@@ -53,21 +53,8 @@ func (u *JobStatusUpdater) UpdateWorkflowStatus(ctx context.Context, wf *models.
 }
 
 func (u *JobStatusUpdater) getClientForWorkflow(ctx context.Context, wf *models.WorkflowInstance, provider Provider) Client {
-	if wf.ProjectID != nil && u.projectLookup != nil && u.tokenResolver != nil && u.clientFactory != nil {
-		project, err := u.projectLookup(ctx, *wf.ProjectID)
-		if err == nil && project != nil && project.VCSTokenSecret != "" {
-			token, err := u.tokenResolver(ctx, project.VCSTokenSecret)
-			if err != nil {
-				u.logger.WithError(err).WithField("project_id", *wf.ProjectID).Warn("Failed to resolve workflow VCS token, falling back to global")
-			} else if token != "" {
-				client, err := u.clientFactory(provider, token)
-				if err != nil {
-					u.logger.WithError(err).Warn("Failed to create workflow VCS client, falling back to global")
-				} else {
-					return client
-				}
-			}
-		}
+	if client := u.getProjectClient(ctx, wf.ProjectID, provider); client != nil {
+		return client
 	}
 	if client, ok := u.vcsClients[provider]; ok {
 		return client
