@@ -19,17 +19,29 @@ import (
 
 // ProjectMockStore implements store.Store for project handler testing
 type ProjectMockStore struct {
-	CreateProjectFunc  func(ctx context.Context, project *models.Project) error
-	GetProjectByIDFunc func(ctx context.Context, projectID string) (*models.Project, error)
-	UpdateProjectFunc  func(ctx context.Context, project *models.Project) error
-	DeleteProjectFunc  func(ctx context.Context, projectID string) error
-	ListProjectsFunc   func(ctx context.Context, limit, offset int) ([]models.Project, error)
+	CreateProjectFunc     func(ctx context.Context, project *models.Project) error
+	GetProjectByIDFunc    func(ctx context.Context, projectID string) (*models.Project, error)
+	UpdateProjectFunc     func(ctx context.Context, project *models.Project) error
+	DeleteProjectFunc     func(ctx context.Context, projectID string) error
+	ListProjectsFunc      func(ctx context.Context, limit, offset int) ([]models.Project, error)
+	CreateSecretGrantFunc func(ctx context.Context, grant *models.SecretGrant) error
+	ListSecretGrantsFunc  func(ctx context.Context, userID string, projectID *string) ([]models.SecretGrant, error)
+	GetSecretGrantFunc    func(ctx context.Context, userID string, projectID *string, ref string) (*models.SecretGrant, error)
+	UpdateSecretGrantFunc func(ctx context.Context, grant *models.SecretGrant) error
+	DeleteSecretGrantFunc func(ctx context.Context, userID string, projectID *string, ref string) error
 
-	CreateProjectCalls  []models.Project
-	GetProjectByIDCalls []string
-	UpdateProjectCalls  []models.Project
-	DeleteProjectCalls  []string
-	ListProjectsCalls   []struct{ Limit, Offset int }
+	CreateProjectCalls     []models.Project
+	GetProjectByIDCalls    []string
+	UpdateProjectCalls     []models.Project
+	DeleteProjectCalls     []string
+	ListProjectsCalls      []struct{ Limit, Offset int }
+	CreateSecretGrantCalls []models.SecretGrant
+	UpdateSecretGrantCalls []models.SecretGrant
+	DeleteSecretGrantCalls []struct {
+		UserID    string
+		ProjectID *string
+		Ref       string
+	}
 }
 
 func (m *ProjectMockStore) CreateProject(ctx context.Context, project *models.Project) error {
@@ -79,6 +91,48 @@ func (m *ProjectMockStore) ListProjects(ctx context.Context, limit, offset int) 
 		return m.ListProjectsFunc(ctx, limit, offset)
 	}
 	return []models.Project{}, nil
+}
+
+func (m *ProjectMockStore) CreateSecretGrant(ctx context.Context, grant *models.SecretGrant) error {
+	m.CreateSecretGrantCalls = append(m.CreateSecretGrantCalls, *grant)
+	if m.CreateSecretGrantFunc != nil {
+		return m.CreateSecretGrantFunc(ctx, grant)
+	}
+	return nil
+}
+
+func (m *ProjectMockStore) ListSecretGrants(ctx context.Context, userID string, projectID *string) ([]models.SecretGrant, error) {
+	if m.ListSecretGrantsFunc != nil {
+		return m.ListSecretGrantsFunc(ctx, userID, projectID)
+	}
+	return nil, nil
+}
+
+func (m *ProjectMockStore) GetSecretGrant(ctx context.Context, userID string, projectID *string, ref string) (*models.SecretGrant, error) {
+	if m.GetSecretGrantFunc != nil {
+		return m.GetSecretGrantFunc(ctx, userID, projectID, ref)
+	}
+	return nil, store.ErrNotFound
+}
+
+func (m *ProjectMockStore) UpdateSecretGrant(ctx context.Context, grant *models.SecretGrant) error {
+	m.UpdateSecretGrantCalls = append(m.UpdateSecretGrantCalls, *grant)
+	if m.UpdateSecretGrantFunc != nil {
+		return m.UpdateSecretGrantFunc(ctx, grant)
+	}
+	return nil
+}
+
+func (m *ProjectMockStore) DeleteSecretGrant(ctx context.Context, userID string, projectID *string, ref string) error {
+	m.DeleteSecretGrantCalls = append(m.DeleteSecretGrantCalls, struct {
+		UserID    string
+		ProjectID *string
+		Ref       string
+	}{UserID: userID, ProjectID: projectID, Ref: ref})
+	if m.DeleteSecretGrantFunc != nil {
+		return m.DeleteSecretGrantFunc(ctx, userID, projectID, ref)
+	}
+	return nil
 }
 
 // Stub implementations for remaining store.Store interface methods
@@ -633,6 +687,108 @@ func TestProjectHandler_DeleteProject(t *testing.T) {
 			assert.Equal(t, tt.expectedStatus, w.Code)
 		})
 	}
+}
+
+func TestProjectHandler_ApplySecretGrants_DryRunPrune(t *testing.T) {
+	projectID := uuid.New().String()
+	ownerID := "test-user-id"
+	oldGrant := models.SecretGrant{
+		GrantID:           uuid.New().String(),
+		Name:              "old-grant",
+		UserID:            ownerID,
+		ProjectID:         &projectID,
+		SecretPathMatch:   models.SecretGrantMatchPrefix,
+		SecretPathPattern: "old/path",
+		JobNameMatch:      models.SecretGrantMatchAny,
+	}
+	mockStore := &ProjectMockStore{
+		GetProjectByIDFunc: func(ctx context.Context, id string) (*models.Project, error) {
+			require.Equal(t, projectID, id)
+			p := testProject(projectID)
+			p.UserID = &ownerID
+			return p, nil
+		},
+		GetSecretGrantFunc: func(ctx context.Context, userID string, gotProjectID *string, ref string) (*models.SecretGrant, error) {
+			require.Equal(t, ownerID, userID)
+			require.NotNil(t, gotProjectID)
+			require.Equal(t, projectID, *gotProjectID)
+			if ref == oldGrant.Name {
+				return &oldGrant, nil
+			}
+			return nil, store.ErrNotFound
+		},
+		ListSecretGrantsFunc: func(ctx context.Context, userID string, gotProjectID *string) ([]models.SecretGrant, error) {
+			require.Equal(t, ownerID, userID)
+			require.NotNil(t, gotProjectID)
+			require.Equal(t, projectID, *gotProjectID)
+			return []models.SecretGrant{oldGrant}, nil
+		},
+	}
+	handler := NewProjectHandler(mockStore)
+	body := SecretGrantApplyRequest{
+		DryRun: true,
+		Prune:  true,
+		Grants: []SecretGrantRequest{{
+			Name:              "new-grant",
+			ProjectID:         projectID,
+			SecretPathMatch:   models.SecretGrantMatchGlob,
+			SecretPathPattern: "new/*",
+			JobNameMatch:      models.SecretGrantMatchPrefix,
+			JobNamePattern:    "github.com/org/repo:",
+			Description:       "test grant",
+		}},
+	}
+	data, err := json.Marshal(body)
+	require.NoError(t, err)
+	req := withUser(httptest.NewRequest(http.MethodPost, "/api/v1/secret-grants/apply", bytes.NewReader(data)))
+
+	w := httptest.NewRecorder()
+	handler.ApplySecretGrants(w, req)
+
+	require.Equal(t, http.StatusOK, w.Code)
+	var resp SecretGrantApplyResponse
+	require.NoError(t, json.NewDecoder(w.Body).Decode(&resp))
+	require.True(t, resp.DryRun)
+	require.Len(t, resp.Created, 1)
+	require.Equal(t, "new-grant", resp.Created[0].Name)
+	require.Len(t, resp.Deleted, 1)
+	require.Equal(t, "old-grant", resp.Deleted[0].Name)
+	require.Empty(t, mockStore.CreateSecretGrantCalls)
+	require.Empty(t, mockStore.DeleteSecretGrantCalls)
+}
+
+func TestProjectHandler_CreateGlobalSecretGrant_UsesBodyProjectScope(t *testing.T) {
+	projectID := uuid.New().String()
+	ownerID := "test-user-id"
+	mockStore := &ProjectMockStore{
+		GetProjectByIDFunc: func(ctx context.Context, id string) (*models.Project, error) {
+			require.Equal(t, projectID, id)
+			p := testProject(projectID)
+			p.UserID = &ownerID
+			return p, nil
+		},
+	}
+	handler := NewProjectHandler(mockStore)
+	body := SecretGrantRequest{
+		Name:              "project-grant",
+		ProjectID:         projectID,
+		SecretPathMatch:   models.SecretGrantMatchPrefix,
+		SecretPathPattern: "project/path",
+		JobNameMatch:      models.SecretGrantMatchAny,
+	}
+	data, err := json.Marshal(body)
+	require.NoError(t, err)
+	req := withUser(httptest.NewRequest(http.MethodPost, "/api/v1/secret-grants", bytes.NewReader(data)))
+
+	w := httptest.NewRecorder()
+	handler.CreateGlobalSecretGrant(w, req)
+
+	require.Equal(t, http.StatusCreated, w.Code)
+	require.Len(t, mockStore.CreateSecretGrantCalls, 1)
+	grant := mockStore.CreateSecretGrantCalls[0]
+	require.Equal(t, "project-grant", grant.Name)
+	require.NotNil(t, grant.ProjectID)
+	require.Equal(t, projectID, *grant.ProjectID)
 }
 
 // helper functions

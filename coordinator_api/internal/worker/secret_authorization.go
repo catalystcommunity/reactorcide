@@ -3,6 +3,8 @@ package worker
 import (
 	"context"
 	"fmt"
+	pathmatch "path"
+	"regexp"
 	"strings"
 
 	"github.com/catalystcommunity/app-utils-go/logging"
@@ -10,7 +12,7 @@ import (
 )
 
 type secretGrantStore interface {
-	ListSecretGrantsForJob(ctx context.Context, userID string, projectID *string, jobName, jobFile string) ([]models.SecretGrant, error)
+	ListSecretGrantsForJob(ctx context.Context, userID string, projectID *string, jobName string) ([]models.SecretGrant, error)
 }
 
 func (jp *JobProcessor) authorizeSecretAccess(ctx context.Context, job *models.Job, path, key string) error {
@@ -28,7 +30,7 @@ func (jp *JobProcessor) authorizeSecretAccess(ctx context.Context, job *models.J
 	if !ok {
 		return fmt.Errorf("secret access denied for %s:%s: secret grants are not available", path, key)
 	}
-	grants, err := grantStore.ListSecretGrantsForJob(ctx, job.UserID, job.ProjectID, job.Name, job.JobFile)
+	grants, err := grantStore.ListSecretGrantsForJob(ctx, job.UserID, job.ProjectID, job.Name)
 	if err != nil {
 		return err
 	}
@@ -42,7 +44,8 @@ func (jp *JobProcessor) authorizeSecretAccess(ctx context.Context, job *models.J
 				"path":      path,
 				"key":       key,
 				"grant_id":  grant.GrantID,
-				"grant_for": grant.SecretPathPrefix,
+				"grant":     grant.Name,
+				"grant_for": grant.SecretPathPattern,
 			}).Info("Secret access allowed")
 			return nil
 		}
@@ -70,14 +73,43 @@ func isJobScopedSecret(job *models.Job, path string) bool {
 }
 
 func grantMatchesSecret(grant models.SecretGrant, job *models.Job, path string) bool {
-	if grant.JobName != "" && grant.JobName != job.Name {
+	if !matchGrantPattern(grant.JobNameMatch, grant.JobNamePattern, job.Name, true) {
 		return false
 	}
-	if grant.JobFile != "" && grant.JobFile != job.JobFile {
+	return matchGrantPattern(grant.SecretPathMatch, grant.SecretPathPattern, path, false)
+}
+
+func matchGrantPattern(matchType, pattern, value string, allowAny bool) bool {
+	if matchType == "" {
+		if allowAny && pattern == "" {
+			matchType = models.SecretGrantMatchAny
+		} else {
+			matchType = models.SecretGrantMatchPrefix
+		}
+	}
+	switch matchType {
+	case models.SecretGrantMatchAny:
+		return allowAny
+	case models.SecretGrantMatchExact:
+		return value == pattern
+	case models.SecretGrantMatchPrefix:
+		prefix := strings.TrimSuffix(pattern, "/")
+		if prefix == "" {
+			return false
+		}
+		if allowAny {
+			return strings.HasPrefix(value, prefix)
+		}
+		return value == prefix || strings.HasPrefix(value, prefix+"/")
+	case models.SecretGrantMatchGlob:
+		ok, err := pathmatch.Match(pattern, value)
+		return err == nil && ok
+	case models.SecretGrantMatchRegex:
+		ok, err := regexp.MatchString(pattern, value)
+		return err == nil && ok
+	default:
 		return false
 	}
-	prefix := strings.TrimSuffix(grant.SecretPathPrefix, "/")
-	return path == prefix || strings.HasPrefix(path, prefix+"/")
 }
 
 func derefSecretProjectID(v *string) string {

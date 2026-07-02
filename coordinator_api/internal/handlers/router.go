@@ -378,6 +378,53 @@ func createAppMux() *http.ServeMux {
 		handler.ServeHTTP(w, r)
 	})
 
+	mux.HandleFunc("/api/v1/secret-grants", func(w http.ResponseWriter, r *http.Request) {
+		handler := transactionMiddleware(authMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			switch r.Method {
+			case http.MethodGet:
+				projectHandler.ListGlobalSecretGrants(w, r)
+			case http.MethodPost:
+				projectHandler.CreateGlobalSecretGrant(w, r)
+			default:
+				http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+			}
+		})))
+		handler.ServeHTTP(w, r)
+	})
+
+	mux.HandleFunc("/api/v1/secret-grants/apply", func(w http.ResponseWriter, r *http.Request) {
+		handler := transactionMiddleware(authMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.Method != http.MethodPost {
+				http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+				return
+			}
+			projectHandler.ApplySecretGrants(w, r)
+		})))
+		handler.ServeHTTP(w, r)
+	})
+
+	mux.HandleFunc("/api/v1/secret-grants/", func(w http.ResponseWriter, r *http.Request) {
+		path := strings.TrimPrefix(r.URL.Path, "/api/v1/secret-grants/")
+		if path == "" || strings.Contains(path, "/") {
+			http.Error(w, "Invalid path", http.StatusBadRequest)
+			return
+		}
+		r = r.WithContext(setIDContext(r.Context(), "grant_id", path))
+		handler := transactionMiddleware(authMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			switch r.Method {
+			case http.MethodGet:
+				projectHandler.GetGlobalSecretGrant(w, r)
+			case http.MethodPatch, http.MethodPut:
+				projectHandler.UpdateGlobalSecretGrant(w, r)
+			case http.MethodDelete:
+				projectHandler.DeleteGlobalSecretGrant(w, r)
+			default:
+				http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+			}
+		})))
+		handler.ServeHTTP(w, r)
+	})
+
 	mux.HandleFunc("/api/v1/projects/", func(w http.ResponseWriter, r *http.Request) {
 		path := strings.TrimPrefix(r.URL.Path, "/api/v1/projects/")
 		if path == "" {
@@ -397,6 +444,10 @@ func createAppMux() *http.ServeMux {
 					projectHandler.ListSecretGrants(w, r)
 				case len(parts) == 2 && r.Method == http.MethodPost:
 					projectHandler.CreateSecretGrant(w, r)
+				case len(parts) == 3 && r.Method == http.MethodGet:
+					projectHandler.GetSecretGrant(w, r)
+				case len(parts) == 3 && (r.Method == http.MethodPatch || r.Method == http.MethodPut):
+					projectHandler.UpdateSecretGrant(w, r)
 				case len(parts) == 3 && r.Method == http.MethodDelete:
 					projectHandler.DeleteSecretGrant(w, r)
 				default:

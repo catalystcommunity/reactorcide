@@ -17,10 +17,10 @@ const (
 
 // Project represents a repository configuration for CI/CD
 type Project struct {
-	ProjectID   string    `gorm:"primaryKey;type:uuid;default:generate_ulid()" json:"project_id"`
-	CreatedAt   time.Time `gorm:"autoCreateTime:false;default:timezone('utc', now())" json:"created_at"`
-	UpdatedAt   time.Time `gorm:"autoUpdateTime:false;default:timezone('utc', now())" json:"updated_at"`
-	UserID      *string   `gorm:"type:uuid" json:"user_id,omitempty"`
+	ProjectID string    `gorm:"primaryKey;type:uuid;default:generate_ulid()" json:"project_id"`
+	CreatedAt time.Time `gorm:"autoCreateTime:false;default:timezone('utc', now())" json:"created_at"`
+	UpdatedAt time.Time `gorm:"autoUpdateTime:false;default:timezone('utc', now())" json:"updated_at"`
+	UserID    *string   `gorm:"type:uuid" json:"user_id,omitempty"`
 
 	// Project identification
 	Name        string `gorm:"type:text;not null" json:"name"`
@@ -29,9 +29,9 @@ type Project struct {
 	RepoURL string `gorm:"type:text;not null;uniqueIndex" json:"repo_url"`
 
 	// Event filtering configuration
-	Enabled            bool     `gorm:"default:true;not null" json:"enabled"`
-	TargetBranches     pq.StringArray `gorm:"type:text[];default:ARRAY['main','master','develop']" json:"target_branches"`
-	AllowedEventTypes  pq.StringArray `gorm:"type:text[];default:ARRAY['push','pull_request_opened','pull_request_updated','tag_created']" json:"allowed_event_types"`
+	Enabled           bool           `gorm:"default:true;not null" json:"enabled"`
+	TargetBranches    pq.StringArray `gorm:"type:text[];default:ARRAY['main','master','develop']" json:"target_branches"`
+	AllowedEventTypes pq.StringArray `gorm:"type:text[];default:ARRAY['push','pull_request_opened','pull_request_updated','tag_created']" json:"allowed_event_types"`
 
 	// Default CI source configuration (trusted CI code)
 	DefaultCISourceType SourceType `gorm:"type:source_type;default:'git'" json:"default_ci_source_type"`
@@ -51,10 +51,10 @@ type Project struct {
 	WebhookSecrets JSONB `gorm:"type:jsonb;default:'{}'" json:"webhook_secrets,omitempty"`
 
 	// Job defaults
-	DefaultRunnerImage     string `gorm:"type:text;default:'quay.io/catalystcommunity/reactorcide_runner'" json:"default_runner_image"`
-	DefaultJobCommand      string `gorm:"type:text" json:"default_job_command"`
-	DefaultTimeoutSeconds  int    `gorm:"default:3600" json:"default_timeout_seconds"`
-	DefaultQueueName       string `gorm:"type:text;default:'reactorcide-jobs'" json:"default_queue_name"`
+	DefaultRunnerImage    string `gorm:"type:text;default:'quay.io/catalystcommunity/reactorcide_runner'" json:"default_runner_image"`
+	DefaultJobCommand     string `gorm:"type:text" json:"default_job_command"`
+	DefaultTimeoutSeconds int    `gorm:"default:3600" json:"default_timeout_seconds"`
+	DefaultQueueName      string `gorm:"type:text;default:'reactorcide-jobs'" json:"default_queue_name"`
 }
 
 // TableName specifies the table name for the model
@@ -62,17 +62,27 @@ func (Project) TableName() string {
 	return "projects"
 }
 
-// SecretGrant allows an API/worker job to resolve secrets under a path prefix.
+const (
+	SecretGrantMatchAny    = "any"
+	SecretGrantMatchExact  = "exact"
+	SecretGrantMatchPrefix = "prefix"
+	SecretGrantMatchGlob   = "glob"
+	SecretGrantMatchRegex  = "regex"
+)
+
+// SecretGrant allows an API/worker job to resolve secrets under a configured path pattern.
 type SecretGrant struct {
-	GrantID          string    `gorm:"primaryKey;type:uuid;default:generate_ulid()" json:"grant_id"`
-	CreatedAt        time.Time `gorm:"autoCreateTime:false;default:timezone('utc', now())" json:"created_at"`
-	UpdatedAt        time.Time `gorm:"autoUpdateTime:false;default:timezone('utc', now())" json:"updated_at"`
-	UserID           string    `gorm:"type:uuid;not null" json:"user_id"`
-	ProjectID        *string   `gorm:"type:uuid" json:"project_id,omitempty"`
-	SecretPathPrefix string    `gorm:"type:text;not null" json:"secret_path_prefix"`
-	JobName          string    `gorm:"type:text" json:"job_name,omitempty"`
-	JobFile          string    `gorm:"type:text" json:"job_file,omitempty"`
-	Description      string    `gorm:"type:text" json:"description,omitempty"`
+	GrantID           string    `gorm:"primaryKey;type:uuid;default:generate_ulid()" json:"grant_id"`
+	CreatedAt         time.Time `gorm:"autoCreateTime:false;default:timezone('utc', now())" json:"created_at"`
+	UpdatedAt         time.Time `gorm:"autoUpdateTime:false;default:timezone('utc', now())" json:"updated_at"`
+	Name              string    `gorm:"type:text;not null" json:"name"`
+	UserID            string    `gorm:"type:uuid;not null" json:"user_id"`
+	ProjectID         *string   `gorm:"type:uuid" json:"project_id,omitempty"`
+	SecretPathMatch   string    `gorm:"type:text;not null;default:'prefix'" json:"secret_path_match"`
+	SecretPathPattern string    `gorm:"type:text;not null" json:"secret_path_pattern"`
+	JobNameMatch      string    `gorm:"type:text;not null;default:'any'" json:"job_name_match"`
+	JobNamePattern    string    `gorm:"type:text;not null;default:''" json:"job_name_pattern,omitempty"`
+	Description       string    `gorm:"type:text" json:"description,omitempty"`
 
 	User    User     `gorm:"foreignKey:UserID" json:"user,omitempty"`
 	Project *Project `gorm:"foreignKey:ProjectID" json:"project,omitempty"`
