@@ -58,6 +58,7 @@
             <td>
                 <a href="/app/jobs/{{.JobID}}">{{.Name}}</a>
                 {{if .Description}}<br><span class="meta">{{.Description}}</span>{{end}}
+                {{if .LastError}}<br><span class="meta">{{.LastError}}</span>{{end}}
             </td>
             <td><span class="status-badge {{statusClass .Status}}">{{.Status}}</span></td>
             <td class="meta">{{formatTime .CreatedAt}}</td>

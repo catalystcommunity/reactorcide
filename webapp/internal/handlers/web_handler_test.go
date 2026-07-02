@@ -135,7 +135,8 @@ func TestJobDetailTemplate(t *testing.T) {
 			JobID:       "test-456",
 			Name:        "build-project",
 			Description: "Build the project",
-			Status:      "completed",
+			Status:      "failed",
+			LastError:   "Failed to resolve secrets: secret access denied for catalystcommunity/ci:githubpat",
 			CreatedAt:   time.Date(2026, 3, 15, 14, 0, 0, 0, time.UTC),
 			UpdatedAt:   time.Date(2026, 3, 15, 14, 5, 0, 0, time.UTC),
 			ExitCode:    &exitCode,
@@ -167,6 +168,50 @@ func TestJobDetailTemplate(t *testing.T) {
 	}
 	if !strings.Contains(html, "feature-branch") {
 		t.Error("job_detail.html should contain source ref")
+	}
+	if !strings.Contains(html, "Failure reason") {
+		t.Error("job_detail.html should contain failure reason heading")
+	}
+	if !strings.Contains(html, "secret access denied") {
+		t.Error("job_detail.html should contain last_error")
+	}
+}
+
+func TestWorkflowDetailTemplateShowsJobLastError(t *testing.T) {
+	handler := NewWebHandler(NewAPIClient())
+
+	var buf strings.Builder
+	data := map[string]interface{}{
+		"Title": "Reactorcide Jobs",
+		"Workflow": &WorkflowSummary{
+			WorkflowID:     "workflow-123",
+			Name:           "Reactorcide Jobs",
+			Status:         "failed",
+			CreatedAt:      time.Date(2026, 3, 15, 14, 0, 0, 0, time.UTC),
+			JobCount:       1,
+			CompletedCount: 1,
+			FailedCount:    1,
+		},
+		"Jobs": []JobResponse{{
+			JobID:     "job-123",
+			Name:      "release",
+			Status:    "failed",
+			LastError: "Failed to resolve secrets: secret access denied for catalystcommunity/ci:githubpat",
+			CreatedAt: time.Date(2026, 3, 15, 14, 1, 0, 0, time.UTC),
+		}},
+	}
+
+	err := handler.templates.ExecuteTemplate(&buf, "workflow_detail.html", data)
+	if err != nil {
+		t.Fatalf("Failed to render workflow_detail.html: %v", err)
+	}
+
+	html := buf.String()
+	if !strings.Contains(html, "release") {
+		t.Error("workflow_detail.html should contain job name")
+	}
+	if !strings.Contains(html, "secret access denied") {
+		t.Error("workflow_detail.html should contain job last_error")
 	}
 }
 

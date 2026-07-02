@@ -164,7 +164,7 @@ func TestJobHandler_CreateJob_WithCorndogs(t *testing.T) {
 				Name:       "Test Job",
 				JobCommand: "echo hello",
 				SourceType: "git",
-				SourceURL:     "https://github.com/test/repo.git",
+				SourceURL:  "https://github.com/test/repo.git",
 			},
 			setupMockStore: func(m *MockStore) {
 				m.CreateJobFunc = func(ctx context.Context, job *models.Job) error {
@@ -200,7 +200,7 @@ func TestJobHandler_CreateJob_WithCorndogs(t *testing.T) {
 				Name:       "Test Job",
 				JobCommand: "echo hello",
 				SourceType: "git",
-				SourceURL:     "https://github.com/test/repo.git",
+				SourceURL:  "https://github.com/test/repo.git",
 			},
 			setupMockStore: func(m *MockStore) {
 				m.CreateJobFunc = func(ctx context.Context, job *models.Job) error {
@@ -222,6 +222,9 @@ func TestJobHandler_CreateJob_WithCorndogs(t *testing.T) {
 				if resp.Status != "failed" {
 					t.Errorf("expected status 'failed', got %s", resp.Status)
 				}
+				if resp.LastError == "" {
+					t.Error("expected last_error to be returned for failed job creation")
+				}
 			},
 		},
 		{
@@ -230,7 +233,7 @@ func TestJobHandler_CreateJob_WithCorndogs(t *testing.T) {
 				Name:       "Test Job",
 				JobCommand: "echo hello",
 				SourceType: "git",
-				SourceURL:     "https://github.com/test/repo.git",
+				SourceURL:  "https://github.com/test/repo.git",
 			},
 			setupMockStore: func(m *MockStore) {
 				m.CreateJobFunc = func(ctx context.Context, job *models.Job) error {
@@ -467,8 +470,8 @@ func TestJobHandler_CorndogsPayloadGeneration(t *testing.T) {
 		Description: "Test Description",
 		JobCommand:  "echo hello",
 		SourceType:  "git",
-		SourceURL:      "https://github.com/test/repo.git",
-		SourceRef:      "main",
+		SourceURL:   "https://github.com/test/repo.git",
+		SourceRef:   "main",
 		JobEnvVars: map[string]string{
 			"KEY1": "value1",
 			"KEY2": "value2",

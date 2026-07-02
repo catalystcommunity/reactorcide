@@ -211,9 +211,9 @@ The workflow status updater writes one rolling PR comment per commit:
 
 | Job | Status | Duration | Reason |
 |-----|--------|----------|--------|
-| plan | succeeded | 4.000s | job finished with status completed |
-| test[0] | running | est 45.000s | dependencies satisfied and condition true |
-| report-failure | skipped | - | condition any_failed(needs) is false |
+| plan | ✅ succeeded | 4.000s | job finished with status completed |
+| test[0] | 🟡 running | est 45.000s | dependencies satisfied and condition true |
+| report-failure | ⏭️ skipped | - | condition any_failed(needs) is false |
 ```
 
 Estimated time comes from the most recent successful matching workflow node for the same workflow name, node name, and project/repo context. When no previous duration exists, the comment shows `-`.

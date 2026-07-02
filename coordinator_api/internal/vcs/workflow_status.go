@@ -139,28 +139,28 @@ func workflowNodeDisplayName(node *models.WorkflowNode) string {
 func renderWorkflowNodeStatus(status string) string {
 	switch status {
 	case "pending":
-		return "pending"
+		return "⏳ pending"
 	case "waiting":
-		return "waiting"
+		return "⏳ waiting"
 	case "submitted":
-		return "submitted"
+		return "⏳ submitted"
 	case "running":
-		return "running"
+		return "🟡 running"
 	case "completed":
-		return "succeeded"
+		return "✅ succeeded"
 	case "failed":
-		return "failed"
+		return "❌ failed"
 	case "skipped":
-		return "skipped"
+		return "⏭️ skipped"
 	case "cancelled":
-		return "cancelled"
+		return "⚠️ cancelled"
 	case "timeout":
-		return "timed out"
+		return "⏱️ timed out"
 	default:
 		if status == "" {
-			return "unknown"
+			return "❓ unknown"
 		}
-		return status
+		return "❓ " + status
 	}
 }
 

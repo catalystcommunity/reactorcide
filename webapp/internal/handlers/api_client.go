@@ -28,6 +28,7 @@ type JobResponse struct {
 	Name             string     `json:"name"`
 	Description      string     `json:"description"`
 	Status           string     `json:"status"`
+	LastError        string     `json:"last_error,omitempty"`
 	CreatedAt        time.Time  `json:"created_at"`
 	UpdatedAt        time.Time  `json:"updated_at"`
 	SourceURL        string     `json:"source_url,omitempty"`
