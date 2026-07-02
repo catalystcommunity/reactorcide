@@ -8,13 +8,64 @@ Reactorcide provides encrypted, per-organization secret storage through the Coor
 - **Automatically masked** in job logs — any output matching a secret value is replaced with `***`
 - **Injected into jobs** via `${secret:path:key}` references in environment variables
 
-This document covers the HTTP API for managing secrets. For CLI usage, run `reactorcide secrets --help`.
+This document covers the CLI and HTTP API for managing secrets.
 
 ## Prerequisites
 
 1. **Authentication token** — All endpoints require a valid API token via `Authorization: Bearer <token>`
 2. **Master keys configured** — The server must have `REACTORCIDE_MASTER_KEYS` set or auto-generated keys present. If master keys are not configured, the secrets endpoints are disabled entirely.
 3. **Secrets initialized** — Before storing secrets, your organization must be initialized (see below). Most endpoints return `412 Precondition Failed` if secrets are not initialized.
+
+## CLI Usage
+
+The `reactorcide secrets` command manages local encrypted storage by default.
+When `--api-url` or `REACTORCIDE_API_URL` is set, the same subcommands operate
+through the Coordinator API instead. API mode requires a token from `--token`,
+`REACTORCIDE_API_TOKEN`, or the interactive token prompt.
+
+Prefer loading tokens from files or secret managers with command substitution so
+values are not written into shell history:
+
+```bash
+export REACTORCIDE_API_URL="https://reactorcide.example.com"
+export REACTORCIDE_API_TOKEN="$(cat ~/.reactorcide-api-token)"
+```
+
+Initialize remote secret storage:
+
+```bash
+reactorcide secrets init
+```
+
+Set a remote secret without putting the value on the command line:
+
+```bash
+reactorcide secrets set --stdin prod/db password < ~/.secrets/prod-db-password
+```
+
+List metadata without exposing values:
+
+```bash
+reactorcide secrets list-paths
+reactorcide secrets list prod/db
+```
+
+Retrieve commands intentionally print secret values for scripting. Use them only
+inside command substitution or direct process input, not as standalone inspection
+commands:
+
+```bash
+DB_PASSWORD="$(reactorcide secrets get prod/db password)" ./deploy.sh
+```
+
+Flags can also be supplied per command:
+
+```bash
+reactorcide secrets \
+  --api-url "https://reactorcide.example.com" \
+  --token "$(cat ~/.reactorcide-api-token)" \
+  list-paths
+```
 
 ## Initializing Secrets
 

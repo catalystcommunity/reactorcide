@@ -24,7 +24,7 @@ sudo cp coordinator_api/reactorcide /usr/local/bin/
 reactorcide secrets init
 
 # Add secrets (e.g., for VM deployment)
-reactorcide secrets set reactorcide/deploy ssh_private_key "$(cat ~/.ssh/id_ed25519)"
+reactorcide secrets set --stdin reactorcide/deploy ssh_private_key < ~/.ssh/id_ed25519
 ```
 
 ### 3. Deploy to a VM
@@ -61,6 +61,10 @@ kubectl exec -n reactorcide deploy/reactorcideapp -- /reactorcide token create -
 ```
 
 Save the returned token - it cannot be retrieved again.
+
+The same `reactorcide secrets` subcommands can manage server-side secrets when
+`REACTORCIDE_API_URL` and `REACTORCIDE_API_TOKEN` are set, or when `--api-url`
+and `--token` are passed.
 
 ### 5. Use the API
 
