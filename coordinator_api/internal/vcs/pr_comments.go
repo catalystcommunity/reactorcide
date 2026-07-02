@@ -10,6 +10,8 @@ import (
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store/models"
 )
 
+const deprecatedJobFlowNotice = "> ⚠️ This repository is using the deprecated Reactorcide job flow. Convert it to workflow-based jobs soon; this path will be removed in the near future."
+
 // prCommentMarkerRolling returns the hidden HTML marker embedded in the
 // pre-merge rolling comment for a given commit. New commits get a new
 // marker value so each commit naturally gets its own comment.
@@ -103,6 +105,7 @@ func (u *JobStatusUpdater) renderRollingCommentBody(jobs []models.Job, commitSHA
 	}
 
 	fmt.Fprintf(&b, "## Reactorcide checks — `%s`\n\n", shortSHA)
+	fmt.Fprintf(&b, "%s\n\n", deprecatedJobFlowNotice)
 	b.WriteString("| Job | Status | Duration | Link |\n")
 	b.WriteString("|-----|--------|----------|------|\n")
 
@@ -174,6 +177,7 @@ func (u *JobStatusUpdater) renderPerJobCommentBody(job *models.Job, marker strin
 
 	var b strings.Builder
 	fmt.Fprintf(&b, "%s **%s** — %s", statusEmoji, name, statusText)
+	fmt.Fprintf(&b, "\n\n%s", deprecatedJobFlowNotice)
 
 	link := u.getJobURL(job.JobID)
 	if link != "" {

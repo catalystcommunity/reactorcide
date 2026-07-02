@@ -111,6 +111,7 @@ type JobResponse struct {
 	Description string    `json:"description"`
 	JobFile     string    `json:"job_file,omitempty"`
 	Status      string    `json:"status"`
+	LastError   string    `json:"last_error,omitempty"`
 	CreatedAt   time.Time `json:"created_at"`
 	UpdatedAt   time.Time `json:"updated_at"`
 
@@ -263,6 +264,7 @@ func (h *JobHandler) CreateJob(w http.ResponseWriter, r *http.Request) {
 			log.Printf("ERROR: Failed to submit task to Corndogs - job_id=%s job_name=%s queue=%s error=%v",
 				job.JobID, job.Name, job.QueueName, err)
 			job.Status = "failed"
+			job.LastError = fmt.Sprintf("failed to submit to Corndogs: %v", err)
 			// Record failed submission metric
 			metrics.RecordCornDogsTaskSubmission(job.QueueName, false)
 		} else {
@@ -890,6 +892,7 @@ func (h *JobHandler) jobToResponse(job *models.Job) JobResponse {
 		Description: job.Description,
 		JobFile:     job.JobFile,
 		Status:      job.Status,
+		LastError:   job.LastError,
 		CreatedAt:   job.CreatedAt,
 		UpdatedAt:   job.UpdatedAt,
 

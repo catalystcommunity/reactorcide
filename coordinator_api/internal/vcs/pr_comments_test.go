@@ -1,6 +1,7 @@
 package vcs
 
 import (
+	"strings"
 	"testing"
 	"time"
 
@@ -87,6 +88,28 @@ func TestDedupeJobsByName(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestLegacyPRCommentsIncludeDeprecationNotice(t *testing.T) {
+	updater := NewJobStatusUpdater()
+	job := models.Job{
+		JobID:     "job-1",
+		Name:      "legacy-job",
+		Status:    "completed",
+		CreatedAt: time.Unix(0, 0),
+	}
+	exitCode := 0
+	job.ExitCode = &exitCode
+
+	rolling := updater.renderRollingCommentBody([]models.Job{job}, "abcdef123456", "<!-- marker -->")
+	if !strings.Contains(rolling, deprecatedJobFlowNotice) {
+		t.Fatalf("rolling legacy comment should include deprecation notice, got:\n%s", rolling)
+	}
+
+	perJob := updater.renderPerJobCommentBody(&job, "<!-- marker -->")
+	if !strings.Contains(perJob, deprecatedJobFlowNotice) {
+		t.Fatalf("per-job legacy comment should include deprecation notice, got:\n%s", perJob)
 	}
 }
 

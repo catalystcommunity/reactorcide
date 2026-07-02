@@ -75,6 +75,13 @@
     </dl>
 </div>
 
+{{if .Job.LastError}}
+<div class="card">
+    <h2 style="margin-bottom: 8px;">Failure reason</h2>
+    <pre class="log-viewer" style="white-space: pre-wrap;">{{.Job.LastError}}</pre>
+</div>
+{{end}}
+
 <div class="card">
     <h2 style="margin-bottom: 8px;">Logs</h2>
     <div class="stream-tabs">
