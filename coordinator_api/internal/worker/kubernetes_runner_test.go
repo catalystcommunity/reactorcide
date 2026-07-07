@@ -173,6 +173,69 @@ func TestKubernetesRunnerBuilderSidecarOverridesPodNonRootPolicy(t *testing.T) {
 	}
 }
 
+func TestKubernetesRunnerDinDSidecarOverridesPodNonRootPolicy(t *testing.T) {
+	clientset := fake.NewSimpleClientset()
+	runner := &KubernetesRunner{
+		clientset:      clientset,
+		namespace:      "reactorcide",
+		serviceAccount: "default",
+		dindImage:      "docker:27-dind",
+	}
+
+	_, err := runner.SpawnJob(context.Background(), &JobConfig{
+		JobID:        "test-job",
+		Image:        "reactorcide/runnerbase:test",
+		Command:      []string{"sh", "-c", "docker info"},
+		Env:          map[string]string{},
+		WorkingDir:   "/job",
+		Capabilities: []string{CapabilityDocker},
+		RunAsUser:    "runner",
+	})
+	if err != nil {
+		t.Fatalf("SpawnJob failed: %v", err)
+	}
+
+	jobs, err := clientset.BatchV1().Jobs("reactorcide").List(context.Background(), metav1.ListOptions{})
+	if err != nil {
+		t.Fatalf("listing jobs failed: %v", err)
+	}
+	if len(jobs.Items) != 1 {
+		t.Fatalf("expected 1 Kubernetes Job, got %d", len(jobs.Items))
+	}
+
+	podSpec := jobs.Items[0].Spec.Template.Spec
+	if podSpec.SecurityContext == nil || podSpec.SecurityContext.RunAsNonRoot == nil || !*podSpec.SecurityContext.RunAsNonRoot {
+		t.Fatalf("expected pod to default to runAsNonRoot=true")
+	}
+
+	var dind *int
+	for i := range podSpec.InitContainers {
+		if podSpec.InitContainers[i].Name == "docker-daemon" {
+			dind = &i
+			break
+		}
+	}
+	if dind == nil {
+		t.Fatalf("expected docker-daemon sidecar init container")
+	}
+
+	// The DinD sidecar image runs as root, so it must override the pod-level
+	// runAsNonRoot policy or the kubelet rejects it with CreateContainerConfigError.
+	dindSecurity := podSpec.InitContainers[*dind].SecurityContext
+	if dindSecurity == nil {
+		t.Fatalf("docker-daemon sidecar should have an explicit security context")
+	}
+	if dindSecurity.Privileged == nil || !*dindSecurity.Privileged {
+		t.Fatalf("docker-daemon sidecar should be privileged")
+	}
+	if dindSecurity.RunAsUser == nil || *dindSecurity.RunAsUser != 0 {
+		t.Fatalf("docker-daemon sidecar should run as uid 0, got %v", dindSecurity.RunAsUser)
+	}
+	if dindSecurity.RunAsNonRoot == nil || *dindSecurity.RunAsNonRoot {
+		t.Fatalf("docker-daemon sidecar should override pod runAsNonRoot=false")
+	}
+}
+
 func TestKubernetesRunnerMountsVCSAuthAsWritableRuntimeFiles(t *testing.T) {
 	clientset := fake.NewSimpleClientset()
 	runner := &KubernetesRunner{
