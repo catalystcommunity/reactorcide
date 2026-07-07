@@ -468,7 +468,9 @@ func (kr *KubernetesRunner) SpawnJob(ctx context.Context, config *JobConfig) (st
 				{Name: "DOCKER_TLS_CERTDIR", Value: ""},
 			},
 			SecurityContext: &corev1.SecurityContext{
-				Privileged: &priv,
+				Privileged:   &priv,
+				RunAsUser:    int64Ptr(0),
+				RunAsNonRoot: boolPtr(false),
 			},
 			VolumeMounts: []corev1.VolumeMount{
 				{Name: "docker-storage", MountPath: "/var/lib/docker"},
