@@ -198,6 +198,56 @@ func TestProcessWorkflowCompletion_OutputConflictFailsNodeAndWorkflow(t *testing
 	}
 }
 
+func TestEnsureWorkflow_CommentMarkerIncludesEventType(t *testing.T) {
+	notes := `{"vcs_provider":"github","repo":"org/repo","commit_sha":"abc123","pr_number":42}`
+	cases := []struct {
+		name       string
+		eventType  interface{}
+		wantMarker string
+	}{
+		{
+			name:       "pr checks event",
+			eventType:  "pull_request_updated",
+			wantMarker: "<!-- reactorcide:workflows:abc123:pull_request_updated -->",
+		},
+		{
+			name:       "post-merge event on same commit gets a distinct marker",
+			eventType:  "pull_request_merged",
+			wantMarker: "<!-- reactorcide:workflows:abc123:pull_request_merged -->",
+		},
+		{
+			name:       "missing event type falls back to directly_submitted",
+			eventType:  nil,
+			wantMarker: "<!-- reactorcide:workflows:abc123:directly_submitted -->",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			store := newWorkflowRuntimeStore()
+			tp := NewTriggerProcessor(store, nil)
+			envVars := models.JSONB{}
+			if tc.eventType != nil {
+				envVars["REACTORCIDE_EVENT_TYPE"] = tc.eventType
+			}
+			parentJob := &models.Job{
+				JobID:      "parent-1",
+				UserID:     "user-1",
+				Notes:      notes,
+				JobEnvVars: envVars,
+			}
+
+			wf, err := tp.ensureWorkflow(context.Background(), parentJob, nil)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if wf.CommentMarker != tc.wantMarker {
+				t.Fatalf("expected marker %q, got %q", tc.wantMarker, wf.CommentMarker)
+			}
+		})
+	}
+}
+
 func TestCreateWorkflowNode_LoadsPreviousSuccessfulDuration(t *testing.T) {
 	store := newWorkflowRuntimeStore()
 	duration := int64(42000)
