@@ -95,7 +95,13 @@ func (tp *TriggerProcessor) ensureWorkflow(ctx context.Context, parentJob *model
 		wf.CommitSHA = metadata.CommitSHA
 	}
 	if wf.CommitSHA != "" {
-		wf.CommentMarker = fmt.Sprintf("<!-- reactorcide:workflows:%s -->", wf.CommitSHA)
+		// Key the comment marker on both the commit and the triggering event
+		// type so distinct workflows landing on the same commit (e.g. PR checks
+		// vs a post-merge release run — common with rebase merges that preserve
+		// the SHA) get separate PR comments instead of clobbering each other,
+		// while a redelivered webhook or manual resubmit of the same event
+		// reuses the marker and edits the existing comment.
+		wf.CommentMarker = fmt.Sprintf("<!-- reactorcide:workflows:%s:%s -->", wf.CommitSHA, workflowEventType(parentJob))
 	}
 
 	if err := ws.CreateWorkflowInstance(ctx, wf); err != nil {
@@ -110,6 +116,24 @@ func (tp *TriggerProcessor) ensureWorkflow(ctx context.Context, parentJob *model
 		"name":          wf.Name,
 	})
 	return wf, nil
+}
+
+// workflowEventType returns the generic VCS event that spawned the workflow,
+// read from the parent (eval) job's REACTORCIDE_EVENT_TYPE env var. It is folded
+// into the PR comment marker so different event types on the same commit do not
+// share (and clobber) one comment. Jobs submitted directly through the API/CLI
+// carry no VCS event type; they are labeled directly_submitted, which keeps
+// their marker distinct but harmless — such jobs have no VCS provider/repo/
+// commit context, so the status updater posts nothing for them.
+func workflowEventType(parentJob *models.Job) vcs.EventType {
+	if parentJob != nil {
+		if raw, ok := parentJob.JobEnvVars["REACTORCIDE_EVENT_TYPE"]; ok {
+			if s, ok := raw.(string); ok && s != "" {
+				return vcs.EventType(s)
+			}
+		}
+	}
+	return vcs.EventDirectlySubmitted
 }
 
 func (tp *TriggerProcessor) addWorkflowVars(ctx context.Context, wf *models.WorkflowInstance, vars map[string]interface{}, sourceNodeID *string, sourceJobID *string) error {

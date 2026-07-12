@@ -13,7 +13,12 @@ const (
 	EventPullRequestClosed  EventType = "pull_request_closed"
 	EventTagCreated         EventType = "tag_created"
 	EventPing               EventType = "ping"
-	EventUnknown            EventType = ""
+	// EventDirectlySubmitted marks jobs submitted directly through the API/CLI
+	// rather than by a VCS webhook. Such jobs have no VCS provider integration,
+	// so they never post commit statuses or PR comments; the type exists to keep
+	// their workflow comment marker distinct from real VCS events.
+	EventDirectlySubmitted EventType = "directly_submitted"
+	EventUnknown           EventType = ""
 )
 
 // GenericEventFromGitHub translates a GitHub webhook event into a generic EventType.
