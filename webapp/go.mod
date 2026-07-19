@@ -1,8 +1,10 @@
 module github.com/catalystcommunity/reactorcide/webapp
 
-go 1.25.0
+go 1.26.4
 
 require (
+	github.com/catalystcommunity/csilgen/transports/go v0.0.0-20260713013116-a661c8727022
+	github.com/gorilla/websocket v1.5.3
 	github.com/lib/pq v1.10.9
 	github.com/sirupsen/logrus v1.9.4
 	github.com/testcontainers/testcontainers-go v0.41.0
@@ -33,7 +35,6 @@ require (
 	github.com/go-logr/stdr v1.2.2 // indirect
 	github.com/go-ole/go-ole v1.2.6 // indirect
 	github.com/google/uuid v1.6.0 // indirect
-	github.com/gorilla/websocket v1.5.3 // indirect
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.28.0 // indirect
 	github.com/jackc/pgx/v5 v5.7.1 // indirect
 	github.com/klauspost/compress v1.18.2 // indirect

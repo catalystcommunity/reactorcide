@@ -1,0 +1,689 @@
+;; Reactorcide UI/Auth CSIL-RPC service definitions.
+;;
+;; Two services back the webapp <-> coordinator CSIL-RPC channel described in
+;; UI_AUTH_PLAN.md ("CSIL-RPC UI service"):
+;;   - ReactorcideAuth: login/session lifecycle (LinkKeys local-rp/rp modes,
+;;     bootstrap admin).
+;;   - ReactorcideUi: everything else the management UI needs (capabilities,
+;;     orgs/projects, groups/roles, webhook + VCS credential rotation,
+;;     write-only secrets + grants, job/workflow cancel/kill, global settings,
+;;     trusted identities/domains).
+;;
+;; Every operation returns a shared ServiceError arm; the go generator special-
+;; cases a type literally named "ServiceError" as the error arm when computing
+;; a client method's success type, so every op below is `Type -> Response /
+;; ServiceError` with no other arms. Timestamps are RFC3339 text (tstr/`text`),
+;; not the CBOR tag-0 `timestamp` builtin, per the plan's field design.
+;;
+;; Regenerate with scripts/generate-csil-ui.sh after editing this file.
+options {
+    package: "reactorcide-ui",
+    version: "v1",
+    package_name: "csilapi"
+}
+
+;;; Shared error arm for every operation in both services.
+ServiceError = {
+    code: text,
+    message: text
+}
+
+;; ---------------------------------------------------------------------------
+;; ReactorcideAuth: login/session lifecycle
+;; ---------------------------------------------------------------------------
+
+;;; One role/permission grant effective for the authenticated caller.
+RoleSummary = {
+    scope_type: text, ;; global | org | project
+    ? scope_id: text,
+    role: text ;; admin | owner | member
+}
+
+;;; Identity + effective roles for a logged-in caller.
+AuthenticatedIdentity = {
+    user_id: text,
+    subject: text, ;; LinkKeys subject, e.g. uuid@domain
+    handle: text,
+    domain: text,
+    display_name: text,
+    is_global_admin: bool,
+    roles: [* RoleSummary]
+}
+
+GetAuthConfigRequest = {}
+GetAuthConfigResponse = {
+    auth_mode: text, ;; none | local-rp | rp
+    bootstrap_admin_available: bool,
+    has_global_admin: bool
+}
+
+BeginLoginRequest = {
+    ? identity_hint: text
+}
+BeginLoginResponse = {
+    redirect_url: text,
+    attempt_token: text
+}
+
+CompleteLoginRequest = {
+    attempt_token: text,
+    encrypted_token: text
+}
+CompleteLoginResponse = {
+    session_token: text,
+    expires_at: text,
+    identity: AuthenticatedIdentity
+}
+
+AuthenticateRequest = {}
+AuthenticateResponse = {
+    authenticated: bool,
+    ? identity: AuthenticatedIdentity
+}
+
+LogoutRequest = {}
+LogoutResponse = {
+    ok: bool
+}
+
+BootstrapAdminRequest = {
+    bootstrap_token: text
+}
+BootstrapAdminResponse = {
+    session_token: text,
+    expires_at: text
+}
+
+service ReactorcideAuth {
+    get-auth-config: GetAuthConfigRequest -> GetAuthConfigResponse / ServiceError,
+    begin-login: BeginLoginRequest -> BeginLoginResponse / ServiceError,
+    complete-login: CompleteLoginRequest -> CompleteLoginResponse / ServiceError,
+    authenticate: AuthenticateRequest -> AuthenticateResponse / ServiceError,
+    logout: LogoutRequest -> LogoutResponse / ServiceError,
+    bootstrap-admin: BootstrapAdminRequest -> BootstrapAdminResponse / ServiceError
+}
+
+;; ---------------------------------------------------------------------------
+;; ReactorcideUi: management surface
+;; ---------------------------------------------------------------------------
+
+;;; Capability booleans, computed by the coordinator against the permission
+;;; matrix for the caller + (optional) org/project scope. The webapp renders
+;;; conditionally on these; the coordinator remains the sole authorizer.
+GetCapabilitiesRequest = {
+    ? org_id: text,
+    ? project_id: text
+}
+GetCapabilitiesResponse = {
+    view_private: bool,
+    cancel_job: bool,
+    kill_job: bool,
+    retry_job: bool,
+    create_project: bool,
+    delete_project: bool,
+    manage_webhook_secrets: bool,
+    manage_vcs_credentials: bool,
+    manage_secrets: bool,
+    manage_groups: bool,
+    manage_project_settings: bool,
+    manage_trusted_identities: bool,
+    manage_global_settings: bool,
+    is_global_admin: bool,
+    is_org_admin: bool,
+    is_project_owner: bool
+}
+
+;;; Orgs are users-as-orgs today (no first-class orgs table).
+OrgSummary = {
+    org_id: text,
+    name: text,
+    is_private: bool
+}
+ListOrgsRequest = {}
+ListOrgsResponse = {
+    orgs: [* OrgSummary]
+}
+
+ProjectSummary = {
+    project_id: text,
+    org_id: text,
+    name: text,
+    description: text,
+    repo_url: text,
+    is_private: bool,
+    enabled: bool,
+    created_at: text,
+    updated_at: text
+}
+ListProjectsRequest = {
+    ? org_id: text
+}
+ListProjectsResponse = {
+    projects: [* ProjectSummary]
+}
+
+ProjectDetail = {
+    project_id: text,
+    org_id: text,
+    name: text,
+    description: text,
+    repo_url: text,
+    is_private: bool,
+    enabled: bool,
+    target_branches: [* text],
+    allowed_event_types: [* text],
+    default_ci_source_type: text,
+    default_ci_source_url: text,
+    default_ci_source_ref: text,
+    default_runner_image: text,
+    default_job_command: text,
+    default_timeout_seconds: int,
+    default_queue_name: text,
+    created_at: text,
+    updated_at: text
+}
+GetProjectRequest = {
+    project_id: text
+}
+GetProjectResponse = {
+    project: ProjectDetail
+}
+
+CreateProjectRequest = {
+    org_id: text,
+    name: text,
+    ? description: text,
+    repo_url: text,
+    ? is_private: bool,
+    ? target_branches: [* text],
+    ? allowed_event_types: [* text]
+}
+CreateProjectResponse = {
+    project: ProjectDetail
+}
+
+UpdateProjectRequest = {
+    project_id: text,
+    ? name: text,
+    ? description: text,
+    ? is_private: bool,
+    ? enabled: bool,
+    ? target_branches: [* text],
+    ? allowed_event_types: [* text],
+    ? default_runner_image: text,
+    ? default_job_command: text,
+    ? default_timeout_seconds: int,
+    ? default_queue_name: text
+}
+UpdateProjectResponse = {
+    project: ProjectDetail
+}
+
+DeleteProjectRequest = {
+    project_id: text
+}
+DeleteProjectResponse = {
+    deleted: bool
+}
+
+GroupSummary = {
+    group_id: text,
+    org_id: text,
+    name: text,
+    ? description: text,
+    created_at: text,
+    updated_at: text
+}
+ListGroupsRequest = {
+    org_id: text
+}
+ListGroupsResponse = {
+    groups: [* GroupSummary]
+}
+
+CreateGroupRequest = {
+    org_id: text,
+    name: text,
+    ? description: text
+}
+CreateGroupResponse = {
+    group: GroupSummary
+}
+
+UpdateGroupRequest = {
+    group_id: text,
+    ? name: text,
+    ? description: text
+}
+UpdateGroupResponse = {
+    group: GroupSummary
+}
+
+DeleteGroupRequest = {
+    group_id: text
+}
+DeleteGroupResponse = {
+    deleted: bool
+}
+
+AddGroupMemberRequest = {
+    group_id: text,
+    user_id: text
+}
+AddGroupMemberResponse = {
+    added: bool
+}
+
+RemoveGroupMemberRequest = {
+    group_id: text,
+    user_id: text
+}
+RemoveGroupMemberResponse = {
+    removed: bool
+}
+
+;;; A single group member, with just enough user info to render a member
+;;; list (see internal/store/models.User's fields exposed via GetUserByID).
+GroupMemberEntry = {
+    user_id: text,
+    username: text
+}
+ListGroupMembersRequest = {
+    group_id: text
+}
+ListGroupMembersResponse = {
+    members: [* GroupMemberEntry]
+}
+
+RoleAssignment = {
+    assignment_id: text,
+    principal_type: text, ;; user | group
+    principal_id: text,
+    scope_type: text, ;; global | org | project
+    ? scope_id: text,
+    role: text, ;; admin | owner | member
+    created_at: text,
+    ? created_by: text
+}
+ListRoleAssignmentsRequest = {
+    ? scope_type: text,
+    ? scope_id: text,
+    ? principal_id: text
+}
+ListRoleAssignmentsResponse = {
+    assignments: [* RoleAssignment]
+}
+
+AssignRoleRequest = {
+    principal_type: text,
+    principal_id: text,
+    scope_type: text,
+    ? scope_id: text,
+    role: text
+}
+AssignRoleResponse = {
+    assignment: RoleAssignment
+}
+
+RevokeRoleRequest = {
+    assignment_id: text
+}
+RevokeRoleResponse = {
+    revoked: bool
+}
+
+;;; Webhook secret metadata only. The secret value is write-only: it is
+;;; accepted on add-webhook-secret and never returned by any op.
+WebhookSecretSummary = {
+    id: text,
+    project_id: text,
+    provider: text,
+    name: text,
+    is_active: bool,
+    ? last_used_at: text,
+    created_at: text,
+    ? deactivated_at: text
+}
+ListWebhookSecretsRequest = {
+    project_id: text
+}
+ListWebhookSecretsResponse = {
+    secrets: [* WebhookSecretSummary]
+}
+
+AddWebhookSecretRequest = {
+    project_id: text,
+    provider: text,
+    name: text,
+    value: text
+}
+AddWebhookSecretResponse = {
+    secret: WebhookSecretSummary
+}
+
+DeactivateWebhookSecretRequest = {
+    id: text
+}
+DeactivateWebhookSecretResponse = {
+    secret: WebhookSecretSummary
+}
+
+DeleteWebhookSecretRequest = {
+    id: text
+}
+DeleteWebhookSecretResponse = {
+    deleted: bool
+}
+
+;;; VCS credential metadata only; same rotation shape as webhook secrets.
+VcsCredentialSummary = {
+    id: text,
+    project_id: text,
+    provider: text,
+    name: text,
+    is_active: bool,
+    ? last_used_at: text,
+    created_at: text,
+    ? deactivated_at: text
+}
+ListVcsCredentialsRequest = {
+    project_id: text
+}
+ListVcsCredentialsResponse = {
+    credentials: [* VcsCredentialSummary]
+}
+
+AddVcsCredentialRequest = {
+    project_id: text,
+    provider: text,
+    name: text,
+    value: text
+}
+AddVcsCredentialResponse = {
+    credential: VcsCredentialSummary
+}
+
+DeactivateVcsCredentialRequest = {
+    id: text
+}
+DeactivateVcsCredentialResponse = {
+    credential: VcsCredentialSummary
+}
+
+DeleteVcsCredentialRequest = {
+    id: text
+}
+DeleteVcsCredentialResponse = {
+    deleted: bool
+}
+
+;;; Secrets are write-only through the UI: set/delete/list-paths only. No op
+;;; ever returns a secret value.
+SetSecretRequest = {
+    org_id: text,
+    path: text,
+    key: text,
+    value: text
+}
+SetSecretResponse = {
+    ok: bool
+}
+
+DeleteSecretRequest = {
+    org_id: text,
+    path: text,
+    key: text
+}
+DeleteSecretResponse = {
+    deleted: bool
+}
+
+SecretPathEntry = {
+    path: text,
+    keys: [* text]
+}
+ListSecretPathsRequest = {
+    org_id: text,
+    ? path_prefix: text
+}
+ListSecretPathsResponse = {
+    paths: [* SecretPathEntry]
+}
+
+;;; Secret grants authorize a job to resolve secrets under a path pattern;
+;;; field names mirror internal/store/models.SecretGrant.
+SecretGrant = {
+    grant_id: text,
+    org_id: text,
+    ? project_id: text,
+    name: text,
+    secret_path_match: text, ;; any | exact | prefix | glob | regex
+    secret_path_pattern: text,
+    job_name_match: text, ;; any | exact | prefix | glob | regex
+    ? job_name_pattern: text,
+    ? description: text,
+    created_at: text,
+    updated_at: text
+}
+ListSecretGrantsRequest = {
+    org_id: text
+}
+ListSecretGrantsResponse = {
+    grants: [* SecretGrant]
+}
+
+CreateSecretGrantRequest = {
+    org_id: text,
+    ? project_id: text,
+    name: text,
+    secret_path_match: text,
+    secret_path_pattern: text,
+    ? job_name_match: text,
+    ? job_name_pattern: text,
+    ? description: text
+}
+CreateSecretGrantResponse = {
+    grant: SecretGrant
+}
+
+UpdateSecretGrantRequest = {
+    grant_id: text,
+    ? name: text,
+    ? secret_path_match: text,
+    ? secret_path_pattern: text,
+    ? job_name_match: text,
+    ? job_name_pattern: text,
+    ? description: text
+}
+UpdateSecretGrantResponse = {
+    grant: SecretGrant
+}
+
+DeleteSecretGrantRequest = {
+    grant_id: text
+}
+DeleteSecretGrantResponse = {
+    deleted: bool
+}
+
+;;; Cancel is graceful (SIGTERM + CLEANUP phase); kill is immediate/forced.
+CancelJobRequest = {
+    job_id: text
+}
+CancelJobResponse = {
+    job_id: text,
+    status: text
+}
+
+KillJobRequest = {
+    job_id: text
+}
+KillJobResponse = {
+    job_id: text,
+    status: text
+}
+
+CancelWorkflowRequest = {
+    workflow_instance_id: text
+}
+CancelWorkflowResponse = {
+    workflow_instance_id: text,
+    status: text
+}
+
+;;; Retry re-submits a failed/cancelled job or workflow. RetryJob clones a
+;;; single job in place (same workflow node, if any) into a brand-new job
+;;; row; RetryWorkflow starts a fresh workflow instance from a failed/
+;;; cancelled one (old instance untouched); RetryUnsuccessfulJobs bulk-
+;;; applies RetryJob to every failed/cancelled member job of a workflow, in
+;;; place. See internal/jobcontrol/retry.go.
+RetryJobRequest = {
+    job_id: text
+}
+RetryJobResponse = {
+    job_id: text,
+    status: text
+}
+
+RetryWorkflowRequest = {
+    workflow_instance_id: text
+}
+RetryWorkflowResponse = {
+    workflow_instance_id: text,
+    status: text
+}
+
+RetryUnsuccessfulJobsRequest = {
+    workflow_instance_id: text
+}
+RetryUnsuccessfulJobsResponse = {
+    job_ids: [* text],
+    retried_count: int,
+    skipped_count: int
+}
+
+;;; Global settings are a k/v store; value is opaque CBOR/JSON-ish data.
+GlobalSettingEntry = {
+    key: text,
+    value: any,
+    updated_at: text
+}
+GetGlobalSettingsRequest = {}
+GetGlobalSettingsResponse = {
+    new_projects_private: bool,
+    settings: [* GlobalSettingEntry]
+}
+
+UpdateGlobalSettingsRequest = {
+    ? new_projects_private: bool,
+    ? settings: [* GlobalSettingEntry]
+}
+UpdateGlobalSettingsResponse = {
+    new_projects_private: bool,
+    settings: [* GlobalSettingEntry]
+}
+
+;;; Trusted identity admission list: exact `[handle@]domain` selectors.
+TrustedIdentity = {
+    domain: text,
+    handle: text,
+    source: text, ;; config | admin
+    created_at: text
+}
+ListTrustedIdentitiesRequest = {}
+ListTrustedIdentitiesResponse = {
+    identities: [* TrustedIdentity]
+}
+
+AddTrustedIdentityRequest = {
+    domain: text,
+    ? handle: text
+}
+AddTrustedIdentityResponse = {
+    identity: TrustedIdentity
+}
+
+RemoveTrustedIdentityRequest = {
+    domain: text,
+    ? handle: text
+}
+RemoveTrustedIdentityResponse = {
+    removed: bool
+}
+
+;;; Trusted domain admission patterns: RE2 regexes over the login domain.
+TrustedDomainPattern = {
+    pattern_id: text,
+    pattern: text,
+    ? description: text,
+    ? created_by: text,
+    created_at: text
+}
+ListTrustedDomainPatternsRequest = {}
+ListTrustedDomainPatternsResponse = {
+    patterns: [* TrustedDomainPattern]
+}
+
+AddTrustedDomainPatternRequest = {
+    pattern: text,
+    ? description: text
+}
+AddTrustedDomainPatternResponse = {
+    pattern: TrustedDomainPattern
+}
+
+RemoveTrustedDomainPatternRequest = {
+    pattern_id: text
+}
+RemoveTrustedDomainPatternResponse = {
+    removed: bool
+}
+
+service ReactorcideUi {
+    get-capabilities: GetCapabilitiesRequest -> GetCapabilitiesResponse / ServiceError,
+    list-orgs: ListOrgsRequest -> ListOrgsResponse / ServiceError,
+    list-projects: ListProjectsRequest -> ListProjectsResponse / ServiceError,
+    get-project: GetProjectRequest -> GetProjectResponse / ServiceError,
+    create-project: CreateProjectRequest -> CreateProjectResponse / ServiceError,
+    update-project: UpdateProjectRequest -> UpdateProjectResponse / ServiceError,
+    delete-project: DeleteProjectRequest -> DeleteProjectResponse / ServiceError,
+    list-groups: ListGroupsRequest -> ListGroupsResponse / ServiceError,
+    create-group: CreateGroupRequest -> CreateGroupResponse / ServiceError,
+    update-group: UpdateGroupRequest -> UpdateGroupResponse / ServiceError,
+    delete-group: DeleteGroupRequest -> DeleteGroupResponse / ServiceError,
+    add-group-member: AddGroupMemberRequest -> AddGroupMemberResponse / ServiceError,
+    remove-group-member: RemoveGroupMemberRequest -> RemoveGroupMemberResponse / ServiceError,
+    list-group-members: ListGroupMembersRequest -> ListGroupMembersResponse / ServiceError,
+    list-role-assignments: ListRoleAssignmentsRequest -> ListRoleAssignmentsResponse / ServiceError,
+    assign-role: AssignRoleRequest -> AssignRoleResponse / ServiceError,
+    revoke-role: RevokeRoleRequest -> RevokeRoleResponse / ServiceError,
+    list-webhook-secrets: ListWebhookSecretsRequest -> ListWebhookSecretsResponse / ServiceError,
+    add-webhook-secret: AddWebhookSecretRequest -> AddWebhookSecretResponse / ServiceError,
+    deactivate-webhook-secret: DeactivateWebhookSecretRequest -> DeactivateWebhookSecretResponse / ServiceError,
+    delete-webhook-secret: DeleteWebhookSecretRequest -> DeleteWebhookSecretResponse / ServiceError,
+    list-vcs-credentials: ListVcsCredentialsRequest -> ListVcsCredentialsResponse / ServiceError,
+    add-vcs-credential: AddVcsCredentialRequest -> AddVcsCredentialResponse / ServiceError,
+    deactivate-vcs-credential: DeactivateVcsCredentialRequest -> DeactivateVcsCredentialResponse / ServiceError,
+    delete-vcs-credential: DeleteVcsCredentialRequest -> DeleteVcsCredentialResponse / ServiceError,
+    set-secret: SetSecretRequest -> SetSecretResponse / ServiceError,
+    delete-secret: DeleteSecretRequest -> DeleteSecretResponse / ServiceError,
+    list-secret-paths: ListSecretPathsRequest -> ListSecretPathsResponse / ServiceError,
+    list-secret-grants: ListSecretGrantsRequest -> ListSecretGrantsResponse / ServiceError,
+    create-secret-grant: CreateSecretGrantRequest -> CreateSecretGrantResponse / ServiceError,
+    update-secret-grant: UpdateSecretGrantRequest -> UpdateSecretGrantResponse / ServiceError,
+    delete-secret-grant: DeleteSecretGrantRequest -> DeleteSecretGrantResponse / ServiceError,
+    cancel-job: CancelJobRequest -> CancelJobResponse / ServiceError,
+    kill-job: KillJobRequest -> KillJobResponse / ServiceError,
+    cancel-workflow: CancelWorkflowRequest -> CancelWorkflowResponse / ServiceError,
+    retry-job: RetryJobRequest -> RetryJobResponse / ServiceError,
+    retry-workflow: RetryWorkflowRequest -> RetryWorkflowResponse / ServiceError,
+    retry-unsuccessful-jobs: RetryUnsuccessfulJobsRequest -> RetryUnsuccessfulJobsResponse / ServiceError,
+    get-global-settings: GetGlobalSettingsRequest -> GetGlobalSettingsResponse / ServiceError,
+    update-global-settings: UpdateGlobalSettingsRequest -> UpdateGlobalSettingsResponse / ServiceError,
+    list-trusted-identities: ListTrustedIdentitiesRequest -> ListTrustedIdentitiesResponse / ServiceError,
+    add-trusted-identity: AddTrustedIdentityRequest -> AddTrustedIdentityResponse / ServiceError,
+    remove-trusted-identity: RemoveTrustedIdentityRequest -> RemoveTrustedIdentityResponse / ServiceError,
+    list-trusted-domain-patterns: ListTrustedDomainPatternsRequest -> ListTrustedDomainPatternsResponse / ServiceError,
+    add-trusted-domain-pattern: AddTrustedDomainPatternRequest -> AddTrustedDomainPatternResponse / ServiceError,
+    remove-trusted-domain-pattern: RemoveTrustedDomainPatternRequest -> RemoveTrustedDomainPatternResponse / ServiceError
+}

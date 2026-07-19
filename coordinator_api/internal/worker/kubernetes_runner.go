@@ -729,6 +729,57 @@ func (kr *KubernetesRunner) WaitForCompletion(ctx context.Context, jobName strin
 	return -1, fmt.Errorf("watch ended unexpectedly")
 }
 
+// Stop requests a graceful shutdown of the job's pod(s) by deleting them with
+// an explicit grace period. Deleting a pod (rather than patching
+// terminationGracePeriodSeconds, which is immutable post-creation) is how
+// Kubernetes lets a caller override the grace period per-delete:
+// DeleteOptions.GracePeriodSeconds controls how long the kubelet waits
+// between sending SIGTERM and SIGKILL to the pod's containers, independent
+// of the pod spec's default. grace == 0 requests immediate SIGKILL (the
+// `kubectl delete --grace-period=0 --force` equivalent).
+//
+// SpawnJob sets BackoffLimit=0 on the owning Job resource, so when the
+// kubelet-terminated pod disappears the Job controller counts it as a
+// failure and transitions the Job to JobFailed without creating a
+// replacement pod — exactly the condition WaitForCompletion's watch is
+// looking for. The pod is deleted (and possibly fully gone) by the time
+// WaitForCompletion tries to read its exit code via getPodExitCode, so
+// callers should expect -1 rather than a real container exit code for a
+// Stop-initiated termination; the caller identifies "this was a stop, not a
+// real failure" out-of-band (the cancel-poll result), not from the exit code.
+func (kr *KubernetesRunner) Stop(ctx context.Context, jobName string, grace time.Duration) error {
+	logger := logging.Log.WithField("job_name", jobName).WithField("grace", grace)
+	logger.Info("Stopping Kubernetes job pod(s)")
+
+	pods, err := kr.clientset.CoreV1().Pods(kr.namespace).List(ctx, metav1.ListOptions{
+		LabelSelector: fmt.Sprintf("reactorcide.io/job-name=%s", jobName),
+	})
+	if err != nil {
+		return fmt.Errorf("failed to list pods for job: %w", err)
+	}
+	if len(pods.Items) == 0 {
+		// No pod created yet, or already gone — nothing to stop. The normal
+		// WaitForCompletion/Cleanup path handles both cases without our help.
+		logger.Debug("No pod found for job during Stop")
+		return nil
+	}
+
+	graceSeconds := int64(grace.Seconds())
+	deleteOptions := metav1.DeleteOptions{GracePeriodSeconds: &graceSeconds}
+
+	var lastErr error
+	for _, pod := range pods.Items {
+		if err := kr.clientset.CoreV1().Pods(kr.namespace).Delete(ctx, pod.Name, deleteOptions); err != nil {
+			if apierrors.IsNotFound(err) {
+				continue
+			}
+			logger.WithError(err).WithField("pod_name", pod.Name).Warn("Failed to delete pod during Stop")
+			lastErr = err
+		}
+	}
+	return lastErr
+}
+
 // Cleanup removes the Kubernetes Job resource
 func (kr *KubernetesRunner) Cleanup(ctx context.Context, jobName string) error {
 	logger := logging.Log.WithField("job_name", jobName)

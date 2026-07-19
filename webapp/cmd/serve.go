@@ -41,6 +41,12 @@ var flags = []cli.Flag{
 		EnvVars:     []string{"REACTORCIDE_API_TOKEN"},
 		Destination: &config.APIToken,
 	},
+	&cli.BoolFlag{
+		Name:        "cookie-insecure",
+		Usage:       "Disable the Secure flag on the session cookie (local http dev only)",
+		EnvVars:     []string{"REACTORCIDE_WEB_COOKIE_INSECURE"},
+		Destination: &config.WebCookieInsecure,
+	},
 }
 
 func Serve() error {

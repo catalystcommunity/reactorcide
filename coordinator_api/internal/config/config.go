@@ -57,4 +57,11 @@ var (
 	SecretsStorageType = env.GetEnvOrDefault("REACTORCIDE_SECRETS_STORAGE_TYPE", "database")
 	// SecretsLocalPath is the path for local secrets storage (only used when SecretsStorageType="local")
 	SecretsLocalPath = env.GetEnvOrDefault("REACTORCIDE_SECRETS_LOCAL_PATH", "")
+
+	// CancelGraceSeconds is how long a graceful job cancel waits between
+	// sending SIGTERM (via JobRunner.Stop) and the worker force-cleaning up
+	// the container/pod. Mirrors the grace period described in
+	// UI_AUTH_PLAN.md's "Cancel vs Kill" section. Not used for kill (admin
+	// force-kill skips the grace period entirely).
+	CancelGraceSeconds = env.GetEnvAsIntOrDefault("REACTORCIDE_CANCEL_GRACE_SECONDS", "60")
 )

@@ -6,9 +6,12 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/catalystcommunity/reactorcide/webapp/internal/templates"
+	"github.com/catalystcommunity/reactorcide/webapp/internal/uiclient"
+	"github.com/catalystcommunity/reactorcide/webapp/internal/uiclient/csilapi"
 	"github.com/sirupsen/logrus"
 )
 
@@ -16,9 +19,24 @@ import (
 type WebHandler struct {
 	client    *APIClient
 	templates *template.Template
+
+	// uiClients is the CSIL-RPC carrier to the coordinator's
+	// ReactorcideAuth/ReactorcideUi services (session, capabilities,
+	// management ops). Nil in tests that only exercise page rendering —
+	// every uiClients-dependent path treats nil as "anonymous, auth mode
+	// none, no coordinator calls made".
+	uiClients *uiclient.Clients
+
+	// authConfigMu guards the short-lived get-auth-config cache (see
+	// getAuthConfig in session.go). Auth mode is coordinator-wide config,
+	// not per-user, so caching it across requests/users is safe.
+	authConfigMu  sync.Mutex
+	authConfigVal csilapi.GetAuthConfigResponse
+	authConfigErr error
+	authConfigAt  time.Time
 }
 
-func NewWebHandler(client *APIClient) *WebHandler {
+func NewWebHandler(client *APIClient, uiClients *uiclient.Clients) *WebHandler {
 	funcMap := template.FuncMap{
 		"statusClass": statusClass,
 		"formatTime":  formatTime,
@@ -66,8 +84,10 @@ func NewWebHandler(client *APIClient) *WebHandler {
 			}
 			return "log-stdout"
 		},
-		"workflowLink": workflowLink,
-		"shortSHA":     shortSHA,
+		"workflowLink":   workflowLink,
+		"shortSHA":       shortSHA,
+		"joinStringList": joinStringList,
+		"isRetryable":    isRetryableStatus,
 	}
 
 	tmpl := template.Must(template.New("").Funcs(funcMap).ParseFS(templates.FS, "*.html"))
@@ -75,6 +95,7 @@ func NewWebHandler(client *APIClient) *WebHandler {
 	return &WebHandler{
 		client:    client,
 		templates: tmpl,
+		uiClients: uiClients,
 	}
 }
 
@@ -124,7 +145,7 @@ func (h *WebHandler) JobsList(w http.ResponseWriter, r *http.Request) {
 	workflows, err := h.client.ListWorkflows(limit, offset, status, projectID)
 	if err != nil {
 		logrus.WithError(err).Error("Failed to fetch workflows")
-		h.renderError(w, http.StatusBadGateway, "Failed to fetch workflows from API", err)
+		h.renderError(w, r, http.StatusBadGateway, "Failed to fetch workflows from API", err)
 		return
 	}
 	projects, err := h.client.ListProjects(100, 0)
@@ -148,7 +169,7 @@ func (h *WebHandler) JobsList(w http.ResponseWriter, r *http.Request) {
 		"NextOffset":      offset + limit,
 	}
 
-	h.render(w, "jobs_list.html", data)
+	h.render(w, r, "jobs_list.html", data)
 }
 
 func (h *WebHandler) WorkflowDetail(w http.ResponseWriter, r *http.Request) {
@@ -161,11 +182,11 @@ func (h *WebHandler) WorkflowDetail(w http.ResponseWriter, r *http.Request) {
 	workflow, err := h.client.GetWorkflow(workflowID)
 	if err != nil {
 		if strings.Contains(err.Error(), "not found") {
-			h.renderError(w, http.StatusNotFound, "Workflow not found", nil)
+			h.renderError(w, r, http.StatusNotFound, "Workflow not found", nil)
 			return
 		}
 		logrus.WithError(err).Error("Failed to fetch workflow")
-		h.renderError(w, http.StatusBadGateway, "Failed to fetch workflow", err)
+		h.renderError(w, r, http.StatusBadGateway, "Failed to fetch workflow", err)
 		return
 	}
 	if workflow.LooseJobID != nil {
@@ -176,16 +197,30 @@ func (h *WebHandler) WorkflowDetail(w http.ResponseWriter, r *http.Request) {
 	jobs, err := h.client.ListJobsForWorkflow(workflowID, 200, 0)
 	if err != nil {
 		logrus.WithError(err).Error("Failed to fetch workflow jobs")
-		h.renderError(w, http.StatusBadGateway, "Failed to fetch workflow jobs", err)
+		h.renderError(w, r, http.StatusBadGateway, "Failed to fetch workflow jobs", err)
 		return
 	}
 
+	// Capability hints for Task I's cancel/kill/retry buttons: scoped to this
+	// workflow's project when known, since cancel/kill/retry authorization is
+	// project/org-scoped (see UI_AUTH_PLAN.md's permission matrix). Display
+	// only — the coordinator re-authorizes the actual cancel-workflow/
+	// retry-workflow/retry-unsuccessful-jobs call.
+	caps := h.capabilitiesForProject(r, workflow.ProjectID)
+	msg, errMsg := flashFromQuery(r)
+
 	data := map[string]interface{}{
-		"Title":    workflow.Name,
-		"Workflow": workflow,
-		"Jobs":     jobs.Jobs,
+		"Title":               workflow.Name,
+		"Workflow":            workflow,
+		"Jobs":                jobs.Jobs,
+		"CanCancel":           caps.CancelJob,
+		"CanKill":             caps.KillJob,
+		"CanRetry":            caps.RetryJob,
+		"HasUnsuccessfulJobs": hasUnsuccessfulJobs(jobs.Jobs),
+		"FormMsg":             msg,
+		"FormError":           errMsg,
 	}
-	h.render(w, "workflow_detail.html", data)
+	h.render(w, r, "workflow_detail.html", data)
 }
 
 // JobDetail renders the job detail page with logs
@@ -199,11 +234,11 @@ func (h *WebHandler) JobDetail(w http.ResponseWriter, r *http.Request) {
 	job, err := h.client.GetJob(jobID)
 	if err != nil {
 		if strings.Contains(err.Error(), "not found") {
-			h.renderError(w, http.StatusNotFound, "Job not found", nil)
+			h.renderError(w, r, http.StatusNotFound, "Job not found", nil)
 			return
 		}
 		logrus.WithError(err).Error("Failed to fetch job")
-		h.renderError(w, http.StatusBadGateway, "Failed to fetch job", err)
+		h.renderError(w, r, http.StatusBadGateway, "Failed to fetch job", err)
 		return
 	}
 
@@ -218,14 +253,24 @@ func (h *WebHandler) JobDetail(w http.ResponseWriter, r *http.Request) {
 		// Don't fail the whole page, just show no logs
 	}
 
+	// Capability hints for Task I's cancel/kill/retry buttons; see the
+	// identical comment in WorkflowDetail.
+	caps := h.capabilitiesForProject(r, job.ProjectID)
+	msg, errMsg := flashFromQuery(r)
+
 	data := map[string]interface{}{
-		"Title":  job.Name,
-		"Job":    job,
-		"Logs":   logs,
-		"Stream": stream,
+		"Title":     job.Name,
+		"Job":       job,
+		"Logs":      logs,
+		"Stream":    stream,
+		"CanCancel": caps.CancelJob,
+		"CanKill":   caps.KillJob,
+		"CanRetry":  caps.RetryJob,
+		"FormMsg":   msg,
+		"FormError": errMsg,
 	}
 
-	h.render(w, "job_detail.html", data)
+	h.render(w, r, "job_detail.html", data)
 }
 
 // JobLogs returns just the log content (for potential AJAX refresh)
@@ -243,7 +288,7 @@ func (h *WebHandler) JobLogs(w http.ResponseWriter, r *http.Request) {
 
 	logs, err := h.client.GetJobLogs(jobID, stream)
 	if err != nil {
-		h.renderError(w, http.StatusBadGateway, "Failed to fetch logs", err)
+		h.renderError(w, r, http.StatusBadGateway, "Failed to fetch logs", err)
 		return
 	}
 
@@ -253,10 +298,19 @@ func (h *WebHandler) JobLogs(w http.ResponseWriter, r *http.Request) {
 		"Stream": stream,
 	}
 
-	h.render(w, "logs_fragment.html", data)
+	h.render(w, r, "logs_fragment.html", data)
 }
 
-func (h *WebHandler) render(w http.ResponseWriter, name string, data interface{}) {
+// render executes a named template with data, auto-injecting the current
+// request's SessionInfo as "Session" (used by the "head"/"foot" layout
+// templates for the nav bar auth area) unless the caller already set one.
+func (h *WebHandler) render(w http.ResponseWriter, r *http.Request, name string, data map[string]interface{}) {
+	if data == nil {
+		data = map[string]interface{}{}
+	}
+	if _, ok := data["Session"]; !ok {
+		data["Session"] = h.sessionInfo(r)
+	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	if err := h.templates.ExecuteTemplate(w, name, data); err != nil {
 		logrus.WithError(err).Errorf("Failed to render template %s", name)
@@ -264,13 +318,14 @@ func (h *WebHandler) render(w http.ResponseWriter, name string, data interface{}
 	}
 }
 
-func (h *WebHandler) renderError(w http.ResponseWriter, status int, message string, err error) {
+func (h *WebHandler) renderError(w http.ResponseWriter, r *http.Request, status int, message string, err error) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.WriteHeader(status)
 	data := map[string]interface{}{
 		"Title":   "Error",
 		"Status":  status,
 		"Message": message,
+		"Session": h.sessionInfo(r),
 	}
 	if err != nil {
 		data["Detail"] = err.Error()
@@ -295,6 +350,26 @@ func statusClass(status string) string {
 	default:
 		return "status-unknown"
 	}
+}
+
+// isRetryableStatus mirrors coordinator_api's models.Job.IsRetryable /
+// models.WorkflowInstance.IsRetryable (failed or cancelled only) for gating
+// the retry buttons' visibility. Display only — the coordinator
+// re-validates the status itself when the retry op is actually called.
+func isRetryableStatus(status string) bool {
+	return status == "failed" || status == "cancelled"
+}
+
+// hasUnsuccessfulJobs reports whether any job in a workflow's member-job
+// list is failed/cancelled, for gating WorkflowDetail's "Retry all
+// unsuccessful jobs" button.
+func hasUnsuccessfulJobs(jobs []JobResponse) bool {
+	for _, j := range jobs {
+		if isRetryableStatus(j.Status) {
+			return true
+		}
+	}
+	return false
 }
 
 func formatTime(t time.Time) string {

@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/auth"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/checkauth"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/config"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/corndogs"
@@ -17,6 +18,8 @@ import (
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/pubsub"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/secrets"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store"
+	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/uiapi"
+	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/uiapi/csilapi"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/vcs"
 
 	"github.com/rs/cors"
@@ -102,7 +105,7 @@ func createAppMux() *http.ServeMux {
 	tokenHandler := NewTokenHandler(store.AppStore)
 	webhookHandler := NewWebhookHandler(store.AppStore, singletoncorndogsClient)
 	projectHandler := NewProjectHandler(store.AppStore)
-	workflowHandler := NewWorkflowHandler(store.AppStore)
+	workflowHandler := NewWorkflowHandlerWithCorndogs(store.AppStore, singletoncorndogsClient)
 
 	// Wire VCS clients into the webhook handler and the job handler's trigger
 	// processor, so jobs submitted via /api/v1/jobs/{id}/triggers register as
@@ -184,6 +187,54 @@ func createAppMux() *http.ServeMux {
 			http.Error(w, "Invalid path", http.StatusBadRequest)
 			return
 		}
+		// Handle the special case for workflow_id/cancel
+		if strings.HasSuffix(path, "/cancel") {
+			workflowID := strings.TrimSuffix(path, "/cancel")
+			r = r.WithContext(setIDContext(r.Context(), "workflow_id", workflowID))
+			handler := transactionMiddleware(authMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.Method == http.MethodPut {
+					workflowHandler.CancelWorkflow(w, r)
+					return
+				}
+				http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+			})))
+			handler.ServeHTTP(w, r)
+			return
+		}
+
+		// Handle the special case for workflow_id/retry-unsuccessful. Must be
+		// checked before the plain "/retry" suffix below since neither is a
+		// prefix of the other, but keeping this one first mirrors the
+		// (more-specific-first) ordering used for jobs/{id}/{cancel,kill}.
+		if strings.HasSuffix(path, "/retry-unsuccessful") {
+			workflowID := strings.TrimSuffix(path, "/retry-unsuccessful")
+			r = r.WithContext(setIDContext(r.Context(), "workflow_id", workflowID))
+			handler := transactionMiddleware(authMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.Method == http.MethodPost {
+					workflowHandler.RetryUnsuccessfulJobs(w, r)
+					return
+				}
+				http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+			})))
+			handler.ServeHTTP(w, r)
+			return
+		}
+
+		// Handle the special case for workflow_id/retry
+		if strings.HasSuffix(path, "/retry") {
+			workflowID := strings.TrimSuffix(path, "/retry")
+			r = r.WithContext(setIDContext(r.Context(), "workflow_id", workflowID))
+			handler := transactionMiddleware(authMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.Method == http.MethodPost {
+					workflowHandler.RetryWorkflow(w, r)
+					return
+				}
+				http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+			})))
+			handler.ServeHTTP(w, r)
+			return
+		}
+
 		r = r.WithContext(setIDContext(r.Context(), "workflow_id", path))
 		handler := transactionMiddleware(authMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			switch r.Method {
@@ -237,6 +288,30 @@ func createAppMux() *http.ServeMux {
 				r = r.WithContext(setIDContext(r.Context(), "job_id", jobID))
 				if r.Method == http.MethodPut {
 					jobHandler.CancelJob(w, r)
+					return
+				}
+				http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+				return
+			}
+
+			// Handle the special case for job_id/kill
+			if strings.HasSuffix(path, "/kill") {
+				jobID := strings.TrimSuffix(path, "/kill")
+				r = r.WithContext(setIDContext(r.Context(), "job_id", jobID))
+				if r.Method == http.MethodPost {
+					jobHandler.KillJob(w, r)
+					return
+				}
+				http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+				return
+			}
+
+			// Handle the special case for job_id/retry
+			if strings.HasSuffix(path, "/retry") {
+				jobID := strings.TrimSuffix(path, "/retry")
+				r = r.WithContext(setIDContext(r.Context(), "job_id", jobID))
+				if r.Method == http.MethodPost {
+					jobHandler.RetryJob(w, r)
 					return
 				}
 				http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
@@ -626,7 +701,78 @@ func createAppMux() *http.ServeMux {
 		})
 	}
 
+	// CSIL-RPC UI/Auth endpoint (webapp <-> coordinator management surface,
+	// see UI_AUTH_PLAN.md "CSIL-RPC UI service"). Real auth/authz/store-backed
+	// implementations when store.AppStore satisfies uiapi.DataStore (always
+	// true for *postgres_store.PostgresDbStore in production); stub
+	// implementations (ServiceError{code:"unimplemented"} for every op)
+	// otherwise, e.g. against a minimal test store that doesn't implement
+	// the full rbac/rotation/settings/trusted-identity surface.
+	var uiAuthImpl csilapi.ReactorcideAuth = uiapi.NewStubAuth()
+	var uiUiImpl csilapi.ReactorcideUi = uiapi.NewStubUi()
+	if uiStore, ok := store.AppStore.(uiapi.DataStore); ok {
+		if deps := buildUIAPIDeps(uiStore, singletonKeyManager, singletoncorndogsClient); deps != nil {
+			uiAuthImpl = uiapi.NewAuthService(deps)
+			uiUiImpl = uiapi.NewUiService(deps)
+		}
+	}
+	mux.Handle(uiapi.RpcPath, uiapi.NewHandler(uiAuthImpl, uiUiImpl))
+
 	return mux
+}
+
+// buildUIAPIDeps wires the CSIL UI service's dependencies (Task G): seeds
+// the trusted-identity admission list from config, selects a LoginBackend
+// matching auth.CurrentMode() (falling back to the none-mode sentinel
+// backend — login unavailable, but every other op still works — if the
+// configured mode's backend can't be constructed, e.g. missing/invalid
+// LinkKeys config), and builds a *uiapi.Deps. Returns nil only if
+// ValidateUIAuthMode itself fails (a misconfigured auth mode), since in that
+// case none of the auth/authz surface can be trusted to behave as
+// configured.
+func buildUIAPIDeps(uiStore uiapi.DataStore, keyManager *secrets.MasterKeyManager, corndogsClient corndogs.ClientInterface) *uiapi.Deps {
+	if err := config.ValidateUIAuthMode(); err != nil {
+		log.Printf("WARNING: REACTORCIDE_UI_AUTH_MODE is misconfigured, CSIL UI service will return unimplemented: %v", err)
+		return nil
+	}
+
+	ctx := context.Background()
+	if err := auth.SeedTrustedIdentitiesFromConfig(ctx, uiStore, config.TrustedIdentities); err != nil {
+		log.Printf("WARNING: failed to seed trusted identities from REACTORCIDE_TRUSTED_IDENTITIES: %v", err)
+	}
+
+	var backend auth.LoginBackend = auth.NewNoneBackend()
+	switch auth.CurrentMode() {
+	case auth.ModeLocalRP:
+		if keyManager == nil {
+			log.Printf("WARNING: REACTORCIDE_UI_AUTH_MODE=local-rp but secrets are not configured; login will be unavailable")
+			break
+		}
+		b, err := auth.NewLocalRPBackend(ctx, uiStore, keyManager)
+		if err != nil {
+			log.Printf("WARNING: failed to initialize local-rp login backend, login will be unavailable: %v", err)
+			break
+		}
+		backend = b
+	case auth.ModeRP:
+		if keyManager == nil {
+			log.Printf("WARNING: REACTORCIDE_UI_AUTH_MODE=rp but secrets are not configured; login will be unavailable")
+			break
+		}
+		apiKey, err := auth.LoadOrBootstrapRPAPIKey(ctx, uiStore, keyManager)
+		if err != nil {
+			log.Printf("WARNING: failed to load rp api key, login will be unavailable: %v", err)
+			break
+		}
+		b, err := auth.NewRPBackend(apiKey, nil)
+		if err != nil {
+			log.Printf("WARNING: failed to initialize rp login backend, login will be unavailable: %v", err)
+			break
+		}
+		backend = b
+	}
+
+	return uiapi.NewDeps(uiStore, backend, keyManager, corndogsClient)
 }
 
 // setIDContext adds an ID to the context for handlers to use

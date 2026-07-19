@@ -102,6 +102,49 @@ func TestProject_ShouldProcessEvent(t *testing.T) {
 	}
 }
 
+func TestProject_IsEffectivelyPrivate(t *testing.T) {
+	tests := []struct {
+		name         string
+		project      *Project
+		orgIsPrivate bool
+		want         bool
+	}{
+		{
+			name:         "public project, public org",
+			project:      &Project{IsPrivate: false},
+			orgIsPrivate: false,
+			want:         false,
+		},
+		{
+			name:         "private project, public org",
+			project:      &Project{IsPrivate: true},
+			orgIsPrivate: false,
+			want:         true,
+		},
+		{
+			name:         "public project, private org",
+			project:      &Project{IsPrivate: false},
+			orgIsPrivate: true,
+			want:         true,
+		},
+		{
+			name:         "private project, private org",
+			project:      &Project{IsPrivate: true},
+			orgIsPrivate: true,
+			want:         true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := tt.project.IsEffectivelyPrivate(tt.orgIsPrivate)
+			if got != tt.want {
+				t.Errorf("IsEffectivelyPrivate(%v) = %v, want %v", tt.orgIsPrivate, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestSourceType_Constants(t *testing.T) {
 	// Test that the constants are properly defined
 	if SourceTypeGit != "git" {

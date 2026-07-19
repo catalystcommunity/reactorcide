@@ -1,0 +1,40 @@
+{{template "head" .}}
+<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+    <h2>Projects</h2>
+    {{if .CanCreate}}
+        <a href="/app/projects/new"><button type="button">New project</button></a>
+    {{end}}
+</div>
+
+{{if .FormMsg}}<p class="form-msg">{{.FormMsg}}</p>{{end}}
+{{if .FormError}}<p class="form-error">{{.FormError}}</p>{{end}}
+
+{{if .Projects}}
+<table>
+    <thead>
+        <tr>
+            <th>Name</th>
+            <th>Visibility</th>
+            <th>Enabled</th>
+            <th>Repo</th>
+        </tr>
+    </thead>
+    <tbody>
+        {{range .Projects}}
+        <tr>
+            <td><a href="/app/projects/{{.ProjectId}}">{{.Name}}</a></td>
+            <td>
+                {{if .IsPrivate}}<span class="badge badge-private">Private</span>{{else}}<span class="badge badge-public">Public</span>{{end}}
+            </td>
+            <td class="meta">{{if .Enabled}}yes{{else}}no{{end}}</td>
+            <td class="meta truncate">{{.RepoUrl}}</td>
+        </tr>
+        {{end}}
+    </tbody>
+</table>
+{{else}}
+<div class="card">
+    <p class="meta">No projects found.</p>
+</div>
+{{end}}
+{{template "foot" .}}

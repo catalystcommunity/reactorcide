@@ -7,12 +7,30 @@
     {{end}}
 </div>
 
+{{if .FormMsg}}<p class="form-msg">{{.FormMsg}}</p>{{end}}
+{{if .FormError}}<p class="form-error">{{.FormError}}</p>{{end}}
+
 <div class="card" data-job-id="{{.Job.JobID}}">
     <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 12px;">
         <h2>{{.Job.Name}}</h2>
         <span id="job-status" class="status-badge {{statusClass .Job.Status}}">{{.Job.Status}}</span>
         {{if .Job.ExitCode}}
             <span class="meta">exit: <span class="{{exitCodeClass .Job.ExitCode}}">{{derefInt .Job.ExitCode}}</span></span>
+        {{end}}
+        {{if .CanCancel}}
+        <form method="post" action="/app/jobs/{{.Job.JobID}}/cancel" style="display:inline;">
+            <button type="submit">Cancel</button>
+        </form>
+        {{end}}
+        {{if .CanKill}}
+        <form method="post" action="/app/jobs/{{.Job.JobID}}/kill" style="display:inline;">
+            <button type="submit" class="danger" data-confirm="Kill this job immediately? Cleanup hooks will not run.">Kill</button>
+        </form>
+        {{end}}
+        {{if and .CanRetry (isRetryable .Job.Status)}}
+        <form method="post" action="/app/jobs/{{.Job.JobID}}/retry" style="display:inline;">
+            <button type="submit">Retry</button>
+        </form>
         {{end}}
     </div>
     {{if .Job.Description}}<p class="meta" style="margin-bottom: 12px;">{{.Job.Description}}</p>{{end}}

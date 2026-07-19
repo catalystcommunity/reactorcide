@@ -28,6 +28,9 @@ type User struct {
 	SecretsInitializedAt *time.Time     `json:"secrets_initialized_at,omitempty"`
 	VCSCredentialSecrets JSONB          `gorm:"column:vcs_token_secrets;type:jsonb;default:'{}'" json:"vcs_token_secrets,omitempty"`
 	WebhookSecrets       JSONB          `gorm:"type:jsonb;default:'{}'" json:"webhook_secrets,omitempty"`
+	// IsPrivate marks the org (this user, since users act as orgs today) as
+	// private. See Project.IsEffectivelyPrivate.
+	IsPrivate bool `gorm:"not null;default:false" json:"is_private"`
 }
 
 // TableName specifies the table name for the model

@@ -42,6 +42,16 @@ func (ps PostgresDbStore) CreateUser(ctx context.Context, user *models.User) err
 	return nil
 }
 
+// UpdateUser updates an existing user (full-row save, mirrors UpdateProject).
+// Added for is_private (org visibility) and for auth identity provisioning
+// (display name / role updates) to have a store path to persist changes.
+func (ps PostgresDbStore) UpdateUser(ctx context.Context, user *models.User) error {
+	if err := ps.getDB(ctx).Save(user).Error; err != nil {
+		return fmt.Errorf("failed to update user: %w", err)
+	}
+	return nil
+}
+
 // EnsureDefaultUser creates a default user if DEFAULT_USER_ID is configured and the user doesn't exist
 func (ps PostgresDbStore) EnsureDefaultUser() error {
 	if config.DefaultUserID == "" {

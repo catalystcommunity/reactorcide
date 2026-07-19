@@ -6,6 +6,7 @@ import subprocess
 import shlex
 import sys
 import threading
+import time
 import getpass
 import typer
 from typing import List, Optional, Dict
@@ -19,8 +20,24 @@ from src.secrets_resolver import has_secret_refs, resolve_secrets_in_dict
 from src.validation import validate_config, format_validation_result
 from src.secrets import SecretMasker
 from src.plugins import plugin_manager, PluginContext, PluginPhase, initialize_plugins
+from src.signals import (
+    TermRequested,
+    TERM_EXIT_CODE,
+    install_sigterm_handler,
+    register_sigterm_cleanup,
+    unregister_sigterm_cleanup,
+)
 
 app = typer.Typer()
+
+
+@app.callback()
+def _install_signal_handling(ctx: typer.Context) -> None:
+    """Runs before every subcommand. Installs the SIGTERM -> TermRequested
+    trap (see src/signals.py) so whichever command ends up as PID 1 in a job
+    container (normally `run`) can route a graceful-cancel SIGTERM into its
+    existing cleanup path instead of dying mid-job."""
+    install_sigterm_handler()
 
 
 def resolve_job_secrets(env_vars: Dict[str, str]) -> Dict[str, str]:
@@ -103,7 +120,9 @@ def _run_local(config, command_args):
         # Run command with shell to support complex commands (pipes, redirects, etc.)
         # start_new_session=True puts the process in its own process group so we
         # can kill background daemons (buildkitd, dockerd, etc.) when the main
-        # command exits, preventing the job from hanging until timeout.
+        # command exits, preventing the job from hanging until timeout. It also
+        # means _kill_child_process_group below can safely target this whole
+        # group via os.killpg(process.pid, ...) — process.pid IS the pgid here.
         process = subprocess.Popen(
             config.job_command,
             shell=True,
@@ -130,27 +149,73 @@ def _run_local(config, command_args):
         reader = threading.Thread(target=_stream_output, daemon=True)
         reader.start()
 
-        # Wait for the main process (the shell) to exit.
-        # This returns as soon as the shell exits, even if background children
-        # are still running.
-        exit_code = process.wait()
-
-        # Kill the process group to clean up background daemons.
-        # Without this, orphaned processes would keep running in the container.
-        pgid = process.pid
-        try:
-            os.killpg(pgid, signal.SIGTERM)
-        except OSError:
-            pass
-
-        # Give processes a moment to handle SIGTERM, then force kill
-        reader.join(timeout=5)
-        if reader.is_alive():
+        # TERM-then-KILL reaper for the job's whole process group, used both
+        # for the normal post-exit cleanup below (any background daemons the
+        # job left running) and, via _reap_after_term, for a SIGTERM-driven
+        # shutdown.
+        def _kill_process_group(sig):
             try:
-                os.killpg(pgid, signal.SIGKILL)
+                os.killpg(process.pid, sig)
             except OSError:
                 pass
+
+        def _reap_with_grace(grace_seconds):
+            """Waits up to grace_seconds for the process to exit, escalating
+            to SIGKILL if it hasn't. Must only be called once the *original*
+            process.wait() call is no longer in flight — Popen serializes
+            wait()/poll() on an internal lock, so calling this while that
+            original call is still unwinding would just block until it does."""
+            try:
+                process.wait(timeout=grace_seconds)
+            except subprocess.TimeoutExpired:
+                _kill_process_group(signal.SIGKILL)
+                try:
+                    process.wait(timeout=2)
+                except subprocess.TimeoutExpired:
+                    pass
             reader.join(timeout=2)
+
+        # Registered as the SIGTERM handler's cleanup callback (see
+        # src/signals.py): forwards SIGTERM to the job's process group the
+        # instant the signal arrives. Deliberately does NOT wait/poll here —
+        # the process.wait() call below is what's being interrupted by the
+        # signal and is still holding Popen's internal waitpid lock for the
+        # duration of the handler, so polling from inside the handler would
+        # just block blindly until that lock frees up on its own. The
+        # TERM-then-KILL escalation happens afterward, in the `except
+        # TermRequested` clause below, once that lock is free again.
+        def _forward_sigterm_immediately():
+            _kill_process_group(signal.SIGTERM)
+
+        register_sigterm_cleanup(_forward_sigterm_immediately)
+        try:
+            try:
+                # Wait for the main process (the shell) to exit. This returns
+                # as soon as the shell exits, even if background children are
+                # still running — or raises TermRequested if a SIGTERM
+                # arrives first (see src/signals.py; _forward_sigterm_immediately
+                # has already sent SIGTERM to the group by the time this
+                # propagates).
+                exit_code = process.wait()
+
+                # Give the reader thread a moment to flush trailing output.
+                reader.join(timeout=5)
+                if reader.is_alive():
+                    # Reader is still going (background daemon still holding
+                    # the pipe open) — clean up the process group.
+                    _kill_process_group(signal.SIGTERM)
+                    reader.join(timeout=2)
+                    if reader.is_alive():
+                        _kill_process_group(signal.SIGKILL)
+                        reader.join(timeout=2)
+            except TermRequested:
+                # SIGTERM already forwarded to the group above; give it up to
+                # 5s to exit gracefully, then force-kill and reap so we don't
+                # leave a zombie/orphan behind.
+                _reap_with_grace(5)
+                raise
+        finally:
+            unregister_sigterm_cleanup(_forward_sigterm_immediately)
 
         # Close the pipe to unblock any remaining reads
         try:
@@ -165,6 +230,11 @@ def _run_local(config, command_args):
 
         return exit_code
 
+    except TermRequested:
+        # Let this propagate to run()'s outer handler, which runs
+        # PluginPhase.CLEANUP and exits with TERM_EXIT_CODE — do not let the
+        # broad except below swallow it as a generic execution error.
+        raise
     except Exception as e:
         log_stderr(f"Error executing job: {e}")
         return 1
@@ -334,19 +404,42 @@ def run(
         plugin_context.phase = PluginPhase.POST_SOURCE_PREP
         plugin_manager.execute_phase(PluginPhase.POST_SOURCE_PREP, plugin_context)
 
-        # Execute the job (use_container already determined before validation)
-        if use_container:
-            # Container execution mode - for integration testing
-            log_stdout("Running job in CONTAINER mode")
-            exit_code = run_container(config=config, additional_args=command_args)
-        else:
-            # Local execution mode (default) - for deployment and emergency use
-            exit_code = _run_local(config, command_args)
+        # Execute the job (use_container already determined before validation).
+        # Wrapped in its own try/finally so PluginPhase.CLEANUP is guaranteed
+        # to run for the local-execution path even on a SIGTERM-triggered
+        # TermRequested (see src/signals.py) — run_container() already
+        # guarantees this via its own internal try/finally, so we only need
+        # to do it here for the non-container (_run_local) branch.
+        try:
+            if use_container:
+                # Container execution mode - for integration testing
+                log_stdout("Running job in CONTAINER mode")
+                exit_code = run_container(config=config, additional_args=command_args)
+            else:
+                # Local execution mode (default) - for deployment and emergency use
+                exit_code = _run_local(config, command_args)
+        finally:
+            if not use_container:
+                plugin_context.phase = PluginPhase.CLEANUP
+                try:
+                    plugin_manager.execute_phase(PluginPhase.CLEANUP, plugin_context)
+                except Exception:
+                    log_stderr("Cleanup plugin phase failed")
 
         raise typer.Exit(exit_code)
     except typer.Exit:
         # Re-raise typer.Exit to avoid catching it as a generic exception
         raise
+    except TermRequested:
+        # SIGTERM was received (graceful cancel/kill from the coordinator —
+        # see UI_AUTH_PLAN.md's Cancel vs Kill section). The child process
+        # has already been terminated and PluginPhase.CLEANUP has already run
+        # (both via the try/finally above); cleanup_vcs_auth already ran in
+        # the source-prep try/finally earlier in this function regardless of
+        # when the signal arrived. Exit with a distinct, recognizable code
+        # rather than falling through to the generic error path.
+        log_stderr(f"Received SIGTERM — job terminated (exit code {TERM_EXIT_CODE})")
+        raise typer.Exit(TERM_EXIT_CODE)
     except (ValueError, FileNotFoundError) as e:
         log_stderr(f"Configuration error: {e}")
         raise typer.Exit(1)

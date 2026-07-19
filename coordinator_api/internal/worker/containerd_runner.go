@@ -6,8 +6,10 @@ import (
 	"fmt"
 	"io"
 	"os/exec"
+	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/catalystcommunity/app-utils-go/logging"
 )
@@ -417,6 +419,30 @@ func (cr *ContainerdRunner) WaitForCompletion(ctx context.Context, containerID s
 	case <-ctx.Done():
 		return -1, ctx.Err()
 	}
+}
+
+// Stop requests a graceful shutdown of the job container via `nerdctl stop`,
+// which sends SIGTERM to PID 1 and waits up to `grace` seconds before
+// sending SIGKILL. grace == 0 requests immediate termination (nerdctl stop
+// -t 0 sends SIGTERM immediately followed by SIGKILL with no wait).
+func (cr *ContainerdRunner) Stop(ctx context.Context, containerID string, grace time.Duration) error {
+	logger := logging.Log.WithField("container_id", containerID).WithField("grace", grace)
+	logger.Info("Stopping nerdctl container")
+
+	graceSeconds := strconv.Itoa(int(grace.Seconds()))
+	cmd := exec.CommandContext(ctx, nerdctlBinary, "--namespace", containerdNamespace, "stop", "-t", graceSeconds, containerID)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		// Tolerate "already stopped"/"not found" — WaitForCompletion racing
+		// against natural container exit is expected, not an error here.
+		if strings.Contains(string(output), "not found") || strings.Contains(string(output), "No such container") ||
+			strings.Contains(string(output), "is not running") {
+			logger.Debug("Container already stopped/not found during Stop")
+			return nil
+		}
+		return fmt.Errorf("failed to stop container: %w (%s)", err, strings.TrimSpace(string(output)))
+	}
+	return nil
 }
 
 // Cleanup removes the container and associated resources

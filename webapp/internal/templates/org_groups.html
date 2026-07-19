@@ -1,0 +1,73 @@
+{{template "head" .}}
+<h2 style="margin-bottom: 16px;">Groups</h2>
+
+{{if .Orgs}}
+<form method="get" action="/app/org/groups" class="inline-form">
+    <label>Organization
+        <select name="org_id" onchange="this.form.submit()">
+            {{range .Orgs}}<option value="{{.OrgId}}" {{if eq $.OrgID .OrgId}}selected{{end}}>{{.Name}}</option>{{end}}
+        </select>
+    </label>
+</form>
+{{end}}
+
+{{if .FormMsg}}<p class="form-msg">{{.FormMsg}}</p>{{end}}
+{{if .FormError}}<p class="form-error">{{.FormError}}</p>{{end}}
+
+{{if .Groups}}
+<table>
+    <thead><tr><th>Name</th><th>Description</th><th>Members</th><th></th></tr></thead>
+    <tbody>
+        {{range .Groups}}
+        <tr>
+            <td>{{.Name}}</td>
+            <td class="meta">{{derefStr .Description}}</td>
+            <td>
+                {{$groupID := .GroupId}}
+                {{$members := index $.GroupMembers $groupID}}
+                {{if $members}}
+                <ul class="member-list">
+                    {{range $members}}
+                    <li>
+                        {{if .Username}}{{.Username}}{{else}}{{.UserId}}{{end}}
+                        <form method="post" action="/app/org/groups/{{$groupID}}/members/remove" class="inline-form" style="display:inline;">
+                            <input type="hidden" name="org_id" value="{{$.OrgID}}">
+                            <input type="hidden" name="user_id" value="{{.UserId}}">
+                            <button type="submit" class="danger" data-confirm="Remove this member?">Remove</button>
+                        </form>
+                    </li>
+                    {{end}}
+                </ul>
+                {{else}}
+                <p class="meta">No members.</p>
+                {{end}}
+                <form method="post" action="/app/org/groups/{{.GroupId}}/members" class="inline-form" style="margin-top: 4px;">
+                    <input type="hidden" name="org_id" value="{{$.OrgID}}">
+                    <input type="text" name="user_id" placeholder="user id to add" required maxlength="64">
+                    <button type="submit">Add member</button>
+                </form>
+            </td>
+            <td>
+                <form method="post" action="/app/org/groups/{{.GroupId}}/delete">
+                    <input type="hidden" name="org_id" value="{{$.OrgID}}">
+                    <button type="submit" class="danger" data-confirm="Delete group {{.Name}}?">Delete</button>
+                </form>
+            </td>
+        </tr>
+        {{end}}
+    </tbody>
+</table>
+{{else}}
+<div class="card"><p class="meta">No groups found for this org.</p></div>
+{{end}}
+
+<div class="card" style="margin-top: 16px;">
+    <h3 class="section-title">New group</h3>
+    <form method="post" action="/app/org/groups" class="inline-form js-disable-on-submit">
+        <input type="hidden" name="org_id" value="{{.OrgID}}">
+        <label>Name <input type="text" name="name" required maxlength="255"></label>
+        <label>Description <input type="text" name="description" maxlength="255"></label>
+        <button type="submit">Create group</button>
+    </form>
+</div>
+{{template "foot" .}}

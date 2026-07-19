@@ -924,6 +924,19 @@ Execution Flow:
 - Resource limits (CPU, memory)
 - Readonly root filesystem (where possible)
 
+### Management UI Auth, RBAC, and Visibility
+
+The management web UI (`webapp/`) and the coordinator's CSIL-RPC management service
+(`coordinator_api/internal/uiapi`, mounted at `POST /csil/v1/rpc`) add a separate,
+optional-by-default security layer on top of everything above: LinkKeys-based login
+(`none`/`local-rp`/`rp` modes), role-based access control (global/org/project-scoped
+`admin`/`owner`/`member` roles, users and groups), public/private project and org
+visibility, and N-per-project rotatable webhook/VCS credentials. The coordinator is the
+sole authorizer for all of it — the webapp only mirrors capabilities for rendering. See
+**[docs/ui-auth.md](./docs/ui-auth.md)** for the operator-facing guide (env vars,
+first-admin/bootstrap setup, the full permission matrix, credential rotation workflow) and
+`UI_AUTH_PLAN.md` for the schema/architecture this was built from.
+
 ## Future Roadmap
 
 ### Container Registry

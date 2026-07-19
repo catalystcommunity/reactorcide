@@ -314,9 +314,15 @@ func TestJobHandler_CancelJob_WithCorndogs(t *testing.T) {
 		setupMockCorndogs     func(*corndogs.MockClient)
 		expectedStatus        int
 		expectedCorndogsCalls int
+		expectedJobStatus     string
 	}{
 		{
-			name:  "successful job cancellation with Corndogs",
+			// Running jobs have an active container, so CancelJob hands off
+			// to the worker rather than cancelling the Corndogs task itself:
+			// the job moves to "cancelling" and the worker cancels the
+			// Corndogs task once it has actually stopped the container (see
+			// CornDogsWorker.processNextTask's Cancelled branch).
+			name:  "running job cancellation moves to cancelling, defers Corndogs cancel to the worker",
 			jobID: "test-job-id",
 			setupMockStore: func(m *MockStore) {
 				taskID := "corndogs-task-id"
@@ -324,6 +330,34 @@ func TestJobHandler_CancelJob_WithCorndogs(t *testing.T) {
 					return &models.Job{
 						JobID:          jobID,
 						Status:         "running",
+						CorndogsTaskID: &taskID,
+						UserID:         "test-user-id",
+					}, nil
+				}
+				m.UpdateJobFunc = func(ctx context.Context, job *models.Job) error {
+					return nil
+				}
+			},
+			setupMockCorndogs: func(m *corndogs.MockClient) {
+				// Should not be called for a running job's cancel — the
+				// worker cancels the Corndogs task once it has stopped.
+			},
+			expectedStatus:        http.StatusOK,
+			expectedCorndogsCalls: 0,
+			expectedJobStatus:     "cancelling",
+		},
+		{
+			// Submitted/queued jobs never started a container, so CancelJob
+			// cancels the Corndogs task immediately and lands directly on
+			// the terminal "cancelled" status — no worker involvement.
+			name:  "queued job cancellation cancels Corndogs task immediately",
+			jobID: "test-job-id",
+			setupMockStore: func(m *MockStore) {
+				taskID := "corndogs-task-id"
+				m.GetJobByIDFunc = func(ctx context.Context, jobID string) (*models.Job, error) {
+					return &models.Job{
+						JobID:          jobID,
+						Status:         "queued",
 						CorndogsTaskID: &taskID,
 						UserID:         "test-user-id",
 					}, nil
@@ -342,16 +376,17 @@ func TestJobHandler_CancelJob_WithCorndogs(t *testing.T) {
 			},
 			expectedStatus:        http.StatusOK,
 			expectedCorndogsCalls: 1,
+			expectedJobStatus:     "cancelled",
 		},
 		{
-			name:  "job cancellation continues even if Corndogs fails",
+			name:  "submitted job cancellation continues even if Corndogs fails",
 			jobID: "test-job-id",
 			setupMockStore: func(m *MockStore) {
 				taskID := "corndogs-task-id"
 				m.GetJobByIDFunc = func(ctx context.Context, jobID string) (*models.Job, error) {
 					return &models.Job{
 						JobID:          jobID,
-						Status:         "running",
+						Status:         "submitted",
 						CorndogsTaskID: &taskID,
 						UserID:         "test-user-id",
 					}, nil
@@ -367,6 +402,7 @@ func TestJobHandler_CancelJob_WithCorndogs(t *testing.T) {
 			},
 			expectedStatus:        http.StatusOK,
 			expectedCorndogsCalls: 1,
+			expectedJobStatus:     "cancelled",
 		},
 		{
 			name:  "job cancellation without Corndogs task ID",
@@ -375,7 +411,7 @@ func TestJobHandler_CancelJob_WithCorndogs(t *testing.T) {
 				m.GetJobByIDFunc = func(ctx context.Context, jobID string) (*models.Job, error) {
 					return &models.Job{
 						JobID:          jobID,
-						Status:         "running",
+						Status:         "submitted",
 						CorndogsTaskID: nil, // No Corndogs task
 						UserID:         "test-user-id",
 					}, nil
@@ -389,6 +425,7 @@ func TestJobHandler_CancelJob_WithCorndogs(t *testing.T) {
 			},
 			expectedStatus:        http.StatusOK,
 			expectedCorndogsCalls: 0,
+			expectedJobStatus:     "cancelled",
 		},
 	}
 
@@ -434,14 +471,241 @@ func TestJobHandler_CancelJob_WithCorndogs(t *testing.T) {
 				t.Errorf("expected %d Corndogs cancel calls, got %d", tt.expectedCorndogsCalls, mockCorndogs.GetCancelTaskCallCount())
 			}
 
-			// Verify job was updated to cancelled
+			// Verify job was updated to the expected status
 			if len(mockStore.UpdateJobCalls) > 0 {
 				lastUpdate := mockStore.UpdateJobCalls[len(mockStore.UpdateJobCalls)-1]
-				if lastUpdate.Status != "cancelled" {
-					t.Errorf("expected job status to be 'cancelled', got %s", lastUpdate.Status)
+				if lastUpdate.Status != tt.expectedJobStatus {
+					t.Errorf("expected job status to be %q, got %s", tt.expectedJobStatus, lastUpdate.Status)
 				}
 			}
 		})
+	}
+}
+
+// TestJobHandler_KillJob_RunningJob verifies POST /api/v1/jobs/{id}/kill on
+// a running job sets status "cancelling" with CancelMode == "kill" — the
+// marker job_processor.go's cancel-poll uses to route into an immediate
+// forced Cleanup instead of a graceful Stop.
+//
+// The caller here is a plain (non-RoleStore) MockStore, so h.visibility is
+// nil and canUserKillJob's fail-closed fallback applies (see
+// TestJobHandler_KillJob_NilResolver_FailClosed_DeniesNonAdminOwner): the
+// caller must carry the legacy admin role for the kill itself to be
+// authorized, even though it also happens to own the job.
+func TestJobHandler_KillJob_RunningJob(t *testing.T) {
+	mockStore := &MockStore{
+		GetJobByIDFunc: func(ctx context.Context, jobID string) (*models.Job, error) {
+			return &models.Job{JobID: jobID, Status: "running", UserID: "test-user-id"}, nil
+		},
+		UpdateJobFunc: func(ctx context.Context, job *models.Job) error { return nil },
+	}
+	handler := NewJobHandler(mockStore, nil)
+
+	req := httptest.NewRequest("POST", "/api/v1/jobs/test-job-id/kill", nil)
+	user := &models.User{UserID: "test-user-id", Roles: []string{"admin"}}
+	ctx := checkauth.SetUserContext(req.Context(), user)
+	ctx = context.WithValue(ctx, GetContextKey("job_id"), "test-job-id")
+	req = req.WithContext(ctx)
+
+	w := httptest.NewRecorder()
+	handler.KillJob(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d: %s", w.Code, w.Body.String())
+	}
+	if len(mockStore.UpdateJobCalls) != 1 {
+		t.Fatalf("expected exactly 1 UpdateJob call, got %d", len(mockStore.UpdateJobCalls))
+	}
+	updated := mockStore.UpdateJobCalls[0]
+	if updated.Status != "cancelling" {
+		t.Errorf("expected status 'cancelling', got %s", updated.Status)
+	}
+	if updated.CancelMode != "kill" {
+		t.Errorf("expected CancelMode %q, got %q", "kill", updated.CancelMode)
+	}
+}
+
+// TestJobHandler_KillJob_NilResolver_FailClosed_DeniesNonAdminOwner is
+// Finding 1's fail-closed regression test: when the wired store doesn't
+// satisfy authz.RoleStore (h.visibility is nil), the pre-existing
+// owner-or-admin canUserAccessJob check must NOT be used for kill — only
+// the legacy isAdmin(user) check is honored, so a plain owner (no admin
+// role) cannot kill their own job in this fallback, even though they could
+// cancel it (see TestJobHandler_KillJob_NilResolver_OwnerCanStillCancel).
+func TestJobHandler_KillJob_NilResolver_FailClosed_DeniesNonAdminOwner(t *testing.T) {
+	mockStore := &MockStore{
+		GetJobByIDFunc: func(ctx context.Context, jobID string) (*models.Job, error) {
+			return &models.Job{JobID: jobID, Status: "running", UserID: "test-user-id"}, nil
+		},
+	}
+	handler := NewJobHandler(mockStore, nil)
+	if handler.visibility != nil {
+		t.Fatal("expected a plain MockStore to not satisfy authz.RoleStore")
+	}
+
+	req := httptest.NewRequest("POST", "/api/v1/jobs/test-job-id/kill", nil)
+	owner := &models.User{UserID: "test-user-id"} // no admin role
+	ctx := checkauth.SetUserContext(req.Context(), owner)
+	ctx = context.WithValue(ctx, GetContextKey("job_id"), "test-job-id")
+	req = req.WithContext(ctx)
+
+	w := httptest.NewRecorder()
+	handler.KillJob(w, req)
+
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("expected 403 (fail-closed: owner without admin role can't kill without a visibility resolver), got %d: %s", w.Code, w.Body.String())
+	}
+	if len(mockStore.UpdateJobCalls) != 0 {
+		t.Fatalf("expected no UpdateJob call for a denied kill, got %d", len(mockStore.UpdateJobCalls))
+	}
+}
+
+// TestJobHandler_KillJob_NilResolver_OwnerCanStillCancel pairs with the
+// fail-closed test above: cancel keeps its original owner-or-admin
+// semantics regardless of h.visibility, so the same plain owner CAN cancel
+// (just not kill) their own job.
+func TestJobHandler_KillJob_NilResolver_OwnerCanStillCancel(t *testing.T) {
+	mockStore := &MockStore{
+		GetJobByIDFunc: func(ctx context.Context, jobID string) (*models.Job, error) {
+			return &models.Job{JobID: jobID, Status: "running", UserID: "test-user-id"}, nil
+		},
+		UpdateJobFunc: func(ctx context.Context, job *models.Job) error { return nil },
+	}
+	handler := NewJobHandler(mockStore, nil)
+
+	req := httptest.NewRequest("PUT", "/api/v1/jobs/test-job-id/cancel", nil)
+	owner := &models.User{UserID: "test-user-id"}
+	ctx := checkauth.SetUserContext(req.Context(), owner)
+	ctx = context.WithValue(ctx, GetContextKey("job_id"), "test-job-id")
+	req = req.WithContext(ctx)
+
+	w := httptest.NewRecorder()
+	handler.CancelJob(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 (owner can still cancel without a visibility resolver), got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+// TestJobHandler_KillJob_AlreadyTerminal verifies kill is rejected for a job
+// that's already in a terminal state, same as cancel. The caller carries
+// the legacy admin role so it clears canUserKillJob's fail-closed gate (see
+// TestJobHandler_KillJob_NilResolver_FailClosed_DeniesNonAdminOwner) and
+// this test exercises the CanBeKilled state check specifically.
+func TestJobHandler_KillJob_AlreadyTerminal(t *testing.T) {
+	mockStore := &MockStore{
+		GetJobByIDFunc: func(ctx context.Context, jobID string) (*models.Job, error) {
+			return &models.Job{JobID: jobID, Status: "completed", UserID: "test-user-id"}, nil
+		},
+	}
+	handler := NewJobHandler(mockStore, nil)
+
+	req := httptest.NewRequest("POST", "/api/v1/jobs/test-job-id/kill", nil)
+	user := &models.User{UserID: "test-user-id", Roles: []string{"admin"}}
+	ctx := checkauth.SetUserContext(req.Context(), user)
+	ctx = context.WithValue(ctx, GetContextKey("job_id"), "test-job-id")
+	req = req.WithContext(ctx)
+
+	w := httptest.NewRecorder()
+	handler.KillJob(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("expected status 400 for an already-terminal job, got %d", w.Code)
+	}
+}
+
+// TestJobHandler_RetryJob_HappyPath verifies POST /api/v1/jobs/{id}/retry on
+// a failed job creates and returns a brand-new job row (distinct JobID,
+// status not "failed"), submitted to Corndogs.
+func TestJobHandler_RetryJob_HappyPath(t *testing.T) {
+	mockStore := &MockStore{
+		GetJobByIDFunc: func(ctx context.Context, jobID string) (*models.Job, error) {
+			return &models.Job{JobID: jobID, Status: "failed", UserID: "test-user-id", JobCommand: "make test"}, nil
+		},
+	}
+	mockCorndogs := corndogs.NewMockClient()
+	handler := NewJobHandler(mockStore, mockCorndogs)
+
+	req := httptest.NewRequest("POST", "/api/v1/jobs/test-job-id/retry", nil)
+	user := &models.User{UserID: "test-user-id"}
+	ctx := checkauth.SetUserContext(req.Context(), user)
+	ctx = context.WithValue(ctx, GetContextKey("job_id"), "test-job-id")
+	req = req.WithContext(ctx)
+
+	w := httptest.NewRecorder()
+	handler.RetryJob(w, req)
+
+	if w.Code != http.StatusCreated {
+		t.Fatalf("expected status 201, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var resp JobResponse
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+	if resp.JobID == "test-job-id" {
+		t.Error("expected a distinct new job ID from the retried job")
+	}
+	if resp.Status == "failed" {
+		t.Errorf("expected the new job to not still be 'failed', got %q", resp.Status)
+	}
+	if mockCorndogs.GetSubmitTaskCallCount() != 1 {
+		t.Errorf("expected 1 SubmitTask call, got %d", mockCorndogs.GetSubmitTaskCallCount())
+	}
+	if len(mockStore.CreateJobCalls) != 1 {
+		t.Errorf("expected 1 CreateJob call, got %d", len(mockStore.CreateJobCalls))
+	}
+}
+
+// TestJobHandler_RetryJob_NotRetryable verifies a running job (not
+// failed/cancelled) is refused with 400.
+func TestJobHandler_RetryJob_NotRetryable(t *testing.T) {
+	mockStore := &MockStore{
+		GetJobByIDFunc: func(ctx context.Context, jobID string) (*models.Job, error) {
+			return &models.Job{JobID: jobID, Status: "running", UserID: "test-user-id"}, nil
+		},
+	}
+	handler := NewJobHandler(mockStore, nil)
+
+	req := httptest.NewRequest("POST", "/api/v1/jobs/test-job-id/retry", nil)
+	user := &models.User{UserID: "test-user-id"}
+	ctx := checkauth.SetUserContext(req.Context(), user)
+	ctx = context.WithValue(ctx, GetContextKey("job_id"), "test-job-id")
+	req = req.WithContext(ctx)
+
+	w := httptest.NewRecorder()
+	handler.RetryJob(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("expected status 400 for a non-retryable (running) job, got %d", w.Code)
+	}
+	if len(mockStore.CreateJobCalls) != 0 {
+		t.Errorf("expected no CreateJob call for a refused retry, got %d", len(mockStore.CreateJobCalls))
+	}
+}
+
+// TestJobHandler_RetryJob_Forbidden verifies a non-owner, non-admin caller
+// cannot retry someone else's job — same authz tier as CancelJob
+// (canUserAccessJob).
+func TestJobHandler_RetryJob_Forbidden(t *testing.T) {
+	mockStore := &MockStore{
+		GetJobByIDFunc: func(ctx context.Context, jobID string) (*models.Job, error) {
+			return &models.Job{JobID: jobID, Status: "failed", UserID: "owner-id"}, nil
+		},
+	}
+	handler := NewJobHandler(mockStore, nil)
+
+	req := httptest.NewRequest("POST", "/api/v1/jobs/test-job-id/retry", nil)
+	user := &models.User{UserID: "someone-else"}
+	ctx := checkauth.SetUserContext(req.Context(), user)
+	ctx = context.WithValue(ctx, GetContextKey("job_id"), "test-job-id")
+	req = req.WithContext(ctx)
+
+	w := httptest.NewRecorder()
+	handler.RetryJob(w, req)
+
+	if w.Code != http.StatusForbidden {
+		t.Errorf("expected status 403, got %d", w.Code)
 	}
 }
 

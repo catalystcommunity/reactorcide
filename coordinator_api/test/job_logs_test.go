@@ -372,10 +372,16 @@ func TestJobLogsAPI(t *testing.T) {
 
 			dataUtils := &DataUtils{db: tx}
 
-			// Create two users
+			// Create two users. user1 is IsPrivate so their job isn't
+			// visible-by-default to unrelated user2 (see
+			// internal/authz/visibility.go's canViewOwned: a project-less
+			// job falls back to its owning org's visibility, and orgs are
+			// public by default per UI_AUTH_PLAN.md's visibility model —
+			// this test is specifically about a *private* org's isolation).
 			user1, err := dataUtils.CreateUser(DataSetup{
-				"Username": "user1",
-				"Email":    "user1@example.com",
+				"Username":  "user1",
+				"Email":     "user1@example.com",
+				"IsPrivate": true,
 			})
 			require.NoError(t, err)
 

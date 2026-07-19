@@ -30,6 +30,15 @@ func (WorkflowInstance) TableName() string {
 	return "workflow_instances"
 }
 
+// IsRetryable returns true if the workflow instance may be retried into a
+// brand-new instance: status is exactly "failed" or "cancelled". Mirrors
+// Job.IsRetryable's two-status rule (see that doc comment) — a workflow
+// that finished "success" or "skipped" has nothing to retry, and one still
+// "evaluating"/"running"/"cancelling" isn't in a terminal state yet.
+func (w *WorkflowInstance) IsRetryable() bool {
+	return w.Status == "failed" || w.Status == "cancelled"
+}
+
 type WorkflowNode struct {
 	NodeID                   string         `gorm:"primaryKey;type:uuid;default:generate_ulid()" json:"node_id"`
 	CreatedAt                time.Time      `gorm:"autoCreateTime:false;default:timezone('utc', now())" json:"created_at"`

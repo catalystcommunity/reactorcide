@@ -3,10 +3,30 @@
     <a href="/app/" class="meta">&larr; Back to Workflows</a>
 </div>
 
+{{if .FormMsg}}<p class="form-msg">{{.FormMsg}}</p>{{end}}
+{{if .FormError}}<p class="form-error">{{.FormError}}</p>{{end}}
+
 <div class="card">
     <div style="display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 12px;">
         <h2>{{.Workflow.Name}}</h2>
-        <span class="status-badge {{statusClass .Workflow.Status}}">{{.Workflow.Status}}</span>
+        <div style="display: flex; align-items: center; gap: 8px;">
+            <span class="status-badge {{statusClass .Workflow.Status}}">{{.Workflow.Status}}</span>
+            {{if .CanCancel}}
+            <form method="post" action="/app/workflows/{{.Workflow.WorkflowID}}/cancel" style="display:inline;">
+                <button type="submit">Cancel workflow</button>
+            </form>
+            {{end}}
+            {{if and .CanRetry (isRetryable .Workflow.Status)}}
+            <form method="post" action="/app/workflows/{{.Workflow.WorkflowID}}/retry" style="display:inline;">
+                <button type="submit">Retry workflow</button>
+            </form>
+            {{end}}
+            {{if and .CanRetry .HasUnsuccessfulJobs}}
+            <form method="post" action="/app/workflows/{{.Workflow.WorkflowID}}/retry-unsuccessful" style="display:inline;">
+                <button type="submit">Retry all unsuccessful jobs</button>
+            </form>
+            {{end}}
+        </div>
     </div>
     <dl class="grid">
         <div>

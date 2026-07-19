@@ -3,6 +3,7 @@ package worker
 import (
 	"context"
 	"io"
+	"time"
 
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store/models"
 )
@@ -31,6 +32,28 @@ type JobRunner interface {
 	// WaitForCompletion blocks until the job container exits
 	// Returns the exit code and any error encountered
 	WaitForCompletion(ctx context.Context, jobID string) (int, error)
+
+	// Stop requests a graceful shutdown of a running job: SIGTERM to the
+	// container's PID 1 (giving runnerlib's SIGTERM trap a chance to run
+	// PluginPhase.CLEANUP/ON_ERROR and cleanup_vcs_auth), then a forced kill
+	// if the container/pod hasn't exited within grace. Stop does not remove
+	// the container/pod — callers still call Cleanup afterward (WaitForCompletion
+	// unblocking is what tells the caller it's safe to do so).
+	//
+	// grace == 0 requests immediate forced termination (no SIGTERM wait) —
+	// used by the admin "kill" path when it needs an unambiguous immediate
+	// stop rather than going through Cleanup directly (e.g. to unblock a
+	// stuck WaitForCompletion caller). Cleanup remains the primary "kill"
+	// primitive at the job_processor/corndogs_worker layer (see AGENTS.md /
+	// UI_AUTH_PLAN.md Cancel vs Kill) — Stop(grace=0) exists so runner
+	// backends have a single, testable primitive for "terminate now".
+	//
+	// Calling Stop on a container/pod that has already exited or been
+	// removed must be a safe no-op (implementations should tolerate
+	// "not found" style errors rather than returning them as failures),
+	// since the worker's cancel-poll and the container's own natural
+	// completion can race.
+	Stop(ctx context.Context, jobID string, grace time.Duration) error
 
 	// Cleanup removes the job container and associated resources
 	// Should be called after the job completes (success or failure)

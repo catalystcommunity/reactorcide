@@ -11,13 +11,65 @@ import (
 
 	"github.com/catalystcommunity/app-utils-go/logging"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/corndogs"
+	pb "github.com/catalystcommunity/reactorcide/coordinator_api/internal/corndogs/v1alpha1"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/metrics"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/pubsub"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/secrets"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store/models"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/vcs"
+	"github.com/sirupsen/logrus"
 )
+
+// guardedJobStore is the narrow store capability the claim-path cancel
+// check, terminal-write guard, and cancelling-job reaper all need: a
+// race-safe status transition scoped to an expected set of prior statuses
+// (see internal/store/postgres_store.PostgresDbStore.UpdateJobStatusGuarded).
+// Reached via type assertion since it's not part of store.Store — the same
+// narrow-interface pattern internal/jobcontrol uses for its own
+// identically-shaped guardedJobStore; the two packages don't share the type
+// to avoid a worker<->jobcontrol import cycle.
+type guardedJobStore interface {
+	UpdateJobStatusGuarded(ctx context.Context, jobID string, fromStatuses []string, apply func(*models.Job)) (*models.Job, bool, error)
+}
+
+// staleCancellingLister is the narrow store capability the cancelling-job
+// reaper needs (Finding 2b: a job stuck "cancelling" forever because the
+// worker driving its cancel crashed/restarted before finalizing it).
+type staleCancellingLister interface {
+	ListStaleCancellingJobs(ctx context.Context, olderThan time.Time) ([]models.Job, error)
+}
+
+// cancellingReapInterval is how often CornDogsWorker's reaper scans for
+// orphaned "cancelling" jobs: once immediately on Start, then on this
+// ticker.
+const cancellingReapInterval = 60 * time.Second
+
+// cancellingReapSafetyMargin pads cancellingReapStaleAfter beyond the
+// longest legitimate in-flight cancel window, so the reaper only ever
+// catches genuinely orphaned jobs (no live worker driving their cancel),
+// never one that's still legitimately within its grace period.
+const cancellingReapSafetyMargin = 2 * time.Minute
+
+// cancellingReapStaleAfter returns how old a "cancelling" job's updated_at
+// must be before the reaper treats it as orphaned: the graceful-cancel
+// grace period (worst case before a live worker's pollForCancel would have
+// force-killed and finalized it) plus the cancel-poll cadence
+// (HeartbeatInterval — how long a live worker can go between observing
+// "cancelling" and acting on it) plus a fixed safety margin. Derived from
+// the worker's own config rather than hardcoded, since both inputs are
+// themselves configurable.
+func cancellingReapStaleAfter(cfg *Config) time.Duration {
+	grace := cfg.CancelGrace
+	if grace <= 0 {
+		grace = DefaultCancelGrace
+	}
+	heartbeat := cfg.HeartbeatInterval
+	if heartbeat <= 0 {
+		heartbeat = 30 * time.Second
+	}
+	return grace + heartbeat + cancellingReapSafetyMargin
+}
 
 // getJobLookupAttempts and getJobLookupBackoff bound the retry loop that
 // papers over the dual-write race between TriggerProcessor.createAndSubmitJob
@@ -86,6 +138,11 @@ func NewCornDogsWorker(config *Config, corndogsClient corndogs.ClientInterface, 
 		config.HeartbeatTimeout = 10 * time.Minute
 	}
 
+	// Set default cancel grace period if not specified
+	if config.CancelGrace == 0 {
+		config.CancelGrace = 60 * time.Second
+	}
+
 	// Create job runner
 	runner, err := NewJobRunner(config.ContainerRuntime)
 	if err != nil {
@@ -124,6 +181,7 @@ func NewCornDogsWorker(config *Config, corndogsClient corndogs.ClientInterface, 
 		LogChunkInterval:   config.LogChunkInterval,
 		HeartbeatInterval:  config.HeartbeatInterval,
 		HeartbeatTimeout:   config.HeartbeatTimeout,
+		CancelGrace:        config.CancelGrace,
 		SecretsKeyManager:  keyManager,
 		SecretsStorageType: secretsStorageType,
 	})
@@ -174,6 +232,14 @@ func (w *CornDogsWorker) Start(ctx context.Context) error {
 		w.wg.Add(1)
 		go w.worker(ctx, i)
 	}
+
+	// Start the cancelling-job reaper (Finding 2b): reaps jobs orphaned in
+	// "cancelling" by a worker that crashed/restarted before finalizing
+	// them. Runs once immediately, then on cancellingReapInterval, until ctx
+	// is cancelled — unlike active job execution, there's no reason to let
+	// this survive shutdown.
+	w.wg.Add(1)
+	go w.runCancellingReaper(ctx)
 
 	// Wait for all goroutines to finish
 	w.wg.Wait()
@@ -291,15 +357,42 @@ func (w *CornDogsWorker) processNextTask(ctx context.Context, workerID int) {
 		return
 	}
 
-	// Update job status to running
+	// Claim-path race closer (Finding 1c): a cancel/kill request can flip
+	// the job to "cancelling" after its Corndogs task was already dequeued
+	// by this worker — jobcontrol.transitionJob's own attempt to cancel the
+	// task pre-claim loses that race and deliberately leaves the job
+	// "cancelling" for whoever claims it. If that's what we just loaded,
+	// there's no execution to run: finalize straight to "cancelled" and
+	// skip ProcessJobWithContext entirely, rather than starting the
+	// container only to have pollForCancel catch it moments later.
+	if job.IsCancelling() {
+		w.finalizeClaimedCancellingJob(jobCtx, job, task, logger)
+		return
+	}
+
+	// Update job status to running. Guarded so a cancel that races in
+	// between the IsCancelling() check above and this write — a narrow but
+	// real window, since both are separate store round trips — can't be
+	// silently clobbered back to "running" (see Finding 1c/1d).
 	now := time.Now().UTC()
-	job.Status = "running"
-	job.StartedAt = &now
-	if err := w.config.Store.UpdateJob(jobCtx, job); err != nil {
-		logger.WithError(err).Error("Failed to update job status to running")
+	running, matched := w.finalizeJobGuarded(jobCtx, job, []string{"submitted", "queued"}, func(j *models.Job) {
+		j.Status = "running"
+		j.StartedAt = &now
+	}, logger)
+	if !matched {
+		// Raced: the job was cancelled between our IsCancelling() check and
+		// this write. Don't start executing a job that's already been asked
+		// to stop — finalize it the same way the earlier check would have.
+		current, getErr := w.config.Store.GetJobByID(jobCtx, job.JobID)
+		if getErr == nil && current.IsCancelling() {
+			w.finalizeClaimedCancellingJob(jobCtx, current, task, logger)
+			return
+		}
+		logger.Warn("Failed to update job status to running (unexpected concurrent status change)")
 		w.updateTaskFailed(jobCtx, task.Uuid, task.CurrentState, "Failed to update job status")
 		return
 	}
+	job = running
 	w.publisher.PublishJobUpdate(jobCtx, job.JobID, job.Status, now.Format(time.RFC3339Nano))
 	if w.triggerProcessor != nil {
 		if workflowErr := w.triggerProcessor.ProcessWorkflowJobStarted(jobCtx, job); workflowErr != nil {
@@ -334,9 +427,16 @@ func (w *CornDogsWorker) processNextTask(ctx context.Context, workerID int) {
 		defer os.RemoveAll(result.WorkspaceDir)
 	}
 
-	// Record job processing metrics
+	// Record job processing metrics. A runner-initiated stop (cancel/kill)
+	// is neither a normal completion nor a failure of the job's own logic,
+	// so it gets its own metrics/status bucket rather than being derived
+	// from ExitCode (which reflects a SIGTERM/SIGKILL termination in that
+	// case, not the job command's outcome).
 	status := "completed"
-	if result.ExitCode != 0 {
+	switch {
+	case result.Cancelled:
+		status = "cancelled"
+	case result.ExitCode != 0:
 		status = "failed"
 	}
 	metrics.RecordJobProcessed(w.config.QueueName, status, workerIDStr, duration)
@@ -346,7 +446,27 @@ func (w *CornDogsWorker) processNextTask(ctx context.Context, workerID int) {
 	job.CompletedAt = &completedAt
 	job.ExitCode = &result.ExitCode
 
-	if result.ExitCode == 0 {
+	switch {
+	case result.Cancelled:
+		// The cancel-poll (job_processor.go pollForCancel) observed
+		// job.Status == "cancelling" mid-execution and stopped/killed the
+		// container itself. Land on the terminal "cancelled" status
+		// regardless of the container's raw exit code — see JobResult.Cancelled.
+		job.Status = "cancelled"
+		if result.Killed {
+			job.LastError = "killed by admin"
+		} else {
+			job.LastError = "cancelled"
+		}
+
+		// The Corndogs task was mid-"processing" — cancel it (rather than
+		// complete/fail) so Corndogs' own bookkeeping matches what actually
+		// happened. Best-effort: the job's terminal DB status is already
+		// authoritative regardless of this call's outcome.
+		if _, err := w.corndogsClient.CancelTask(jobCtx, task.Uuid, "processing"); err != nil {
+			logger.WithError(err).Warn("Failed to cancel task in Corndogs after job cancellation")
+		}
+	case result.ExitCode == 0:
 		job.Status = "completed"
 
 		// Complete the task in Corndogs
@@ -354,7 +474,7 @@ func (w *CornDogsWorker) processNextTask(ctx context.Context, workerID int) {
 		if err != nil {
 			logger.WithError(err).Error("Failed to complete task in Corndogs")
 		}
-	} else {
+	default:
 		job.Status = "failed"
 		// Update task state to failed
 		w.updateTaskFailed(jobCtx, task.Uuid, "processing", "Job execution failed")
@@ -368,9 +488,37 @@ func (w *CornDogsWorker) processNextTask(ctx context.Context, workerID int) {
 		job.ArtifactsObjectKey = result.ArtifactsObjectKey
 	}
 
-	// Update job in database
-	if err := w.config.Store.UpdateJob(jobCtx, job); err != nil {
-		logger.WithError(err).Error("Failed to update job result")
+	// Update job in database. Guarded (Finding 1d) so this terminal write
+	// can't blindly clobber a status a concurrent cancel/kill or the
+	// cancelling-job reaper already landed — e.g. the classic TOCTOU: a
+	// CancelJob request reads the job mid-execution, races job_processor.go's
+	// own pollForCancel, and both try to write a terminal status.
+	finalized, matched := w.finalizeJobGuarded(jobCtx, job, []string{"running", "cancelling"}, func(j *models.Job) {
+		j.Status = job.Status
+		j.LastError = job.LastError
+		j.CompletedAt = job.CompletedAt
+		j.ExitCode = job.ExitCode
+		if job.LogsObjectKey != "" {
+			j.LogsObjectKey = job.LogsObjectKey
+		}
+		if job.ArtifactsObjectKey != "" {
+			j.ArtifactsObjectKey = job.ArtifactsObjectKey
+		}
+	}, logger)
+	if !matched {
+		// The row was no longer "running"/"cancelling" by the time we tried
+		// to land the terminal status — most likely the cancelling-job
+		// reaper (or another worker, after a crash/restart) already
+		// finalized it. Don't clobber whatever terminal status is already
+		// there; reload it so the trigger/VCS-status logic below reflects
+		// reality instead of the status this execution computed but
+		// couldn't persist.
+		logger.Warn("Job already finalized by another writer; not overwriting terminal status")
+		if current, getErr := w.config.Store.GetJobByID(jobCtx, job.JobID); getErr == nil {
+			job = current
+		}
+	} else if finalized != nil {
+		job = finalized
 	}
 	w.publisher.PublishJobUpdate(jobCtx, job.JobID, job.Status, completedAt.Format(time.RFC3339Nano))
 
@@ -398,6 +546,143 @@ func (w *CornDogsWorker) processNextTask(ctx context.Context, workerID int) {
 	}
 
 	logger.WithField("status", job.Status).WithField("exit_code", result.ExitCode).Info("Task processing completed")
+}
+
+// finalizeJobGuarded performs a race-safe status write for job (JobID is
+// authoritative; apply mutates whichever copy of the row actually gets
+// persisted). It prefers a guarded (race-safe) store transition when the
+// configured store supports it (see guardedJobStore), and falls back to
+// mutating job in place and issuing a blind store.UpdateJob — this worker's
+// pre-existing behavior — when it doesn't (e.g. the package's own MockStore
+// in tests, or any store.Store implementation that hasn't been updated).
+//
+// Returns the resulting job and whether the write actually landed. false
+// means the row's status was no longer in fromStatuses by the time the
+// guarded update ran (someone else already moved it on) — callers must not
+// treat their locally computed job state as authoritative in that case.
+// The fallback (non-guarded) path always reports matched=true, matching
+// its pre-existing best-effort semantics; a store error either way returns
+// (nil, false).
+func (w *CornDogsWorker) finalizeJobGuarded(ctx context.Context, job *models.Job, fromStatuses []string, apply func(*models.Job), logger *logrus.Entry) (*models.Job, bool) {
+	if gs, ok := w.config.Store.(guardedJobStore); ok {
+		updated, matched, err := gs.UpdateJobStatusGuarded(ctx, job.JobID, fromStatuses, apply)
+		if err != nil {
+			logger.WithError(err).Error("Guarded job status update failed")
+			return nil, false
+		}
+		return updated, matched
+	}
+
+	apply(job)
+	if err := w.config.Store.UpdateJob(ctx, job); err != nil {
+		logger.WithError(err).Error("Failed to update job result")
+		return nil, false
+	}
+	return job, true
+}
+
+// finalizeClaimedCancellingJob closes the claim-time cancel race (Finding
+// 1c/1d): a job can be "cancelling" by the time this worker has claimed its
+// Corndogs task, either because internal/jobcontrol.transitionJob lost its
+// own pre-claim CancelTask race, or because a cancel/kill request landed in
+// the narrow window between processNextTask's IsCancelling() check and its
+// running-transition write. Either way there's no execution to run:
+// finalize straight to "cancelled" (guarded, from "cancelling") and cancel
+// the Corndogs task, without ever calling ProcessJobWithContext.
+func (w *CornDogsWorker) finalizeClaimedCancellingJob(ctx context.Context, job *models.Job, task *pb.Task, logger *logrus.Entry) {
+	lastError := "cancelled"
+	if job.IsKillRequested() {
+		lastError = "killed by admin"
+	}
+	now := time.Now().UTC()
+	finalized, matched := w.finalizeJobGuarded(ctx, job, []string{"cancelling"}, func(j *models.Job) {
+		j.Status = "cancelled"
+		j.LastError = lastError
+		j.CompletedAt = &now
+	}, logger)
+	if !matched {
+		logger.Warn("Job no longer cancelling by the time the claiming worker tried to finalize it; leaving as-is")
+		return
+	}
+
+	if _, err := w.corndogsClient.CancelTask(ctx, task.Uuid, task.CurrentState); err != nil {
+		logger.WithError(err).Warn("Failed to cancel corndogs task for a job cancelled before worker claim")
+	}
+
+	status := "cancelled"
+	if finalized != nil {
+		status = finalized.Status
+	}
+	w.publisher.PublishJobUpdate(ctx, job.JobID, status, now.Format(time.RFC3339Nano))
+	logger.Info("Job was already cancelling when claimed; finalized without executing")
+}
+
+// runCancellingReaper drives reapStaleCancellingJobs on
+// cancellingReapInterval until ctx is cancelled, running once immediately
+// on entry (Finding 2b).
+func (w *CornDogsWorker) runCancellingReaper(ctx context.Context) {
+	defer w.wg.Done()
+
+	w.reapStaleCancellingJobs(ctx)
+
+	ticker := time.NewTicker(cancellingReapInterval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			w.reapStaleCancellingJobs(ctx)
+		}
+	}
+}
+
+// reapStaleCancellingJobs finalizes jobs orphaned in "cancelling": no
+// worker is actively driving their cancel to completion (e.g. the worker
+// that was executing them crashed or restarted before finalizing), so
+// without this they would stay "cancelling" forever. A no-op if the
+// configured store doesn't support staleCancellingLister.
+func (w *CornDogsWorker) reapStaleCancellingJobs(ctx context.Context) {
+	lister, ok := w.config.Store.(staleCancellingLister)
+	if !ok {
+		return
+	}
+
+	threshold := time.Now().Add(-cancellingReapStaleAfter(w.config))
+	stale, err := lister.ListStaleCancellingJobs(ctx, threshold)
+	if err != nil {
+		logging.Log.WithError(err).Warn("Failed to list stale cancelling jobs for reaper")
+		return
+	}
+
+	for i := range stale {
+		job := &stale[i]
+		logger := logging.Log.WithField("job_id", job.JobID)
+		now := time.Now().UTC()
+		finalized, matched := w.finalizeJobGuarded(ctx, job, []string{"cancelling"}, func(j *models.Job) {
+			j.Status = "cancelled"
+			j.LastError = "cancelled: no active worker (reaped)"
+			j.CompletedAt = &now
+		}, logger)
+		if !matched {
+			// Finalized by someone else (e.g. the executing worker, after
+			// all) between the list query and this write — nothing to do.
+			continue
+		}
+
+		if w.corndogsClient != nil && job.CorndogsTaskID != nil && *job.CorndogsTaskID != "" {
+			if _, err := w.corndogsClient.CancelTask(ctx, *job.CorndogsTaskID, "processing"); err != nil {
+				logger.WithError(err).Debug("Best-effort corndogs cancel failed while reaping stale cancelling job")
+			}
+		}
+
+		status := "cancelled"
+		if finalized != nil {
+			status = finalized.Status
+		}
+		w.publisher.PublishJobUpdate(ctx, job.JobID, status, now.Format(time.RFC3339Nano))
+		logger.Warn("Reaped orphaned cancelling job with no active worker")
+	}
 }
 
 // updateTaskFailed updates a task to failed state with an error message

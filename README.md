@@ -106,6 +106,7 @@ REACTORCIDE_SECRETS_PASSWORD="<your-secrets-password>" \
 - **[docs/runtime-behavior.md](./docs/runtime-behavior.md)** - Local, VM, Kubernetes, path, and run identity behavior
 - **[docs/workflow-design.md](./docs/workflow-design.md)** - Workflow DAGs, dependency handling, workflow vars, and PR status/comment behavior
 - **[docs/vcs-credentials-and-secret-grants.md](./docs/vcs-credentials-and-secret-grants.md)** - Project/org VCS credentials, webhook secrets, and job secret grants
+- **[docs/ui-auth.md](./docs/ui-auth.md)** - Management UI login modes, RBAC/permission matrix, public/private visibility, and credential rotation
 - **[runnerlib/DESIGN.md](./runnerlib/DESIGN.md)** - Detailed runnerlib architecture and API
 - **[docs/](./docs/)** - Additional documentation
 

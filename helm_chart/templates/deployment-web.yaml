@@ -71,6 +71,10 @@ spec:
                   key: {{ ((.Values.web).apiTokenSecret).key | default "token" }}
             - name: PORT
               value: {{ .Values.web.service.port | quote }}
+            {{- if .Values.web.webCookieInsecure }}
+            - name: REACTORCIDE_WEB_COOKIE_INSECURE
+              value: "true"
+            {{- end }}
       {{- with .Values.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}
