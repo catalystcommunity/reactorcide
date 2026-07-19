@@ -8,16 +8,29 @@
 //
 //   - RetryJob: retries a single job in place — same workflow, same
 //     workflow node (if any) — by cloning its spec into a brand-new job row
-//     and resubmitting. Only valid for a job that IsRetryable() (failed or
-//     cancelled).
+//     and resubmitting. Only valid for a job that IsRetryable() (failed,
+//     cancelled, or timeout).
 //   - RetryWorkflow: retries an entire workflow as a brand-new instance
 //     (fresh workflow_id, fresh nodes, fresh jobs) — the old instance is
 //     left untouched for history/audit. Only valid for a workflow instance
-//     that IsRetryable() (failed or cancelled).
-//   - RetryUnsuccessfulJobs: bulk-applies RetryJob to every failed/cancelled
-//     node's job in a workflow, in place (same workflow, same instance) —
-//     the workflow-scoped analog of "retry all the red jobs" without
-//     starting a whole new run.
+//     that IsRetryable() (failed or cancelled — a WorkflowInstance's Status
+//     is never "timeout", see models.WorkflowInstance.IsRetryable's doc
+//     comment).
+//   - RetryUnsuccessfulJobs: bulk-applies RetryJob to every failed/
+//     cancelled/timeout node's job in a workflow, in place (same workflow,
+//     same instance) — the workflow-scoped analog of "retry all the red
+//     jobs" without starting a whole new run.
+//
+// None of these three take a VCS/comment status-updater dependency, same as
+// CancelJob/CancelWorkflow above: they only ever mutate job/workflow/node
+// rows and resubmit to Corndogs, and trust the worker's existing
+// ProcessWorkflowJobStarted/ProcessWorkflowCompletion hooks (and, for loose
+// non-workflow jobs, internal/worker/corndogs_worker.go's completion-time
+// VCS push) to bring a retried job's PR comment/commit-status row up to
+// date once it actually starts/finishes — see docs/ui-auth.md's "Retry and
+// PR comment updates" section for the full trace and why threading a
+// statusUpdater through REST+CSIL wasn't worth it for what is, at worst, a
+// brief staleness window rather than an incorrect final result.
 package jobcontrol
 
 import (
@@ -56,7 +69,7 @@ type workflowRetryStore interface {
 }
 
 // RetryJob retries a single job in place: validates job.IsRetryable()
-// (failed or cancelled only), clones its full spec into a brand-new job row
+// (failed, cancelled, or timeout), clones its full spec into a brand-new job row
 // (fresh JobID, status "submitted", every execution field zeroed —
 // started/completed/exit_code/last_error/cancel_mode/logs/artifacts keys/
 // corndogs_task_id/worker_id), sets ParentJobID to the original job's ID and
@@ -69,8 +82,8 @@ type workflowRetryStore interface {
 // If the original job belongs to a workflow node (WorkflowNodeID set), the
 // node is rebound to the new job (JobID updated, status back to
 // "submitted", CompletedAt cleared) and the workflow instance's status is
-// forced back to "running" so the UI stops showing it as failed/cancelled
-// while the retried node is in flight, and so the normal
+// forced back to "running" so the UI stops showing it as failed/cancelled/
+// timeout while the retried node is in flight, and so the normal
 // ProcessWorkflowJobStarted/ProcessWorkflowCompletion hooks re-evaluate
 // dependents once the retried job finishes (see rebindWorkflowNodeForRetry
 // for why this is a direct assignment rather than a
@@ -200,7 +213,7 @@ func RetryWorkflow(ctx context.Context, st store.Store, corndogsClient corndogs.
 }
 
 // RetryUnsuccessfulJobs job-retries every member job of workflowID that is
-// failed or cancelled, in place (same workflow instance, same nodes — no
+// failed, cancelled, or timeout, in place (same workflow instance, same nodes — no
 // new workflow is created; compare RetryWorkflow). Nodes with no job, or
 // whose job isn't retryable (still running, or already terminal-success),
 // are skipped without error. Individual RetryJob failures don't abort the

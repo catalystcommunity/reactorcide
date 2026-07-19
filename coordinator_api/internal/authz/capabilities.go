@@ -33,9 +33,10 @@ type Caps struct {
 	Cancel bool
 	// Kill: forced/admin kill of a job (no cleanup guarantee).
 	Kill bool
-	// Retry: retry a failed/cancelled job or workflow (single job, a whole
-	// workflow as a fresh instance, or every unsuccessful member job of a
-	// workflow in place). Same permission tier as Cancel — see
+	// Retry: retry a failed/cancelled/timeout job, or a failed/cancelled
+	// workflow (single job, a whole workflow as a fresh instance, or every
+	// unsuccessful member job of a workflow in place). Same permission tier
+	// as Cancel — see
 	// jobcontrol.RetryJob/RetryWorkflow/RetryUnsuccessfulJobs and
 	// UI_AUTH_PLAN.md's permission matrix, which lists retry alongside
 	// cancel.

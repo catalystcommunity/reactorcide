@@ -1,7 +1,7 @@
 name: test-web
 description: "Run Go tests for web UI"
 job:
-  image: golang:1.25
+  image: golang:1.26
   command: |
     set -e
     export HOME="${HOME:-/tmp/reactorcide-home}"

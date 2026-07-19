@@ -31,8 +31,13 @@ func (WorkflowInstance) TableName() string {
 }
 
 // IsRetryable returns true if the workflow instance may be retried into a
-// brand-new instance: status is exactly "failed" or "cancelled". Mirrors
-// Job.IsRetryable's two-status rule (see that doc comment) — a workflow
+// brand-new instance: status is exactly "failed" or "cancelled". Unlike
+// Job.IsRetryable, this deliberately does NOT admit "timeout": a
+// WorkflowInstance's Status is never set to "timeout" in the first place —
+// worker/workflow_runtime.go's computeWorkflowStatus folds a "timeout" node
+// status into the workflow's aggregate "failed" status (see
+// isWorkflowNodeFailure/computeWorkflowStatus's fail-fast branch), so
+// "failed" already covers workflows containing a timed-out node. A workflow
 // that finished "success" or "skipped" has nothing to retry, and one still
 // "evaluating"/"running"/"cancelling" isn't in a terminal state yet.
 func (w *WorkflowInstance) IsRetryable() bool {

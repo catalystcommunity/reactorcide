@@ -125,10 +125,13 @@ func (s *workflowRuntimeStore) GetLastSuccessfulWorkflowNodeDuration(ctx context
 type workflowRuntimeStatusUpdater struct {
 	MockJobStatusUpdater
 	workflowCalls []models.WorkflowInstance
+	nodesCalls    [][]models.WorkflowNode
 }
 
 func (u *workflowRuntimeStatusUpdater) UpdateWorkflowStatus(ctx context.Context, wf *models.WorkflowInstance, nodes []models.WorkflowNode) error {
 	u.workflowCalls = append(u.workflowCalls, *wf)
+	nodesCopy := append([]models.WorkflowNode(nil), nodes...)
+	u.nodesCalls = append(u.nodesCalls, nodesCopy)
 	return nil
 }
 
@@ -195,6 +198,98 @@ func TestProcessWorkflowCompletion_OutputConflictFailsNodeAndWorkflow(t *testing
 	}
 	if statusUpdater.workflowCalls[0].Status != "failed" {
 		t.Fatalf("expected failed workflow status update, got %q", statusUpdater.workflowCalls[0].Status)
+	}
+}
+
+// TestProcessWorkflowJobStarted_ReflectsRetryRebindWithoutDuplicateRow
+// verifies the seam jobcontrol.RetryJob relies on instead of pushing its own
+// VCS/comment update (see retry.go's design doc comment): once a retried
+// job is rebound onto the SAME workflow node (as
+// jobcontrol.rebindWorkflowNodeForRetry does — same NodeID, JobID swapped to
+// the new job, status reset to "submitted") and that job actually starts
+// running, the worker's normal ProcessWorkflowJobStarted hook must find the
+// SAME node via GetWorkflowNodeByJobID(newJobID), update it in place, and
+// push a workflow status/comment update whose node list still has exactly
+// one row for that node — reflecting the CURRENT (retried) job, not a
+// second stale row for the original job. This is what makes the workflow PR
+// comment table "last run wins" with no duplicate lines even though
+// jobcontrol itself never talks to the VCS status updater.
+func TestProcessWorkflowJobStarted_ReflectsRetryRebindWithoutDuplicateRow(t *testing.T) {
+	store := newWorkflowRuntimeStore()
+	wf := &models.WorkflowInstance{
+		WorkflowID: "wf-1",
+		UserID:     "user-1",
+		Name:       "Reactorcide Jobs",
+		Status:     "running", // jobcontrol.rebindWorkflowNodeForRetry forces this before the retried job starts.
+		QueueName:  "reactorcide-jobs",
+	}
+	store.workflows[wf.WorkflowID] = wf
+
+	// node-1 originally belonged to job-original (failed); simulate exactly
+	// what jobcontrol.rebindWorkflowNodeForRetry does to it on retry: JobID
+	// swapped to the new job, status back to "submitted", CompletedAt
+	// cleared. Same NodeID throughout — retry never creates a second node.
+	newJobID := "job-retried"
+	node := &models.WorkflowNode{
+		NodeID:      "node-1",
+		WorkflowID:  wf.WorkflowID,
+		Name:        "build",
+		DisplayName: "build",
+		Status:      "submitted",
+		JobID:       &newJobID,
+	}
+	store.nodes[node.NodeID] = node
+	store.nodeByJobID[newJobID] = node.NodeID
+
+	statusUpdater := &workflowRuntimeStatusUpdater{}
+	tp := NewTriggerProcessor(store, nil)
+	tp.SetStatusUpdater(statusUpdater)
+
+	retriedJob := &models.Job{
+		JobID:          newJobID,
+		WorkflowID:     &wf.WorkflowID,
+		WorkflowNodeID: &node.NodeID,
+		Status:         "running",
+	}
+
+	if err := tp.ProcessWorkflowJobStarted(context.Background(), retriedJob); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// The node the worker updated must be the SAME node (by ID), now
+	// reflecting the retried job's "running" state.
+	updatedNode := store.nodes[node.NodeID]
+	if updatedNode.Status != "running" {
+		t.Fatalf("expected node-1 status 'running' after the retried job started, got %q", updatedNode.Status)
+	}
+	if updatedNode.JobID == nil || *updatedNode.JobID != newJobID {
+		t.Fatalf("expected node-1 to still be bound to the retried job %q, got %v", newJobID, updatedNode.JobID)
+	}
+
+	// Exactly one node exists for the workflow — retry rebinding never
+	// spawned a duplicate row.
+	nodes, err := store.ListWorkflowNodes(context.Background(), wf.WorkflowID)
+	if err != nil {
+		t.Fatalf("unexpected error listing nodes: %v", err)
+	}
+	if len(nodes) != 1 {
+		t.Fatalf("expected exactly 1 node for the workflow after retry, got %d: %+v", len(nodes), nodes)
+	}
+
+	// The VCS/comment status updater was driven with that single,
+	// up-to-date node — this is what renderWorkflowCommentBody (see
+	// internal/vcs/workflow_status.go) iterates to build the PR comment
+	// table, so the retried node's row reflects its current job/status
+	// with no duplicate line for the old job.
+	if len(statusUpdater.nodesCalls) != 1 {
+		t.Fatalf("expected 1 workflow status update, got %d", len(statusUpdater.nodesCalls))
+	}
+	pushedNodes := statusUpdater.nodesCalls[0]
+	if len(pushedNodes) != 1 {
+		t.Fatalf("expected the pushed node list to have exactly 1 node, got %d: %+v", len(pushedNodes), pushedNodes)
+	}
+	if pushedNodes[0].NodeID != "node-1" || pushedNodes[0].Status != "running" {
+		t.Fatalf("expected the pushed node to be node-1 in 'running' status, got %+v", pushedNodes[0])
 	}
 }
 

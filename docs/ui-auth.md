@@ -215,18 +215,20 @@ cancelled directly. There's no workflow-level kill — kill is a per-job admin a
 
 ## Retry semantics
 
-Only a job or workflow instance that is `failed` or `cancelled` can be retried
-(`models.Job.IsRetryable`/`models.WorkflowInstance.IsRetryable`); retrying anything else
-(including `cancelling`) is refused with a `conflict` error. There are three retry shapes,
-each its own CSIL op (`retry-job`, `retry-workflow`, `retry-unsuccessful-jobs` on
-`ReactorcideUi`) and its own button in the webapp:
+Only a job that is `failed`, `cancelled`, or `timeout` (`models.Job.IsRetryable`), or a
+workflow instance that is `failed` or `cancelled` (`models.WorkflowInstance.IsRetryable` — a
+workflow instance's own status is never `timeout`; a timed-out node folds into the workflow's
+aggregate `failed` status instead), can be retried; retrying anything else (including
+`cancelling`) is refused with a `conflict` error. There are three retry shapes, each its own
+CSIL op (`retry-job`, `retry-workflow`, `retry-unsuccessful-jobs` on `ReactorcideUi`) and its
+own button in the webapp:
 
-- **Job retry stays in the workflow.** `retry-job` clones the failed/cancelled job's full
-  spec into a brand-new job row (fresh id, `submitted` status, every execution field —
+- **Job retry stays in the workflow.** `retry-job` clones the failed/cancelled/timeout job's
+  full spec into a brand-new job row (fresh id, `submitted` status, every execution field —
   timestamps, exit code, logs, etc. — zeroed) and resubmits it. If the original job belonged
   to a workflow node, the *same* node is rebound to the new job and the workflow instance's
-  status is forced back to `running` so the UI stops showing it as failed/cancelled while the
-  retry is in flight. The job detail page's **Retry** button drives this.
+  status is forced back to `running` so the UI stops showing it as failed/cancelled/timeout
+  while the retry is in flight. The job detail page's **Retry** button drives this.
 - **Workflow retry is a fresh instance.** `retry-workflow` creates an entirely new
   `WorkflowInstance` (new id, new nodes, new jobs) copying the old instance's definition
   (name, VCS repo/PR/commit, queue, etc.) and evaluates it from scratch, exactly like a brand
@@ -234,15 +236,76 @@ each its own CSIL op (`retry-job`, `retry-workflow`, `retry-unsuccessful-jobs` o
   untouched for history/audit — this is a new run, not a mutation. The workflow detail page's
   **Retry workflow** button redirects to the *new* workflow's detail page, since the button's
   own page still describes the old (untouched) instance.
-- **Retry-all = failed + cancelled members.** `retry-unsuccessful-jobs` applies the same
-  in-place job-retry to every failed/cancelled member job of a workflow, without creating a
-  new workflow instance — the workflow-scoped analog of "retry all the red jobs" in one
-  click. A node with no job, or whose job is already successful, is skipped rather than
+- **Retry-all = failed + cancelled + timeout members.** `retry-unsuccessful-jobs` applies the
+  same in-place job-retry to every failed/cancelled/timeout member job of a workflow, without
+  creating a new workflow instance — the workflow-scoped analog of "retry all the red jobs" in
+  one click. A node with no job, or whose job is already successful, is skipped rather than
   erroring; an individual retry failure doesn't abort the batch, so the response always
   reports how many jobs were actually retried vs. skipped. The workflow detail page's
   **Retry all unsuccessful jobs** button (shown whenever at least one member job is
-  failed/cancelled, independent of the workflow instance's own overall status) drives this
-  and redirects back to the same workflow page.
+  failed/cancelled/timeout, independent of the workflow instance's own overall status) drives
+  this and redirects back to the same workflow page.
+
+Retried jobs update their PR comment/commit-status row in place rather than posting a new
+one — see "Retry and PR comment updates" below.
+
+## Retry and PR comment updates
+
+Reactorcide has two independent PR-comment mechanisms, and retries interact with them
+differently:
+
+- **Workflow comment** (`internal/vcs/workflow_status.go`'s `UpdateWorkflowStatus`, marker
+  `<!-- reactorcide:workflows:<sha>:<event> -->`): one comment per workflow instance, a table
+  with one row per `WorkflowNode`. It's fully regenerated — from the workflow's *current*
+  `ListWorkflowNodes` result — every time `internal/worker/workflow_runtime.go`'s
+  `refreshWorkflowStatus` runs, which is on every node start (`ProcessWorkflowJobStarted`) and
+  completion (`ProcessWorkflowCompletion`/`evaluateWorkflow`). Because `jobcontrol.RetryJob`
+  rebinds the *same* `WorkflowNode` row to the new job (`rebindWorkflowNodeForRetry` sets
+  `node.JobID` to the retried job's id; the `NodeID` never changes), the next time either hook
+  fires for that node it naturally reflects the retried job's status — last run wins, and there
+  is no separate row for the old job, because the table is keyed by node, not by job id.
+- **Legacy per-job comment** (`internal/vcs/pr_comments.go`, used only for non-workflow "loose"
+  jobs after their PR has merged): originally keyed its marker on `job.JobID`, which would have
+  made a retry of a merged-PR job post a *second* comment instead of updating the first, since a
+  retry gets a brand-new `JobID`. Fixed by keying `prCommentMarkerPerJob` on
+  `(commit sha, jobCommentKey(job))` instead — `jobCommentKey` is the job's `Name` (falling back
+  to `JobID` for an unnamed job), which a retry clone carries forward unchanged from the
+  original job. The pre-merge rolling comment (`renderRollingCommentBody`/`dedupeJobsByName`)
+  already deduped by that same name-based key before this change (see its doc comment), so only
+  the post-merge per-job path needed fixing.
+
+**The submission-time gap.** A freshly trigger-created job gets an immediate "pending" VCS
+commit-status/comment push at creation time, before Corndogs submission
+(`trigger_processor.go`'s `createAndSubmitJob`, and — for workflow nodes —
+`evaluateWorkflow`'s trailing `refreshWorkflowStatus` call after a batch of ready nodes is
+submitted). `jobcontrol.RetryJob`/`RetryWorkflow`/`RetryUnsuccessfulJobs` do not reproduce this
+immediate push: `jobcontrol` intentionally holds no VCS/comment dependency at all (see
+`jobcontrol.go`'s package doc — the same is true of `CancelJob`/`CancelWorkflow`, which only
+ever flip status in the store and trust the worker to do the rest), and wiring one in would mean
+threading a `vcs.JobStatusUpdaterInterface` through every caller: REST's `JobHandler` already
+has one (via its `TriggerProcessor`), but `WorkflowHandler` and the CSIL `uiapi.Deps` used by
+the webapp currently have none at all. Rather than give three callers of three retry functions
+three different levels of freshness, retry relies entirely on the **worker's existing hooks**:
+
+- Workflow-bound retries: the rebound node's row is stale only until the retried job actually
+  starts running, at which point `ProcessWorkflowJobStarted` → `refreshWorkflowStatus` pushes an
+  update reflecting it (verified by
+  `internal/worker/workflow_runtime_test.go`'s
+  `TestProcessWorkflowJobStarted_ReflectsRetryRebindWithoutDuplicateRow`). In practice this is a
+  short window bounded by queue wait time, not by the job's full run.
+- Loose (non-workflow) retries: `internal/worker/corndogs_worker.go` only ever pushes a
+  per-job VCS/comment update for non-workflow jobs at *completion*
+  (`updateVCSStatusWithRetry`, gated on `job.WorkflowID == nil`) — this is unchanged,
+  pre-existing behavior for every directly-submitted loose job, retried or not, and applies to a
+  retried loose job exactly the same way once it finishes.
+
+Net effect: a retried job's PR row always ends up correct once the retry actually runs (its
+completion, and for workflow nodes its start too, are both covered by hooks that already exist
+and are already wired with a working status updater in the worker process), but there is a
+window between "retry submitted" and "retry started/completed" during which the row still shows
+the pre-retry (failed/cancelled/timeout) state rather than "pending"/"submitted". This is judged
+an acceptable, explicitly-scoped tradeoff rather than plumbing a new cross-cutting dependency
+through REST and CSIL for a purely cosmetic gap.
 
 ## See also
 

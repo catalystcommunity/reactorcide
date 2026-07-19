@@ -6,7 +6,7 @@ triggers:
   branches:
     - main
 job:
-  image: golang:1.25-alpine
+  image: golang:1.26-alpine
   command: |
     set -e
     apk add --no-cache git wget zip

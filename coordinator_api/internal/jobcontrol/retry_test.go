@@ -250,10 +250,11 @@ func intPtr(i int) *int       { return &i }
 
 // ===== RetryJob =====
 
-// TestRetryJob_StatusMatrix verifies the exactly-two-statuses rule end to
-// end through RetryJob (not just models.Job.IsRetryable in isolation):
-// every non-terminal or successfully-terminal status is refused, and only
-// "failed"/"cancelled" succeed.
+// TestRetryJob_StatusMatrix verifies the retryable-status rule end to end
+// through RetryJob (not just models.Job.IsRetryable in isolation): every
+// non-terminal or successfully-terminal status is refused, and every
+// terminal-but-unsuccessful status ("failed"/"cancelled"/"timeout")
+// succeeds.
 func TestRetryJob_StatusMatrix(t *testing.T) {
 	statuses := []struct {
 		status      string
@@ -264,7 +265,7 @@ func TestRetryJob_StatusMatrix(t *testing.T) {
 		{"running", false},
 		{"cancelling", false},
 		{"completed", false},
-		{"timeout", false},
+		{"timeout", true},
 		{"failed", true},
 		{"cancelled", true},
 	}
