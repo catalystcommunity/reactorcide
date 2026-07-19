@@ -1,5 +1,5 @@
 name: build-demo-site
-image: golang:1.25-alpine
+image: golang:1.26-alpine
 source:
   type: git
   url: https://github.com/catalystcommunity/reactorcide.git

@@ -352,16 +352,20 @@ func statusClass(status string) string {
 	}
 }
 
-// isRetryableStatus mirrors coordinator_api's models.Job.IsRetryable /
-// models.WorkflowInstance.IsRetryable (failed or cancelled only) for gating
-// the retry buttons' visibility. Display only — the coordinator
+// isRetryableStatus mirrors coordinator_api's models.Job.IsRetryable
+// (failed, cancelled, or timeout) for gating the job-level retry button, and
+// models.WorkflowInstance.IsRetryable (failed or cancelled — a workflow
+// instance's own status is never "timeout", see that method's doc comment)
+// for gating the workflow-level retry button. Sharing one function for both
+// is safe: "timeout" never appears as a workflow instance status, so this
+// only ever adds visibility for jobs. Display only — the coordinator
 // re-validates the status itself when the retry op is actually called.
 func isRetryableStatus(status string) bool {
-	return status == "failed" || status == "cancelled"
+	return status == "failed" || status == "cancelled" || status == "timeout"
 }
 
 // hasUnsuccessfulJobs reports whether any job in a workflow's member-job
-// list is failed/cancelled, for gating WorkflowDetail's "Retry all
+// list is failed/cancelled/timeout, for gating WorkflowDetail's "Retry all
 // unsuccessful jobs" button.
 func hasUnsuccessfulJobs(jobs []JobResponse) bool {
 	for _, j := range jobs {

@@ -20,9 +20,30 @@ func prCommentMarkerRolling(commitSHA string) string {
 }
 
 // prCommentMarkerPerJob returns the hidden HTML marker for a post-merge
-// per-job result comment.
-func prCommentMarkerPerJob(jobID string) string {
-	return fmt.Sprintf("<!-- reactorcide:pr-result:%s -->", jobID)
+// per-job result comment. Keyed on (commitSHA, key) rather than a specific
+// job's JobID so that retrying a post-merge job (jobcontrol.RetryJob clones
+// a brand-new JobID) updates the SAME comment in place instead of posting a
+// duplicate: key is jobCommentKey(job) (the job's Name, or its JobID as a
+// last resort for an unnamed job — see jobCommentKey), which a retry clone
+// carries forward unchanged from the original job, and commitSHA scopes it
+// so unrelated jobs sharing a name on different commits within the same PR
+// still get distinct comments. Mirrors prCommentMarkerRolling's
+// commit-scoped, name-keyed approach for the pre-merge rolling comment.
+func prCommentMarkerPerJob(commitSHA, key string) string {
+	return fmt.Sprintf("<!-- reactorcide:pr-result:%s:%s -->", commitSHA, key)
+}
+
+// jobCommentKey returns the identity a PR comment builder dedupes/keys a job
+// on: the job's Name, falling back to its JobID when Name is empty so two
+// unnamed jobs are never collapsed together. Shared by dedupeJobsByName (the
+// pre-merge rolling comment) and prCommentMarkerPerJob (the post-merge
+// per-job comment) so both comment flows agree on what makes two job rows
+// "the same job, possibly retried" versus "two unrelated jobs".
+func jobCommentKey(job *models.Job) string {
+	if job.Name != "" {
+		return job.Name
+	}
+	return job.JobID
 }
 
 // updatePRCommentForJob posts or updates the appropriate PR comment for a
@@ -74,9 +95,12 @@ func (u *JobStatusUpdater) postRollingComment(ctx context.Context, client Client
 	}
 }
 
-// postPerJobComment updates the per-job comment for a merged PR.
+// postPerJobComment updates the per-job comment for a merged PR. Keyed by
+// (commit, job name) rather than job.JobID (see prCommentMarkerPerJob) so a
+// retried job's completion updates the existing comment in place instead of
+// posting a new one alongside it — last run wins.
 func (u *JobStatusUpdater) postPerJobComment(ctx context.Context, client Client, job *models.Job, metadata *JobMetadata) {
-	marker := prCommentMarkerPerJob(job.JobID)
+	marker := prCommentMarkerPerJob(metadata.CommitSHA, jobCommentKey(job))
 	body := u.renderPerJobCommentBody(job, marker)
 
 	if err := client.UpsertPRCommentByMarker(ctx, metadata.Repo, metadata.PRNumber, marker, body); err != nil {
@@ -131,27 +155,18 @@ func (u *JobStatusUpdater) renderRollingCommentBody(jobs []models.Job, commitSHA
 	return b.String()
 }
 
-// dedupeJobsByName keeps only the most-recent job per Name from an ASC-by-
-// CreatedAt input. The returned slice preserves the original relative order
-// of kept jobs (so an eval registered first still renders first; a retried
-// child slots into its first appearance position with the newer job's
-// content). Jobs with an empty Name fall back to JobID as the dedup key so
-// they're never collapsed with one another.
+// dedupeJobsByName keeps only the most-recent job per jobCommentKey (Name,
+// falling back to JobID) from an ASC-by-CreatedAt input. The returned slice
+// preserves the original relative order of kept jobs (so an eval registered
+// first still renders first; a retried child slots into its first
+// appearance position with the newer job's content).
 func dedupeJobsByName(jobs []models.Job) []models.Job {
 	if len(jobs) <= 1 {
 		return jobs
 	}
-	// keyOf collapses retries of the same job; pulling it out keeps the
-	// fallback rule (no-name → JobID) in one place.
-	keyOf := func(j *models.Job) string {
-		if j.Name != "" {
-			return j.Name
-		}
-		return j.JobID
-	}
 	latestIdx := make(map[string]int, len(jobs))
 	for i := range jobs {
-		latestIdx[keyOf(&jobs[i])] = i
+		latestIdx[jobCommentKey(&jobs[i])] = i
 	}
 	keep := make(map[int]bool, len(latestIdx))
 	for _, idx := range latestIdx {

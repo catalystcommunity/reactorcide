@@ -1,5 +1,5 @@
 name: build-coordinator
-image: golang:1.25-alpine
+image: golang:1.26-alpine
 capabilities:
   - builder
 run_as:

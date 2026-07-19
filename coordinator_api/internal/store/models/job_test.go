@@ -89,11 +89,10 @@ func TestJob_CanBeKilled(t *testing.T) {
 	}
 }
 
-// TestJob_IsRetryable verifies the retry feature's exactly-two-statuses
-// rule: only "failed" and "cancelled" are retryable. Notably narrower than
-// IsCompleted — "completed" (nothing to retry) and "timeout" (spec
-// explicitly excludes it) are both NOT retryable, unlike the terminal-state
-// grouping IsCompleted uses.
+// TestJob_IsRetryable verifies the retry feature's rule: "failed",
+// "cancelled", and "timeout" are retryable; nothing else is. Notably
+// narrower than IsCompleted only in that "completed" (nothing to retry) is
+// excluded — every other terminal-but-unsuccessful status IS retryable.
 func TestJob_IsRetryable(t *testing.T) {
 	tests := []struct {
 		status        string
@@ -104,7 +103,7 @@ func TestJob_IsRetryable(t *testing.T) {
 		{status: "running", wantRetryable: false},
 		{status: "cancelling", wantRetryable: false},
 		{status: "completed", wantRetryable: false},
-		{status: "timeout", wantRetryable: false},
+		{status: "timeout", wantRetryable: true},
 		{status: "failed", wantRetryable: true},
 		{status: "cancelled", wantRetryable: true},
 	}

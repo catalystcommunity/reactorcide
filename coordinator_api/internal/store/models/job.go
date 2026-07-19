@@ -197,14 +197,14 @@ func (j *Job) IsKillRequested() bool {
 	return j.CancelMode == "kill"
 }
 
-// IsRetryable returns true if the job may be retried: status is exactly
-// "failed" or "cancelled", nothing else. This is deliberately narrower than
-// IsCompleted (which also admits "completed" and "timeout") — a
-// successfully completed job has nothing to retry, and a job that hit its
-// execution timeout without ever being cancelled is not retryable either,
-// per the retry feature spec. Single source of truth for
-// internal/jobcontrol.RetryJob and REST/CSIL retry authorization so they
-// can't drift apart on which statuses qualify.
+// IsRetryable returns true if the job may be retried: status is "failed",
+// "cancelled", or "timeout" — every terminal-but-unsuccessful status. This is
+// deliberately narrower than IsCompleted (which also admits "completed") — a
+// successfully completed job has nothing to retry. A job that hit its
+// execution timeout IS retryable: it never produced a usable result any more
+// than a failure did, so there is no reason to withhold retry from it. Single
+// source of truth for internal/jobcontrol.RetryJob and REST/CSIL retry
+// authorization so they can't drift apart on which statuses qualify.
 func (j *Job) IsRetryable() bool {
-	return j.Status == "failed" || j.Status == "cancelled"
+	return j.Status == "failed" || j.Status == "cancelled" || j.Status == "timeout"
 }

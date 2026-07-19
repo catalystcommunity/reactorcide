@@ -32,6 +32,32 @@ func TestStatusClass(t *testing.T) {
 	}
 }
 
+// TestIsRetryableStatus verifies the retry-button gating matrix mirrors
+// coordinator_api's models.Job.IsRetryable: failed/cancelled/timeout are
+// retryable, everything else (including the non-terminal statuses and a
+// successful completion) is not.
+func TestIsRetryableStatus(t *testing.T) {
+	tests := []struct {
+		status   string
+		expected bool
+	}{
+		{"submitted", false},
+		{"queued", false},
+		{"running", false},
+		{"cancelling", false},
+		{"completed", false},
+		{"timeout", true},
+		{"failed", true},
+		{"cancelled", true},
+	}
+	for _, tc := range tests {
+		got := isRetryableStatus(tc.status)
+		if got != tc.expected {
+			t.Errorf("isRetryableStatus(%q) = %v, want %v", tc.status, got, tc.expected)
+		}
+	}
+}
+
 func TestFormatTime(t *testing.T) {
 	ts := time.Date(2026, 3, 15, 14, 30, 45, 0, time.UTC)
 	got := formatTime(ts)
