@@ -214,6 +214,54 @@ objectStore:
     secretAccessKey: ""  # Set via --set-string
 ```
 
+### Management UI Auth (RBAC, login, visibility)
+
+Disabled by default (`uiAuth.mode: none` — no login, public-view only). See
+[docs/ui-auth.md](../docs/ui-auth.md) for the full operator guide (permission matrix,
+first-admin/bootstrap flow, credential rotation). To enable LinkKeys login:
+
+```yaml
+uiAuth:
+  mode: local-rp                       # or "rp" for a full LinkKeys RP deployment
+  localRpName: "my-reactorcide"        # local-rp only
+  # linkkeysRpAddr / linkkeysRpFingerprints instead, for mode: rp
+  firstAdmin: "you@your-domain.example"
+  trustedIdentities: "your-domain.example"
+  callbackURL: "https://ci.example.com"  # the web UI's public base URL, not the coordinator's
+
+web:
+  enabled: true
+  gateway:
+    enabled: true
+    domains: ["ci.example.com"]
+```
+
+The two secret-bearing values (`linkkeysRpApiKey` for `mode: rp`, and
+`bootstrapAdminToken`) should reference an existing Kubernetes secret in production rather
+than sitting in `values.yaml` in plaintext, the same way `secrets.existingSecret` works for
+master keys:
+
+```yaml
+uiAuth:
+  existingSecret: "reactorcide-ui-auth"
+  existingSecretRpApiKeyKey: "rp-api-key"            # default
+  existingSecretBootstrapTokenKey: "bootstrap-admin-token"  # default
+```
+
+```bash
+kubectl create secret generic reactorcide-ui-auth \
+  --from-literal=rp-api-key="$(cat /path/to/rp-api-key)" \
+  --from-literal=bootstrap-admin-token="$(openssl rand -hex 32)"
+```
+
+Consider removing `bootstrapAdminToken`/the `existingSecret` reference to it once your
+first real admin (via `firstAdmin` + a normal login) is established — the bootstrap flow is
+meant for initial setup, not ongoing use.
+
+If the webapp is only ever reached over plain HTTP (no TLS terminator in front of it — not
+recommended for a real deployment), set `web.webCookieInsecure: true` so the session cookie
+doesn't require `Secure`; otherwise leave it `false`.
+
 ## Production Deployment
 
 ### 1. Create Production Values

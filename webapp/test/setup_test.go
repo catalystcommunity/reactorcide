@@ -24,6 +24,13 @@ import (
 
 const testUserID = "550e8400-e29b-41d4-a716-446655440000"
 
+// testBootstrapAdminToken is a fixed, obviously-fake token for this test
+// binary's coordinator subprocess (REACTORCIDE_BOOTSTRAP_ADMIN_TOKEN) so
+// ui_auth_integration_test.go can exercise the /app/bootstrap flow against a
+// real coordinator. It is never a real secret — it only ever guards a
+// throwaway, per-test-run Postgres container.
+const testBootstrapAdminToken = "webapp-test-bootstrap-token-not-a-secret"
+
 var (
 	postgresContainer *postgres.PostgresContainer
 	apiBaseURL        string
@@ -139,6 +146,10 @@ func TestMain(m *testing.M) {
 		"REACTORCIDE_DEFAULT_USER_ID="+testUserID,
 		"REACTORCIDE_COMMIT_ON_SUCCESS=true",
 		"REACTORCIDE_OBJECT_STORE_TYPE=memory",
+		// REACTORCIDE_UI_AUTH_MODE is left unset (defaults "none") — the
+		// mode-none UI-auth integration tests need no login machinery, and
+		// BootstrapAdminSession works regardless of auth mode.
+		"REACTORCIDE_BOOTSTRAP_ADMIN_TOKEN="+testBootstrapAdminToken,
 	)
 	apiCmd.Stdout = os.Stdout
 	apiCmd.Stderr = os.Stderr
@@ -158,6 +169,12 @@ func TestMain(m *testing.M) {
 	// Start webapp server
 	webConfig.APIUrl = apiBaseURL
 	webConfig.APIToken = testToken
+	// This test suite runs the webapp over plain HTTP (no TLS terminator in
+	// front of it), so the session cookie must not carry the Secure flag or
+	// no HTTP client (including net/http's own cookie jar) will ever send it
+	// back — mirrors REACTORCIDE_WEB_COOKIE_INSECURE's real local-http-dev
+	// use case (see internal/config/config.go).
+	webConfig.WebCookieInsecure = true
 	webPort := getFreePort()
 	webRouter := webHandlers.NewRouter()
 	webServer := &http.Server{

@@ -143,19 +143,151 @@
         .error-page { text-align: center; padding: 48px 0; }
         .error-page h2 { font-size: 48px; color: var(--text-muted); }
         .error-page p { color: var(--text-muted); margin-top: 8px; }
+        button, input[type="submit"] {
+            font-family: inherit;
+            font-size: 13px;
+            background: var(--bg-secondary);
+            color: var(--text);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            padding: 6px 12px;
+            cursor: pointer;
+        }
+        button:hover, input[type="submit"]:hover { background: var(--border); }
+        input[type="text"], input[type="password"] {
+            font-family: inherit;
+            font-size: 14px;
+            background: var(--bg);
+            color: var(--text);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            padding: 6px 8px;
+        }
+        .link-button {
+            background: none;
+            border: none;
+            padding: 0;
+            color: var(--link);
+            font-size: 14px;
+            cursor: pointer;
+            text-decoration: none;
+        }
+        .link-button:hover { text-decoration: underline; }
+        .auth-area { margin-left: auto; display: flex; align-items: center; gap: 12px; }
+        .form-error { color: var(--red); margin-bottom: 12px; }
+        .form-msg { color: var(--green); margin-bottom: 12px; }
+        .auth-card { max-width: 420px; margin: 48px auto; }
+        .auth-card label { display: block; margin-bottom: 6px; }
+        .auth-card input[type="text"], .auth-card input[type="password"] { width: 100%; margin-bottom: 16px; }
+        form.inline-form { display: flex; gap: 8px; align-items: flex-end; flex-wrap: wrap; margin-bottom: 8px; }
+        form.inline-form label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--text-muted); }
+        .field-row { display: flex; flex-direction: column; gap: 4px; margin-bottom: 12px; }
+        .field-row label { font-size: 13px; color: var(--text-muted); }
+        .checkbox-row { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; }
+        .badge { display: inline-block; padding: 2px 8px; border-radius: 12px; font-size: 12px; font-weight: 500; }
+        .badge-private { background: rgba(210, 153, 34, 0.15); color: var(--yellow); }
+        .badge-public { background: rgba(63, 185, 80, 0.15); color: var(--green); }
+        .badge-inactive { background: rgba(139, 148, 158, 0.15); color: var(--text-muted); }
+        .danger { border-color: var(--red); color: var(--red); }
+        .danger:hover { background: rgba(248, 81, 73, 0.15); }
+        .section-title { font-size: 14px; font-weight: 600; margin: 20px 0 8px; color: var(--text-muted); text-transform: uppercase; }
+        .tab-nav { display: flex; gap: 4px; margin-bottom: 12px; border-bottom: 1px solid var(--border); }
+        .tab-nav a { padding: 6px 14px; color: var(--text-muted); font-size: 13px; }
+        .tab-nav a.active { color: var(--text); border-bottom: 2px solid var(--link); }
     </style>
 </head>
 <body>
     <header>
         <div class="container">
             <h1><a href="/app/" style="color: var(--text)">Reactorcide</a></h1>
-            <nav><a href="/app/">Workflows</a></nav>
+            <nav>
+                <a href="/app/">Workflows</a>
+                <a href="/app/projects">Projects</a>
+                {{if .Session.Caps.ManageGroups}}<a href="/app/org/groups">Groups</a> <a href="/app/org/roles">Roles</a>{{end}}
+                {{if .Session.Caps.ManageSecrets}}<a href="/app/org/secrets">Secrets</a>{{end}}
+                {{if .Session.IsGlobalAdmin}}<a href="/app/admin">Admin</a>{{end}}
+            </nav>
+            <div class="auth-area">
+                {{if .Session.LoggedIn}}
+                    <span class="meta">{{.Session.DisplayName}}</span>
+                    <form method="post" action="/app/logout" style="display: inline;">
+                        <button type="submit" class="link-button">Sign out</button>
+                    </form>
+                {{else if .Session.LoginEnabled}}
+                    <a href="/app/login">Sign in</a>
+                {{end}}
+            </div>
         </div>
     </header>
     <main class="container">
 {{end}}
 {{define "foot"}}
     </main>
+    <script>
+    // Shared, page-agnostic form helpers for Task I's management UI. Every
+    // management page opts in by adding the matching data-*/class attribute
+    // to its own forms/buttons rather than each page re-implementing this.
+    (function() {
+        // Confirm-before-action: any element with data-confirm="..." (kill
+        // buttons, delete buttons without a typed-name form) asks first.
+        document.querySelectorAll('[data-confirm]').forEach(function(el) {
+            el.addEventListener('click', function(e) {
+                if (!window.confirm(el.getAttribute('data-confirm'))) {
+                    e.preventDefault();
+                }
+            });
+        });
+
+        // Client-side regex sanity check (deliverable #8): a form with
+        // data-validate-regex on it, and a field inside marked
+        // data-regex-check, is blocked from submitting if the field's value
+        // doesn't compile as a RegExp. This mirrors, but does not replace,
+        // the coordinator's authoritative RE2 validation.
+        document.querySelectorAll('form[data-validate-regex]').forEach(function(form) {
+            form.addEventListener('submit', function(e) {
+                var field = form.querySelector('[data-regex-check]');
+                if (!field || !field.value) { return; }
+                try { new RegExp(field.value); }
+                catch (err) {
+                    e.preventDefault();
+                    window.alert('Pattern does not compile as a regular expression: ' + err.message);
+                }
+            });
+        });
+
+        // No-spaces path/key sanity check, mirroring the coordinator's
+        // secret path/key format (letters, digits, "/", "_", "-" for paths;
+        // no "/" for keys).
+        document.querySelectorAll('[data-no-spaces-check]').forEach(function(field) {
+            field.addEventListener('input', function() {
+                field.setCustomValidity(/\s/.test(field.value) ? 'must not contain spaces' : '');
+            });
+        });
+
+        // Disable-on-submit: avoids double-submitting slower management
+        // actions.
+        document.querySelectorAll('form.js-disable-on-submit').forEach(function(form) {
+            form.addEventListener('submit', function() {
+                form.querySelectorAll('button[type=submit], input[type=submit]').forEach(function(btn) {
+                    btn.disabled = true;
+                });
+            });
+        });
+
+        // Typed-name delete confirmation (deliverable #1): the submit
+        // button on a form with data-confirm-name-match="<expected>" stays
+        // disabled until its confirm_name input matches exactly.
+        document.querySelectorAll('form[data-confirm-name-match]').forEach(function(form) {
+            var expected = form.getAttribute('data-confirm-name-match');
+            var input = form.querySelector('input[name=confirm_name]');
+            var btn = form.querySelector('button[type=submit], input[type=submit]');
+            if (!input || !btn) { return; }
+            function check() { btn.disabled = input.value !== expected; }
+            input.addEventListener('input', check);
+            check();
+        });
+    })();
+    </script>
 </body>
 </html>
 {{end}}

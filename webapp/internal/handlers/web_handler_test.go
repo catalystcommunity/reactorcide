@@ -59,6 +59,8 @@ func TestTemplatesParse(t *testing.T) {
 		"streamClass":            func(stream string) string { return "" },
 		"workflowLink":           workflowLink,
 		"shortSHA":               shortSHA,
+		"joinStringList":         joinStringList,
+		"isRetryable":            isRetryableStatus,
 	}
 
 	tmpl, err := template.New("").Funcs(funcMap).ParseFS(templates.FS, "*.html")
@@ -66,7 +68,12 @@ func TestTemplatesParse(t *testing.T) {
 		t.Fatalf("Failed to parse templates: %v", err)
 	}
 
-	expectedTemplates := []string{"head", "foot", "jobs_list.html", "job_detail.html", "workflow_detail.html", "error.html", "logs_fragment.html"}
+	expectedTemplates := []string{
+		"head", "foot", "jobs_list.html", "job_detail.html", "workflow_detail.html", "error.html",
+		"logs_fragment.html", "login.html", "bootstrap.html",
+		"projects_list.html", "project_new.html", "project_detail.html",
+		"org_groups.html", "org_roles.html", "org_secrets.html", "admin.html",
+	}
 	for _, name := range expectedTemplates {
 		if tmpl.Lookup(name) == nil {
 			t.Errorf("Template %q not found", name)
@@ -75,7 +82,7 @@ func TestTemplatesParse(t *testing.T) {
 }
 
 func TestJobsListTemplate(t *testing.T) {
-	handler := NewWebHandler(NewAPIClient())
+	handler := NewWebHandler(NewAPIClient(), nil)
 
 	var buf strings.Builder
 	exitCode := 0
@@ -125,7 +132,7 @@ func TestJobsListTemplate(t *testing.T) {
 }
 
 func TestJobDetailTemplate(t *testing.T) {
-	handler := NewWebHandler(NewAPIClient())
+	handler := NewWebHandler(NewAPIClient(), nil)
 
 	var buf strings.Builder
 	exitCode := 0
@@ -178,7 +185,7 @@ func TestJobDetailTemplate(t *testing.T) {
 }
 
 func TestWorkflowDetailTemplateShowsJobLastError(t *testing.T) {
-	handler := NewWebHandler(NewAPIClient())
+	handler := NewWebHandler(NewAPIClient(), nil)
 
 	var buf strings.Builder
 	data := map[string]interface{}{
@@ -216,7 +223,7 @@ func TestWorkflowDetailTemplateShowsJobLastError(t *testing.T) {
 }
 
 func TestErrorTemplate(t *testing.T) {
-	handler := NewWebHandler(NewAPIClient())
+	handler := NewWebHandler(NewAPIClient(), nil)
 
 	var buf strings.Builder
 	data := map[string]interface{}{
@@ -240,7 +247,7 @@ func TestErrorTemplate(t *testing.T) {
 }
 
 func TestEmptyJobsList(t *testing.T) {
-	handler := NewWebHandler(NewAPIClient())
+	handler := NewWebHandler(NewAPIClient(), nil)
 
 	var buf strings.Builder
 	data := map[string]interface{}{

@@ -1,0 +1,20 @@
+{{template "head" .}}
+<div class="card auth-card">
+    <h2 style="margin-bottom: 16px;">Sign in</h2>
+    {{if .LoginDisabled}}
+        <p class="meta">Login is disabled on this Reactorcide instance.</p>
+        <p style="margin-top: 16px;"><a href="/app/">&larr; Back to Workflows</a></p>
+    {{else}}
+        {{if .FormError}}<p class="form-error">{{.FormError}}</p>{{end}}
+        <form method="post" action="/app/login">
+            <label for="identity">Identity (handle@domain or domain)</label>
+            <input type="text" id="identity" name="identity" required autofocus value="{{.Identity}}">
+            <button type="submit">Sign in</button>
+        </form>
+        {{if .Session.BootstrapAvailable}}
+            <p class="meta" style="margin-top: 16px;"><a href="/app/bootstrap">Bootstrap the first admin</a></p>
+        {{end}}
+        <p style="margin-top: 16px;"><a href="/app/">&larr; Back to Workflows</a></p>
+    {{end}}
+</div>
+{{template "foot" .}}

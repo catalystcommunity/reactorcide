@@ -54,6 +54,21 @@ services:
             REACTORCIDE_OBJECT_STORE_BASE_PATH: /var/lib/reactorcide
             REACTORCIDE_LOG_LEVEL: debug
             REACTORCIDE_DEFAULT_USER_ID: "550e8400-e29b-41d4-a716-446655440000"
+            # Management UI auth (see docs/ui-auth.md). "none" (the default,
+            # set explicitly here for clarity) means no login: anyone
+            # reaching the web UI can view public projects/jobs and
+            # gracefully cancel a job. Uncomment to try LinkKeys login
+            # locally:
+            # REACTORCIDE_UI_AUTH_MODE: local-rp
+            # REACTORCIDE_LOCAL_RP_NAME: reactorcide-dev
+            # REACTORCIDE_UI_CALLBACK_URL: "http://localhost:4080"
+            # REACTORCIDE_FIRST_ADMIN: "you@your-domain.example"
+            # REACTORCIDE_TRUSTED_IDENTITIES: "your-domain.example"
+            REACTORCIDE_UI_AUTH_MODE: none
+            # One-time bootstrap-admin session (visit http://localhost:4080/app/bootstrap)
+            # while no global admin exists yet. Obviously-fake dev-only value;
+            # never reuse this for a real deployment.
+            REACTORCIDE_BOOTSTRAP_ADMIN_TOKEN: dev-bootstrap-token-change-me
         ports:
             - "8080:8080"
         volumes:
@@ -108,6 +123,11 @@ services:
             REACTORCIDE_API_URL: "http://coordinator-api:8080"
             REACTORCIDE_API_TOKEN: "" # Set after creating a token via: docker compose exec coordinator-api /reactorcide token create --name web-ui
             PORT: "4080"
+            # This dev stack serves plain HTTP with no TLS terminator in
+            # front of it, so the session cookie must not require Secure or
+            # no browser will ever send it back. Never set this for a real
+            # deployment (see docs/ui-auth.md).
+            REACTORCIDE_WEB_COOKIE_INSECURE: "true"
         ports:
             - "4080:4080"
         depends_on:

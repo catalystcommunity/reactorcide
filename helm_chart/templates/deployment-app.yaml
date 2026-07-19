@@ -128,6 +128,38 @@ spec:
                 secretKeyRef:
                   name: {{ .Values.defaults.userSecretName }}
                   key: user-id
+            {{- /* UI-auth secret-bearing values (see docs/ui-auth.md) */ -}}
+            {{- if .Values.uiAuth.existingSecret }}
+            {{- if .Values.uiAuth.linkkeysRpApiKey }}
+            - name: REACTORCIDE_LINKKEYS_RP_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.uiAuth.existingSecret }}
+                  key: {{ .Values.uiAuth.existingSecretRpApiKeyKey | default "rp-api-key" }}
+            {{- end }}
+            {{- if .Values.uiAuth.bootstrapAdminToken }}
+            - name: REACTORCIDE_BOOTSTRAP_ADMIN_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.uiAuth.existingSecret }}
+                  key: {{ .Values.uiAuth.existingSecretBootstrapTokenKey | default "bootstrap-admin-token" }}
+            {{- end }}
+            {{- else }}
+            {{- if .Values.uiAuth.linkkeysRpApiKey }}
+            - name: REACTORCIDE_LINKKEYS_RP_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "app.secretName" . }}
+                  key: REACTORCIDE_LINKKEYS_RP_API_KEY
+            {{- end }}
+            {{- if .Values.uiAuth.bootstrapAdminToken }}
+            - name: REACTORCIDE_BOOTSTRAP_ADMIN_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "app.secretName" . }}
+                  key: REACTORCIDE_BOOTSTRAP_ADMIN_TOKEN
+            {{- end }}
+            {{- end }}
       {{- with .Values.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}

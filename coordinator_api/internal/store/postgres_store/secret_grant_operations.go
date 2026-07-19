@@ -32,6 +32,38 @@ func (ps PostgresDbStore) ListSecretGrants(ctx context.Context, userID string, p
 	return grants, nil
 }
 
+// GetSecretGrantByID retrieves a secret grant by its ID, with no user/project
+// scoping. Added for Task G (the CSIL UI service's UpdateSecretGrant/
+// DeleteSecretGrant ops, which identify their target by grant ID alone):
+// callers must load the row first to discover its owning org before they can
+// authorize the request.
+func (ps PostgresDbStore) GetSecretGrantByID(ctx context.Context, grantID string) (*models.SecretGrant, error) {
+	if !isValidUUID(grantID) {
+		return nil, store.ErrNotFound
+	}
+
+	var grant models.SecretGrant
+	if err := ps.getDB(ctx).Where("grant_id = ?", grantID).First(&grant).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, store.ErrNotFound
+		}
+		return nil, fmt.Errorf("failed to get secret grant: %w", err)
+	}
+	return &grant, nil
+}
+
+// ListSecretGrantsByOrg lists every secret grant owned by an org (both
+// global, project_id IS NULL, and project-scoped rows), unlike ListSecretGrants
+// which requires picking one or the other. Added for Task G's
+// list-secret-grants CSIL op, whose request carries only an org_id.
+func (ps PostgresDbStore) ListSecretGrantsByOrg(ctx context.Context, orgID string) ([]models.SecretGrant, error) {
+	var grants []models.SecretGrant
+	if err := ps.getDB(ctx).Where("user_id = ?", orgID).Order("created_at ASC").Find(&grants).Error; err != nil {
+		return nil, fmt.Errorf("failed to list secret grants for org: %w", err)
+	}
+	return grants, nil
+}
+
 func (ps PostgresDbStore) GetSecretGrant(ctx context.Context, userID string, projectID *string, ref string) (*models.SecretGrant, error) {
 	query := ps.scopedSecretGrantQuery(ctx, userID, projectID).Where("(grant_id::text = ? OR name = ?)", ref, ref)
 	var grant models.SecretGrant

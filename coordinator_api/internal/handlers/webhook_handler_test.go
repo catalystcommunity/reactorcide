@@ -22,12 +22,13 @@ import (
 
 // WebhookMockStore implements store.Store for webhook handler testing
 type WebhookMockStore struct {
-	CreateJobFunc          func(ctx context.Context, job *models.Job) error
-	UpdateJobFunc          func(ctx context.Context, job *models.Job) error
+	CreateJobFunc           func(ctx context.Context, job *models.Job) error
+	UpdateJobFunc           func(ctx context.Context, job *models.Job) error
 	GetProjectByRepoURLFunc func(ctx context.Context, repoURL string) (*models.Project, error)
+	GetUserByIDFunc         func(ctx context.Context, userID string) (*models.User, error)
 
-	CreateJobCalls          []*models.Job
-	UpdateJobCalls          []*models.Job
+	CreateJobCalls           []*models.Job
+	UpdateJobCalls           []*models.Job
 	GetProjectByRepoURLCalls []string
 }
 
@@ -65,6 +66,9 @@ func (m *WebhookMockStore) Initialize() (func(), error)                         
 func (m *WebhookMockStore) EnsureDefaultUser() error                                { return nil }
 func (m *WebhookMockStore) CreateUser(ctx context.Context, user *models.User) error { return nil }
 func (m *WebhookMockStore) GetUserByID(ctx context.Context, userID string) (*models.User, error) {
+	if m.GetUserByIDFunc != nil {
+		return m.GetUserByIDFunc(ctx, userID)
+	}
 	return nil, nil
 }
 func (m *WebhookMockStore) CreateProject(ctx context.Context, project *models.Project) error {

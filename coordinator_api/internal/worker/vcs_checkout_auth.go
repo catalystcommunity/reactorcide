@@ -108,8 +108,45 @@ func cleanupVCSCheckoutAuth(workspaceDir string) {
 	_ = os.RemoveAll(filepath.Join(workspaceDir, ".reactorcide", "vcs-auth"))
 }
 
+// vcsCredentialRotationStore is the narrow store interface needed to list
+// active rotatable VCS credentials and stamp last-used timestamps. Defined
+// on the consumer side per the repo's narrow-interface + type-assertion
+// pattern (see internal/handlers/project_handler.go and
+// internal/worker/secret_authorization.go for precedent).
+type vcsCredentialRotationStore interface {
+	ListActiveProjectVCSCredentials(ctx context.Context, projectID, provider string) ([]models.ProjectVCSCredential, error)
+	TouchProjectVCSCredentialLastUsed(ctx context.Context, id string) error
+}
+
 func (jp *JobProcessor) resolveVCSCheckoutToken(ctx context.Context, job *models.Job, provider vcs.Provider) (string, bool, error) {
 	project, ownerID := jp.checkoutProjectOwner(ctx, job)
+
+	// Highest-precedence active project_vcs_credentials rotation row wins
+	// over the legacy project ref. Deactivated rows are never returned by
+	// ListActiveProjectVCSCredentials, so they are never used here.
+	if project != nil {
+		if rotationStore, ok := jp.store.(vcsCredentialRotationStore); ok {
+			rows, err := rotationStore.ListActiveProjectVCSCredentials(ctx, project.ProjectID, string(provider))
+			if err != nil {
+				logging.Log.WithError(err).WithFields(map[string]interface{}{
+					"job_id":   job.JobID,
+					"provider": provider,
+				}).Warn("Failed to list active rotatable VCS credentials")
+			}
+			if row, ok := vcs.HighestPrecedenceActiveVCSCredential(rows); ok {
+				token, err := jp.resolveSecretRefForUser(ctx, ownerID, row.SecretRef)
+				if err != nil {
+					return "", false, fmt.Errorf("resolving project VCS checkout credential (rotation): %w", err)
+				}
+				if token != "" {
+					logVCSCheckoutCredential(job.JobID, provider, "project-rotation")
+					jp.touchVCSCredentialLastUsed(ctx, row.ID)
+					return token, true, nil
+				}
+			}
+		}
+	}
+
 	if ref := vcs.ProjectVCSCredentialSecretRef(project, provider); ref != "" {
 		token, err := jp.resolveSecretRefForUser(ctx, ownerID, ref)
 		if err != nil {
@@ -146,6 +183,19 @@ func (jp *JobProcessor) resolveVCSCheckoutToken(ctx context.Context, job *models
 		}
 	}
 	return "", false, nil
+}
+
+// touchVCSCredentialLastUsed stamps last_used_at for the rotation row that
+// was successfully resolved into a checkout token. Best-effort: a stamp
+// failure must never fail the job's checkout.
+func (jp *JobProcessor) touchVCSCredentialLastUsed(ctx context.Context, rotationID string) {
+	rotationStore, ok := jp.store.(vcsCredentialRotationStore)
+	if !ok {
+		return
+	}
+	if err := rotationStore.TouchProjectVCSCredentialLastUsed(ctx, rotationID); err != nil {
+		logging.Log.WithError(err).WithField("rotation_id", rotationID).Warn("Failed to stamp VCS credential last_used_at")
+	}
 }
 
 func (jp *JobProcessor) checkoutProjectOwner(ctx context.Context, job *models.Job) (*models.Project, string) {

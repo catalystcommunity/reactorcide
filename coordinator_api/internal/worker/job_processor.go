@@ -18,6 +18,7 @@ import (
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/secrets"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store/models"
+	"github.com/sirupsen/logrus"
 )
 
 // JobResult represents the result of job execution
@@ -31,7 +32,25 @@ type JobResult struct {
 	RetryCount         int    // Number of retry attempts made
 	Retryable          bool   // Whether the failure was retryable
 	WorkspaceDir       string // Host path to workspace directory; caller must clean up via os.RemoveAll
+
+	// Cancelled is true when the cancel-poll observed the job's DB status
+	// flip to "cancelling" during execution and drove the container to stop
+	// (gracefully or via kill) itself, rather than the job command exiting
+	// on its own. Callers should set the job's terminal status to
+	// "cancelled" rather than deriving it from ExitCode, which is not
+	// meaningful for a runner-initiated stop (see JobRunner.Stop, Killed).
+	Cancelled bool
+
+	// Killed is true when Cancelled is true and the cancel was an admin
+	// kill (immediate force-Cleanup, no SIGTERM grace) rather than a
+	// graceful cancel (JobRunner.Stop).
+	Killed bool
 }
+
+// DefaultCancelGrace is the fallback grace period used when
+// JobProcessorConfig.CancelGrace is unset (zero). Mirrors
+// REACTORCIDE_CANCEL_GRACE_SECONDS' own default in internal/config.
+const DefaultCancelGrace = 60 * time.Second
 
 // HeartbeatFunc is a function that sends a heartbeat
 // It should extend the timeout for the currently executing task
@@ -44,6 +63,12 @@ type JobProcessorConfig struct {
 	HeartbeatInterval time.Duration
 	HeartbeatTimeout  time.Duration
 	RetryConfig       *RetryConfig
+
+	// CancelGrace is how long a graceful cancel (JobRunner.Stop) waits
+	// between SIGTERM and the runner's own forced kill, checked on each
+	// heartbeat tick alongside the cancel-status poll (default: 60s, see
+	// DefaultCancelGrace).
+	CancelGrace time.Duration
 
 	// Publisher, if non-nil, is threaded into each LogShipper so chunk
 	// flushes trigger NOTIFY events to WebSocket subscribers.
@@ -684,12 +709,19 @@ func (jp *JobProcessor) executeWithRunnerlib(ctx context.Context, job *models.Jo
 
 	logger.WithField("container_id", containerID).Info("Job container spawned successfully")
 
-	// Start heartbeat goroutine if heartbeat function is provided
+	// Start heartbeat goroutine if heartbeat function is provided. This is
+	// also the cancel-poll point: on every heartbeat tick we also check the
+	// job's current DB status and, if it has moved to "cancelling", stop
+	// (or kill) the container ourselves so WaitForCompletion below unblocks.
+	// cancelResult records what happened so the caller can set the correct
+	// terminal JobResult fields even though WaitForCompletion returns via a
+	// runner-initiated stop rather than the job command exiting on its own.
 	heartbeatDone := make(chan struct{})
 	defer close(heartbeatDone)
 
+	cancelResult := &cancelOutcome{}
 	if execCtx != nil && execCtx.HeartbeatFunc != nil && jp.config.HeartbeatInterval > 0 {
-		go jp.sendHeartbeats(ctx, execCtx.HeartbeatFunc, heartbeatDone)
+		go jp.sendHeartbeats(ctx, job, containerID, execCtx.HeartbeatFunc, heartbeatDone, cancelResult)
 	}
 
 	// Stream logs from the container
@@ -824,6 +856,16 @@ func (jp *JobProcessor) executeWithRunnerlib(ctx context.Context, job *models.Jo
 		WorkspaceDir: workspaceDir,
 	}
 
+	// If the cancel-poll intervened (JobRunner.Stop or an immediate kill
+	// Cleanup), the container's exit code above reflects a SIGTERM/SIGKILL
+	// termination, not the job command's own outcome — flag it so the
+	// caller (CornDogsWorker) sets the terminal job status to "cancelled"
+	// rather than deriving completed/failed from ExitCode. This also
+	// resolves the race against natural completion: if WaitForCompletion
+	// returned before the poller ever observed "cancelling", Cancelled
+	// stays false here and the job's real exit code/status wins.
+	result.Cancelled, result.Killed = cancelResult.snapshot()
+
 	// Set log object keys if logs were shipped
 	if stdoutKey != "" || stderrKey != "" {
 		// Use stdout key as primary log key (stderr is separate)
@@ -860,12 +902,51 @@ func (jp *JobProcessor) executeWithRunnerlib(ctx context.Context, job *models.Jo
 	return result
 }
 
-// sendHeartbeats sends periodic heartbeats to prevent task timeout
-func (jp *JobProcessor) sendHeartbeats(ctx context.Context, heartbeatFunc HeartbeatFunc, done chan struct{}) {
+// cancelOutcome is a small concurrency-safe box shared between the
+// cancel-poll goroutine (sendHeartbeats/pollForCancel) and the main
+// executeWithRunnerlib goroutine. It records whether the poller intervened
+// (and how) so the caller can distinguish a runner-initiated stop from the
+// job command's own exit once WaitForCompletion returns. acted also acts as
+// a guard so Stop/Cleanup is only triggered once even though the ticker
+// keeps running until the job fully completes.
+type cancelOutcome struct {
+	mu        sync.Mutex
+	acted     bool
+	cancelled bool
+	killed    bool
+}
+
+// markActed records that the poller is about to act (Stop or kill-Cleanup).
+// Returns false if another tick already claimed the action, so callers only
+// ever issue one Stop/Cleanup per job execution.
+func (co *cancelOutcome) markActed(killed bool) bool {
+	co.mu.Lock()
+	defer co.mu.Unlock()
+	if co.acted {
+		return false
+	}
+	co.acted = true
+	co.cancelled = true
+	co.killed = killed
+	return true
+}
+
+// snapshot returns whether the poller acted, and whether it was a kill.
+func (co *cancelOutcome) snapshot() (cancelled, killed bool) {
+	co.mu.Lock()
+	defer co.mu.Unlock()
+	return co.cancelled, co.killed
+}
+
+// sendHeartbeats sends periodic heartbeats to prevent task timeout, and
+// doubles as the cancel-poll loop: on each tick it also checks the job's
+// current DB status (job_processor.go owns jp.store, so no extra plumbing
+// is needed) and reacts if the job has moved to "cancelling".
+func (jp *JobProcessor) sendHeartbeats(ctx context.Context, job *models.Job, containerID string, heartbeatFunc HeartbeatFunc, done chan struct{}, outcome *cancelOutcome) {
 	ticker := time.NewTicker(jp.config.HeartbeatInterval)
 	defer ticker.Stop()
 
-	logger := logging.Log.WithField("heartbeat_interval", jp.config.HeartbeatInterval)
+	logger := logging.Log.WithField("job_id", job.JobID).WithField("heartbeat_interval", jp.config.HeartbeatInterval)
 	logger.Debug("Starting heartbeat goroutine")
 
 	for {
@@ -883,6 +964,59 @@ func (jp *JobProcessor) sendHeartbeats(ctx context.Context, heartbeatFunc Heartb
 			} else {
 				logger.Debug("Heartbeat sent successfully")
 			}
+			jp.pollForCancel(job.JobID, containerID, outcome, logger)
 		}
+	}
+}
+
+// pollForCancel checks the job's current DB status and, the first time it
+// observes "cancelling", stops or kills the container accordingly.
+//
+//   - Kill (job.CancelMode == "kill", see models.Job.IsKillRequested):
+//     immediate forced JobRunner.Cleanup — no SIGTERM, no grace, no
+//     guarantee runnerlib's cleanup hooks run. Matches the "Kill (admin)"
+//     semantics in UI_AUTH_PLAN.md's Cancel vs Kill section.
+//   - Cancel (anything else): JobRunner.Stop with the configured grace —
+//     SIGTERM to PID 1, giving runnerlib's SIGTERM trap a chance to run
+//     PluginPhase.CLEANUP/ON_ERROR, then a forced kill after grace.
+//
+// Uses a background context (like the deferred Cleanup call in
+// executeWithRunnerlib) so the stop/kill attempt isn't cut short if the
+// job's own context is torn down concurrently.
+func (jp *JobProcessor) pollForCancel(jobID, containerID string, outcome *cancelOutcome, logger *logrus.Entry) {
+	if jp.store == nil {
+		return
+	}
+	current, err := jp.store.GetJobByID(context.Background(), jobID)
+	if err != nil {
+		logger.WithError(err).Debug("Failed to poll job status for cancel check")
+		return
+	}
+	if !current.IsCancelling() {
+		return
+	}
+
+	killed := current.IsKillRequested()
+	if !outcome.markActed(killed) {
+		// Another tick already triggered Stop/Cleanup for this job.
+		return
+	}
+
+	actionCtx := context.Background()
+	if killed {
+		logger.Warn("Kill requested for running job — force-cleaning up container immediately")
+		if err := jp.runner.Cleanup(actionCtx, containerID); err != nil {
+			logger.WithError(err).Warn("Kill: failed to force-cleanup job container")
+		}
+		return
+	}
+
+	grace := jp.config.CancelGrace
+	if grace <= 0 {
+		grace = DefaultCancelGrace
+	}
+	logger.WithField("grace", grace).Info("Cancel requested for running job — stopping container gracefully")
+	if err := jp.runner.Stop(actionCtx, containerID, grace); err != nil {
+		logger.WithError(err).Warn("Cancel: failed to gracefully stop job container")
 	}
 }

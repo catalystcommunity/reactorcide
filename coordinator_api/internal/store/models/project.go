@@ -55,6 +55,10 @@ type Project struct {
 	DefaultJobCommand     string `gorm:"type:text" json:"default_job_command"`
 	DefaultTimeoutSeconds int    `gorm:"default:3600" json:"default_timeout_seconds"`
 	DefaultQueueName      string `gorm:"type:text;default:'reactorcide-jobs'" json:"default_queue_name"`
+
+	// IsPrivate marks the project as private. Effective visibility is
+	// IsPrivate OR the owning org's (user's) IsPrivate.
+	IsPrivate bool `gorm:"not null;default:false" json:"is_private"`
 }
 
 // TableName specifies the table name for the model
@@ -90,6 +94,14 @@ type SecretGrant struct {
 
 func (SecretGrant) TableName() string {
 	return "secret_grants"
+}
+
+// IsEffectivelyPrivate reports whether the project should be treated as
+// private: either the project itself is marked private, or its owning org
+// (user, since users act as orgs today) is marked private. orgIsPrivate
+// should be false when the project has no owning user (UserID is nil).
+func (p *Project) IsEffectivelyPrivate(orgIsPrivate bool) bool {
+	return p.IsPrivate || orgIsPrivate
 }
 
 // ShouldProcessEvent checks if an event should trigger CI based on filtering rules

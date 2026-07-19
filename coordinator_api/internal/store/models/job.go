@@ -87,8 +87,28 @@ type Job struct {
 	AutoTargetState string `gorm:"type:text;default:'running'" json:"auto_target_state"`
 
 	// Current state
-	Status         string  `gorm:"type:text;not null;default:'submitted';check:status IN ('submitted', 'queued', 'running', 'completed', 'failed', 'cancelled', 'timeout')" json:"status"`
+	//
+	// "cancelling" is a transient state: it means a graceful cancel has been
+	// requested (via CancelJob/CancelWorkflow) but the worker has not yet
+	// confirmed the job container has stopped. The worker's heartbeat/
+	// supervision loop observes this state and drives the job to its terminal
+	// "cancelled" status. Requires the "cancelling" value to also be present
+	// in the jobs.status CHECK constraint (owned by the schema/migration
+	// wave, see coredb/migrations) — this Go-level enum is documentation-only
+	// since models are hand-matched to SQL rather than AutoMigrated.
+	Status         string  `gorm:"type:text;not null;default:'submitted';check:status IN ('submitted', 'queued', 'running', 'cancelling', 'completed', 'failed', 'cancelled', 'timeout')" json:"status"`
 	CorndogsTaskID *string `gorm:"type:uuid" json:"corndogs_task_id"`
+
+	// CancelMode records which kind of cancel request drove the job into
+	// "cancelling": "cancel" (graceful — SIGTERM, runnerlib cleanup hooks,
+	// forced kill only after the configured grace) or "kill" (immediate
+	// forced Cleanup, no grace). Empty/NULL outside the "cancelling" status
+	// (and briefly during "cancelled" finalization). See CanBeKilled and
+	// IsKillRequested, and internal/jobcontrol.transitionJob, which is the
+	// only writer. Requires "cancel_mode" to also exist as a column with a
+	// CHECK constraint (coredb/migrations/000019_job_cancel_mode.sql) —
+	// this Go-level enum is documentation-only, same caveat as Status above.
+	CancelMode string `gorm:"type:text;check:cancel_mode IN ('cancel', 'kill')" json:"cancel_mode,omitempty"`
 
 	// Execution metadata
 	StartedAt   *time.Time `json:"started_at"`
@@ -133,12 +153,58 @@ func (j *Job) IsRunning() bool {
 	return j.Status == "running"
 }
 
-// IsCompleted returns true if the job has finished (success or failure)
+// IsCancelling returns true if a graceful cancel has been requested but the
+// worker has not yet confirmed the job container has stopped. This is a
+// transient, non-terminal state: IsCompleted() deliberately excludes it so
+// callers (log tailing, WS status filters, etc.) keep treating the job as
+// "still active" until the worker lands on the terminal "cancelled" status.
+func (j *Job) IsCancelling() bool {
+	return j.Status == "cancelling"
+}
+
+// IsCompleted returns true if the job has reached a terminal state (success,
+// failure, or confirmed cancellation). "cancelling" is intentionally NOT
+// included here — it is a transient state, not a terminal one.
 func (j *Job) IsCompleted() bool {
 	return j.Status == "completed" || j.Status == "failed" || j.Status == "cancelled" || j.Status == "timeout"
 }
 
-// CanBeCancelled returns true if the job can be cancelled
+// CanBeCancelled returns true if the job can be moved into the cancel flow.
+// Submitted/queued jobs haven't started a container yet, so cancellation is
+// immediate (handled entirely by the API layer). Running jobs transition to
+// "cancelling" so the worker can drive a graceful stop. Jobs already
+// cancelling, or in any terminal state, cannot be cancelled again.
 func (j *Job) CanBeCancelled() bool {
 	return j.Status == "submitted" || j.Status == "queued" || j.Status == "running"
+}
+
+// CanBeKilled returns true if the job can be moved into (or escalated
+// within) the kill flow. Unlike CanBeCancelled, this also admits a job
+// already in "cancelling": a graceful cancel that's stuck (worker slow to
+// observe it, grace period still running, etc.) can always be escalated to
+// an immediate kill. It cannot be re-cancelled gracefully — CanBeCancelled
+// stays false for "cancelling" — because a second graceful cancel request
+// has nothing new to do that the first one hasn't already triggered.
+func (j *Job) CanBeKilled() bool {
+	return j.CanBeCancelled() || j.IsCancelling()
+}
+
+// IsKillRequested returns true if the job's cancel-in-progress is a kill
+// (immediate forced Cleanup) rather than a graceful cancel (SIGTERM +
+// grace). Only meaningful while IsCancelling() is true; CancelMode is
+// otherwise empty. See CancelMode's doc comment for the full rationale.
+func (j *Job) IsKillRequested() bool {
+	return j.CancelMode == "kill"
+}
+
+// IsRetryable returns true if the job may be retried: status is exactly
+// "failed" or "cancelled", nothing else. This is deliberately narrower than
+// IsCompleted (which also admits "completed" and "timeout") — a
+// successfully completed job has nothing to retry, and a job that hit its
+// execution timeout without ever being cancelled is not retryable either,
+// per the retry feature spec. Single source of truth for
+// internal/jobcontrol.RetryJob and REST/CSIL retry authorization so they
+// can't drift apart on which statuses qualify.
+func (j *Job) IsRetryable() bool {
+	return j.Status == "failed" || j.Status == "cancelled"
 }

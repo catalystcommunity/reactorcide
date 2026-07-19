@@ -1,0 +1,81 @@
+{{template "head" .}}
+<h2 style="margin-bottom: 16px;">Roles</h2>
+
+<form method="get" action="/app/org/roles" class="inline-form">
+    {{if .Orgs}}
+    <label>Organization
+        <select name="org_id" onchange="this.form.submit()">
+            {{range .Orgs}}<option value="{{.OrgId}}" {{if eq $.OrgID .OrgId}}selected{{end}}>{{.Name}}</option>{{end}}
+        </select>
+    </label>
+    {{else}}
+    <input type="hidden" name="org_id" value="{{.OrgID}}">
+    {{end}}
+    <label>Scope type
+        <select name="scope_type" onchange="this.form.submit()">
+            <option value="org" {{if eq .ScopeType "org"}}selected{{end}}>org</option>
+            <option value="project" {{if eq .ScopeType "project"}}selected{{end}}>project</option>
+            {{if .IsAdmin}}<option value="global" {{if eq .ScopeType "global"}}selected{{end}}>global</option>{{end}}
+        </select>
+    </label>
+    <label>Scope ID <input type="text" name="scope_id" value="{{.ScopeID}}"></label>
+    <button type="submit">Filter</button>
+</form>
+
+{{if .FormMsg}}<p class="form-msg">{{.FormMsg}}</p>{{end}}
+{{if .FormError}}<p class="form-error">{{.FormError}}</p>{{end}}
+
+{{if .Assignments}}
+<table>
+    <thead><tr><th>Principal</th><th>Scope</th><th>Role</th><th>Created</th><th></th></tr></thead>
+    <tbody>
+        {{range .Assignments}}
+        <tr>
+            <td><code>{{.PrincipalType}}:{{.PrincipalId}}</code></td>
+            <td class="meta">{{.ScopeType}}{{if .ScopeId}} / {{derefStr .ScopeId}}{{end}}</td>
+            <td>{{.Role}}</td>
+            <td class="meta">{{.CreatedAt}}</td>
+            <td>
+                <form method="post" action="/app/org/roles/{{.AssignmentId}}/revoke">
+                    <input type="hidden" name="org_id" value="{{$.OrgID}}">
+                    <button type="submit" class="danger" data-confirm="Revoke this role assignment?">Revoke</button>
+                </form>
+            </td>
+        </tr>
+        {{end}}
+    </tbody>
+</table>
+{{else}}
+<div class="card"><p class="meta">No role assignments found for this scope.</p></div>
+{{end}}
+
+<div class="card" style="margin-top: 16px;">
+    <h3 class="section-title">Assign role</h3>
+    <form method="post" action="/app/org/roles" class="inline-form js-disable-on-submit">
+        <input type="hidden" name="org_id" value="{{.OrgID}}">
+        <label>Principal type
+            <select name="principal_type">
+                <option value="user">user</option>
+                <option value="group">group</option>
+            </select>
+        </label>
+        <label>Principal ID <input type="text" name="principal_id" required maxlength="64"></label>
+        <label>Scope type
+            <select name="scope_type">
+                <option value="org">org</option>
+                <option value="project">project</option>
+                {{if .IsAdmin}}<option value="global">global</option>{{end}}
+            </select>
+        </label>
+        <label>Scope ID <input type="text" name="scope_id" placeholder="org/project id (blank for global)"></label>
+        <label>Role
+            <select name="role">
+                <option value="member">member</option>
+                <option value="owner">owner</option>
+                <option value="admin">admin</option>
+            </select>
+        </label>
+        <button type="submit">Assign</button>
+    </form>
+</div>
+{{template "foot" .}}

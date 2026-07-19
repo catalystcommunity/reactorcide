@@ -117,22 +117,115 @@ func extractRepoCloneURL(body []byte, contentType string) (string, error) {
 	return "", fmt.Errorf("no clone URL found in payload")
 }
 
-// resolveWebhookSecret returns the webhook secret using project, owner/org, then
-// global config fallback. Secret values are never logged.
-func (h *WebhookHandler) resolveWebhookSecret(ctx context.Context, project *models.Project, provider vcs.Provider) string {
-	if ref := vcs.ProjectWebhookSecretRef(project, provider); ref != "" {
-		return h.resolveSecretRef(ctx, ref, "project", provider, project)
-	}
-	if owner := h.projectOwner(ctx, project); owner != nil {
-		if ref := vcs.UserWebhookSecretRef(owner, provider); ref != "" {
-			return h.resolveSecretRef(ctx, ref, "org", provider, project)
+// webhookSecretRotationStore is the narrow store interface needed to list
+// active rotatable webhook secrets and stamp last-used timestamps. Defined
+// here on the consumer side (repo convention: narrow interface + type
+// assertion on the store) so tests can supply a fake without implementing
+// the full store.Store interface, and so this file stays decoupled from
+// unrelated store surface. The concrete PostgresDbStore satisfies it via
+// internal/store/postgres_store/rotation_operations.go.
+type webhookSecretRotationStore interface {
+	ListActiveProjectWebhookSecrets(ctx context.Context, projectID, provider string) ([]models.ProjectWebhookSecret, error)
+	TouchProjectWebhookSecretLastUsed(ctx context.Context, id string) error
+}
+
+// webhookSecretCandidate is one secret value to try against an incoming
+// webhook signature. RotationID is non-empty when the candidate came from a
+// project_webhook_secrets row, so a successful match can stamp
+// last_used_at on that row.
+type webhookSecretCandidate struct {
+	Secret     string
+	Source     string
+	RotationID string
+}
+
+// resolveWebhookSecretCandidates gathers the secret values that should be
+// tried against an incoming webhook signature.
+//
+// Candidates are grouped into three tiers, and only the FIRST non-empty tier
+// is returned — tiers are mutually exclusive so a project with its own
+// dedicated secret(s) never also accepts a signature computed with the
+// shared org or global secret (that would be a forgery risk: anyone who
+// knows the broadly-shared org/global secret could forge webhooks for a
+// project that deliberately configured its own). Within a tier, multiple
+// candidates remain (that's what makes rotation possible):
+//
+//  1. Project-scoped: all active project_webhook_secrets rotation rows for
+//     (project, provider), newest first, PLUS the legacy project jsonb/text
+//     ref. Both are project-scoped and coexist during migration to rotation
+//     rows, so they share a tier — either one configured is enough to make
+//     this the winning (and only) tier.
+//  2. Org-scoped: the project owner's org-level ref (jsonb/legacy).
+//  3. Global/env fallback.
+//
+// Verification tries each candidate within the winning tier in order and
+// stops at the first match. Secret values are never logged.
+func (h *WebhookHandler) resolveWebhookSecretCandidates(ctx context.Context, project *models.Project, provider vcs.Provider) []webhookSecretCandidate {
+	var projectTier []webhookSecretCandidate
+
+	if project != nil {
+		if rotationStore, ok := h.store.(webhookSecretRotationStore); ok {
+			rows, err := rotationStore.ListActiveProjectWebhookSecrets(ctx, project.ProjectID, string(provider))
+			if err != nil {
+				h.logger.WithError(err).WithFields(logrus.Fields{
+					"project":  project.Name,
+					"provider": provider,
+				}).Warn("Failed to list active rotatable webhook secrets")
+			}
+			// Rows come back oldest-first (created_at ASC); try newest first.
+			for _, row := range vcs.ActiveWebhookSecretsNewestFirst(rows) {
+				secret := h.resolveSecretRef(ctx, row.SecretRef, "project-rotation", provider, project)
+				if secret == "" {
+					continue
+				}
+				projectTier = append(projectTier, webhookSecretCandidate{
+					Secret:     secret,
+					Source:     "project-rotation",
+					RotationID: row.ID,
+				})
+			}
 		}
 	}
-	if secret := globalWebhookSecret(provider); secret != "" {
-		h.logger.WithField("provider", provider).Info("Using global webhook secret")
-		return secret
+	if ref := vcs.ProjectWebhookSecretRef(project, provider); ref != "" {
+		if secret := h.resolveSecretRef(ctx, ref, "project", provider, project); secret != "" {
+			projectTier = append(projectTier, webhookSecretCandidate{Secret: secret, Source: "project"})
+		}
 	}
-	return ""
+	if len(projectTier) > 0 {
+		return projectTier
+	}
+
+	var orgTier []webhookSecretCandidate
+	if owner := h.projectOwner(ctx, project); owner != nil {
+		if ref := vcs.UserWebhookSecretRef(owner, provider); ref != "" {
+			if secret := h.resolveSecretRef(ctx, ref, "org", provider, project); secret != "" {
+				orgTier = append(orgTier, webhookSecretCandidate{Secret: secret, Source: "org"})
+			}
+		}
+	}
+	if len(orgTier) > 0 {
+		return orgTier
+	}
+
+	if secret := globalWebhookSecret(provider); secret != "" {
+		h.logger.WithField("provider", provider).Info("Global webhook secret available as fallback candidate")
+		return []webhookSecretCandidate{{Secret: secret, Source: "env"}}
+	}
+
+	return nil
+}
+
+// touchWebhookSecretLastUsed stamps last_used_at for the rotation row that
+// successfully validated a webhook signature. Best-effort: a stamp failure
+// must never fail the webhook request itself.
+func (h *WebhookHandler) touchWebhookSecretLastUsed(ctx context.Context, rotationID string) {
+	rotationStore, ok := h.store.(webhookSecretRotationStore)
+	if !ok {
+		return
+	}
+	if err := rotationStore.TouchProjectWebhookSecretLastUsed(ctx, rotationID); err != nil {
+		h.logger.WithError(err).WithField("rotation_id", rotationID).Warn("Failed to stamp webhook secret last_used_at")
+	}
 }
 
 // handleWebhook processes webhook events from a specific provider
@@ -181,20 +274,35 @@ func (h *WebhookHandler) handleWebhook(w http.ResponseWriter, r *http.Request, p
 		}
 	}
 
-	// Resolve webhook secret from project, owner/org, or global configuration.
-	secret := h.resolveWebhookSecret(context.Background(), project, provider)
-	if secret == "" {
+	// Resolve webhook secret candidates: active rotation rows first (newest
+	// first), then legacy project/org/env fallbacks. Try each until one
+	// validates the signature; constant-time comparison happens inside
+	// client.ValidateWebhook, same as before rotation support existed.
+	candidates := h.resolveWebhookSecretCandidates(context.Background(), project, provider)
+	if len(candidates) == 0 {
 		h.logger.WithField("project_found", project != nil).Error("Webhook secret not configured — rejecting request")
 		http.Error(w, "Webhook secret not configured", http.StatusInternalServerError)
 		return
 	}
 
-	// Create a new request with the body for validation
-	validateReq, _ := http.NewRequest(r.Method, r.URL.String(), bytes.NewReader(body))
-	validateReq.Header = r.Header
+	matched := false
+	for _, candidate := range candidates {
+		// Each attempt needs its own fresh body reader: some ValidateWebhook
+		// implementations (e.g. GitHub's) consume the request body.
+		validateReq, _ := http.NewRequest(r.Method, r.URL.String(), bytes.NewReader(body))
+		validateReq.Header = r.Header
 
-	if err := client.ValidateWebhook(validateReq, secret); err != nil {
-		h.logger.WithError(err).Warn("Invalid webhook signature")
+		if err := client.ValidateWebhook(validateReq, candidate.Secret); err != nil {
+			continue
+		}
+		matched = true
+		if candidate.RotationID != "" {
+			h.touchWebhookSecretLastUsed(context.Background(), candidate.RotationID)
+		}
+		break
+	}
+	if !matched {
+		h.logger.Warn("Invalid webhook signature")
 		http.Error(w, "Invalid webhook signature", http.StatusUnauthorized)
 		return
 	}
@@ -464,9 +572,38 @@ func (h *WebhookHandler) handlePRMerged(event *vcs.WebhookEvent) {
 	}
 }
 
-// getStatusClient returns a per-project VCS client if a project token is configured,
-// otherwise falls back to the provided global client.
+// vcsCredentialRotationStore is the narrow store interface needed to list
+// active rotatable VCS credentials and stamp last-used timestamps. Defined
+// on the consumer side per the repo's narrow-interface + type-assertion
+// pattern (see webhookSecretRotationStore above).
+type vcsCredentialRotationStore interface {
+	ListActiveProjectVCSCredentials(ctx context.Context, projectID, provider string) ([]models.ProjectVCSCredential, error)
+	TouchProjectVCSCredentialLastUsed(ctx context.Context, id string) error
+}
+
+// getStatusClient returns a per-project VCS client, preferring the
+// highest-precedence active project_vcs_credentials rotation row over the
+// legacy project ref, then falling back to org and the provided global
+// client. Deactivated rotation rows are never used (the store only returns
+// active rows).
 func (h *WebhookHandler) getStatusClient(ctx context.Context, project *models.Project, provider vcs.Provider, fallback vcs.Client) vcs.Client {
+	if project != nil {
+		if rotationStore, ok := h.store.(vcsCredentialRotationStore); ok {
+			rows, err := rotationStore.ListActiveProjectVCSCredentials(ctx, project.ProjectID, string(provider))
+			if err != nil {
+				h.logger.WithError(err).WithFields(logrus.Fields{
+					"project":  project.Name,
+					"provider": provider,
+				}).Warn("Failed to list active rotatable VCS credentials")
+			}
+			if row, ok := vcs.HighestPrecedenceActiveVCSCredential(rows); ok {
+				if client := h.clientForSecretRef(ctx, row.SecretRef, provider, "project-rotation", project); client != nil {
+					h.touchVCSCredentialLastUsed(ctx, row.ID)
+					return client
+				}
+			}
+		}
+	}
 	if ref := vcs.ProjectVCSCredentialSecretRef(project, provider); ref != "" {
 		if client := h.clientForSecretRef(ctx, ref, provider, "project", project); client != nil {
 			return client
@@ -480,6 +617,19 @@ func (h *WebhookHandler) getStatusClient(ctx context.Context, project *models.Pr
 		}
 	}
 	return fallback
+}
+
+// touchVCSCredentialLastUsed stamps last_used_at for the rotation row that
+// was successfully resolved into a usable VCS client. Best-effort: a stamp
+// failure must never fail the caller's operation.
+func (h *WebhookHandler) touchVCSCredentialLastUsed(ctx context.Context, rotationID string) {
+	rotationStore, ok := h.store.(vcsCredentialRotationStore)
+	if !ok {
+		return
+	}
+	if err := rotationStore.TouchProjectVCSCredentialLastUsed(ctx, rotationID); err != nil {
+		h.logger.WithError(err).WithField("rotation_id", rotationID).Warn("Failed to stamp VCS credential last_used_at")
+	}
 }
 
 func (h *WebhookHandler) resolveSecretRef(ctx context.Context, secretRef, scope string, provider vcs.Provider, project *models.Project) string {

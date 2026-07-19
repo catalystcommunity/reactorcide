@@ -478,6 +478,16 @@ func (tp *TriggerProcessor) buildJobFromTrigger(spec triggerJobSpec, parentJob *
 
 // buildTaskPayload creates a Corndogs TaskPayload from a job.
 func (tp *TriggerProcessor) buildTaskPayload(job *models.Job) *corndogs.TaskPayload {
+	return BuildTaskPayload(job)
+}
+
+// BuildTaskPayload is the exported, receiver-free form of buildTaskPayload:
+// it depends only on the job, not on any TriggerProcessor field, so it's
+// safe to call from other packages that need to mirror the exact submission
+// shape trigger_processor.go/workflow_runtime.go use — currently
+// internal/jobcontrol.RetryJob, which resubmits a cloned job the same way a
+// freshly triggered or workflow-node job is submitted.
+func BuildTaskPayload(job *models.Job) *corndogs.TaskPayload {
 	sourceTypeStr := ""
 	if job.SourceType != nil {
 		sourceTypeStr = string(*job.SourceType)

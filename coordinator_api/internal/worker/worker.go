@@ -29,6 +29,11 @@ type Config struct {
 	// Heartbeat configuration
 	HeartbeatInterval time.Duration // Interval for sending heartbeats to Corndogs (default: 30 seconds)
 	HeartbeatTimeout  time.Duration // Timeout extension for each heartbeat (default: 10 minutes)
+
+	// CancelGrace is how long a graceful cancel waits between SIGTERM
+	// (JobRunner.Stop) and a forced Cleanup, checked on the heartbeat tick
+	// (default: 60 seconds). Not used for kill (immediate, no grace).
+	CancelGrace time.Duration
 }
 
 // Worker represents a job processing worker
@@ -75,6 +80,11 @@ func New(config *Config) *Worker {
 	// Set default heartbeat timeout if not specified
 	if config.HeartbeatTimeout == 0 {
 		config.HeartbeatTimeout = 10 * time.Minute
+	}
+
+	// Set default cancel grace period if not specified
+	if config.CancelGrace == 0 {
+		config.CancelGrace = 60 * time.Second
 	}
 
 	// Create job runner based on container runtime

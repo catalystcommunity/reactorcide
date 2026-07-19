@@ -6,6 +6,7 @@ import (
 	"io"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/filters"
@@ -444,6 +445,33 @@ func (dr *DockerRunner) WaitForCompletion(ctx context.Context, containerID strin
 	}
 
 	return -1, fmt.Errorf("unexpected error waiting for container")
+}
+
+// Stop requests a graceful shutdown of the job container: the Docker daemon
+// sends SIGTERM to PID 1 and waits up to `grace` before sending SIGKILL.
+// grace == 0 skips the wait and kills immediately (Docker's ContainerStop
+// with Timeout=0 still sends SIGTERM first, but does not wait for it to take
+// effect before following up with SIGKILL).
+//
+// Any builder sidecar is left running; the caller's subsequent Cleanup()
+// call tears down both the job container and its sidecar together.
+func (dr *DockerRunner) Stop(ctx context.Context, containerID string, grace time.Duration) error {
+	logger := logging.Log.WithField("container_id", containerID).WithField("grace", grace)
+	logger.Info("Stopping Docker container")
+
+	timeoutSeconds := int(grace.Seconds())
+	err := dr.client.ContainerStop(ctx, containerID, container.StopOptions{Timeout: &timeoutSeconds})
+	if err != nil {
+		if client.IsErrNotFound(err) {
+			// Container already gone (naturally exited + reaped, or already
+			// cleaned up) — the caller's WaitForCompletion/Cleanup path
+			// handles that race, so this is not an error for Stop.
+			logger.Debug("Container not found during Stop, treating as already stopped")
+			return nil
+		}
+		return fmt.Errorf("failed to stop container: %w", err)
+	}
+	return nil
 }
 
 // Cleanup removes the container and any builder sidecar launched for it.

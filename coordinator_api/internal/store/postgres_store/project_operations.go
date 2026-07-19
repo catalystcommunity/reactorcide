@@ -82,3 +82,16 @@ func (ps PostgresDbStore) ListProjects(ctx context.Context, limit, offset int) (
 	}
 	return projects, nil
 }
+
+// ListProjectsByOrg retrieves a list of projects owned by a single org
+// (user_id), with pagination. Added for Task G's list-projects CSIL op,
+// whose request can filter to a single org_id.
+func (ps PostgresDbStore) ListProjectsByOrg(ctx context.Context, orgID string, limit, offset int) ([]models.Project, error) {
+	db := ps.getDB(ctx)
+	var projects []models.Project
+	result := db.Where("user_id = ?", orgID).Limit(limit).Offset(offset).Order("created_at DESC").Find(&projects)
+	if result.Error != nil {
+		return nil, fmt.Errorf("failed to list projects by org: %w", result.Error)
+	}
+	return projects, nil
+}

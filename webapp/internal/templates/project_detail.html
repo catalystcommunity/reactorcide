@@ -1,0 +1,162 @@
+{{template "head" .}}
+<div style="margin-bottom: 16px;"><a href="/app/projects" class="meta">&larr; Back to Projects</a></div>
+
+<div class="card">
+    <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 12px;">
+        <h2>{{.Project.Name}}</h2>
+        {{if .Project.IsPrivate}}<span class="badge badge-private">Private</span>{{else}}<span class="badge badge-public">Public</span>{{end}}
+        {{if not .Project.Enabled}}<span class="badge badge-inactive">Disabled</span>{{end}}
+    </div>
+    {{if .Project.Description}}<p class="meta" style="margin-bottom: 12px;">{{.Project.Description}}</p>{{end}}
+    <dl class="grid">
+        <div><dt>Project ID</dt><dd><code>{{.Project.ProjectId}}</code></dd></div>
+        <div><dt>Org ID</dt><dd><code>{{.Project.OrgId}}</code></dd></div>
+        <div><dt>Repo URL</dt><dd class="truncate">{{.Project.RepoUrl}}</dd></div>
+        <div><dt>Created</dt><dd>{{.Project.CreatedAt}}</dd></div>
+    </dl>
+</div>
+
+{{if .FormMsg}}<p class="form-msg">{{.FormMsg}}</p>{{end}}
+{{if .FormError}}<p class="form-error">{{.FormError}}</p>{{end}}
+
+{{if .Caps.ManageProjectSettings}}
+<div class="card">
+    <h3 class="section-title">Settings</h3>
+    <form method="post" action="/app/projects/{{.Project.ProjectId}}/settings" class="js-disable-on-submit">
+        <div class="field-row">
+            <label for="name">Name</label>
+            <input type="text" id="name" name="name" value="{{.Project.Name}}" required maxlength="255">
+        </div>
+        <div class="field-row">
+            <label for="description">Description</label>
+            <input type="text" id="description" name="description" value="{{.Project.Description}}" maxlength="255">
+        </div>
+        <div class="field-row">
+            <label for="target_branches">Target branches (comma-separated)</label>
+            <input type="text" id="target_branches" name="target_branches" value="{{joinStringList .Project.TargetBranches}}">
+        </div>
+        <div class="field-row">
+            <label for="allowed_event_types">Allowed event types (comma-separated)</label>
+            <input type="text" id="allowed_event_types" name="allowed_event_types" value="{{joinStringList .Project.AllowedEventTypes}}">
+        </div>
+        <div class="field-row">
+            <label for="default_runner_image">Default runner image</label>
+            <input type="text" id="default_runner_image" name="default_runner_image" value="{{.Project.DefaultRunnerImage}}">
+        </div>
+        <div class="field-row">
+            <label for="default_job_command">Default job command</label>
+            <input type="text" id="default_job_command" name="default_job_command" value="{{.Project.DefaultJobCommand}}">
+        </div>
+        <div class="field-row">
+            <label for="default_timeout_seconds">Default timeout (seconds)</label>
+            <input type="text" id="default_timeout_seconds" name="default_timeout_seconds" value="{{.Project.DefaultTimeoutSeconds}}" pattern="[0-9]*">
+        </div>
+        <div class="field-row">
+            <label for="default_queue_name">Default queue name</label>
+            <input type="text" id="default_queue_name" name="default_queue_name" value="{{.Project.DefaultQueueName}}">
+        </div>
+        <div class="checkbox-row">
+            <input type="checkbox" id="is_private" name="is_private" {{if .Project.IsPrivate}}checked{{end}}>
+            <label for="is_private" style="margin: 0;">Private</label>
+        </div>
+        <div class="checkbox-row">
+            <input type="checkbox" id="enabled" name="enabled" {{if .Project.Enabled}}checked{{end}}>
+            <label for="enabled" style="margin: 0;">Enabled</label>
+        </div>
+        <button type="submit">Save settings</button>
+    </form>
+</div>
+{{end}}
+
+{{if .Caps.ManageWebhookSecrets}}
+<div class="card">
+    <h3 class="section-title">Webhook secrets</h3>
+    {{if .WebhookSecrets}}
+    <table>
+        <thead><tr><th>Provider</th><th>Name</th><th>Active</th><th>Last used</th><th>Created</th><th></th></tr></thead>
+        <tbody>
+            {{range .WebhookSecrets}}
+            <tr>
+                <td>{{.Provider}}</td>
+                <td>{{.Name}}</td>
+                <td>{{if .IsActive}}yes{{else}}no{{end}}</td>
+                <td class="meta">{{if .LastUsedAt}}{{derefStr .LastUsedAt}}{{else}}never{{end}}</td>
+                <td class="meta">{{.CreatedAt}}</td>
+                <td>
+                    {{if .IsActive}}
+                    <form method="post" action="/app/projects/{{$.Project.ProjectId}}/webhook-secrets/{{.Id}}/deactivate" style="display:inline;">
+                        <button type="submit">Deactivate</button>
+                    </form>
+                    {{end}}
+                    <form method="post" action="/app/projects/{{$.Project.ProjectId}}/webhook-secrets/{{.Id}}/delete" style="display:inline;">
+                        <button type="submit" class="danger" data-confirm="Delete this webhook secret?">Delete</button>
+                    </form>
+                </td>
+            </tr>
+            {{end}}
+        </tbody>
+    </table>
+    {{else}}
+    <p class="meta">No webhook secrets configured.</p>
+    {{end}}
+    <form method="post" action="/app/projects/{{.Project.ProjectId}}/webhook-secrets" class="inline-form js-disable-on-submit" style="margin-top: 12px;">
+        <label>Provider <input type="text" name="provider" required maxlength="64" placeholder="github"></label>
+        <label>Name <input type="text" name="name" required maxlength="255" data-no-spaces-check></label>
+        <label>Secret value <input type="password" name="value" required autocomplete="new-password"></label>
+        <button type="submit">Add webhook secret</button>
+    </form>
+</div>
+{{end}}
+
+{{if .Caps.ManageVcsCredentials}}
+<div class="card">
+    <h3 class="section-title">VCS credentials</h3>
+    {{if .VcsCredentials}}
+    <table>
+        <thead><tr><th>Provider</th><th>Name</th><th>Active</th><th>Last used</th><th>Created</th><th></th></tr></thead>
+        <tbody>
+            {{range .VcsCredentials}}
+            <tr>
+                <td>{{.Provider}}</td>
+                <td>{{.Name}}</td>
+                <td>{{if .IsActive}}yes{{else}}no{{end}}</td>
+                <td class="meta">{{if .LastUsedAt}}{{derefStr .LastUsedAt}}{{else}}never{{end}}</td>
+                <td class="meta">{{.CreatedAt}}</td>
+                <td>
+                    {{if .IsActive}}
+                    <form method="post" action="/app/projects/{{$.Project.ProjectId}}/vcs-credentials/{{.Id}}/deactivate" style="display:inline;">
+                        <button type="submit">Deactivate</button>
+                    </form>
+                    {{end}}
+                    <form method="post" action="/app/projects/{{$.Project.ProjectId}}/vcs-credentials/{{.Id}}/delete" style="display:inline;">
+                        <button type="submit" class="danger" data-confirm="Delete this vcs credential?">Delete</button>
+                    </form>
+                </td>
+            </tr>
+            {{end}}
+        </tbody>
+    </table>
+    {{else}}
+    <p class="meta">No VCS credentials configured.</p>
+    {{end}}
+    <form method="post" action="/app/projects/{{.Project.ProjectId}}/vcs-credentials" class="inline-form js-disable-on-submit" style="margin-top: 12px;">
+        <label>Provider <input type="text" name="provider" required maxlength="64" placeholder="github"></label>
+        <label>Name <input type="text" name="name" required maxlength="255" data-no-spaces-check></label>
+        <label>Credential value <input type="password" name="value" required autocomplete="new-password"></label>
+        <button type="submit">Add VCS credential</button>
+    </form>
+</div>
+{{end}}
+
+{{if .Caps.DeleteProject}}
+<div class="card">
+    <h3 class="section-title" style="color: var(--red);">Danger zone</h3>
+    <p class="meta" style="margin-bottom: 8px;">Type the project name (<strong>{{.Project.Name}}</strong>) to confirm deletion.</p>
+    <form method="post" action="/app/projects/{{.Project.ProjectId}}/delete" data-confirm-name-match="{{.Project.Name}}" data-confirm="Delete project {{.Project.Name}}? This cannot be undone.">
+        <input type="hidden" name="expected_name" value="{{.Project.Name}}">
+        <input type="text" name="confirm_name" placeholder="type project name to confirm" style="margin-right: 8px;">
+        <button type="submit" class="danger">Delete project</button>
+    </form>
+</div>
+{{end}}
+{{template "foot" .}}

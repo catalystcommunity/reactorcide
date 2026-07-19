@@ -2,6 +2,13 @@
 
 This guide covers deploying Reactorcide to a VM with a single command.
 
+The management web UI is public-view by default (`REACTORCIDE_UI_AUTH_MODE=none`): no
+login, anyone reaching it can browse public projects/jobs and gracefully cancel a runaway
+job, but nothing else. Turn on LinkKeys login and role-based access if you need per-user
+accounts, private projects, or self-service secret/webhook management from the browser —
+see **[docs/ui-auth.md](./ui-auth.md)** for auth modes, environment variables, first-admin/
+bootstrap setup, and the full permission matrix.
+
 ## Prerequisites
 
 ### Local Machine (where you run the deploy script)

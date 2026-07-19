@@ -277,6 +277,21 @@ func (tp *TriggerProcessor) createWorkflowNode(ctx context.Context, wf *models.W
 	return nil
 }
 
+// EvaluateWorkflow is the exported form of evaluateWorkflow, used by
+// internal/jobcontrol.RetryWorkflow to drive initial node submission for a
+// freshly created workflow instance exactly the way ProcessTriggersFromData
+// drives it for a brand-new one (same dependency/condition evaluation, same
+// submitWorkflowNode path, same refreshWorkflowStatus at the end) — the
+// alternative would be reimplementing that evaluation loop a second time in
+// jobcontrol, which risks drifting from the worker's own semantics. The
+// caller must pass a store implementing this package's full workflowStore
+// interface (postgres_store.PostgresDbStore does); against a narrower store
+// this returns ErrWorkflowsUnsupported-equivalent errors the same way
+// ProcessTriggersFromData's own callers would see.
+func (tp *TriggerProcessor) EvaluateWorkflow(ctx context.Context, wf *models.WorkflowInstance) ([]string, error) {
+	return tp.evaluateWorkflow(ctx, wf)
+}
+
 func (tp *TriggerProcessor) evaluateWorkflow(ctx context.Context, wf *models.WorkflowInstance) ([]string, error) {
 	ws, err := tp.workflowStore()
 	if err != nil {
@@ -601,15 +616,49 @@ func evaluateWorkflowCondition(nodes []models.WorkflowNode, node *models.Workflo
 	return false, "unsupported condition " + condition
 }
 
+// ComputeWorkflowStatus is the exported form of computeWorkflowStatus, used
+// by internal/jobcontrol (CancelWorkflow) so the workflow-cancel cascade and
+// the normal per-node completion path (refreshWorkflowStatus, above) agree
+// on exactly one status-derivation rule instead of maintaining two.
+func ComputeWorkflowStatus(nodes []models.WorkflowNode) string {
+	return computeWorkflowStatus(nodes)
+}
+
+// computeWorkflowStatus derives the workflow instance's status from its
+// nodes' statuses.
+//
+// Failure semantics (unchanged from before this cancel/kill wave): any node
+// that reached "failed" or "timeout" on its own merits fails the whole
+// workflow immediately, even while sibling nodes are still running —
+// fail-fast, matches prior behavior.
+//
+// Cancellation semantics (new): a node lands on "cancelled" either because
+// CancelWorkflow cascaded a cancel/kill onto every non-terminal node (the
+// workflow itself was cancelled), or because one node's job was individually
+// cancelled while siblings kept running independently. Unlike failure,
+// cancellation is deliberately NOT eager: computeWorkflowStatus only reports
+// "cancelled" once every node has reached a terminal state (allTerminal),
+// with zero real failures among them. Until then it reports "running",
+// leaving the workflow instance's own status wherever the caller last set it
+// — for a CancelWorkflow-initiated cascade that's the transient
+// "cancelling" value (see jobcontrol.CancelWorkflow), so the UI shows
+// "cancelling" while a node's container is still mid-SIGTERM-grace rather
+// than flickering to "running". A real failure still takes priority over
+// any cancellation, eager or not: a genuinely failed node mixed with
+// cascaded cancellations on its siblings is a failure, not a clean cancel.
 func computeWorkflowStatus(nodes []models.WorkflowNode) string {
 	if len(nodes) == 0 {
 		return "skipped"
 	}
 	allSkipped := true
 	allTerminal := true
+	anyCancelled := false
 	for _, node := range nodes {
-		if node.Status == "failed" || node.Status == "timeout" || node.Status == "cancelled" {
+		if node.Status == "failed" || node.Status == "timeout" {
 			return "failed"
+		}
+		if node.Status == "cancelled" {
+			anyCancelled = true
 		}
 		if node.Status != "skipped" {
 			allSkipped = false
@@ -618,13 +667,16 @@ func computeWorkflowStatus(nodes []models.WorkflowNode) string {
 			allTerminal = false
 		}
 	}
+	if !allTerminal {
+		return "running"
+	}
+	if anyCancelled {
+		return "cancelled"
+	}
 	if allSkipped {
 		return "skipped"
 	}
-	if allTerminal {
-		return "success"
-	}
-	return "running"
+	return "success"
 }
 
 func workflowNodeStatusFromJob(status string) string {

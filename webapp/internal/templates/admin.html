@@ -1,0 +1,78 @@
+{{template "head" .}}
+<h2 style="margin-bottom: 16px;">Admin</h2>
+
+{{if .FormMsg}}<p class="form-msg">{{.FormMsg}}</p>{{end}}
+{{if .FormError}}<p class="form-error">{{.FormError}}</p>{{end}}
+
+<div class="card">
+    <h3 class="section-title">Global settings</h3>
+    <form method="post" action="/app/admin/global-settings" class="js-disable-on-submit">
+        <div class="checkbox-row">
+            <input type="checkbox" id="new_projects_private" name="new_projects_private" {{if .Settings.NewProjectsPrivate}}checked{{end}}>
+            <label for="new_projects_private" style="margin: 0;">New projects are private by default</label>
+        </div>
+        <button type="submit">Save global settings</button>
+    </form>
+</div>
+
+<div class="card" style="margin-top: 16px;">
+    <h3 class="section-title">Trusted identities</h3>
+    {{if .TrustedIdentities}}
+    <table>
+        <thead><tr><th>Domain</th><th>Handle</th><th>Source</th><th></th></tr></thead>
+        <tbody>
+            {{range .TrustedIdentities}}
+            <tr>
+                <td>{{.Domain}}</td>
+                <td class="meta">{{if .Handle}}{{.Handle}}{{else}}(any handle){{end}}</td>
+                <td class="meta">{{.Source}}</td>
+                <td>
+                    <form method="post" action="/app/admin/trusted-identities/remove">
+                        <input type="hidden" name="domain" value="{{.Domain}}">
+                        <input type="hidden" name="handle" value="{{.Handle}}">
+                        <button type="submit" class="danger" data-confirm="Remove trusted identity {{.Domain}}?">Remove</button>
+                    </form>
+                </td>
+            </tr>
+            {{end}}
+        </tbody>
+    </table>
+    {{else}}
+    <p class="meta">No trusted identities configured.</p>
+    {{end}}
+    <form method="post" action="/app/admin/trusted-identities" class="inline-form js-disable-on-submit" style="margin-top: 12px;">
+        <label>Domain <input type="text" name="domain" required maxlength="255" placeholder="example.com"></label>
+        <label>Handle (optional) <input type="text" name="handle" maxlength="255" placeholder="alice"></label>
+        <button type="submit">Add trusted identity</button>
+    </form>
+</div>
+
+<div class="card" style="margin-top: 16px;">
+    <h3 class="section-title">Trusted domain patterns</h3>
+    {{if .TrustedPatterns}}
+    <table>
+        <thead><tr><th>Pattern</th><th>Description</th><th></th></tr></thead>
+        <tbody>
+            {{range .TrustedPatterns}}
+            <tr>
+                <td><code>{{.Pattern}}</code></td>
+                <td class="meta">{{derefStr .Description}}</td>
+                <td>
+                    <form method="post" action="/app/admin/trusted-domain-patterns/{{.PatternId}}/remove">
+                        <button type="submit" class="danger" data-confirm="Remove pattern {{.Pattern}}?">Remove</button>
+                    </form>
+                </td>
+            </tr>
+            {{end}}
+        </tbody>
+    </table>
+    {{else}}
+    <p class="meta">No trusted domain patterns configured.</p>
+    {{end}}
+    <form method="post" action="/app/admin/trusted-domain-patterns" class="inline-form js-disable-on-submit" data-validate-regex>
+        <label>Pattern (regex) <input type="text" name="pattern" required maxlength="255" placeholder="^.*\.example\.com$" data-regex-check></label>
+        <label>Description (optional) <input type="text" name="description" maxlength="255"></label>
+        <button type="submit">Add pattern</button>
+    </form>
+</div>
+{{template "foot" .}}

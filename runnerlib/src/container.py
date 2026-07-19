@@ -10,6 +10,12 @@ from src.source_prep import prepare_job_directory
 from src.secrets import SecretMasker
 from src.secrets_server import SecretRegistrationServer
 from src.plugins import plugin_manager, PluginContext, PluginPhase
+from src.signals import (
+    TermRequested,
+    TERM_EXIT_CODE,
+    register_sigterm_cleanup,
+    unregister_sigterm_cleanup,
+)
 
 
 def build_docker_command(
@@ -179,26 +185,44 @@ def run_container(
                 universal_newlines=True
             )
 
-            # Stream output line by line with secret masking
-            while True:
-                stdout_line = process.stdout.readline() if process.stdout else None
-                stderr_line = process.stderr.readline() if process.stderr else None
+            # Terminates the `docker run` CLI process if a SIGTERM arrives
+            # while we're blocked reading its output / waiting on it below. A
+            # plain terminate() (not process-group TERM-then-KILL) is correct
+            # here: docker run in foreground mode forwards SIGTERM into the
+            # container itself and --rm cleans it up once it exits, mirroring
+            # what the existing KeyboardInterrupt handling already does for
+            # Ctrl-C.
+            def _terminate_docker_process():
+                if process.poll() is None:
+                    try:
+                        process.terminate()
+                    except Exception:
+                        pass
 
-                if stdout_line:
-                    # Mask secrets in output before logging
-                    masked_line = output_masker.mask_string(stdout_line.rstrip())
-                    log_stdout(masked_line)
-                if stderr_line:
-                    # Mask secrets in error output before logging
-                    masked_line = output_masker.mask_string(stderr_line.rstrip())
-                    log_stderr(masked_line)
+            register_sigterm_cleanup(_terminate_docker_process)
+            try:
+                # Stream output line by line with secret masking
+                while True:
+                    stdout_line = process.stdout.readline() if process.stdout else None
+                    stderr_line = process.stderr.readline() if process.stderr else None
 
-                # Check if process has finished and no more output
-                if process.poll() is not None and not stdout_line and not stderr_line:
-                    break
+                    if stdout_line:
+                        # Mask secrets in output before logging
+                        masked_line = output_masker.mask_string(stdout_line.rstrip())
+                        log_stdout(masked_line)
+                    if stderr_line:
+                        # Mask secrets in error output before logging
+                        masked_line = output_masker.mask_string(stderr_line.rstrip())
+                        log_stderr(masked_line)
 
-            # Get any remaining output
-            remaining_stdout, remaining_stderr = process.communicate()
+                    # Check if process has finished and no more output
+                    if process.poll() is not None and not stdout_line and not stderr_line:
+                        break
+
+                # Get any remaining output
+                remaining_stdout, remaining_stderr = process.communicate()
+            finally:
+                unregister_sigterm_cleanup(_terminate_docker_process)
             if remaining_stdout:
                 for line in remaining_stdout.splitlines():
                     masked_line = output_masker.mask_string(line)
@@ -234,6 +258,20 @@ def run_container(
                 pass  # Don't let plugin errors mask the original error
             secret_server.stop()
             return 1
+        except TermRequested:
+            # SIGTERM (graceful cancel/kill) — _terminate_docker_process
+            # already ran (registered above) by the time this is caught, so
+            # the docker CLI process is already terminated or terminating.
+            # The outer finally still runs PluginPhase.CLEANUP.
+            logger.warning("Container execution terminated by SIGTERM")
+            log_stderr("Container execution terminated (SIGTERM)")
+            if 'process' in locals() and process.poll() is None:
+                try:
+                    process.terminate()
+                except Exception:
+                    pass
+            secret_server.stop()
+            return TERM_EXIT_CODE
         except KeyboardInterrupt:
             logger.warning("Container execution interrupted by user")
             log_stderr("Container execution interrupted")

@@ -60,6 +60,11 @@ web:
   apiTokenSecret:
     name: "base-reactorcide-user"
     key: "token"
+  # Disables the Secure flag on the session cookie (see docs/ui-auth.md).
+  # Only set this true if the web pod is reached over plain HTTP with no TLS
+  # terminator in front of it (e.g. some local/dev setups) — leave false for
+  # any real deployment, which must terminate TLS in front of this service.
+  webCookieInsecure: false
   # Gateway API HTTPRoute configuration (routes /* to web UI)
   gateway:
     enabled: false
@@ -257,6 +262,48 @@ vcs:
   enabled: false
   # Base URL of this Reactorcide instance, used for job links in commit statuses
   baseURL: ""
+
+# Management UI auth, RBAC, and visibility (see docs/ui-auth.md for the full
+# operator guide). Disabled ("none") by default: no login, public-view only.
+uiAuth:
+  # "none" (default, no login) | "local-rp" (DNS-less LinkKeys identity this
+  # coordinator generates itself) | "rp" (app of a full LinkKeys RP deployment)
+  mode: none
+  # local-rp only: display name for this coordinator's generated identity.
+  localRpName: ""
+  # rp only: host:port TCP CSIL-RPC address of your LinkKeys RP server, and
+  # comma-separated pinned SPKI SHA-256 fingerprints for its TLS certificate.
+  linkkeysRpAddr: ""
+  linkkeysRpFingerprints: ""
+  # rp only, first boot: the RP server's API key. Presented once — the
+  # coordinator persists it encrypted in the DB and the env var can be
+  # dropped afterward. IMPORTANT: set via existingSecret in production, not
+  # here in values.yaml.
+  linkkeysRpApiKey: ""
+  # Identity selector ([handle@]domain, or bare uuid@domain) granted global
+  # admin the first time it completes a real login, while no admin exists yet.
+  firstAdmin: ""
+  # Comma-separated [handle@]domain selectors seeded into the login
+  # admission list at startup (source=config). A bare domain admits any
+  # handle at that domain.
+  trustedIdentities: ""
+  # The web UI's public base URL (what browsers reach the webapp on, e.g.
+  # "https://ci.example.com") — required for local-rp/rp login to work.
+  # NOT the coordinator's own URL; see docs/ui-auth.md.
+  callbackURL: ""
+  # One-time bootstrap-admin session token (visit /app/bootstrap) usable
+  # only while no global admin exists yet. Leave empty to disable the
+  # feature. IMPORTANT: set via existingSecret in production, not here.
+  bootstrapAdminToken: ""
+  # How long (seconds) a graceful job cancel waits before the worker force-
+  # cleans up. Not used for kill (force-kill skips the grace period).
+  cancelGraceSeconds: 60
+  # Reference an existing Kubernetes secret for the two secret-bearing
+  # values above instead of setting them directly (recommended for
+  # production). Keys default to "rp-api-key" / "bootstrap-admin-token".
+  existingSecret: ""
+  existingSecretRpApiKeyKey: "rp-api-key"
+  existingSecretBootstrapTokenKey: "bootstrap-admin-token"
 
 imagePullSecrets: []
 nameOverride: ""

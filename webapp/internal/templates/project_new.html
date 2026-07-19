@@ -1,0 +1,45 @@
+{{template "head" .}}
+<div style="margin-bottom: 16px;"><a href="/app/projects" class="meta">&larr; Back to Projects</a></div>
+
+<div class="card" style="max-width: 560px;">
+    <h2 style="margin-bottom: 16px;">New project</h2>
+    {{if .FormError}}<p class="form-error">{{.FormError}}</p>{{end}}
+    <form method="post" action="/app/projects" class="js-disable-on-submit">
+        {{if .Orgs}}
+        <div class="field-row">
+            <label for="org_id">Organization</label>
+            <select id="org_id" name="org_id" required>
+                {{range .Orgs}}<option value="{{.OrgId}}">{{.Name}}</option>{{end}}
+            </select>
+        </div>
+        {{else}}
+        <input type="hidden" name="org_id" value="{{.OwnOrgID}}">
+        {{end}}
+        <div class="field-row">
+            <label for="name">Name</label>
+            <input type="text" id="name" name="name" required maxlength="255">
+        </div>
+        <div class="field-row">
+            <label for="repo_url">Repository URL</label>
+            <input type="text" id="repo_url" name="repo_url" required maxlength="2048">
+        </div>
+        <div class="field-row">
+            <label for="description">Description</label>
+            <input type="text" id="description" name="description" maxlength="255">
+        </div>
+        <div class="field-row">
+            <label for="target_branches">Target branches (comma-separated, optional)</label>
+            <input type="text" id="target_branches" name="target_branches" placeholder="main, develop">
+        </div>
+        <div class="field-row">
+            <label for="allowed_event_types">Allowed event types (comma-separated, optional)</label>
+            <input type="text" id="allowed_event_types" name="allowed_event_types" placeholder="push, pull_request">
+        </div>
+        <div class="checkbox-row">
+            <input type="checkbox" id="is_private" name="is_private">
+            <label for="is_private" style="margin: 0;">Make this project private (leave unchecked to use the org default)</label>
+        </div>
+        <button type="submit">Create project</button>
+    </form>
+</div>
+{{template "foot" .}}

@@ -60,3 +60,26 @@ data:
 
   # API URL for job containers to submit triggers (reachable from job pods)
   REACTORCIDE_JOB_API_URL: "http://{{ include "app.name" . }}.{{ .Release.Namespace }}.svc.cluster.local:{{ .Values.app.service.port }}"
+
+  # Management UI auth, RBAC, and visibility (see docs/ui-auth.md)
+  REACTORCIDE_UI_AUTH_MODE: {{ .Values.uiAuth.mode | quote }}
+  REACTORCIDE_CANCEL_GRACE_SECONDS: {{ .Values.uiAuth.cancelGraceSeconds | quote }}
+  {{- if eq .Values.uiAuth.mode "local-rp" }}
+  REACTORCIDE_LOCAL_RP_NAME: {{ .Values.uiAuth.localRpName | quote }}
+  {{- end }}
+  {{- if eq .Values.uiAuth.mode "rp" }}
+  REACTORCIDE_LINKKEYS_RP_ADDR: {{ .Values.uiAuth.linkkeysRpAddr | quote }}
+  REACTORCIDE_LINKKEYS_RP_FINGERPRINTS: {{ .Values.uiAuth.linkkeysRpFingerprints | quote }}
+  {{- end }}
+  {{- if .Values.uiAuth.firstAdmin }}
+  REACTORCIDE_FIRST_ADMIN: {{ .Values.uiAuth.firstAdmin | quote }}
+  {{- end }}
+  {{- if .Values.uiAuth.trustedIdentities }}
+  REACTORCIDE_TRUSTED_IDENTITIES: {{ .Values.uiAuth.trustedIdentities | quote }}
+  {{- end }}
+  {{- if .Values.uiAuth.callbackURL }}
+  REACTORCIDE_UI_CALLBACK_URL: {{ .Values.uiAuth.callbackURL | quote }}
+  {{- end }}
+  # REACTORCIDE_LINKKEYS_RP_API_KEY / REACTORCIDE_BOOTSTRAP_ADMIN_TOKEN are
+  # secret-bearing and read from {{ include "app.secretName" . }} (or
+  # uiAuth.existingSecret) instead — see secret-app.yaml / deployment-app.yaml.

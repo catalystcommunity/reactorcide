@@ -133,6 +133,7 @@ func RunWorker(ctx *cli.Context) error {
 		Store:            store.AppStore,
 		ContainerRuntime: containerRuntime,
 		ObjectStore:      objectStore,
+		CancelGrace:      time.Duration(config.CancelGraceSeconds) * time.Second,
 	}
 
 	// Set up graceful shutdown
