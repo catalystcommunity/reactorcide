@@ -64,6 +64,7 @@ func (m *WebhookMockStore) GetProjectByRepoURL(ctx context.Context, repoURL stri
 // Stub implementations for remaining store.Store interface methods
 func (m *WebhookMockStore) Initialize() (func(), error)                             { return nil, nil }
 func (m *WebhookMockStore) EnsureDefaultUser() error                                { return nil }
+func (m *WebhookMockStore) EnsureDefaultQueue(ctx context.Context) error            { return nil }
 func (m *WebhookMockStore) CreateUser(ctx context.Context, user *models.User) error { return nil }
 func (m *WebhookMockStore) GetUserByID(ctx context.Context, userID string) (*models.User, error) {
 	if m.GetUserByIDFunc != nil {
@@ -125,12 +126,12 @@ func (m *WebhookMockStore) DeleteAPIToken(ctx context.Context, tokenID string) e
 
 // MockVCSClient implements vcs.Client for testing
 type MockVCSClient struct {
-	ParseWebhookFunc             func(r *http.Request) (*vcs.WebhookEvent, error)
-	ValidateWebhookFunc          func(r *http.Request, secret string) error
-	UpdateCommitStatusFunc       func(ctx context.Context, repo string, update vcs.StatusUpdate) error
-	UpdatePRCommentFunc          func(ctx context.Context, repo string, prNumber int, comment string) error
-	UpsertPRCommentByMarkerFunc  func(ctx context.Context, repo string, prNumber int, marker, body string) error
-	GetPRInfoFunc                func(ctx context.Context, repo string, prNumber int) (*vcs.PullRequestInfo, error)
+	ParseWebhookFunc            func(r *http.Request) (*vcs.WebhookEvent, error)
+	ValidateWebhookFunc         func(r *http.Request, secret string) error
+	UpdateCommitStatusFunc      func(ctx context.Context, repo string, update vcs.StatusUpdate) error
+	UpdatePRCommentFunc         func(ctx context.Context, repo string, prNumber int, comment string) error
+	UpsertPRCommentByMarkerFunc func(ctx context.Context, repo string, prNumber int, marker, body string) error
+	GetPRInfoFunc               func(ctx context.Context, repo string, prNumber int) (*vcs.PullRequestInfo, error)
 }
 
 func (m *MockVCSClient) GetProvider() vcs.Provider { return vcs.GitHub }
@@ -366,8 +367,8 @@ func TestWebhookHandler_PREvent_SubmitsToCorndogs(t *testing.T) {
 	assert.Equal(t, "https://github.com/test-org/test-repo.git", *createdJob.CISourceURL)
 
 	// Verify Corndogs submission
-	require.Equal(t, 1, mockCorndogs.GetSubmitTaskCallCount())
-	submitCall := mockCorndogs.SubmitTaskCalls[0]
+	require.Equal(t, 1, len(mockCorndogs.SubmitTaskToQueueCalls))
+	submitCall := mockCorndogs.SubmitTaskToQueueCalls[0]
 	assert.Equal(t, createdJob.JobID, submitCall.Payload.JobID)
 	assert.Equal(t, int64(10), submitCall.Priority)
 	assert.Equal(t, "run", submitCall.Payload.JobType)
@@ -448,8 +449,8 @@ func TestWebhookHandler_PushEvent_SubmitsToCorndogs(t *testing.T) {
 	assert.Equal(t, "https://github.com/test-org/test-repo.git", *createdJob.CISourceURL)
 
 	// Verify Corndogs submission
-	require.Equal(t, 1, mockCorndogs.GetSubmitTaskCallCount())
-	submitCall := mockCorndogs.SubmitTaskCalls[0]
+	require.Equal(t, 1, len(mockCorndogs.SubmitTaskToQueueCalls))
+	submitCall := mockCorndogs.SubmitTaskToQueueCalls[0]
 	assert.Equal(t, createdJob.JobID, submitCall.Payload.JobID)
 	assert.Equal(t, int64(5), submitCall.Priority)
 	assert.Equal(t, "run", submitCall.Payload.JobType)
@@ -474,7 +475,7 @@ func TestWebhookHandler_CorndogsSubmissionFailure_JobStillCreated(t *testing.T) 
 		},
 	}
 	mockCorndogs := corndogs.NewMockClient()
-	mockCorndogs.SubmitTaskFunc = func(ctx context.Context, payload *corndogs.TaskPayload, priority int64) (*pb.Task, error) {
+	mockCorndogs.SubmitTaskToQueueFunc = func(ctx context.Context, queue string, payload *corndogs.TaskPayload, priority int64) (*pb.Task, error) {
 		return nil, fmt.Errorf("corndogs connection refused")
 	}
 
@@ -520,7 +521,7 @@ func TestWebhookHandler_CorndogsSubmissionFailure_JobStillCreated(t *testing.T) 
 	require.Len(t, mockStore.CreateJobCalls, 1)
 
 	// Corndogs was called but failed
-	require.Equal(t, 1, mockCorndogs.GetSubmitTaskCallCount())
+	require.Equal(t, 1, len(mockCorndogs.SubmitTaskToQueueCalls))
 
 	// Job was updated with failed status
 	require.Len(t, mockStore.UpdateJobCalls, 1)
@@ -1059,4 +1060,3 @@ func TestWebhookHandler_PerProjectWebhookSecret(t *testing.T) {
 	assert.Equal(t, "per-project-secret", validatedWithSecret)
 	require.Len(t, mockStore.CreateJobCalls, 1)
 }
-

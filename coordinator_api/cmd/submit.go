@@ -86,6 +86,13 @@ type CreateJobRequest struct {
 	Priority       *int   `json:"priority,omitempty"`
 	RunAsUser      string `json:"run_as_user,omitempty"`
 	QueueName      string `json:"queue_name,omitempty"`
+
+	// Characteristics/Resources -- see WORKERS_PLAN.md "Characteristics &
+	// matching" / "Resources". Passed through verbatim from the job spec's
+	// top-level `characteristics`/`resources` blocks; the coordinator
+	// validates and applies them (queue routing, resource defaults).
+	Characteristics map[string]interface{} `json:"characteristics,omitempty"`
+	Resources       map[string]interface{} `json:"resources,omitempty"`
 }
 
 // JobResponse is the API response structure for job operations
@@ -230,12 +237,14 @@ func submitAction(ctx *cli.Context) error {
 // specToCreateJobRequest converts a JobSpec to a CreateJobRequest
 func specToCreateJobRequest(spec *worker.JobSpec) *CreateJobRequest {
 	req := &CreateJobRequest{
-		Name:        spec.Name,
-		JobCommand:  spec.Command,
-		RunnerImage: spec.Image,
-		JobEnvVars:  spec.Environment,
-		CodeDir:     worker.DefaultJobCodeDir(spec.CodeDir),
-		JobDir:      worker.DefaultJobDir(spec.CodeDir, spec.JobDir),
+		Name:            spec.Name,
+		JobCommand:      spec.Command,
+		RunnerImage:     spec.Image,
+		JobEnvVars:      spec.Environment,
+		CodeDir:         worker.DefaultJobCodeDir(spec.CodeDir),
+		JobDir:          worker.DefaultJobDir(spec.CodeDir, spec.JobDir),
+		Characteristics: spec.Characteristics,
+		Resources:       spec.Resources,
 	}
 	if spec.RunAs != nil {
 		req.RunAsUser = spec.RunAs.User

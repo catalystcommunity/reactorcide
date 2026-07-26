@@ -6,6 +6,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/characteristics"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/secrets"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store/models"
@@ -53,6 +54,12 @@ type fakeStore struct {
 	secretGrants map[string]models.SecretGrant
 
 	authCredentials map[string]models.AuthCredential
+
+	queues           map[string]models.Queue
+	pools            map[string]models.WorkerPool
+	enrollmentTokens map[string]models.PoolEnrollmentToken
+	workers          map[string]models.Worker
+	leasesByWorker   map[string][]models.WorkerLease
 }
 
 func newFakeStore() *fakeStore {
@@ -74,6 +81,11 @@ func newFakeStore() *fakeStore {
 		vcsCreds:                map[string]models.ProjectVCSCredential{},
 		secretGrants:            map[string]models.SecretGrant{},
 		authCredentials:         map[string]models.AuthCredential{},
+		queues:                  map[string]models.Queue{},
+		pools:                   map[string]models.WorkerPool{},
+		enrollmentTokens:        map[string]models.PoolEnrollmentToken{},
+		workers:                 map[string]models.Worker{},
+		leasesByWorker:          map[string][]models.WorkerLease{},
 	}
 }
 
@@ -325,7 +337,8 @@ func (f *fakeStore) CreateUser(_ context.Context, user *models.User) error {
 	return nil
 }
 
-func (f *fakeStore) EnsureDefaultUser() error { return nil }
+func (f *fakeStore) EnsureDefaultUser() error                     { return nil }
+func (f *fakeStore) EnsureDefaultQueue(ctx context.Context) error { return nil }
 
 // --- authz.RoleStore (ListGroupsForUser/ListRoleAssignmentsForPrincipal) ---
 
@@ -1084,6 +1097,354 @@ func (f *fakeStore) CreateWorkflowEvent(_ context.Context, event *models.Workflo
 	}
 	f.events = append(f.events, *event)
 	return nil
+}
+
+// --- queues (WORKERS_PLAN.md Wave-4 P4 admin ops) --------------------------
+
+func (f *fakeStore) ListQueues(_ context.Context, limit, offset int) ([]models.Queue, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	out := make([]models.Queue, 0, len(f.queues))
+	for _, q := range f.queues {
+		out = append(out, q)
+	}
+	return out, nil
+}
+
+func (f *fakeStore) GetQueueByID(_ context.Context, queueID string) (*models.Queue, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	q, ok := f.queues[queueID]
+	if !ok {
+		return nil, store.ErrNotFound
+	}
+	return &q, nil
+}
+
+func (f *fakeStore) CreateQueue(_ context.Context, chars characteristics.Characteristics, displayName string) (*models.Queue, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	hash := characteristics.Hash(chars)
+	for _, q := range f.queues {
+		if q.CharacteristicsHash == hash {
+			return nil, store.ErrAlreadyExists
+		}
+	}
+	q := models.Queue{
+		QueueID:             f.genID("queue"),
+		QueueUUID:           f.genID("queue-uuid"),
+		Characteristics:     chars,
+		CharacteristicsHash: hash,
+		DisplayName:         displayName,
+		CreatedAt:           fakeNow(),
+		UpdatedAt:           fakeNow(),
+	}
+	f.queues[q.QueueID] = q
+	return &q, nil
+}
+
+func (f *fakeStore) UpdateQueueDisplayName(_ context.Context, queueID, displayName string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	q, ok := f.queues[queueID]
+	if !ok {
+		return store.ErrNotFound
+	}
+	q.DisplayName = displayName
+	q.UpdatedAt = fakeNow()
+	f.queues[queueID] = q
+	return nil
+}
+
+func (f *fakeStore) DeleteQueue(_ context.Context, queueID string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if _, ok := f.queues[queueID]; !ok {
+		return store.ErrNotFound
+	}
+	delete(f.queues, queueID)
+	return nil
+}
+
+// ListNonTerminalJobsByQueue mirrors postgres_store's status filter (every
+// status jobcontrol.CancelJob can still act on) directly against the fake's
+// in-memory jobs map.
+func (f *fakeStore) ListNonTerminalJobsByQueue(_ context.Context, queueUUID string) ([]models.Job, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	var out []models.Job
+	for _, j := range f.jobs {
+		if j.QueueName != queueUUID {
+			continue
+		}
+		switch j.Status {
+		case "submitted", "queued", "running", "cancelling":
+			out = append(out, j)
+		}
+	}
+	return out, nil
+}
+
+// --- worker_pools / pool_enrollment_tokens ---------------------------------
+
+func (f *fakeStore) ListWorkerPools(_ context.Context, orgID *string) ([]models.WorkerPool, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	out := make([]models.WorkerPool, 0, len(f.pools))
+	for _, p := range f.pools {
+		if orgID != nil {
+			if p.OrgID == nil || *p.OrgID != *orgID {
+				continue
+			}
+		}
+		out = append(out, p)
+	}
+	return out, nil
+}
+
+func (f *fakeStore) GetWorkerPoolByID(_ context.Context, poolID string) (*models.WorkerPool, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	p, ok := f.pools[poolID]
+	if !ok {
+		return nil, store.ErrNotFound
+	}
+	return &p, nil
+}
+
+func (f *fakeStore) CreateWorkerPool(_ context.Context, pool *models.WorkerPool) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if pool.PoolID == "" {
+		pool.PoolID = f.genID("pool")
+	}
+	pool.CreatedAt = fakeNow()
+	pool.UpdatedAt = fakeNow()
+	f.pools[pool.PoolID] = *pool
+	return nil
+}
+
+func (f *fakeStore) UpdateWorkerPool(_ context.Context, poolID, name, description string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	p, ok := f.pools[poolID]
+	if !ok {
+		return store.ErrNotFound
+	}
+	p.Name = name
+	p.Description = description
+	p.UpdatedAt = fakeNow()
+	f.pools[poolID] = p
+	return nil
+}
+
+func (f *fakeStore) DeleteWorkerPool(_ context.Context, poolID string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if _, ok := f.pools[poolID]; !ok {
+		return store.ErrNotFound
+	}
+	delete(f.pools, poolID)
+	return nil
+}
+
+func (f *fakeStore) CreatePoolEnrollmentToken(_ context.Context, poolID, name string, tokenHash []byte) (*models.PoolEnrollmentToken, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	t := models.PoolEnrollmentToken{
+		TokenID:   f.genID("token"),
+		PoolID:    poolID,
+		Name:      name,
+		TokenHash: tokenHash,
+		IsActive:  true,
+		CreatedAt: fakeNow(),
+	}
+	f.enrollmentTokens[t.TokenID] = t
+	return &t, nil
+}
+
+func (f *fakeStore) ListPoolEnrollmentTokens(_ context.Context, poolID string) ([]models.PoolEnrollmentToken, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	var out []models.PoolEnrollmentToken
+	for _, t := range f.enrollmentTokens {
+		if t.PoolID == poolID {
+			out = append(out, t)
+		}
+	}
+	return out, nil
+}
+
+func (f *fakeStore) GetPoolEnrollmentTokenByID(_ context.Context, tokenID string) (*models.PoolEnrollmentToken, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	t, ok := f.enrollmentTokens[tokenID]
+	if !ok {
+		return nil, store.ErrNotFound
+	}
+	return &t, nil
+}
+
+func (f *fakeStore) GetActiveEnrollmentTokenByHash(_ context.Context, tokenHash []byte) (*models.PoolEnrollmentToken, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for _, t := range f.enrollmentTokens {
+		if t.IsActive && bytesEqual(t.TokenHash, tokenHash) {
+			cp := t
+			return &cp, nil
+		}
+	}
+	return nil, store.ErrNotFound
+}
+
+func (f *fakeStore) TouchEnrollmentTokenLastUsed(_ context.Context, tokenID string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	t, ok := f.enrollmentTokens[tokenID]
+	if !ok {
+		return store.ErrNotFound
+	}
+	now := fakeNow()
+	t.LastUsedAt = &now
+	f.enrollmentTokens[tokenID] = t
+	return nil
+}
+
+func (f *fakeStore) DeactivatePoolEnrollmentToken(_ context.Context, tokenID string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	t, ok := f.enrollmentTokens[tokenID]
+	if !ok {
+		return store.ErrNotFound
+	}
+	if !t.IsActive {
+		return nil
+	}
+	t.IsActive = false
+	now := fakeNow()
+	t.DeactivatedAt = &now
+	f.enrollmentTokens[tokenID] = t
+	return nil
+}
+
+func bytesEqual(a, b []byte) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
+}
+
+// --- workers / worker_leases ------------------------------------------------
+
+func (f *fakeStore) ListWorkers(_ context.Context, poolID *string) ([]models.Worker, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	out := make([]models.Worker, 0, len(f.workers))
+	for _, w := range f.workers {
+		if poolID != nil && w.PoolID != *poolID {
+			continue
+		}
+		out = append(out, w)
+	}
+	return out, nil
+}
+
+func (f *fakeStore) GetWorkerByID(_ context.Context, workerID string) (*models.Worker, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	w, ok := f.workers[workerID]
+	if !ok {
+		return nil, store.ErrNotFound
+	}
+	return &w, nil
+}
+
+func (f *fakeStore) UpdateWorkerStatus(_ context.Context, workerID, status string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	w, ok := f.workers[workerID]
+	if !ok {
+		return store.ErrNotFound
+	}
+	w.Status = status
+	f.workers[workerID] = w
+	return nil
+}
+
+func (f *fakeStore) ListActiveLeasesForWorker(_ context.Context, workerID string) ([]models.WorkerLease, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	var out []models.WorkerLease
+	for _, l := range f.leasesByWorker[workerID] {
+		if l.ReleasedAt == nil {
+			out = append(out, l)
+		}
+	}
+	return out, nil
+}
+
+// --- test-only helpers for the worker/queue/pool admin surface -------------
+
+func (f *fakeStore) putQueue(q models.Queue) models.Queue {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if q.QueueID == "" {
+		q.QueueID = f.genID("queue")
+	}
+	if q.QueueUUID == "" {
+		q.QueueUUID = f.genID("queue-uuid")
+	}
+	if q.CreatedAt.IsZero() {
+		q.CreatedAt = fakeNow()
+	}
+	q.UpdatedAt = fakeNow()
+	f.queues[q.QueueID] = q
+	return q
+}
+
+func (f *fakeStore) putPool(p models.WorkerPool) models.WorkerPool {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if p.PoolID == "" {
+		p.PoolID = f.genID("pool")
+	}
+	if p.CreatedAt.IsZero() {
+		p.CreatedAt = fakeNow()
+	}
+	p.UpdatedAt = fakeNow()
+	f.pools[p.PoolID] = p
+	return p
+}
+
+func (f *fakeStore) putWorker(w models.Worker) models.Worker {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if w.WorkerID == "" {
+		w.WorkerID = f.genID("worker")
+	}
+	if w.Status == "" {
+		w.Status = models.WorkerStatusActive
+	}
+	f.workers[w.WorkerID] = w
+	return w
+}
+
+func (f *fakeStore) putActiveLease(l models.WorkerLease) models.WorkerLease {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if l.LeaseID == "" {
+		l.LeaseID = f.genID("lease")
+	}
+	if l.AcquiredAt.IsZero() {
+		l.AcquiredAt = fakeNow()
+	}
+	f.leasesByWorker[l.WorkerID] = append(f.leasesByWorker[l.WorkerID], l)
+	return l
 }
 
 var _ DataStore = (*fakeStore)(nil)

@@ -15,7 +15,11 @@ var (
 	// Default is true, but can be set to false for testing environments
 	CommitOnSuccess = env.GetEnvAsBoolOrDefault("REACTORCIDE_COMMIT_ON_SUCCESS", "true")
 
-	// Corndogs integration (gRPC address - no http:// prefix)
+	// Corndogs integration: a CSIL-RPC-over-TCP address (host:port, no scheme),
+	// or a comma-separated list of seed addresses for a corndogs cluster
+	// (leader-following). Corndogs no longer speaks HTTP for RPC — RPC is TCP
+	// (StreamCarrier) on CORNDOGS_LISTEN (default :5080); /healthz and /metrics
+	// moved to the ops HTTP port CORNDOGS_HTTP_LISTEN (default :8080).
 	CornDogsBaseURL = env.GetEnvOrDefault("REACTORCIDE_CORNDOGS_BASE_URL", "")
 	CornDogsAPIKey  = env.GetEnvOrDefault("REACTORCIDE_CORNDOGS_API_KEY", "")
 

@@ -59,6 +59,20 @@ type GetNextTaskResponse struct {
 	Task *Task `json:"task,omitempty" yaml:"task,omitempty"`
 }
 
+// GetNextTaskGroupRequest represents a structured data type
+type GetNextTaskGroupRequest struct {
+	Queues                  []string `json:"queues" yaml:"queues"`
+	CurrentState            string   `json:"current_state" yaml:"current_state"`
+	OverrideTimeout         int64    `json:"override_timeout" yaml:"override_timeout"`
+	OverrideCurrentState    string   `json:"override_current_state" yaml:"override_current_state"`
+	OverrideAutoTargetState string   `json:"override_auto_target_state" yaml:"override_auto_target_state"`
+}
+
+// GetNextTaskGroupResponse represents a structured data type
+type GetNextTaskGroupResponse struct {
+	Task *Task `json:"task,omitempty" yaml:"task,omitempty"`
+}
+
 // CompleteTaskRequest represents a structured data type
 type CompleteTaskRequest struct {
 	Uuid         string `json:"uuid" yaml:"uuid"`

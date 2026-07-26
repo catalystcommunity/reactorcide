@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/catalystcommunity/app-utils-go/logging"
+	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/resources"
 	"github.com/google/uuid"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -148,30 +149,50 @@ func (kr *KubernetesRunner) SpawnJob(ctx context.Context, config *JobConfig) (st
 		})
 	}
 
-	// Build resource requirements
-	resources := corev1.ResourceRequirements{}
-	if config.CPULimit != "" || config.MemoryLimit != "" {
-		resources.Limits = corev1.ResourceList{}
-		resources.Requests = corev1.ResourceList{}
+	// Build resource requirements. Values are quantity strings parsed by
+	// internal/resources (see JobConfig's doc comments), not by
+	// resource.ParseQuantity -- that keeps our own grammar (e.g. "4GB") in
+	// play for the Kubernetes runner too. The parsed millicores/bytes are
+	// turned into resource.Quantity via NewMilliQuantity/NewQuantity, which
+	// is why this runner still imports k8s.io/apimachinery: it's intrinsic
+	// to building a pod spec, not to string parsing. Memory is limit-only --
+	// no memory request is set, mirroring JobConfig/the Job model (a pure
+	// ceiling, not a reservation). CPU sets both a real request and limit,
+	// unlike the Docker runner where the request is only advisory.
+	resourceReqs := corev1.ResourceRequirements{}
+	if config.CPURequest != "" || config.CPULimit != "" || config.MemoryLimit != "" {
+		resourceReqs.Limits = corev1.ResourceList{}
+		resourceReqs.Requests = corev1.ResourceList{}
+
+		if config.CPURequest != "" {
+			millicores, err := resources.CPUMillicores(config.CPURequest)
+			if err != nil {
+				logger.WithError(err).Warn("Failed to parse CPU request, ignoring")
+			} else {
+				resourceReqs.Requests[corev1.ResourceCPU] = *resource.NewMilliQuantity(millicores, resource.DecimalSI)
+			}
+		}
 
 		if config.CPULimit != "" {
-			cpuQuantity, err := resource.ParseQuantity(config.CPULimit)
+			millicores, err := resources.CPUMillicores(config.CPULimit)
 			if err != nil {
 				logger.WithError(err).Warn("Failed to parse CPU limit, ignoring")
 			} else {
-				resources.Limits[corev1.ResourceCPU] = cpuQuantity
-				resources.Requests[corev1.ResourceCPU] = cpuQuantity
+				resourceReqs.Limits[corev1.ResourceCPU] = *resource.NewMilliQuantity(millicores, resource.DecimalSI)
 			}
 		}
 
 		if config.MemoryLimit != "" {
-			memQuantity, err := resource.ParseQuantity(config.MemoryLimit)
+			memBytes, err := resources.MemoryBytes(config.MemoryLimit)
 			if err != nil {
 				logger.WithError(err).Warn("Failed to parse memory limit, ignoring")
 			} else {
-				resources.Limits[corev1.ResourceMemory] = memQuantity
-				resources.Requests[corev1.ResourceMemory] = memQuantity
+				resourceReqs.Limits[corev1.ResourceMemory] = *resource.NewQuantity(memBytes, resource.BinarySI)
 			}
+		}
+
+		if len(resourceReqs.Requests) == 0 {
+			resourceReqs.Requests = nil
 		}
 	}
 
@@ -244,7 +265,7 @@ func (kr *KubernetesRunner) SpawnJob(ctx context.Context, config *JobConfig) (st
 				Command:         config.Command,
 				WorkingDir:      config.WorkingDir,
 				Env:             envVars,
-				Resources:       resources,
+				Resources:       resourceReqs,
 				SecurityContext: &corev1.SecurityContext{
 					RunAsUser: runAsUser,
 				},

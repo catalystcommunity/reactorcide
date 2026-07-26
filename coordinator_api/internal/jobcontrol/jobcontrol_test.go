@@ -130,6 +130,7 @@ func (m *jobControlMockStore) GetUserByID(ctx context.Context, userID string) (*
 }
 func (m *jobControlMockStore) CreateUser(ctx context.Context, user *models.User) error { return nil }
 func (m *jobControlMockStore) EnsureDefaultUser() error                                { return nil }
+func (m *jobControlMockStore) EnsureDefaultQueue(ctx context.Context) error            { return nil }
 
 var _ store.Store = (*jobControlMockStore)(nil)
 var _ guardedJobStore = (*jobControlMockStore)(nil)

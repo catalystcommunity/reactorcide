@@ -14,12 +14,14 @@ import (
 	"time"
 
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/authz"
+	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/characteristics"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/checkauth"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/config"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/corndogs"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/jobcontrol"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/metrics"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/objects"
+	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/resources"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store/models"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/vcs"
@@ -122,6 +124,22 @@ type CreateJobRequest struct {
 	Priority       *int   `json:"priority,omitempty"`
 	RunAsUser      string `json:"run_as_user,omitempty"`
 	QueueName      string `json:"queue_name,omitempty"`
+
+	// Characteristics routes this job to a queue (WORKERS_PLAN.md
+	// "Characteristics & matching"); values must be scalar (string, int, or
+	// bool -- see internal/characteristics.ParseJobCharacteristics). Omitted
+	// or missing "os" defaults to "linux". Overrides any QueueName set
+	// above: the submit path resolves Characteristics to a queue UUID and
+	// that UUID becomes the job's QueueName immediately before the Corndogs
+	// submit.
+	Characteristics map[string]interface{} `json:"characteristics,omitempty"`
+
+	// Resources declares per-job compute resource cpu.request/cpu.limit/
+	// memory.limit as Kubernetes-style quantity strings (see
+	// internal/resources.ParseResources). Any field left unset falls back
+	// to the DB column default (cpu.request=1, cpu.limit=2,
+	// memory.limit=4Gi).
+	Resources map[string]interface{} `json:"resources,omitempty"`
 }
 
 // JobResponse represents the response for job operations
@@ -183,6 +201,18 @@ type ListJobsResponse struct {
 	Offset int           `json:"offset"`
 }
 
+// queueResolvingStore is the narrow store capability the submit path uses
+// to resolve a job's characteristics to a queue UUID (find-or-create) before
+// the job is persisted/submitted -- WORKERS_PLAN.md "Find-or-create at
+// submit". Defined here on the consumer side (repo convention: narrow
+// interface + type assertion on the store) so job_handler_test.go's mock
+// store doesn't need to implement queue storage to exercise the rest of
+// this handler. The concrete PostgresDbStore satisfies it via
+// internal/store/postgres_store/queue_operations.go.
+type queueResolvingStore interface {
+	FindOrCreateQueueByCharacteristics(ctx context.Context, chars characteristics.Characteristics) (*models.Queue, error)
+}
+
 // CreateJob handles POST /api/v1/jobs
 func (h *JobHandler) CreateJob(w http.ResponseWriter, r *http.Request) {
 	var req CreateJobRequest
@@ -210,7 +240,26 @@ func (h *JobHandler) CreateJob(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Convert request to job model
-	job := h.createJobFromRequest(&req, user.UserID)
+	job, err := h.createJobFromRequest(&req, user.UserID)
+	if err != nil {
+		h.respondWithError(w, http.StatusBadRequest, err)
+		return
+	}
+
+	// Resolve the job's characteristics to a queue (find-or-create) and
+	// route it there before anything is persisted or submitted -- see
+	// WORKERS_PLAN.md "Find-or-create at submit". queueResolvingStore is a
+	// narrow interface (defined below) so tests that supply a plain
+	// store.Store mock still compile; production always satisfies it via
+	// postgres_store.PostgresDbStore.
+	if qs, ok := h.store.(queueResolvingStore); ok {
+		queue, err := qs.FindOrCreateQueueByCharacteristics(r.Context(), job.Characteristics)
+		if err != nil {
+			h.respondWithError(w, http.StatusInternalServerError, fmt.Errorf("failed to resolve queue: %w", err))
+			return
+		}
+		job.QueueName = queue.QueueUUID
+	}
 
 	// Create job in database
 	if err := h.store.CreateJob(r.Context(), job); err != nil {
@@ -278,7 +327,7 @@ func (h *JobHandler) CreateJob(w http.ResponseWriter, r *http.Request) {
 			taskPayload.Config["env_file"] = job.JobEnvFile
 		}
 
-		task, err := h.corndogsClient.SubmitTask(r.Context(), taskPayload, int64(job.Priority))
+		task, err := h.corndogsClient.SubmitTaskToQueue(r.Context(), job.QueueName, taskPayload, int64(job.Priority))
 		if err != nil {
 			// Log error but don't fail the request - job is in DB
 			log.Printf("ERROR: Failed to submit task to Corndogs - job_id=%s job_name=%s queue=%s error=%v",
@@ -935,7 +984,7 @@ func (h *JobHandler) validateCiCodeURL(ciSourceURL string) error {
 	return store.ErrForbidden
 }
 
-func (h *JobHandler) createJobFromRequest(req *CreateJobRequest, userID string) *models.Job {
+func (h *JobHandler) createJobFromRequest(req *CreateJobRequest, userID string) (*models.Job, error) {
 	// Convert source type string to SourceType enum
 	var sourceType models.SourceType
 	switch req.SourceType {
@@ -1031,7 +1080,31 @@ func (h *JobHandler) createJobFromRequest(req *CreateJobRequest, userID string) 
 		}
 	}
 
-	return job
+	// Characteristics (WORKERS_PLAN.md "Characteristics & matching"):
+	// scalars only, "os" defaults to "linux" when omitted. CreateJob resolves
+	// this to a queue UUID (queueResolvingStore) and overwrites job.QueueName
+	// with it before submitting.
+	chars, err := characteristics.ParseJobCharacteristics(req.Characteristics)
+	if err != nil {
+		// Wrap store.ErrInvalidInput (not just the raw parse error) so
+		// respondWithError's errors.Is sentinel matching maps this to 400,
+		// not the 500 default -- see base_handler.go's respondWithError.
+		return nil, fmt.Errorf("%w: invalid characteristics: %w", store.ErrInvalidInput, err)
+	}
+	job.Characteristics = chars
+
+	// Resources (WORKERS_PLAN.md "Resources"): unset fields are left empty
+	// so the resource_cpu_request/resource_cpu_limit/resource_memory_limit
+	// column defaults apply on insert.
+	cpuRequest, cpuLimit, memoryLimit, err := resources.ParseResources(req.Resources)
+	if err != nil {
+		return nil, fmt.Errorf("%w: invalid resources: %w", store.ErrInvalidInput, err)
+	}
+	job.ResourceCPURequest = cpuRequest
+	job.ResourceCPULimit = cpuLimit
+	job.ResourceMemoryLimit = memoryLimit
+
+	return job, nil
 }
 
 func (h *JobHandler) jobToResponse(job *models.Job) JobResponse {

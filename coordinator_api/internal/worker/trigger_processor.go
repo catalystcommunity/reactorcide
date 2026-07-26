@@ -9,7 +9,9 @@ import (
 	"time"
 
 	"github.com/catalystcommunity/app-utils-go/logging"
+	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/characteristics"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/corndogs"
+	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/resources"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store/models"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/vcs"
@@ -75,6 +77,13 @@ type triggerJobSpec struct {
 	Capabilities   []string          `json:"capabilities"`
 	ForEach        []interface{}     `json:"for_each"`
 	ItemVar        string            `json:"item_var"`
+
+	// Characteristics/Resources, when set, override the parent (eval) job's
+	// characteristics/resources for this triggered job (WORKERS_PLAN.md:
+	// "Triggered/workflow child jobs inherit the PARENT's characteristics
+	// unless the child spec overrides"). See buildJobFromTrigger.
+	Characteristics map[string]interface{} `json:"characteristics"`
+	Resources       map[string]interface{} `json:"resources"`
 }
 
 // jobDefinitionFile represents a YAML job definition file (e.g., .reactorcide/jobs/*.yaml).
@@ -97,6 +106,9 @@ type jobDefinitionJobConfig struct {
 	Priority     *int       `yaml:"priority"`
 	RawCommand   bool       `yaml:"raw_command"`
 	Capabilities []string   `yaml:"capabilities"`
+	// Characteristics/Resources -- see triggerJobSpec's doc comment.
+	Characteristics map[string]interface{} `yaml:"characteristics"`
+	Resources       map[string]interface{} `yaml:"resources"`
 }
 
 func runAsUserFromSpec(spec *RunAsSpec) string {
@@ -209,17 +221,19 @@ func (tp *TriggerProcessor) loadJobFile(workspaceDir, jobFile string) (triggerJo
 	}
 
 	spec := triggerJobSpec{
-		JobName:        def.Name,
-		ContainerImage: def.Job.Image,
-		JobCommand:     def.Job.Command,
-		CodeDir:        def.Job.CodeDir,
-		JobDir:         def.Job.JobDir,
-		WorkingDir:     def.Job.WorkingDir,
-		RunAsUser:      runAsUserFromSpec(def.Job.RunAs),
-		Timeout:        def.Job.Timeout,
-		Priority:       def.Job.Priority,
-		Capabilities:   def.Job.Capabilities,
-		Env:            def.Environment,
+		JobName:         def.Name,
+		ContainerImage:  def.Job.Image,
+		JobCommand:      def.Job.Command,
+		CodeDir:         def.Job.CodeDir,
+		JobDir:          def.Job.JobDir,
+		WorkingDir:      def.Job.WorkingDir,
+		RunAsUser:       runAsUserFromSpec(def.Job.RunAs),
+		Timeout:         def.Job.Timeout,
+		Priority:        def.Job.Priority,
+		Capabilities:    def.Job.Capabilities,
+		Env:             def.Environment,
+		Characteristics: def.Job.Characteristics,
+		Resources:       def.Job.Resources,
 	}
 
 	return spec, nil
@@ -297,6 +311,12 @@ func (tp *TriggerProcessor) overlaySpec(base, overlay triggerJobSpec) triggerJob
 	if overlay.ItemVar != "" {
 		result.ItemVar = overlay.ItemVar
 	}
+	if len(overlay.Characteristics) > 0 {
+		result.Characteristics = overlay.Characteristics
+	}
+	if len(overlay.Resources) > 0 {
+		result.Resources = overlay.Resources
+	}
 
 	// Merge env vars: base first, then overlay on top
 	if len(overlay.Env) > 0 {
@@ -311,10 +331,46 @@ func (tp *TriggerProcessor) overlaySpec(base, overlay triggerJobSpec) triggerJob
 	return result
 }
 
+// queueResolvingStore is the narrow store capability trigger/workflow job
+// submission uses to resolve a job's characteristics to a queue UUID
+// (find-or-create) before it is persisted/submitted -- WORKERS_PLAN.md
+// "Find-or-create at submit". Defined here on the consumer side (repo
+// convention: narrow interface + type assertion on the store), mirroring
+// internal/handlers/job_handler.go's identical interface for the REST
+// submit path. The concrete PostgresDbStore satisfies it via
+// internal/store/postgres_store/queue_operations.go.
+type queueResolvingStore interface {
+	FindOrCreateQueueByCharacteristics(ctx context.Context, chars characteristics.Characteristics) (*models.Queue, error)
+}
+
+// resolveJobQueue resolves job.Characteristics to a queue (find-or-create)
+// and sets job.QueueName to the resolved Queue.QueueUUID. A no-op (QueueName
+// left as buildJobFromTrigger set it -- the parent's or an override's) when
+// the store doesn't implement queueResolvingStore.
+func (tp *TriggerProcessor) resolveJobQueue(ctx context.Context, job *models.Job) error {
+	qs, ok := tp.store.(queueResolvingStore)
+	if !ok {
+		return nil
+	}
+	queue, err := qs.FindOrCreateQueueByCharacteristics(ctx, job.Characteristics)
+	if err != nil {
+		return fmt.Errorf("resolving queue: %w", err)
+	}
+	job.QueueName = queue.QueueUUID
+	return nil
+}
+
 // createAndSubmitJob creates a single job from a trigger spec and submits it to Corndogs.
 // Returns the created job ID on success.
 func (tp *TriggerProcessor) createAndSubmitJob(ctx context.Context, spec triggerJobSpec, parentJob *models.Job) (string, error) {
-	job := tp.buildJobFromTrigger(spec, parentJob)
+	job, err := tp.buildJobFromTrigger(spec, parentJob)
+	if err != nil {
+		return "", fmt.Errorf("failed to build triggered job: %w", err)
+	}
+
+	if err := tp.resolveJobQueue(ctx, job); err != nil {
+		return "", err
+	}
 
 	if err := tp.store.CreateJob(ctx, job); err != nil {
 		return "", fmt.Errorf("failed to create job in database: %w", err)
@@ -335,7 +391,7 @@ func (tp *TriggerProcessor) createAndSubmitJob(ctx context.Context, spec trigger
 
 	taskPayload := tp.buildTaskPayload(job)
 
-	task, err := tp.corndogsClient.SubmitTask(ctx, taskPayload, int64(job.Priority))
+	task, err := tp.corndogsClient.SubmitTaskToQueue(ctx, job.QueueName, taskPayload, int64(job.Priority))
 	if err != nil {
 		logging.Log.WithError(err).WithField("job_id", job.JobID).Error("Failed to submit triggered job to Corndogs")
 		job.Status = "failed"
@@ -360,8 +416,12 @@ func (tp *TriggerProcessor) createAndSubmitJob(ctx context.Context, spec trigger
 	return job.JobID, nil
 }
 
-// buildJobFromTrigger creates a models.Job from a trigger spec and parent job.
-func (tp *TriggerProcessor) buildJobFromTrigger(spec triggerJobSpec, parentJob *models.Job) *models.Job {
+// buildJobFromTrigger creates a models.Job from a trigger spec and parent
+// job. Returns an error only when the spec's own `characteristics`/
+// `resources` block fails validation (internal/characteristics.
+// ParseJobCharacteristics / internal/resources.ParseResources) -- every
+// other field is either copied verbatim or defaulted, so it never fails.
+func (tp *TriggerProcessor) buildJobFromTrigger(spec triggerJobSpec, parentJob *models.Job) (*models.Job, error) {
 	now := time.Now().UTC()
 	parentJobID := parentJob.JobID
 
@@ -390,6 +450,39 @@ func (tp *TriggerProcessor) buildJobFromTrigger(spec triggerJobSpec, parentJob *
 		JobEnvVars:  envVars,
 		CodeDir:     DefaultJobCodeDir(parentJob.CodeDir),
 		JobDir:      DefaultJobDir(parentJob.CodeDir, parentJob.JobDir),
+	}
+
+	// Characteristics: the child spec overrides the parent's when it
+	// declares its own `characteristics` block, otherwise it inherits the
+	// parent (eval) job's characteristics wholesale -- WORKERS_PLAN.md
+	// "Triggered/workflow child jobs inherit the PARENT's characteristics
+	// unless the child spec overrides". This mirrors QueueName's inheritance
+	// above; createAndSubmitJob/submitWorkflowNode re-resolve QueueName from
+	// this value right before submitting, so QueueName here is only a
+	// starting point for stores that don't support queue resolution.
+	if len(spec.Characteristics) > 0 {
+		chars, err := characteristics.ParseJobCharacteristics(spec.Characteristics)
+		if err != nil {
+			return nil, fmt.Errorf("invalid characteristics in triggered job %q: %w", spec.JobName, err)
+		}
+		job.Characteristics = chars
+	} else {
+		job.Characteristics = parentJob.Characteristics
+	}
+
+	// Resources: only set when the child spec explicitly declares a
+	// `resources` block; otherwise left empty so the resource_cpu_request/
+	// resource_cpu_limit/resource_memory_limit column defaults apply on
+	// insert (same "leave empty for DB defaults" behavior as every other
+	// submit path -- see internal/resources.ParseResources).
+	if len(spec.Resources) > 0 {
+		cpuRequest, cpuLimit, memoryLimit, err := resources.ParseResources(spec.Resources)
+		if err != nil {
+			return nil, fmt.Errorf("invalid resources in triggered job %q: %w", spec.JobName, err)
+		}
+		job.ResourceCPURequest = cpuRequest
+		job.ResourceCPULimit = cpuLimit
+		job.ResourceMemoryLimit = memoryLimit
 	}
 
 	// Source configuration
@@ -473,7 +566,7 @@ func (tp *TriggerProcessor) buildJobFromTrigger(spec triggerJobSpec, parentJob *
 		}
 	}
 
-	return job
+	return job, nil
 }
 
 // buildTaskPayload creates a Corndogs TaskPayload from a job.

@@ -84,6 +84,20 @@ type JobSpec struct {
 	// changing how the job runs in CI. Defining it here makes a job behave
 	// consistently across local invocations without per-command flags.
 	RunLocal *RunLocalSpec `json:"run_local" yaml:"run_local"`
+
+	// Characteristics routes this job to a queue when submitted remotely
+	// (WORKERS_PLAN.md "Characteristics & matching"); raw map, validated by
+	// internal/characteristics.ParseJobCharacteristics at submit time. Not
+	// consumed by run-local/ToJobConfig -- queue routing only applies to
+	// jobs submitted through the coordinator API (see cmd/submit.go).
+	Characteristics map[string]interface{} `json:"characteristics" yaml:"characteristics"`
+
+	// Resources declares per-job compute resource cpu.request/cpu.limit/
+	// memory.limit (WORKERS_PLAN.md "Resources"); raw map, validated by
+	// internal/resources.ParseResources at submit time. Not consumed by
+	// run-local/ToJobConfig -- see the flat CPULimit/MemoryLimit fields
+	// above for that path.
+	Resources map[string]interface{} `json:"resources" yaml:"resources"`
 }
 
 // RunAsSpec controls the user identity for deployed job containers.
@@ -627,6 +641,25 @@ func MergeJobSpecs(base *JobSpec, overlays []*JobSpec, overlayFiles []string) (*
 		MemoryLimit:    base.MemoryLimit,
 	}
 
+	// Deep copy characteristics/resources (whole-map replace on overlay,
+	// like Capabilities below -- these are validated as a unit by
+	// internal/characteristics.ParseJobCharacteristics/
+	// internal/resources.ParseResources, so a partial per-key merge would
+	// risk producing a combination neither the base nor the overlay author
+	// intended).
+	if len(base.Characteristics) > 0 {
+		result.Characteristics = make(map[string]interface{}, len(base.Characteristics))
+		for k, v := range base.Characteristics {
+			result.Characteristics[k] = v
+		}
+	}
+	if len(base.Resources) > 0 {
+		result.Resources = make(map[string]interface{}, len(base.Resources))
+		for k, v := range base.Resources {
+			result.Resources[k] = v
+		}
+	}
+
 	// Deep copy environment
 	result.Environment = make(map[string]string)
 	for k, v := range base.Environment {
@@ -727,6 +760,22 @@ func MergeJobSpecs(base *JobSpec, overlays []*JobSpec, overlayFiles []string) (*
 		if len(overlay.Capabilities) > 0 {
 			result.Capabilities = make([]string, len(overlay.Capabilities))
 			copy(result.Capabilities, overlay.Capabilities)
+		}
+
+		// Override characteristics/resources (whole-map replace) if set in
+		// overlay -- see the deep-copy comment above for why these aren't
+		// merged key-by-key.
+		if len(overlay.Characteristics) > 0 {
+			result.Characteristics = make(map[string]interface{}, len(overlay.Characteristics))
+			for k, v := range overlay.Characteristics {
+				result.Characteristics[k] = v
+			}
+		}
+		if len(overlay.Resources) > 0 {
+			result.Resources = make(map[string]interface{}, len(overlay.Resources))
+			for k, v := range overlay.Resources {
+				result.Resources[k] = v
+			}
 		}
 
 		// Override source if set in overlay

@@ -22,10 +22,16 @@ const (
 
 	// BackendAuto automatically detects the best backend
 	BackendAuto RunnerBackend = "auto"
+
+	// BackendVM uses ephemeral guest VMs to run native macOS/Windows jobs
+	// (see VM_RUNNERS_PLAN.md). It is a recognized backend name on every
+	// OS, but only actually implemented on darwin/windows once VM-3/VM-4
+	// land -- see IsBackendImplemented and vmrunner.newVMLifecycle.
+	BackendVM RunnerBackend = "vm"
 )
 
 // NewJobRunner creates a new JobRunner based on the specified backend
-// Supported backends: "docker", "containerd", "kubernetes", "auto"
+// Supported backends: "docker", "containerd", "kubernetes", "vm", "auto"
 // "auto" will detect if running in Kubernetes and use that, otherwise Docker
 func NewJobRunner(backend string) (JobRunner, error) {
 	// Normalize backend string (lowercase, trim whitespace)
@@ -46,8 +52,11 @@ func NewJobRunner(backend string) (JobRunner, error) {
 	case BackendKubernetes:
 		return NewKubernetesRunner()
 
+	case BackendVM:
+		return newVMRunner()
+
 	default:
-		return nil, fmt.Errorf("unsupported job runner backend: %s (supported: docker, containerd, kubernetes, auto)", backend)
+		return nil, fmt.Errorf("unsupported job runner backend: %s (supported: docker, containerd, kubernetes, vm, auto)", backend)
 	}
 }
 
@@ -79,6 +88,7 @@ func GetSupportedBackends() []RunnerBackend {
 		BackendDocker,
 		BackendContainerd,
 		BackendKubernetes,
+		BackendVM,
 	}
 }
 
@@ -96,9 +106,19 @@ func IsBackendSupported(backend string) bool {
 // IsBackendImplemented checks if a backend is fully implemented (not just stubbed)
 func IsBackendImplemented(backend string) bool {
 	backend = strings.ToLower(strings.TrimSpace(backend))
-	// Docker, Containerd, and Kubernetes are fully implemented
-	return backend == string(BackendDocker) ||
+	// Docker, Containerd, and Kubernetes are fully implemented.
+	if backend == string(BackendDocker) ||
 		backend == string(BackendContainerd) ||
 		backend == string(BackendKubernetes) ||
-		backend == string(BackendAuto)
+		backend == string(BackendAuto) {
+		return true
+	}
+	// "vm" is a recognized backend name everywhere (GetSupportedBackends
+	// lists it), but its VMLifecycle is only real on darwin/windows once
+	// VM-3/VM-4 land (see vmrunner.newVMLifecycle) -- report that honestly
+	// rather than claiming it's usable on Linux today.
+	if backend == string(BackendVM) {
+		return isVMBackendImplemented()
+	}
+	return false
 }

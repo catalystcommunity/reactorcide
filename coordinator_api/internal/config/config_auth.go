@@ -70,6 +70,17 @@ var (
 	// implementation notes in UI_AUTH_PLAN.md. Required for begin-login to
 	// succeed in local-rp/rp mode; unused in mode none.
 	UICallbackURL = env.GetEnvOrDefault("REACTORCIDE_UI_CALLBACK_URL", "")
+
+	// DefaultWorkerEnrollmentToken, if set, is a raw worker enrollment
+	// token for the dev/alpha bootstrap (WORKERS_PLAN.md Wave-4 P4):
+	// postgres_store.PostgresDbStore.EnsureDefaultWorkerPool ensures a
+	// "default" worker pool exists and registers this token's SHA-256
+	// hash as an active pool_enrollment_tokens row for it, idempotently
+	// (compared by hash, never by re-reading a stored raw value — the raw
+	// value is never persisted). This lets a dev/compose worker enroll
+	// with a token known in advance instead of one minted through the
+	// admin UI. Never logged; read only at startup.
+	DefaultWorkerEnrollmentToken = env.GetEnvOrDefault("REACTORCIDE_DEFAULT_WORKER_ENROLLMENT_TOKEN", "")
 )
 
 // ValidateUIAuthMode checks that REACTORCIDE_UI_AUTH_MODE holds one of the

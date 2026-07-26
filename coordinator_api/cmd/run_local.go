@@ -187,7 +187,7 @@ var RunLocalCommand = &cli.Command{
 		},
 		&cli.StringFlag{
 			Name:  "backend",
-			Usage: "Container runtime backend: docker, containerd, kubernetes",
+			Usage: "Container runtime backend: docker, containerd, kubernetes, vm (vm is only implemented on darwin/windows)",
 			Value: "docker",
 		},
 		&cli.StringSliceFlag{

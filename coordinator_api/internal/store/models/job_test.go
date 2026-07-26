@@ -132,3 +132,36 @@ func TestJob_IsKillRequested(t *testing.T) {
 		t.Error("expected IsKillRequested() to be false for empty CancelMode")
 	}
 }
+
+// TestJob_ResourceFieldsRoundTrip verifies the resource_cpu_request/
+// resource_cpu_limit/resource_memory_limit fields (coredb/migrations/
+// 000021_job_resources.sql) hold whatever k8s-quantity strings are set on
+// them without transformation -- these fields are plain passthrough storage,
+// validated upstream by internal/resources.ParseResources.
+func TestJob_ResourceFieldsRoundTrip(t *testing.T) {
+	job := &Job{
+		ResourceCPURequest:  "500m",
+		ResourceCPULimit:    "2",
+		ResourceMemoryLimit: "4Gi",
+	}
+
+	if job.ResourceCPURequest != "500m" {
+		t.Errorf("ResourceCPURequest = %q, want %q", job.ResourceCPURequest, "500m")
+	}
+	if job.ResourceCPULimit != "2" {
+		t.Errorf("ResourceCPULimit = %q, want %q", job.ResourceCPULimit, "2")
+	}
+	if job.ResourceMemoryLimit != "4Gi" {
+		t.Errorf("ResourceMemoryLimit = %q, want %q", job.ResourceMemoryLimit, "4Gi")
+	}
+
+	// Zero-value Job (as constructed in Go, before any DB round trip) has
+	// empty strings -- the migration's NOT NULL DEFAULTs are what supply
+	// "1"/"2"/"4Gi" once a row is actually inserted; this is not something
+	// the Go zero value can assert without a live DB.
+	var zero Job
+	if zero.ResourceCPURequest != "" || zero.ResourceCPULimit != "" || zero.ResourceMemoryLimit != "" {
+		t.Errorf("expected zero-value Job to have empty resource fields, got (%q, %q, %q)",
+			zero.ResourceCPURequest, zero.ResourceCPULimit, zero.ResourceMemoryLimit)
+	}
+}

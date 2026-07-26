@@ -70,9 +70,9 @@ func (ps PostgresDbStore) UpdateJobStatusGuarded(ctx context.Context, jobID stri
 }
 
 // ListStaleCancellingJobs returns every job with status "cancelling" whose
-// updated_at is older than olderThan. Used by CornDogsWorker's reaper
-// (Finding 2b) to find jobs orphaned by a worker that crashed or restarted
-// mid-cancel and never finalized them.
+// updated_at is older than olderThan. Used by the coordinator's lease
+// reaper (internal/workerapi, Finding 2b) to find jobs orphaned by a worker
+// that crashed or restarted mid-cancel and never finalized them.
 func (ps PostgresDbStore) ListStaleCancellingJobs(ctx context.Context, olderThan time.Time) ([]models.Job, error) {
 	var jobs []models.Job
 	if err := ps.getDB(ctx).

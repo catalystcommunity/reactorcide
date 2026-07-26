@@ -15,25 +15,29 @@ type MockClient struct {
 	mu sync.Mutex
 
 	// Control behavior
-	SubmitTaskFunc      func(ctx context.Context, payload *TaskPayload, priority int64) (*pb.Task, error)
-	GetNextTaskFunc     func(ctx context.Context, state string, timeout int64) (*pb.Task, error)
-	UpdateTaskFunc      func(ctx context.Context, taskID string, currentState string, newState string, payload []byte) (*pb.Task, error)
-	SendHeartbeatFunc   func(ctx context.Context, taskID string, currentState string, timeoutExtensionSeconds int64) (*pb.Task, error)
-	CompleteTaskFunc    func(ctx context.Context, taskID string, currentState string) (*pb.Task, error)
-	CancelTaskFunc      func(ctx context.Context, taskID string, currentState string) (*pb.Task, error)
-	GetTaskByIDFunc     func(ctx context.Context, taskID string) (*pb.Task, error)
-	CleanUpTimedOutFunc func(ctx context.Context) (int64, error)
-	GetQueuesFunc       func(ctx context.Context) ([]string, int64, error)
+	SubmitTaskFunc        func(ctx context.Context, payload *TaskPayload, priority int64) (*pb.Task, error)
+	SubmitTaskToQueueFunc func(ctx context.Context, queue string, payload *TaskPayload, priority int64) (*pb.Task, error)
+	GetNextTaskFunc       func(ctx context.Context, state string, timeout int64) (*pb.Task, error)
+	GetNextTaskGroupFunc  func(ctx context.Context, queues []string, currentState string, timeout int64) (*pb.Task, error)
+	UpdateTaskFunc        func(ctx context.Context, taskID string, currentState string, newState string, payload []byte) (*pb.Task, error)
+	SendHeartbeatFunc     func(ctx context.Context, taskID string, currentState string, timeoutExtensionSeconds int64) (*pb.Task, error)
+	CompleteTaskFunc      func(ctx context.Context, taskID string, currentState string) (*pb.Task, error)
+	CancelTaskFunc        func(ctx context.Context, taskID string, currentState string) (*pb.Task, error)
+	GetTaskByIDFunc       func(ctx context.Context, taskID string) (*pb.Task, error)
+	CleanUpTimedOutFunc   func(ctx context.Context) (int64, error)
+	GetQueuesFunc         func(ctx context.Context) ([]string, int64, error)
 
 	// Track calls for assertions
-	SubmitTaskCalls      []SubmitTaskCall
-	GetNextTaskCalls     []GetNextTaskCall
-	UpdateTaskCalls      []UpdateTaskCall
-	SendHeartbeatCalls   []SendHeartbeatCall
-	CompleteTaskCalls    []CompleteTaskCall
-	CancelTaskCalls      []CancelTaskCall
-	GetTaskByIDCalls     []GetTaskByIDCall
-	CleanUpTimedOutCalls []CleanUpTimedOutCall
+	SubmitTaskCalls        []SubmitTaskCall
+	SubmitTaskToQueueCalls []SubmitTaskToQueueCall
+	GetNextTaskCalls       []GetNextTaskCall
+	GetNextTaskGroupCalls  []GetNextTaskGroupCall
+	UpdateTaskCalls        []UpdateTaskCall
+	SendHeartbeatCalls     []SendHeartbeatCall
+	CompleteTaskCalls      []CompleteTaskCall
+	CancelTaskCalls        []CancelTaskCall
+	GetTaskByIDCalls       []GetTaskByIDCall
+	CleanUpTimedOutCalls   []CleanUpTimedOutCall
 }
 
 // Call tracking structures
@@ -42,9 +46,21 @@ type SubmitTaskCall struct {
 	Priority int64
 }
 
+type SubmitTaskToQueueCall struct {
+	Queue    string
+	Payload  *TaskPayload
+	Priority int64
+}
+
 type GetNextTaskCall struct {
 	State   string
 	Timeout int64
+}
+
+type GetNextTaskGroupCall struct {
+	Queues       []string
+	CurrentState string
+	Timeout      int64
 }
 
 type UpdateTaskCall struct {
@@ -55,9 +71,9 @@ type UpdateTaskCall struct {
 }
 
 type SendHeartbeatCall struct {
-	TaskID                   string
-	CurrentState             string
-	TimeoutExtensionSeconds  int64
+	TaskID                  string
+	CurrentState            string
+	TimeoutExtensionSeconds int64
 }
 
 type CompleteTaskCall struct {
@@ -110,6 +126,34 @@ func (m *MockClient) SubmitTask(ctx context.Context, payload *TaskPayload, prior
 	}, nil
 }
 
+// SubmitTaskToQueue mock implementation
+func (m *MockClient) SubmitTaskToQueue(ctx context.Context, queue string, payload *TaskPayload, priority int64) (*pb.Task, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	m.SubmitTaskToQueueCalls = append(m.SubmitTaskToQueueCalls, SubmitTaskToQueueCall{
+		Queue:    queue,
+		Payload:  payload,
+		Priority: priority,
+	})
+
+	if m.SubmitTaskToQueueFunc != nil {
+		return m.SubmitTaskToQueueFunc(ctx, queue, payload, priority)
+	}
+
+	// Default behavior
+	return &pb.Task{
+		Uuid:            uuid.New().String(),
+		Queue:           queue,
+		CurrentState:    "submitted",
+		AutoTargetState: "submitted-working",
+		SubmitTime:      time.Now().Unix(),
+		UpdateTime:      time.Now().Unix(),
+		Timeout:         3600,
+		Priority:        priority,
+	}, nil
+}
+
 // GetNextTask mock implementation
 func (m *MockClient) GetNextTask(ctx context.Context, state string, timeout int64) (*pb.Task, error) {
 	m.mu.Lock()
@@ -126,6 +170,25 @@ func (m *MockClient) GetNextTask(ctx context.Context, state string, timeout int6
 
 	// Default behavior - no tasks available
 	return nil, fmt.Errorf("failed to get next task: rpc error: code = NotFound")
+}
+
+// GetNextTaskGroup mock implementation
+func (m *MockClient) GetNextTaskGroup(ctx context.Context, queues []string, currentState string, timeout int64) (*pb.Task, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	m.GetNextTaskGroupCalls = append(m.GetNextTaskGroupCalls, GetNextTaskGroupCall{
+		Queues:       queues,
+		CurrentState: currentState,
+		Timeout:      timeout,
+	})
+
+	if m.GetNextTaskGroupFunc != nil {
+		return m.GetNextTaskGroupFunc(ctx, queues, currentState, timeout)
+	}
+
+	// Default behavior - no tasks available in the group
+	return nil, nil
 }
 
 // UpdateTask mock implementation
@@ -310,7 +373,9 @@ func (m *MockClient) Reset() {
 	defer m.mu.Unlock()
 
 	m.SubmitTaskCalls = nil
+	m.SubmitTaskToQueueCalls = nil
 	m.GetNextTaskCalls = nil
+	m.GetNextTaskGroupCalls = nil
 	m.UpdateTaskCalls = nil
 	m.SendHeartbeatCalls = nil
 	m.CompleteTaskCalls = nil

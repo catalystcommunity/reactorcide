@@ -125,6 +125,7 @@ GetCapabilitiesResponse = {
     manage_vcs_credentials: bool,
     manage_secrets: bool,
     manage_groups: bool,
+    manage_workers: bool,
     manage_project_settings: bool,
     manage_trusted_identities: bool,
     manage_global_settings: bool,
@@ -639,6 +640,210 @@ RemoveTrustedDomainPatternResponse = {
     removed: bool
 }
 
+;; ---------------------------------------------------------------------------
+;; Worker/queue/pool admin (WORKERS_PLAN.md Wave-4 P4: admin CSIL ops for
+;; managing pools, workers, and queues). Gated by authz.Caps.ManageWorkers
+;; (org-admin/global-admin tier) -- see get-capabilities' manage_workers
+;; field above. Queues have no creation path that sets an owning org today,
+;; so queue ops require global admin; pools/workers/enrollment tokens may be
+;; org-scoped (an org admin of that pool's org may manage it) or global
+;; (global admin only, when the pool has no org).
+;; ---------------------------------------------------------------------------
+
+;;; Scalar-only characteristic value -- used for queues (job/queue
+;;; characteristics are always scalar, never lists, per WORKERS_PLAN.md
+;;; "Characteristics & matching").
+CharacteristicScalar = text / int / bool
+
+CharacteristicEntry = {
+    key: text,
+    value: CharacteristicScalar
+}
+
+;;; Worker characteristic values may additionally be a homogeneous list
+;;; (worker-only) -- structurally identical to reactorcide-worker.csil's
+;;; CharacteristicValue, independently defined here (this file's own
+;;; generated package) rather than shared across an `include`, same
+;;; rationale as this file's own ServiceError mirror.
+WorkerCharacteristicValue = text / int / bool / [* text] / [* int] / [* bool]
+
+WorkerCharacteristicEntry = {
+    key: text,
+    value: WorkerCharacteristicValue
+}
+
+QueueSummary = {
+    queue_id: text,
+    queue_uuid: text,
+    characteristics: [* CharacteristicEntry],
+    display_name: text,
+    is_default: bool,
+    backlog_count: int
+}
+
+ListQueuesRequest = {}
+ListQueuesResponse = {
+    queues: [* QueueSummary]
+}
+
+;;; CreateQueue lets an operator pre-create a queue (define characteristics +
+;;; display name up front). Characteristics are immutable once created --
+;;; there is no update-characteristics op, only rename-queue for the display
+;;; name.
+CreateQueueRequest = {
+    characteristics: [* CharacteristicEntry],
+    ? display_name: text
+}
+CreateQueueResponse = {
+    queue: QueueSummary
+}
+
+RenameQueueRequest = {
+    queue_id: text,
+    display_name: text
+}
+RenameQueueResponse = {
+    queue: QueueSummary
+}
+
+;;; DeleteQueue cancels every non-terminal job routed to the queue (via the
+;;; existing cancel path) before removing the row. The seeded default queue
+;;; (is_default) may never be deleted -- rejected with invalid_argument.
+DeleteQueueRequest = {
+    queue_id: text
+}
+DeleteQueueResponse = {
+    deleted: bool,
+    cancelled_job_ids: [* text]
+}
+
+WorkerSummary = {
+    worker_id: text,
+    pool_id: text,
+    worker_key: text,
+    ? hostname: text,
+    os: text,
+    arch: text,
+    characteristics: [* WorkerCharacteristicEntry],
+    ? worker_version: text,
+    status: text, ;; active | quarantined | disabled
+    ? last_seen_at: text,
+    active_lease_count: int
+}
+
+ListWorkersRequest = {
+    ? pool_id: text
+}
+ListWorkersResponse = {
+    workers: [* WorkerSummary]
+}
+
+;;; SetWorkerStatus is the quarantine/disable/re-activate admin control:
+;;; status must be one of active/quarantined/disabled. A non-active worker's
+;;; RequestJob calls are refused no future job offers (internal/workerapi's
+;;; RequestJob checks worker status before matching).
+SetWorkerStatusRequest = {
+    worker_id: text,
+    status: text
+}
+SetWorkerStatusResponse = {
+    worker: WorkerSummary
+}
+
+;;; DrainWorker asks a worker to stop accepting new work without disabling it
+;;; outright: modeled as the "quarantined" status (RequestJob already offers
+;;; no further jobs to a non-active worker) plus a heartbeat drain directive
+;;; so a worker still finishing existing leases learns to shut down once they
+;;; complete -- see internal/workerapi/service.go's Heartbeat.
+DrainWorkerRequest = {
+    worker_id: text
+}
+DrainWorkerResponse = {
+    worker: WorkerSummary
+}
+
+WorkerPoolSummary = {
+    pool_id: text,
+    ? org_id: text,
+    name: text,
+    ? description: text,
+    created_at: text,
+    updated_at: text
+}
+
+ListPoolsRequest = {
+    ? org_id: text
+}
+ListPoolsResponse = {
+    pools: [* WorkerPoolSummary]
+}
+
+CreatePoolRequest = {
+    ? org_id: text,
+    name: text,
+    ? description: text
+}
+CreatePoolResponse = {
+    pool: WorkerPoolSummary
+}
+
+UpdatePoolRequest = {
+    pool_id: text,
+    ? name: text,
+    ? description: text
+}
+UpdatePoolResponse = {
+    pool: WorkerPoolSummary
+}
+
+DeletePoolRequest = {
+    pool_id: text
+}
+DeletePoolResponse = {
+    deleted: bool
+}
+
+;;; Enrollment token metadata only -- list/deactivate never return the raw
+;;; token or its hash. SECURITY: create-enrollment-token is the only op that
+;;; ever returns the raw value, exactly once at creation; it is stored
+;;; hash-only and no op (including list-enrollment-tokens) ever returns it
+;;; again.
+EnrollmentTokenSummary = {
+    token_id: text,
+    pool_id: text,
+    ? name: text,
+    is_active: bool,
+    ? last_used_at: text,
+    created_at: text,
+    ? deactivated_at: text
+}
+
+CreateEnrollmentTokenRequest = {
+    pool_id: text,
+    ? name: text
+}
+;;; SECURITY: token is the raw enrollment token, returned exactly once here.
+;;; Only its SHA-256 hash is ever persisted (internal/workerauth); no other
+;;; op returns it again, and it must never be logged.
+CreateEnrollmentTokenResponse = {
+    token: text,
+    summary: EnrollmentTokenSummary
+}
+
+ListEnrollmentTokensRequest = {
+    pool_id: text
+}
+ListEnrollmentTokensResponse = {
+    tokens: [* EnrollmentTokenSummary]
+}
+
+DeactivateEnrollmentTokenRequest = {
+    token_id: text
+}
+DeactivateEnrollmentTokenResponse = {
+    summary: EnrollmentTokenSummary
+}
+
 service ReactorcideUi {
     get-capabilities: GetCapabilitiesRequest -> GetCapabilitiesResponse / ServiceError,
     list-orgs: ListOrgsRequest -> ListOrgsResponse / ServiceError,
@@ -685,5 +890,19 @@ service ReactorcideUi {
     remove-trusted-identity: RemoveTrustedIdentityRequest -> RemoveTrustedIdentityResponse / ServiceError,
     list-trusted-domain-patterns: ListTrustedDomainPatternsRequest -> ListTrustedDomainPatternsResponse / ServiceError,
     add-trusted-domain-pattern: AddTrustedDomainPatternRequest -> AddTrustedDomainPatternResponse / ServiceError,
-    remove-trusted-domain-pattern: RemoveTrustedDomainPatternRequest -> RemoveTrustedDomainPatternResponse / ServiceError
+    remove-trusted-domain-pattern: RemoveTrustedDomainPatternRequest -> RemoveTrustedDomainPatternResponse / ServiceError,
+    list-queues: ListQueuesRequest -> ListQueuesResponse / ServiceError,
+    create-queue: CreateQueueRequest -> CreateQueueResponse / ServiceError,
+    rename-queue: RenameQueueRequest -> RenameQueueResponse / ServiceError,
+    delete-queue: DeleteQueueRequest -> DeleteQueueResponse / ServiceError,
+    list-workers: ListWorkersRequest -> ListWorkersResponse / ServiceError,
+    set-worker-status: SetWorkerStatusRequest -> SetWorkerStatusResponse / ServiceError,
+    drain-worker: DrainWorkerRequest -> DrainWorkerResponse / ServiceError,
+    list-pools: ListPoolsRequest -> ListPoolsResponse / ServiceError,
+    create-pool: CreatePoolRequest -> CreatePoolResponse / ServiceError,
+    update-pool: UpdatePoolRequest -> UpdatePoolResponse / ServiceError,
+    delete-pool: DeletePoolRequest -> DeletePoolResponse / ServiceError,
+    create-enrollment-token: CreateEnrollmentTokenRequest -> CreateEnrollmentTokenResponse / ServiceError,
+    list-enrollment-tokens: ListEnrollmentTokensRequest -> ListEnrollmentTokensResponse / ServiceError,
+    deactivate-enrollment-token: DeactivateEnrollmentTokenRequest -> DeactivateEnrollmentTokenResponse / ServiceError
 }

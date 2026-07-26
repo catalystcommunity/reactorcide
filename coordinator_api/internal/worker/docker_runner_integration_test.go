@@ -1,3 +1,4 @@
+//go:build integration
 // +build integration
 
 package worker
@@ -183,7 +184,7 @@ func TestDockerRunner_Integration_ResourceLimits(t *testing.T) {
 		Image:        "alpine:latest",
 		Command:      []string{"sh", "-c", "echo 'Testing resource limits' && sleep 1"},
 		WorkspaceDir: workspaceDir,
-		CPULimit:     "0.5",  // 0.5 CPU cores
+		CPULimit:     "0.5",   // 0.5 CPU cores
 		MemoryLimit:  "128Mi", // 128 MiB
 		JobID:        "limits-job-123",
 		QueueName:    "test-queue",

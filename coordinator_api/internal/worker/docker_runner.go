@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"strings"
 	"sync"
 	"time"
 
@@ -13,8 +12,10 @@ import (
 	"github.com/docker/docker/api/types/image"
 	"github.com/docker/docker/client"
 	"github.com/docker/docker/pkg/stdcopy"
+	"github.com/sirupsen/logrus"
 
 	"github.com/catalystcommunity/app-utils-go/logging"
+	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/resources"
 )
 
 // DockerRunner implements JobRunner using the Docker daemon
@@ -190,25 +191,10 @@ func (dr *DockerRunner) SpawnJob(ctx context.Context, config *JobConfig) (string
 		hostConfig.NetworkMode = container.NetworkMode("container:" + sidecarName)
 	}
 
-	// Add resource limits if specified
-	if config.CPULimit != "" {
-		// Convert CPU limit (e.g., "1.0" -> 1000000000 nanoseconds)
-		// Docker uses NanoCPUs (1 CPU = 1e9 nanoseconds)
-		var cpuNanos int64
-		if _, err := fmt.Sscanf(config.CPULimit, "%f", &cpuNanos); err == nil {
-			hostConfig.NanoCPUs = int64(cpuNanos * 1e9)
-		}
-	}
-
-	if config.MemoryLimit != "" {
-		// Parse memory limit (e.g., "512Mi" or "1Gi")
-		memBytes, err := parseMemoryString(config.MemoryLimit)
-		if err != nil {
-			logger.WithError(err).Warn("Failed to parse memory limit, ignoring")
-		} else {
-			hostConfig.Memory = memBytes
-		}
-	}
+	// Add resource limits/requests if specified. CPU/memory values are
+	// Kubernetes-style quantity strings (see internal/resources and
+	// JobConfig's CPURequest/CPULimit/MemoryLimit doc comments).
+	hostConfig.NanoCPUs, hostConfig.CPUShares, hostConfig.Memory = dockerResourceLimits(config, logger)
 
 	// Create the container
 	containerName := fmt.Sprintf("reactorcide-job-%s", config.JobID)
@@ -571,45 +557,55 @@ func (dr *DockerRunner) envMapToSlice(envMap map[string]string) []string {
 	return envSlice
 }
 
-// parseMemoryString parses memory strings like "512Mi", "1Gi", "1024M", "1G"
-func parseMemoryString(memStr string) (int64, error) {
-	memStr = strings.TrimSpace(memStr)
-	if memStr == "" {
-		return 0, fmt.Errorf("empty memory string")
-	}
-
-	// Common suffixes and their multipliers
-	suffixes := map[string]int64{
-		"Ki": 1024,
-		"Mi": 1024 * 1024,
-		"Gi": 1024 * 1024 * 1024,
-		"Ti": 1024 * 1024 * 1024 * 1024,
-		"K":  1000,
-		"M":  1000 * 1000,
-		"G":  1000 * 1000 * 1000,
-		"T":  1000 * 1000 * 1000 * 1000,
-	}
-
-	// Try to match suffix
-	for suffix, multiplier := range suffixes {
-		if strings.HasSuffix(memStr, suffix) {
-			numStr := strings.TrimSuffix(memStr, suffix)
-			var num int64
-			_, err := fmt.Sscanf(numStr, "%d", &num)
-			if err != nil {
-				return 0, fmt.Errorf("invalid number in memory string: %w", err)
-			}
-			return num * multiplier, nil
+// dockerResourceLimits translates JobConfig's Kubernetes-style quantity
+// resource fields into Docker's HostConfig resource knobs:
+//   - NanoCPUs (nanoseconds of CPU time per second of wall time; 1 full CPU
+//     == 1e9) from CPULimit.
+//   - CPUShares (Docker's relative scheduling weight, default 1024 per full
+//     CPU, documented minimum 2) from CPURequest. Docker has no native CPU
+//     reservation distinct from --cpus, so the request is applied
+//     advisorily rather than as a hard reservation.
+//   - Memory (bytes) from MemoryLimit. Memory is limit-only -- there is no
+//     memory request/reservation knob applied here, mirroring JobConfig.
+//
+// An empty field leaves the corresponding return value at zero (Docker's
+// "unset" default); an invalid quantity is logged and skipped the same way
+// rather than failing the spawn, matching the pre-existing behavior for
+// these fields.
+func dockerResourceLimits(config *JobConfig, logger *logrus.Entry) (nanoCPUs int64, cpuShares int64, memoryBytes int64) {
+	if config.CPULimit != "" {
+		millicores, err := resources.CPUMillicores(config.CPULimit)
+		if err != nil {
+			logger.WithError(err).Warn("Failed to parse CPU limit, ignoring")
+		} else {
+			// nanocpus = millicores * 1e6 (1 full CPU == 1e9 nanocpus).
+			nanoCPUs = millicores * 1e6
 		}
 	}
 
-	// No suffix, assume bytes
-	var num int64
-	_, err := fmt.Sscanf(memStr, "%d", &num)
-	if err != nil {
-		return 0, fmt.Errorf("invalid memory string format: %w", err)
+	if config.CPURequest != "" {
+		millicores, err := resources.CPUMillicores(config.CPURequest)
+		if err != nil {
+			logger.WithError(err).Warn("Failed to parse CPU request, ignoring")
+		} else {
+			shares := millicores * 1024 / 1000
+			if shares < 2 {
+				shares = 2
+			}
+			cpuShares = shares
+		}
 	}
-	return num, nil
+
+	if config.MemoryLimit != "" {
+		memBytes, err := resources.MemoryBytes(config.MemoryLimit)
+		if err != nil {
+			logger.WithError(err).Warn("Failed to parse memory limit, ignoring")
+		} else {
+			memoryBytes = memBytes
+		}
+	}
+
+	return nanoCPUs, cpuShares, memoryBytes
 }
 
 // Ensure DockerRunner implements JobRunner interface

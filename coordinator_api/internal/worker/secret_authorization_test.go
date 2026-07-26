@@ -26,10 +26,8 @@ func TestAuthorizeSecretAccess_AllowsJobScopedSecrets(t *testing.T) {
 		Name:      "deploy",
 		JobFile:   ".reactorcide/jobs/deploy.yaml",
 	}
-	jp := &JobProcessor{store: &MockStore{}}
-
-	require.NoError(t, jp.authorizeSecretAccess(context.Background(), job, "jobs/job-1", "token"))
-	require.NoError(t, jp.authorizeSecretAccess(context.Background(), job, "projects/project-1/jobs/.reactorcide/jobs/deploy.yaml", "token"))
+	require.NoError(t, AuthorizeSecretAccess(context.Background(), nil, job, "jobs/job-1", "token"))
+	require.NoError(t, AuthorizeSecretAccess(context.Background(), nil, job, "projects/project-1/jobs/.reactorcide/jobs/deploy.yaml", "token"))
 }
 
 func TestAuthorizeSecretAccess_RequiresMatchingGrantForSharedSecrets(t *testing.T) {
@@ -41,7 +39,7 @@ func TestAuthorizeSecretAccess_RequiresMatchingGrantForSharedSecrets(t *testing.
 		Name:      "deploy",
 		JobFile:   ".reactorcide/jobs/deploy.yaml",
 	}
-	jp := &JobProcessor{store: &secretGrantMockStore{
+	grantStore := &secretGrantMockStore{
 		grants: []models.SecretGrant{{
 			GrantID:           "grant-1",
 			Name:              "deploy-production",
@@ -52,10 +50,10 @@ func TestAuthorizeSecretAccess_RequiresMatchingGrantForSharedSecrets(t *testing.
 			JobNameMatch:      models.SecretGrantMatchExact,
 			JobNamePattern:    "deploy",
 		}},
-	}}
+	}
 
-	require.NoError(t, jp.authorizeSecretAccess(context.Background(), job, "deploy/production/db", "password"))
-	require.Error(t, jp.authorizeSecretAccess(context.Background(), job, "deploy/staging/db", "password"))
+	require.NoError(t, AuthorizeSecretAccess(context.Background(), grantStore, job, "deploy/production/db", "password"))
+	require.Error(t, AuthorizeSecretAccess(context.Background(), grantStore, job, "deploy/staging/db", "password"))
 }
 
 func TestAuthorizeSecretAccess_SupportsGrantPatterns(t *testing.T) {
@@ -66,7 +64,7 @@ func TestAuthorizeSecretAccess_SupportsGrantPatterns(t *testing.T) {
 		ProjectID: &projectID,
 		Name:      "release-linux-amd64",
 	}
-	jp := &JobProcessor{store: &secretGrantMockStore{
+	grantStore := &secretGrantMockStore{
 		grants: []models.SecretGrant{{
 			GrantID:           "grant-1",
 			Name:              "release-registry",
@@ -77,10 +75,10 @@ func TestAuthorizeSecretAccess_SupportsGrantPatterns(t *testing.T) {
 			JobNameMatch:      models.SecretGrantMatchPrefix,
 			JobNamePattern:    "release-",
 		}},
-	}}
+	}
 
-	require.NoError(t, jp.authorizeSecretAccess(context.Background(), job, "catalystcommunity/registry", "password"))
+	require.NoError(t, AuthorizeSecretAccess(context.Background(), grantStore, job, "catalystcommunity/registry", "password"))
 
 	job.Name = "test-linux-amd64"
-	require.Error(t, jp.authorizeSecretAccess(context.Background(), job, "catalystcommunity/registry", "password"))
+	require.Error(t, AuthorizeSecretAccess(context.Background(), grantStore, job, "catalystcommunity/registry", "password"))
 }

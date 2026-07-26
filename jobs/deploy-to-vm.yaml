@@ -177,7 +177,11 @@ command: |-
         echo "REACTORCIDE_CONTAINER_RUNTIME=${CONTAINER_RUNTIME}" >> .env
       fi
       sed -i '/^CORNDOGS_DB_NAME=/d' .env
-      grep -q "^REACTORCIDE_WORKER_SHUTDOWN_TIMEOUT=" .env || echo "REACTORCIDE_WORKER_SHUTDOWN_TIMEOUT=1h" >> .env
+      # Stale coordinator-mediated-worker cleanup (WORKERS_PLAN.md): the
+      # worker no longer polls corndogs directly or has its own shutdown
+      # timeout distinct from the compose stop_grace_period.
+      sed -i '/^REACTORCIDE_WORKER_POLL_INTERVAL=/d' .env
+      sed -i '/^REACTORCIDE_WORKER_SHUTDOWN_TIMEOUT=/d' .env
       grep -q "^REACTORCIDE_WORKER_STOP_GRACE_PERIOD=" .env || echo "REACTORCIDE_WORKER_STOP_GRACE_PERIOD=1h" >> .env
       echo "Updated REACTORCIDE_CONTAINER_RUNTIME=${CONTAINER_RUNTIME}"
     else
@@ -203,10 +207,11 @@ command: |-
     REACTORCIDE_OBJECT_STORE_TYPE=filesystem
     REACTORCIDE_OBJECT_STORE_BASE_PATH=/data/reactorcide
 
-    # Worker Configuration
+    # Worker Configuration (coordinator-mediated, WORKERS_PLAN.md -- the
+    # worker's REACTORCIDE_COORDINATOR_URL is set directly in
+    # docker-compose.prod.yml; its enrollment token is written below by
+    # this same deploy job, not generated here)
     REACTORCIDE_WORKER_CONCURRENCY=2
-    REACTORCIDE_WORKER_POLL_INTERVAL=5
-    REACTORCIDE_WORKER_SHUTDOWN_TIMEOUT=1h
     REACTORCIDE_WORKER_STOP_GRACE_PERIOD=1h
     REACTORCIDE_CONTAINER_RUNTIME=${CONTAINER_RUNTIME}
     REACTORCIDE_LOG_LEVEL=info
@@ -274,6 +279,15 @@ command: |-
 
     echo "Configuring VCS webhook secrets:"
     update_env_var "REACTORCIDE_VCS_GITHUB_SECRET" "${REACTORCIDE_VCS_GITHUB_SECRET:-}"
+
+    # Worker enrollment (WORKERS_PLAN.md, coordinator-mediated workers): the
+    # worker's REACTORCIDE_COORDINATOR_URL is a static in-compose service URL
+    # (set directly in docker-compose.prod.yml), so only the enrollment
+    # token -- a secret -- needs writing into .env here. Value comes from
+    # ${secret:reactorcide/deploy:worker_enrollment_token} above, which
+    # runnerlib auto-masks in this job's logs, same as the VCS secret above.
+    echo "Configuring worker enrollment:"
+    update_env_var "REACTORCIDE_WORKER_ENROLLMENT_TOKEN" "${REACTORCIDE_WORKER_ENROLLMENT_TOKEN:-}"
     REMOTE_EOF
 
     echo ""
@@ -411,9 +425,16 @@ environment:
 
     # Optional with defaults
     REACTORCIDE_WORKER_CONCURRENCY: "${env:REACTORCIDE_WORKER_CONCURRENCY}"
-    REACTORCIDE_WORKER_POLL_INTERVAL: "${env:REACTORCIDE_WORKER_POLL_INTERVAL}"
     REACTORCIDE_LOG_LEVEL: "${env:REACTORCIDE_LOG_LEVEL}"
     REACTORCIDE_REMOTE_DIR: "${env:REACTORCIDE_REMOTE_DIR}"
+
+    # Worker enrollment (WORKERS_PLAN.md, coordinator-mediated workers):
+    # create a worker pool + enrollment token via the coordinator admin UI/CLI
+    # first (see docs/workers.md), store it as a reactorcide secret, and
+    # reference it here -- never as a plaintext default. Written into the
+    # VM's .env, which the worker container reads as
+    # REACTORCIDE_WORKER_ENROLLMENT_TOKEN.
+    REACTORCIDE_WORKER_ENROLLMENT_TOKEN: "${secret:reactorcide/deploy:worker_enrollment_token}"
 
     # VCS webhook secret for GitHub signature validation
     REACTORCIDE_VCS_GITHUB_SECRET: "${secret:reactorcide/deployment:github_webhook_secret}"

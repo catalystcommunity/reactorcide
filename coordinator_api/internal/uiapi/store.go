@@ -5,6 +5,7 @@ import (
 
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/auth"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/authz"
+	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/characteristics"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store/models"
 )
@@ -87,4 +88,40 @@ type DataStore interface {
 	UpdateSecretGrant(ctx context.Context, grant *models.SecretGrant) error
 	DeleteSecretGrant(ctx context.Context, userID string, projectID *string, ref string) error
 	GetSecretGrantByID(ctx context.Context, grantID string) (*models.SecretGrant, error)
+
+	// --- queues (WORKERS_PLAN.md Wave-4 P4 admin ops -- list-queues/
+	// create-queue/rename-queue/delete-queue) ---
+	ListQueues(ctx context.Context, limit, offset int) ([]models.Queue, error)
+	GetQueueByID(ctx context.Context, queueID string) (*models.Queue, error)
+	CreateQueue(ctx context.Context, chars characteristics.Characteristics, displayName string) (*models.Queue, error)
+	UpdateQueueDisplayName(ctx context.Context, queueID, displayName string) error
+	DeleteQueue(ctx context.Context, queueID string) error
+
+	// ListNonTerminalJobsByQueue is the additive lookup delete-queue's
+	// cancel-in-flight orchestration needs (postgres_store/
+	// queue_operations.go) -- not part of any existing narrow interface,
+	// same "add a bare-ID/bare-scope lookup alongside the CSIL op that
+	// needs it" pattern as this interface's other additive methods.
+	ListNonTerminalJobsByQueue(ctx context.Context, queueUUID string) ([]models.Job, error)
+
+	// --- worker_pools / pool_enrollment_tokens (WORKERS_PLAN.md Wave-4 P4
+	// admin ops -- list-pools/create-pool/update-pool/delete-pool,
+	// create-enrollment-token/list-enrollment-tokens/
+	// deactivate-enrollment-token) ---
+	ListWorkerPools(ctx context.Context, orgID *string) ([]models.WorkerPool, error)
+	GetWorkerPoolByID(ctx context.Context, poolID string) (*models.WorkerPool, error)
+	CreateWorkerPool(ctx context.Context, pool *models.WorkerPool) error
+	UpdateWorkerPool(ctx context.Context, poolID, name, description string) error
+	DeleteWorkerPool(ctx context.Context, poolID string) error
+	CreatePoolEnrollmentToken(ctx context.Context, poolID, name string, tokenHash []byte) (*models.PoolEnrollmentToken, error)
+	ListPoolEnrollmentTokens(ctx context.Context, poolID string) ([]models.PoolEnrollmentToken, error)
+	GetPoolEnrollmentTokenByID(ctx context.Context, tokenID string) (*models.PoolEnrollmentToken, error)
+	DeactivatePoolEnrollmentToken(ctx context.Context, tokenID string) error
+
+	// --- workers / worker_leases (WORKERS_PLAN.md Wave-4 P4 admin ops --
+	// list-workers/set-worker-status/drain-worker) ---
+	ListWorkers(ctx context.Context, poolID *string) ([]models.Worker, error)
+	GetWorkerByID(ctx context.Context, workerID string) (*models.Worker, error)
+	UpdateWorkerStatus(ctx context.Context, workerID, status string) error
+	ListActiveLeasesForWorker(ctx context.Context, workerID string) ([]models.WorkerLease, error)
 }

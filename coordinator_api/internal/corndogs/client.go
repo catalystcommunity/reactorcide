@@ -43,19 +43,38 @@ func NewClient(config Config) (*Client, error) {
 	}
 
 	return &Client{
-		client: csil.New(normalizeBaseURL(config.BaseURL)),
+		client: newCorndogsClient(config.BaseURL),
 		config: config,
 	}, nil
 }
 
-func normalizeBaseURL(baseURL string) string {
-	if strings.Contains(baseURL, "://") {
-		return baseURL
+// newCorndogsClient builds the generated CorndogsClient over the TCP
+// StreamCarrier transport. config.BaseURL is a corndogs CSIL-RPC address
+// (host:port), or a comma-separated list of seed addresses for a corndogs
+// cluster (leader-following). Any URL scheme (tcp://, http://) is tolerated and
+// stripped by the transport's dialAddr, so legacy "corndogs:5080" values keep
+// working — as a plain TCP address now, not HTTP.
+func newCorndogsClient(baseURL string) *csil.CorndogsClient {
+	seeds := splitSeeds(baseURL)
+	if len(seeds) <= 1 {
+		return csil.New(baseURL)
 	}
-	return "http://" + baseURL
+	return csil.NewCluster(seeds...)
 }
 
-// Close is retained for the client interface; CSIL-RPC uses per-request HTTP.
+func splitSeeds(baseURL string) []string {
+	parts := strings.Split(baseURL, ",")
+	seeds := make([]string, 0, len(parts))
+	for _, p := range parts {
+		if s := strings.TrimSpace(p); s != "" {
+			seeds = append(seeds, s)
+		}
+	}
+	return seeds
+}
+
+// Close is retained for the client interface; the TCP transport dials lazily
+// and re-dials on failure, so there is nothing to close here.
 func (c *Client) Close() error {
 	return nil
 }
@@ -69,15 +88,22 @@ type TaskPayload struct {
 	Metadata map[string]interface{} `json:"metadata"`
 }
 
-// SubmitTask submits a new task to Corndogs
+// SubmitTask submits a new task to Corndogs on the client's configured queue.
 func (c *Client) SubmitTask(ctx context.Context, payload *TaskPayload, priority int64) (*pb.Task, error) {
+	return c.SubmitTaskToQueue(ctx, c.config.QueueName, payload, priority)
+}
+
+// SubmitTaskToQueue submits a new task to Corndogs on an explicit queue, rather than
+// the client's configured default queue. This is the primitive used by queue routing
+// (each job's characteristics resolve to a UUID queue at submit time).
+func (c *Client) SubmitTaskToQueue(ctx context.Context, queue string, payload *TaskPayload, priority int64) (*pb.Task, error) {
 	payloadBytes, err := json.Marshal(payload)
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal payload: %w", err)
 	}
 
 	req := csil.SubmitTaskRequest{
-		Queue:           c.config.QueueName,
+		Queue:           queue,
 		CurrentState:    "submitted",
 		AutoTargetState: "submitted-working",
 		Timeout:         int64(c.config.Timeout.Seconds()),
@@ -108,6 +134,30 @@ func (c *Client) GetNextTask(ctx context.Context, state string, timeout int64) (
 	resp, err := c.client.GetNextTask(ctx, req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get next task: %w", err)
+	}
+
+	return toPBTask(resp.Task), nil
+}
+
+// GetNextTaskGroup gets the next available task across a group of queues, honoring
+// priority across the whole group and claiming exactly one task per call (the store
+// runs GetNextTask generalized to `queue IN (?)` with FOR UPDATE SKIP LOCKED). Used by
+// worker matching: the coordinator resolves the worker's satisfiable queues to UUIDs
+// and polls all of them in one call. Returns (nil, nil) when the group yields nothing.
+func (c *Client) GetNextTaskGroup(ctx context.Context, queues []string, currentState string, timeout int64) (*pb.Task, error) {
+	if currentState == "" {
+		currentState = "submitted"
+	}
+
+	req := csil.GetNextTaskGroupRequest{
+		Queues:          queues,
+		CurrentState:    currentState,
+		OverrideTimeout: timeout,
+	}
+
+	resp, err := c.client.GetNextTaskGroup(ctx, req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get next task group: %w", err)
 	}
 
 	return toPBTask(resp.Task), nil

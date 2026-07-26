@@ -4,18 +4,7 @@ import (
 	"context"
 	"io"
 	"time"
-
-	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store/models"
 )
-
-// JobProcessorInterface defines the interface for job processing
-type JobProcessorInterface interface {
-	ProcessJob(ctx context.Context, job *models.Job) *JobResult
-	ProcessJobWithContext(ctx context.Context, job *models.Job, execCtx *JobExecutionContext) *JobResult
-}
-
-// Ensure JobProcessor implements JobProcessorInterface
-var _ JobProcessorInterface = (*JobProcessor)(nil)
 
 // JobRunner defines the interface for container runtime backends
 // This abstraction allows the worker to spawn job containers using different runtimes
@@ -44,9 +33,9 @@ type JobRunner interface {
 	// used by the admin "kill" path when it needs an unambiguous immediate
 	// stop rather than going through Cleanup directly (e.g. to unblock a
 	// stuck WaitForCompletion caller). Cleanup remains the primary "kill"
-	// primitive at the job_processor/corndogs_worker layer (see AGENTS.md /
-	// UI_AUTH_PLAN.md Cancel vs Kill) — Stop(grace=0) exists so runner
-	// backends have a single, testable primitive for "terminate now".
+	// primitive at the caller layer (coordinatorworker's run loop; see
+	// AGENTS.md / UI_AUTH_PLAN.md Cancel vs Kill) — Stop(grace=0) exists so
+	// runner backends have a single, testable primitive for "terminate now".
 	//
 	// Calling Stop on a container/pod that has already exited or been
 	// removed must be a safe no-op (implementations should tolerate
@@ -160,9 +149,18 @@ type JobConfig struct {
 	// Timeout for the job execution (0 = no timeout)
 	TimeoutSeconds int
 
-	// Resource limits
-	CPULimit    string // e.g., "1.0" for 1 CPU
-	MemoryLimit string // e.g., "512Mi" or "1Gi"
+	// Resource requests/limits. Values are Kubernetes-style quantity strings
+	// (https://kubernetes.io/docs/reference/kubernetes-api/common-definitions/quantity/,
+	// validated by k8s.io/apimachinery/pkg/api/resource -- see
+	// internal/resources.ParseResources): "1", "2", "500m" for CPU; "4Gi",
+	// "512Mi" for memory. Memory is limit-only -- there is no MemoryRequest,
+	// mirroring the Job model and DB schema (memory is a pure ceiling, not a
+	// reservation). CPURequest is advisory for runners that have no native
+	// CPU reservation concept (see DockerRunner: mapped to --cpu-shares);
+	// KubernetesRunner sets it as a real requests.cpu.
+	CPURequest  string // e.g., "1" or "500m"; advisory outside Kubernetes
+	CPULimit    string // e.g., "1", "2", or "500m"
+	MemoryLimit string // e.g., "512Mi" or "4Gi"
 
 	// Job metadata (for labeling/tagging)
 	JobID     string

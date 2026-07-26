@@ -12,6 +12,7 @@ type CorndogsService interface {
 	SubmitTask(ctx context.Context, req SubmitTaskRequest) (SubmitTaskResponse, error)
 	GetTaskStateByID(ctx context.Context, req GetTaskStateByIDRequest) (GetTaskStateByIDResponse, error)
 	GetNextTask(ctx context.Context, req GetNextTaskRequest) (GetNextTaskResponse, error)
+	GetNextTaskGroup(ctx context.Context, req GetNextTaskGroupRequest) (GetNextTaskGroupResponse, error)
 	UpdateTask(ctx context.Context, req UpdateTaskRequest) (UpdateTaskResponse, error)
 	CompleteTask(ctx context.Context, req CompleteTaskRequest) (CompleteTaskResponse, error)
 	CancelTask(ctx context.Context, req CancelTaskRequest) (CancelTaskResponse, error)

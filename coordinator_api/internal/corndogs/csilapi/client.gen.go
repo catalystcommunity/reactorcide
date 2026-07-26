@@ -25,8 +25,10 @@ func (e *ClientError) Error() string {
 
 // Transport is the caller-supplied byte carrier: it performs the call named by
 // (service, op) with the already-encoded request bytes and returns the response
-// bytes, or an error. The generated client owns (de)serialization via the codec;
-// the carrier only moves bytes, so it can be HTTP, a queue, or an in-process loop.
+// bytes, or an error. Both names are the verbatim CSIL names (service as written,
+// op in kebab-case as written), ready to go on the wire unmodified. The generated
+// client owns (de)serialization via the codec; the carrier only moves bytes, so
+// it can be HTTP, a queue, or an in-process loop.
 type Transport interface {
 	Call(ctx context.Context, service string, op string, req []byte) ([]byte, error)
 }
@@ -43,7 +45,7 @@ func NewCorndogsClient(transport Transport) *CorndogsClient {
 
 func (c *CorndogsClient) SubmitTask(ctx context.Context, req SubmitTaskRequest) (SubmitTaskResponse, error) {
 	var csilZero SubmitTaskResponse
-	csilResp, csilErr := c.transport.Call(ctx, "corndogs", "SubmitTask", EncodeSubmitTaskRequest(req))
+	csilResp, csilErr := c.transport.Call(ctx, "CorndogsService", "SubmitTask", EncodeSubmitTaskRequest(req))
 	if csilErr != nil {
 		return csilZero, csilErr
 	}
@@ -52,7 +54,7 @@ func (c *CorndogsClient) SubmitTask(ctx context.Context, req SubmitTaskRequest) 
 
 func (c *CorndogsClient) GetTaskStateByID(ctx context.Context, req GetTaskStateByIDRequest) (GetTaskStateByIDResponse, error) {
 	var csilZero GetTaskStateByIDResponse
-	csilResp, csilErr := c.transport.Call(ctx, "corndogs", "GetTaskStateByID", EncodeGetTaskStateByIDRequest(req))
+	csilResp, csilErr := c.transport.Call(ctx, "CorndogsService", "GetTaskStateByID", EncodeGetTaskStateByIDRequest(req))
 	if csilErr != nil {
 		return csilZero, csilErr
 	}
@@ -61,16 +63,25 @@ func (c *CorndogsClient) GetTaskStateByID(ctx context.Context, req GetTaskStateB
 
 func (c *CorndogsClient) GetNextTask(ctx context.Context, req GetNextTaskRequest) (GetNextTaskResponse, error) {
 	var csilZero GetNextTaskResponse
-	csilResp, csilErr := c.transport.Call(ctx, "corndogs", "GetNextTask", EncodeGetNextTaskRequest(req))
+	csilResp, csilErr := c.transport.Call(ctx, "CorndogsService", "GetNextTask", EncodeGetNextTaskRequest(req))
 	if csilErr != nil {
 		return csilZero, csilErr
 	}
 	return DecodeGetNextTaskResponse(csilResp)
 }
 
+func (c *CorndogsClient) GetNextTaskGroup(ctx context.Context, req GetNextTaskGroupRequest) (GetNextTaskGroupResponse, error) {
+	var csilZero GetNextTaskGroupResponse
+	csilResp, csilErr := c.transport.Call(ctx, "CorndogsService", "GetNextTaskGroup", EncodeGetNextTaskGroupRequest(req))
+	if csilErr != nil {
+		return csilZero, csilErr
+	}
+	return DecodeGetNextTaskGroupResponse(csilResp)
+}
+
 func (c *CorndogsClient) UpdateTask(ctx context.Context, req UpdateTaskRequest) (UpdateTaskResponse, error) {
 	var csilZero UpdateTaskResponse
-	csilResp, csilErr := c.transport.Call(ctx, "corndogs", "UpdateTask", EncodeUpdateTaskRequest(req))
+	csilResp, csilErr := c.transport.Call(ctx, "CorndogsService", "UpdateTask", EncodeUpdateTaskRequest(req))
 	if csilErr != nil {
 		return csilZero, csilErr
 	}
@@ -79,7 +90,7 @@ func (c *CorndogsClient) UpdateTask(ctx context.Context, req UpdateTaskRequest) 
 
 func (c *CorndogsClient) CompleteTask(ctx context.Context, req CompleteTaskRequest) (CompleteTaskResponse, error) {
 	var csilZero CompleteTaskResponse
-	csilResp, csilErr := c.transport.Call(ctx, "corndogs", "CompleteTask", EncodeCompleteTaskRequest(req))
+	csilResp, csilErr := c.transport.Call(ctx, "CorndogsService", "CompleteTask", EncodeCompleteTaskRequest(req))
 	if csilErr != nil {
 		return csilZero, csilErr
 	}
@@ -88,7 +99,7 @@ func (c *CorndogsClient) CompleteTask(ctx context.Context, req CompleteTaskReque
 
 func (c *CorndogsClient) CancelTask(ctx context.Context, req CancelTaskRequest) (CancelTaskResponse, error) {
 	var csilZero CancelTaskResponse
-	csilResp, csilErr := c.transport.Call(ctx, "corndogs", "CancelTask", EncodeCancelTaskRequest(req))
+	csilResp, csilErr := c.transport.Call(ctx, "CorndogsService", "CancelTask", EncodeCancelTaskRequest(req))
 	if csilErr != nil {
 		return csilZero, csilErr
 	}
@@ -97,7 +108,7 @@ func (c *CorndogsClient) CancelTask(ctx context.Context, req CancelTaskRequest) 
 
 func (c *CorndogsClient) CleanUpTimedOut(ctx context.Context, req CleanUpTimedOutRequest) (CleanUpTimedOutResponse, error) {
 	var csilZero CleanUpTimedOutResponse
-	csilResp, csilErr := c.transport.Call(ctx, "corndogs", "CleanUpTimedOut", EncodeCleanUpTimedOutRequest(req))
+	csilResp, csilErr := c.transport.Call(ctx, "CorndogsService", "CleanUpTimedOut", EncodeCleanUpTimedOutRequest(req))
 	if csilErr != nil {
 		return csilZero, csilErr
 	}
@@ -106,7 +117,7 @@ func (c *CorndogsClient) CleanUpTimedOut(ctx context.Context, req CleanUpTimedOu
 
 func (c *CorndogsClient) GetQueues(ctx context.Context, req GetQueuesRequest) (GetQueuesResponse, error) {
 	var csilZero GetQueuesResponse
-	csilResp, csilErr := c.transport.Call(ctx, "corndogs", "GetQueues", EncodeGetQueuesRequest(req))
+	csilResp, csilErr := c.transport.Call(ctx, "CorndogsService", "GetQueues", EncodeGetQueuesRequest(req))
 	if csilErr != nil {
 		return csilZero, csilErr
 	}
@@ -115,7 +126,7 @@ func (c *CorndogsClient) GetQueues(ctx context.Context, req GetQueuesRequest) (G
 
 func (c *CorndogsClient) GetQueueTaskCounts(ctx context.Context, req GetQueueTaskCountsRequest) (GetQueueTaskCountsResponse, error) {
 	var csilZero GetQueueTaskCountsResponse
-	csilResp, csilErr := c.transport.Call(ctx, "corndogs", "GetQueueTaskCounts", EncodeGetQueueTaskCountsRequest(req))
+	csilResp, csilErr := c.transport.Call(ctx, "CorndogsService", "GetQueueTaskCounts", EncodeGetQueueTaskCountsRequest(req))
 	if csilErr != nil {
 		return csilZero, csilErr
 	}
@@ -124,7 +135,7 @@ func (c *CorndogsClient) GetQueueTaskCounts(ctx context.Context, req GetQueueTas
 
 func (c *CorndogsClient) GetTaskStateCounts(ctx context.Context, req GetTaskStateCountsRequest) (GetTaskStateCountsResponse, error) {
 	var csilZero GetTaskStateCountsResponse
-	csilResp, csilErr := c.transport.Call(ctx, "corndogs", "GetTaskStateCounts", EncodeGetTaskStateCountsRequest(req))
+	csilResp, csilErr := c.transport.Call(ctx, "CorndogsService", "GetTaskStateCounts", EncodeGetTaskStateCountsRequest(req))
 	if csilErr != nil {
 		return csilZero, csilErr
 	}
@@ -133,7 +144,7 @@ func (c *CorndogsClient) GetTaskStateCounts(ctx context.Context, req GetTaskStat
 
 func (c *CorndogsClient) GetQueueAndStateCounts(ctx context.Context, req GetQueueAndStateCountsRequest) (GetQueueAndStateCountsResponse, error) {
 	var csilZero GetQueueAndStateCountsResponse
-	csilResp, csilErr := c.transport.Call(ctx, "corndogs", "GetQueueAndStateCounts", EncodeGetQueueAndStateCountsRequest(req))
+	csilResp, csilErr := c.transport.Call(ctx, "CorndogsService", "GetQueueAndStateCounts", EncodeGetQueueAndStateCountsRequest(req))
 	if csilErr != nil {
 		return csilZero, csilErr
 	}
