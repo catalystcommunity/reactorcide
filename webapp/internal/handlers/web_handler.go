@@ -84,10 +84,11 @@ func NewWebHandler(client *APIClient, uiClients *uiclient.Clients) *WebHandler {
 			}
 			return "log-stdout"
 		},
-		"workflowLink":   workflowLink,
-		"shortSHA":       shortSHA,
-		"joinStringList": joinStringList,
-		"isRetryable":    isRetryableStatus,
+		"workflowLink":           workflowLink,
+		"shortSHA":               shortSHA,
+		"joinStringList":         joinStringList,
+		"isRetryable":            isRetryableStatus,
+		"workerStatusBadgeClass": workerStatusBadgeClass,
 	}
 
 	tmpl := template.Must(template.New("").Funcs(funcMap).ParseFS(templates.FS, "*.html"))
@@ -362,6 +363,23 @@ func statusClass(status string) string {
 // re-validates the status itself when the retry op is actually called.
 func isRetryableStatus(status string) bool {
 	return status == "failed" || status == "cancelled" || status == "timeout"
+}
+
+// workerStatusBadgeClass maps a worker's persisted status
+// (active/quarantined/disabled — models.Worker's status CHECK constraint on
+// the coordinator) onto one of the existing generic .badge-* CSS classes
+// (layout.html), so the Workers admin page (workers.html) doesn't need its
+// own status color palette: active reads as healthy (green), quarantined as
+// a caution state (yellow), disabled as inert (gray).
+func workerStatusBadgeClass(status string) string {
+	switch status {
+	case "active":
+		return "badge-public"
+	case "quarantined":
+		return "badge-private"
+	default:
+		return "badge-inactive"
+	}
 }
 
 // hasUnsuccessfulJobs reports whether any job in a workflow's member-job

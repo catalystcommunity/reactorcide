@@ -54,6 +54,13 @@ type Caps struct {
 	ManageSecrets bool
 	// ManageGroupsRoles: manage groups and assign/revoke role assignments.
 	ManageGroupsRoles bool
+	// ManageWorkers: manage worker pools, workers, enrollment tokens, and
+	// queues (WORKERS_PLAN.md Wave-4 P4 admin ops) — create/rename/delete
+	// queues, quarantine/disable/drain a worker, pool + enrollment-token
+	// CRUD. Same org-admin/global-admin tier as ManageSecrets/
+	// ManageGroupsRoles; there is no separate "view" capability for this
+	// surface.
+	ManageWorkers bool
 	// ProjectSettings: edit project settings (visibility, defaults).
 	ProjectSettings bool
 	// GlobalAdmin: the global-admin-only surface — trusted
@@ -76,6 +83,7 @@ func orgAdminCaps() Caps {
 		ManageVCSCredentials: true,
 		ManageSecrets:        true,
 		ManageGroupsRoles:    true,
+		ManageWorkers:        true,
 		ProjectSettings:      true,
 	}
 }

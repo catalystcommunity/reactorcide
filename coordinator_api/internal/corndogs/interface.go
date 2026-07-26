@@ -9,11 +9,19 @@ import (
 // ClientInterface defines the interface for Corndogs operations
 // This allows for easy mocking in tests
 type ClientInterface interface {
-	// SubmitTask submits a new task to Corndogs
+	// SubmitTask submits a new task to Corndogs on the client's configured queue
 	SubmitTask(ctx context.Context, payload *TaskPayload, priority int64) (*pb.Task, error)
+
+	// SubmitTaskToQueue submits a new task to Corndogs on an explicit queue
+	SubmitTaskToQueue(ctx context.Context, queue string, payload *TaskPayload, priority int64) (*pb.Task, error)
 
 	// GetNextTask gets the next available task from the queue
 	GetNextTask(ctx context.Context, state string, timeout int64) (*pb.Task, error)
+
+	// GetNextTaskGroup gets the next available task across a group of queues,
+	// honoring priority across the whole group. Returns nil when the group yields
+	// nothing.
+	GetNextTaskGroup(ctx context.Context, queues []string, currentState string, timeout int64) (*pb.Task, error)
 
 	// UpdateTask updates the state of a task
 	UpdateTask(ctx context.Context, taskID string, currentState string, newState string, payload []byte) (*pb.Task, error)

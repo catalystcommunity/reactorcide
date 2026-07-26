@@ -24,7 +24,7 @@ services:
 
     # Corndogs Task Queue
     corndogs:
-        image: containers.catalystsquad.com/public/catalystcommunity/corndogs:0.6.0
+        image: containers.catalystsquad.com/public/catalystcommunity/corndogs:0.7.0
         container_name: reactorcide-corndogs-dev
         user: "0:0"
         environment:
@@ -69,6 +69,15 @@ services:
             # while no global admin exists yet. Obviously-fake dev-only value;
             # never reuse this for a real deployment.
             REACTORCIDE_BOOTSTRAP_ADMIN_TOKEN: dev-bootstrap-token-change-me
+            # Worker bootstrap (WORKERS_PLAN.md, coordinator-mediated workers):
+            # on first boot with no worker pools yet, the coordinator seeds a
+            # default pool + enrollment token equal to this value so the dev
+            # worker below can enroll without any manual admin step. Obviously-
+            # fake dev-only value; never reuse this for a real deployment --
+            # production wires a real per-pool token via a Secret instead (see
+            # helm_chart/values.yaml worker.enrollmentTokenSecret and
+            # docs/workers.md).
+            REACTORCIDE_DEFAULT_WORKER_ENROLLMENT_TOKEN: ${REACTORCIDE_WORKER_ENROLLMENT_TOKEN:-dev-worker-enroll-token-change-me}
         ports:
             - "8080:8080"
         volumes:
@@ -82,6 +91,11 @@ services:
             - reactorcide
 
     # Worker
+    #
+    # Coordinator-mediated (WORKERS_PLAN.md): the worker only needs a
+    # coordinator URL + enrollment token + a writable data dir for its
+    # persisted worker_key. It no longer talks to corndogs, Postgres, or
+    # object storage directly -- the coordinator brokers all of that.
     worker:
         build:
             context: .
@@ -89,24 +103,22 @@ services:
         image: reactorcide/worker:dev
         container_name: reactorcide-worker-dev
         environment:
-            REACTORCIDE_DB_URI: "postgresql://reactorcide:devpass123@postgres:5432/reactorcide_db?sslmode=disable"
-            REACTORCIDE_CORNDOGS_BASE_URL: corndogs:5080
-            REACTORCIDE_WORKER_QUEUE: reactorcide-jobs
-            REACTORCIDE_WORKER_CONCURRENCY: "2"
-            REACTORCIDE_WORKER_POLL_INTERVAL: "5"
-            REACTORCIDE_WORKER_SHUTDOWN_TIMEOUT: 1h
+            REACTORCIDE_COORDINATOR_URL: http://coordinator-api:8080
+            # Dev-only bootstrap token; must match coordinator-api's
+            # REACTORCIDE_DEFAULT_WORKER_ENROLLMENT_TOKEN above. In production
+            # this comes from a real per-pool enrollment token stored as a
+            # secret (see docs/workers.md), never a literal here.
+            REACTORCIDE_WORKER_ENROLLMENT_TOKEN: ${REACTORCIDE_WORKER_ENROLLMENT_TOKEN:-dev-worker-enroll-token-change-me}
+            REACTORCIDE_WORKER_DATA_DIR: /var/lib/reactorcide-worker
             REACTORCIDE_CONTAINER_RUNTIME: docker
-            REACTORCIDE_OBJECT_STORE_TYPE: filesystem
-            REACTORCIDE_OBJECT_STORE_BASE_PATH: /var/lib/reactorcide
+            REACTORCIDE_WORKER_CONCURRENCY: "2"
             REACTORCIDE_LOG_LEVEL: debug
         volumes:
             - /var/run/docker.sock:/var/run/docker.sock
-            - reactorcide_data:/var/lib/reactorcide
+            - reactorcide_worker_data:/var/lib/reactorcide-worker
             - /tmp/reactorcide-jobs:/tmp/reactorcide-jobs
         depends_on:
             coordinator-api:
-                condition: service_started
-            corndogs:
                 condition: service_started
         stop_grace_period: 1h
         networks:
@@ -144,3 +156,7 @@ volumes:
     postgres_data:
     corndogs_data:
     reactorcide_data:
+    # Worker's persisted worker_key (not a secret). Not shared with
+    # coordinator-api's reactorcide_data -- the worker no longer touches
+    # object storage.
+    reactorcide_worker_data:

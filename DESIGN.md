@@ -937,6 +937,18 @@ sole authorizer for all of it — the webapp only mirrors capabilities for rende
 first-admin/bootstrap setup, the full permission matrix, credential rotation workflow) and
 `UI_AUTH_PLAN.md` for the schema/architecture this was built from.
 
+### Workers & Queues
+
+The Worker section above (and its Corndogs-polling description) predates the
+coordinator-mediated worker model: workers now authenticate to the coordinator over
+CSIL-RPC and pull all work through it (`Register`/`RequestJob`/`Heartbeat`/`AppendLogs`/
+`ReportResult`) rather than polling Corndogs directly, jobs route to UUID-identified
+Corndogs queues by **characteristics** (a `key → value` match, defaulting untagged jobs to
+`{os: linux}`), and jobs carry their own **resources** (Kubernetes-style CPU/memory
+quantity strings). See **[docs/workers.md](./docs/workers.md)** for the operator-facing
+guide (topology, characteristics/matching, queues, resources, enrollment, admin UI) and
+`WORKERS_PLAN.md` for the schema/architecture this was built from.
+
 ## Future Roadmap
 
 ### Container Registry

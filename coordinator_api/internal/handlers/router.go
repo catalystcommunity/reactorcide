@@ -7,6 +7,7 @@ import (
 	"log"
 	"net/http"
 	"strings"
+	"sync"
 
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/auth"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/checkauth"
@@ -18,9 +19,13 @@ import (
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/pubsub"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/secrets"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store"
+	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store/postgres_store"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/uiapi"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/uiapi/csilapi"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/vcs"
+	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/workerapi"
+	workercsilapi "github.com/catalystcommunity/reactorcide/coordinator_api/internal/workerapi/csilapi"
+	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/workerauth"
 
 	"github.com/rs/cors"
 )
@@ -716,9 +721,52 @@ func createAppMux() *http.ServeMux {
 			uiUiImpl = uiapi.NewUiService(deps)
 		}
 	}
-	mux.Handle(uiapi.RpcPath, uiapi.NewHandler(uiAuthImpl, uiUiImpl))
+
+	// ReactorcideWorker (WORKERS_PLAN.md "Workers -- registration, auth,
+	// protocol", P2-A2) is mounted on the SAME /csil/v1/rpc endpoint as
+	// ReactorcideAuth/ReactorcideUi -- CSIL-RPC routes on the envelope's own
+	// `service` field, so one HTTP handler serves every service sharing this
+	// transport. nil (no worker ops registered; "ReactorcideWorker" resolves
+	// as an unknown route) when store.AppStore doesn't satisfy
+	// workerapi.DataStore, e.g. a minimal test store.
+	var workerImpl workercsilapi.ReactorcideWorker
+	if workerStore, ok := store.AppStore.(workerapi.DataStore); ok {
+		workerDeps := buildWorkerAPIDeps(workerStore, singletoncorndogsClient, singletonKeyManager, singletonObjectStore)
+		workerSvc := workerapi.NewWorkerService(workerDeps)
+		workerImpl = workerSvc
+		startWorkerLeaseReaperOnce(workerSvc)
+	}
+	mux.Handle(uiapi.RpcPath, uiapi.NewHandlerWithWorker(uiAuthImpl, uiUiImpl, workerImpl))
 
 	return mux
+}
+
+// workerLeaseReaperOnce ensures the worker-lease reaper background loop
+// (internal/workerapi's WorkerService.RunLeaseReaper -- WORKERS_PLAN.md
+// "Workers", mirroring internal/worker/corndogs_worker.go's own
+// runCancellingReaper) starts at most once per process, even though
+// createAppMux may run more than once in tests via ResetAppMux/
+// GetAppMuxWithClient.
+var workerLeaseReaperOnce sync.Once
+
+func startWorkerLeaseReaperOnce(svc *workerapi.WorkerService) {
+	workerLeaseReaperOnce.Do(func() {
+		go svc.RunLeaseReaper(context.Background())
+	})
+}
+
+// buildWorkerAPIDeps wires the CSIL Worker service's dependencies (P2-A2),
+// reusing the exact same store/corndogs/key-manager/object-store singletons
+// buildUIAPIDeps wires for the sibling ReactorcideAuth/ReactorcideUi
+// service, plus a dedicated pubsub.Publisher built the same way other
+// coordinator-side publishers are wired (pubsub.NewPublisher is
+// nil-pool-safe, so a deployment without a pgx pool simply gets a Publisher
+// that drops every publish).
+func buildWorkerAPIDeps(workerStore workerapi.DataStore, corndogsClient corndogs.ClientInterface, keyManager *secrets.MasterKeyManager, objectStore objects.ObjectStore) *workerapi.Deps {
+	enrollment := workerauth.NewEnrollment(workerStore)
+	sessions := workerauth.NewWorkerSessions(workerStore)
+	publisher := pubsub.NewPublisher(postgres_store.PgxPool())
+	return workerapi.NewDeps(workerStore, corndogsClient, enrollment, sessions, keyManager, objectStore, publisher)
 }
 
 // buildUIAPIDeps wires the CSIL UI service's dependencies (Task G): seeds

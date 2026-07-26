@@ -25,7 +25,9 @@ func main() {
 			cmd.LogsCommand,
 		},
 	}
-	err := app.Run(os.Args)
+	// Work around a urfave/cli/v2 parsing limitation for "secret-grants set":
+	// see the doc comment on cmd.NormalizeSecretGrantsArgs.
+	err := app.Run(cmd.NormalizeSecretGrantsArgs(os.Args))
 	if err != nil {
 		// log fatal so we exit with the proper exit code, this is important for containerized deployment health checks
 		logging.Log.WithError(err).Fatal("runtime error")

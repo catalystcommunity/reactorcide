@@ -40,6 +40,7 @@ import (
 	"time"
 
 	"github.com/catalystcommunity/app-utils-go/logging"
+	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/characteristics"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/corndogs"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store/models"
@@ -68,6 +69,18 @@ type workflowRetryStore interface {
 	CreateWorkflowNode(ctx context.Context, node *models.WorkflowNode) error
 }
 
+// queueResolvingStore is the narrow store capability RetryJob uses to
+// re-resolve a retried job's characteristics to a queue UUID before
+// resubmitting -- WORKERS_PLAN.md "Find-or-create at submit". Defined here
+// on the consumer side (repo convention: narrow interface + type assertion
+// on the store), mirroring internal/handlers/job_handler.go and
+// internal/worker/trigger_processor.go's identical interface for their own
+// submit paths. The concrete PostgresDbStore satisfies it via
+// internal/store/postgres_store/queue_operations.go.
+type queueResolvingStore interface {
+	FindOrCreateQueueByCharacteristics(ctx context.Context, chars characteristics.Characteristics) (*models.Queue, error)
+}
+
 // RetryJob retries a single job in place: validates job.IsRetryable()
 // (failed, cancelled, or timeout), clones its full spec into a brand-new job row
 // (fresh JobID, status "submitted", every execution field zeroed —
@@ -94,13 +107,28 @@ func RetryJob(ctx context.Context, st store.Store, corndogsClient corndogs.Clien
 	}
 
 	newJob := cloneJobForRetry(job)
+
+	// Re-resolve the queue from the cloned characteristics rather than
+	// trusting the cloned QueueName verbatim (WORKERS_PLAN.md "Find-or-create
+	// at submit", same as every other submit path) -- this is a no-op in the
+	// common case (the original job's characteristics already resolved to a
+	// live queue row) but stays correct if that queue row was ever deleted
+	// and needs re-creating.
+	if qs, ok := st.(queueResolvingStore); ok {
+		queue, err := qs.FindOrCreateQueueByCharacteristics(ctx, newJob.Characteristics)
+		if err != nil {
+			return nil, fmt.Errorf("failed to resolve queue for retried job: %w", err)
+		}
+		newJob.QueueName = queue.QueueUUID
+	}
+
 	if err := st.CreateJob(ctx, newJob); err != nil {
 		return nil, fmt.Errorf("failed to create retried job: %w", err)
 	}
 
 	if corndogsClient != nil {
 		payload := worker.BuildTaskPayload(newJob)
-		task, err := corndogsClient.SubmitTask(ctx, payload, int64(newJob.Priority))
+		task, err := corndogsClient.SubmitTaskToQueue(ctx, newJob.QueueName, payload, int64(newJob.Priority))
 		if err != nil {
 			logging.Log.WithError(err).WithField("job_id", newJob.JobID).
 				Error("Failed to submit retried job to Corndogs")
@@ -382,6 +410,11 @@ func cloneJobForRetry(original *models.Job) *models.Job {
 
 		QueueName:       original.QueueName,
 		AutoTargetState: original.AutoTargetState,
+		Characteristics: cloneCharacteristics(original.Characteristics),
+
+		ResourceCPURequest:  original.ResourceCPURequest,
+		ResourceCPULimit:    original.ResourceCPULimit,
+		ResourceMemoryLimit: original.ResourceMemoryLimit,
 
 		Status: "submitted",
 
@@ -411,6 +444,21 @@ func cloneJSONB(in models.JSONB) models.JSONB {
 		return nil
 	}
 	out := make(models.JSONB, len(in))
+	for k, v := range in {
+		out[k] = v
+	}
+	return out
+}
+
+// cloneCharacteristics shallow-copies a Characteristics map. Values
+// (characteristics.Value) are immutable by construction (see
+// internal/characteristics), so a shallow copy is sufficient to give the
+// retried job its own map instance.
+func cloneCharacteristics(in characteristics.Characteristics) characteristics.Characteristics {
+	if in == nil {
+		return nil
+	}
+	out := make(characteristics.Characteristics, len(in))
 	for k, v := range in {
 		out[k] = v
 	}

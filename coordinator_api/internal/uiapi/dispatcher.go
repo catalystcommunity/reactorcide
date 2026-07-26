@@ -9,6 +9,7 @@ import (
 
 	rpctransport "github.com/catalystcommunity/csilgen/transports/go"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/uiapi/csilapi"
+	workercsilapi "github.com/catalystcommunity/reactorcide/coordinator_api/internal/workerapi/csilapi"
 )
 
 const (
@@ -61,10 +62,35 @@ type Handler struct {
 }
 
 // NewHandler builds the dispatcher for the given ReactorcideAuth /
-// ReactorcideUi implementations. Pass NewStubAuth()/NewStubUi() to mount a
-// handler whose every op returns ServiceError{code:"unimplemented"} until
-// the real implementations (Task G) are wired in.
+// ReactorcideUi implementations, with no ReactorcideWorker service mounted
+// (a request for service "ReactorcideWorker" resolves as an unknown route).
+// Pass NewStubAuth()/NewStubUi() to mount a handler whose every op returns
+// ServiceError{code:"unimplemented"} until the real implementations (Task G)
+// are wired in. Existing callers (router.go's non-worker paths, this
+// package's own dispatcher tests) keep this two-argument shape; production
+// wiring that also mounts the worker protocol uses NewHandlerWithWorker.
 func NewHandler(auth csilapi.ReactorcideAuth, ui csilapi.ReactorcideUi) *Handler {
+	return NewHandlerWithWorker(auth, ui, nil)
+}
+
+// NewHandlerWithWorker builds the dispatcher for the given ReactorcideAuth /
+// ReactorcideUi implementations, additionally mounting a ReactorcideWorker
+// implementation (WORKERS_PLAN.md "Workers -- registration, auth,
+// protocol") on the SAME /csil/v1/rpc envelope-in-body endpoint -- CSIL-RPC
+// routes on the envelope's own `service` field, so one HTTP handler serves
+// every service sharing this transport. worker may be nil (no
+// "ReactorcideWorker" ops registered; a request naming that service resolves
+// as an unknown route, matching pre-worker-protocol behavior exactly).
+//
+// worker's ServiceError arm is encoded via THIS package's
+// csilapi.EncodeServiceError (through wrapOp's *ServiceErr recognition,
+// shared across every service this dispatcher serves) rather than
+// workerapi/csilapi's own generated encoder for the same-shaped type --
+// reactorcide-worker.csil's ServiceError is a structurally identical
+// {code: text, message: text} record, so the wire bytes are identical
+// either way; internal/workerapi implementations return uiapi.NewServiceError
+// values for exactly this reason (see internal/workerapi/deps.go).
+func NewHandlerWithWorker(auth csilapi.ReactorcideAuth, ui csilapi.ReactorcideUi, worker workercsilapi.ReactorcideWorker) *Handler {
 	h := &Handler{ops: map[string]map[string]opFunc{}}
 
 	h.ops["ReactorcideAuth"] = map[string]opFunc{
@@ -122,6 +148,29 @@ func NewHandler(auth csilapi.ReactorcideAuth, ui csilapi.ReactorcideUi) *Handler
 		"list-trusted-domain-patterns":  wrapOp(csilapi.DecodeListTrustedDomainPatternsRequest, csilapi.EncodeListTrustedDomainPatternsResponse, "ListTrustedDomainPatternsResponse", ui.ListTrustedDomainPatterns),
 		"add-trusted-domain-pattern":    wrapOp(csilapi.DecodeAddTrustedDomainPatternRequest, csilapi.EncodeAddTrustedDomainPatternResponse, "AddTrustedDomainPatternResponse", ui.AddTrustedDomainPattern),
 		"remove-trusted-domain-pattern": wrapOp(csilapi.DecodeRemoveTrustedDomainPatternRequest, csilapi.EncodeRemoveTrustedDomainPatternResponse, "RemoveTrustedDomainPatternResponse", ui.RemoveTrustedDomainPattern),
+		"list-queues":                   wrapOp(csilapi.DecodeListQueuesRequest, csilapi.EncodeListQueuesResponse, "ListQueuesResponse", ui.ListQueues),
+		"create-queue":                  wrapOp(csilapi.DecodeCreateQueueRequest, csilapi.EncodeCreateQueueResponse, "CreateQueueResponse", ui.CreateQueue),
+		"rename-queue":                  wrapOp(csilapi.DecodeRenameQueueRequest, csilapi.EncodeRenameQueueResponse, "RenameQueueResponse", ui.RenameQueue),
+		"delete-queue":                  wrapOp(csilapi.DecodeDeleteQueueRequest, csilapi.EncodeDeleteQueueResponse, "DeleteQueueResponse", ui.DeleteQueue),
+		"list-workers":                  wrapOp(csilapi.DecodeListWorkersRequest, csilapi.EncodeListWorkersResponse, "ListWorkersResponse", ui.ListWorkers),
+		"set-worker-status":             wrapOp(csilapi.DecodeSetWorkerStatusRequest, csilapi.EncodeSetWorkerStatusResponse, "SetWorkerStatusResponse", ui.SetWorkerStatus),
+		"drain-worker":                  wrapOp(csilapi.DecodeDrainWorkerRequest, csilapi.EncodeDrainWorkerResponse, "DrainWorkerResponse", ui.DrainWorker),
+		"list-pools":                    wrapOp(csilapi.DecodeListPoolsRequest, csilapi.EncodeListPoolsResponse, "ListPoolsResponse", ui.ListPools),
+		"create-pool":                   wrapOp(csilapi.DecodeCreatePoolRequest, csilapi.EncodeCreatePoolResponse, "CreatePoolResponse", ui.CreatePool),
+		"update-pool":                   wrapOp(csilapi.DecodeUpdatePoolRequest, csilapi.EncodeUpdatePoolResponse, "UpdatePoolResponse", ui.UpdatePool),
+		"delete-pool":                   wrapOp(csilapi.DecodeDeletePoolRequest, csilapi.EncodeDeletePoolResponse, "DeletePoolResponse", ui.DeletePool),
+		"create-enrollment-token":       wrapOp(csilapi.DecodeCreateEnrollmentTokenRequest, csilapi.EncodeCreateEnrollmentTokenResponse, "CreateEnrollmentTokenResponse", ui.CreateEnrollmentToken),
+		"list-enrollment-tokens":        wrapOp(csilapi.DecodeListEnrollmentTokensRequest, csilapi.EncodeListEnrollmentTokensResponse, "ListEnrollmentTokensResponse", ui.ListEnrollmentTokens),
+		"deactivate-enrollment-token":   wrapOp(csilapi.DecodeDeactivateEnrollmentTokenRequest, csilapi.EncodeDeactivateEnrollmentTokenResponse, "DeactivateEnrollmentTokenResponse", ui.DeactivateEnrollmentToken),
+	}
+	if worker != nil {
+		h.ops["ReactorcideWorker"] = map[string]opFunc{
+			"register":      wrapOp(workercsilapi.DecodeRegisterRequest, workercsilapi.EncodeRegisterResponse, "RegisterResponse", worker.Register),
+			"request-job":   wrapOp(workercsilapi.DecodeRequestJobRequest, workercsilapi.EncodeRequestJobResponse, "RequestJobResponse", worker.RequestJob),
+			"heartbeat":     wrapOp(workercsilapi.DecodeHeartbeatRequest, workercsilapi.EncodeHeartbeatResponse, "HeartbeatResponse", worker.Heartbeat),
+			"append-logs":   wrapOp(workercsilapi.DecodeAppendLogsRequest, workercsilapi.EncodeAppendLogsResponse, "AppendLogsResponse", worker.AppendLogs),
+			"report-result": wrapOp(workercsilapi.DecodeReportResultRequest, workercsilapi.EncodeReportResultResponse, "ReportResultResponse", worker.ReportResult),
+		}
 	}
 	return h
 }

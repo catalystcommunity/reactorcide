@@ -412,6 +412,10 @@ func (h *WebhookHandler) processPullRequestEvent(event *vcs.WebhookEvent, client
 		return fmt.Errorf("applying VCS metadata: %w", err)
 	}
 
+	if err := h.resolveJobQueue(context.Background(), job); err != nil {
+		return err
+	}
+
 	// Create the job in the database
 	if err := h.store.CreateJob(context.Background(), job); err != nil {
 		return fmt.Errorf("creating job: %w", err)
@@ -500,6 +504,10 @@ func (h *WebhookHandler) processPushEvent(event *vcs.WebhookEvent, client vcs.Cl
 	}
 	if err := metadata.ApplyToJob(job); err != nil {
 		return fmt.Errorf("applying VCS metadata: %w", err)
+	}
+
+	if err := h.resolveJobQueue(context.Background(), job); err != nil {
+		return err
 	}
 
 	// Create the job in the database
@@ -724,6 +732,25 @@ func globalWebhookSecret(provider vcs.Provider) string {
 	return config.VCSWebhookSecret
 }
 
+// resolveJobQueue resolves job.Characteristics to a queue (find-or-create)
+// and sets job.QueueName to the resolved Queue.QueueUUID, mutating job in
+// place before it is persisted -- WORKERS_PLAN.md "Find-or-create at
+// submit". A no-op (job.QueueName left as BuildEvalJob set it) when the
+// store doesn't implement queueResolvingStore, matching job_handler.go's
+// CreateJob so tests with a narrower store mock still work.
+func (h *WebhookHandler) resolveJobQueue(ctx context.Context, job *models.Job) error {
+	qs, ok := h.store.(queueResolvingStore)
+	if !ok {
+		return nil
+	}
+	queue, err := qs.FindOrCreateQueueByCharacteristics(ctx, job.Characteristics)
+	if err != nil {
+		return fmt.Errorf("resolving queue: %w", err)
+	}
+	job.QueueName = queue.QueueUUID
+	return nil
+}
+
 // submitJobToCorndogs submits a job to the Corndogs task queue
 func (h *WebhookHandler) submitJobToCorndogs(job *models.Job) {
 	if h.corndogsClient == nil {
@@ -780,7 +807,7 @@ func (h *WebhookHandler) submitJobToCorndogs(job *models.Job) {
 		taskPayload.Config["env_file"] = job.JobEnvFile
 	}
 
-	task, err := h.corndogsClient.SubmitTask(context.Background(), taskPayload, int64(job.Priority))
+	task, err := h.corndogsClient.SubmitTaskToQueue(context.Background(), job.QueueName, taskPayload, int64(job.Priority))
 	if err != nil {
 		h.logger.WithFields(logrus.Fields{
 			"job_id":   job.JobID,

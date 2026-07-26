@@ -353,12 +353,18 @@ func (tp *TriggerProcessor) submitWorkflowNode(ctx context.Context, wf *models.W
 	if err != nil {
 		return "", err
 	}
-	job := tp.buildJobFromTrigger(spec, parentJob)
+	job, err := tp.buildJobFromTrigger(spec, parentJob)
+	if err != nil {
+		return "", err
+	}
 	job.WorkflowID = &wf.WorkflowID
 	job.WorkflowNodeID = &node.NodeID
 	runID := uuid.New().String()
 	job.WorkflowRunID = &runID
 	job.WorkflowNodeName = node.DisplayName
+	if err := tp.resolveJobQueue(ctx, job); err != nil {
+		return "", err
+	}
 	if err := tp.store.CreateJob(ctx, job); err != nil {
 		return "", err
 	}
@@ -370,7 +376,7 @@ func (tp *TriggerProcessor) submitWorkflowNode(ctx context.Context, wf *models.W
 	}
 	if tp.corndogsClient != nil {
 		taskPayload := tp.buildTaskPayload(job)
-		task, err := tp.corndogsClient.SubmitTask(ctx, taskPayload, int64(job.Priority))
+		task, err := tp.corndogsClient.SubmitTaskToQueue(ctx, job.QueueName, taskPayload, int64(job.Priority))
 		if err != nil {
 			now := time.Now().UTC()
 			job.Status = "failed"

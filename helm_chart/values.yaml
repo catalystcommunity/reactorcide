@@ -103,13 +103,50 @@ worker:
     pullPolicy: Always
     tag: "dev"
   replicaCount: 1
-  queue: "reactorcide-jobs"
-  pollInterval: 5  # seconds
-  concurrency: 2    # concurrent jobs per worker pod
-  shutdownTimeout: "1h"
+  concurrency: 2    # concurrent leases (jobs) per worker pod
   terminationGracePeriodSeconds: 3600
-  dryRun: false
   containerRuntime: "auto"
+
+  # --- Coordinator-mediated worker (WORKERS_PLAN.md) ---
+  # The worker authenticates to the coordinator over CSIL-RPC and pulls work
+  # through it; it has no direct corndogs, Postgres, or object-store
+  # dependency of its own. See docs/workers.md ("Deploying workers") and
+  # helm_chart/DEPLOYMENT.md for the full operator flow.
+  #
+  # In-cluster URL of the coordinator this worker registers with. Leave
+  # empty to default to this release's coordinator Service
+  # (http://<app-name>.<namespace>.svc.cluster.local:<app.service.port>);
+  # only set this for out-of-cluster or cross-namespace workers.
+  coordinatorUrl: ""
+  # Enrollment token (secret): an operator creates a worker pool + enrollment
+  # token via the coordinator admin UI/CLI, stores the token value in a
+  # Kubernetes Secret out-of-band (kubectl create secret ...), and points
+  # this at that Secret. The token is never written to values.yaml or any
+  # other committed file -- only referenced by Secret name/key.
+  enrollmentTokenSecret:
+    name: ""       # e.g. "reactorcide-worker-enrollment" -- required to enroll
+    key: "token"   # key within that secret holding the enrollment token
+  # Directory used to persist this worker's stable identity (worker_key,
+  # not a secret, but used by the coordinator to recognize a reconnecting
+  # worker across restarts). emptyDir by default -- the worker generates a
+  # fresh worker_key (and re-enrolls as a "new" worker) every time the pod
+  # is recreated. Set dataDirPersistence.enabled to keep identity stable
+  # across restarts (only meaningful with replicaCount: 1 -- see below).
+  dataDir: /var/lib/reactorcide-worker
+  dataDirPersistence:
+    enabled: false
+    size: 1Gi
+    storageClass: ""
+    accessMode: ReadWriteOnce
+  # Worker characteristics used for queue matching (WORKERS_PLAN.md). Leave
+  # os/arch empty to auto-detect from the running container (linux/amd64 for
+  # the stock image).
+  os: ""
+  arch: ""
+  # Free-form custom characteristics, each "key=value" (repeatable).
+  custom: []
+  workerVersion: ""
+
   # Settings used by KubernetesRunner for the per-Reactorcide-job Kubernetes Jobs.
   jobNamespace: ""
   jobServiceAccount: ""

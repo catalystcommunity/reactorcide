@@ -239,3 +239,59 @@ func (StubUi) AddTrustedDomainPattern(ctx context.Context, req csilapi.AddTruste
 func (StubUi) RemoveTrustedDomainPattern(ctx context.Context, req csilapi.RemoveTrustedDomainPatternRequest) (csilapi.RemoveTrustedDomainPatternResponse, error) {
 	return csilapi.RemoveTrustedDomainPatternResponse{}, ErrUnimplemented("ReactorcideUi/remove-trusted-domain-pattern")
 }
+
+func (StubUi) ListQueues(ctx context.Context, req csilapi.ListQueuesRequest) (csilapi.ListQueuesResponse, error) {
+	return csilapi.ListQueuesResponse{}, ErrUnimplemented("ReactorcideUi/list-queues")
+}
+
+func (StubUi) CreateQueue(ctx context.Context, req csilapi.CreateQueueRequest) (csilapi.CreateQueueResponse, error) {
+	return csilapi.CreateQueueResponse{}, ErrUnimplemented("ReactorcideUi/create-queue")
+}
+
+func (StubUi) RenameQueue(ctx context.Context, req csilapi.RenameQueueRequest) (csilapi.RenameQueueResponse, error) {
+	return csilapi.RenameQueueResponse{}, ErrUnimplemented("ReactorcideUi/rename-queue")
+}
+
+func (StubUi) DeleteQueue(ctx context.Context, req csilapi.DeleteQueueRequest) (csilapi.DeleteQueueResponse, error) {
+	return csilapi.DeleteQueueResponse{}, ErrUnimplemented("ReactorcideUi/delete-queue")
+}
+
+func (StubUi) ListWorkers(ctx context.Context, req csilapi.ListWorkersRequest) (csilapi.ListWorkersResponse, error) {
+	return csilapi.ListWorkersResponse{}, ErrUnimplemented("ReactorcideUi/list-workers")
+}
+
+func (StubUi) SetWorkerStatus(ctx context.Context, req csilapi.SetWorkerStatusRequest) (csilapi.SetWorkerStatusResponse, error) {
+	return csilapi.SetWorkerStatusResponse{}, ErrUnimplemented("ReactorcideUi/set-worker-status")
+}
+
+func (StubUi) DrainWorker(ctx context.Context, req csilapi.DrainWorkerRequest) (csilapi.DrainWorkerResponse, error) {
+	return csilapi.DrainWorkerResponse{}, ErrUnimplemented("ReactorcideUi/drain-worker")
+}
+
+func (StubUi) ListPools(ctx context.Context, req csilapi.ListPoolsRequest) (csilapi.ListPoolsResponse, error) {
+	return csilapi.ListPoolsResponse{}, ErrUnimplemented("ReactorcideUi/list-pools")
+}
+
+func (StubUi) CreatePool(ctx context.Context, req csilapi.CreatePoolRequest) (csilapi.CreatePoolResponse, error) {
+	return csilapi.CreatePoolResponse{}, ErrUnimplemented("ReactorcideUi/create-pool")
+}
+
+func (StubUi) UpdatePool(ctx context.Context, req csilapi.UpdatePoolRequest) (csilapi.UpdatePoolResponse, error) {
+	return csilapi.UpdatePoolResponse{}, ErrUnimplemented("ReactorcideUi/update-pool")
+}
+
+func (StubUi) DeletePool(ctx context.Context, req csilapi.DeletePoolRequest) (csilapi.DeletePoolResponse, error) {
+	return csilapi.DeletePoolResponse{}, ErrUnimplemented("ReactorcideUi/delete-pool")
+}
+
+func (StubUi) CreateEnrollmentToken(ctx context.Context, req csilapi.CreateEnrollmentTokenRequest) (csilapi.CreateEnrollmentTokenResponse, error) {
+	return csilapi.CreateEnrollmentTokenResponse{}, ErrUnimplemented("ReactorcideUi/create-enrollment-token")
+}
+
+func (StubUi) ListEnrollmentTokens(ctx context.Context, req csilapi.ListEnrollmentTokensRequest) (csilapi.ListEnrollmentTokensResponse, error) {
+	return csilapi.ListEnrollmentTokensResponse{}, ErrUnimplemented("ReactorcideUi/list-enrollment-tokens")
+}
+
+func (StubUi) DeactivateEnrollmentToken(ctx context.Context, req csilapi.DeactivateEnrollmentTokenRequest) (csilapi.DeactivateEnrollmentTokenResponse, error) {
+	return csilapi.DeactivateEnrollmentTokenResponse{}, ErrUnimplemented("ReactorcideUi/deactivate-enrollment-token")
+}

@@ -1,0 +1,25 @@
+{{- if and .Values.worker.enabled .Values.worker.dataDirPersistence.enabled }}
+# Persists the worker's REACTORCIDE_WORKER_DATA_DIR (worker_key identity)
+# across pod restarts. Only meaningful with worker.replicaCount: 1 -- if
+# multiple worker pods share this claim they will race on the same
+# worker_key file and can appear to the coordinator as one flapping worker.
+# For >1 persistent-identity worker, run separate Helm releases (or set
+# dataDirPersistence.enabled: false and accept re-enrollment on restart).
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "worker.name" . }}-data
+  labels:
+    {{- include "worker.labels" . | nindent 4 }}
+  annotations:
+    helm.sh/resource-policy: keep
+spec:
+  accessModes:
+    - {{ .Values.worker.dataDirPersistence.accessMode | default "ReadWriteOnce" }}
+  {{- if .Values.worker.dataDirPersistence.storageClass }}
+  storageClassName: {{ .Values.worker.dataDirPersistence.storageClass }}
+  {{- end }}
+  resources:
+    requests:
+      storage: {{ .Values.worker.dataDirPersistence.size | default "1Gi" }}
+{{- end }}

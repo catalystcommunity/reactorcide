@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/catalystcommunity/app-utils-go/logging"
+	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/resources"
 )
 
 const (
@@ -189,9 +190,44 @@ func (cr *ContainerdRunner) SpawnJob(ctx context.Context, config *JobConfig) (st
 		}
 	}
 
-	// Add resource limits if specified
+	// Add resource limits/requests if specified. Values are quantity strings
+	// parsed by internal/resources (see JobConfig's doc comments); nerdctl
+	// mirrors Docker CLI flag semantics, so CPU is converted to fractional
+	// cores (--cpus) / relative share weight (--cpu-shares, advisory only,
+	// mirroring DockerRunner) while memory (limit-only) is converted to a
+	// plain byte count for --memory, which nerdctl/go-units accepts
+	// unconditionally regardless of how the original string was suffixed
+	// (Gi/GB/G/...).
+	if config.CPULimit != "" {
+		millicores, err := resources.CPUMillicores(config.CPULimit)
+		if err != nil {
+			logger.WithError(err).Warn("Failed to parse CPU limit, ignoring")
+		} else {
+			cores := float64(millicores) / 1000.0
+			args = append(args, "--cpus", strconv.FormatFloat(cores, 'f', -1, 64))
+		}
+	}
+
+	if config.CPURequest != "" {
+		millicores, err := resources.CPUMillicores(config.CPURequest)
+		if err != nil {
+			logger.WithError(err).Warn("Failed to parse CPU request, ignoring")
+		} else {
+			shares := millicores * 1024 / 1000
+			if shares < 2 {
+				shares = 2
+			}
+			args = append(args, "--cpu-shares", strconv.FormatInt(shares, 10))
+		}
+	}
+
 	if config.MemoryLimit != "" {
-		args = append(args, "--memory", config.MemoryLimit)
+		memBytes, err := resources.MemoryBytes(config.MemoryLimit)
+		if err != nil {
+			logger.WithError(err).Warn("Failed to parse memory limit, ignoring")
+		} else {
+			args = append(args, "--memory", strconv.FormatInt(memBytes, 10))
+		}
 	}
 
 	// Add labels

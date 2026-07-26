@@ -1,0 +1,166 @@
+{{template "head" .}}
+<div class="tab-nav">
+    <a href="/app/workers" class="active">Pools &amp; Workers</a>
+    {{if .IsAdmin}}<a href="/app/workers/queues">Queues</a>{{end}}
+</div>
+
+<h2 style="margin-bottom: 16px;">Workers</h2>
+
+{{if .FormMsg}}<p class="form-msg">{{.FormMsg}}</p>{{end}}
+{{if .FormError}}<p class="form-error">{{.FormError}}</p>{{end}}
+
+{{if .NewToken}}
+<div class="card" style="border-color: var(--yellow);">
+    <h3 class="section-title" style="color: var(--yellow);">New enrollment token &mdash; shown once</h3>
+    <p class="meta">This is the only time this token's value will be shown. Copy it now and store it
+        somewhere safe (for example, as the secret a worker deployment reads on startup). It will not be
+        shown again on this page, in any list, or in any log.</p>
+    <div class="field-row">
+        <label for="new-token-value">Token{{if .NewTokenName}} ({{derefStr .NewTokenName}}){{end}} for pool {{.NewTokenPoolId}}</label>
+        <input type="text" id="new-token-value" readonly value="{{.NewToken}}" onclick="this.select()" style="font-family: SFMono-Regular, Consolas, monospace; width: 100%;">
+    </div>
+    <button type="button" id="copy-new-token">Copy to clipboard</button>
+</div>
+<script>
+(function() {
+    var btn = document.getElementById('copy-new-token');
+    var field = document.getElementById('new-token-value');
+    if (!btn || !field) { return; }
+    btn.addEventListener('click', function() {
+        field.select();
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(field.value);
+        } else {
+            document.execCommand('copy');
+        }
+    });
+})();
+</script>
+{{end}}
+
+{{if .Orgs}}
+<form method="get" action="/app/workers" class="inline-form">
+    <label>Organization
+        <select name="org_id" onchange="this.form.submit()">
+            <option value="" {{if eq .OrgID ""}}selected{{end}}>All pools (every org + global)</option>
+            {{range .Orgs}}<option value="{{.OrgId}}" {{if eq $.OrgID .OrgId}}selected{{end}}>{{.Name}}</option>{{end}}
+        </select>
+    </label>
+</form>
+{{end}}
+
+{{if .Pools}}
+{{range .Pools}}
+<div class="card" style="margin-top: 16px;">
+    <h3>{{.Pool.Name}} <span class="meta">{{if .Pool.OrgId}}(org: {{derefStr .Pool.OrgId}}){{else}}(global pool){{end}}</span></h3>
+    {{if .Pool.Description}}<p class="meta">{{derefStr .Pool.Description}}</p>{{end}}
+
+    <h4 class="section-title">Workers ({{len .Workers}})</h4>
+    {{if .Workers}}
+    <table>
+        <thead><tr><th>Hostname</th><th>OS/Arch</th><th>Characteristics</th><th>Status</th><th>Last seen</th><th>Version</th><th>Active leases</th><th></th></tr></thead>
+        <tbody>
+            {{range .Workers}}
+            <tr>
+                <td>{{derefStr .Hostname}}</td>
+                <td class="meta">{{.Os}}/{{.Arch}}</td>
+                <td class="meta">{{range .Characteristics}}{{.Key}}={{.Value}} {{end}}</td>
+                <td><span class="badge {{workerStatusBadgeClass .Status}}">{{.Status}}</span></td>
+                <td class="meta">{{derefStr .LastSeenAt}}</td>
+                <td class="meta">{{derefStr .WorkerVersion}}</td>
+                <td>{{.ActiveLeaseCount}}</td>
+                <td style="white-space: nowrap;">
+                    {{if ne .Status "active"}}
+                    <form method="post" action="/app/workers/worker/{{.WorkerId}}/status" style="display:inline;">
+                        <input type="hidden" name="status" value="active">
+                        <button type="submit">Activate</button>
+                    </form>
+                    {{end}}
+                    {{if ne .Status "quarantined"}}
+                    <form method="post" action="/app/workers/worker/{{.WorkerId}}/status" style="display:inline;">
+                        <input type="hidden" name="status" value="quarantined">
+                        <button type="submit" data-confirm="Quarantine this worker? It will stop accepting new jobs until re-activated.">Quarantine</button>
+                    </form>
+                    {{end}}
+                    <form method="post" action="/app/workers/worker/{{.WorkerId}}/drain" style="display:inline;">
+                        <button type="submit" data-confirm="Drain this worker? It will finish any job(s) it is currently running, then stop accepting new work.">Drain</button>
+                    </form>
+                    {{if ne .Status "disabled"}}
+                    <form method="post" action="/app/workers/worker/{{.WorkerId}}/status" style="display:inline;">
+                        <input type="hidden" name="status" value="disabled">
+                        <button type="submit" class="danger" data-confirm="Disable this worker? It will stop accepting new jobs until re-activated.">Disable</button>
+                    </form>
+                    {{end}}
+                </td>
+            </tr>
+            {{end}}
+        </tbody>
+    </table>
+    {{else}}
+    <p class="meta">No workers enrolled in this pool.</p>
+    {{end}}
+
+    <h4 class="section-title" style="margin-top: 16px;">Enrollment tokens</h4>
+    {{if .Tokens}}
+    <table>
+        <thead><tr><th>Name</th><th>Status</th><th>Last used</th><th>Created</th><th></th></tr></thead>
+        <tbody>
+            {{range .Tokens}}
+            <tr>
+                <td>{{if .Name}}{{derefStr .Name}}{{else}}<span class="meta">(unnamed)</span>{{end}}</td>
+                <td>{{if .IsActive}}<span class="badge badge-public">active</span>{{else}}<span class="badge badge-inactive">deactivated</span>{{end}}</td>
+                <td class="meta">{{derefStr .LastUsedAt}}</td>
+                <td class="meta">{{.CreatedAt}}</td>
+                <td>
+                    {{if .IsActive}}
+                    <form method="post" action="/app/workers/tokens/{{.TokenId}}/deactivate">
+                        <button type="submit" class="danger" data-confirm="Deactivate this enrollment token? Workers using it will no longer be able to (re-)enroll.">Deactivate</button>
+                    </form>
+                    {{end}}
+                </td>
+            </tr>
+            {{end}}
+        </tbody>
+    </table>
+    {{else}}
+    <p class="meta">No enrollment tokens for this pool.</p>
+    {{end}}
+    <form method="post" action="/app/workers/pools/{{.Pool.PoolId}}/tokens" class="inline-form js-disable-on-submit" style="margin-top: 4px;">
+        <label>Token name (optional) <input type="text" name="name" maxlength="255" placeholder="e.g. ci-runners-us-east"></label>
+        <button type="submit">Create enrollment token</button>
+    </form>
+
+    <h4 class="section-title" style="margin-top: 16px;">Pool settings</h4>
+    <form method="post" action="/app/workers/pools/{{.Pool.PoolId}}" class="inline-form js-disable-on-submit">
+        <label>Name <input type="text" name="name" value="{{.Pool.Name}}" maxlength="255"></label>
+        <label>Description <input type="text" name="description" value="{{derefStr .Pool.Description}}" maxlength="255"></label>
+        <button type="submit">Save</button>
+    </form>
+    <form method="post" action="/app/workers/pools/{{.Pool.PoolId}}/delete" style="margin-top: 4px;">
+        <button type="submit" class="danger" data-confirm="Delete pool {{.Pool.Name}}? This fails if it still has workers.">Delete pool</button>
+    </form>
+</div>
+{{end}}
+{{else}}
+<div class="card"><p class="meta">No worker pools found.</p></div>
+{{end}}
+
+<div class="card" style="margin-top: 16px;">
+    <h3 class="section-title">New pool</h3>
+    <form method="post" action="/app/workers/pools" class="inline-form js-disable-on-submit">
+        {{if .IsAdmin}}
+        <label>Organization
+            <select name="org_id">
+                <option value="">Global (no org)</option>
+                {{range .Orgs}}<option value="{{.OrgId}}">{{.Name}}</option>{{end}}
+            </select>
+        </label>
+        {{else}}
+        <input type="hidden" name="org_id" value="{{.OrgID}}">
+        {{end}}
+        <label>Name <input type="text" name="name" required maxlength="255"></label>
+        <label>Description <input type="text" name="description" maxlength="255"></label>
+        <button type="submit">Create pool</button>
+    </form>
+</div>
+{{template "foot" .}}

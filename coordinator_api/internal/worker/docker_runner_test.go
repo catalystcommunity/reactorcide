@@ -2,6 +2,8 @@ package worker
 
 import (
 	"testing"
+
+	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/resources"
 )
 
 // TestDockerRunner_validateConfig tests the configuration validation
@@ -129,7 +131,10 @@ func TestDockerRunner_envMapToSlice(t *testing.T) {
 	}
 }
 
-// TestParseMemoryString tests memory string parsing
+// TestParseMemoryString tests memory string parsing via
+// resources.MemoryBytes, which is what dockerResourceLimits now calls
+// instead of the removed local parseMemoryString/k8s quantity parser (see
+// internal/resources.ParseMemory and WORKERS_PLAN.md "Resources").
 func TestParseMemoryString(t *testing.T) {
 	tests := []struct {
 		name        string
@@ -168,6 +173,18 @@ func TestParseMemoryString(t *testing.T) {
 			expectError: false,
 		},
 		{
+			name:        "gigabytes (GB) -- rejected by k8s parser, accepted by ours",
+			input:       "1GB",
+			expected:    1 * 1000 * 1000 * 1000,
+			expectError: false,
+		},
+		{
+			name:        "megabytes (MB) -- rejected by k8s parser, accepted by ours",
+			input:       "500MB",
+			expected:    500 * 1000 * 1000,
+			expectError: false,
+		},
+		{
 			name:        "plain bytes",
 			input:       "1024",
 			expected:    1024,
@@ -195,7 +212,7 @@ func TestParseMemoryString(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result, err := parseMemoryString(tt.input)
+			result, err := resources.MemoryBytes(tt.input)
 			if tt.expectError && err == nil {
 				t.Errorf("expected error but got none")
 			}
@@ -264,7 +281,7 @@ func TestIsBackendSupported(t *testing.T) {
 		{"containerd", true},
 		{"kubernetes", true},
 		{"invalid", false},
-		{"DOCKER", true}, // case insensitive
+		{"DOCKER", true},     // case insensitive
 		{"  docker  ", true}, // whitespace handling
 	}
 
@@ -284,14 +301,18 @@ func TestIsBackendImplemented(t *testing.T) {
 		backend  string
 		expected bool
 	}{
-		{"docker", true},      // fully implemented
-		{"containerd", true},  // fully implemented
-		{"kubernetes", true},  // fully implemented
-		{"auto", true},        // fully implemented (auto-detection)
+		{"docker", true},     // fully implemented
+		{"containerd", true}, // fully implemented
+		{"kubernetes", true}, // fully implemented
+		{"auto", true},       // fully implemented (auto-detection)
 		{"invalid", false},
-		{"DOCKER", true},       // case insensitive
-		{"KUBERNETES", true},   // case insensitive
-		{"CONTAINERD", true},   // case insensitive
+		{"DOCKER", true},     // case insensitive
+		{"KUBERNETES", true}, // case insensitive
+		{"CONTAINERD", true}, // case insensitive
+		// "vm" is OS-dependent (real only on darwin/windows once VM-3/VM-4
+		// land) -- see TestIsBackendImplemented_VM_MatchesOS in
+		// vm_adapter_test.go for the GOOS-aware assertion; this table only
+		// asserts it's a recognized name, not a fixed true/false.
 	}
 
 	for _, tt := range tests {
@@ -307,8 +328,8 @@ func TestIsBackendImplemented(t *testing.T) {
 // TestGetSupportedBackends tests getting the list of supported backends
 func TestGetSupportedBackends(t *testing.T) {
 	backends := GetSupportedBackends()
-	if len(backends) != 4 {
-		t.Errorf("expected 4 supported backends, got %d", len(backends))
+	if len(backends) != 5 {
+		t.Errorf("expected 5 supported backends, got %d", len(backends))
 	}
 
 	expectedBackends := map[RunnerBackend]bool{
@@ -316,6 +337,7 @@ func TestGetSupportedBackends(t *testing.T) {
 		BackendDocker:     true,
 		BackendContainerd: true,
 		BackendKubernetes: true,
+		BackendVM:         true,
 	}
 
 	for _, backend := range backends {

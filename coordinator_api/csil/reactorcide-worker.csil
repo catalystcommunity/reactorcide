@@ -1,0 +1,233 @@
+;; Reactorcide Worker CSIL-RPC service definitions (WORKERS_PLAN.md "Workers
+;; -- registration, auth, protocol").
+;;
+;; ReactorcideWorker is the coordinator-mediated worker protocol: a worker
+;; process authenticates once (Register, presenting a durable enrollment
+;; token in the request body -- no session exists yet) and then rides an
+;; ephemeral worker session in the CSIL-RPC envelope's own `auth` field on
+;; every subsequent call (RequestJob/Heartbeat/AppendLogs/ReportResult),
+;; exactly like the webapp's UI session token on ReactorcideAuth/ReactorcideUi
+;; (see reactorcide-ui.csil). Workers never talk to corndogs/Postgres/object
+;; storage directly -- the coordinator is the only thing that does, brokering
+;; every job claim, log chunk, and result through this service.
+;;
+;; SECURITY: secret values resolved for a leased job travel ONLY in
+;; RequestJobResponse's Lease.secrets field, distinct from Lease.env. They are
+;; never present in the corndogs task payload, never logged, and never
+;; returned by any other op.
+;;
+;; Every operation returns a shared ServiceError arm; the go generator
+;; special-cases a type literally named "ServiceError" as the error arm when
+;; computing a client method's success type, so every op below is
+;; `Type -> Response / ServiceError` with no other arms. Timestamps are
+;; RFC3339 text (tstr/`text`), not the CBOR tag-0 `timestamp` builtin, per
+;; reactorcide-ui.csil's field design -- this service has none today, but the
+;; convention is noted for future fields.
+;;
+;; Regenerate with scripts/generate-csil-worker.sh after editing this file.
+options {
+    package: "reactorcide-worker",
+    version: "v1",
+    package_name: "csilapi"
+}
+
+;;; Shared error arm for every operation in this service (structurally
+;;; identical to reactorcide-ui.csil's ServiceError -- same wire shape, two
+;;; independently generated Go types, mirrored deliberately rather than
+;;; shared across an `include` so this file stays a fully self-contained
+;;; service definition).
+ServiceError = {
+    code: text,
+    message: text
+}
+
+;;; CharacteristicValue is a worker/job characteristic value
+;;; (WORKERS_PLAN.md "Characteristics & matching"): a scalar string/int/bool,
+;;; or -- worker-side only -- a homogeneous list of one of those. Wire shape
+;;; is CSIL's tagged-sum union ([variant_index, value]); the Go generator
+;;; renders an unnamed union of concrete types as a bare `interface{}` alias,
+;;; which round-trips directly through
+;;; internal/characteristics.KV{Key string, Value any} and
+;;; ParseWorkerCharacteristics' classifyScalar/classifyList without any
+;;; adapter code.
+CharacteristicValue = text / int / bool / [* text] / [* int] / [* bool]
+
+;;; CustomCharacteristic is one worker custom characteristic key/value pair,
+;;; used by both WorkerInfo (Register) and WorkerCharacteristics (RequestJob).
+CustomCharacteristic = {
+    key: text,
+    value: CharacteristicValue
+}
+
+;;; WorkerInfo identifies a worker process at enrollment time. worker_key is
+;;; a stable, worker-provided identifier (generated and persisted locally by
+;;; the worker, like a host GUID) that Register upserts the workers row by;
+;;; distinct from the worker_id the coordinator assigns and returns.
+WorkerInfo = {
+    worker_key: text,
+    ? hostname: text,
+    os: text,
+    arch: text,
+    ? worker_version: text,
+    custom: [* CustomCharacteristic]
+}
+
+RegisterRequest = {
+    enrollment_token: text,
+    worker_info: WorkerInfo
+}
+RegisterResponse = {
+    worker_session: text,
+    worker_id: text,
+    heartbeat_interval: int
+}
+
+;;; WorkerCharacteristics is the worker's full characteristic set as of this
+;;; RequestJob call (os/arch plus free-form custom), sent on every poll so
+;;; any coordinator pod can match statelessly (WORKERS_PLAN.md "Queues --
+;;; Matching at pull").
+WorkerCharacteristics = {
+    os: text,
+    arch: text,
+    custom: [* CustomCharacteristic]
+}
+
+RequestJobRequest = {
+    worker_characteristics: WorkerCharacteristics
+}
+
+;;; EnvVar is a single environment variable key/value pair. Used both for
+;;; Lease.env (non-secret) and Lease.secrets (resolved secret values,
+;;; delivered separately -- see Lease's own doc comment).
+EnvVar = {
+    key: text,
+    value: text
+}
+
+;;; Resources mirrors the job's resource_cpu_request/resource_cpu_limit/
+;;; resource_memory_limit columns: Kubernetes-flavored quantity strings
+;;; ("1", "500m" for CPU; "4Gi", "512Mi" for memory), parsed and applied by
+;;; the worker's own runner, not by the coordinator (WORKERS_PLAN.md
+;;; "Resources").
+Resources = {
+    cpu_request: text,
+    cpu_limit: text,
+    memory_limit: text
+}
+
+;;; VCSAuth is a resolved git-checkout credential for a leased job's source
+;;; repo (WORKERS_PLAN.md Wave 3 P3c "VCS checkout credentials through the
+;;; worker lease"), delivered ONLY on this authenticated Lease response --
+;;; never in the corndogs task payload, never logged. token is the resolved
+;;; secret value; the coordinator resolves it (project rotation credential ->
+;;; project ref -> owning user/org ref -> global deployment config, mirroring
+;;; internal/vcs credential_refs.go resolution) and the worker injects it
+;;; into per-job git credential material (see
+;;; docs/vcs-credentials-and-secret-grants.md "Private Git Checkout Auth"),
+;;; masked, without ever placing it in the job's environment. url is the
+;;; job's checkout URL this credential applies to; username is the
+;;; provider-appropriate git credential username (e.g. "x-access-token" for
+;;; GitHub, "oauth2" for GitLab).
+VCSAuth = {
+    provider: text,
+    url: text,
+    username: text,
+    token: text
+}
+
+;;; Lease is the full job spec handed to a worker on a successful RequestJob
+;;; claim. command/env/image/working_dir/capabilities/run_as_user mirror
+;;; internal/worker.JobConfig; secrets is intentionally a SEPARATE field from
+;;; env -- resolved secret values delivered over this authenticated channel
+;;; only, never placed in the corndogs task payload, never logged. The
+;;; worker injects secrets into the job at runtime the same masked way
+;;; runnerlib does today, keeping them out of any env dump. vcs_auth is
+;;; optional and absent for jobs whose source needs no checkout credential
+;;; (public repos, or no source repo at all).
+Lease = {
+    lease_id: text,
+    job_id: text,
+    image: text,
+    command: [* text],
+    working_dir: text,
+    env: [* EnvVar],
+    secrets: [* EnvVar],
+    resources: Resources,
+    timeout_seconds: int,
+    cancel_grace_seconds: int,
+    capabilities: [* text],
+    run_as_user: text,
+    ? vcs_auth: VCSAuth
+}
+
+RequestJobResponse = {
+    has_lease: bool,
+    ? lease: Lease
+}
+
+;;; RunningLease identifies one lease a worker is currently executing, for
+;;; Heartbeat to extend the matching corndogs task's timeout.
+RunningLease = {
+    lease_id: text
+}
+
+HeartbeatRequest = {
+    status: text,
+    running_leases: [* RunningLease]
+}
+
+;;; Directive tells a worker to act on a lease it holds: action is "cancel"
+;;; (graceful -- mirrors models.Job.CancelMode "cancel") or "kill" (immediate
+;;; -- mirrors "kill"/IsKillRequested).
+Directive = {
+    lease_id: text,
+    action: text
+}
+
+;;; draining is true when the coordinator has quarantined/disabled this
+;;; worker (WORKERS_PLAN.md Wave-4 P4's drain-worker admin op models drain as
+;;; the existing "quarantined" status: RequestJob already refuses further
+;;; job offers to a non-active worker, and this heartbeat-carried flag is the
+;;; signal a worker uses to finish its currently-running leases and then shut
+;;; itself down cleanly instead of polling forever). It is derived from the
+;;; worker's current status on every Heartbeat call, not a separate
+;;; persisted state.
+HeartbeatResponse = {
+    directives: [* Directive],
+    draining: bool
+}
+
+;;; AppendLogs is push log ingestion (new -- today logs are pulled by the
+;;; worker's own LogShipper). chunk is a raw text blob of one or more
+;;; newline-separated log lines; the coordinator accumulates chunks into the
+;;; existing logs/{jobID}/{stdout|stderr}.json object layout.
+AppendLogsRequest = {
+    lease_id: text,
+    stream: text,
+    chunk: text
+}
+AppendLogsResponse = {
+    ok: bool
+}
+
+;;; ReportResult is terminal: it finalizes the job's status via the existing
+;;; guarded transition + corndogs Complete/Cancel/Fail path, exactly like
+;;; internal/worker/corndogs_worker.go's own finalize step, and releases the
+;;; worker_leases row.
+ReportResultRequest = {
+    lease_id: text,
+    exit_code: int,
+    status: text,
+    ? error: text
+}
+ReportResultResponse = {
+    ok: bool
+}
+
+service ReactorcideWorker {
+    register: RegisterRequest -> RegisterResponse / ServiceError,
+    request-job: RequestJobRequest -> RequestJobResponse / ServiceError,
+    heartbeat: HeartbeatRequest -> HeartbeatResponse / ServiceError,
+    append-logs: AppendLogsRequest -> AppendLogsResponse / ServiceError,
+    report-result: ReportResultRequest -> ReportResultResponse / ServiceError
+}

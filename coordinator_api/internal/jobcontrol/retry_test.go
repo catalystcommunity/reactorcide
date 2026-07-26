@@ -241,6 +241,7 @@ func (m *retryMockStore) GetUserByID(ctx context.Context, userID string) (*model
 }
 func (m *retryMockStore) CreateUser(ctx context.Context, user *models.User) error { return nil }
 func (m *retryMockStore) EnsureDefaultUser() error                                { return nil }
+func (m *retryMockStore) EnsureDefaultQueue(ctx context.Context) error            { return nil }
 
 var _ store.Store = (*retryMockStore)(nil)
 var _ workflowRetryStore = (*retryMockStore)(nil)
@@ -441,9 +442,10 @@ func TestRetryJob_ClonesSpecFields(t *testing.T) {
 		t.Errorf("expected a fresh CorndogsTaskID from the new Corndogs submission, got %v", newJob.CorndogsTaskID)
 	}
 
-	// Corndogs was actually invoked with the new job's payload.
-	if mockCorndogs.GetSubmitTaskCallCount() != 1 {
-		t.Errorf("expected 1 SubmitTask call, got %d", mockCorndogs.GetSubmitTaskCallCount())
+	// Corndogs was actually invoked with the new job's payload, via the
+	// queue-routed SubmitTaskToQueue (not the legacy SubmitTask).
+	if len(mockCorndogs.SubmitTaskToQueueCalls) != 1 {
+		t.Errorf("expected 1 SubmitTaskToQueue call, got %d", len(mockCorndogs.SubmitTaskToQueueCalls))
 	}
 }
 
@@ -543,7 +545,7 @@ func TestRetryJob_CorndogsFailure_MarksNewJobFailed(t *testing.T) {
 	st := newRetryMockStore()
 	job := st.addJob(&models.Job{JobID: "orig-job", UserID: "user-1", Status: "failed", JobCommand: "echo hi"})
 	mockCorndogs := corndogs.NewMockClient()
-	mockCorndogs.SubmitTaskFunc = func(ctx context.Context, payload *corndogs.TaskPayload, priority int64) (*pb.Task, error) {
+	mockCorndogs.SubmitTaskToQueueFunc = func(ctx context.Context, queue string, payload *corndogs.TaskPayload, priority int64) (*pb.Task, error) {
 		return nil, fmt.Errorf("queue unavailable")
 	}
 
@@ -650,8 +652,8 @@ func TestRetryWorkflow_CreatesFreshInstanceAndSubmits(t *testing.T) {
 		t.Errorf("expected a fresh job bound to the new node, got %v", newNodes[0].JobID)
 	}
 
-	if mockCorndogs.GetSubmitTaskCallCount() != 1 {
-		t.Errorf("expected 1 SubmitTask call, got %d", mockCorndogs.GetSubmitTaskCallCount())
+	if len(mockCorndogs.SubmitTaskToQueueCalls) != 1 {
+		t.Errorf("expected 1 SubmitTaskToQueue call, got %d", len(mockCorndogs.SubmitTaskToQueueCalls))
 	}
 
 	// Old instance/nodes/jobs untouched.

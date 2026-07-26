@@ -13,8 +13,13 @@ This guide covers deploying Reactorcide to Kubernetes using Helm, including inte
 
 The complete Reactorcide deployment consists of:
 
-- **Coordinator API**: REST API for job submission and management
-- **Workers**: Process jobs from the queue using Docker-in-Docker
+- **Coordinator API**: REST API for job submission and management; the only
+  component that talks to corndogs, PostgreSQL, and object storage
+- **Workers**: Authenticate to the coordinator over CSIL-RPC and pull work
+  through it, then execute jobs using Docker-in-Docker (or containerd/
+  Kubernetes). Coordinator-mediated — a worker has no direct corndogs/DB/
+  object-store dependency of its own; see "Deploying Workers" below and
+  [`docs/workers.md`](../docs/workers.md)
 - **PostgreSQL**: Database for job metadata and state
 - **Corndogs**: Distributed task queue system (bundled subchart or external service)
 - **Object Storage**: MinIO, S3, or GCS for artifacts and logs
@@ -79,6 +84,58 @@ If Corndogs is deployed in another namespace or cluster:
 corndogs:
   enabled: false
   baseUrl: "http://corndogs.other-namespace.svc.cluster.local:5080"
+```
+
+## Deploying Workers
+
+Workers are **coordinator-mediated**: they authenticate to the coordinator
+over CSIL-RPC and pull work through it instead of talking to corndogs,
+PostgreSQL, or object storage directly. A worker deployment needs only:
+
+- a **coordinator URL** (defaults to this release's in-cluster coordinator
+  Service — you normally don't need to set this),
+- an **enrollment token**, referenced from a Kubernetes Secret you create,
+- a writable **data directory** for the worker's persisted identity
+  (`worker_key` — not a secret; `emptyDir` by default).
+
+See [`docs/workers.md`](../docs/workers.md) for the full operator flow,
+worker environment reference, and dev-bootstrap details. In short:
+
+1. Create a worker pool + enrollment token via the coordinator admin UI/CLI.
+2. Store the token in a Kubernetes Secret:
+
+   ```bash
+   kubectl create secret generic reactorcide-worker-enrollment \
+     --from-literal=token="$(cat /path/to/enrollment-token)" \
+     -n reactorcide
+   ```
+
+3. Reference that Secret in your values (never the token value itself):
+
+   ```yaml
+   worker:
+     enrollmentTokenSecret:
+       name: "reactorcide-worker-enrollment"
+       key: "token"       # default
+   ```
+
+The chart wires this via `secretKeyRef` in `templates/deployment-worker.yaml`
+the same way `secrets.existingSecret` / `uiAuth.existingSecret` reference
+their own Secrets — no plaintext secret value ever belongs in `values.yaml`
+or any committed manifest.
+
+Optional worker settings (all under `worker:` in `values.yaml`):
+
+```yaml
+worker:
+  concurrency: 2              # concurrent leases (jobs) per worker pod
+  containerRuntime: "auto"    # docker | containerd | kubernetes | auto
+  os: ""                      # characteristic override; auto-detected otherwise
+  arch: ""                    # characteristic override; auto-detected otherwise
+  custom: []                  # free-form "key=value" characteristics
+  dataDirPersistence:
+    enabled: false             # true to keep worker_key stable across restarts
+    size: 1Gi                  # only meaningful with replicaCount: 1
 ```
 
 ## Configuration
@@ -281,8 +338,10 @@ app:
 worker:
   replicaCount: 10
   concurrency: 4
-  shutdownTimeout: "1h"
   terminationGracePeriodSeconds: 3600
+  enrollmentTokenSecret:
+    name: "reactorcide-worker-enrollment"  # created out-of-band, see "Deploying Workers"
+    key: "token"
   resources:
     limits:
       cpu: 4000m
@@ -360,8 +419,11 @@ curl localhost:9000/api/v1/metrics
 ### Troubleshooting
 
 1. **Workers not processing jobs**
-   - Check Corndogs connectivity: `kubectl logs -n reactorcide deployment/reactorcide-worker | grep Corndogs`
-   - Verify queue exists in Corndogs
+   - Check the worker can reach and register with the coordinator:
+     `kubectl logs -n reactorcide deployment/reactorcide-worker | grep -i register`
+   - Verify `worker.enrollmentTokenSecret.name` points at a Secret that
+     actually exists and holds a valid, active enrollment token (see
+     [`docs/workers.md`](../docs/workers.md))
    - Check worker resource limits
 
 2. **Database connection issues**

@@ -55,3 +55,14 @@ environment:
 
     # Default user ID
     REACTORCIDE_DEFAULT_USER_ID: "${env:REACTORCIDE_DEFAULT_USER_ID}"
+
+    # Worker: coordinator-mediated (WORKERS_PLAN.md). Create a worker pool +
+    # enrollment token via the coordinator admin UI/CLI first (see
+    # docs/workers.md), put the token value in a Kubernetes Secret yourself
+    # (kubectl create secret ...), and reference that Secret's name/key here
+    # -- never the token value itself. Coordinator URL defaults to the
+    # in-cluster coordinator Service; only set the override for an
+    # out-of-cluster or cross-namespace worker deployment.
+    REACTORCIDE_WORKER_ENROLLMENT_TOKEN_SECRET: "${env:REACTORCIDE_WORKER_ENROLLMENT_TOKEN_SECRET}"
+    REACTORCIDE_WORKER_ENROLLMENT_TOKEN_KEY: "${env:REACTORCIDE_WORKER_ENROLLMENT_TOKEN_KEY}"
+    REACTORCIDE_WORKER_COORDINATOR_URL: "${env:REACTORCIDE_WORKER_COORDINATOR_URL}"

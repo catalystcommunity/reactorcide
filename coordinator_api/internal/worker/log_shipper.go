@@ -26,12 +26,12 @@ type LogEntry struct {
 
 // LogShipperConfig holds configuration for log shipping
 type LogShipperConfig struct {
-	ObjectStore    objects.ObjectStore
-	JobID          string
-	StreamType     string // "stdout" or "stderr"
-	ChunkInterval  time.Duration
+	ObjectStore     objects.ObjectStore
+	JobID           string
+	StreamType      string // "stdout" or "stderr"
+	ChunkInterval   time.Duration
 	OnChunkUploaded func(objectKey string, bytesWritten int64) error // Callback for chunk uploads
-	Publisher      *pubsub.Publisher // optional: NOTIFY WS clients when a chunk is flushed
+	Publisher       *pubsub.Publisher                                // optional: NOTIFY WS clients when a chunk is flushed
 }
 
 // LogShipper handles streaming logs to object storage in chunks
@@ -135,8 +135,8 @@ func (ls *LogShipper) StreamAndShip(ctx context.Context, reader io.ReadCloser) (
 	}
 
 	logger.WithFields(map[string]interface{}{
-		"object_key":    ls.objectKey,
-		"total_bytes":   ls.totalBytes,
+		"object_key":     ls.objectKey,
+		"total_bytes":    ls.totalBytes,
 		"chunks_written": ls.chunksWritten,
 	}).Info("Log streaming completed")
 

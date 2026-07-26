@@ -138,6 +138,7 @@ func (m *ProjectMockStore) DeleteSecretGrant(ctx context.Context, userID string,
 // Stub implementations for remaining store.Store interface methods
 func (m *ProjectMockStore) Initialize() (func(), error)                             { return nil, nil }
 func (m *ProjectMockStore) EnsureDefaultUser() error                                { return nil }
+func (m *ProjectMockStore) EnsureDefaultQueue(ctx context.Context) error            { return nil }
 func (m *ProjectMockStore) CreateUser(ctx context.Context, user *models.User) error { return nil }
 func (m *ProjectMockStore) GetUserByID(ctx context.Context, userID string) (*models.User, error) {
 	return nil, nil

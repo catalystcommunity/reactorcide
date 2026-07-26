@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/characteristics"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/config"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store/models"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/vcs"
@@ -124,22 +125,30 @@ func BuildEvalJob(project *models.Project, event *vcs.WebhookEvent) *models.Job 
 		priority = 10
 	}
 
+	// Eval jobs carry no per-job characteristics block (they're
+	// system-generated, not parsed from a job spec), so they resolve to the
+	// default {"os":"linux"} queue. ParseJobCharacteristics(nil) never
+	// errors -- a nil raw map has nothing to fail validation -- so the error
+	// is safe to discard here.
+	chars, _ := characteristics.ParseJobCharacteristics(nil)
+
 	job := &models.Job{
-		UserID:       config.DefaultUserID,
-		ProjectID:    &project.ProjectID,
-		Name:         jobName,
-		Description:  fmt.Sprintf("Eval job for %s event on %s", event.GenericEvent, event.Repository.FullName),
-		SourceURL:    &sourceURL,
-		SourceRef:    &sourceRef,
-		SourceType:   &sourceType,
-		CISourceType: ciSourceType,
-		CISourceURL:  ciSourceURL,
-		CISourceRef:  ciSourceRef,
-		JobCommand:   jobCommand,
-		RunnerImage:  project.DefaultRunnerImage,
-		JobEnvVars:   envVars,
-		Priority:     priority,
-		QueueName:    project.DefaultQueueName,
+		UserID:          config.DefaultUserID,
+		ProjectID:       &project.ProjectID,
+		Name:            jobName,
+		Description:     fmt.Sprintf("Eval job for %s event on %s", event.GenericEvent, event.Repository.FullName),
+		SourceURL:       &sourceURL,
+		SourceRef:       &sourceRef,
+		SourceType:      &sourceType,
+		CISourceType:    ciSourceType,
+		CISourceURL:     ciSourceURL,
+		CISourceRef:     ciSourceRef,
+		JobCommand:      jobCommand,
+		RunnerImage:     project.DefaultRunnerImage,
+		JobEnvVars:      envVars,
+		Priority:        priority,
+		QueueName:       project.DefaultQueueName,
+		Characteristics: chars,
 	}
 
 	if project.DefaultTimeoutSeconds > 0 {

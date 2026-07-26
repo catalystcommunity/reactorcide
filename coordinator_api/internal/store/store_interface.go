@@ -81,4 +81,10 @@ type Store interface {
 	GetUserByID(ctx context.Context, userID string) (*models.User, error)
 	CreateUser(ctx context.Context, user *models.User) error
 	EnsureDefaultUser() error
+
+	// EnsureDefaultQueue finds or creates the seeded {"os":"linux"} default
+	// queue (WORKERS_PLAN.md "Queues"). Called at coordinator/API startup
+	// alongside EnsureDefaultUser; see
+	// postgres_store.PostgresDbStore.EnsureDefaultQueue.
+	EnsureDefaultQueue(ctx context.Context) error
 }

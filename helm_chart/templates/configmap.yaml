@@ -43,23 +43,15 @@ data:
   REACTORCIDE_S3_ENDPOINT: {{ .Values.objectStore.s3.endpoint | quote }}
   {{- end }}
 
-  # Worker configuration
-  WORKER_QUEUE: {{ .Values.worker.queue | quote }}
-  WORKER_POLL_INTERVAL: {{ .Values.worker.pollInterval | quote }}
-  WORKER_CONCURRENCY: {{ .Values.worker.concurrency | quote }}
-  REACTORCIDE_WORKER_SHUTDOWN_TIMEOUT: {{ .Values.worker.shutdownTimeout | quote }}
-  WORKER_DRY_RUN: {{ .Values.worker.dryRun | quote }}
-  REACTORCIDE_CONTAINER_RUNTIME: {{ .Values.worker.containerRuntime | quote }}
-  {{- if .Values.worker.jobNamespace }}
-  REACTORCIDE_K8S_JOB_NAMESPACE: {{ .Values.worker.jobNamespace | quote }}
-  {{- end }}
-  REACTORCIDE_K8S_JOB_SERVICE_ACCOUNT: {{ default (include "worker.serviceAccountName" .) .Values.worker.jobServiceAccount | quote }}
-  {{- if .Values.worker.jobImagePullSecrets }}
-  REACTORCIDE_K8S_JOB_IMAGE_PULL_SECRETS: {{ join "," .Values.worker.jobImagePullSecrets | quote }}
-  {{- end }}
-
-  # API URL for job containers to submit triggers (reachable from job pods)
-  REACTORCIDE_JOB_API_URL: "http://{{ include "app.name" . }}.{{ .Release.Namespace }}.svc.cluster.local:{{ .Values.app.service.port }}"
+  # NOTE: this configmap is mounted via envFrom on the app (coordinator)
+  # deployment only. The worker deployment (WORKERS_PLAN.md, coordinator-
+  # mediated) sets its own explicit, minimal env in deployment-worker.yaml --
+  # it does not use envFrom here, since almost none of this configmap
+  # (corndogs, object store, default queue/timeout, UI auth) applies to a
+  # worker. Worker-specific values (container runtime, concurrency, job API
+  # URL, K8s job namespace/service-account/image-pull-secrets, builder sidecar
+  # config) are computed directly in deployment-worker.yaml from the same
+  # `worker.*` / `builder.*` values keys.
 
   # Management UI auth, RBAC, and visibility (see docs/ui-auth.md)
   REACTORCIDE_UI_AUTH_MODE: {{ .Values.uiAuth.mode | quote }}

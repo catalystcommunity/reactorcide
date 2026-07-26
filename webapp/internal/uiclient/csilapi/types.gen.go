@@ -110,6 +110,7 @@ type GetCapabilitiesResponse struct {
 	ManageVcsCredentials    bool `json:"manage_vcs_credentials" yaml:"manage_vcs_credentials"`
 	ManageSecrets           bool `json:"manage_secrets" yaml:"manage_secrets"`
 	ManageGroups            bool `json:"manage_groups" yaml:"manage_groups"`
+	ManageWorkers           bool `json:"manage_workers" yaml:"manage_workers"`
 	ManageProjectSettings   bool `json:"manage_project_settings" yaml:"manage_project_settings"`
 	ManageTrustedIdentities bool `json:"manage_trusted_identities" yaml:"manage_trusted_identities"`
 	ManageGlobalSettings    bool `json:"manage_global_settings" yaml:"manage_global_settings"`
@@ -767,4 +768,217 @@ type RemoveTrustedDomainPatternRequest struct {
 // RemoveTrustedDomainPatternResponse represents a structured data type
 type RemoveTrustedDomainPatternResponse struct {
 	Removed bool `json:"removed" yaml:"removed"`
+}
+
+// CharacteristicScalar is a type alias
+type CharacteristicScalar interface{}
+
+// CharacteristicEntry represents a structured data type
+type CharacteristicEntry struct {
+	Key   string               `json:"key" yaml:"key"`
+	Value CharacteristicScalar `json:"value" yaml:"value"`
+}
+
+// WorkerCharacteristicValue is a type alias
+type WorkerCharacteristicValue interface{}
+
+// WorkerCharacteristicEntry represents a structured data type
+type WorkerCharacteristicEntry struct {
+	Key   string                    `json:"key" yaml:"key"`
+	Value WorkerCharacteristicValue `json:"value" yaml:"value"`
+}
+
+// QueueSummary represents a structured data type
+type QueueSummary struct {
+	QueueId         string                `json:"queue_id" yaml:"queue_id"`
+	QueueUuid       string                `json:"queue_uuid" yaml:"queue_uuid"`
+	Characteristics []CharacteristicEntry `json:"characteristics" yaml:"characteristics"`
+	DisplayName     string                `json:"display_name" yaml:"display_name"`
+	IsDefault       bool                  `json:"is_default" yaml:"is_default"`
+	BacklogCount    int64                 `json:"backlog_count" yaml:"backlog_count"`
+}
+
+// ListQueuesRequest represents a structured data type
+type ListQueuesRequest struct {
+}
+
+// ListQueuesResponse represents a structured data type
+type ListQueuesResponse struct {
+	Queues []QueueSummary `json:"queues" yaml:"queues"`
+}
+
+// CreateQueueRequest represents a structured data type
+type CreateQueueRequest struct {
+	Characteristics []CharacteristicEntry `json:"characteristics" yaml:"characteristics"`
+	DisplayName     *string               `json:"display_name,omitempty" yaml:"display_name,omitempty"`
+}
+
+// CreateQueueResponse represents a structured data type
+type CreateQueueResponse struct {
+	Queue QueueSummary `json:"queue" yaml:"queue"`
+}
+
+// RenameQueueRequest represents a structured data type
+type RenameQueueRequest struct {
+	QueueId     string `json:"queue_id" yaml:"queue_id"`
+	DisplayName string `json:"display_name" yaml:"display_name"`
+}
+
+// RenameQueueResponse represents a structured data type
+type RenameQueueResponse struct {
+	Queue QueueSummary `json:"queue" yaml:"queue"`
+}
+
+// DeleteQueueRequest represents a structured data type
+type DeleteQueueRequest struct {
+	QueueId string `json:"queue_id" yaml:"queue_id"`
+}
+
+// DeleteQueueResponse represents a structured data type
+type DeleteQueueResponse struct {
+	Deleted         bool     `json:"deleted" yaml:"deleted"`
+	CancelledJobIds []string `json:"cancelled_job_ids" yaml:"cancelled_job_ids"`
+}
+
+// WorkerSummary represents a structured data type
+type WorkerSummary struct {
+	WorkerId         string                      `json:"worker_id" yaml:"worker_id"`
+	PoolId           string                      `json:"pool_id" yaml:"pool_id"`
+	WorkerKey        string                      `json:"worker_key" yaml:"worker_key"`
+	Hostname         *string                     `json:"hostname,omitempty" yaml:"hostname,omitempty"`
+	Os               string                      `json:"os" yaml:"os"`
+	Arch             string                      `json:"arch" yaml:"arch"`
+	Characteristics  []WorkerCharacteristicEntry `json:"characteristics" yaml:"characteristics"`
+	WorkerVersion    *string                     `json:"worker_version,omitempty" yaml:"worker_version,omitempty"`
+	Status           string                      `json:"status" yaml:"status"`
+	LastSeenAt       *string                     `json:"last_seen_at,omitempty" yaml:"last_seen_at,omitempty"`
+	ActiveLeaseCount int64                       `json:"active_lease_count" yaml:"active_lease_count"`
+}
+
+// ListWorkersRequest represents a structured data type
+type ListWorkersRequest struct {
+	PoolId *string `json:"pool_id,omitempty" yaml:"pool_id,omitempty"`
+}
+
+// ListWorkersResponse represents a structured data type
+type ListWorkersResponse struct {
+	Workers []WorkerSummary `json:"workers" yaml:"workers"`
+}
+
+// SetWorkerStatusRequest represents a structured data type
+type SetWorkerStatusRequest struct {
+	WorkerId string `json:"worker_id" yaml:"worker_id"`
+	Status   string `json:"status" yaml:"status"`
+}
+
+// SetWorkerStatusResponse represents a structured data type
+type SetWorkerStatusResponse struct {
+	Worker WorkerSummary `json:"worker" yaml:"worker"`
+}
+
+// DrainWorkerRequest represents a structured data type
+type DrainWorkerRequest struct {
+	WorkerId string `json:"worker_id" yaml:"worker_id"`
+}
+
+// DrainWorkerResponse represents a structured data type
+type DrainWorkerResponse struct {
+	Worker WorkerSummary `json:"worker" yaml:"worker"`
+}
+
+// WorkerPoolSummary represents a structured data type
+type WorkerPoolSummary struct {
+	PoolId      string  `json:"pool_id" yaml:"pool_id"`
+	OrgId       *string `json:"org_id,omitempty" yaml:"org_id,omitempty"`
+	Name        string  `json:"name" yaml:"name"`
+	Description *string `json:"description,omitempty" yaml:"description,omitempty"`
+	CreatedAt   string  `json:"created_at" yaml:"created_at"`
+	UpdatedAt   string  `json:"updated_at" yaml:"updated_at"`
+}
+
+// ListPoolsRequest represents a structured data type
+type ListPoolsRequest struct {
+	OrgId *string `json:"org_id,omitempty" yaml:"org_id,omitempty"`
+}
+
+// ListPoolsResponse represents a structured data type
+type ListPoolsResponse struct {
+	Pools []WorkerPoolSummary `json:"pools" yaml:"pools"`
+}
+
+// CreatePoolRequest represents a structured data type
+type CreatePoolRequest struct {
+	OrgId       *string `json:"org_id,omitempty" yaml:"org_id,omitempty"`
+	Name        string  `json:"name" yaml:"name"`
+	Description *string `json:"description,omitempty" yaml:"description,omitempty"`
+}
+
+// CreatePoolResponse represents a structured data type
+type CreatePoolResponse struct {
+	Pool WorkerPoolSummary `json:"pool" yaml:"pool"`
+}
+
+// UpdatePoolRequest represents a structured data type
+type UpdatePoolRequest struct {
+	PoolId      string  `json:"pool_id" yaml:"pool_id"`
+	Name        *string `json:"name,omitempty" yaml:"name,omitempty"`
+	Description *string `json:"description,omitempty" yaml:"description,omitempty"`
+}
+
+// UpdatePoolResponse represents a structured data type
+type UpdatePoolResponse struct {
+	Pool WorkerPoolSummary `json:"pool" yaml:"pool"`
+}
+
+// DeletePoolRequest represents a structured data type
+type DeletePoolRequest struct {
+	PoolId string `json:"pool_id" yaml:"pool_id"`
+}
+
+// DeletePoolResponse represents a structured data type
+type DeletePoolResponse struct {
+	Deleted bool `json:"deleted" yaml:"deleted"`
+}
+
+// EnrollmentTokenSummary represents a structured data type
+type EnrollmentTokenSummary struct {
+	TokenId       string  `json:"token_id" yaml:"token_id"`
+	PoolId        string  `json:"pool_id" yaml:"pool_id"`
+	Name          *string `json:"name,omitempty" yaml:"name,omitempty"`
+	IsActive      bool    `json:"is_active" yaml:"is_active"`
+	LastUsedAt    *string `json:"last_used_at,omitempty" yaml:"last_used_at,omitempty"`
+	CreatedAt     string  `json:"created_at" yaml:"created_at"`
+	DeactivatedAt *string `json:"deactivated_at,omitempty" yaml:"deactivated_at,omitempty"`
+}
+
+// CreateEnrollmentTokenRequest represents a structured data type
+type CreateEnrollmentTokenRequest struct {
+	PoolId string  `json:"pool_id" yaml:"pool_id"`
+	Name   *string `json:"name,omitempty" yaml:"name,omitempty"`
+}
+
+// CreateEnrollmentTokenResponse represents a structured data type
+type CreateEnrollmentTokenResponse struct {
+	Token   string                 `json:"token" yaml:"token"`
+	Summary EnrollmentTokenSummary `json:"summary" yaml:"summary"`
+}
+
+// ListEnrollmentTokensRequest represents a structured data type
+type ListEnrollmentTokensRequest struct {
+	PoolId string `json:"pool_id" yaml:"pool_id"`
+}
+
+// ListEnrollmentTokensResponse represents a structured data type
+type ListEnrollmentTokensResponse struct {
+	Tokens []EnrollmentTokenSummary `json:"tokens" yaml:"tokens"`
+}
+
+// DeactivateEnrollmentTokenRequest represents a structured data type
+type DeactivateEnrollmentTokenRequest struct {
+	TokenId string `json:"token_id" yaml:"token_id"`
+}
+
+// DeactivateEnrollmentTokenResponse represents a structured data type
+type DeactivateEnrollmentTokenResponse struct {
+	Summary EnrollmentTokenSummary `json:"summary" yaml:"summary"`
 }

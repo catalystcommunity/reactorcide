@@ -72,6 +72,7 @@ func (s *UiService) GetCapabilities(ctx context.Context, req csilapi.GetCapabili
 		ManageVcsCredentials:    caps.ManageVCSCredentials,
 		ManageSecrets:           caps.ManageSecrets,
 		ManageGroups:            caps.ManageGroupsRoles,
+		ManageWorkers:           caps.ManageWorkers,
 		ManageProjectSettings:   caps.ProjectSettings,
 		ManageTrustedIdentities: caps.GlobalAdmin,
 		ManageGlobalSettings:    caps.GlobalAdmin,

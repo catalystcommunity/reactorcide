@@ -114,6 +114,12 @@ def read_config() -> Dict[str, Any]:
         'vcs_enabled': os.environ.get('REACTORCIDE_VCS_ENABLED', 'false').lower() == 'true',
         'vcs_base_url': os.environ.get('REACTORCIDE_VCS_BASE_URL', ''),
         'kubeconfig_content': os.environ.get('KUBECONFIG_CONTENT', ''),
+        # Worker: coordinator-mediated (WORKERS_PLAN.md). These reference a
+        # Kubernetes Secret the operator manages out-of-band -- never the
+        # enrollment token value itself. See docs/workers.md.
+        'worker_coordinator_url': os.environ.get('REACTORCIDE_WORKER_COORDINATOR_URL', ''),
+        'worker_enrollment_token_secret': os.environ.get('REACTORCIDE_WORKER_ENROLLMENT_TOKEN_SECRET', ''),
+        'worker_enrollment_token_key': os.environ.get('REACTORCIDE_WORKER_ENROLLMENT_TOKEN_KEY', ''),
     }
 
 
@@ -377,6 +383,23 @@ def build_helm_values(config: Dict[str, Any], db_uri: str, corndogs_url: str) ->
     # User secret name (if non-default)
     if config['user_secret_name'] != 'base-reactorcide-user':
         args.extend(["--set", f"defaults.userSecretName={config['user_secret_name']}"])
+
+    # Worker: coordinator-mediated (WORKERS_PLAN.md). Only Secret name/key
+    # references are ever passed here -- the enrollment token value itself
+    # is never read, logged, or set by this script.
+    if config['worker_coordinator_url']:
+        args.extend(["--set", f"worker.coordinatorUrl={config['worker_coordinator_url']}"])
+    if config['worker_enrollment_token_secret']:
+        args.extend(["--set", f"worker.enrollmentTokenSecret.name={config['worker_enrollment_token_secret']}"])
+        if config['worker_enrollment_token_key']:
+            args.extend(["--set", f"worker.enrollmentTokenSecret.key={config['worker_enrollment_token_key']}"])
+        log(f"Worker enrollment token: Secret {config['worker_enrollment_token_secret']}")
+    else:
+        log("WARNING: REACTORCIDE_WORKER_ENROLLMENT_TOKEN_SECRET not set -- "
+            "the worker deployment will come up without an enrollment token "
+            "and will fail to register with the coordinator. Create a worker "
+            "pool + enrollment token (see docs/workers.md), store it in a "
+            "Kubernetes Secret, and set REACTORCIDE_WORKER_ENROLLMENT_TOKEN_SECRET.")
 
     return args
 

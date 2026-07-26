@@ -205,6 +205,7 @@
                 <a href="/app/projects">Projects</a>
                 {{if .Session.Caps.ManageGroups}}<a href="/app/org/groups">Groups</a> <a href="/app/org/roles">Roles</a>{{end}}
                 {{if .Session.Caps.ManageSecrets}}<a href="/app/org/secrets">Secrets</a>{{end}}
+                {{if .Session.Caps.ManageWorkers}}<a href="/app/workers">Workers</a>{{end}}
                 {{if .Session.IsGlobalAdmin}}<a href="/app/admin">Admin</a>{{end}}
             </nav>
             <div class="auth-area">

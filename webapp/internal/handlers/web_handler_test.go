@@ -87,6 +87,7 @@ func TestTemplatesParse(t *testing.T) {
 		"shortSHA":               shortSHA,
 		"joinStringList":         joinStringList,
 		"isRetryable":            isRetryableStatus,
+		"workerStatusBadgeClass": workerStatusBadgeClass,
 	}
 
 	tmpl, err := template.New("").Funcs(funcMap).ParseFS(templates.FS, "*.html")
@@ -99,6 +100,7 @@ func TestTemplatesParse(t *testing.T) {
 		"logs_fragment.html", "login.html", "bootstrap.html",
 		"projects_list.html", "project_new.html", "project_detail.html",
 		"org_groups.html", "org_roles.html", "org_secrets.html", "admin.html",
+		"workers.html", "workers_queues.html",
 	}
 	for _, name := range expectedTemplates {
 		if tmpl.Lookup(name) == nil {

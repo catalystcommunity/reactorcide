@@ -158,6 +158,46 @@ func TestCapabilities_Matrix(t *testing.T) {
 	}
 }
 
+// TestCapabilities_ManageWorkers drives the ManageWorkers field on its own
+// (WORKERS_PLAN.md Wave-4 P4): org-admin/global-admin tier only, same as
+// ManageSecrets/ManageGroupsRoles — a plain member or project owner never
+// gets it, even though a project owner does get other Caps fields true.
+func TestCapabilities_ManageWorkers(t *testing.T) {
+	origMode := config.UIAuthMode
+	config.UIAuthMode = config.UIAuthModeLocalRP
+	defer func() { config.UIAuthMode = origMode }()
+
+	const (
+		orgID     = "org-mw"
+		projectID = "proj-mw"
+		ownerID   = "user-owner-mw"
+		adminID   = "user-admin-mw"
+		globalID  = "user-global-mw"
+	)
+	fs := newFakeStore()
+	fs.projects[projectID] = &models.Project{ProjectID: projectID, UserID: strPtr(orgID)}
+	fs.assignments = []models.RoleAssignment{
+		{PrincipalType: models.PrincipalTypeUser, PrincipalID: ownerID, ScopeType: models.ScopeTypeProject, ScopeID: strPtr(projectID), Role: models.RoleOwner},
+		{PrincipalType: models.PrincipalTypeUser, PrincipalID: adminID, ScopeType: models.ScopeTypeOrg, ScopeID: strPtr(orgID), Role: models.RoleAdmin},
+		{PrincipalType: models.PrincipalTypeUser, PrincipalID: globalID, ScopeType: models.ScopeTypeGlobal, Role: models.RoleAdmin},
+	}
+	r := NewResolver(fs)
+	scope := Scope{ProjectID: strPtr(projectID)}
+
+	if got, err := r.Capabilities(context.Background(), UserIdentity(ownerID), scope); err != nil || got.ManageWorkers {
+		t.Fatalf("project owner ManageWorkers = %v, %v; want false, nil", got.ManageWorkers, err)
+	}
+	if got, err := r.Capabilities(context.Background(), UserIdentity(adminID), scope); err != nil || !got.ManageWorkers {
+		t.Fatalf("org admin ManageWorkers = %v, %v; want true, nil", got.ManageWorkers, err)
+	}
+	if got, err := r.Capabilities(context.Background(), UserIdentity(globalID), scope); err != nil || !got.ManageWorkers {
+		t.Fatalf("global admin ManageWorkers = %v, %v; want true, nil", got.ManageWorkers, err)
+	}
+	if got, err := r.Capabilities(context.Background(), AnonymousIdentity(), scope); err != nil || got.ManageWorkers {
+		t.Fatalf("anonymous ManageWorkers = %v, %v; want false, nil", got.ManageWorkers, err)
+	}
+}
+
 func TestCapabilities_GlobalScopeOnlyGlobalAdminTrue(t *testing.T) {
 	origMode := config.UIAuthMode
 	config.UIAuthMode = config.UIAuthModeLocalRP

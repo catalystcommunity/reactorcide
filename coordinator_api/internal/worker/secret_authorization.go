@@ -11,11 +11,24 @@ import (
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store/models"
 )
 
-type secretGrantStore interface {
+// SecretGrantStore is the narrow store capability secret-grant
+// authorization needs. Exported (alongside AuthorizeSecretAccess) so
+// internal/workerapi's coordinator-mediated RequestJob can run the grant-
+// authorization decision without reimplementing it -- WORKERS_PLAN.md
+// requires secret resolution + grant authorization to happen coordinator-
+// side at lease hand-off using this same code path.
+type SecretGrantStore interface {
 	ListSecretGrantsForJob(ctx context.Context, userID string, projectID *string, jobName string) ([]models.SecretGrant, error)
 }
 
-func (jp *JobProcessor) authorizeSecretAccess(ctx context.Context, job *models.Job, path, key string) error {
+// AuthorizeSecretAccess is the free-function core of secret-grant
+// authorization: a job-scoped secret path (isJobScopedSecret) is always
+// allowed; anything else requires a matching models.SecretGrant row (looked
+// up via grantStore, or denied outright if grantStore is nil -- e.g. a
+// store that doesn't implement SecretGrantStore). internal/workerapi's
+// RequestJob calls this directly so a coordinator-mediated worker's job is
+// authorized identically to (the now-removed) local worker's decision.
+func AuthorizeSecretAccess(ctx context.Context, grantStore SecretGrantStore, job *models.Job, path, key string) error {
 	if isJobScopedSecret(job, path) {
 		logging.Log.WithFields(map[string]interface{}{
 			"job_id": job.JobID,
@@ -26,8 +39,7 @@ func (jp *JobProcessor) authorizeSecretAccess(ctx context.Context, job *models.J
 		return nil
 	}
 
-	grantStore, ok := jp.store.(secretGrantStore)
-	if !ok {
+	if grantStore == nil {
 		return fmt.Errorf("secret access denied for %s:%s: secret grants are not available", path, key)
 	}
 	grants, err := grantStore.ListSecretGrantsForJob(ctx, job.UserID, job.ProjectID, job.Name)

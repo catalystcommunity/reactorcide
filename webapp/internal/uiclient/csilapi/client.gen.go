@@ -520,3 +520,129 @@ func (c *ReactorcideUiClient) RemoveTrustedDomainPattern(ctx context.Context, re
 	}
 	return DecodeRemoveTrustedDomainPatternResponse(csilResp)
 }
+
+func (c *ReactorcideUiClient) ListQueues(ctx context.Context, req ListQueuesRequest) (ListQueuesResponse, error) {
+	var csilZero ListQueuesResponse
+	csilResp, csilErr := c.transport.Call(ctx, "ReactorcideUi", "list-queues", EncodeListQueuesRequest(req))
+	if csilErr != nil {
+		return csilZero, csilErr
+	}
+	return DecodeListQueuesResponse(csilResp)
+}
+
+func (c *ReactorcideUiClient) CreateQueue(ctx context.Context, req CreateQueueRequest) (CreateQueueResponse, error) {
+	var csilZero CreateQueueResponse
+	csilResp, csilErr := c.transport.Call(ctx, "ReactorcideUi", "create-queue", EncodeCreateQueueRequest(req))
+	if csilErr != nil {
+		return csilZero, csilErr
+	}
+	return DecodeCreateQueueResponse(csilResp)
+}
+
+func (c *ReactorcideUiClient) RenameQueue(ctx context.Context, req RenameQueueRequest) (RenameQueueResponse, error) {
+	var csilZero RenameQueueResponse
+	csilResp, csilErr := c.transport.Call(ctx, "ReactorcideUi", "rename-queue", EncodeRenameQueueRequest(req))
+	if csilErr != nil {
+		return csilZero, csilErr
+	}
+	return DecodeRenameQueueResponse(csilResp)
+}
+
+func (c *ReactorcideUiClient) DeleteQueue(ctx context.Context, req DeleteQueueRequest) (DeleteQueueResponse, error) {
+	var csilZero DeleteQueueResponse
+	csilResp, csilErr := c.transport.Call(ctx, "ReactorcideUi", "delete-queue", EncodeDeleteQueueRequest(req))
+	if csilErr != nil {
+		return csilZero, csilErr
+	}
+	return DecodeDeleteQueueResponse(csilResp)
+}
+
+func (c *ReactorcideUiClient) ListWorkers(ctx context.Context, req ListWorkersRequest) (ListWorkersResponse, error) {
+	var csilZero ListWorkersResponse
+	csilResp, csilErr := c.transport.Call(ctx, "ReactorcideUi", "list-workers", EncodeListWorkersRequest(req))
+	if csilErr != nil {
+		return csilZero, csilErr
+	}
+	return DecodeListWorkersResponse(csilResp)
+}
+
+func (c *ReactorcideUiClient) SetWorkerStatus(ctx context.Context, req SetWorkerStatusRequest) (SetWorkerStatusResponse, error) {
+	var csilZero SetWorkerStatusResponse
+	csilResp, csilErr := c.transport.Call(ctx, "ReactorcideUi", "set-worker-status", EncodeSetWorkerStatusRequest(req))
+	if csilErr != nil {
+		return csilZero, csilErr
+	}
+	return DecodeSetWorkerStatusResponse(csilResp)
+}
+
+func (c *ReactorcideUiClient) DrainWorker(ctx context.Context, req DrainWorkerRequest) (DrainWorkerResponse, error) {
+	var csilZero DrainWorkerResponse
+	csilResp, csilErr := c.transport.Call(ctx, "ReactorcideUi", "drain-worker", EncodeDrainWorkerRequest(req))
+	if csilErr != nil {
+		return csilZero, csilErr
+	}
+	return DecodeDrainWorkerResponse(csilResp)
+}
+
+func (c *ReactorcideUiClient) ListPools(ctx context.Context, req ListPoolsRequest) (ListPoolsResponse, error) {
+	var csilZero ListPoolsResponse
+	csilResp, csilErr := c.transport.Call(ctx, "ReactorcideUi", "list-pools", EncodeListPoolsRequest(req))
+	if csilErr != nil {
+		return csilZero, csilErr
+	}
+	return DecodeListPoolsResponse(csilResp)
+}
+
+func (c *ReactorcideUiClient) CreatePool(ctx context.Context, req CreatePoolRequest) (CreatePoolResponse, error) {
+	var csilZero CreatePoolResponse
+	csilResp, csilErr := c.transport.Call(ctx, "ReactorcideUi", "create-pool", EncodeCreatePoolRequest(req))
+	if csilErr != nil {
+		return csilZero, csilErr
+	}
+	return DecodeCreatePoolResponse(csilResp)
+}
+
+func (c *ReactorcideUiClient) UpdatePool(ctx context.Context, req UpdatePoolRequest) (UpdatePoolResponse, error) {
+	var csilZero UpdatePoolResponse
+	csilResp, csilErr := c.transport.Call(ctx, "ReactorcideUi", "update-pool", EncodeUpdatePoolRequest(req))
+	if csilErr != nil {
+		return csilZero, csilErr
+	}
+	return DecodeUpdatePoolResponse(csilResp)
+}
+
+func (c *ReactorcideUiClient) DeletePool(ctx context.Context, req DeletePoolRequest) (DeletePoolResponse, error) {
+	var csilZero DeletePoolResponse
+	csilResp, csilErr := c.transport.Call(ctx, "ReactorcideUi", "delete-pool", EncodeDeletePoolRequest(req))
+	if csilErr != nil {
+		return csilZero, csilErr
+	}
+	return DecodeDeletePoolResponse(csilResp)
+}
+
+func (c *ReactorcideUiClient) CreateEnrollmentToken(ctx context.Context, req CreateEnrollmentTokenRequest) (CreateEnrollmentTokenResponse, error) {
+	var csilZero CreateEnrollmentTokenResponse
+	csilResp, csilErr := c.transport.Call(ctx, "ReactorcideUi", "create-enrollment-token", EncodeCreateEnrollmentTokenRequest(req))
+	if csilErr != nil {
+		return csilZero, csilErr
+	}
+	return DecodeCreateEnrollmentTokenResponse(csilResp)
+}
+
+func (c *ReactorcideUiClient) ListEnrollmentTokens(ctx context.Context, req ListEnrollmentTokensRequest) (ListEnrollmentTokensResponse, error) {
+	var csilZero ListEnrollmentTokensResponse
+	csilResp, csilErr := c.transport.Call(ctx, "ReactorcideUi", "list-enrollment-tokens", EncodeListEnrollmentTokensRequest(req))
+	if csilErr != nil {
+		return csilZero, csilErr
+	}
+	return DecodeListEnrollmentTokensResponse(csilResp)
+}
+
+func (c *ReactorcideUiClient) DeactivateEnrollmentToken(ctx context.Context, req DeactivateEnrollmentTokenRequest) (DeactivateEnrollmentTokenResponse, error) {
+	var csilZero DeactivateEnrollmentTokenResponse
+	csilResp, csilErr := c.transport.Call(ctx, "ReactorcideUi", "deactivate-enrollment-token", EncodeDeactivateEnrollmentTokenRequest(req))
+	if csilErr != nil {
+		return csilZero, csilErr
+	}
+	return DecodeDeactivateEnrollmentTokenResponse(csilResp)
+}

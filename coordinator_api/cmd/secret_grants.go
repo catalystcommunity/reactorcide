@@ -138,7 +138,11 @@ var SecretGrantsCommand = &cli.Command{
 			Name:  "apply",
 			Usage: "Apply secret grants from a YAML file",
 			Flags: []cli.Flag{
-				&cli.StringFlag{Name: "file", Aliases: []string{"f"}, Usage: "YAML file to apply"},
+				// NOTE: no "-f" alias here. secretGrantFormatFlag() below already
+				// claims "-f" for --format (consistent with list/get); giving --file
+				// the same short alias makes urfave/cli panic when this command's flag
+				// set is built ("apply flag redefined: f").
+				&cli.StringFlag{Name: "file", Usage: "YAML file to apply"},
 				&cli.BoolFlag{Name: "dry-run", Usage: "Compute changes without writing them"},
 				&cli.BoolFlag{Name: "prune", Usage: "Delete grants omitted from scopes present in the file"},
 				secretGrantFormatFlag(),
@@ -166,6 +170,127 @@ var SecretGrantsCommand = &cli.Command{
 			},
 		},
 	},
+}
+
+// NormalizeSecretGrantsArgs works around a urfave/cli/v2 limitation: its flag
+// parser (stdlib "flag") stops parsing at the first non-flag argument, so the
+// documented invocation of "set" —
+//
+//	reactorcide secret-grants set my-grant --secret-path ... --secret-match ...
+//
+// — has every flag placed after the positional <name> silently dropped as
+// extra positional args instead of being parsed, which then trips the
+// "--secret-path is required" guard even though --secret-path was supplied.
+// urfave/cli v2 has no per-command "allow interspersed flags/args" toggle
+// (confirmed against v2.27.7: parsing goes through stdlib flag.FlagSet.Parse,
+// which does not permute), so this reorders the raw argv for
+// "secret-grants set" specifically: recognized flags (and their values) are
+// moved before any bare positional tokens, which is the ordering the
+// underlying parser already handles correctly. This lets the documented
+// name-first usage work without changing the docs or the parser's normal
+// error behavior for genuinely unknown flags.
+//
+// It is a no-op for any other command, and only ever reorders arguments
+// found after the "set" subcommand token in argv.
+//
+// Note: urfave/cli v2 also does not inherit a parent command's flags into a
+// subcommand's own flag set, so persistent "secret-grants" flags
+// (--api-url/--token/--project) must still precede "set" on the command
+// line (e.g. "secret-grants --project X set name ..."), same as before this
+// fix. That constraint is independent of Bug 2 (which is specifically about
+// "set"'s own flags being swallowed when placed after <name>) and is left
+// alone here.
+func NormalizeSecretGrantsArgs(args []string) []string {
+	if len(args) < 2 || args[1] != "secret-grants" {
+		return args
+	}
+	// Find the "set" subcommand token: the first bare (non-flag) argument
+	// after "secret-grants". Anything before it is either "secret-grants"
+	// itself or one of its own persistent flags/values, which urfave/cli
+	// already parses correctly since they precede any positional token.
+	setIdx := -1
+	for i := 2; i < len(args); i++ {
+		a := args[i]
+		if a == "--" {
+			break
+		}
+		if a != "-" && strings.HasPrefix(a, "-") {
+			name := strings.TrimLeft(a, "-")
+			if !strings.Contains(name, "=") && name != "help" && name != "h" && i+1 < len(args) {
+				i++ // skip this flag's value token too
+			}
+			continue
+		}
+		setIdx = i
+		break
+	}
+	if setIdx == -1 || args[setIdx] != "set" {
+		return args
+	}
+	head := append([]string{}, args[:setIdx+1]...)
+	tail := reorderFlagsBeforeArgs(secretGrantsSetKnownFlags(), args[setIdx+1:])
+	return append(head, tail...)
+}
+
+// secretGrantsSetKnownFlags returns the flags visible to "secret-grants set":
+// its own flags plus the persistent flags declared on the parent
+// "secret-grants" command (api-url, token, project), which the documented
+// usage also places after the positional name.
+func secretGrantsSetKnownFlags() []cli.Flag {
+	var flags []cli.Flag
+	flags = append(flags, SecretGrantsCommand.Flags...)
+	for _, sub := range SecretGrantsCommand.Subcommands {
+		if sub.Name == "set" {
+			flags = append(flags, sub.Flags...)
+			break
+		}
+	}
+	return flags
+}
+
+// reorderFlagsBeforeArgs splits args into recognized flag tokens ("-x" /
+// "--x[=v]", plus a following value token when the flag isn't boolean) and
+// bare positional tokens, then returns the flag tokens followed by the
+// positional tokens, preserving relative order within each group. Tokens
+// from a literal "--" onward are left untouched as positionals. Unknown
+// "-x" tokens are conservatively treated like a value-taking flag (matching
+// every non-boolean flag on these commands) so a typo still surfaces the
+// normal urfave/cli "flag provided but not defined" error instead of being
+// silently swallowed as a positional argument.
+func reorderFlagsBeforeArgs(flags []cli.Flag, args []string) []string {
+	boolFlags := map[string]bool{"help": true, "h": true}
+	for _, f := range flags {
+		if _, ok := f.(*cli.BoolFlag); ok {
+			for _, name := range f.Names() {
+				boolFlags[name] = true
+			}
+		}
+	}
+
+	var flagArgs, positional []string
+	for i := 0; i < len(args); i++ {
+		a := args[i]
+		if a == "--" {
+			positional = append(positional, args[i:]...)
+			break
+		}
+		if a == "-" || !strings.HasPrefix(a, "-") {
+			positional = append(positional, a)
+			continue
+		}
+		flagArgs = append(flagArgs, a)
+		name := strings.TrimLeft(a, "-")
+		if strings.Contains(name, "=") || boolFlags[name] {
+			// Embedded value (--flag=value) or a known boolean flag: no
+			// separate value token to consume.
+			continue
+		}
+		if i+1 < len(args) {
+			flagArgs = append(flagArgs, args[i+1])
+			i++
+		}
+	}
+	return append(flagArgs, positional...)
 }
 
 type secretGrantAPIClient struct {

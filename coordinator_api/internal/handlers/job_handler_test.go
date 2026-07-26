@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/characteristics"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/checkauth"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/config"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/corndogs"
@@ -88,6 +89,7 @@ func (m *MockStore) Commit(ctx context.Context) error                        { r
 func (m *MockStore) Rollback(ctx context.Context) error                      { return nil }
 func (m *MockStore) GetContext(ctx context.Context) interface{}              { return nil }
 func (m *MockStore) EnsureDefaultUser() error                                { return nil }
+func (m *MockStore) EnsureDefaultQueue(ctx context.Context) error            { return nil }
 func (m *MockStore) CreateUser(ctx context.Context, user *models.User) error { return nil }
 func (m *MockStore) GetUserByID(ctx context.Context, userID string) (*models.User, error) {
 	return nil, nil
@@ -176,7 +178,7 @@ func TestJobHandler_CreateJob_WithCorndogs(t *testing.T) {
 				}
 			},
 			setupMockCorndogs: func(m *corndogs.MockClient) {
-				m.SubmitTaskFunc = func(ctx context.Context, payload *corndogs.TaskPayload, priority int64) (*pb.Task, error) {
+				m.SubmitTaskToQueueFunc = func(ctx context.Context, queue string, payload *corndogs.TaskPayload, priority int64) (*pb.Task, error) {
 					return &pb.Task{
 						Uuid:         "corndogs-task-id",
 						CurrentState: "submitted",
@@ -212,7 +214,7 @@ func TestJobHandler_CreateJob_WithCorndogs(t *testing.T) {
 				}
 			},
 			setupMockCorndogs: func(m *corndogs.MockClient) {
-				m.SubmitTaskFunc = func(ctx context.Context, payload *corndogs.TaskPayload, priority int64) (*pb.Task, error) {
+				m.SubmitTaskToQueueFunc = func(ctx context.Context, queue string, payload *corndogs.TaskPayload, priority int64) (*pb.Task, error) {
 					return nil, fmt.Errorf("corndogs error")
 				}
 			},
@@ -289,9 +291,10 @@ func TestJobHandler_CreateJob_WithCorndogs(t *testing.T) {
 				t.Errorf("expected status %d, got %d", tt.expectedStatus, w.Code)
 			}
 
-			// Check Corndogs calls
-			if mockCorndogs != nil && mockCorndogs.GetSubmitTaskCallCount() != tt.expectedCorndogsCalls {
-				t.Errorf("expected %d Corndogs calls, got %d", tt.expectedCorndogsCalls, mockCorndogs.GetSubmitTaskCallCount())
+			// Check Corndogs calls -- submission goes through SubmitTaskToQueue
+			// (queue-routed submit path), not the legacy SubmitTask.
+			if mockCorndogs != nil && len(mockCorndogs.SubmitTaskToQueueCalls) != tt.expectedCorndogsCalls {
+				t.Errorf("expected %d Corndogs calls, got %d", tt.expectedCorndogsCalls, len(mockCorndogs.SubmitTaskToQueueCalls))
 			}
 
 			// Check response
@@ -321,7 +324,8 @@ func TestJobHandler_CancelJob_WithCorndogs(t *testing.T) {
 			// to the worker rather than cancelling the Corndogs task itself:
 			// the job moves to "cancelling" and the worker cancels the
 			// Corndogs task once it has actually stopped the container (see
-			// CornDogsWorker.processNextTask's Cancelled branch).
+			// internal/coordinatorworker's cancel-directive handling and
+			// internal/workerapi's ReportResult finalize path).
 			name:  "running job cancellation moves to cancelling, defers Corndogs cancel to the worker",
 			jobID: "test-job-id",
 			setupMockStore: func(m *MockStore) {
@@ -649,8 +653,8 @@ func TestJobHandler_RetryJob_HappyPath(t *testing.T) {
 	if resp.Status == "failed" {
 		t.Errorf("expected the new job to not still be 'failed', got %q", resp.Status)
 	}
-	if mockCorndogs.GetSubmitTaskCallCount() != 1 {
-		t.Errorf("expected 1 SubmitTask call, got %d", mockCorndogs.GetSubmitTaskCallCount())
+	if len(mockCorndogs.SubmitTaskToQueueCalls) != 1 {
+		t.Errorf("expected 1 SubmitTaskToQueue call, got %d", len(mockCorndogs.SubmitTaskToQueueCalls))
 	}
 	if len(mockStore.CreateJobCalls) != 1 {
 		t.Errorf("expected 1 CreateJob call, got %d", len(mockStore.CreateJobCalls))
@@ -719,7 +723,7 @@ func TestJobHandler_CorndogsPayloadGeneration(t *testing.T) {
 
 	mockCorndogs := corndogs.NewMockClient()
 	var capturedPayload *corndogs.TaskPayload
-	mockCorndogs.SubmitTaskFunc = func(ctx context.Context, payload *corndogs.TaskPayload, priority int64) (*pb.Task, error) {
+	mockCorndogs.SubmitTaskToQueueFunc = func(ctx context.Context, queue string, payload *corndogs.TaskPayload, priority int64) (*pb.Task, error) {
 		capturedPayload = payload
 		return &pb.Task{
 			Uuid:         "task-id",
@@ -1557,4 +1561,263 @@ func TestGetJobLogsObjectStoreNotConfigured(t *testing.T) {
 
 		assert.Equal(t, http.StatusServiceUnavailable, rr.Code)
 	})
+}
+
+// ===== Characteristics / Resources submit-path wiring (WORKERS_PLAN.md
+// "Characteristics & matching" / "Resources") =====
+
+// queueResolvingMockStore layers a fake FindOrCreateQueueByCharacteristics
+// onto MockStore so CreateJob's queueResolvingStore type assertion succeeds,
+// letting these tests exercise the queue-resolution branch of the submit
+// path (job_handler.go's queueResolvingStore) without a real database.
+type queueResolvingMockStore struct {
+	*MockStore
+	// Queues maps a characteristics hash to the queue that should be
+	// "found" for it; a miss synthesizes a new queue (like the real
+	// find-or-create), recording it in Calls.
+	Queues map[string]*models.Queue
+	Calls  []characteristics.Characteristics
+}
+
+func newQueueResolvingMockStore() *queueResolvingMockStore {
+	return &queueResolvingMockStore{
+		MockStore: &MockStore{},
+		Queues:    map[string]*models.Queue{},
+	}
+}
+
+func (m *queueResolvingMockStore) FindOrCreateQueueByCharacteristics(ctx context.Context, chars characteristics.Characteristics) (*models.Queue, error) {
+	m.Calls = append(m.Calls, chars)
+	hash := characteristics.Hash(chars)
+	if q, ok := m.Queues[hash]; ok {
+		return q, nil
+	}
+	q := &models.Queue{
+		QueueID:             uuid.New().String(),
+		QueueUUID:           uuid.New().String(),
+		Characteristics:     chars,
+		CharacteristicsHash: hash,
+	}
+	m.Queues[hash] = q
+	return q, nil
+}
+
+// TestJobHandler_CreateJob_CharacteristicsDefaultToLinux verifies a bare job
+// request (no `characteristics` field) resolves to {"os":"linux"} -- the one
+// default assumption in the characteristic model.
+func TestJobHandler_CreateJob_CharacteristicsDefaultToLinux(t *testing.T) {
+	mockStore := &MockStore{
+		CreateJobFunc: func(ctx context.Context, job *models.Job) error {
+			job.JobID = "test-job-id"
+			return nil
+		},
+	}
+	handler := NewJobHandler(mockStore, nil)
+
+	request := CreateJobRequest{
+		Name:       "Test Job",
+		JobCommand: "echo hello",
+		SourceType: "copy",
+		SourcePath: "./",
+	}
+	body, _ := json.Marshal(request)
+	req := httptest.NewRequest("POST", "/api/v1/jobs", bytes.NewReader(body))
+	user := &models.User{UserID: "test-user-id"}
+	req = req.WithContext(checkauth.SetUserContext(req.Context(), user))
+
+	w := httptest.NewRecorder()
+	handler.CreateJob(w, req)
+
+	require.Equal(t, http.StatusCreated, w.Code, w.Body.String())
+	require.Len(t, mockStore.CreateJobCalls, 1)
+
+	got := mockStore.CreateJobCalls[0].Characteristics
+	want, err := characteristics.ParseJobCharacteristics(nil)
+	require.NoError(t, err)
+	assert.Equal(t, characteristics.Hash(want), characteristics.Hash(got))
+}
+
+// TestJobHandler_CreateJob_CharacteristicsParsed verifies an explicit
+// `characteristics` block on the request is parsed onto the job.
+func TestJobHandler_CreateJob_CharacteristicsParsed(t *testing.T) {
+	mockStore := &MockStore{
+		CreateJobFunc: func(ctx context.Context, job *models.Job) error {
+			job.JobID = "test-job-id"
+			return nil
+		},
+	}
+	handler := NewJobHandler(mockStore, nil)
+
+	request := CreateJobRequest{
+		Name:            "Test Job",
+		JobCommand:      "echo hello",
+		SourceType:      "copy",
+		SourcePath:      "./",
+		Characteristics: map[string]interface{}{"os": "windows", "gpu": true},
+	}
+	body, _ := json.Marshal(request)
+	req := httptest.NewRequest("POST", "/api/v1/jobs", bytes.NewReader(body))
+	user := &models.User{UserID: "test-user-id"}
+	req = req.WithContext(checkauth.SetUserContext(req.Context(), user))
+
+	w := httptest.NewRecorder()
+	handler.CreateJob(w, req)
+
+	require.Equal(t, http.StatusCreated, w.Code, w.Body.String())
+	require.Len(t, mockStore.CreateJobCalls, 1)
+
+	got := mockStore.CreateJobCalls[0].Characteristics
+	want, err := characteristics.ParseJobCharacteristics(map[string]any{"os": "windows", "gpu": true})
+	require.NoError(t, err)
+	assert.Equal(t, characteristics.Hash(want), characteristics.Hash(got))
+}
+
+// TestJobHandler_CreateJob_InvalidCharacteristics_Returns400 verifies a
+// list-valued characteristic (rejected for job/queue characteristics --
+// list values are worker-only) is a 400, not a 500 or a silently-ignored
+// value.
+func TestJobHandler_CreateJob_InvalidCharacteristics_Returns400(t *testing.T) {
+	mockStore := &MockStore{}
+	handler := NewJobHandler(mockStore, nil)
+
+	request := CreateJobRequest{
+		Name:            "Test Job",
+		JobCommand:      "echo hello",
+		SourceType:      "copy",
+		SourcePath:      "./",
+		Characteristics: map[string]interface{}{"os": []interface{}{"linux", "windows"}},
+	}
+	body, _ := json.Marshal(request)
+	req := httptest.NewRequest("POST", "/api/v1/jobs", bytes.NewReader(body))
+	user := &models.User{UserID: "test-user-id"}
+	req = req.WithContext(checkauth.SetUserContext(req.Context(), user))
+
+	w := httptest.NewRecorder()
+	handler.CreateJob(w, req)
+
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+	assert.Empty(t, mockStore.CreateJobCalls, "job must not be persisted when characteristics fail validation")
+}
+
+// TestJobHandler_CreateJob_ResourcesParsed verifies a `resources` block is
+// parsed onto the job's resource fields, and left empty (DB-default
+// territory) when the request has none.
+func TestJobHandler_CreateJob_ResourcesParsed(t *testing.T) {
+	mockStore := &MockStore{
+		CreateJobFunc: func(ctx context.Context, job *models.Job) error {
+			job.JobID = "test-job-id"
+			return nil
+		},
+	}
+	handler := NewJobHandler(mockStore, nil)
+
+	request := CreateJobRequest{
+		Name:       "Test Job",
+		JobCommand: "echo hello",
+		SourceType: "copy",
+		SourcePath: "./",
+		Resources: map[string]interface{}{
+			"cpu":    map[string]interface{}{"request": "500m", "limit": "1"},
+			"memory": map[string]interface{}{"limit": "1Gi"},
+		},
+	}
+	body, _ := json.Marshal(request)
+	req := httptest.NewRequest("POST", "/api/v1/jobs", bytes.NewReader(body))
+	user := &models.User{UserID: "test-user-id"}
+	req = req.WithContext(checkauth.SetUserContext(req.Context(), user))
+
+	w := httptest.NewRecorder()
+	handler.CreateJob(w, req)
+
+	require.Equal(t, http.StatusCreated, w.Code, w.Body.String())
+	require.Len(t, mockStore.CreateJobCalls, 1)
+
+	got := mockStore.CreateJobCalls[0]
+	assert.Equal(t, "500m", got.ResourceCPURequest)
+	assert.Equal(t, "1", got.ResourceCPULimit)
+	assert.Equal(t, "1Gi", got.ResourceMemoryLimit)
+}
+
+// TestJobHandler_CreateJob_ResourcesAbsent_LeavesFieldsEmpty verifies that
+// omitting `resources` entirely leaves the resource fields empty so the DB
+// column defaults (cpu.request=1, cpu.limit=2, memory.limit=4Gi) apply.
+func TestJobHandler_CreateJob_ResourcesAbsent_LeavesFieldsEmpty(t *testing.T) {
+	mockStore := &MockStore{
+		CreateJobFunc: func(ctx context.Context, job *models.Job) error {
+			job.JobID = "test-job-id"
+			return nil
+		},
+	}
+	handler := NewJobHandler(mockStore, nil)
+
+	request := CreateJobRequest{
+		Name:       "Test Job",
+		JobCommand: "echo hello",
+		SourceType: "copy",
+		SourcePath: "./",
+	}
+	body, _ := json.Marshal(request)
+	req := httptest.NewRequest("POST", "/api/v1/jobs", bytes.NewReader(body))
+	user := &models.User{UserID: "test-user-id"}
+	req = req.WithContext(checkauth.SetUserContext(req.Context(), user))
+
+	w := httptest.NewRecorder()
+	handler.CreateJob(w, req)
+
+	require.Equal(t, http.StatusCreated, w.Code, w.Body.String())
+	require.Len(t, mockStore.CreateJobCalls, 1)
+
+	got := mockStore.CreateJobCalls[0]
+	assert.Empty(t, got.ResourceCPURequest)
+	assert.Empty(t, got.ResourceCPULimit)
+	assert.Empty(t, got.ResourceMemoryLimit)
+}
+
+// TestJobHandler_CreateJob_ResolvesQueueUUID_SubmitsToIt verifies the
+// submit path resolves the job's characteristics to a queue (find-or-create)
+// and submits the Corndogs task to that queue's UUID -- WORKERS_PLAN.md
+// "Find-or-create at submit". Uses queueResolvingMockStore since the plain
+// MockStore doesn't implement queueResolvingStore (that's the point being
+// tested: production's PostgresDbStore does, via
+// internal/store/postgres_store/queue_operations.go).
+func TestJobHandler_CreateJob_ResolvesQueueUUID_SubmitsToIt(t *testing.T) {
+	qStore := newQueueResolvingMockStore()
+	qStore.MockStore.CreateJobFunc = func(ctx context.Context, job *models.Job) error {
+		job.JobID = "test-job-id"
+		return nil
+	}
+
+	mockCorndogs := corndogs.NewMockClient()
+	handler := NewJobHandler(qStore, mockCorndogs)
+
+	request := CreateJobRequest{
+		Name:            "Test Job",
+		JobCommand:      "echo hello",
+		SourceType:      "copy",
+		SourcePath:      "./",
+		Characteristics: map[string]interface{}{"os": "windows"},
+	}
+	body, _ := json.Marshal(request)
+	req := httptest.NewRequest("POST", "/api/v1/jobs", bytes.NewReader(body))
+	user := &models.User{UserID: "test-user-id"}
+	req = req.WithContext(checkauth.SetUserContext(req.Context(), user))
+
+	w := httptest.NewRecorder()
+	handler.CreateJob(w, req)
+
+	require.Equal(t, http.StatusCreated, w.Code, w.Body.String())
+	require.Len(t, qStore.Calls, 1, "expected exactly one queue-resolution call")
+
+	wantChars, err := characteristics.ParseJobCharacteristics(map[string]any{"os": "windows"})
+	require.NoError(t, err)
+	resolvedQueue := qStore.Queues[characteristics.Hash(wantChars)]
+	require.NotNil(t, resolvedQueue, "expected the {os:windows} queue to have been created")
+
+	require.Len(t, qStore.MockStore.CreateJobCalls, 1)
+	assert.Equal(t, resolvedQueue.QueueUUID, qStore.MockStore.CreateJobCalls[0].QueueName,
+		"expected job.QueueName to be set to the resolved queue's UUID before persisting")
+
+	require.Len(t, mockCorndogs.SubmitTaskToQueueCalls, 1)
+	assert.Equal(t, resolvedQueue.QueueUUID, mockCorndogs.SubmitTaskToQueueCalls[0].Queue,
+		"expected the Corndogs task to be submitted to the resolved queue's UUID")
 }

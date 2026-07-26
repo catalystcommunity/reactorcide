@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/characteristics"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/corndogs"
 	pb "github.com/catalystcommunity/reactorcide/coordinator_api/internal/corndogs/v1alpha1"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store/models"
@@ -25,7 +26,7 @@ func TestProcessTriggers_NoTriggersFile(t *testing.T) {
 		t.Errorf("expected no error for missing triggers file, got %v", err)
 	}
 
-	if mockCorndogs.GetSubmitTaskCallCount() != 0 {
+	if mockCorndogs.GetSubmitTaskCallCount() != 0 || len(mockCorndogs.SubmitTaskToQueueCalls) != 0 {
 		t.Error("expected no Corndogs calls when triggers file is missing")
 	}
 }
@@ -47,7 +48,7 @@ func TestProcessTriggers_EmptyJobs(t *testing.T) {
 		t.Errorf("expected no error for empty jobs list, got %v", err)
 	}
 
-	if mockCorndogs.GetSubmitTaskCallCount() != 0 {
+	if mockCorndogs.GetSubmitTaskCallCount() != 0 || len(mockCorndogs.SubmitTaskToQueueCalls) != 0 {
 		t.Error("expected no Corndogs calls for empty jobs list")
 	}
 }
@@ -197,12 +198,13 @@ func TestProcessTriggers_SingleJob(t *testing.T) {
 		t.Error("expected trigger env var 'REACTORCIDE_BRANCH' to be set")
 	}
 
-	// Verify Corndogs submission
-	if mockCorndogs.GetSubmitTaskCallCount() != 1 {
-		t.Fatalf("expected 1 SubmitTask call, got %d", mockCorndogs.GetSubmitTaskCallCount())
+	// Verify Corndogs submission -- queue-routed submit, not the legacy
+	// SubmitTask.
+	if len(mockCorndogs.SubmitTaskToQueueCalls) != 1 {
+		t.Fatalf("expected 1 SubmitTaskToQueue call, got %d", len(mockCorndogs.SubmitTaskToQueueCalls))
 	}
 
-	submitCall := mockCorndogs.SubmitTaskCalls[0]
+	submitCall := mockCorndogs.SubmitTaskToQueueCalls[0]
 	if submitCall.Payload.JobID != "generated-job-id" {
 		t.Errorf("expected task payload job ID 'generated-job-id', got %q", submitCall.Payload.JobID)
 	}
@@ -264,8 +266,8 @@ func TestProcessTriggers_MultipleJobs(t *testing.T) {
 	if createCount != 2 {
 		t.Errorf("expected 2 jobs created, got %d", createCount)
 	}
-	if mockCorndogs.GetSubmitTaskCallCount() != 2 {
-		t.Errorf("expected 2 SubmitTask calls, got %d", mockCorndogs.GetSubmitTaskCallCount())
+	if len(mockCorndogs.SubmitTaskToQueueCalls) != 2 {
+		t.Errorf("expected 2 SubmitTaskToQueue calls, got %d", len(mockCorndogs.SubmitTaskToQueueCalls))
 	}
 }
 
@@ -465,7 +467,7 @@ func TestProcessTriggers_CornDogsSubmitError(t *testing.T) {
 		},
 	}
 	mockCorndogs := corndogs.NewMockClient()
-	mockCorndogs.SubmitTaskFunc = func(ctx context.Context, payload *corndogs.TaskPayload, priority int64) (*pb.Task, error) {
+	mockCorndogs.SubmitTaskToQueueFunc = func(ctx context.Context, queue string, payload *corndogs.TaskPayload, priority int64) (*pb.Task, error) {
 		return nil, fmt.Errorf("corndogs unavailable")
 	}
 
@@ -539,11 +541,11 @@ func TestProcessTriggers_TaskPayloadStructure(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	if mockCorndogs.GetSubmitTaskCallCount() != 1 {
-		t.Fatalf("expected 1 SubmitTask call, got %d", mockCorndogs.GetSubmitTaskCallCount())
+	if len(mockCorndogs.SubmitTaskToQueueCalls) != 1 {
+		t.Fatalf("expected 1 SubmitTaskToQueue call, got %d", len(mockCorndogs.SubmitTaskToQueueCalls))
 	}
 
-	call := mockCorndogs.SubmitTaskCalls[0]
+	call := mockCorndogs.SubmitTaskToQueueCalls[0]
 	payload := call.Payload
 
 	if payload.JobID != "deploy-job-id" {
@@ -682,7 +684,7 @@ func TestProcessTriggersFromData_EmptyJobs(t *testing.T) {
 	if len(jobIDs) != 0 {
 		t.Errorf("expected 0 job IDs, got %d", len(jobIDs))
 	}
-	if mockCorndogs.GetSubmitTaskCallCount() != 0 {
+	if mockCorndogs.GetSubmitTaskCallCount() != 0 || len(mockCorndogs.SubmitTaskToQueueCalls) != 0 {
 		t.Error("expected no Corndogs calls for empty jobs")
 	}
 }
@@ -722,7 +724,10 @@ func TestBuildJobFromTrigger_MinimalSpec(t *testing.T) {
 		TimeoutSeconds: 3600,
 	}
 
-	job := tp.buildJobFromTrigger(spec, parentJob)
+	job, err := tp.buildJobFromTrigger(spec, parentJob)
+	if err != nil {
+		t.Fatalf("buildJobFromTrigger failed: %v", err)
+	}
 
 	if job.Name != "minimal-job" {
 		t.Errorf("expected name 'minimal-job', got %q", job.Name)
@@ -741,19 +746,150 @@ func TestBuildJobFromTrigger_MinimalSpec(t *testing.T) {
 	}
 }
 
+// TestBuildJobFromTrigger_InheritsParentCharacteristics verifies a triggered
+// job with no `characteristics` block of its own inherits the parent (eval)
+// job's characteristics wholesale (WORKERS_PLAN.md "Triggered/workflow child
+// jobs inherit the PARENT's characteristics unless the child spec
+// overrides").
+func TestBuildJobFromTrigger_InheritsParentCharacteristics(t *testing.T) {
+	mockStore := &MockStore{}
+	tp := NewTriggerProcessor(mockStore, nil)
+
+	parentChars, err := characteristics.ParseJobCharacteristics(map[string]any{"os": "windows", "arch": "amd64"})
+	if err != nil {
+		t.Fatalf("failed to build parent characteristics: %v", err)
+	}
+	parentJob := &models.Job{
+		JobID:           "parent-id",
+		UserID:          "user-123",
+		QueueName:       "some-queue-uuid",
+		RunnerImage:     "default:runner",
+		TimeoutSeconds:  3600,
+		Characteristics: parentChars,
+	}
+
+	spec := triggerJobSpec{JobName: "child-job"}
+
+	job, err := tp.buildJobFromTrigger(spec, parentJob)
+	if err != nil {
+		t.Fatalf("buildJobFromTrigger failed: %v", err)
+	}
+
+	if characteristics.Hash(job.Characteristics) != characteristics.Hash(parentChars) {
+		t.Errorf("expected child to inherit parent characteristics %s, got %s",
+			characteristics.CanonicalString(parentChars), characteristics.CanonicalString(job.Characteristics))
+	}
+}
+
+// TestBuildJobFromTrigger_OverridesParentCharacteristics verifies a
+// triggered job whose spec declares its own `characteristics` block uses
+// that instead of the parent's.
+func TestBuildJobFromTrigger_OverridesParentCharacteristics(t *testing.T) {
+	mockStore := &MockStore{}
+	tp := NewTriggerProcessor(mockStore, nil)
+
+	parentChars, err := characteristics.ParseJobCharacteristics(map[string]any{"os": "linux"})
+	if err != nil {
+		t.Fatalf("failed to build parent characteristics: %v", err)
+	}
+	parentJob := &models.Job{
+		JobID:           "parent-id",
+		UserID:          "user-123",
+		QueueName:       "some-queue-uuid",
+		RunnerImage:     "default:runner",
+		TimeoutSeconds:  3600,
+		Characteristics: parentChars,
+	}
+
+	spec := triggerJobSpec{
+		JobName:         "child-job",
+		Characteristics: map[string]interface{}{"os": "windows"},
+	}
+
+	job, err := tp.buildJobFromTrigger(spec, parentJob)
+	if err != nil {
+		t.Fatalf("buildJobFromTrigger failed: %v", err)
+	}
+
+	wantChars, err := characteristics.ParseJobCharacteristics(map[string]any{"os": "windows"})
+	if err != nil {
+		t.Fatalf("failed to build expected characteristics: %v", err)
+	}
+	if characteristics.Hash(job.Characteristics) != characteristics.Hash(wantChars) {
+		t.Errorf("expected overridden characteristics %s, got %s",
+			characteristics.CanonicalString(wantChars), characteristics.CanonicalString(job.Characteristics))
+	}
+}
+
+// TestBuildJobFromTrigger_InvalidCharacteristicsErrors verifies a spec with
+// an invalid `characteristics` block (a list value, which is rejected for
+// job/queue characteristics) fails buildJobFromTrigger with an error rather
+// than silently falling back.
+func TestBuildJobFromTrigger_InvalidCharacteristicsErrors(t *testing.T) {
+	mockStore := &MockStore{}
+	tp := NewTriggerProcessor(mockStore, nil)
+
+	parentJob := &models.Job{JobID: "parent-id", UserID: "user-123"}
+	spec := triggerJobSpec{
+		JobName:         "child-job",
+		Characteristics: map[string]interface{}{"os": []interface{}{"linux", "windows"}},
+	}
+
+	if _, err := tp.buildJobFromTrigger(spec, parentJob); err == nil {
+		t.Fatal("expected an error for a list-valued characteristic in a triggered job spec")
+	}
+}
+
+// TestBuildJobFromTrigger_ResourcesOverride verifies a spec's `resources`
+// block is parsed onto the child job when present, and left empty
+// (DB-default territory) when absent.
+func TestBuildJobFromTrigger_ResourcesOverride(t *testing.T) {
+	mockStore := &MockStore{}
+	tp := NewTriggerProcessor(mockStore, nil)
+	parentJob := &models.Job{JobID: "parent-id", UserID: "user-123"}
+
+	t.Run("no resources block leaves fields empty for DB defaults", func(t *testing.T) {
+		spec := triggerJobSpec{JobName: "child-job"}
+		job, err := tp.buildJobFromTrigger(spec, parentJob)
+		if err != nil {
+			t.Fatalf("buildJobFromTrigger failed: %v", err)
+		}
+		if job.ResourceCPURequest != "" || job.ResourceCPULimit != "" || job.ResourceMemoryLimit != "" {
+			t.Errorf("expected empty resource fields, got %q/%q/%q",
+				job.ResourceCPURequest, job.ResourceCPULimit, job.ResourceMemoryLimit)
+		}
+	})
+
+	t.Run("resources block is parsed onto the child job", func(t *testing.T) {
+		spec := triggerJobSpec{
+			JobName: "child-job",
+			Resources: map[string]interface{}{
+				"cpu":    map[string]interface{}{"request": "2", "limit": "4"},
+				"memory": map[string]interface{}{"limit": "8Gi"},
+			},
+		}
+		job, err := tp.buildJobFromTrigger(spec, parentJob)
+		if err != nil {
+			t.Fatalf("buildJobFromTrigger failed: %v", err)
+		}
+		if job.ResourceCPURequest != "2" || job.ResourceCPULimit != "4" || job.ResourceMemoryLimit != "8Gi" {
+			t.Errorf("expected resources 2/4/8Gi, got %q/%q/%q",
+				job.ResourceCPURequest, job.ResourceCPULimit, job.ResourceMemoryLimit)
+		}
+	})
+}
+
 func TestBuildJobEnv_PassesAPICredentials(t *testing.T) {
 	// Set up environment variables that the worker reads
 	t.Setenv("REACTORCIDE_JOB_API_URL", "http://coordinator:6080")
 	t.Setenv("REACTORCIDE_API_TOKEN", "test-api-token-123")
-
-	jp := NewJobProcessor(&MockStore{}, nil, false)
 
 	job := &models.Job{
 		JobID:     "test-job",
 		QueueName: "reactorcide-jobs",
 	}
 
-	env := jp.buildJobEnv(job)
+	env := BuildJobEnv(job)
 
 	if env["REACTORCIDE_COORDINATOR_URL"] != "http://coordinator:6080" {
 		t.Errorf("expected REACTORCIDE_COORDINATOR_URL to be set, got %q", env["REACTORCIDE_COORDINATOR_URL"])
@@ -768,14 +904,12 @@ func TestBuildJobEnv_NoAPICredentials(t *testing.T) {
 	t.Setenv("REACTORCIDE_JOB_API_URL", "")
 	t.Setenv("REACTORCIDE_API_TOKEN", "")
 
-	jp := NewJobProcessor(&MockStore{}, nil, false)
-
 	job := &models.Job{
 		JobID:     "test-job",
 		QueueName: "reactorcide-jobs",
 	}
 
-	env := jp.buildJobEnv(job)
+	env := BuildJobEnv(job)
 
 	if _, ok := env["REACTORCIDE_COORDINATOR_URL"]; ok && env["REACTORCIDE_COORDINATOR_URL"] != "" {
 		t.Errorf("expected REACTORCIDE_COORDINATOR_URL to not be set, got %q", env["REACTORCIDE_COORDINATOR_URL"])
@@ -804,7 +938,10 @@ func TestBuildJobFromTrigger_CopiesNotesFromParent(t *testing.T) {
 		Notes:          vcsNotes,
 	}
 
-	job := tp.buildJobFromTrigger(spec, parentJob)
+	job, err := tp.buildJobFromTrigger(spec, parentJob)
+	if err != nil {
+		t.Fatalf("buildJobFromTrigger failed: %v", err)
+	}
 
 	// Notes should be updated with StatusContext set to job name and IsEval cleared
 	var metadata vcs.JobMetadata
@@ -845,7 +982,10 @@ func TestBuildJobFromTrigger_EmptyNotesNotCopied(t *testing.T) {
 		Notes:          "",
 	}
 
-	job := tp.buildJobFromTrigger(spec, parentJob)
+	job, err := tp.buildJobFromTrigger(spec, parentJob)
+	if err != nil {
+		t.Fatalf("buildJobFromTrigger failed: %v", err)
+	}
 
 	if job.Notes != "" {
 		t.Errorf("expected Notes to be empty when parent has no notes, got %q", job.Notes)
@@ -964,7 +1104,7 @@ func TestProcessTriggersFromData_JobFileRequiresWorkspace(t *testing.T) {
 	if !strings.Contains(err.Error(), "requires workspace-backed trigger processing") {
 		t.Fatalf("expected workspace-backed error, got %v", err)
 	}
-	if mockCorndogs.GetSubmitTaskCallCount() != 0 {
+	if mockCorndogs.GetSubmitTaskCallCount() != 0 || len(mockCorndogs.SubmitTaskToQueueCalls) != 0 {
 		t.Error("expected no Corndogs calls when job_file cannot be resolved")
 	}
 }
@@ -1101,7 +1241,7 @@ func TestProcessTriggers_JobFileMissing(t *testing.T) {
 	}
 
 	// No jobs should be created
-	if mockCorndogs.GetSubmitTaskCallCount() != 0 {
+	if mockCorndogs.GetSubmitTaskCallCount() != 0 || len(mockCorndogs.SubmitTaskToQueueCalls) != 0 {
 		t.Error("expected no Corndogs calls when job file is missing")
 	}
 }
@@ -1147,7 +1287,7 @@ func TestProcessTriggers_JobFileInvalidYAML(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	if mockCorndogs.GetSubmitTaskCallCount() != 0 {
+	if mockCorndogs.GetSubmitTaskCallCount() != 0 || len(mockCorndogs.SubmitTaskToQueueCalls) != 0 {
 		t.Error("expected no Corndogs calls when job file has invalid YAML")
 	}
 }
