@@ -197,10 +197,39 @@ func TestOCIImageSource_ArtifactShapeMismatch(t *testing.T) {
 // credential resolution (anonymous, since the test registry requires no
 // auth). Skips gracefully if a container runtime isn't available, and is
 // skipped in -short mode like other container-backed tests in this repo.
+// skipIfNoDocker skips a container-backed test when no Docker/OCI container
+// runtime is reachable, BEFORE any testcontainers call. testcontainers-go's
+// GenericContainer PANICS (via MustExtractDockerHost) rather than returning an
+// error when no Docker host exists, so the usual "err != nil -> t.Skip" guard
+// is unreachable in a no-Docker environment — e.g. reactorcide's own test-go CI
+// pod (golang:1.26, no Docker), where this package's test binary would otherwise
+// crash and fail the whole `go test` run. This pure env/socket check runs first
+// so the test skips cleanly instead of panicking.
+func skipIfNoDocker(t *testing.T) {
+	t.Helper()
+	if os.Getenv("DOCKER_HOST") != "" {
+		return
+	}
+	candidates := []string{"/var/run/docker.sock"}
+	if xdg := os.Getenv("XDG_RUNTIME_DIR"); xdg != "" {
+		candidates = append(candidates,
+			filepath.Join(xdg, "docker.sock"),
+			filepath.Join(xdg, "podman", "podman.sock"),
+		)
+	}
+	for _, p := range candidates {
+		if _, err := os.Stat(p); err == nil {
+			return
+		}
+	}
+	t.Skip("skipping: no Docker/OCI runtime reachable (no DOCKER_HOST and no known container socket)")
+}
+
 func TestOCIImageSource_ResolveViaLocalRegistry(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping OCI registry integration test in -short mode")
 	}
+	skipIfNoDocker(t)
 
 	ctx := context.Background()
 
