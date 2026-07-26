@@ -94,12 +94,30 @@ PostgreSQL, or object storage directly. A worker deployment needs only:
 
 - a **coordinator URL** (defaults to this release's in-cluster coordinator
   Service — you normally don't need to set this),
-- an **enrollment token**, referenced from a Kubernetes Secret you create,
+- an **enrollment token** (auto-provisioned by default; see below),
 - a writable **data directory** for the worker's persisted identity
   (`worker_key` — not a secret; `emptyDir` by default).
 
-See [`docs/workers.md`](../docs/workers.md) for the full operator flow,
-worker environment reference, and dev-bootstrap details. In short:
+**Zero-touch enrollment (default):** a fresh `helm install` needs **no manual
+Secret, pool, or kubectl step**. `templates/secret-worker-enrollment.yaml`
+generates a stable enrollment token once into a managed Secret
+(`<release>-worker-enrollment`, key `token`), annotated
+`helm.sh/resource-policy: keep`. Both the **coordinator** deployment
+(`REACTORCIDE_DEFAULT_WORKER_ENROLLMENT_TOKEN`, which seeds the default worker
+pool) and the **worker** deployment (`REACTORCIDE_WORKER_ENROLLMENT_TOKEN`)
+reference that same Secret via `secretKeyRef`, so the worker enrolls against a
+pool the coordinator already knows about. A `lookup` in the template reuses the
+already-applied value on `helm upgrade`, keeping the token stable across
+redeploys — the token value never appears in `values.yaml` or any manifest.
+
+> `helm template` / `--dry-run` cannot read a live cluster, so they render a
+> fresh random value each run; the value that actually persists is the one from
+> a real `helm install`/`upgrade`.
+
+**Operator override:** to enroll with your own admin-minted per-pool token,
+create the Secret yourself and set `worker.enrollmentTokenSecret.name`. The
+chart then does **not** create the managed Secret and both deployments read
+yours instead:
 
 1. Create a worker pool + enrollment token via the coordinator admin UI/CLI.
 2. Store the token in a Kubernetes Secret:
@@ -115,14 +133,18 @@ worker environment reference, and dev-bootstrap details. In short:
    ```yaml
    worker:
      enrollmentTokenSecret:
-       name: "reactorcide-worker-enrollment"
+       name: "reactorcide-worker-enrollment"   # set = override; empty = auto-generate
        key: "token"       # default
    ```
 
 The chart wires this via `secretKeyRef` in `templates/deployment-worker.yaml`
-the same way `secrets.existingSecret` / `uiAuth.existingSecret` reference
-their own Secrets — no plaintext secret value ever belongs in `values.yaml`
-or any committed manifest.
+and `templates/deployment-app.yaml` the same way `secrets.existingSecret` /
+`uiAuth.existingSecret` reference their own Secrets — no plaintext secret value
+ever belongs in `values.yaml` or any committed manifest.
+
+**Rotation:** delete the managed Secret and re-run `helm upgrade` to regenerate
+and re-seed, or switch to an operator-override Secret and rotate it via the
+admin UI (a pool can hold several active tokens for a flag-day-free rollover).
 
 Optional worker settings (all under `worker:` in `values.yaml`):
 
@@ -339,6 +361,7 @@ worker:
   replicaCount: 10
   concurrency: 4
   terminationGracePeriodSeconds: 3600
+  # Optional operator override; omit for zero-touch auto-provisioning.
   enrollmentTokenSecret:
     name: "reactorcide-worker-enrollment"  # created out-of-band, see "Deploying Workers"
     key: "token"
@@ -421,8 +444,12 @@ curl localhost:9000/api/v1/metrics
 1. **Workers not processing jobs**
    - Check the worker can reach and register with the coordinator:
      `kubectl logs -n reactorcide deployment/reactorcide-worker | grep -i register`
-   - Verify `worker.enrollmentTokenSecret.name` points at a Secret that
-     actually exists and holds a valid, active enrollment token (see
+   - With zero-touch defaults, confirm the managed
+     `<release>-worker-enrollment` Secret exists and that the coordinator
+     seeded its default pool (coordinator logs mention the default worker
+     pool); with an operator override, verify
+     `worker.enrollmentTokenSecret.name` points at a Secret that actually
+     exists and holds a valid, active enrollment token (see
      [`docs/workers.md`](../docs/workers.md))
    - Check worker resource limits
 

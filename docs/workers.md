@@ -271,7 +271,24 @@ learns to shut itself down cleanly.
 
 ## Deploying workers
 
-### Operator flow (production)
+### Zero-touch by default
+
+A fresh deploy — Helm or VM — enrolls its worker with **no manual
+secret/pool/kubectl step**. Both deployment shapes generate an enrollment
+token **once** at deploy time and keep it **stable across redeploys**, wire the
+**coordinator** to seed its default worker pool from that same token
+(`REACTORCIDE_DEFAULT_WORKER_ENROLLMENT_TOKEN` → `EnsureDefaultWorkerPool`,
+which hashes and registers it), and wire the **worker** to enroll with it
+(`REACTORCIDE_WORKER_ENROLLMENT_TOKEN`). Because both sides read the same
+generated value, the worker registers against a pool the coordinator already
+knows about the first time it comes up. The token value is never echoed,
+logged, or committed.
+
+You only fall back to the manual "create a pool + mint a token" flow when you
+want an **operator override** (a specific admin-minted per-pool token instead
+of the auto-generated one) — see each shape below.
+
+### Operator flow (production, optional override)
 
 1. Create a **worker pool** and an **enrollment token** for it, via the coordinator admin UI
    or CLI (see "Operator setup flow" above). The token is shown once at creation; the
@@ -284,6 +301,27 @@ learns to shut itself down cleanly.
 
 ### Helm
 
+**Default (zero-touch):** deploy with nothing extra. The chart's
+`templates/secret-worker-enrollment.yaml` generates a stable enrollment token
+into a managed Secret (`<release>-worker-enrollment`, key `token`,
+`randAlphaNum`), annotated `helm.sh/resource-policy: keep` so it survives
+upgrades and uninstalls. Both the coordinator (app) deployment
+(`REACTORCIDE_DEFAULT_WORKER_ENROLLMENT_TOKEN`) and the worker deployment
+(`REACTORCIDE_WORKER_ENROLLMENT_TOKEN`) reference that same Secret via
+`secretKeyRef`, so the coordinator seeds its default pool from exactly the
+value the worker enrolls with. Stability is preserved across `helm upgrade` by
+a `lookup` that reuses the already-applied Secret's value instead of
+re-generating.
+
+> Note: `helm template` / `--dry-run` render a *fresh* random value each time
+> (there is no live cluster for `lookup` to read); the value that actually
+> lands and stays stable is the one from a real `helm install`/`upgrade`.
+
+**Operator override:** to enroll with your own admin-minted per-pool token,
+create the Secret yourself and point `worker.enrollmentTokenSecret.name` at it.
+The chart then does **not** create the managed Secret, and both deployments
+read yours instead:
+
 ```bash
 kubectl create secret generic reactorcide-worker-enrollment \
   --from-literal=token="$(cat /path/to/enrollment-token)" \
@@ -294,7 +332,7 @@ kubectl create secret generic reactorcide-worker-enrollment \
 # values.yaml
 worker:
   enrollmentTokenSecret:
-    name: "reactorcide-worker-enrollment"
+    name: "reactorcide-worker-enrollment"   # set = override; empty = auto-generate
     key: "token"          # default
   # coordinatorUrl: ""     # optional override; defaults to this release's
   #                         in-cluster coordinator Service URL
@@ -302,6 +340,12 @@ worker:
   # arch: ""                # optional override; auto-detected otherwise
   # custom: ["pool=gpu"]   # optional free-form characteristics
 ```
+
+**Rotation:** to rotate the auto-generated token, delete the managed Secret and
+re-run `helm upgrade` (a new value is generated and re-seeded); or switch to an
+operator-override Secret and rotate it via the admin UI's token
+create/deactivate flow (a pool can hold several active tokens at once, so you
+can roll a new one out before retiring the old).
 
 See `helm_chart/values.yaml` (`worker:` section) and
 `helm_chart/DEPLOYMENT.md` ("Deploying Workers") for the full set of knobs,
@@ -336,24 +380,40 @@ should be left unset once real pools exist.
 
 ### VM deploy (`jobs/deploy-to-vm.yaml`)
 
-The VM deploy job takes the enrollment token as a reactorcide secret
-reference and writes it into the target host's `.env` (never into the job
-YAML or the repo):
+**Default (zero-touch):** the deploy job generates a stable
+`REACTORCIDE_WORKER_ENROLLMENT_TOKEN` into the target host's `.env` if one
+isn't already present (`openssl rand -hex 32`), exactly the way it generates
+`DB_PASSWORD`/`JWT_SECRET`. It is only generated when absent, so it's preserved
+across redeploys. In `deployment/docker-compose.prod.yml` the **worker** reads
+that `.env` var to enroll and the **coordinator** reads the same var as
+`REACTORCIDE_DEFAULT_WORKER_ENROLLMENT_TOKEN` to seed its default pool — so both
+sides match with no manual step. (`REACTORCIDE_COORDINATOR_URL` is hardcoded to
+the in-compose coordinator service `http://coordinator-api:6080`.)
+
+**Operator override:** set `REACTORCIDE_WORKER_ENROLLMENT_TOKEN` in the deploy
+job's host environment to an admin-minted per-pool token. The job's
+`environment:` picks it up as an *optional* env reference and writes it into the
+VM's `.env`, replacing the generated value:
 
 ```yaml
 environment:
-  REACTORCIDE_WORKER_ENROLLMENT_TOKEN: "${secret:reactorcide/deploy:worker_enrollment_token}"
+  # optional override; empty (unset) resolves to empty and the generated
+  # token stands — never a plaintext default here
+  REACTORCIDE_WORKER_ENROLLMENT_TOKEN: "${env:REACTORCIDE_WORKER_ENROLLMENT_TOKEN}"
 ```
 
-`deployment/docker-compose.prod.yml`'s worker service reads
-`REACTORCIDE_WORKER_ENROLLMENT_TOKEN` from that `.env` and
-`REACTORCIDE_COORDINATOR_URL` is hardcoded to the in-compose coordinator
-service (`http://coordinator-api:6080`).
+**Rotation:** overwrite `REACTORCIDE_WORKER_ENROLLMENT_TOKEN` in the VM's `.env`
+(or pass a new override) and restart the stack; or use an admin-minted token and
+rotate it through the admin UI.
 
 ### Kubernetes deploy (`jobs/deploy-to-k8s.yaml`)
 
-The k8s deploy job takes only a **Secret name/key reference**, never the
-token value:
+**Default (zero-touch):** set neither variable and the Helm chart
+auto-generates the managed enrollment Secret and the coordinator seeds its
+default pool from it (see "Helm" above) — no `kubectl create secret` step.
+
+**Operator override:** pass a **Secret name/key reference** (never the token
+value) and the deploy threads it through to the chart's override path:
 
 ```yaml
 environment:
@@ -363,11 +423,11 @@ environment:
 
 `jobs/scripts/deploy_k8s.py` turns these into
 `--set worker.enrollmentTokenSecret.name=... --set worker.enrollmentTokenSecret.key=...`
-on the `helm upgrade` it runs; if `REACTORCIDE_WORKER_ENROLLMENT_TOKEN_SECRET`
-is unset it logs a warning and deploys the worker without a token (it will
-fail to register until one is added). You are responsible for creating that
-Kubernetes Secret yourself (`kubectl create secret ...`) before or after
-the deploy — the deploy job does not create it.
+on the `helm upgrade` it runs, which suppresses the managed Secret and points
+both deployments at yours. If `REACTORCIDE_WORKER_ENROLLMENT_TOKEN_SECRET` is
+unset, the chart's zero-touch default applies. You create the override Secret
+yourself (`kubectl create secret ...`); the deploy job never creates or reads a
+token value.
 
 ## Worker environment reference
 

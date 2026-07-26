@@ -393,13 +393,13 @@ def build_helm_values(config: Dict[str, Any], db_uri: str, corndogs_url: str) ->
         args.extend(["--set", f"worker.enrollmentTokenSecret.name={config['worker_enrollment_token_secret']}"])
         if config['worker_enrollment_token_key']:
             args.extend(["--set", f"worker.enrollmentTokenSecret.key={config['worker_enrollment_token_key']}"])
-        log(f"Worker enrollment token: Secret {config['worker_enrollment_token_secret']}")
+        log(f"Worker enrollment token: operator override Secret {config['worker_enrollment_token_secret']}")
     else:
-        log("WARNING: REACTORCIDE_WORKER_ENROLLMENT_TOKEN_SECRET not set -- "
-            "the worker deployment will come up without an enrollment token "
-            "and will fail to register with the coordinator. Create a worker "
-            "pool + enrollment token (see docs/workers.md), store it in a "
-            "Kubernetes Secret, and set REACTORCIDE_WORKER_ENROLLMENT_TOKEN_SECRET.")
+        log("Worker enrollment token: zero-touch -- the chart auto-generates a "
+            "stable enrollment token Secret and the coordinator seeds its "
+            "default worker pool from it (no manual pool/token/kubectl step "
+            "needed). To use your own admin-minted token instead, set "
+            "REACTORCIDE_WORKER_ENROLLMENT_TOKEN_SECRET (see docs/workers.md).")
 
     return args
 

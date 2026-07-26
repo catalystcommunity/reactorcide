@@ -128,6 +128,17 @@ spec:
                 secretKeyRef:
                   name: {{ .Values.defaults.userSecretName }}
                   key: user-id
+            {{- /* Zero-touch worker enrollment (WORKERS_PLAN.md): seed the
+            default worker pool from the SAME enrollment token the worker
+            enrolls with. Sourced from the chart-managed auto-generated Secret
+            (secret-worker-enrollment.yaml) or the operator override -- see the
+            worker.enrollmentSecretName helper. This is what makes a fresh
+            deploy work with no manual pool/token step. */}}
+            - name: REACTORCIDE_DEFAULT_WORKER_ENROLLMENT_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "worker.enrollmentSecretName" . }}
+                  key: {{ include "worker.enrollmentSecretKey" . }}
             {{- /* UI-auth secret-bearing values (see docs/ui-auth.md) */ -}}
             {{- if .Values.uiAuth.existingSecret }}
             {{- if .Values.uiAuth.linkkeysRpApiKey }}
