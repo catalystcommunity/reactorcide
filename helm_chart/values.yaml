@@ -118,14 +118,31 @@ worker:
   # (http://<app-name>.<namespace>.svc.cluster.local:<app.service.port>);
   # only set this for out-of-cluster or cross-namespace workers.
   coordinatorUrl: ""
-  # Enrollment token (secret): an operator creates a worker pool + enrollment
-  # token via the coordinator admin UI/CLI, stores the token value in a
-  # Kubernetes Secret out-of-band (kubectl create secret ...), and points
-  # this at that Secret. The token is never written to values.yaml or any
-  # other committed file -- only referenced by Secret name/key.
+  # Enrollment token (secret) -- ZERO-TOUCH by default (WORKERS_PLAN.md).
+  #
+  # Leave enrollmentTokenSecret.name EMPTY (the default) and the chart
+  # auto-provisions everything: it generates a stable enrollment token once
+  # into a managed Secret (see managedEnrollmentTokenSecret below), the
+  # coordinator seeds its default worker pool from that same token, and this
+  # worker enrolls with it -- no kubectl, no admin-UI step, no manual Secret.
+  # The token is generated in-cluster (randAlphaNum) and never written to
+  # values.yaml or any committed file.
+  #
+  # OPERATOR OVERRIDE: to use a token you manage yourself (created via the
+  # coordinator admin UI/CLI and stored with `kubectl create secret ...`),
+  # set enrollmentTokenSecret.name to that Secret. When set, the chart does
+  # NOT create the managed Secret, and both the worker and the coordinator
+  # (its REACTORCIDE_DEFAULT_WORKER_ENROLLMENT_TOKEN) read your Secret instead.
   enrollmentTokenSecret:
-    name: ""       # e.g. "reactorcide-worker-enrollment" -- required to enroll
-    key: "token"   # key within that secret holding the enrollment token
+    name: ""       # override: name of a Secret YOU manage; empty = auto-provision
+    key: "token"   # key within that override secret holding the token
+  # Managed (auto-generated) enrollment token Secret used when the override
+  # above is unset. Rendered by templates/secret-worker-enrollment.yaml with
+  # helm.sh/resource-policy: keep so the value survives upgrades/uninstalls.
+  # Leave name empty to default to "<worker-name>-enrollment".
+  managedEnrollmentTokenSecret:
+    name: ""       # empty -> "<release>-worker-enrollment"
+    key: "token"
   # Directory used to persist this worker's stable identity (worker_key,
   # not a secret, but used by the coordinator to recognize a reconnecting
   # worker across restarts). emptyDir by default -- the worker generates a

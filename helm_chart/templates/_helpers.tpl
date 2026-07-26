@@ -105,6 +105,37 @@ Create the name of the secret. Default to the service name, allow overriding.
 {{- end }}
 
 {{/*
+Worker enrollment token Secret (WORKERS_PLAN.md, zero-touch auto-provision).
+
+The enrollment token is generated ONCE, in secret-worker-enrollment.yaml, and
+BOTH the coordinator (app) deployment (as REACTORCIDE_DEFAULT_WORKER_ENROLLMENT_TOKEN,
+which seeds the default worker pool) and the worker deployment (as
+REACTORCIDE_WORKER_ENROLLMENT_TOKEN) reference that same Secret via these
+helpers -- never randAlphaNum'd independently, so both sides always agree.
+
+Two paths:
+  - Operator override: set worker.enrollmentTokenSecret.name to a Secret you
+    manage yourself (kubectl create secret ...). The managed Secret is then
+    NOT created, and both deployments read your Secret.
+  - Default (name empty): the chart generates + manages the Secret named by
+    worker.managedEnrollmentTokenSecret.name (defaulting to "<worker>-enrollment").
+*/}}
+{{- define "worker.enrollmentSecretName" -}}
+{{- if .Values.worker.enrollmentTokenSecret.name -}}
+{{- .Values.worker.enrollmentTokenSecret.name -}}
+{{- else -}}
+{{- default (printf "%s-enrollment" (include "worker.name" .)) .Values.worker.managedEnrollmentTokenSecret.name -}}
+{{- end -}}
+{{- end }}
+{{- define "worker.enrollmentSecretKey" -}}
+{{- if .Values.worker.enrollmentTokenSecret.name -}}
+{{- .Values.worker.enrollmentTokenSecret.key | default "token" -}}
+{{- else -}}
+{{- .Values.worker.managedEnrollmentTokenSecret.key | default "token" -}}
+{{- end -}}
+{{- end }}
+
+{{/*
 PostgreSQL helpers
 */}}
 {{- define "postgresql.name" -}}

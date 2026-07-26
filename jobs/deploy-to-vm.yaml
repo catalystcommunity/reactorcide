@@ -183,11 +183,19 @@ command: |-
       sed -i '/^REACTORCIDE_WORKER_POLL_INTERVAL=/d' .env
       sed -i '/^REACTORCIDE_WORKER_SHUTDOWN_TIMEOUT=/d' .env
       grep -q "^REACTORCIDE_WORKER_STOP_GRACE_PERIOD=" .env || echo "REACTORCIDE_WORKER_STOP_GRACE_PERIOD=1h" >> .env
+      # Zero-touch worker enrollment (WORKERS_PLAN.md): generate a stable
+      # enrollment token if .env doesn't already carry one, mirroring how
+      # DB_PASSWORD/JWT_SECRET are generated-if-absent. Preserved as-is on
+      # redeploy (only added when missing), so the token stays stable and the
+      # coordinator's seeded default pool keeps matching the worker. An operator
+      # override (Step 5, REACTORCIDE_WORKER_ENROLLMENT_TOKEN) replaces it when set.
+      grep -q "^REACTORCIDE_WORKER_ENROLLMENT_TOKEN=" .env || echo "REACTORCIDE_WORKER_ENROLLMENT_TOKEN=$(openssl rand -hex 32)" >> .env
       echo "Updated REACTORCIDE_CONTAINER_RUNTIME=${CONTAINER_RUNTIME}"
     else
       echo "No existing .env found - creating new configuration"
       DB_PASSWORD=$(openssl rand -hex 24)
       JWT_SECRET=$(openssl rand -hex 32)
+      WORKER_ENROLLMENT_TOKEN=$(openssl rand -hex 32)
 
       cat > .env <<ENVFILE
     # Database Configuration (for postgres containers)
@@ -209,8 +217,13 @@ command: |-
 
     # Worker Configuration (coordinator-mediated, WORKERS_PLAN.md -- the
     # worker's REACTORCIDE_COORDINATOR_URL is set directly in
-    # docker-compose.prod.yml; its enrollment token is written below by
-    # this same deploy job, not generated here)
+    # docker-compose.prod.yml). Zero-touch enrollment: a stable enrollment
+    # token is generated here if one wasn't supplied. The coordinator seeds its
+    # default worker pool from this same value (docker-compose.prod.yml maps it
+    # into REACTORCIDE_DEFAULT_WORKER_ENROLLMENT_TOKEN), and the worker enrolls
+    # with it -- so both sides match with no manual step. An operator override
+    # (Step 5, from REACTORCIDE_WORKER_ENROLLMENT_TOKEN) replaces it when set.
+    REACTORCIDE_WORKER_ENROLLMENT_TOKEN=${WORKER_ENROLLMENT_TOKEN}
     REACTORCIDE_WORKER_CONCURRENCY=2
     REACTORCIDE_WORKER_STOP_GRACE_PERIOD=1h
     REACTORCIDE_CONTAINER_RUNTIME=${CONTAINER_RUNTIME}
@@ -280,12 +293,20 @@ command: |-
     echo "Configuring VCS webhook secrets:"
     update_env_var "REACTORCIDE_VCS_GITHUB_SECRET" "${REACTORCIDE_VCS_GITHUB_SECRET:-}"
 
-    # Worker enrollment (WORKERS_PLAN.md, coordinator-mediated workers): the
-    # worker's REACTORCIDE_COORDINATOR_URL is a static in-compose service URL
-    # (set directly in docker-compose.prod.yml), so only the enrollment
-    # token -- a secret -- needs writing into .env here. Value comes from
-    # ${secret:reactorcide/deploy:worker_enrollment_token} above, which
-    # runnerlib auto-masks in this job's logs, same as the VCS secret above.
+    # Worker enrollment (WORKERS_PLAN.md, coordinator-mediated workers):
+    # enrollment is zero-touch -- Step 4 already generated a stable token into
+    # .env if one wasn't present, and the coordinator seeds its default pool
+    # from it. This step only applies an OPTIONAL operator override: if
+    # REACTORCIDE_WORKER_ENROLLMENT_TOKEN was supplied to this job (from an
+    # admin-minted per-pool token), it wins and is written into .env; if it's
+    # empty, update_env_var is a no-op and the Step-4 generated/preserved value
+    # stands. The value is expanded here with a POSIX default-substitution
+    # (dollar-brace VAR colon-dash) which is dash-safe. IMPORTANT: this is an
+    # UNQUOTED heredoc, so never write a runnerlib secret/env dollar-brace
+    # reference (the coordinator-resolved kind used in the environment block
+    # below) as a literal here -- /bin/sh (dash) would try to expand it and
+    # fail with "Bad substitution". runnerlib auto-masks the value in this
+    # job's logs, same as the VCS secret above.
     echo "Configuring worker enrollment:"
     update_env_var "REACTORCIDE_WORKER_ENROLLMENT_TOKEN" "${REACTORCIDE_WORKER_ENROLLMENT_TOKEN:-}"
     REMOTE_EOF
@@ -429,12 +450,15 @@ environment:
     REACTORCIDE_REMOTE_DIR: "${env:REACTORCIDE_REMOTE_DIR}"
 
     # Worker enrollment (WORKERS_PLAN.md, coordinator-mediated workers):
-    # create a worker pool + enrollment token via the coordinator admin UI/CLI
-    # first (see docs/workers.md), store it as a reactorcide secret, and
-    # reference it here -- never as a plaintext default. Written into the
-    # VM's .env, which the worker container reads as
-    # REACTORCIDE_WORKER_ENROLLMENT_TOKEN.
-    REACTORCIDE_WORKER_ENROLLMENT_TOKEN: "${secret:reactorcide/deploy:worker_enrollment_token}"
+    # OPTIONAL operator override only. Zero-touch is the default -- the deploy
+    # job generates a stable token into the VM's .env if one isn't present, and
+    # the coordinator seeds its default pool from it (see Step 4 /
+    # docker-compose.prod.yml). Set REACTORCIDE_WORKER_ENROLLMENT_TOKEN in this
+    # job's host env only if you want to enroll with an admin-minted per-pool
+    # token instead; unset resolves to empty (${env:...} of an unset var is
+    # empty, not an error) and the generated token stands. Never a plaintext
+    # default here.
+    REACTORCIDE_WORKER_ENROLLMENT_TOKEN: "${env:REACTORCIDE_WORKER_ENROLLMENT_TOKEN}"
 
     # VCS webhook secret for GitHub signature validation
     REACTORCIDE_VCS_GITHUB_SECRET: "${secret:reactorcide/deployment:github_webhook_secret}"

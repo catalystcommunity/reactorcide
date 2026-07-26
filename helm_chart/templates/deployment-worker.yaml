@@ -85,15 +85,17 @@ spec:
             - name: REACTORCIDE_WORKER_CONCURRENCY
               value: {{ .Values.worker.concurrency | quote }}
             {{- /* Enrollment token (secret): required to Register with the
-            coordinator. Always sourced from a Kubernetes Secret the operator
-            manages -- see values.yaml worker.enrollmentTokenSecret. */ -}}
-            {{- if .Values.worker.enrollmentTokenSecret.name }}
+            coordinator. Sourced from the enrollment Secret -- either the
+            operator override (worker.enrollmentTokenSecret.name) or the
+            chart-managed, auto-generated Secret (secret-worker-enrollment.yaml).
+            The SAME Secret/key is read by the coordinator deployment as
+            REACTORCIDE_DEFAULT_WORKER_ENROLLMENT_TOKEN, so both sides always
+            agree on the token value. See values.yaml worker.enrollmentTokenSecret. */}}
             - name: REACTORCIDE_WORKER_ENROLLMENT_TOKEN
               valueFrom:
                 secretKeyRef:
-                  name: {{ .Values.worker.enrollmentTokenSecret.name }}
-                  key: {{ .Values.worker.enrollmentTokenSecret.key | default "token" }}
-            {{- end }}
+                  name: {{ include "worker.enrollmentSecretName" . }}
+                  key: {{ include "worker.enrollmentSecretKey" . }}
             {{- /* API token for job containers to submit triggers */ -}}
             {{- if .Values.worker.apiTokenSecret }}
             - name: REACTORCIDE_API_TOKEN
