@@ -41,6 +41,23 @@ services:
       - reactorcide
     command: ["run"]
 
+  # Make the object-store volume writable by the coordinator, which runs as the
+  # image's non-root UID 1000 (deployment/Dockerfile.coordinator) while a fresh
+  # named volume is created root-owned. Without this, coordinator-mediated log
+  # persistence (AppendLogs -> ${REACTORCIDE_OBJECT_STORE_BASE_PATH}/logs) fails
+  # with "permission denied" (the worker no longer owns object storage; the
+  # coordinator does). Runs once as root, chowns, exits.
+  init-object-store:
+    image: busybox:1.37
+    container_name: reactorcide-init-object-store
+    user: "0:0"
+    command: ["sh", "-c", "chown -R 1000:1000 \"${REACTORCIDE_OBJECT_STORE_BASE_PATH:-/data/reactorcide}\""]
+    volumes:
+      - reactorcide_data:${REACTORCIDE_OBJECT_STORE_BASE_PATH}
+    restart: "no"
+    networks:
+      - reactorcide
+
   # Coordinator API
   coordinator-api:
     image: ${REACTORCIDE_COORDINATOR_IMAGE:-containers.catalystsquad.com/public/reactorcide/coordinator:dev}
@@ -75,6 +92,8 @@ services:
         condition: service_healthy
       corndogs:
         condition: service_started
+      init-object-store:
+        condition: service_completed_successfully
     restart: unless-stopped
     networks:
       - reactorcide
