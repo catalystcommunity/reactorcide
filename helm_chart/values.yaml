@@ -13,6 +13,17 @@ app:
   service:
     type: ClusterIP
     port: 6080
+  # In-cluster coordinator API URL that job containers use to submit child jobs /
+  # new workflows (injected as REACTORCIDE_COORDINATOR_URL by BuildJobEnv).
+  # Empty = auto-derive "http://<app>.<namespace>.svc.cluster.local:<port>".
+  jobApiUrl: ""
+  # Secret holding the API token the coordinator injects into job containers as
+  # REACTORCIDE_API_TOKEN (defaults to the deploy-managed user secret / "token"
+  # key -- the same token the web app uses). The reference is optional so the
+  # coordinator starts even before the token has been created.
+  apiTokenSecret:
+    name: ""  # default: defaults.userSecretName
+    key: ""   # default: "token"
   # Gateway API HTTPRoute configuration (routes /api/* to coordinator)
   gateway:
     enabled: false

@@ -87,6 +87,20 @@ spec:
                 secretKeyRef:
                   name: {{ include "app.secretName" . }}
                   key: DB_URI
+            # API token the coordinator injects into job containers (as
+            # REACTORCIDE_API_TOKEN) so eval jobs can submit child jobs / new
+            # workflows via the API -- see internal/worker.BuildJobEnv and the
+            # REACTORCIDE_JOB_API_URL configmap entry. Stored by deploy's
+            # create_api_token step in the same secret the web app uses.
+            # optional: the coordinator must stay up even before the token is
+            # created (BuildJobEnv logs a warning and jobs fall back until a
+            # later rollout picks it up) rather than CrashLoop the whole API.
+            - name: REACTORCIDE_API_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ ((.Values.app).apiTokenSecret).name | default .Values.defaults.userSecretName }}
+                  key: {{ ((.Values.app).apiTokenSecret).key | default "token" }}
+                  optional: true
             {{- if and .Values.corndogs.enabled .Values.corndogs.apiKey }}
             - name: CORNDOGS_API_KEY
               valueFrom:

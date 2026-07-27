@@ -78,6 +78,23 @@ func (s *WorkerService) ReportResult(ctx context.Context, req csilapi.ReportResu
 
 	s.finalizeCorndogsTask(ctx, job, finalStatus)
 
+	// Advance the job's workflow (best-effort): mark this node terminal and
+	// re-evaluate the workflow so ready downstream nodes get submitted, the
+	// workflow_instances status rolls up (running -> success/failed/... with
+	// completed_at), and the VCS check updates. Without this, a workflow's jobs
+	// all complete but the workflow instance stays "running" forever. Empty
+	// workspaceDir: the coordinator has no access to the job's workspace, so
+	// workflow-output.json vars are not merged here -- status/DAG only. Does
+	// nothing for non-workflow jobs.
+	if s.deps.WorkflowFinalizer != nil && job.WorkflowID != nil && *job.WorkflowID != "" {
+		if err := s.deps.WorkflowFinalizer.ProcessWorkflowCompletion(ctx, "", job); err != nil {
+			logging.Log.WithError(err).WithFields(map[string]interface{}{
+				"job_id":      job.JobID,
+				"workflow_id": *job.WorkflowID,
+			}).Warn("Failed to advance workflow after job completion")
+		}
+	}
+
 	if err := s.deps.Store.ReleaseWorkerLease(ctx, lease.LeaseID, finalStatus); err != nil {
 		logging.Log.WithError(err).WithField("lease_id", lease.LeaseID).Warn("Failed to release worker lease")
 	}

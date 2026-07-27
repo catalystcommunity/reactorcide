@@ -23,6 +23,7 @@ import (
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/uiapi"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/uiapi/csilapi"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/vcs"
+	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/worker"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/workerapi"
 	workercsilapi "github.com/catalystcommunity/reactorcide/coordinator_api/internal/workerapi/csilapi"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/workerauth"
@@ -732,6 +733,15 @@ func createAppMux() *http.ServeMux {
 	var workerImpl workercsilapi.ReactorcideWorker
 	if workerStore, ok := store.AppStore.(workerapi.DataStore); ok {
 		workerDeps := buildWorkerAPIDeps(workerStore, singletoncorndogsClient, singletonKeyManager, singletonObjectStore)
+		// Wire workflow progression into the coordinator-mediated job lifecycle
+		// (ReportResult/RequestJob): a TriggerProcessor over the concrete store +
+		// the same configured VCS status updater the webhook/job handlers use, so
+		// completing a job's node re-evaluates its workflow (submits ready
+		// downstream nodes, rolls workflow_instances status, updates the PR check)
+		// instead of leaving the workflow stuck "running".
+		wfFinalizer := worker.NewTriggerProcessor(store.AppStore, singletoncorndogsClient)
+		wfFinalizer.SetStatusUpdater(vcsManager.GetStatusUpdater())
+		workerDeps.WorkflowFinalizer = wfFinalizer
 		workerSvc := workerapi.NewWorkerService(workerDeps)
 		workerImpl = workerSvc
 		startWorkerLeaseReaperOnce(workerSvc)

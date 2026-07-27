@@ -33,6 +33,15 @@ data:
   {{- end }}
   # REACTORCIDE_DEFAULT_USER_ID is read from {{ .Values.defaults.userSecretName }} secret
 
+  # Job containers submit child jobs / new workflows back to the coordinator API
+  # (internal/worker.BuildJobEnv injects this as REACTORCIDE_COORDINATOR_URL into
+  # each job container). This is the coordinator's own in-cluster URL -- the same
+  # address the worker reaches it on. REQUIRED for eval jobs to spawn their
+  # build/test/release children on the coordinator-mediated k8s path, where the
+  # file-based triggers.json fallback is not retrievable from the ephemeral Job
+  # pod. Paired with REACTORCIDE_API_TOKEN (secret) on the app deployment.
+  REACTORCIDE_JOB_API_URL: {{ .Values.app.jobApiUrl | default (printf "http://%s.%s.svc.cluster.local:%v" (include "app.name" .) .Release.Namespace .Values.app.service.port) | quote }}
+
   # Object store configuration
   REACTORCIDE_OBJECT_STORE_TYPE: {{ .Values.objectStore.type | quote }}
   REACTORCIDE_OBJECT_STORE_BUCKET: {{ .Values.objectStore.bucket | quote }}
