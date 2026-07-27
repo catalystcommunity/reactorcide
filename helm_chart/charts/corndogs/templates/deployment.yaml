@@ -124,19 +124,21 @@ spec:
             - name: corndogshttp
               containerPort: 5080
               protocol: TCP
-            {{- if .Values.appconfig.prometheusEnabled }}
-            - name: corndogsmetrics
+            # 0.7.0 serves /healthz + /metrics on the ops HTTP port :8080
+            # regardless of prometheus scraping, and 5080 is now raw TCP RPC
+            # (no HTTP), so the health probes MUST target 8080 -- always expose
+            # it (probing /healthz on 5080 would never succeed under 0.7.0).
+            - name: corndogsops
               containerPort: 8080
               protocol: TCP
-            {{- end }}
           livenessProbe:
             httpGet:
               path: /healthz
-              port: 5080
+              port: 8080
           readinessProbe:
             httpGet:
               path: /healthz
-              port: 5080
+              port: 8080
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
           {{- if eq .Values.storage.backend "file" }}

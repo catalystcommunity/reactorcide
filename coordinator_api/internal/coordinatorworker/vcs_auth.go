@@ -177,6 +177,20 @@ func writePrivateFile(path, contents string, uid, gid int) error {
 // to the uid/gid that should own the credential files so a non-root
 // container user can still read them through the bind-mounted workspace,
 // mirroring the deleted vcs_checkout_auth.go's authFileOwner exactly.
+// makeWritableFor makes path accessible and writable by uid:gid. It prefers
+// chown; if chown is not permitted (e.g. a rootless worker or a user
+// namespace) it falls back to world-writable, mirroring cmd/run_local.go's
+// makeWritableFor. Used to hand worker-created workspace/home dirs to a job
+// container that runs as a different uid than the worker process.
+func makeWritableFor(path string, uid, gid int) error {
+	if err := os.Chown(path, uid, gid); err != nil {
+		if chmodErr := os.Chmod(path, 0o777); chmodErr != nil {
+			return fmt.Errorf("chown %s to %d:%d failed (%v) and chmod 0777 fallback failed: %w", path, uid, gid, err, chmodErr)
+		}
+	}
+	return nil
+}
+
 func authFileOwner(runAsUser string) (int, int) {
 	user, err := worker.DefaultRunAsUser(runAsUser)
 	if err != nil {
