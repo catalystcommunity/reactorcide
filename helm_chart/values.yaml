@@ -263,21 +263,25 @@ corndogs:
     port: 5080
 
 # Object storage configuration
-# WARNING: Job logs are stored here. The default 'filesystem' type is for DEVELOPMENT ONLY.
-# Logs will be LOST when pods restart since there is no persistent volume for filesystem storage.
-# For production, you MUST configure 's3' or 'gcs' type with appropriate credentials below.
+# WARNING: Job logs/artifacts are stored here. The default 'filesystem' type is
+# for DEVELOPMENT ONLY: it is backed by an emptyDir (the chart mounts one at
+# basePath and sets fsGroup:1000 so the non-root coordinator can write), so data
+# is LOST whenever the pod restarts.
+# For production you MUST use 's3' (durable, recommended). NOTE: 'gcs' is NOT yet
+# implemented in the coordinator -- s3 (incl. S3-compatible endpoints) is the
+# only durable backend today.
 objectStore:
-  type: filesystem  # Options: filesystem, s3, gcs, memory (filesystem is dev-only!)
+  type: filesystem  # Options: filesystem (dev/ephemeral), s3 (production), memory (tests)
   bucket: reactorcide-objects
-  basePath: /tmp/reactorcide-objects  # For filesystem type (ephemeral - dev only)
-  prefix: reactorcide/  # For s3/gcs types
+  basePath: /tmp/reactorcide-objects  # For filesystem type (emptyDir-backed, ephemeral - dev only)
+  prefix: reactorcide/  # For s3 types
   s3:
     accessKeyId: ""
     secretAccessKey: ""
     region: us-east-1
     endpoint: ""  # Leave empty for AWS S3, set for S3-compatible services
   gcs:
-    serviceAccountJson: ""
+    serviceAccountJson: ""  # NOTE: gcs backend is not implemented yet; use s3
 
 # Default configuration
 defaults:

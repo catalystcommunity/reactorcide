@@ -11,11 +11,11 @@ spec:
       targetPort: corndogshttp
       protocol: TCP
       name: corndogshttp
-    {{- if .Values.appconfig.prometheusEnabled }}
+    # 0.7.0 ops HTTP (/healthz + /metrics). Always exposed: 5080 is raw TCP RPC
+    # in 0.7.0, so health checks and the helm test must use this port.
     - port: 8080
-      targetPort: corndogsmetrics
+      targetPort: corndogsops
       protocol: TCP
-      name: corndogsmetrics
-    {{- end }}
+      name: corndogsops
   selector:
     {{- include "corndogs.selectorLabels" . | nindent 4 }}

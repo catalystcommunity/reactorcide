@@ -739,7 +739,7 @@ $ python -m runnerlib.cli run \
 
 **Use Case**: Small team or startup wanting simple deployment
 
-**Via SSH Deployment** (`deploy-vm.sh`):
+**Via SSH Deployment** (`jobs/deploy-to-vm.yaml`):
 
 ```
 VM (Ubuntu/Debian)
@@ -755,7 +755,7 @@ Prerequisites:
 - Ports 80/443 open
 
 Deployment:
-$ ./deploy-vm.sh --host vm.example.com --ssh-key ~/.ssh/id_rsa
+$ reactorcide run-local --job-dir ./ ./jobs/deploy-to-vm.yaml
 ```
 
 Runnerlib deploys the system to the VM as a CI/CD job.
@@ -1052,7 +1052,7 @@ job:
 ### Deployment
 - `helm/reactorcide/` - Kubernetes Helm chart
 - `docker-compose.yml` - Local development environment
-- `deploy-vm.sh` - Single VM deployment script
+- `jobs/deploy-to-vm.yaml` - Single VM deployment job
 - `deployment-plan.md` - Deployment strategy and roadmap
 
 ## Migration Strategy
@@ -1098,7 +1098,7 @@ job:
 
 ### Manual Testing
 - Local runnerlib execution
-- VM deployment via `deploy-vm.sh`
+- VM deployment via `jobs/deploy-to-vm.yaml`
 - GitHub/GitLab webhook integration
 
 ## Configuration Examples

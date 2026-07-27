@@ -39,7 +39,17 @@ spec:
           matchLabels:
             name: {{ include "app.name" . }}
       securityContext:
-        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+        {{- $psc := .Values.podSecurityContext | default dict }}
+        {{- /* filesystem object store writes to an emptyDir at
+        objectStore.basePath; the coordinator runs as non-root uid/gid 1000
+        (deployment/Dockerfile.coordinator), so an fsGroup is required for that
+        mount to be writable -- otherwise every job-log write fails silently.
+        Production should use objectStore.type=s3 (filesystem is ephemeral/
+        dev-only). Only injected when the operator hasn't set their own. */}}
+        {{- if and (eq .Values.objectStore.type "filesystem") (not $psc.fsGroup) }}
+        {{- $psc = merge (dict "fsGroup" 1000) $psc }}
+        {{- end }}
+        {{- toYaml $psc | nindent 8 }}
       containers:
         - name: {{ include "app.name" . }}
           args:
@@ -171,6 +181,18 @@ spec:
                   key: REACTORCIDE_BOOTSTRAP_ADMIN_TOKEN
             {{- end }}
             {{- end }}
+          {{- if eq .Values.objectStore.type "filesystem" }}
+          volumeMounts:
+            - name: object-store
+              mountPath: {{ .Values.objectStore.basePath | quote }}
+          {{- end }}
+      {{- if eq .Values.objectStore.type "filesystem" }}
+      volumes:
+        # Ephemeral backing for the filesystem object store (job logs/artifacts).
+        # Lost on pod restart -- use objectStore.type=s3 for durable storage.
+        - name: object-store
+          emptyDir: {}
+      {{- end }}
       {{- with .Values.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}

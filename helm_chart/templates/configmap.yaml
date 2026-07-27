@@ -16,7 +16,7 @@ data:
   PROMETHEUS_PORT: {{ .Values.app.prometheus.port | quote }}
   PROMETHEUS_LATENCY_HISTOGRAMS_ENABLED: {{ .Values.app.prometheus.latencyHistogramsEnabled | quote }}
 
-  # Corndogs configuration (CSIL-RPC over HTTP)
+  # Corndogs configuration (CSIL-RPC over TCP on :5080; /healthz+/metrics on :8080)
   {{- if .Values.corndogs.enabled }}
   # Corndogs subchart is deployed - use internal service
   REACTORCIDE_CORNDOGS_BASE_URL: "{{ .Release.Name }}-corndogs:{{ .Values.corndogs.service.port }}"

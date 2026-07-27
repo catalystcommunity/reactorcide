@@ -11,5 +11,5 @@ spec:
     - name: wget
       image: busybox
       command: ['wget']
-      args: ['http://{{ include "corndogs.fullname" . }}:{{ .Values.service.port }}/healthz']
+      args: ['http://{{ include "corndogs.fullname" . }}:8080/healthz']
   restartPolicy: Never

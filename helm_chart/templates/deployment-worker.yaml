@@ -31,8 +31,13 @@ spec:
         {{- toYaml .Values.podSecurityContext | nindent 8 }}
       containers:
         - name: {{ include "worker.name" . }}
+          # The worker image ENTRYPOINT is ["/reactorcide", "worker"] (see
+          # deployment/Dockerfile.worker), so args must be flags ONLY. A stray
+          # leading "worker" here made the command "/reactorcide worker worker
+          # --coordinator-url ..."; urfave/cli v2 stops flag parsing at that
+          # extra positional, leaving --coordinator-url unparsed -> the worker
+          # exits "coordinator-url is required" -> CrashLoop.
           args:
-            - worker
             - --coordinator-url
             - {{ default (printf "http://%s.%s.svc.cluster.local:%v" (include "app.name" .) .Release.Namespace .Values.app.service.port) .Values.worker.coordinatorUrl | quote }}
             {{- if .Values.worker.os }}

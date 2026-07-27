@@ -42,24 +42,30 @@ Optional configuration:
 ```bash
 export REACTORCIDE_REMOTE_DIR="~/reactorcide"        # Default: ~/reactorcide
 export REACTORCIDE_WORKER_CONCURRENCY="2"            # Default: 2
-export REACTORCIDE_WORKER_POLL_INTERVAL="5"          # Default: 5 seconds
 export REACTORCIDE_LOG_LEVEL="info"                  # Default: info
 ```
 
 ### 2. Run Deployment
 
-From the repository root:
+The supported VM deploy is the `jobs/deploy-to-vm.yaml` reactorcide job, run
+locally with the `reactorcide` CLI. Build the CLI, then run the job from the
+repository root:
+
 ```bash
-bash deployment/deploy-vm.sh
+cd coordinator_api && go build -o reactorcide . && cd ..
+./coordinator_api/reactorcide run-local --job-dir ./ ./jobs/deploy-to-vm.yaml
 ```
 
-The script will:
-1. Build the coordinator binary locally
-2. Copy all deployment files to the VM
-3. Build container images on the VM
-4. Start all services
-5. Run database migrations
-6. Verify the deployment
+The job reads the `REACTORCIDE_DEPLOY_*` variables set above (plus an
+`SSH_PRIVATE_KEY` for the target host) and will:
+1. Copy the deployment files to the VM
+2. Detect the container runtime and generate the compose override
+3. Pull the Reactorcide images
+4. Start all services (postgres, corndogs, coordinator, worker)
+5. Run database migrations on startup and verify health
+
+See `jobs/deploy-to-vm.yaml` for the full list of inputs. (For Kubernetes, see
+`helm_chart/DEPLOYMENT.md` and `jobs/deploy-to-k8s.yaml`.)
 
 ### 3. Create an API Token
 
@@ -110,12 +116,12 @@ curl -X POST http://your-vm:6080/api/v1/jobs \
 
 ## Updating
 
-To update an existing deployment, simply run the deploy script again:
+To update an existing deployment, run the deploy job again:
 ```bash
-bash deployment/deploy-vm.sh
+./coordinator_api/reactorcide run-local --job-dir ./ ./jobs/deploy-to-vm.yaml
 ```
 
-The script will rebuild images and restart services with the new code.
+It pulls the latest images and restarts services with the new configuration.
 
 ## Troubleshooting
 

@@ -436,8 +436,13 @@ def wait_for_rollout(config: Dict[str, Any], dry_run: bool = False) -> None:
     namespace = config['namespace']
     release = config['release']
 
-    run_cmd(f"kubectl rollout status deployment/{release}app -n {namespace} --timeout=5m || true", dry_run=dry_run)
-    run_cmd(f"kubectl rollout status deployment/{release}-worker -n {namespace} --timeout=5m || true", dry_run=dry_run)
+    # app and worker are always deployed and are the deploy's whole point, so a
+    # failed rollout must fail the job (no "|| true" masking) -- otherwise a
+    # CrashLooping coordinator/worker reports a green deploy over broken pods.
+    run_cmd(f"kubectl rollout status deployment/{release}app -n {namespace} --timeout=5m", dry_run=dry_run)
+    run_cmd(f"kubectl rollout status deployment/{release}-worker -n {namespace} --timeout=5m", dry_run=dry_run)
+    # web is the optional UI; keep it non-fatal so a slow/absent web rollout
+    # does not fail an otherwise-healthy control-plane deploy.
     run_cmd(f"kubectl rollout status deployment/{release}web -n {namespace} --timeout=5m || true", dry_run=dry_run)
 
 

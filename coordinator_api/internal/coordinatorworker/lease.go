@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -141,6 +142,17 @@ func runLease(c client, runner worker.JobRunner, lease csilapi.Lease, tracker *l
 		masker.RegisterSecret(s.Value)
 	}
 
+	// The runner image creates /home/runner (uid 1001) but sets no ENV HOME,
+	// and run-local (the known-good path) sets HOME explicitly. Without it,
+	// tooling that resolves the home dir via $HOME / os.UserHomeDir() (helm,
+	// kubectl, pip --user, git) fails -- os.UserHomeDir() errors on an empty
+	// $HOME rather than falling back to /etc/passwd, and whether the runtime
+	// populates HOME from passwd differs between docker and containerd. Default
+	// it here (a job may still override via its own env).
+	if _, ok := env["HOME"]; !ok {
+		env["HOME"] = "/home/runner"
+	}
+
 	// workspaceRoot ("" -> OS temp dir) must resolve to the same path inside
 	// this worker and on the host when the worker drives a host container
 	// runtime, so the runtime can stat the /job bind-mount source. See
@@ -163,6 +175,86 @@ func runLease(c client, runner worker.JobRunner, lease csilapi.Lease, tracker *l
 	// there is no separate VCS-auth cleanup step, per WORKERS_PLAN.md P3c:
 	// the credential file only ever exists inside this ephemeral workspace.
 	defer os.RemoveAll(workspaceDir)
+
+	// The job container runs as RunAsUser (default 1001:1001), not as the
+	// worker process that just created this dir (root under the privileged
+	// deploy compose). MkdirTemp makes it 0700 owned by the creator, so the
+	// job uid cannot even traverse /job -- the runner then fails with
+	// "[Errno 13] Permission denied: '/job/src'". Make the workspace owned by
+	// / writable for the job uid, mirroring run-local's makeWritableFor:
+	// prefer chown; fall back to world-writable where chown is not permitted
+	// (rootless / user namespaces).
+	wsUID, wsGID := authFileOwner(lease.RunAsUser)
+	if err := makeWritableFor(workspaceDir, wsUID, wsGID); err != nil {
+		logger.WithError(err).Error("failed to make lease workspace accessible to job uid")
+		reportResult(c, lease.LeaseId, 1, "failed", "failed to prepare workspace permissions: "+err.Error())
+		return
+	}
+
+	// Restore run-local parity for the job's in-container filesystem:
+	//   (a) pre-create the working/code dir (default /job/src) owned by the job
+	//       uid, so raw-command jobs that write to their cwd without runnerlib's
+	//       clone-and-reclone don't hit EACCES (cmd/run_local.go pre-creates it
+	//       too); and
+	//   (b) for a job uid that is neither the image runner (1001, which has a
+	//       real passwd entry + writable /home/runner) nor root, synthesize
+	//       /etc/passwd, /etc/group and a writable /home/runner so tools needing
+	//       a passwd entry (ssh, sudo, id) and a writable HOME work -- exactly
+	//       what run-local does for a non-runner uid.
+	// Control files live under the workspace so they inherit its shared,
+	// host-visible path (the host runtime must be able to stat bind-mount
+	// sources) and its single deferred RemoveAll.
+	var extraMounts []string
+	if rel := worker.ContainerPathInsideJob(lease.WorkingDir); rel != "." {
+		codeDir := filepath.Join(workspaceDir, rel)
+		if err := os.MkdirAll(codeDir, 0o755); err != nil {
+			logger.WithError(err).Error("failed to pre-create job code dir")
+			reportResult(c, lease.LeaseId, 1, "failed", "failed to prepare code dir: "+err.Error())
+			return
+		}
+		if err := makeWritableFor(codeDir, wsUID, wsGID); err != nil {
+			logger.WithError(err).Error("failed to make job code dir writable")
+			reportResult(c, lease.LeaseId, 1, "failed", "failed to prepare code dir: "+err.Error())
+			return
+		}
+	}
+	if wsUID != 1001 && wsUID != 0 {
+		ctlDir := filepath.Join(workspaceDir, ".reactorcide-ctl")
+		homeDir := filepath.Join(ctlDir, "home")
+		if err := os.MkdirAll(homeDir, 0o755); err != nil {
+			logger.WithError(err).Error("failed to create control home dir")
+			reportResult(c, lease.LeaseId, 1, "failed", "failed to prepare home dir: "+err.Error())
+			return
+		}
+		if err := makeWritableFor(homeDir, wsUID, wsGID); err != nil {
+			logger.WithError(err).Error("failed to make control home dir writable")
+			reportResult(c, lease.LeaseId, 1, "failed", "failed to prepare home dir: "+err.Error())
+			return
+		}
+		passwdFile := filepath.Join(ctlDir, "passwd")
+		groupFile := filepath.Join(ctlDir, "group")
+		passwd := fmt.Sprintf(
+			"root:x:0:0:root:/root:/bin/sh\n"+
+				"reactorcide:x:1001:1001:reactorcide:/home/reactorcide:/bin/sh\n"+
+				"runner:x:%d:%d:runner:/home/runner:/bin/sh\n",
+			wsUID, wsGID)
+		group := fmt.Sprintf("root:x:0:\nreactorcide:x:1001:\nrunner:x:%d:\n", wsGID)
+		if err := os.WriteFile(passwdFile, []byte(passwd), 0o644); err != nil {
+			logger.WithError(err).Error("failed to write synthetic passwd")
+			reportResult(c, lease.LeaseId, 1, "failed", "failed to prepare passwd: "+err.Error())
+			return
+		}
+		if err := os.WriteFile(groupFile, []byte(group), 0o644); err != nil {
+			logger.WithError(err).Error("failed to write synthetic group")
+			reportResult(c, lease.LeaseId, 1, "failed", "failed to prepare group: "+err.Error())
+			return
+		}
+		extraMounts = append(extraMounts,
+			passwdFile+":/etc/passwd:ro",
+			groupFile+":/etc/group:ro",
+			homeDir+":/home/runner",
+		)
+	}
 
 	// Set up git checkout auth BEFORE spawning, registering the resolved
 	// token with masker so any log line the container emits (e.g. a
@@ -191,6 +283,7 @@ func runLease(c client, runner worker.JobRunner, lease csilapi.Lease, tracker *l
 		WorkingDir:     lease.WorkingDir,
 		Capabilities:   append([]string{}, lease.Capabilities...),
 		RunAsUser:      lease.RunAsUser,
+		ExtraMounts:    extraMounts,
 		VCSAuth:        vcsAuth,
 		TimeoutSeconds: int(lease.TimeoutSeconds),
 		CPURequest:     lease.Resources.CpuRequest,
