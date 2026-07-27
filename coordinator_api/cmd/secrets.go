@@ -129,7 +129,7 @@ var SecretsCommand = &cli.Command{
 						return fmt.Errorf("failed to read secret value from stdin: %w", err)
 					}
 					value = string(content)
-				} else if ctx.String("value") != "" {
+				} else if ctx.IsSet("value") {
 					value = ctx.String("value")
 				} else {
 					// Prompt for value
