@@ -288,7 +288,10 @@ def deploy_corndogs(config: Dict[str, Any], dry_run: bool = False) -> str:
     )
     run_cmd(cmd, dry_run=dry_run)
 
-    corndogs_url = f"http://corndogs.{namespace}.svc.cluster.local:5080"
+    # corndogs 0.7.0 RPC is raw TCP (CSIL StreamCarrier), NOT HTTP -- the address
+    # must be scheme-less "host:port" or the coordinator's TCP dial fails with
+    # "too many colons in address". (No "http://" prefix.)
+    corndogs_url = f"corndogs.{namespace}.svc.cluster.local:5080"
     log(f"Corndogs deployed: {corndogs_url}")
     return corndogs_url
 

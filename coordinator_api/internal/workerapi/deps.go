@@ -27,6 +27,20 @@ import (
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/workerauth"
 )
 
+// WorkflowFinalizer advances a job's workflow instance when the job starts and
+// finishes. It is satisfied by *internal/worker.TriggerProcessor, whose
+// ProcessWorkflowJobStarted/ProcessWorkflowCompletion roll the node's status
+// and re-evaluate the workflow. Declared here as a narrow interface so the
+// worker service depends on the behavior, not the concrete TriggerProcessor
+// (and tests can substitute a fake). workspaceDir is passed empty on the
+// coordinator-mediated path: the coordinator has no access to the job's
+// (possibly remote/ephemeral) workspace, so workflow-output.json vars are not
+// merged here -- only status/DAG progression, which needs no workspace.
+type WorkflowFinalizer interface {
+	ProcessWorkflowJobStarted(ctx context.Context, job *models.Job) error
+	ProcessWorkflowCompletion(ctx context.Context, workspaceDir string, job *models.Job) error
+}
+
 // DataStore is everything the ReactorcideWorker service implementations need
 // from the store: the enrollment/session primitives workerauth.Enrollment/
 // WorkerSessions consume, the worker/lease operations
@@ -100,6 +114,18 @@ type Deps struct {
 	KeyManager     *secrets.MasterKeyManager
 	ObjectStore    objects.ObjectStore
 	Publisher      *pubsub.Publisher
+
+	// WorkflowFinalizer advances a job's workflow instance across the job's
+	// lifecycle: mark the node running when the worker starts it, and mark the
+	// node terminal + re-evaluate the workflow (submit ready downstream nodes,
+	// recompute the instance status, update the VCS check) when it finishes.
+	// Without this the coordinator-mediated ReportResult path finalizes the job
+	// but never rolls the workflow forward, leaving workflow_instances stuck in
+	// "running" even after every job completes. Satisfied by
+	// *internal/worker.TriggerProcessor; wired in router.go from the concrete
+	// store + the configured VCS status updater. nil in tests / stores that
+	// don't exercise workflows (calls are then skipped).
+	WorkflowFinalizer WorkflowFinalizer
 
 	// SecretsProvider resolves a secrets.Provider scoped to a job's owning
 	// user (job.UserID -- orgs are users-as-orgs today, matching

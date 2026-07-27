@@ -81,7 +81,12 @@ func (t *StreamTransport) ensureConn() (net.Conn, error) {
 	if t.conn != nil {
 		return t.conn, nil
 	}
-	conn, err := net.DialTimeout("tcp", t.Addr, t.dialTimeout())
+	// Strip any URL scheme ("tcp://", "http://") and path from the configured
+	// address before dialing: corndogs 0.7.0 RPC is raw TCP, and net.Dial
+	// rejects "http://host:5080" with "too many colons in address". This mirrors
+	// the multi-seed ClusterTransport (dialAddr) so single-address configs are
+	// equally tolerant of a scheme-bearing REACTORCIDE_CORNDOGS_BASE_URL.
+	conn, err := net.DialTimeout("tcp", dialAddr(t.Addr), t.dialTimeout())
 	if err != nil {
 		return nil, err
 	}

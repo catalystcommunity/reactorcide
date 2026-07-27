@@ -212,6 +212,18 @@ func (s *WorkerService) RequestJob(ctx context.Context, req csilapi.RequestJobRe
 	job = running
 	s.publishJobUpdate(ctx, job, now)
 
+	// Roll the job's workflow node to "running" (best-effort): keeps the
+	// workflow instance and its VCS check in sync while the job executes. Does
+	// nothing for non-workflow jobs.
+	if s.deps.WorkflowFinalizer != nil && job.WorkflowID != nil && *job.WorkflowID != "" {
+		if err := s.deps.WorkflowFinalizer.ProcessWorkflowJobStarted(ctx, job); err != nil {
+			logging.Log.WithError(err).WithFields(map[string]interface{}{
+				"job_id":      job.JobID,
+				"workflow_id": *job.WorkflowID,
+			}).Warn("Failed to mark workflow node running")
+		}
+	}
+
 	if _, err := s.deps.CorndogsClient.UpdateTask(ctx, task.Uuid, task.CurrentState, "processing", nil); err != nil {
 		logging.Log.WithError(err).WithField("task_id", task.Uuid).Warn("Failed to update task state to processing")
 	}
