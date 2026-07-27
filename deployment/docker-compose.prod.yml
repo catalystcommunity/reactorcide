@@ -125,6 +125,13 @@ services:
       # reactorcide secret reference -- see jobs/deploy-to-vm.yaml.
       REACTORCIDE_WORKER_ENROLLMENT_TOKEN: ${REACTORCIDE_WORKER_ENROLLMENT_TOKEN:-}
       REACTORCIDE_WORKER_DATA_DIR: /var/lib/reactorcide-worker
+      # Per-job workspaces are bind-mounted into job containers as /job. The
+      # worker drives the HOST container runtime (see the socket mount added by
+      # docker-compose.override.yml), so the workspace path must resolve to the
+      # same location on the host and inside this container -- that is exactly
+      # the /tmp/reactorcide-jobs bind mount below. Without this the runtime
+      # can't stat the /job bind-mount source ("no such file or directory").
+      REACTORCIDE_WORKER_WORKSPACE_DIR: /tmp/reactorcide-jobs
       REACTORCIDE_WORKER_CONCURRENCY: ${REACTORCIDE_WORKER_CONCURRENCY}
       REACTORCIDE_CONTAINER_RUNTIME: ${REACTORCIDE_CONTAINER_RUNTIME}
       REACTORCIDE_LOG_LEVEL: ${REACTORCIDE_LOG_LEVEL}

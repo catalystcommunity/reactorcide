@@ -68,6 +68,17 @@ type Config struct {
 	// Concurrency bounds how many leases this worker runs at once. Values
 	// less than 1 are treated as 1.
 	Concurrency int
+
+	// WorkspaceRoot is the base directory under which each lease's ephemeral
+	// job workspace is created (bind-mounted into the job container as /job).
+	// When the worker itself runs in a container and drives a host container
+	// runtime (docker-out-of-docker / a shared containerd socket), this MUST
+	// be a path that resolves identically inside the worker and on the host
+	// (e.g. a `-v /tmp/reactorcide-jobs:/tmp/reactorcide-jobs` bind mount) --
+	// otherwise the host runtime cannot stat the bind-mount source and
+	// container creation fails. Empty means the OS temp dir (correct for a
+	// bare-metal worker and for run-local, where there is no namespace split).
+	WorkspaceRoot string
 }
 
 // defaultHeartbeatInterval is used only if Register's response carries a

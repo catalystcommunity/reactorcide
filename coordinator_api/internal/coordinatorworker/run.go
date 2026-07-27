@@ -119,7 +119,7 @@ pollLoop:
 		go func() {
 			defer wg.Done()
 			defer func() { <-sem }()
-			runLease(c, runner, lease, tracker)
+			runLease(c, runner, lease, tracker, cfg.WorkspaceRoot)
 		}()
 	}
 

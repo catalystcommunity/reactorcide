@@ -110,6 +110,11 @@ var workerFlags = []cli.Flag{
 		Usage:   "Number of leases this worker runs concurrently",
 		EnvVars: []string{"REACTORCIDE_WORKER_CONCURRENCY"},
 	},
+	&cli.StringFlag{
+		Name:    "workspace-dir",
+		Usage:   "Base directory for each job's ephemeral workspace (bind-mounted as /job). When the worker runs in a container and drives a host container runtime, set this to a path bind-mounted identically on host and in the worker (e.g. /tmp/reactorcide-jobs); empty uses the OS temp dir.",
+		EnvVars: []string{"REACTORCIDE_WORKER_WORKSPACE_DIR"},
+	},
 }
 
 // RunWorker wires CLI flags/env into a coordinatorworker.Config and blocks
@@ -182,6 +187,7 @@ func RunWorker(ctx *cli.Context) error {
 		WorkerVersion:    ctx.String("worker-version"),
 		ContainerRuntime: containerRuntime,
 		Concurrency:      concurrency,
+		WorkspaceRoot:    strings.TrimSpace(ctx.String("workspace-dir")),
 	}
 
 	if err := coordinatorworker.Run(runCtx, cfg); err != nil && !errors.Is(err, context.Canceled) {
