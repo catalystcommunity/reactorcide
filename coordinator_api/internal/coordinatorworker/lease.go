@@ -115,7 +115,7 @@ func (t *leaseTracker) runningLeaseIDs() []string {
 // work and waits for in-flight leases to finish rather than aborting them.
 // A directive-driven Stop/Cleanup (see heartbeat.go) is the only thing that
 // interrupts a lease early.
-func runLease(c client, runner worker.JobRunner, lease csilapi.Lease, tracker *leaseTracker) {
+func runLease(c client, runner worker.JobRunner, lease csilapi.Lease, tracker *leaseTracker, workspaceRoot string) {
 	logger := logging.Log.WithFields(map[string]interface{}{"lease_id": lease.LeaseId, "job_id": lease.JobId})
 
 	tl := &trackedLease{jobID: lease.JobId, graceSeconds: lease.CancelGraceSeconds}
@@ -141,7 +141,18 @@ func runLease(c client, runner worker.JobRunner, lease csilapi.Lease, tracker *l
 		masker.RegisterSecret(s.Value)
 	}
 
-	workspaceDir, err := os.MkdirTemp("", "reactorcide-worker-lease-*")
+	// workspaceRoot ("" -> OS temp dir) must resolve to the same path inside
+	// this worker and on the host when the worker drives a host container
+	// runtime, so the runtime can stat the /job bind-mount source. See
+	// Config.WorkspaceRoot.
+	if workspaceRoot != "" {
+		if err := os.MkdirAll(workspaceRoot, 0o755); err != nil {
+			logger.WithError(err).Error("failed to create lease workspace root")
+			reportResult(c, lease.LeaseId, 1, "failed", "failed to create workspace root: "+err.Error())
+			return
+		}
+	}
+	workspaceDir, err := os.MkdirTemp(workspaceRoot, "reactorcide-worker-lease-*")
 	if err != nil {
 		logger.WithError(err).Error("failed to create lease workspace directory")
 		reportResult(c, lease.LeaseId, 1, "failed", "failed to create workspace: "+err.Error())
