@@ -132,7 +132,7 @@ func (kr *KubernetesRunner) SpawnJob(ctx context.Context, config *JobConfig) (st
 		// Set HOME to a writable directory so tools (git, go, etc.) work under UID 1001
 		envVars = append(envVars, corev1.EnvVar{
 			Name:  "HOME",
-			Value: "/home/reactorcide",
+			Value: "/home/runner",
 		})
 	}
 	// Mark all directories as git safe.directory so git works when emptyDir
@@ -229,7 +229,7 @@ func (kr *KubernetesRunner) SpawnJob(ctx context.Context, config *JobConfig) (st
 	prepareWorkspace := corev1.Container{
 		Name:    "prepare-workspace",
 		Image:   "busybox:1.36",
-		Command: []string{"sh", "-c", `set -eu; mkdir -p "$REACTORCIDE_CODE_DIR" "$REACTORCIDE_JOB_DIR"; if [ -n "$REACTORCIDE_WORKING_DIR" ]; then mkdir -p "$REACTORCIDE_WORKING_DIR"; fi; chmod -R 0777 /job /workspace /home/reactorcide`},
+		Command: []string{"sh", "-c", `set -eu; mkdir -p "$REACTORCIDE_CODE_DIR" "$REACTORCIDE_JOB_DIR"; if [ -n "$REACTORCIDE_WORKING_DIR" ]; then mkdir -p "$REACTORCIDE_WORKING_DIR"; fi; chmod -R 0777 /job /workspace /home/runner`},
 		Env:     prepareEnv,
 		SecurityContext: &corev1.SecurityContext{
 			RunAsUser:    int64Ptr(0),
@@ -246,7 +246,7 @@ func (kr *KubernetesRunner) SpawnJob(ctx context.Context, config *JobConfig) (st
 			},
 			{
 				Name:      "home",
-				MountPath: "/home/reactorcide",
+				MountPath: "/home/runner",
 			},
 		},
 	}
@@ -280,7 +280,7 @@ func (kr *KubernetesRunner) SpawnJob(ctx context.Context, config *JobConfig) (st
 					},
 					{
 						Name:      "home",
-						MountPath: "/home/reactorcide",
+						MountPath: "/home/runner",
 					},
 				},
 			},

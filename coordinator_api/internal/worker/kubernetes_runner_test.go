@@ -4,11 +4,62 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"testing"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes/fake"
 )
+
+// TestKubernetesRunnerHomeMatchesHOME guards that the k8s runner's writable
+// home emptyDir is mounted at /home/runner -- the same path lease.go/run-local
+// set HOME to (and the AGENTS.md convention). The runner previously used
+// /home/reactorcide, so once lease.go set HOME=/home/runner the home was
+// unwritable and every job died at
+// "mkdir: cannot create directory '/home/runner': Permission denied".
+func TestKubernetesRunnerHomeMatchesHOME(t *testing.T) {
+	clientset := fake.NewSimpleClientset()
+	runner := &KubernetesRunner{
+		clientset:      clientset,
+		namespace:      "reactorcide",
+		serviceAccount: "default",
+		dindImage:      "docker:27-dind",
+	}
+	if _, err := runner.SpawnJob(context.Background(), &JobConfig{
+		JobID:      "home-job",
+		Image:      "reactorcide/runnerbase:test",
+		Command:    []string{"sh", "-c", "echo ok"},
+		Env:        map[string]string{"HOME": "/home/runner"},
+		WorkingDir: "/job",
+	}); err != nil {
+		t.Fatalf("SpawnJob failed: %v", err)
+	}
+	jobs, err := clientset.BatchV1().Jobs("reactorcide").List(context.Background(), metav1.ListOptions{})
+	if err != nil {
+		t.Fatalf("listing jobs failed: %v", err)
+	}
+	podSpec := jobs.Items[0].Spec.Template.Spec
+
+	foundHomeMount := false
+	for _, m := range podSpec.Containers[0].VolumeMounts {
+		if m.MountPath == "/home/runner" {
+			foundHomeMount = true
+		}
+		if m.MountPath == "/home/reactorcide" {
+			t.Errorf("job container mounts its writable home at /home/reactorcide; must be /home/runner to match HOME")
+		}
+	}
+	if !foundHomeMount {
+		t.Fatalf("job container has no volume mounted at /home/runner; HOME=/home/runner would be unwritable")
+	}
+
+	if len(podSpec.InitContainers) == 0 {
+		t.Fatal("expected a prepare init container")
+	}
+	if prep := strings.Join(podSpec.InitContainers[0].Command, " "); !strings.Contains(prep, "/home/runner") {
+		t.Errorf("prepare init container does not make /home/runner writable: %q", prep)
+	}
+}
 
 func TestPodStartupError(t *testing.T) {
 	tests := []struct {
