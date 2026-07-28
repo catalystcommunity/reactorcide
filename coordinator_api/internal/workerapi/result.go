@@ -95,6 +95,18 @@ func (s *WorkerService) ReportResult(ctx context.Context, req csilapi.ReportResu
 		}
 	}
 
+	// Resolve the job's OWN VCS check on completion (e.g. the eval's
+	// "reactorcide/eval" check, posted pending at creation). Only for non-node
+	// jobs: workflow node jobs are covered by the aggregate workflow check
+	// (updated via the finalizer above), so reporting them individually would
+	// add redundant per-node checks. UpdateJobStatus is a no-op for jobs
+	// without VCS metadata, so standalone non-VCS jobs are unaffected.
+	if s.deps.JobStatusReporter != nil && job.WorkflowNodeID == nil {
+		if err := s.deps.JobStatusReporter.UpdateJobStatus(ctx, job); err != nil {
+			logging.Log.WithError(err).WithField("job_id", job.JobID).Warn("Failed to update job VCS status on completion")
+		}
+	}
+
 	if err := s.deps.Store.ReleaseWorkerLease(ctx, lease.LeaseID, finalStatus); err != nil {
 		logging.Log.WithError(err).WithField("lease_id", lease.LeaseID).Warn("Failed to release worker lease")
 	}

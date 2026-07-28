@@ -32,6 +32,24 @@ func (ps PostgresDbStore) GetWorkflowInstance(ctx context.Context, workflowID st
 	return &wf, nil
 }
 
+// GetWorkflowInstanceByParentJobAndName is the find-or-create key for
+// multi-workflow spawning: a single eval (parent_job_id) owns at most one
+// workflow per name, so reprocessing the same triggers reuses it rather than
+// duplicating. Returns store.ErrNotFound when none exists.
+func (ps PostgresDbStore) GetWorkflowInstanceByParentJobAndName(ctx context.Context, parentJobID, name string) (*models.WorkflowInstance, error) {
+	if !isValidUUID(parentJobID) {
+		return nil, store.ErrNotFound
+	}
+	var wf models.WorkflowInstance
+	if err := ps.getDB(ctx).Where("parent_job_id = ? AND name = ?", parentJobID, name).First(&wf).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return nil, store.ErrNotFound
+		}
+		return nil, fmt.Errorf("failed to get workflow for parent %s name %q: %w", parentJobID, name, err)
+	}
+	return &wf, nil
+}
+
 func (ps PostgresDbStore) UpdateWorkflowInstance(ctx context.Context, wf *models.WorkflowInstance) error {
 	result := ps.getDB(ctx).Save(wf)
 	if result.Error != nil {

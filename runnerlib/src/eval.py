@@ -125,6 +125,32 @@ class JobDefinition:
 
 
 @dataclass
+class WorkflowDefinition:
+    """A parsed workflow definition from a .reactorcide/workflows/*.yaml file.
+
+    A workflow names a pipeline and groups the jobs that run together for it.
+    One event can match several workflows, so a repo can split its pipelines
+    per team, org, or product. Each job is a fully resolved JobDefinition: a
+    job entry can reference a reusable .reactorcide/jobs/*.yaml through
+    ``job_file`` and overlay inline fields on top of it.
+
+    Attributes:
+        name: Human-readable workflow name (e.g. "Reactorcide PR").
+        description: Human-readable description.
+        triggers: Event and branch trigger configuration (from ``on:``).
+        paths: Optional path include/exclude configuration.
+        jobs: Resolved job definitions that make up this workflow.
+        source_file: Path to the workflow YAML this was loaded from.
+    """
+    name: str
+    description: str = ""
+    triggers: TriggersConfig = field(default_factory=TriggersConfig)
+    paths: PathsConfig = field(default_factory=PathsConfig)
+    jobs: List[JobDefinition] = field(default_factory=list)
+    source_file: Optional[str] = None
+
+
+@dataclass
 class EventContext:
     """Context about the current event for trigger generation.
 
@@ -529,3 +555,256 @@ def generate_triggers(
         triggers.append(trigger)
 
     return triggers
+
+
+def _load_job_file_raw(ci_source_path: Path, job_file: str) -> tuple:
+    """Load a referenced job YAML file as a raw dictionary.
+
+    A workflow job entry can point at a reusable job definition through
+    ``job_file``. The path is resolved relative to the CI source root first,
+    then relative to ``.reactorcide/jobs/`` for convenience.
+
+    Args:
+        ci_source_path: Path to the CI source checkout.
+        job_file: Path to the job YAML, relative to the CI source root.
+
+    Returns:
+        A (data, resolved_path) tuple.
+
+    Raises:
+        FileNotFoundError: If the file cannot be found.
+        ValueError: If the file is not a YAML mapping.
+    """
+    candidates = [
+        ci_source_path / job_file,
+        ci_source_path / ".reactorcide" / "jobs" / job_file,
+    ]
+    for candidate in candidates:
+        if candidate.is_file():
+            with open(candidate, "r") as f:
+                data = yaml.safe_load(f)
+            if not isinstance(data, dict):
+                raise ValueError(f"job_file {candidate} is not a valid YAML mapping")
+            return data, str(candidate)
+    looked = ", ".join(str(c) for c in candidates)
+    raise FileNotFoundError(f"job_file '{job_file}' not found (looked in: {looked})")
+
+
+def _entry_to_job_dict(name: str, entry: Dict[str, Any]) -> Dict[str, Any]:
+    """Normalize a workflow job entry into a job-file-shaped dictionary.
+
+    Workflow job entries are ergonomic: container config fields can be written
+    flat at the entry level (``image``, ``command``, ``depends_on`` ...) or
+    nested under ``job:``. ``needs`` is accepted as an alias for
+    ``depends_on``. The result uses the same shape parse_job_definition reads.
+    """
+    entry = dict(entry or {})
+    out: Dict[str, Any] = {"name": name}
+
+    if "description" in entry:
+        out["description"] = entry.pop("description")
+    if "environment" in entry:
+        out["environment"] = entry.pop("environment")
+
+    # A workflow's triggers/paths live at the workflow level, not per job.
+    entry.pop("triggers", None)
+    entry.pop("paths", None)
+    entry.pop("job_file", None)
+
+    job_cfg = dict(entry.pop("job", {}) or {})
+    if "needs" in entry:
+        entry["depends_on"] = entry.pop("needs")
+    # Remaining flat keys are job config; explicit `job:` values win.
+    for key, val in entry.items():
+        job_cfg.setdefault(key, val)
+    if job_cfg:
+        out["job"] = job_cfg
+    return out
+
+
+def _parse_workflow_job(
+    name: str,
+    entry: Any,
+    ci_source_path: Path,
+    workflow_source_file: Optional[str],
+) -> JobDefinition:
+    """Parse and fully resolve a single job entry within a workflow.
+
+    If the entry references a ``job_file``, its contents form the base and the
+    inline entry fields overlay on top (deep-merged for ``job`` and
+    ``environment``). Otherwise the entry is parsed directly.
+    """
+    entry = dict(entry or {})
+    job_file = entry.get("job_file")
+
+    base: Dict[str, Any] = {}
+    resolved_from = None
+    if job_file:
+        base, resolved_from = _load_job_file_raw(ci_source_path, job_file)
+
+    inline = _entry_to_job_dict(name, entry)
+
+    merged: Dict[str, Any] = dict(base)
+    for key, val in inline.items():
+        if key in ("job", "environment") and isinstance(val, dict) and isinstance(merged.get(key), dict):
+            merged[key] = {**merged[key], **val}
+        else:
+            merged[key] = val
+
+    # The workflow entry key is the authoritative node name; a workflow never
+    # inherits per-job triggers/paths from a referenced job file.
+    merged["name"] = name
+    merged.pop("triggers", None)
+    merged.pop("paths", None)
+
+    return parse_job_definition(merged, source_file=resolved_from or workflow_source_file)
+
+
+def parse_workflow_definition(
+    data: Dict[str, Any],
+    ci_source_path: Path,
+    source_file: Optional[str] = None,
+) -> WorkflowDefinition:
+    """Parse a single workflow definition from a YAML dictionary.
+
+    Args:
+        data: Parsed YAML dictionary.
+        ci_source_path: Path to the CI source checkout (to resolve job_file refs).
+        source_file: Optional path to the source YAML file.
+
+    Returns:
+        A WorkflowDefinition instance with fully resolved jobs.
+
+    Raises:
+        ValueError: If required fields are missing or malformed.
+    """
+    where = f" in {source_file}" if source_file else ""
+    name = data.get("name")
+    if not name:
+        raise ValueError(f"Workflow definition missing required 'name' field{where}")
+
+    # `on:` is the workflow trigger block; accept `triggers:` as an alias.
+    # NOTE: YAML 1.1 (PyYAML) parses the bare key `on` as the boolean True
+    # (the same "Norway problem" GitHub Actions hits), so check True too.
+    on = data.get("on")
+    if on is None:
+        on = data.get(True)
+    if on is None:
+        on = data.get("triggers")
+    triggers = _parse_triggers_config(on)
+    paths = _parse_paths_config(data.get("paths"))
+
+    jobs_raw = data.get("jobs")
+    job_defs: List[JobDefinition] = []
+    if isinstance(jobs_raw, dict):
+        for jname, jentry in jobs_raw.items():
+            job_defs.append(_parse_workflow_job(str(jname), jentry, ci_source_path, source_file))
+    elif isinstance(jobs_raw, list):
+        for jentry in jobs_raw:
+            jentry = jentry or {}
+            jname = jentry.get("name")
+            if not jname:
+                raise ValueError(f"Workflow '{name}'{where} has a job entry without a 'name'")
+            job_defs.append(_parse_workflow_job(str(jname), jentry, ci_source_path, source_file))
+    else:
+        raise ValueError(f"Workflow '{name}'{where} missing required 'jobs' mapping or list")
+
+    return WorkflowDefinition(
+        name=str(name),
+        description=str(data.get("description", "") or ""),
+        triggers=triggers,
+        paths=paths,
+        jobs=job_defs,
+        source_file=source_file,
+    )
+
+
+def load_workflow_definitions(ci_source_path: Path) -> List[WorkflowDefinition]:
+    """Load all workflow definitions from the CI source directory.
+
+    Reads all .yaml and .yml files from {ci_source_path}/.reactorcide/workflows/
+
+    Args:
+        ci_source_path: Path to the CI source checkout (e.g. /job/ci).
+
+    Returns:
+        List of parsed WorkflowDefinition instances. Empty if the directory
+        does not exist (the caller falls back to bare .reactorcide/jobs).
+    """
+    wf_dir = ci_source_path / ".reactorcide" / "workflows"
+    if not wf_dir.is_dir():
+        return []
+
+    definitions: List[WorkflowDefinition] = []
+    yaml_files = sorted(
+        list(wf_dir.glob("*.yaml")) + list(wf_dir.glob("*.yml"))
+    )
+
+    for yaml_file in yaml_files:
+        try:
+            with open(yaml_file, "r") as f:
+                data = yaml.safe_load(f)
+            if not isinstance(data, dict):
+                print(f"Skipping {yaml_file}: not a valid YAML mapping", file=sys.stderr)
+                continue
+            definitions.append(parse_workflow_definition(data, ci_source_path, source_file=str(yaml_file)))
+        except yaml.YAMLError as e:
+            print(f"Error parsing {yaml_file}: {e}", file=sys.stderr)
+        except (ValueError, FileNotFoundError) as e:
+            print(f"Invalid workflow definition in {yaml_file}: {e}", file=sys.stderr)
+
+    return definitions
+
+
+def workflow_match_reason(
+    workflow: WorkflowDefinition,
+    event_type: str,
+    branch: str = "",
+    changed_files: Optional[List[str]] = None,
+) -> tuple:
+    """Explain whether a workflow matches the current event.
+
+    Returns a (matched, reason) tuple. The reason is a short human-readable
+    string suitable for the eval log so people can see what was evaluated and
+    why a workflow did or did not run.
+    """
+    t = workflow.triggers
+    if not t.events:
+        return False, "no events configured"
+    if event_type not in t.events:
+        return False, f"event '{event_type}' not in configured events {t.events}"
+    if t.branches and branch:
+        if not any(branch_matches(pattern, branch) for pattern in t.branches):
+            return False, f"branch '{branch}' did not match {t.branches}"
+    if workflow.paths.include or workflow.paths.exclude:
+        if changed_files is None:
+            pass  # No changed-file info available, do not filter on paths.
+        elif not paths_match(workflow.paths, changed_files):
+            return False, "no changed files matched the path filters"
+    reason = f"event '{event_type}'"
+    if branch:
+        reason += f", branch '{branch}'"
+    return True, reason
+
+
+def evaluate_workflows(
+    workflow_defs: List[WorkflowDefinition],
+    event_type: str,
+    branch: str = "",
+    changed_files: Optional[List[str]] = None,
+) -> List[WorkflowDefinition]:
+    """Evaluate which workflows match the current event.
+
+    Args:
+        workflow_defs: Workflow definitions to evaluate.
+        event_type: The generic event type (e.g. "push", "pull_request_opened").
+        branch: Current branch name (optional).
+        changed_files: List of changed file paths (optional).
+
+    Returns:
+        List of workflow definitions that match the event.
+    """
+    return [
+        wf for wf in workflow_defs
+        if workflow_match_reason(wf, event_type, branch, changed_files)[0]
+    ]

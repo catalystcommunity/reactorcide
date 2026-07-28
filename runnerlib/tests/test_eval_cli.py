@@ -77,6 +77,82 @@ class TestEvalCommand:
         assert data["jobs"][0]["env"]["REACTORCIDE_EVENT_TYPE"] == "push"
         assert data["jobs"][0]["env"]["REACTORCIDE_BRANCH"] == "main"
 
+    def test_eval_workflow_mode_multi_workflow(self, temp_dirs):
+        """Workflow files take precedence and emit the multi-workflow form."""
+        ci_dir, src_dir, jobs_dir, triggers_file = temp_dirs
+        wf_dir = ci_dir / ".reactorcide" / "workflows"
+        wf_dir.mkdir(parents=True)
+
+        # A reusable job referenced by the PR workflow.
+        _write_yaml(jobs_dir / "test-go.yaml", {
+            "name": "test-go",
+            "job": {"image": "golang:1.26", "command": "go test ./..."},
+        })
+        # PR workflow matches push; release workflow does not.
+        _write_yaml(wf_dir / "pr.yaml", {
+            "name": "Reactorcide PR",
+            "on": {"events": ["push"]},
+            "jobs": {
+                "lint": {"image": "alpine", "command": "make lint"},
+                "test-go": {"job_file": "test-go.yaml", "depends_on": ["lint"]},
+            },
+        })
+        _write_yaml(wf_dir / "release.yaml", {
+            "name": "Reactorcide Release",
+            "on": {"events": ["pull_request_merged"]},
+            "jobs": {"release": {"image": "alpine", "command": "make release"}},
+        })
+
+        result = runner.invoke(app, [
+            "eval",
+            "--ci-source-dir", str(ci_dir),
+            "--source-dir", str(src_dir),
+            "--event-type", "push",
+            "--branch", "main",
+            "--triggers-file", str(triggers_file),
+        ])
+
+        assert result.exit_code == 0, result.stdout
+        assert triggers_file.exists()
+
+        with open(triggers_file) as f:
+            data = json.load(f)
+
+        assert data["type"] == "trigger_job"
+        # Only the PR workflow matched push.
+        assert [w["name"] for w in data["workflows"]] == ["Reactorcide PR"]
+        pr = data["workflows"][0]
+        by_name = {j["job_name"]: j for j in pr["jobs"]}
+        assert set(by_name) == {"lint", "test-go"}
+        # job_file was resolved by runnerlib; it must not leak to the coordinator.
+        assert "job_file" not in by_name["test-go"]
+        assert by_name["test-go"]["container_image"] == "golang:1.26"
+        assert by_name["test-go"]["depends_on"] == ["lint"]
+
+    def test_eval_workflow_mode_no_match_is_success(self, temp_dirs):
+        """A workflow that matches no event still exits 0 with an explanation."""
+        ci_dir, src_dir, jobs_dir, triggers_file = temp_dirs
+        wf_dir = ci_dir / ".reactorcide" / "workflows"
+        wf_dir.mkdir(parents=True)
+        _write_yaml(wf_dir / "release.yaml", {
+            "name": "Reactorcide Release",
+            "on": {"events": ["pull_request_merged"]},
+            "jobs": {"release": {"image": "alpine", "command": "make release"}},
+        })
+
+        result = runner.invoke(app, [
+            "eval",
+            "--ci-source-dir", str(ci_dir),
+            "--source-dir", str(src_dir),
+            "--event-type", "push",
+            "--triggers-file", str(triggers_file),
+        ])
+
+        assert result.exit_code == 0
+        assert "nothing to run" in result.stdout
+        assert "skipped workflow 'Reactorcide Release'" in result.stdout
+        assert not triggers_file.exists()
+
     def test_eval_no_match(self, temp_dirs):
         """Test eval command when no definitions match the event."""
         ci_dir, src_dir, jobs_dir, triggers_file = temp_dirs
@@ -111,7 +187,7 @@ class TestEvalCommand:
         ])
 
         assert result.exit_code == 0
-        assert "No job definitions found" in result.stdout
+        assert "No workflow or job definitions found" in result.stdout
         assert not triggers_file.exists()
 
     def test_eval_invalid_event_type(self, temp_dirs):

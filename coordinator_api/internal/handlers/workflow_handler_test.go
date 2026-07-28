@@ -125,6 +125,16 @@ func (m *mockWorkflowStore) GetWorkflowInstance(ctx context.Context, workflowID 
 	return &cp, nil
 }
 
+func (m *mockWorkflowStore) GetWorkflowInstanceByParentJobAndName(ctx context.Context, parentJobID, name string) (*models.WorkflowInstance, error) {
+	for _, wf := range m.instances {
+		if wf.ParentJobID != nil && *wf.ParentJobID == parentJobID && wf.Name == name {
+			cp := *wf
+			return &cp, nil
+		}
+	}
+	return nil, store.ErrNotFound
+}
+
 func (m *mockWorkflowStore) UpdateWorkflowInstance(ctx context.Context, wf *models.WorkflowInstance) error {
 	cp := *wf
 	m.instances[wf.WorkflowID] = &cp

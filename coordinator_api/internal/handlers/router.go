@@ -742,6 +742,9 @@ func createAppMux() *http.ServeMux {
 		wfFinalizer := worker.NewTriggerProcessor(store.AppStore, singletoncorndogsClient)
 		wfFinalizer.SetStatusUpdater(vcsManager.GetStatusUpdater())
 		workerDeps.WorkflowFinalizer = wfFinalizer
+		// Resolve a completing job's own VCS check (e.g. the eval's
+		// "reactorcide/eval" pending check) to success/failure on ReportResult.
+		workerDeps.JobStatusReporter = vcsManager.GetStatusUpdater()
 		workerSvc := workerapi.NewWorkerService(workerDeps)
 		workerImpl = workerSvc
 		startWorkerLeaseReaperOnce(workerSvc)

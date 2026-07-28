@@ -15,6 +15,7 @@ import (
 	"github.com/catalystcommunity/app-utils-go/logging"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/resources"
 	"github.com/google/uuid"
+	"github.com/sirupsen/logrus"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -529,6 +530,14 @@ func (kr *KubernetesRunner) SpawnJob(ctx context.Context, config *JobConfig) (st
 	// TTL for automatic cleanup (1 hour after completion)
 	ttlSeconds := int32(3600)
 
+	// Enforce the job's configured timeout at the pod level so it's authoritative
+	// (the lease/heartbeat path is best-effort). nil = no deadline when unset.
+	var activeDeadline *int64
+	if config.TimeoutSeconds > 0 {
+		d := int64(config.TimeoutSeconds)
+		activeDeadline = &d
+	}
+
 	// Create the Job resource
 	job := &batchv1.Job{
 		ObjectMeta: metav1.ObjectMeta{
@@ -572,7 +581,8 @@ func (kr *KubernetesRunner) SpawnJob(ctx context.Context, config *JobConfig) (st
 		},
 		Spec: batchv1.JobSpec{
 			TTLSecondsAfterFinished: &ttlSeconds,
-			BackoffLimit:            int32Ptr(0), // No retries - we handle retries at a higher level
+			ActiveDeadlineSeconds:   activeDeadline, // enforce the configured job timeout at the pod level
+			BackoffLimit:            int32Ptr(0),    // No retries - we handle retries at a higher level
 			Template: corev1.PodTemplateSpec{
 				ObjectMeta: metav1.ObjectMeta{
 					Labels: map[string]string{
@@ -705,49 +715,79 @@ func (kr *KubernetesRunner) StreamLogs(ctx context.Context, jobName string) (std
 	return stdoutReader, stderrReader, nil
 }
 
-// WaitForCompletion waits for the Kubernetes Job to complete and returns the exit code
+// jobTerminal reports whether a Job has reached a terminal condition and, if
+// so, the exit code (0 for Complete; the pod's exit code for Failed).
+func (kr *KubernetesRunner) jobTerminal(ctx context.Context, job *batchv1.Job, jobName string, logger *logrus.Entry) (int, bool) {
+	for _, condition := range job.Status.Conditions {
+		if condition.Type == batchv1.JobComplete && condition.Status == corev1.ConditionTrue {
+			logger.Info("Job completed successfully")
+			return 0, true
+		}
+		if condition.Type == batchv1.JobFailed && condition.Status == corev1.ConditionTrue {
+			exitCode, err := kr.getPodExitCode(ctx, jobName)
+			if err != nil {
+				logger.WithError(err).Warn("Failed to get pod exit code, returning -1")
+				return -1, true
+			}
+			logger.WithField("exit_code", exitCode).Info("Job failed")
+			return exitCode, true
+		}
+	}
+	return 0, false
+}
+
+// WaitForCompletion waits for the Kubernetes Job to complete and returns the
+// exit code. The Kubernetes API server closes long-lived watch connections
+// after its (randomized ~30-60m) server-side timeout, so a single watch is NOT
+// safe for long jobs (e.g. a multi-arch release build) -- a closed channel does
+// NOT mean the job ended. We therefore poll the Job's status each cycle and
+// re-establish the watch whenever it closes, only concluding when the Job
+// reaches a terminal condition or ctx is cancelled.
 func (kr *KubernetesRunner) WaitForCompletion(ctx context.Context, jobName string) (int, error) {
 	logger := logging.Log.WithField("job_name", jobName)
 
-	// Watch for job completion
-	watcher, err := kr.clientset.BatchV1().Jobs(kr.namespace).Watch(ctx, metav1.ListOptions{
-		FieldSelector: fmt.Sprintf("metadata.name=%s", jobName),
-	})
-	if err != nil {
-		return -1, fmt.Errorf("failed to watch job: %w", err)
-	}
-	defer watcher.Stop()
-
-	for event := range watcher.ResultChan() {
-		if event.Type == watch.Error {
-			return -1, fmt.Errorf("watch error: %v", event.Object)
+	for {
+		if err := ctx.Err(); err != nil {
+			return -1, err
 		}
 
-		job, ok := event.Object.(*batchv1.Job)
-		if !ok {
-			continue
-		}
-
-		// Check if job completed
-		for _, condition := range job.Status.Conditions {
-			if condition.Type == batchv1.JobComplete && condition.Status == corev1.ConditionTrue {
-				logger.Info("Job completed successfully")
-				return 0, nil
-			}
-			if condition.Type == batchv1.JobFailed && condition.Status == corev1.ConditionTrue {
-				// Get exit code from pod
-				exitCode, err := kr.getPodExitCode(ctx, jobName)
-				if err != nil {
-					logger.WithError(err).Warn("Failed to get pod exit code, returning -1")
-					return -1, nil
-				}
-				logger.WithField("exit_code", exitCode).Info("Job failed")
-				return exitCode, nil
+		// Check current status first: catches a Job that reached terminal while
+		// no watch was open (e.g. during the gap after an API-server timeout).
+		if job, err := kr.clientset.BatchV1().Jobs(kr.namespace).Get(ctx, jobName, metav1.GetOptions{}); err == nil {
+			if code, done := kr.jobTerminal(ctx, job, jobName, logger); done {
+				return code, nil
 			}
 		}
-	}
 
-	return -1, fmt.Errorf("watch ended unexpectedly")
+		watcher, err := kr.clientset.BatchV1().Jobs(kr.namespace).Watch(ctx, metav1.ListOptions{
+			FieldSelector: fmt.Sprintf("metadata.name=%s", jobName),
+		})
+		if err != nil {
+			return -1, fmt.Errorf("failed to watch job: %w", err)
+		}
+
+		terminal, code := false, -1
+		for event := range watcher.ResultChan() {
+			if event.Type == watch.Error {
+				break // re-establish the watch
+			}
+			job, ok := event.Object.(*batchv1.Job)
+			if !ok {
+				continue
+			}
+			if c, done := kr.jobTerminal(ctx, job, jobName, logger); done {
+				code, terminal = c, true
+				break
+			}
+		}
+		watcher.Stop()
+		if terminal {
+			return code, nil
+		}
+		// ResultChan closed without a terminal condition -> the API server timed
+		// out the watch on a still-running job. Loop to re-Get + re-watch. The
+		// ctx check at the top prevents an unbounded spin.
+	}
 }
 
 // Stop requests a graceful shutdown of the job's pod(s) by deleting them with

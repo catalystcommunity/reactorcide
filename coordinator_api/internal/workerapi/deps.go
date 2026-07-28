@@ -27,6 +27,19 @@ import (
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/workerauth"
 )
 
+// JobStatusReporter posts a job's own VCS commit-status check (e.g. the
+// "reactorcide/eval" check on a PR). Satisfied by *internal/vcs.JobStatusUpdater
+// and is a no-op for jobs without VCS metadata. ReportResult calls it on
+// completion so a job's individual check resolves (pending -> success/failure)
+// instead of hanging forever -- the coordinator-mediated path previously only
+// posted the pending check at creation and never the terminal one. Workflow
+// node jobs are deliberately NOT reported this way (the aggregate workflow
+// check covers them); only non-node jobs (the eval parent, standalone jobs)
+// get an individual terminal check.
+type JobStatusReporter interface {
+	UpdateJobStatus(ctx context.Context, job *models.Job) error
+}
+
 // WorkflowFinalizer advances a job's workflow instance when the job starts and
 // finishes. It is satisfied by *internal/worker.TriggerProcessor, whose
 // ProcessWorkflowJobStarted/ProcessWorkflowCompletion roll the node's status
@@ -126,6 +139,10 @@ type Deps struct {
 	// store + the configured VCS status updater. nil in tests / stores that
 	// don't exercise workflows (calls are then skipped).
 	WorkflowFinalizer WorkflowFinalizer
+
+	// JobStatusReporter posts a completing job's own VCS check (see the
+	// JobStatusReporter interface doc). nil in tests / when VCS is unconfigured.
+	JobStatusReporter JobStatusReporter
 
 	// SecretsProvider resolves a secrets.Provider scoped to a job's owning
 	// user (job.UserID -- orgs are users-as-orgs today, matching

@@ -872,7 +872,10 @@ def eval_cmd(
     from pathlib import Path
     from src.eval import (
         load_job_definitions,
+        load_workflow_definitions,
         evaluate_event,
+        evaluate_workflows,
+        workflow_match_reason,
         generate_triggers,
         EventContext,
         VALID_EVENT_TYPES,
@@ -891,7 +894,7 @@ def eval_cmd(
     # Prepare CI source if not already present.
     # When running as an eval job, the coordinator passes CI source info via env vars
     # but doesn't pre-clone the repository — the eval command needs to do it.
-    if ci_source_url and not (ci_source_path / ".reactorcide" / "jobs").is_dir():
+    if ci_source_url and not (ci_source_path / ".reactorcide").is_dir():
         log_stdout(f"CI source not found at {ci_source_path}, cloning from {ci_source_url}")
         from src.source_prep import _prepare_git_source
         _prepare_git_source(ci_source_url, ci_source_ref or None, ci_source_path)
@@ -903,17 +906,8 @@ def eval_cmd(
         from src.source_prep import _prepare_git_source
         _prepare_git_source(source_url, source_ref or None, source_path)
 
-    # Load job definitions
-    log_stdout(f"Loading job definitions from {ci_source_path}")
-    definitions = load_job_definitions(ci_source_path)
-
-    if not definitions:
-        log_stdout("No job definitions found, nothing to evaluate")
-        raise typer.Exit(0)
-
-    log_stdout(f"Loaded {len(definitions)} job definition(s)")
-
-    # Get changed files via git diff if source dir is a git repo
+    # Get changed files via git diff if source dir is a git repo. Both the
+    # workflow and bare-jobs paths use this for path-based trigger filtering.
     changed = None
     if source_path.exists() and (source_path / ".git").exists():
         try:
@@ -929,16 +923,7 @@ def eval_cmd(
         except Exception as e:
             log_stderr(f"Warning: could not determine changed files: {e}")
 
-    # Evaluate definitions against event
-    matched = evaluate_event(definitions, event_type, branch, changed)
-
-    log_stdout(f"Matched {len(matched)} job(s) for event '{event_type}'")
-
-    if not matched:
-        log_stdout("No jobs matched, no triggers to generate")
-        raise typer.Exit(0)
-
-    # Build event context
+    # Build event context (shared by both evaluation paths).
     ctx = EventContext(
         event_type=event_type,
         branch=branch,
@@ -955,11 +940,86 @@ def eval_cmd(
         is_fork_pr=is_fork_pr,
     )
 
+    workflow_ctx = WorkflowContext(triggers_file=triggers_file)
+
+    # Prefer workflow-centric definitions (.reactorcide/workflows/*.yaml). A
+    # workflow names its pipeline and groups its jobs, and one event can match
+    # several workflows (per team/product/etc). Fall back to bare job files
+    # (.reactorcide/jobs/*.yaml) when no workflow files exist.
+    workflow_defs = load_workflow_definitions(ci_source_path)
+
+    if workflow_defs:
+        log_stdout(
+            f"Loaded {len(workflow_defs)} workflow definition(s) from "
+            f"{ci_source_path / '.reactorcide' / 'workflows'}: "
+            f"{', '.join(w.name for w in workflow_defs)}"
+        )
+        log_stdout(f"Evaluating for event '{event_type}'"
+                   + (f", branch '{branch}'" if branch else "")
+                   + (f", {len(changed)} changed file(s)" if changed else ""))
+
+        batches = []
+        for wf in workflow_defs:
+            matched_wf, reason = workflow_match_reason(wf, event_type, branch, changed)
+            if not matched_wf:
+                log_stdout(f"  – skipped workflow '{wf.name}': {reason}")
+                continue
+            job_triggers = generate_triggers(wf.jobs, ctx)
+            batches.append({"name": wf.name, "jobs": job_triggers})
+            job_names = ", ".join(t.job_name for t in job_triggers) or "(no jobs)"
+            log_stdout(f"  ✓ matched workflow '{wf.name}' ({reason}): {len(job_triggers)} job(s): {job_names}")
+
+        # Drop workflows that matched but resolved to zero jobs — nothing to run.
+        batches = [b for b in batches if b["jobs"]]
+
+        if not batches:
+            log_stdout(
+                f"No workflows produced jobs for event '{event_type}'. "
+                f"Evaluated {len(workflow_defs)} workflow(s); nothing to run. "
+                f"This eval is successful."
+            )
+            raise typer.Exit(0)
+
+        workflow_ctx.flush_workflow_batches(batches)
+        total = sum(len(b["jobs"]) for b in batches)
+        log_stdout(f"Wrote {len(batches)} workflow(s) / {total} trigger(s) to {triggers_file}")
+        raise typer.Exit(0)
+
+    # Back-compat: bare .reactorcide/jobs/*.yaml. These collapse to one default
+    # workflow named "Reactorcide Jobs, repo: <name>" on the coordinator side.
+    log_stdout(f"No workflow definitions found; loading bare job definitions from {ci_source_path}")
+    definitions = load_job_definitions(ci_source_path)
+
+    if not definitions:
+        log_stdout(
+            "No workflow or job definitions found (looked in .reactorcide/workflows "
+            "and .reactorcide/jobs); nothing to evaluate. This eval is successful."
+        )
+        raise typer.Exit(0)
+
+    log_stdout(f"Loaded {len(definitions)} job definition(s): "
+               f"{', '.join(d.name for d in definitions)}")
+    log_stdout(f"Evaluating for event '{event_type}'"
+               + (f", branch '{branch}'" if branch else "")
+               + (f", {len(changed)} changed file(s)" if changed else ""))
+
+    # Evaluate definitions against event
+    matched = evaluate_event(definitions, event_type, branch, changed)
+
+    if not matched:
+        skipped = ", ".join(d.name for d in definitions)
+        log_stdout(
+            f"No jobs matched event '{event_type}'. Evaluated {len(definitions)} "
+            f"job(s) ({skipped}); nothing to run. This eval is successful."
+        )
+        raise typer.Exit(0)
+
+    log_stdout(f"Matched {len(matched)} of {len(definitions)} job(s) for event '{event_type}': "
+               f"{', '.join(d.name for d in matched)}")
+
     # Generate triggers
     triggers = generate_triggers(matched, ctx)
 
-    # Write triggers using WorkflowContext
-    workflow_ctx = WorkflowContext(triggers_file=triggers_file)
     workflow_ctx.triggers = triggers
     workflow_ctx.flush_triggers()
 
