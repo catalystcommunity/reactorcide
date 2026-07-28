@@ -15,6 +15,86 @@ your-repo/
 
 All `.yaml` and `.yml` files in `.reactorcide/jobs/` are loaded. Subdirectories are not scanned.
 
+## Workflow Definitions
+
+A workflow groups the jobs that run together for one event. A workflow has a name. The name shows as a check on the pull request. Put workflow files in `.reactorcide/workflows/`.
+
+```
+your-repo/
+  .reactorcide/
+    workflows/
+      pr.yaml
+      release.yaml
+    jobs/
+      test-go.yaml
+      test-web.yaml
+```
+
+One event can match more than one workflow. Each matched workflow runs as a separate named check. This lets a large repository split its pipelines per team, product, or org.
+
+### Workflow schema
+
+```yaml
+# Required: the workflow name. It shows as the check name.
+name: "Reactorcide PR"
+
+# Optional: a short description.
+description: "Validate commits and run the tests for pull requests."
+
+# Required: when the workflow runs.
+on:
+  # Required: the event types that start the workflow.
+  events:
+    - pull_request_opened
+    - pull_request_updated
+  # Optional: branch patterns. An empty list matches all branches.
+  branches:
+    - main
+
+# Optional: run the workflow only when matching files change.
+paths:
+  include:
+    - "coordinator_api/**"
+
+# Required: the jobs in the workflow. The map key is the job name.
+jobs:
+  # A job can reference a reusable job file and add the run order.
+  conventional-commits:
+    job_file: conventional-commits.yaml
+
+  test-go:
+    job_file: test-go.yaml
+    depends_on:
+      - conventional-commits
+
+  # A job can also be written inline.
+  test-web:
+    image: golang:1.26
+    command: "go test ./..."
+    depends_on:
+      - conventional-commits
+```
+
+### How workflow jobs work
+
+- The map key is the job name. Use the key name in `depends_on` to set the run order.
+- A job entry uses one of two forms. Use `job_file` to reference a file in `.reactorcide/jobs/`. Or write the job fields inline.
+- With `job_file`, the referenced file is the base. The inline fields overlay the base. The inline fields win.
+- Write the container fields (`image`, `command`, `capabilities`, and so on) flat in the job entry, or nested under a `job:` key.
+- `depends_on` sets the jobs that must finish first. `needs` is an alias for `depends_on`.
+- `condition` controls when the job runs. The values are `all_success` (default), `any_failed`, and `always`.
+- The `on:` and `paths:` of a referenced job file are ignored. The workflow controls when the jobs run.
+
+runnerlib resolves each `job_file` reference before it sends the triggers. It reads the referenced file, applies the inline fields, and sends a complete job. The coordinator does not need the job files.
+
+The event and branch fields use the same rules as the bare job files. See [Event Types](#event-types) and [Branch Matching](#branch-matching).
+
+### Bare jobs (compatibility)
+
+Bare `.reactorcide/jobs/*.yaml` files still work. Reactorcide uses workflow files first. If there are no workflow files, Reactorcide loads the bare job files instead. It groups them under one workflow. The default workflow name is `Reactorcide Jobs, repo: <name>`, where `<name>` is the repository basename.
+
+The rest of this page describes the bare job file schema. A workflow job entry uses the same job fields.
+
 ## YAML Schema
 
 ```yaml

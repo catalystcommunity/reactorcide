@@ -50,6 +50,16 @@ func (s *workflowRuntimeStore) GetWorkflowInstance(ctx context.Context, workflow
 	return &copy, nil
 }
 
+func (s *workflowRuntimeStore) GetWorkflowInstanceByParentJobAndName(ctx context.Context, parentJobID, name string) (*models.WorkflowInstance, error) {
+	for _, wf := range s.workflows {
+		if wf.ParentJobID != nil && *wf.ParentJobID == parentJobID && wf.Name == name {
+			cp := *wf
+			return &cp, nil
+		}
+	}
+	return nil, store.ErrNotFound
+}
+
 func (s *workflowRuntimeStore) UpdateWorkflowInstance(ctx context.Context, wf *models.WorkflowInstance) error {
 	copy := *wf
 	s.workflows[wf.WorkflowID] = &copy
@@ -340,6 +350,53 @@ func TestEnsureWorkflow_CommentMarkerIncludesEventType(t *testing.T) {
 				t.Fatalf("expected marker %q, got %q", tc.wantMarker, wf.CommentMarker)
 			}
 		})
+	}
+}
+
+// TestEnsureWorkflow_MultiWorkflowSpawnerModel guards the multi-workflow model:
+// one eval spawns a distinct workflow per name, reprocessing the same name
+// reuses it (find-or-create by parent+name), the eval never joins any workflow
+// (spawner model), and the no-spec default is qualified by the repo basename.
+func TestEnsureWorkflow_MultiWorkflowSpawnerModel(t *testing.T) {
+	store := newWorkflowRuntimeStore()
+	tp := NewTriggerProcessor(store, nil)
+	ci := "https://github.com/catalystcommunity/reactorcide.git"
+	parent := &models.Job{JobID: "parent-1", UserID: "u1", CISourceURL: &ci}
+	ctx := context.Background()
+
+	pr, err := tp.ensureWorkflow(ctx, parent, &triggerWorkflowSpec{Name: "Reactorcide PR"})
+	if err != nil {
+		t.Fatalf("ensureWorkflow PR: %v", err)
+	}
+	rel, err := tp.ensureWorkflow(ctx, parent, &triggerWorkflowSpec{Name: "Corndogs Release"})
+	if err != nil {
+		t.Fatalf("ensureWorkflow Release: %v", err)
+	}
+	if pr.WorkflowID == rel.WorkflowID {
+		t.Fatalf("one eval must spawn distinct workflows per name; both = %s", pr.WorkflowID)
+	}
+	if pr.Name != "Reactorcide PR" || rel.Name != "Corndogs Release" {
+		t.Fatalf("names not honored: %q / %q", pr.Name, rel.Name)
+	}
+
+	prAgain, err := tp.ensureWorkflow(ctx, parent, &triggerWorkflowSpec{Name: "Reactorcide PR"})
+	if err != nil {
+		t.Fatalf("ensureWorkflow PR again: %v", err)
+	}
+	if prAgain.WorkflowID != pr.WorkflowID {
+		t.Fatalf("reprocessing same name must reuse the workflow; got %s want %s", prAgain.WorkflowID, pr.WorkflowID)
+	}
+
+	if parent.WorkflowID != nil {
+		t.Fatalf("eval must not join a workflow (spawner model); got WorkflowID=%v", *parent.WorkflowID)
+	}
+
+	def, err := tp.ensureWorkflow(ctx, &models.Job{JobID: "parent-2", UserID: "u1", CISourceURL: &ci}, nil)
+	if err != nil {
+		t.Fatalf("ensureWorkflow default: %v", err)
+	}
+	if def.Name != "Reactorcide Jobs, repo: reactorcide" {
+		t.Fatalf("default name = %q, want %q", def.Name, "Reactorcide Jobs, repo: reactorcide")
 	}
 }
 

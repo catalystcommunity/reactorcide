@@ -62,6 +62,36 @@ V1 workflow nodes are declared dynamically through `triggers.json`, either by wr
 
 The normal trigger fields still work: `job_file`, `job_name`, source fields, `container_image`, `job_command`, `code_dir`, `job_dir`, `working_dir`, `run_as_user`, `priority`, `timeout`, `capabilities`, and `env`.
 
+### Multiple workflows per event
+
+One event can produce more than one workflow. Use the `workflows` array. Each entry is a named workflow with its own `jobs`. This is the form the eval job emits when it finds `.reactorcide/workflows/*.yaml` files.
+
+```json
+{
+  "type": "trigger_job",
+  "workflows": [
+    {
+      "name": "Reactorcide PR",
+      "jobs": [
+        { "job_name": "test-go", "container_image": "golang:1.26", "job_command": "go test ./..." }
+      ]
+    },
+    {
+      "name": "Docs",
+      "jobs": [
+        { "job_name": "build-docs", "container_image": "alpine", "job_command": "make docs" }
+      ]
+    }
+  ]
+}
+```
+
+The parent (eval) job spawns each workflow. It does not join any of them. Each workflow gets its own name and its own status check.
+
+The `workflows` array takes precedence. When it is absent, the legacy `workflow` plus `jobs` form collapses to one workflow. When the workflow name is empty, the coordinator uses the default name `Reactorcide Jobs, repo: <name>`.
+
+The coordinator cannot read `job_file` references from an API submission, because it has no workspace. runnerlib resolves each `job_file` before it submits, so the `workflows` form always contains complete job specs.
+
 ## Conditions
 
 V1 keeps conditions intentionally small:

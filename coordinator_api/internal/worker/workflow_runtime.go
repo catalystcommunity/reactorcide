@@ -32,6 +32,10 @@ type workflowStatusUpdater interface {
 type workflowStore interface {
 	CreateWorkflowInstance(ctx context.Context, wf *models.WorkflowInstance) error
 	GetWorkflowInstance(ctx context.Context, workflowID string) (*models.WorkflowInstance, error)
+	// GetWorkflowInstanceByParentJobAndName find-or-create key for multi-workflow
+	// spawning: one eval (parent job) owns at most one workflow per name.
+	// Returns store.ErrNotFound when none exists yet.
+	GetWorkflowInstanceByParentJobAndName(ctx context.Context, parentJobID, name string) (*models.WorkflowInstance, error)
 	UpdateWorkflowInstance(ctx context.Context, wf *models.WorkflowInstance) error
 	CreateWorkflowNode(ctx context.Context, node *models.WorkflowNode) error
 	UpdateWorkflowNode(ctx context.Context, node *models.WorkflowNode) error
@@ -60,18 +64,57 @@ func (tp *TriggerProcessor) workflowStore() (workflowStore, error) {
 	return ws, nil
 }
 
+// repoBasename returns the last path component of the parent job's CI/source
+// repo URL, with any ".git" suffix removed and casing preserved (e.g.
+// "https://github.com/catalystcommunity/reactorcide.git" -> "reactorcide").
+// Returns "" when no source URL is set (e.g. a directly-submitted job).
+func repoBasename(job *models.Job) string {
+	url := ""
+	if job.CISourceURL != nil && strings.TrimSpace(*job.CISourceURL) != "" {
+		url = strings.TrimSpace(*job.CISourceURL)
+	} else if job.SourceURL != nil && strings.TrimSpace(*job.SourceURL) != "" {
+		url = strings.TrimSpace(*job.SourceURL)
+	}
+	if url == "" {
+		return ""
+	}
+	url = strings.TrimRight(url, "/")
+	url = strings.TrimSuffix(url, ".git")
+	if i := strings.LastIndexAny(url, "/:"); i >= 0 {
+		url = url[i+1:]
+	}
+	return strings.TrimSuffix(url, ".git")
+}
+
 func (tp *TriggerProcessor) ensureWorkflow(ctx context.Context, parentJob *models.Job, spec *triggerWorkflowSpec) (*models.WorkflowInstance, error) {
 	ws, err := tp.workflowStore()
 	if err != nil {
 		return nil, err
 	}
-	if parentJob.WorkflowID != nil && *parentJob.WorkflowID != "" {
-		return ws.GetWorkflowInstance(ctx, *parentJob.WorkflowID)
-	}
 
+	// A trigger-declared workflow name (from a .reactorcide workflow YAML) wins.
+	// Otherwise fall back to the default, qualified by the repo basename so the
+	// PR check reads e.g. "Reactorcide Jobs, repo: reactorcide" instead of a
+	// bare, ambiguous "Reactorcide Jobs" -- the basename is the last path
+	// component of the source repo (no ".git", casing preserved), not the URL.
 	name := defaultWorkflowName
+	if base := repoBasename(parentJob); base != "" {
+		name = fmt.Sprintf("%s, repo: %s", defaultWorkflowName, base)
+	}
 	if spec != nil && strings.TrimSpace(spec.Name) != "" {
 		name = strings.TrimSpace(spec.Name)
+	}
+
+	// Find-or-create by (parent eval, name): one eval spawns one workflow per
+	// distinct name, and reprocessing the same triggers (retry / at-least-once
+	// delivery) reuses them instead of duplicating. The eval is the parent but
+	// does NOT join any of them (no parentJob.WorkflowID write) -- it's the
+	// spawner; each spawned workflow is independent, keeping the eval's own
+	// "reactorcide/eval" check separate from the workflows' checks.
+	if existing, err := ws.GetWorkflowInstanceByParentJobAndName(ctx, parentJob.JobID, name); err == nil && existing != nil {
+		return existing, nil
+	} else if err != nil && !errors.Is(err, store.ErrNotFound) {
+		return nil, err
 	}
 
 	parentJobID := parentJob.JobID
@@ -105,10 +148,6 @@ func (tp *TriggerProcessor) ensureWorkflow(ctx context.Context, parentJob *model
 	}
 
 	if err := ws.CreateWorkflowInstance(ctx, wf); err != nil {
-		return nil, err
-	}
-	parentJob.WorkflowID = &wf.WorkflowID
-	if err := tp.store.UpdateJob(ctx, parentJob); err != nil {
 		return nil, err
 	}
 	tp.recordWorkflowEvent(ctx, wf.WorkflowID, nil, nil, "workflow_evaluated", "created workflow from triggers", models.JSONB{

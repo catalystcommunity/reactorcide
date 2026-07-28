@@ -1,0 +1,12 @@
+name: Reactorcide Release
+description: "Build containers, cross-compile the CLI, version with semver-tags, and publish a GitHub release on merge to main."
+
+on:
+  events:
+    - pull_request_merged
+  branches:
+    - main
+
+jobs:
+  release:
+    job_file: release.yaml

@@ -43,7 +43,14 @@ func (tp *TriggerProcessor) SetStatusUpdater(u vcs.JobStatusUpdaterInterface) {
 
 // triggersFile represents the top-level structure of triggers.json.
 type triggersFile struct {
-	Type     string               `json:"type"`
+	Type string `json:"type"`
+	// Workflows is the multi-workflow form: an eval emits one entry per matched
+	// .reactorcide workflow YAML, so one event can spawn several independently
+	// named workflows (per team/product/etc). Takes precedence over the legacy
+	// single-workflow fields below when present.
+	Workflows []triggerWorkflowSpec `json:"workflows,omitempty"`
+	// Workflow + Jobs are the legacy single-workflow form (bare .reactorcide/
+	// jobs), still accepted: they collapse to exactly one workflow.
 	Workflow *triggerWorkflowSpec `json:"workflow,omitempty"`
 	Jobs     []triggerJobSpec     `json:"jobs"`
 }
@@ -51,6 +58,9 @@ type triggersFile struct {
 type triggerWorkflowSpec struct {
 	Name string                 `json:"name"`
 	Vars map[string]interface{} `json:"vars"`
+	// Jobs are this workflow's nodes (multi-workflow form). Empty in the legacy
+	// single-workflow form, where jobs live in triggersFile.Jobs instead.
+	Jobs []triggerJobSpec `json:"jobs,omitempty"`
 }
 
 // triggerJobSpec represents a single triggered job from triggers.json.
@@ -150,59 +160,102 @@ func (tp *TriggerProcessor) ProcessTriggersFromData(ctx context.Context, data []
 		return nil, fmt.Errorf("unexpected trigger type: %q", tf.Type)
 	}
 
-	if len(tf.Jobs) == 0 {
-		logging.Log.WithField("parent_job_id", parentJob.JobID).Debug("Trigger data contains no jobs")
-		return nil, nil
+	// Normalize to a list of workflow batches. The multi-workflow form
+	// (tf.Workflows) wins; otherwise the legacy single-workflow form
+	// (tf.Workflow + tf.Jobs) collapses to exactly one batch.
+	batches := tf.Workflows
+	if len(batches) == 0 {
+		batch := triggerWorkflowSpec{Jobs: tf.Jobs}
+		if tf.Workflow != nil {
+			batch.Name = tf.Workflow.Name
+			batch.Vars = tf.Workflow.Vars
+		}
+		batches = []triggerWorkflowSpec{batch}
 	}
 
-	logger := logging.Log.WithField("parent_job_id", parentJob.JobID).WithField("trigger_count", len(tf.Jobs))
+	logger := logging.Log.WithField("parent_job_id", parentJob.JobID).WithField("workflow_count", len(batches))
 	logger.Info("Processing triggers from eval job")
 
-	specs := make([]triggerJobSpec, 0, len(tf.Jobs))
-	for _, spec := range tf.Jobs {
-		// If job_file is specified, load the YAML definition as base and overlay inline fields
-		if spec.JobFile != "" {
-			jobFile := spec.JobFile
-			if workspaceDir == "" {
-				return nil, fmt.Errorf("job_file %q requires workspace-backed trigger processing", jobFile)
-			}
-			baseSpec, err := tp.loadJobFile(workspaceDir, jobFile)
+	// No workflow store (narrow test stores): fall back to submitting each
+	// batch's jobs standalone, preserving the pre-workflow behavior.
+	if _, err := tp.workflowStore(); err != nil {
+		var createdJobIDs []string
+		for i := range batches {
+			specs, err := tp.resolveJobSpecs(batches[i].Jobs, workspaceDir)
 			if err != nil {
-				logger.WithError(err).WithField("job_file", jobFile).Error("Failed to load job file")
+				return createdJobIDs, err
+			}
+			for _, spec := range specs {
+				jobID, err := tp.createAndSubmitJob(ctx, spec, parentJob)
+				if err != nil {
+					logger.WithError(err).WithField("job_name", spec.JobName).Error("Failed to create triggered job")
+					continue
+				}
+				createdJobIDs = append(createdJobIDs, jobID)
+			}
+		}
+		return createdJobIDs, nil
+	}
+
+	var createdJobIDs []string
+	for i := range batches {
+		ids, err := tp.processWorkflowBatch(ctx, parentJob, &batches[i], workspaceDir)
+		if err != nil {
+			return createdJobIDs, err
+		}
+		createdJobIDs = append(createdJobIDs, ids...)
+	}
+	return createdJobIDs, nil
+}
+
+// resolveJobSpecs loads any job_file references (a workflow node can reference a
+// reusable .reactorcide/jobs/*.yaml and overlay inline fields on top) for a
+// batch of job specs.
+func (tp *TriggerProcessor) resolveJobSpecs(jobs []triggerJobSpec, workspaceDir string) ([]triggerJobSpec, error) {
+	specs := make([]triggerJobSpec, 0, len(jobs))
+	for _, spec := range jobs {
+		if spec.JobFile != "" {
+			if workspaceDir == "" {
+				return nil, fmt.Errorf("job_file %q requires workspace-backed trigger processing", spec.JobFile)
+			}
+			baseSpec, err := tp.loadJobFile(workspaceDir, spec.JobFile)
+			if err != nil {
+				logging.Log.WithError(err).WithField("job_file", spec.JobFile).Error("Failed to load job file")
 				continue
 			}
+			jobFile := spec.JobFile
 			spec = tp.overlaySpec(baseSpec, spec)
 			spec.JobFile = jobFile
 		}
 		specs = append(specs, spec)
 	}
+	return specs, nil
+}
 
-	if _, err := tp.workflowStore(); err != nil {
-		var createdJobIDs []string
-		for _, spec := range specs {
-			jobID, err := tp.createAndSubmitJob(ctx, spec, parentJob)
-			if err != nil {
-				logger.WithError(err).WithField("job_name", spec.JobName).Error("Failed to create triggered job")
-				continue
-			}
-			createdJobIDs = append(createdJobIDs, jobID)
-		}
-		return createdJobIDs, nil
+// processWorkflowBatch creates one workflow instance (find-or-create by name for
+// this parent eval) from a batch, registers its nodes, and evaluates it. The
+// eval is the workflow's parent but does NOT join it, so a single event can
+// spawn several independently-named workflows.
+func (tp *TriggerProcessor) processWorkflowBatch(ctx context.Context, parentJob *models.Job, spec *triggerWorkflowSpec, workspaceDir string) ([]string, error) {
+	if len(spec.Jobs) == 0 {
+		return nil, nil
 	}
-
-	wf, err := tp.ensureWorkflow(ctx, parentJob, tf.Workflow)
+	specs, err := tp.resolveJobSpecs(spec.Jobs, workspaceDir)
+	if err != nil {
+		return nil, err
+	}
+	wf, err := tp.ensureWorkflow(ctx, parentJob, spec)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create workflow: %w", err)
 	}
-	if tf.Workflow != nil && len(tf.Workflow.Vars) > 0 {
-		if err := tp.addWorkflowVars(ctx, wf, tf.Workflow.Vars, nil, &parentJob.JobID); err != nil {
+	if len(spec.Vars) > 0 {
+		if err := tp.addWorkflowVars(ctx, wf, spec.Vars, nil, &parentJob.JobID); err != nil {
 			return nil, fmt.Errorf("failed to add workflow vars: %w", err)
 		}
 	}
 	if err := tp.createWorkflowNodes(ctx, wf, specs); err != nil {
 		return nil, fmt.Errorf("failed to create workflow nodes: %w", err)
 	}
-
 	return tp.evaluateWorkflow(ctx, wf)
 }
 

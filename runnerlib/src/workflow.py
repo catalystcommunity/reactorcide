@@ -264,6 +264,54 @@ class WorkflowContext:
             except OSError:
                 pass
 
+    def flush_workflow_batches(self, batches: List[Dict[str, Any]]) -> None:
+        """Write and submit triggers grouped into named workflows.
+
+        Each batch is ``{"name": str, "jobs": List[JobTrigger]}``. One event
+        can produce several independently named workflows, so this emits the
+        multi-workflow trigger form the coordinator understands:
+        ``{"type": "trigger_job", "workflows": [{"name", "jobs": [...]}]}``.
+
+        As with flush_triggers, the file is written first (fallback for
+        run-local and VM deployments) and then submitted via the coordinator
+        API when credentials are available; on success the file is removed so
+        the worker does not also create jobs from it.
+        """
+        if not batches:
+            return
+
+        self.triggers_file.parent.mkdir(parents=True, exist_ok=True)
+
+        workflows_payload = [
+            {
+                "name": batch["name"],
+                "jobs": [t.to_dict() for t in batch["jobs"]],
+            }
+            for batch in batches
+        ]
+
+        trigger_data = {
+            "type": "trigger_job",
+            "workflows": workflows_payload,
+        }
+
+        with open(self.triggers_file, 'w') as f:
+            json.dump(trigger_data, f, indent=2)
+
+        total_jobs = sum(len(batch["jobs"]) for batch in batches)
+        print(
+            f"✓ Wrote {len(batches)} workflow(s) / {total_jobs} job trigger(s) "
+            f"to {self.triggers_file}",
+            file=sys.stderr,
+        )
+
+        if self._submit_triggers_via_api(trigger_data):
+            try:
+                self.triggers_file.unlink()
+                print("✓ Triggers submitted via API, removed triggers.json", file=sys.stderr)
+            except OSError:
+                pass
+
     def _submit_triggers_via_api(self, trigger_data: dict) -> bool:
         """
         Submit triggers to the coordinator API.
