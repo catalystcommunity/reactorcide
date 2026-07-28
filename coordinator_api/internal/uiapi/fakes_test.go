@@ -1005,6 +1005,18 @@ func (f *fakeStore) GetWorkflowInstance(_ context.Context, workflowID string) (*
 	return &w, nil
 }
 
+func (f *fakeStore) GetWorkflowInstanceByParentJobAndName(_ context.Context, parentJobID, name string) (*models.WorkflowInstance, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for _, w := range f.workflows {
+		if w.ParentJobID != nil && *w.ParentJobID == parentJobID && w.Name == name {
+			wf := w
+			return &wf, nil
+		}
+	}
+	return nil, store.ErrNotFound
+}
+
 func (f *fakeStore) UpdateWorkflowInstance(_ context.Context, wf *models.WorkflowInstance) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
