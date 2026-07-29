@@ -74,7 +74,11 @@ if HAS_RUNNERLIB:
             return [PluginPhase.POST_SOURCE_PREP]
 
         def execute(self, context: PluginContext):
-            if context.phase == PluginPhase.POST_SOURCE_PREP:
+            install_requested = (
+                os.environ.get("REACTORCIDE_INSTALL_K8S_TOOLS", "").lower()
+                == "true"
+            )
+            if context.phase == PluginPhase.POST_SOURCE_PREP and install_requested:
                 install_tools()
 
 

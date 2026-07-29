@@ -1,149 +1,255 @@
-# Getting Started: VM Deployment
+# Installation and Deployment
 
-This guide covers deploying Reactorcide to a VM with a single command.
+This guide helps you select and install a Reactorcide deployment.
 
-The management web UI is public-view by default (`REACTORCIDE_UI_AUTH_MODE=none`): no
-login, anyone reaching it can browse public projects/jobs and gracefully cancel a runaway
-job, but nothing else. Turn on LinkKeys login and role-based access if you need per-user
-accounts, private projects, or self-service secret/webhook management from the browser —
-see **[docs/ui-auth.md](./ui-auth.md)** for auth modes, environment variables, first-admin/
-bootstrap setup, and the full permission matrix.
+## Select a Deployment
 
-## Prerequisites
+| Use case | Deployment | Result |
+|---|---|---|
+| Test one job on a workstation | `run-local` | One local job container |
+| Develop Reactorcide | Development Compose stack | Coordinator, worker, web application, PostgreSQL, and Corndogs |
+| Operate one small installation | VM deployment job | Compose control plane and one host-runtime worker |
+| Operate in a cluster | Helm chart | Kubernetes control plane and Kubernetes Job worker |
 
-### Local Machine (where you run the deploy script)
-- Go 1.21+ (to build the coordinator binary)
-- SSH client with key-based authentication to the target VM
-- rsync
+Read [Runtime Behavior](./runtime-behavior.md) before you depend on a specific
+container user, path, or runtime capability.
 
-### Target VM
-- containerd with nerdctl, or Docker with Docker Compose v2
-- SSH access (key-based authentication)
-- Runtime access for the deployment user. Prefer nerdctl/containerd where available; Docker remains supported.
+## Build the CLI
 
-## Deployment
-
-### 1. Set Environment Variables
-
-Required:
-```bash
-export REACTORCIDE_DEPLOY_HOST="your-vm-hostname-or-ip"
-export REACTORCIDE_DEPLOY_USER="your-ssh-user"
-export REACTORCIDE_DEPLOY_DOMAINS="your-domain.com"
-```
-
-Optional (auto-generated if not provided):
-```bash
-export REACTORCIDE_DB_PASSWORD="your-db-password"
-export REACTORCIDE_JWT_SECRET="your-jwt-secret"
-```
-
-Optional configuration:
-```bash
-export REACTORCIDE_REMOTE_DIR="~/reactorcide"        # Default: ~/reactorcide
-export REACTORCIDE_WORKER_CONCURRENCY="2"            # Default: 2
-export REACTORCIDE_LOG_LEVEL="info"                  # Default: info
-```
-
-### 2. Run Deployment
-
-The supported VM deploy is the `jobs/deploy-to-vm.yaml` reactorcide job, run
-locally with the `reactorcide` CLI. Build the CLI, then run the job from the
-repository root:
+The coordinator module requires the Go version in
+`coordinator_api/go.mod`. Build the CLI from the repository root:
 
 ```bash
-cd coordinator_api && go build -o reactorcide . && cd ..
-./coordinator_api/reactorcide run-local --job-dir ./ ./jobs/deploy-to-vm.yaml
+cd coordinator_api
+go build -o reactorcide .
+cd ..
 ```
 
-The job reads the `REACTORCIDE_DEPLOY_*` variables set above (plus an
-`SSH_PRIVATE_KEY` for the target host) and will:
-1. Copy the deployment files to the VM
-2. Detect the container runtime and generate the compose override
-3. Pull the Reactorcide images
-4. Start all services (postgres, corndogs, coordinator, worker)
-5. Run database migrations on startup and verify health
+Use `./coordinator_api/reactorcide` in the commands below. You can copy it to a
+directory on `PATH` if required.
 
-See `jobs/deploy-to-vm.yaml` for the full list of inputs. (For Kubernetes, see
-`helm_chart/DEPLOYMENT.md` and `jobs/deploy-to-k8s.yaml`.)
+## Run One Local Job
 
-### 3. Create an API Token
+You need Docker, or containerd with nerdctl. `run-local` uses Docker by
+default. Add `--backend containerd` when you use nerdctl.
 
-SSH to your VM and create a token:
-```bash
-ssh your-user@your-vm
-cd ~/reactorcide
-docker compose -f docker-compose.prod.yml exec coordinator-api /reactorcide token create --name "my-token"
-```
-
-Save the generated token - it's only shown once.
-
-### 4. Verify Installation
-
-Check the API health:
-```bash
-curl http://your-vm:6080/api/v1/health
-```
-
-## Services
-
-After deployment, these services will be running:
-
-| Service | Port | Description |
-|---------|------|-------------|
-| coordinator-api | 6080 | REST API for job management |
-| corndogs | 5080 | CSIL-RPC task queue |
-| postgres | 5432 | Main database |
-| worker | - | Job processor |
-
-## Submitting a Job
-
-With your API token, submit a job. `code_dir` defaults to `/job/src`, `job_dir` defaults to `code_dir`, and deployed workers run as the image runner uid unless `run_as_user` is set.
+Run an example:
 
 ```bash
-curl -X POST http://your-vm:6080/api/v1/jobs \
-  -H "Authorization: Bearer YOUR_TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "name": "test-job",
-    "source_url": "https://github.com/your-org/your-repo.git",
-    "source_ref": "main",
-    "source_type": "git",
-    "job_command": "echo Hello from Reactorcide",
-    "run_as_user": "runner"
-  }'
+./coordinator_api/reactorcide run-local \
+  --job-dir ./ \
+  ./examples/jobs/hello-world.yaml
 ```
 
-## Updating
+The command bind-mounts the repository and uses the host user by default. Use
+`--as-runner` for deployed-worker user parity.
 
-To update an existing deployment, run the deploy job again:
+Run against a different Git source:
+
 ```bash
-./coordinator_api/reactorcide run-local --job-dir ./ ./jobs/deploy-to-vm.yaml
+./coordinator_api/reactorcide run-local \
+  --code-url https://github.com/example/project.git \
+  --code-ref main \
+  .reactorcide/jobs/test.yaml
 ```
 
-It pulls the latest images and restarts services with the new configuration.
+## Start the Development Stack
 
-## Troubleshooting
+This path is for repository development. Do not use the development
+credentials in production.
 
-### Check service logs
+Prerequisites:
+
+- Go version from the Go modules
+- Python 3.13 or later
+- `uv`
+- Docker with Compose v2
+
+Run:
+
 ```bash
-ssh your-user@your-vm
-cd ~/reactorcide
-docker compose -f docker-compose.prod.yml logs -f coordinator-api
-docker compose -f docker-compose.prod.yml logs -f worker
+./tools setup
+./tools dev
 ```
 
-### Check service status
+The default endpoints are:
+
+- Web application: `http://localhost:4080`
+- Coordinator API: `http://localhost:8080`
+
+Run tests with:
+
 ```bash
-docker compose -f docker-compose.prod.yml ps
+./tools test
 ```
 
-### Restart services
+## Install on a VM
+
+The supported VM path is `jobs/deploy-to-vm.yaml`. It installs these services:
+
+- PostgreSQL
+- Corndogs
+- Coordinator
+- One worker
+
+The current VM deployment does not install the web application. It exposes
+the coordinator API on port `6080`. Put a TLS reverse proxy in front of this
+port before you expose it to a VCS provider or the public internet.
+
+### VM prerequisites
+
+The local deployment machine needs:
+
+- The Reactorcide CLI
+- SSH access to the VM
+- A local container runtime for `run-local`
+- An initialized Reactorcide local secret store
+
+The target VM needs:
+
+- Linux
+- Key-based SSH access
+- `sudo` access for runtime configuration
+- Docker with Compose v2, or containerd with nerdctl
+- `curl`, `tar`, and OpenSSL
+- Network access to the configured image registry
+
+The deploy job currently uses `~/reactorcide` on the VM. Do not set
+`REACTORCIDE_REMOTE_DIR` to a different path.
+
+### Store deployment inputs
+
+Initialize the local secret store. Use a password file. Do not put the
+password in the command history.
+
 ```bash
-docker compose -f docker-compose.prod.yml restart
+./coordinator_api/reactorcide secrets init
+chmod 600 ~/.reactorcide-pass
 ```
 
-### View all running containers
+Store the SSH private key:
+
 ```bash
-nerdctl ps || docker ps
+REACTORCIDE_SECRETS_PASSWORD="$(cat ~/.reactorcide-pass)" \
+  ./coordinator_api/reactorcide secrets set --stdin \
+  reactorcide/deploy ssh_private_key < ~/.ssh/id_ed25519
 ```
+
+Create random database and JWT values without terminal output:
+
+```bash
+openssl rand -hex 24 | \
+  REACTORCIDE_SECRETS_PASSWORD="$(cat ~/.reactorcide-pass)" \
+  ./coordinator_api/reactorcide secrets set --stdin \
+  reactorcide/deploy db_password
+
+openssl rand -hex 32 | \
+  REACTORCIDE_SECRETS_PASSWORD="$(cat ~/.reactorcide-pass)" \
+  ./coordinator_api/reactorcide secrets set --stdin \
+  reactorcide/deploy jwt_secret
+```
+
+The job definition requires these two secret references during input
+resolution. The current VM script generates and preserves its own database and
+JWT values in the VM `.env` file. It does not apply the two resolved input
+values.
+
+The job file has a GitHub webhook secret reference. Create a value even if you
+do not enable VCS integration yet:
+
+```bash
+openssl rand -hex 32 | \
+  REACTORCIDE_SECRETS_PASSWORD="$(cat ~/.reactorcide-pass)" \
+  ./coordinator_api/reactorcide secrets set --stdin \
+  reactorcide/deployment github_webhook_secret
+```
+
+Set the non-secret inputs:
+
+```bash
+export REACTORCIDE_DEPLOY_HOST="ci-vm.example.com"
+export REACTORCIDE_DEPLOY_USER="reactorcide"
+export REACTORCIDE_DEPLOY_DOMAINS="ci.example.com"
+```
+
+`REACTORCIDE_DEPLOY_DOMAINS` is currently informational. The deployment job
+does not create a TLS route or reverse-proxy service.
+
+Optional image overrides are:
+
+- `REACTORCIDE_COORDINATOR_IMAGE`
+- `REACTORCIDE_WORKER_IMAGE`
+- `REACTORCIDE_RUNNER_IMAGE`
+
+### Run the VM deployment
+
+Run from the repository root:
+
+```bash
+REACTORCIDE_SECRETS_PASSWORD="$(cat ~/.reactorcide-pass)" \
+  ./coordinator_api/reactorcide run-local \
+  --job-dir ./ \
+  ./jobs/deploy-to-vm.yaml
+```
+
+Add `--backend containerd` before `--job-dir` when the local deployment
+machine uses nerdctl.
+
+The job keeps existing database, JWT, and worker enrollment values on later
+runs. It updates images and restarts the services.
+
+### Verify the VM
+
+```bash
+curl --fail http://ci-vm.example.com:6080/api/v1/health
+ssh reactorcide@ci-vm.example.com \
+  'cd ~/reactorcide && source ./.docker-cmd && $DOCKER_CMD ps'
+```
+
+Use your TLS endpoint instead of direct port `6080` after you configure the
+reverse proxy.
+
+### Create an API token on the VM
+
+The token command prints a new token one time. Redirect the token line to a
+file on your workstation:
+
+```bash
+mkdir -p ~/.config/reactorcide
+chmod 700 ~/.config/reactorcide
+ssh reactorcide@ci-vm.example.com \
+  'cd ~/reactorcide && source ./.docker-cmd && $DOCKER_CMD exec reactorcide-coordinator /reactorcide token create --name workstation' \
+  | sed -n 's/^Token: //p' > ~/.config/reactorcide/api-token
+chmod 600 ~/.config/reactorcide/api-token
+```
+
+Test the token:
+
+```bash
+REACTORCIDE_API_TOKEN="$(cat ~/.config/reactorcide/api-token)" \
+  ./coordinator_api/reactorcide logs \
+  --api-url https://ci.example.com \
+  JOB_ID
+```
+
+Use [Connect a VCS Repository](./vcs-setup.md) after the API and TLS endpoint
+are ready.
+
+## Install on Kubernetes
+
+Use the [Kubernetes Deployment Guide](../helm_chart/DEPLOYMENT.md). The chart
+defaults are a configuration reference. A default install is not a complete
+production installation. You must select:
+
+- PostgreSQL
+- Corndogs
+- A runner image
+- Durable object storage for production
+- An external route and TLS when you use webhooks
+
+## Next Steps
+
+1. Read [Security Model](./security-model.md).
+2. Connect a repository with [VCS Setup](./vcs-setup.md).
+3. Add `.reactorcide/workflows` and `.reactorcide/jobs` to the repository.
+4. Configure only the secret grants that each job needs.

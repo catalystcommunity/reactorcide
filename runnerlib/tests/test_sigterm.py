@@ -146,16 +146,22 @@ def test_sigterm_reaps_child_process_group(sigterm_job_dirs):
     assert match is not None, f"could not find CHILD_PID in output:\n{full_output}"
     child_pid = int(match.group(1))
 
-    # The sleep's pid should no longer exist (or should already be a zombie
-    # with no living process behind it) — os.kill with signal 0 raises
-    # ProcessLookupError once it's fully reaped, or succeeds harmlessly if
-    # it's a zombie awaiting reap by its (now-dead) parent; either way it
-    # must not still be an active, running "sleep" process.
+    # The sleep process must not run. A zombie is acceptable because it has
+    # exited and waits only for its parent to read its exit status.
     for _ in range(20):
         try:
             os.kill(child_pid, 0)
         except ProcessLookupError:
             break
+        try:
+            process_state = Path(f"/proc/{child_pid}/stat").read_text().split()[2]
+        except (FileNotFoundError, IndexError):
+            break
+        if process_state == "Z":
+            break
         time.sleep(0.1)
     else:
-        pytest.fail(f"child pid {child_pid} (sleep 30) was still alive after SIGTERM + grace period")
+        pytest.fail(
+            f"child pid {child_pid} (sleep 30) was still running "
+            "after SIGTERM and the grace period"
+        )

@@ -293,11 +293,9 @@ three different levels of freshness, retry relies entirely on the **worker's exi
   `internal/worker/workflow_runtime_test.go`'s
   `TestProcessWorkflowJobStarted_ReflectsRetryRebindWithoutDuplicateRow`). In practice this is a
   short window bounded by queue wait time, not by the job's full run.
-- Loose (non-workflow) retries: `internal/worker/corndogs_worker.go` only ever pushes a
-  per-job VCS/comment update for non-workflow jobs at *completion*
-  (`updateVCSStatusWithRetry`, gated on `job.WorkflowID == nil`) — this is unchanged,
-  pre-existing behavior for every directly-submitted loose job, retried or not, and applies to a
-  retried loose job exactly the same way once it finishes.
+- Loose (non-workflow) retries: the coordinator-mediated worker pushes a
+  per-job VCS/comment update for a non-workflow job when the job completes.
+  This applies to direct jobs and their retries.
 
 Net effect: a retried job's PR row always ends up correct once the retry actually runs (its
 completion, and for workflow nodes its start too, are both covered by hooks that already exist

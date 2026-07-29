@@ -1,5 +1,5 @@
 name: conventional-commits
-description: "Validate all PR commits follow conventional commit format"
+description: "Validate all pull-request commits with the conventional commit format"
 triggers:
   events:
     - pull_request_opened
@@ -7,48 +7,12 @@ triggers:
   branches:
     - main
 job:
-  image: 10.16.0.1:5000/public/reactorcide/runnerbase:dev
-  command: |
-    set -e
-    CODE_DIR="${REACTORCIDE_CODE_DIR:-/job/src}"
-    if [ ! -d "${CODE_DIR}/.git" ]; then
-      rm -rf "${CODE_DIR}"
-      git clone "${REACTORCIDE_HEAD_URL:-$REACTORCIDE_SOURCE_URL}" "${CODE_DIR}"
-      cd "${CODE_DIR}"
-      git checkout "${REACTORCIDE_SHA:-${REACTORCIDE_HEAD_REF:-${REACTORCIDE_SOURCE_REF:-HEAD}}}"
-    fi
-    cd "${CODE_DIR}"
-    if [ -n "${REACTORCIDE_BASE_URL}" ] && [ "${REACTORCIDE_BASE_URL}" != "${REACTORCIDE_HEAD_URL:-$REACTORCIDE_SOURCE_URL}" ]; then
-      git remote get-url upstream >/dev/null 2>&1 || git remote add upstream "${REACTORCIDE_BASE_URL}"
-      git fetch upstream "${REACTORCIDE_BASE_REF:-$REACTORCIDE_PR_BASE_REF}"
-    fi
-
-    echo "=== Validating Conventional Commits ==="
-    PATTERN='^(feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert)(\(.+\))?!?: .+'
-    FAILED=0
-
-    git log "${REACTORCIDE_DIFF_BASE}..HEAD" --pretty=format:"%H %s" > /tmp/commits.txt
-    while IFS= read -r LINE; do
-      HASH=$(echo "${LINE}" | cut -d' ' -f1)
-      MSG=$(echo "${LINE}" | cut -d' ' -f2-)
-      if echo "${MSG}" | grep -qE "${PATTERN}"; then
-        echo "OK: ${MSG}"
-      else
-        echo "FAIL: ${MSG} (${HASH})"
-        FAILED=1
-      fi
-    done < /tmp/commits.txt
-
-    if [ "${FAILED}" = "1" ]; then
-      echo ""
-      echo "Commit messages must match: type(scope)?: description"
-      echo "Valid types: feat, fix, docs, style, refactor, perf, test, build, ci, chore, revert"
-      exit 1
-    fi
-
-    echo "All commits follow conventional commit format."
+  image: containers.catalystsquad.com/public/reactorcide/runnerbase:dev
+  command: "runnerlib run --job-command true"
   timeout: 300
   priority: 10
   working_dir: /job
-  raw_command: true
-  disable_run_local: true
+environment:
+  REACTORCIDE_CI_JOB: conventional-commits
+run_local:
+  user: host

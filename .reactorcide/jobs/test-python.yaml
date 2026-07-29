@@ -1,16 +1,12 @@
 name: test-python
-description: "Run Python tests for runnerlib"
+description: "Run runnerlib Python tests through the runnerlib lifecycle"
 job:
-  image: 10.16.0.1:5000/public/reactorcide/runnerbase:dev
-  command: |
-    set -e
-    cd "${REACTORCIDE_CODE_DIR:-/job/src}/runnerlib"
-    echo "=== Running Python Tests ==="
-    uv run python -m pytest tests/ \
-      --ignore=tests/test_docker_execution.py \
-      --ignore=tests/test_dynamic_secret_masking.py \
-      --ignore=tests/test_dynamic_secrets.py
+  image: containers.catalystsquad.com/public/reactorcide/runnerbase:dev
+  command: "runnerlib run --job-command true"
   timeout: 1800
   priority: 10
+  working_dir: /job
+environment:
+  REACTORCIDE_CI_JOB: test-python
 run_local:
   user: host

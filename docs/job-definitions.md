@@ -246,7 +246,7 @@ Standard variables available in every webhook-triggered job:
 | Variable | Description |
 |---|---|
 | `REACTORCIDE_CI` | Always `"true"` |
-| `REACTORCIDE_PROVIDER` | VCS provider (`github`, `gitlab`) |
+| `REACTORCIDE_PROVIDER` | VCS provider name, such as `github` |
 | `REACTORCIDE_EVENT_TYPE` | Generic event type |
 | `REACTORCIDE_REPO` | Repository full name (`org/repo`) |
 | `REACTORCIDE_SOURCE_URL` | Source repository clone URL |

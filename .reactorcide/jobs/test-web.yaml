@@ -1,24 +1,12 @@
 name: test-web
-description: "Run Go tests for web UI"
+description: "Run web application Go tests through the runnerlib lifecycle"
 job:
-  image: golang:1.26
-  command: |
-    set -e
-    export HOME="${HOME:-/tmp/reactorcide-home}"
-    mkdir -p "$HOME"
-    CODE_DIR="${REACTORCIDE_CODE_DIR:-/job/src}"
-    if [ ! -d "${CODE_DIR}/.git" ]; then
-      rm -rf "${CODE_DIR}"
-      git clone "${REACTORCIDE_HEAD_URL:-$REACTORCIDE_SOURCE_URL}" "${CODE_DIR}"
-      cd "${CODE_DIR}"
-      git checkout "${REACTORCIDE_SHA:-${REACTORCIDE_HEAD_REF:-${REACTORCIDE_SOURCE_REF:-HEAD}}}"
-    fi
-    cd "${CODE_DIR}/webapp"
-    echo "=== Running Web UI Unit Tests ==="
-    go test ./internal/... -count=1
+  image: containers.catalystsquad.com/public/reactorcide/runnerbase:dev
+  command: "runnerlib run --job-command true"
   timeout: 1800
   priority: 10
   working_dir: /job
-  raw_command: true
+environment:
+  REACTORCIDE_CI_JOB: test-web
 run_local:
   user: host

@@ -1,132 +1,95 @@
 # Reactorcide
 
-A minimalist CI/CD system for serious engineering teams. Works with open source or business needs, with particular focus on security for outside contributions.
+Reactorcide is a small CI/CD system for isolated container jobs. You can run
+the same job on a workstation, a VM worker, or a Kubernetes worker.
 
-Run jobs from your laptop just as easily as from the full system. If your VCS provider is down, fine - it's just building blocks.
+Reactorcide supports trusted CI definitions for source from outside
+contributors. It also supports named workflows, job dependencies, secret
+grants, authenticated workers, and GitHub webhooks.
 
-Reactorcide runs isolated jobs locally, on single-VM workers, or as Kubernetes Jobs. Workflow-triggered jobs are grouped under a single workflow view, PR comment, and workflow-named VCS status.
+## Choose a Starting Point
 
-## Quick Start
+- Run one local job: [Installation and Deployment](./docs/getting-started.md)
+- Install on a VM: [VM Installation](./docs/getting-started.md#install-on-a-vm)
+- Install on Kubernetes: [Kubernetes Deployment](./helm_chart/DEPLOYMENT.md)
+- Connect GitHub: [VCS Setup](./docs/vcs-setup.md)
+- Write repository jobs: [Job Definition Reference](./docs/job-definitions.md)
+- Understand the security boundary: [Security Model](./docs/security-model.md)
 
-### 1. Build the CLI
+## Build the CLI
 
-```bash
-cd coordinator_api && go build -o reactorcide . && cd ..
-
-# Optionally add to PATH
-sudo cp coordinator_api/reactorcide /usr/local/bin/
-```
-
-### 2. Initialize Secrets Storage
-
-```bash
-# Initialize encrypted secrets vault
-reactorcide secrets init
-
-# Add secrets (e.g., for VM deployment)
-reactorcide secrets set --stdin reactorcide/deploy ssh_private_key < ~/.ssh/id_ed25519
-```
-
-### 3. Deploy to a VM
-
-Create an overlay file at `~/.config/reactorcide/my-vm.yaml`:
-
-```yaml
-environment:
-  REACTORCIDE_DEPLOY_HOST: "your-vm-hostname"
-  REACTORCIDE_DEPLOY_USER: "your-username"
-  REACTORCIDE_DEPLOY_DOMAINS: "reactorcide.example.com"
-```
-
-Run the deployment:
+Use the Go version in `coordinator_api/go.mod`:
 
 ```bash
-REACTORCIDE_SECRETS_PASSWORD="<your-secrets-password>" \
-  reactorcide run-local \
+cd coordinator_api
+go build -o reactorcide .
+cd ..
+```
+
+## Run a Job Locally
+
+You need Docker, or containerd with nerdctl. The default backend is Docker.
+Add `--backend containerd` when you use nerdctl.
+
+```bash
+./coordinator_api/reactorcide run-local \
   --job-dir ./ \
-  -i ~/.config/reactorcide/my-vm.yaml \
-  ./jobs/deploy-to-vm.yaml
+  ./examples/jobs/hello-world.yaml
 ```
 
-### 4. Create an API Token
+`run-local` bind-mounts `--job-dir` and uses the host user by default. Use
+`--as-runner` to use the deployed runner user.
 
-After deployment, create a token to authenticate with the API:
+## Develop Reactorcide
 
-```bash
-# For VM deployment
-ssh your-vm-hostname "cd ~/reactorcide && docker compose -f docker-compose.prod.yml exec coordinator-api /reactorcide token create --name my-token"
-
-# For Kubernetes deployment
-kubectl exec -n reactorcide deploy/reactorcideapp -- /reactorcide token create --name my-token
-```
-
-Save the returned token - it cannot be retrieved again.
-
-The same `reactorcide secrets` subcommands can manage server-side secrets when
-`REACTORCIDE_API_URL` and `REACTORCIDE_API_TOKEN` are set, or when `--api-url`
-and `--token` are passed.
-
-### 5. Use the API
+You need Python 3.13 or later, `uv`, Go, and a container runtime.
 
 ```bash
-# Check API health
-curl http://your-vm-hostname:6080/api/v1/health
-
-# List jobs (authenticated)
-curl -H "Authorization: Bearer <your-token>" \
-  http://your-vm-hostname:6080/api/v1/jobs
-```
-
-### Local Development
-
-```bash
-# Start local dev stack
+./tools setup
 ./tools dev
-
-# Run tests
 ./tools test
-
-# Build Docker images locally (for development)
-./tools docker-build
 ```
 
-### Running Jobs Locally
+The development stack uses local development credentials. Do not use it for
+production.
 
-```bash
-REACTORCIDE_SECRETS_PASSWORD="<your-secrets-password>" \
-  reactorcide run-local --job-dir ./ ./jobs/build-all.yaml
-```
+## Main Components
 
-`run-local` bind-mounts `--job-dir` by default and runs as your host uid so generated files remain writable. Jobs can opt into root with `run_as.user: root` or worker parity with `run_local.user: runner` / `--as-runner`. Tooling prefers containerd/nerdctl when available and falls back to Docker.
+- `coordinator_api/`: CLI, REST API, workflow state, VCS integration, secrets,
+  and worker protocol
+- `runnerlib/`: Job-side Python library
+- `webapp/`: Optional management web application
+- `helm_chart/`: Kubernetes deployment
+- `deployment/`: VM Compose deployment assets
+- `jobs/`: Build, test, and deployment jobs for Reactorcide
+- `examples/`: Job, pipeline, plugin, and API examples
+
+## Implemented Deployment Model
+
+The coordinator owns control-plane state. It connects to PostgreSQL,
+Corndogs, and object storage. Authenticated workers request work from the
+coordinator. Workers can use Docker, containerd, Kubernetes Jobs, or supported
+VM backends.
+
+See [System Design](./DESIGN.md).
+
+## VCS Support
+
+GitHub webhook events are operational. A GitLab client exists, but its webhook
+event normalization is incomplete. GitLab events do not start jobs. Complete
+the common event mapping before you use GitLab for CI triggers.
+
+See [VCS Provider Integration](./coordinator_api/docs/vcs_integration.md).
 
 ## Documentation
 
-- **[DESIGN.md](./DESIGN.md)** - Complete system architecture and design principles
-- **[AGENTS.md](./AGENTS.md)** - Implementation guidance for AI assistants and contributors
-- **[docs/runtime-behavior.md](./docs/runtime-behavior.md)** - Local, VM, Kubernetes, path, and run identity behavior
-- **[docs/workflow-design.md](./docs/workflow-design.md)** - Workflow DAGs, dependency handling, workflow vars, and PR status/comment behavior
-- **[docs/vcs-credentials-and-secret-grants.md](./docs/vcs-credentials-and-secret-grants.md)** - Project/org VCS credentials, webhook secrets, and job secret grants
-- **[docs/ui-auth.md](./docs/ui-auth.md)** - Management UI login modes, RBAC/permission matrix, public/private visibility, and credential rotation
-- **[docs/workers.md](./docs/workers.md)** - Coordinator-mediated workers, characteristics/queue matching, job resources, enrollment, and the admin UI
-- **[runnerlib/DESIGN.md](./runnerlib/DESIGN.md)** - Detailed runnerlib architecture and API
-- **[docs/](./docs/)** - Additional documentation
-
-## Philosophy
-
-- **Isolation First**: Run jobs from a known state in isolated containers
-- **Configuration Flexibility**: System config and job config are separate
-- **VCS Agnostic**: No hard ties to specific VCS providers
-- **Local Development**: Run jobs from your laptop as easily as from the full system
-- **Building Blocks**: Modular components that can be combined as needed
-- **Security by Design**: Built with outside contributions and security in mind
-
-## Components
-
-- **reactorcide CLI** - Main binary for running jobs, managing secrets, serving API
-- **runnerlib** - Python library for job execution inside containers
-- **Coordinator API** - REST API for job management and orchestration
-- **Worker** - Distributed job processing with Corndogs task queue; supports Docker, containerd/nerdctl, and Kubernetes Jobs
+Use the [Documentation Index](./docs/README.md) for all operator, job author,
+and contributor guides.
 
 ## Project Status
 
-Active development. Join the [Catalyst Community Discord](https://discord.gg/sfNb9xRjPn) to discuss and contribute.
+Reactorcide is in active development. Review image tags, deployment defaults,
+and security settings before production use.
+
+Join the [Catalyst Community Discord](https://discord.gg/sfNb9xRjPn) for
+project discussion.
