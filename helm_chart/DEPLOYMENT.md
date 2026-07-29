@@ -1,391 +1,206 @@
-# Reactorcide Kubernetes Deployment Guide
+# Kubernetes Deployment
 
-This guide covers deploying Reactorcide to Kubernetes using Helm, including integration with Corndogs for job queueing.
+This guide installs Reactorcide with the Helm chart in this repository.
 
-## Prerequisites
+## Architecture
 
-- Kubernetes cluster (v1.25+)
-- Helm 3.x installed
-- kubectl configured to access your cluster
-- Container registry access for container images
+The chart can install:
 
-## Architecture Overview
+- Coordinator deployment and service
+- Worker deployment
+- Optional web application
+- Optional PostgreSQL StatefulSet
+- Optional Corndogs subchart
+- Worker service account and namespace Role
+- Generated default-user and worker-enrollment Secrets
+- Optional Gateway API HTTPRoutes
 
-The complete Reactorcide deployment consists of:
+The worker uses the Kubernetes backend and creates a Kubernetes Job for each
+Reactorcide job. It connects only to the coordinator. The coordinator connects
+to PostgreSQL, Corndogs, and object storage.
 
-- **Coordinator API**: REST API for job submission and management; the only
-  component that talks to corndogs, PostgreSQL, and object storage
-- **Workers**: Authenticate to the coordinator over CSIL-RPC and pull work
-  through it, then execute jobs using Docker-in-Docker (or containerd/
-  Kubernetes). Coordinator-mediated — a worker has no direct corndogs/DB/
-  object-store dependency of its own; see "Deploying Workers" below and
-  [`docs/workers.md`](../docs/workers.md)
-- **PostgreSQL**: Database for job metadata and state
-- **Corndogs**: Distributed task queue system (bundled subchart or external service)
-- **Object Storage**: MinIO, S3, or GCS for artifacts and logs
+## Requirements
 
-## Quick Start
+You need:
 
-### 1. Add Helm Repository
+- A Kubernetes cluster that supports `batch/v1` Jobs.
+- Helm 3.
+- `kubectl` access to the target namespace.
+- Access to the Reactorcide and runner image registry.
+- A default StorageClass if you enable persistent bundled services.
+- A Gateway API controller if you enable HTTPRoutes.
 
-```bash
-helm repo add bitnami https://charts.bitnami.com/bitnami
-helm repo update
-```
+## Important Defaults
 
-### 2. Deploy Reactorcide
+The default `values.yaml` is a configuration reference. These defaults do not
+form a complete production installation:
 
-```bash
-# Install with default values
-helm install reactorcide ./helm_chart \
-  --namespace reactorcide \
-  --create-namespace
+- Bundled PostgreSQL is disabled.
+- Bundled Corndogs is disabled.
+- The default runner image is empty.
+- The object store is ephemeral filesystem storage.
+- The web application is disabled.
+- VCS integration is disabled.
+- Worker enrollment is automatic.
 
-# Or with custom values
-helm install reactorcide ./helm_chart \
-  --namespace reactorcide \
-  --create-namespace \
-  -f custom-values.yaml
-```
+Select each required dependency before installation.
 
-### 3. Verify Deployment
+## Evaluation Installation
 
-```bash
-kubectl get pods -n reactorcide
-kubectl get svc -n reactorcide
-```
+This installation uses bundled PostgreSQL, bundled Corndogs, and ephemeral
+object storage. Data can be lost. Do not use these values for production.
 
-## Corndogs Integration
-
-Reactorcide requires Corndogs for distributed job queueing. The bundled chart
-uses Corndogs' CSIL-RPC HTTP transport on port `5080` and defaults to the
-single-replica file backend, so no separate Corndogs Postgres database is
-deployed.
-
-### Option 1: Deploy Corndogs in Same Namespace
+Create `values-evaluation.yaml`:
 
 ```yaml
+app:
+  image:
+    tag: "dev"
+
+worker:
+  containerRuntime: "kubernetes"
+  image:
+    tag: "dev"
+
+web:
+  enabled: false
+
+defaults:
+  runnerImage: "containers.catalystsquad.com/public/reactorcide/runnerbase:dev"
+
+postgres:
+  uri: "postgresql://devuser:devpass@reactorcide-postgresql:5432/reactorcide?sslmode=disable"
+
+postgresql:
+  enabled: true
+  auth:
+    username: "devuser"
+    password: "devpass"
+    database: "reactorcide"
+  persistence:
+    enabled: false
+
 corndogs:
   enabled: true
-  replicaCount: 1
   storage:
     backend: file
     file:
       persistence:
-        enabled: true
-        size: 10Gi
-```
+        enabled: false
 
-### Option 2: Use External Corndogs
-
-If Corndogs is deployed in another namespace or cluster:
-
-```yaml
-corndogs:
-  enabled: false
-  baseUrl: "http://corndogs.other-namespace.svc.cluster.local:5080"
-```
-
-## Deploying Workers
-
-Workers are **coordinator-mediated**: they authenticate to the coordinator
-over CSIL-RPC and pull work through it instead of talking to corndogs,
-PostgreSQL, or object storage directly. A worker deployment needs only:
-
-- a **coordinator URL** (defaults to this release's in-cluster coordinator
-  Service — you normally don't need to set this),
-- an **enrollment token** (auto-provisioned by default; see below),
-- a writable **data directory** for the worker's persisted identity
-  (`worker_key` — not a secret; `emptyDir` by default).
-
-**Zero-touch enrollment (default):** a fresh `helm install` needs **no manual
-Secret, pool, or kubectl step**. `templates/secret-worker-enrollment.yaml`
-generates a stable enrollment token once into a managed Secret
-(`<release>-worker-enrollment`, key `token`), annotated
-`helm.sh/resource-policy: keep`. Both the **coordinator** deployment
-(`REACTORCIDE_DEFAULT_WORKER_ENROLLMENT_TOKEN`, which seeds the default worker
-pool) and the **worker** deployment (`REACTORCIDE_WORKER_ENROLLMENT_TOKEN`)
-reference that same Secret via `secretKeyRef`, so the worker enrolls against a
-pool the coordinator already knows about. A `lookup` in the template reuses the
-already-applied value on `helm upgrade`, keeping the token stable across
-redeploys — the token value never appears in `values.yaml` or any manifest.
-
-> `helm template` / `--dry-run` cannot read a live cluster, so they render a
-> fresh random value each run; the value that actually persists is the one from
-> a real `helm install`/`upgrade`.
-
-**Operator override:** to enroll with your own admin-minted per-pool token,
-create the Secret yourself and set `worker.enrollmentTokenSecret.name`. The
-chart then does **not** create the managed Secret and both deployments read
-yours instead:
-
-1. Create a worker pool + enrollment token via the coordinator admin UI/CLI.
-2. Store the token in a Kubernetes Secret:
-
-   ```bash
-   kubectl create secret generic reactorcide-worker-enrollment \
-     --from-literal=token="$(cat /path/to/enrollment-token)" \
-     -n reactorcide
-   ```
-
-3. Reference that Secret in your values (never the token value itself):
-
-   ```yaml
-   worker:
-     enrollmentTokenSecret:
-       name: "reactorcide-worker-enrollment"   # set = override; empty = auto-generate
-       key: "token"       # default
-   ```
-
-The chart wires this via `secretKeyRef` in `templates/deployment-worker.yaml`
-and `templates/deployment-app.yaml` the same way `secrets.existingSecret` /
-`uiAuth.existingSecret` reference their own Secrets — no plaintext secret value
-ever belongs in `values.yaml` or any committed manifest.
-
-**Rotation:** delete the managed Secret and re-run `helm upgrade` to regenerate
-and re-seed, or switch to an operator-override Secret and rotate it via the
-admin UI (a pool can hold several active tokens for a flag-day-free rollover).
-
-Optional worker settings (all under `worker:` in `values.yaml`):
-
-```yaml
-worker:
-  concurrency: 2              # concurrent leases (jobs) per worker pod
-  containerRuntime: "auto"    # docker | containerd | kubernetes | auto
-  os: ""                      # characteristic override; auto-detected otherwise
-  arch: ""                    # characteristic override; auto-detected otherwise
-  custom: []                  # free-form "key=value" characteristics
-  dataDirPersistence:
-    enabled: false             # true to keep worker_key stable across restarts
-    size: 1Gi                  # only meaningful with replicaCount: 1
-```
-
-## Configuration
-
-### Core Settings
-
-```yaml
-app:
-  enabled: true
-  replicaCount: 2
-  resources:
-    limits:
-      cpu: 1000m
-      memory: 1Gi
-    requests:
-      cpu: 100m
-      memory: 128Mi
-
-worker:
-  enabled: true
-  replicaCount: 3
-  concurrency: 2  # Jobs per worker
-  resources:
-    limits:
-      cpu: 2000m
-      memory: 2Gi
-    requests:
-      cpu: 500m
-      memory: 512Mi
-```
-
-### Database Configuration
-
-#### Using Built-in PostgreSQL
-
-```yaml
-postgresql:
-  enabled: true
-  auth:
-    username: "reactorcide"
-    password: "changeme"
-    database: "reactorcide"
-  persistence:
-    enabled: true
-    size: 10Gi
-```
-
-#### Using External Database
-
-```yaml
-postgresql:
-  enabled: false
-
-postgres:
-  uri: "postgresql://user:pass@external-db:5432/reactorcide?sslmode=require"
-```
-
-### Object Storage
-
-#### Filesystem (Development)
-
-```yaml
 objectStore:
   type: filesystem
   basePath: /tmp/reactorcide-objects
 ```
 
-#### S3/MinIO
-
-```yaml
-objectStore:
-  type: s3
-  bucket: reactorcide-objects
-  s3:
-    accessKeyId: "your-access-key"
-    secretAccessKey: "your-secret-key"
-    region: us-east-1
-    endpoint: "http://minio:9000"  # For MinIO
-```
-
-#### Google Cloud Storage
-
-```yaml
-objectStore:
-  type: gcs
-  bucket: reactorcide-objects
-  gcs:
-    serviceAccountJson: |
-      {
-        "type": "service_account",
-        ...
-      }
-```
-
-## Advanced Configuration
-
-### Autoscaling
-
-```yaml
-app:
-  autoscaling:
-    enabled: true
-    minReplicas: 2
-    maxReplicas: 10
-    targetCPUUtilizationPercentage: 70
-
-worker:
-  autoscaling:
-    enabled: true
-    minReplicas: 1
-    maxReplicas: 20
-    targetCPUUtilizationPercentage: 60
-    targetMemoryUtilizationPercentage: 80
-```
-
-### Prometheus Metrics
-
-```yaml
-app:
-  prometheus:
-    enabled: true
-    path: /api/v1/metrics
-    port: 9000
-```
-
-### Security
-
-```yaml
-# Use secrets for sensitive data
-objectStore:
-  s3:
-    accessKeyId: ""  # Set via --set-string
-    secretAccessKey: ""  # Set via --set-string
-```
-
-### Management UI Auth (RBAC, login, visibility)
-
-Disabled by default (`uiAuth.mode: none` — no login, public-view only). See
-[docs/ui-auth.md](../docs/ui-auth.md) for the full operator guide (permission matrix,
-first-admin/bootstrap flow, credential rotation). To enable LinkKeys login:
-
-```yaml
-uiAuth:
-  mode: local-rp                       # or "rp" for a full LinkKeys RP deployment
-  localRpName: "my-reactorcide"        # local-rp only
-  # linkkeysRpAddr / linkkeysRpFingerprints instead, for mode: rp
-  firstAdmin: "you@your-domain.example"
-  trustedIdentities: "your-domain.example"
-  callbackURL: "https://ci.example.com"  # the web UI's public base URL, not the coordinator's
-
-web:
-  enabled: true
-  gateway:
-    enabled: true
-    domains: ["ci.example.com"]
-```
-
-The two secret-bearing values (`linkkeysRpApiKey` for `mode: rp`, and
-`bootstrapAdminToken`) should reference an existing Kubernetes secret in production rather
-than sitting in `values.yaml` in plaintext, the same way `secrets.existingSecret` works for
-master keys:
-
-```yaml
-uiAuth:
-  existingSecret: "reactorcide-ui-auth"
-  existingSecretRpApiKeyKey: "rp-api-key"            # default
-  existingSecretBootstrapTokenKey: "bootstrap-admin-token"  # default
-```
+Install:
 
 ```bash
-kubectl create secret generic reactorcide-ui-auth \
-  --from-literal=rp-api-key="$(cat /path/to/rp-api-key)" \
-  --from-literal=bootstrap-admin-token="$(openssl rand -hex 32)"
+helm upgrade --install reactorcide ./helm_chart \
+  --namespace reactorcide \
+  --create-namespace \
+  --values values-evaluation.yaml \
+  --wait \
+  --timeout 10m
 ```
 
-Consider removing `bootstrapAdminToken`/the `existingSecret` reference to it once your
-first real admin (via `firstAdmin` + a normal login) is established — the bootstrap flow is
-meant for initial setup, not ongoing use.
+Verify:
 
-If the webapp is only ever reached over plain HTTP (no TLS terminator in front of it — not
-recommended for a real deployment), set `web.webCookieInsecure: true` so the session cookie
-doesn't require `Secure`; otherwise leave it `false`.
+```bash
+kubectl get pods -n reactorcide
+kubectl get jobs -n reactorcide
+kubectl get svc -n reactorcide
+kubectl get --raw /readyz >/dev/null
+kubectl port-forward -n reactorcide svc/reactorcideapp 6080:6080
+```
 
-## Production Deployment
+In a second terminal:
 
-### 1. Create Production Values
+```bash
+curl --fail http://127.0.0.1:6080/api/v1/health
+```
+
+## Create the First API Token
+
+The chart creates `base-reactorcide-user` with a generated user ID. It does not
+create an API token during a direct Helm installation.
+
+Create a protected local token file:
+
+```bash
+mkdir -p ~/.config/reactorcide
+chmod 700 ~/.config/reactorcide
+
+REACTORCIDE_USER_ID="$(
+  kubectl get secret base-reactorcide-user \
+    -n reactorcide \
+    -o jsonpath='{.data.user-id}' | base64 -d
+)"
+
+kubectl exec -n reactorcide deployment/reactorcideapp -- \
+  /reactorcide token create \
+  --name cluster-bootstrap \
+  --user-id "${REACTORCIDE_USER_ID}" \
+  | sed -n 's/^Token: //p' \
+  > ~/.config/reactorcide/api-token
+
+chmod 600 ~/.config/reactorcide/api-token
+```
+
+Store the token in a Kubernetes Secret without terminal output:
+
+```bash
+kubectl create secret generic reactorcide-api-token \
+  --namespace reactorcide \
+  --from-file=token="$HOME/.config/reactorcide/api-token"
+```
+
+Add these values to the installation:
 
 ```yaml
-# values-production.yaml
 app:
-  replicaCount: 3
-  resources:
-    limits:
-      cpu: 2000m
-      memory: 2Gi
-    requests:
-      cpu: 500m
-      memory: 512Mi
+  apiTokenSecret:
+    name: reactorcide-api-token
+    key: token
 
 worker:
-  replicaCount: 10
-  concurrency: 4
-  terminationGracePeriodSeconds: 3600
-  # Optional operator override; omit for zero-touch auto-provisioning.
-  enrollmentTokenSecret:
-    name: "reactorcide-worker-enrollment"  # created out-of-band, see "Deploying Workers"
-    key: "token"
-  resources:
-    limits:
-      cpu: 4000m
-      memory: 4Gi
-    requests:
-      cpu: 1000m
-      memory: 1Gi
+  apiTokenSecret:
+    name: reactorcide-api-token
+    key: token
 
+web:
+  apiTokenSecret:
+    name: reactorcide-api-token
+    key: token
+```
+
+Run `helm upgrade` again. This token lets eval jobs submit workflow children.
+It also lets the web application authenticate when you enable it.
+
+## Production Dependencies
+
+### PostgreSQL
+
+Set:
+
+```yaml
 postgresql:
-  enabled: false  # Use managed database
+  enabled: false
 
 postgres:
-  uri: "${POSTGRES_URI}"  # Set via secret
+  uri: "postgresql://USER:PASSWORD@HOST:5432/reactorcide?sslmode=require"
+```
 
-objectStore:
-  type: s3
-  bucket: prod-reactorcide-objects
+The current chart stores this URI in the release Secret. Protect the values
+source and Helm release records. Do not commit the URI.
 
+### Corndogs
+
+Use the bundled subchart:
+
+```yaml
 corndogs:
   enabled: true
-  replicaCount: 1
   storage:
     backend: file
     file:
@@ -394,125 +209,260 @@ corndogs:
         size: 10Gi
 ```
 
-### 2. Deploy with Secrets
+Or use an external Corndogs address:
 
-```bash
-# Create namespace
-kubectl create namespace reactorcide-prod
-
-# Create secrets
-kubectl create secret generic reactorcide-secrets \
-  --from-literal=postgres-uri="postgresql://..." \
-  --from-literal=aws-access-key-id="..." \
-  --from-literal=aws-secret-access-key="..." \
-  -n reactorcide-prod
-
-# Deploy
-helm install reactorcide ./helm_chart \
-  --namespace reactorcide-prod \
-  -f values-production.yaml \
-  --set-string postgres.uri="${POSTGRES_URI}" \
-  --set-string objectStore.s3.accessKeyId="${AWS_ACCESS_KEY_ID}" \
-  --set-string objectStore.s3.secretAccessKey="${AWS_SECRET_ACCESS_KEY}"
+```yaml
+corndogs:
+  enabled: false
+  baseUrl: "corndogs.example.internal:5080"
 ```
 
-## Monitoring and Operations
+The value is a CSIL-RPC TCP address. Do not add `http://`.
 
-### Health Checks
+### Object storage
 
-```bash
-# Check API health
-kubectl exec -n reactorcide deployment/reactorcideapp -- curl localhost:6080/api/health
+Use S3 or an S3-compatible service for durable logs:
 
-# Check worker status
-kubectl logs -n reactorcide deployment/reactorcide-worker
-
-# Check job processing
-kubectl exec -n reactorcide deployment/reactorcideapp -- curl localhost:6080/api/v1/jobs
+```yaml
+objectStore:
+  type: s3
+  bucket: reactorcide-objects
+  prefix: reactorcide/
+  s3:
+    region: us-east-1
+    endpoint: ""
+    accessKeyId: ""
+    secretAccessKey: ""
 ```
 
-### Metrics
+Set `endpoint` for an S3-compatible service. The current chart stores S3
+credentials in the release Secret. Do not commit them in a values file.
 
-If Prometheus is enabled:
+The `gcs` values are reserved. The coordinator does not implement a GCS object
+store.
+
+### Secret encryption
+
+Create the master-key Secret from a protected file:
+
 ```bash
-kubectl port-forward -n reactorcide svc/reactorcideapp 9000:9000
-curl localhost:9000/api/v1/metrics
+openssl rand -base64 32 > ~/.config/reactorcide/master-key
+chmod 600 ~/.config/reactorcide/master-key
+
+{
+  printf 'primary:'
+  tr -d '\n' < ~/.config/reactorcide/master-key
+  printf '\n'
+} > ~/.config/reactorcide/master-keys
+chmod 600 ~/.config/reactorcide/master-keys
+
+kubectl create secret generic reactorcide-master-keys \
+  --namespace reactorcide \
+  --from-file=master-keys="$HOME/.config/reactorcide/master-keys"
 ```
 
-### Troubleshooting
+Reference it:
 
-1. **Workers not processing jobs**
-   - Check the worker can reach and register with the coordinator:
-     `kubectl logs -n reactorcide deployment/reactorcide-worker | grep -i register`
-   - With zero-touch defaults, confirm the managed
-     `<release>-worker-enrollment` Secret exists and that the coordinator
-     seeded its default pool (coordinator logs mention the default worker
-     pool); with an operator override, verify
-     `worker.enrollmentTokenSecret.name` points at a Secret that actually
-     exists and holds a valid, active enrollment token (see
-     [`docs/workers.md`](../docs/workers.md))
-   - Check worker resource limits
+```yaml
+secrets:
+  storageType: database
+  existingSecret: reactorcide-master-keys
+  existingSecretKey: master-keys
+```
 
-2. **Database connection issues**
-   - Verify PostgreSQL is running: `kubectl get pods -n reactorcide | grep postgresql`
-   - Check connection string in secrets
-   - Review migration job logs: `kubectl logs -n reactorcide job/migrations`
+Keep the master key stable. Back it up separately from PostgreSQL. Encrypted
+secret rows cannot be recovered without it.
 
-3. **Docker-in-Docker issues**
-   - Ensure workers have Docker socket mount
-   - Check worker pod security context
-   - Verify Docker daemon is running on nodes
+## Worker Configuration
 
-## Upgrading
+Use the Kubernetes runtime:
+
+```yaml
+worker:
+  enabled: true
+  containerRuntime: kubernetes
+  concurrency: 2
+  jobNamespace: reactorcide
+  dataDirPersistence:
+    enabled: true
+    size: 1Gi
+```
+
+The chart creates a worker enrollment Secret by default. The coordinator and
+worker read the same Secret. Helm keeps it after uninstall.
+
+Use an operator-managed enrollment Secret when required:
+
+```yaml
+worker:
+  enrollmentTokenSecret:
+    name: reactorcide-worker-enrollment
+    key: token
+```
+
+The worker Role can create and delete Jobs and temporary checkout Secrets. It
+can read Pods and Pod logs in its namespace. Review
+`templates/rbac-worker.yaml` before you change its namespace or service
+account.
+
+See [Worker Operation](../docs/workers.md).
+
+## Builder Jobs
+
+A job with `capabilities: [builder]` uses a BuildKit sidecar. Configure
+optional resources:
+
+```yaml
+builder:
+  image: "moby/buildkit:v0.17.3"
+  configMap: "buildkit-config"
+  authSecret: "registry-auth"
+  cachePvc: "buildkit-cache"
+```
+
+The registry Secret must have a `config.json` key.
+
+## Public Routes and TLS
+
+The chart can create Gateway API HTTPRoutes:
+
+```yaml
+app:
+  gateway:
+    enabled: true
+    domains:
+      - ci.example.com
+    gatewayName: shared-gateway
+    gatewayNamespace: gateway-system
+    sectionName: https
+
+web:
+  enabled: true
+  gateway:
+    enabled: true
+    domains:
+      - ci.example.com
+    gatewayName: shared-gateway
+    gatewayNamespace: gateway-system
+    sectionName: https
+```
+
+The coordinator route handles `/api/*`. The web route handles other paths.
+The referenced Gateway must provide TLS.
+
+Enable VCS integration:
+
+```yaml
+vcs:
+  enabled: true
+  baseURL: "https://ci.example.com"
+```
+
+Then use [Connect a VCS Repository](../docs/vcs-setup.md).
+
+## Web Authentication
+
+The web application is disabled by default. UI auth mode `none` permits public
+read access to public projects. Use LinkKeys auth for accounts and private
+projects.
+
+See [UI Authentication and Authorization](../docs/ui-auth.md) before you
+enable the web application on a public route.
+
+## Production Values Checklist
+
+Your production values must set:
+
+- Exact coordinator, worker, web, and runner image tags
+- External or persistent PostgreSQL
+- External or persistent Corndogs
+- S3 object storage
+- Secret master-key reference
+- API-token Secret references
+- Kubernetes runtime for the in-cluster worker
+- Resource requests and limits
+- TLS route
+- VCS base URL when VCS is enabled
+- UI authentication when the web application is enabled
+
+Use more than one coordinator replica only after you verify that all selected
+dependencies and session behavior support it.
+
+## Upgrade
+
+Render and review changes:
 
 ```bash
-# Update chart dependencies
-helm dependency update ./helm_chart
+helm template reactorcide ./helm_chart \
+  --namespace reactorcide \
+  --values values-production.yaml \
+  > /tmp/reactorcide-rendered.yaml
+```
 
-# Upgrade deployment
+Upgrade:
+
+```bash
 helm upgrade reactorcide ./helm_chart \
   --namespace reactorcide \
-  -f custom-values.yaml
+  --values values-production.yaml \
+  --wait \
+  --timeout 10m
+```
 
-# Check rollout status
+Check rollouts:
+
+```bash
 kubectl rollout status -n reactorcide deployment/reactorcideapp
 kubectl rollout status -n reactorcide deployment/reactorcide-worker
 ```
 
-## Uninstalling
+## Troubleshooting
+
+### Coordinator does not start
+
+Check the PostgreSQL URI and database network access:
+
+```bash
+kubectl logs -n reactorcide deployment/reactorcideapp
+```
+
+### Worker does not enroll
+
+Check both deployments reference the same enrollment Secret:
+
+```bash
+kubectl get secret -n reactorcide reactorcide-worker-enrollment
+kubectl logs -n reactorcide deployment/reactorcide-worker
+```
+
+Do not print the Secret value.
+
+### Jobs do not start
+
+Confirm:
+
+- Corndogs is reachable at the configured TCP address.
+- The worker is online.
+- Job characteristics match the worker.
+- `defaults.runnerImage` or the job image is set.
+- The worker uses `containerRuntime: kubernetes`.
+
+### Eval runs but child jobs do not start
+
+Confirm that `app.apiTokenSecret` and `worker.apiTokenSecret` reference a valid
+API token. Restart both deployments after you create or rotate the Secret.
+
+### Logs disappear
+
+The filesystem object store uses `emptyDir`. Select S3 storage for durable
+logs.
+
+## Uninstall
 
 ```bash
 helm uninstall reactorcide --namespace reactorcide
-kubectl delete namespace reactorcide
 ```
 
-## Development with Skaffold
-
-For local development with hot-reloading:
-
-```bash
-# Install Skaffold
-curl -Lo skaffold https://storage.googleapis.com/skaffold/releases/latest/skaffold-linux-amd64
-sudo install skaffold /usr/local/bin/
-
-# Run development environment
-skaffold dev
-
-# Or without app (use local app)
-skaffold dev --profile no-app
-```
-
-## Security Considerations
-
-1. **Network Policies**: Implement network policies to restrict pod-to-pod communication
-2. **RBAC**: Use appropriate service accounts with minimal permissions
-3. **Secrets Management**: Use external secret managers (Vault, Sealed Secrets) in production
-4. **Image Scanning**: Scan container images for vulnerabilities
-5. **Pod Security Standards**: Apply appropriate pod security policies
-
-## Support and Documentation
-
-- Main Documentation: [README.md](../README.md)
-- Runnerlib Documentation: [runnerlib/docs/](../runnerlib/docs/)
-- Corndogs Integration: [corndogs-integration.md](../corndogs-integration.md)
-- API Documentation: [coordinator_api/README.md](../coordinator_api/README.md)
+Helm keeps the default-user and worker-enrollment Secrets by policy. Persistent
+volume claims can also remain. Inspect and remove retained resources only when
+you no longer need their data.

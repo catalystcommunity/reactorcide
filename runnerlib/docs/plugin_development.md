@@ -21,12 +21,21 @@ Plugins can hook into the following phases:
 
 ### Plugin Loading
 
-Plugins are loaded from:
-1. Built-in plugins directory (`src/builtin_plugins/`)
-2. Environment variable `REACTORCIDE_PLUGIN_DIR`
-3. CLI option `--plugin-dir`
+Runnerlib loads built-in plugins first.
 
-**Important**: Only `.py` files starting with `plugin_` prefix are loaded as plugins.
+For `runnerlib run`, it then searches for `.reactorcide/plugins`:
+
+1. Runnerlib uses the trusted CI source directory when that directory has
+   plugins.
+2. If the trusted CI source does not have plugins, runnerlib uses the
+   application source directory.
+3. Runnerlib also loads the directory from `--plugin-dir` when you set that
+   option.
+
+Runnerlib does not load application source plugins when trusted CI plugins
+exist. This rule prevents a pull request from changing the CI lifecycle code.
+
+Plugin file names must start with `plugin_` and must end with `.py`.
 
 ## Creating a Plugin
 
@@ -420,4 +429,5 @@ Verify:
 
 ## API Reference
 
-See the [Plugin API Documentation](plugin_api.md) for complete API reference.
+See the plugin interfaces in
+[`runnerlib/src/plugins.py`](../src/plugins.py) for the current API.

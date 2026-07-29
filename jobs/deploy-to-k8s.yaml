@@ -6,6 +6,10 @@ source:
   ref: main
 command: runnerlib run --job-command "python /job/src/jobs/scripts/deploy_k8s.py"
 environment:
+    # Request the trusted runnerlib lifecycle plugin that installs Helm and
+    # kubectl after source preparation.
+    REACTORCIDE_INSTALL_K8S_TOOLS: "true"
+
     # Required - Kubernetes access (raw kubeconfig YAML content)
     KUBECONFIG_CONTENT: "${secret:reactorcide/k8s:kubeconfig}"
 

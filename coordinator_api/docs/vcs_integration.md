@@ -1,231 +1,114 @@
-# VCS Integration Documentation
+# VCS Provider Integration
 
-## Overview
+This document describes the coordinator VCS adapter boundary. Operators must
+use [Connect a VCS Repository](../../docs/vcs-setup.md).
 
-Reactorcide provides comprehensive Version Control System (VCS) integration to enable automated CI/CD workflows triggered by Git events. The system supports both GitHub and GitLab, with features including webhook processing, commit status updates, pull request comments, and branch protection enforcement.
+## Provider Status
 
-## Features
+GitHub is operational.
 
-### 1. Webhook Receivers
-- **GitHub Webhooks**: Receives and processes GitHub webhook events at `/api/v1/webhooks/github`
-- **GitLab Webhooks**: Receives and processes GitLab webhook events at `/api/v1/webhooks/gitlab`
-- **Event Types Supported**:
-  - Pull Request/Merge Request events (opened, closed, synchronized)
-  - Push events (commits to branches)
-  - Ping events (webhook verification)
-- **Security**: Validates webhook signatures using HMAC-SHA256 (GitHub) or token validation (GitLab)
+The GitLab client can validate and parse webhooks and can call provider APIs.
+It does not set `WebhookEvent.GenericEvent`. The webhook handler treats the
+event as unknown and does not create a job. GitLab also does not populate
+cross-project head repository data.
 
-### 2. Automatic Job Creation
-When webhook events are received, Reactorcide automatically:
-- Creates CI jobs for pull requests and pushes
-- Sets appropriate priorities (PRs get higher priority)
-- Configures environment variables with CI context
-- Stores VCS metadata for status updates
+The coordinator registers provider clients only when
+`REACTORCIDE_VCS_ENABLED=true`.
 
-### 3. Commit Status Updates
-- Updates commit statuses in real-time as jobs progress through states:
-  - `pending`: Job submitted or queued
-  - `running`: Job executing
-  - `success`: Job completed successfully
-  - `failure`: Job failed
-  - `error`: Job encountered an error or timed out
-  - `cancelled`: Job was cancelled
-- Provides direct links to job logs and details
+Registered webhook routes are:
 
-### 4. Pull Request Comments
-- Automatically comments on pull requests when CI builds complete
-- Includes build status, duration, exit code, and link to full logs
-- Uses emoji indicators for quick visual feedback (✅ ❌ ⚠️ ⏱️)
-
-### 5. Branch Protection Integration
-- Enforces branch protection rules before allowing merges
-- Supports required status checks
-- Validates that PR branches are up-to-date with base branch
-- Configurable protection patterns (exact match or wildcard)
-
-## Configuration
-
-### Environment Variables
-
-```bash
-# Enable VCS integration
-VCS_ENABLED=true
-
-# GitHub Configuration
-VCS_GITHUB_TOKEN=ghp_xxxxxxxxxxxx  # GitHub personal access token
-VCS_GITHUB_SECRET=webhook_secret    # GitHub webhook secret (optional)
-
-# GitLab Configuration
-VCS_GITLAB_TOKEN=glpat-xxxxxxxxxxxx # GitLab personal access token
-VCS_GITLAB_SECRET=webhook_secret    # GitLab webhook secret (optional)
-
-# Shared Configuration
-VCS_WEBHOOK_SECRET=shared_secret    # Shared secret for all providers (optional)
-VCS_BASE_URL=https://ci.example.com # Base URL for status links
+```text
+POST /api/v1/webhooks/github
+POST /api/v1/webhooks/gitlab
 ```
 
-### Required Permissions
+The routes do not use API-token authentication. Provider webhook validation is
+mandatory.
 
-#### GitHub Token Permissions
-- `repo:status` - Update commit statuses
-- `repo` - Read repository information and create PR comments
-- `write:discussion` - Comment on pull requests
+## Generic Events
 
-#### GitLab Token Permissions
-- `api` - Full API access
-- `read_repository` - Read repository information
-- `write_repository` - Update commit statuses
+Provider adapters map payloads to:
 
-## Setup Guide
+- `push`
+- `pull_request_opened`
+- `pull_request_updated`
+- `pull_request_merged`
+- `pull_request_closed`
+- `tag_created`
+- `ping`
 
-### 1. GitHub Webhook Setup
+Unknown events return success and do not create work. All current GitLab push
+and merge-request events have this result because normalization is incomplete.
 
-1. Navigate to your repository's Settings → Webhooks
-2. Click "Add webhook"
-3. Configure:
-   - **Payload URL**: `https://your-reactorcide-instance.com/api/v1/webhooks/github`
-   - **Content type**: `application/json`
-   - **Secret**: Your configured `VCS_GITHUB_SECRET` or `VCS_WEBHOOK_SECRET`
-   - **Events**: Select "Pull requests" and "Pushes" (or "Send me everything")
-4. Click "Add webhook"
+## Client Interface
 
-### 2. GitLab Webhook Setup
+A provider `Client` implements:
 
-1. Navigate to your project's Settings → Webhooks
-2. Configure:
-   - **URL**: `https://your-reactorcide-instance.com/api/v1/webhooks/gitlab`
-   - **Secret token**: Your configured `VCS_GITLAB_SECRET` or `VCS_WEBHOOK_SECRET`
-   - **Trigger events**: Select "Push events" and "Merge request events"
-3. Click "Add webhook"
+- `ParseWebhook`
+- `ValidateWebhook`
+- `UpdateCommitStatus`
+- `UpdatePRComment`
+- `UpsertPRCommentByMarker`
+- `GetPRInfo`
+- `GetProvider`
 
-### 3. Branch Protection Setup
+The common structures are in `internal/vcs/interface.go`.
 
-Configure branch protection rules in your job configuration or via API:
+## Webhook Processing
 
-```json
-{
-  "branch_protection": {
-    "pattern": "main",
-    "require_status_checks": true,
-    "required_status_checks": ["continuous-integration/reactorcide"],
-    "require_pr_reviews": true,
-    "required_review_count": 1,
-    "require_up_to_date": true
-  }
-}
-```
+The handler:
 
-## API Endpoints
+1. Selects the provider client.
+2. Reads the request body.
+3. Returns a ping response when applicable.
+4. Extracts and normalizes the repository URL.
+5. Finds the project.
+6. Resolves webhook-secret candidates.
+7. Validates the request.
+8. Parses the provider payload.
+9. Filters the event by project event and target branch.
+10. Creates an eval job.
 
-### Webhook Endpoints
+Webhook secret candidates include active rotation entries, project
+references, organization references, and deployment fallback values. Project
+configuration uses `path:key` references. It does not contain values.
 
-#### `POST /api/v1/webhooks/github`
-Receives GitHub webhook events. No authentication required (validated via signature).
+## Fork Pull Requests
 
-#### `POST /api/v1/webhooks/gitlab`
-Receives GitLab webhook events. No authentication required (validated via token).
+An adapter must distinguish the base repository from the head repository.
+Set `PullRequestInfo.HeadRepository` when the head branch is in a fork.
 
-## Job Metadata
+The handler then uses:
 
-Jobs created from VCS events include metadata in the `notes` field:
+- Fork URL and head SHA for application source.
+- Base repository URL and trusted base SHA for CI source.
 
-```json
-{
-  "vcs_provider": "github",
-  "repo": "owner/repository",
-  "pr_number": 123,
-  "branch": "feature-branch",
-  "commit_sha": "abc123def456"
-}
-```
+Tests must cover a fork whose branch name does not exist in the base
+repository.
 
-This metadata is used to:
-- Update commit statuses as job state changes
-- Post comments to pull requests
-- Link back to the VCS from job details
+## Status and Comments
 
-## CI Environment Variables
+The status updater uses project credentials when available. It falls back to
+organization or deployment credentials.
 
-Jobs triggered by VCS events receive these environment variables:
+Workflow status uses the workflow name as the status context. Pull-request
+comments use a stable marker so Reactorcide can update one comment.
 
-### Common Variables
-- `REACTORCIDE_CI=true` - Indicates Reactorcide CI environment
-- `REACTORCIDE_PROVIDER` - VCS provider (github/gitlab)
-- `REACTORCIDE_REPO` - Repository full name
-- `REACTORCIDE_SHA` - Commit SHA
-- `REACTORCIDE_EVENT_TYPE` - Generic event type (push, pull_request_opened, etc.)
-- `REACTORCIDE_SOURCE_URL` - Source repository clone URL
+## Add a Provider
 
-### Pull Request Variables
-- `REACTORCIDE_PR_NUMBER` - Pull request number
-- `REACTORCIDE_PR_SHA` - Pull request head SHA
-- `REACTORCIDE_PR_REF` - Pull request source branch
-- `REACTORCIDE_PR_BASE_REF` - Pull request target branch
+1. Add the provider constant to `internal/vcs/interface.go`.
+2. Add a provider file under `internal/vcs/`.
+3. Implement the complete `Client` interface.
+4. Add event translation tests.
+5. Add signature or token validation tests.
+6. Add push, tag, pull-request, and fork payload tests.
+7. Add status and comment tests with an HTTP test server.
+8. Add URL normalization cases.
+9. Register the provider in `NewClient`.
+10. Register it in `Manager.initializeClients`.
+11. Add the webhook route and handler method.
+12. Add the provider to secret-reference lookup.
+13. Update operator documentation.
 
-### Push Variables
-- `REACTORCIDE_BRANCH` - Branch name
-- `REACTORCIDE_COMMIT_MESSAGE` - First commit message in push
-
-## Default CI Commands
-
-When no specific CI configuration is provided, Reactorcide attempts to detect and run appropriate tests:
-
-1. **Makefile**: Runs `make test`
-2. **Node.js** (package.json): Runs `npm install && npm test`
-3. **Go** (go.mod): Runs `go test ./...`
-4. **Python** (requirements.txt): Runs `pip install -r requirements.txt && python -m pytest`
-
-## Security Considerations
-
-1. **Webhook Validation**: Always configure webhook secrets to prevent unauthorized job creation
-2. **Token Security**: Store VCS tokens as environment variables, never in code
-3. **Network Security**: Use HTTPS for all webhook endpoints
-4. **Permission Scope**: Use minimal token permissions required for functionality
-5. **Branch Protection**: Configure branch protection to prevent unauthorized code execution
-
-## Troubleshooting
-
-### Webhooks Not Triggering
-- Verify webhook URL is accessible from the internet
-- Check webhook secret configuration matches
-- Review webhook delivery logs in GitHub/GitLab
-- Check Reactorcide logs for webhook processing errors
-
-### Status Updates Not Appearing
-- Verify VCS token has correct permissions
-- Check job metadata includes VCS information
-- Review worker logs for status update errors
-- Ensure VCS_ENABLED is set to true
-
-### PR Comments Not Posted
-- Verify token has permission to comment on PRs
-- Check that job has PR metadata (pr_number)
-- Ensure job reaches a terminal state (completed/failed/cancelled)
-
-## Architecture
-
-The VCS integration consists of several components:
-
-1. **Webhook Handlers** (`webhook_handler.go`): Receive and process webhook events
-2. **VCS Clients** (`github.go`, `gitlab.go`): Provider-specific implementations
-3. **Status Updater** (`status_updater.go`): Updates commit statuses based on job state
-4. **Branch Protection** (`branch_protection.go`): Enforces merge requirements
-5. **VCS Manager** (`manager.go`): Coordinates VCS operations and client initialization
-
-## Best Practices
-
-1. **Use Separate Queues**: Configure different queues for PR builds vs. branch pushes
-2. **Set Appropriate Priorities**: Give PR builds higher priority for faster feedback
-3. **Configure Timeouts**: Set reasonable timeouts to prevent hanging builds
-4. **Monitor Webhook Failures**: Set up alerting for webhook processing errors
-5. **Rotate Tokens Regularly**: Implement token rotation for security
-6. **Test Webhook Locally**: Use tools like ngrok for local webhook testing
-
-## Future Enhancements
-
-- Support for additional VCS providers (Bitbucket, Gitea)
-- Advanced branch protection rules (required checks per file pattern)
-- Integration with code review tools
-- Automatic retry of failed status updates
-- Webhook event replay functionality
-- Custom CI configuration per repository
+Do not log payload credentials, webhook secrets, or API tokens. Do not pass a
+VCS system credential to a normal job environment.

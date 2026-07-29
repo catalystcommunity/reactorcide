@@ -841,7 +841,7 @@ When triggering jobs, these fields are available:
 
 - [DESIGN.md](../DESIGN.md) - System architecture and design principles
 - [Runnerlib DESIGN.md](../runnerlib/DESIGN.md) - Detailed runnerlib design
-- [deployment-plan.md](../deployment-plan.md) - Deployment guide
+- [Installation and Deployment](./getting-started.md) - Deployment guide
 
 ## Support
 

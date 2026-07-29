@@ -9,6 +9,7 @@ import threading
 import time
 import getpass
 import typer
+from pathlib import Path
 from typing import List, Optional, Dict
 
 from src.logging import log_stdout, log_stderr
@@ -29,6 +30,47 @@ from src.signals import (
 )
 
 app = typer.Typer()
+
+
+def discover_run_plugin_directories(
+    config,
+    ci_source_path=None,
+    source_path=None,
+    explicit_plugin_dir=None,
+):
+    """Find plugin directories for an in-container runnerlib job.
+
+    Trusted CI plugins take precedence over application-source plugins. This
+    prevents a pull request from adding a plugin when the coordinator supplied
+    a separate trusted CI checkout.
+    """
+    plugin_dirs = []
+
+    def add_plugins_from(base_path):
+        if not base_path:
+            return False
+        candidate = Path(base_path) / ".reactorcide" / "plugins"
+        if not candidate.is_dir():
+            return False
+        candidate_text = str(candidate)
+        if candidate_text not in plugin_dirs:
+            plugin_dirs.append(candidate_text)
+        return True
+
+    trusted_plugins_found = add_plugins_from(ci_source_path)
+
+    if not trusted_plugins_found:
+        configured_ci_path = os.environ.get("REACTORCIDE_CI_SOURCE_DIR")
+        trusted_plugins_found = add_plugins_from(configured_ci_path)
+
+    if not trusted_plugins_found:
+        application_path = source_path or config.code_dir
+        add_plugins_from(application_path)
+
+    if explicit_plugin_dir and explicit_plugin_dir not in plugin_dirs:
+        plugin_dirs.append(explicit_plugin_dir)
+
+    return plugin_dirs
 
 
 @app.callback()
@@ -368,33 +410,21 @@ def run(
         finally:
             cleanup_vcs_auth()
 
-        # Now load plugins from standard locations AFTER source checkout
-        # This allows plugins to be part of the checked-out repository
-        from pathlib import Path as PathLib
-
-        plugin_dirs = []
-
-        # Check CI source directory for plugins first (trusted code)
-        if ci_source_path:
-            ci_plugin_dir = PathLib(ci_source_path) / ".reactorcide" / "plugins"
-            if ci_plugin_dir.exists():
-                plugin_dirs.append(str(ci_plugin_dir))
-                log_stdout(f"Found plugins in CI source: {ci_plugin_dir}")
-
-        # Check regular source directory for plugins
-        if source_path:
-            src_plugin_dir = PathLib(source_path) / ".reactorcide" / "plugins"
-            if src_plugin_dir.exists():
-                plugin_dirs.append(str(src_plugin_dir))
-                log_stdout(f"Found plugins in source: {src_plugin_dir}")
-
-        # Add explicitly provided plugin directory
-        if plugin_dir:
-            plugin_dirs.append(plugin_dir)
+        # Load trusted CI plugins when a CI checkout exists. Do not also load
+        # application-source plugins in that case: application source can be
+        # an untrusted pull request. For run-local, discover plugins from the
+        # pre-mounted code directory when no source preparation was necessary.
+        plugin_dirs = discover_run_plugin_directories(
+            config,
+            ci_source_path=ci_source_path,
+            source_path=source_path,
+            explicit_plugin_dir=plugin_dir,
+        )
 
         # Initialize plugins from all discovered directories
         initialize_plugins(None)  # Load built-in plugins first
         for pdir in plugin_dirs:
+            log_stdout(f"Loading plugins from: {pdir}")
             plugin_manager.load_plugins_from_directory(pdir)
 
         if plugin_manager.plugins:

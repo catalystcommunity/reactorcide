@@ -207,7 +207,7 @@ docker run reactorcide:latest migrate up
 ## Development Environment Notes
 
 ### Current Setup
-- Go 1.21+ with proper module support
+- The Go version declared in `go.mod`, with module support
 - PostgreSQL database with migrations
 - GORM ORM with proper transaction handling
 - Testify for assertions and test utilities

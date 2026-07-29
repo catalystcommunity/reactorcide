@@ -1,22 +1,54 @@
-# coordinator_api
+# Reactorcide Coordinator and CLI
 
-This is a go web server providing the meat of an API that will validate authenticated users at a basic level, and part of a monorepo example to run in k8s with multiple services/tools.
+This Go module builds the `reactorcide` binary. The binary includes the
+coordinator, worker, local runner, remote client, token commands, and secret
+commands.
 
-See [the github repo](https://github.com/catalystcommunity/k8s-monorepo-example) for the rest of the project.
+## Build
 
-This sub-project should contain tests that use an actual postgres db but the only requirements for testing or running are environment variables.
-
-## Testing
-
-To run tests, you'll need a PostgreSQL database running. You can start one using Docker as an example:
+Use the Go version in `go.mod`:
 
 ```bash
-docker run -d --rm --name postgres-test -e POSTGRES_USER=devuser -e POSTGRES_PASSWORD=devpass -e POSTGRES_DB=testpg -p 5432:5432 postgres:17
+go build -o reactorcide .
 ```
 
-Then run tests with:
+## Main Commands
+
+```text
+reactorcide serve
+reactorcide worker
+reactorcide run-local
+reactorcide submit
+reactorcide logs
+reactorcide token
+reactorcide secrets
+reactorcide secret-grants
+reactorcide migrate
+```
+
+Run `./reactorcide COMMAND --help` for current arguments.
+
+## Tests
+
+Run a package test:
+
 ```bash
-go test ./test -v
+go test ./internal/vcs
 ```
 
-The test suite automatically runs migrations and uses transactional rollback for isolation, using the DataUtils pattern.
+Run all module tests:
+
+```bash
+go test ./...
+```
+
+Some integration tests need a container runtime. See
+[test/README.md](./test/README.md).
+
+## Documentation
+
+- [System Design](../DESIGN.md)
+- [Installation and Deployment](../docs/getting-started.md)
+- [Worker Operation](../docs/workers.md)
+- [VCS Provider Integration](./docs/vcs_integration.md)
+- [Advanced Corndogs Features](./docs/advanced_corndogs_features.md)

@@ -197,4 +197,5 @@ if __name__ == "__main__":
 
 ## Learn More
 
-See the full documentation in [`docs/writing-pipelines.md`](../../docs/writing-pipelines.md) (coming soon).
+See the full documentation in
+[`docs/writing-pipelines.md`](../../docs/writing-pipelines.md).
