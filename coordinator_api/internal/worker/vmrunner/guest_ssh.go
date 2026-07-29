@@ -227,10 +227,15 @@ func (s *sshSession) killFallback(sig string) error {
 	}
 	defer killSess.Close()
 
-	// sshSig/pidFile are both internally generated (allowlisted signal
-	// name, uuid-derived path) -- never derived from job-controlled input
-	// -- so this is safe to interpolate directly.
-	killCmd := fmt.Sprintf("kill -%s $(cat %s 2>/dev/null) 2>/dev/null", string(sshSig), s.pidFile)
+	// Start returns when the guest accepts the exec request. The remote shell
+	// can still be starting, so wait briefly for it to write the PID file.
+	// sshSig and pidFile are internally generated values, not job input.
+	killCmd := fmt.Sprintf(
+		`i=0; while [ ! -s %s ] && [ "$i" -lt 20 ]; do sleep 0.05; i=$((i + 1)); done; `+
+			`[ -s %s ] || exit 1; pid=$(cat %s 2>/dev/null) || exit 1; `+
+			`kill -%s "$pid" 2>/dev/null || ! kill -0 "$pid" 2>/dev/null`,
+		s.pidFile, s.pidFile, s.pidFile, string(sshSig),
+	)
 	return killSess.Run(killCmd)
 }
 

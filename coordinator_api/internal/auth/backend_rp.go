@@ -100,7 +100,7 @@ func (b *RPBackend) BeginLogin(ctx context.Context, identitySelector, callbackUR
 		return "", nil, fmt.Errorf("auth: decode sign-request response: %w", err)
 	}
 
-	u := url.URL{Scheme: "https", Host: domain, Path: "/auth/authorize"}
+	u := resolveBrowserEndpoint(b.dns, domain, "/auth/authorize")
 	q := u.Query()
 	q.Set("signed_request", signed.SignedRequest)
 	if handle != "" {
@@ -213,6 +213,9 @@ func (b *RPBackend) userInfoFetch(ctx context.Context, signedAssertion, apiBase,
 // exports for its own purposes.
 func resolveAPIBase(dns localrp.DnsResolver, domain string) string {
 	fallback := "https://" + domain
+	if dns == nil {
+		return fallback
+	}
 	txts, err := dns.TxtLookup(localrp.LinkKeysApisDNSName(domain))
 	if err != nil {
 		return fallback
@@ -225,4 +228,19 @@ func resolveAPIBase(dns localrp.DnsResolver, domain string) string {
 		return *apis.HTTPSBase
 	}
 	return fallback
+}
+
+// resolveBrowserEndpoint returns a browser-facing LinkKeys URL. It uses the
+// HTTPS endpoint from _linkkeys_apis and keeps an optional path prefix. If
+// discovery is not available, it uses the identity domain.
+func resolveBrowserEndpoint(dns localrp.DnsResolver, domain, endpointPath string) *url.URL {
+	base, err := url.Parse(resolveAPIBase(dns, domain))
+	if err != nil || base.Scheme != "https" || base.Host == "" {
+		base = &url.URL{Scheme: "https", Host: domain}
+	}
+	base.Path = strings.TrimRight(base.Path, "/") + "/" + strings.TrimLeft(endpointPath, "/")
+	base.RawPath = ""
+	base.RawQuery = ""
+	base.Fragment = ""
+	return base
 }

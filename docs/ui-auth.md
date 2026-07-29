@@ -45,6 +45,11 @@ job YAML, env files checked into a repo, or command output.
 | `REACTORCIDE_CANCEL_GRACE_SECONDS` | optional (default `60`) | How long a graceful job cancel waits between sending the stop signal and the worker force-cleaning up. Not used for kill (force-kill skips the grace period). |
 | `REACTORCIDE_WEB_COOKIE_INSECURE` | optional, **webapp**-side | Disables the `Secure` flag on the session cookie. Only set this for local plaintext-HTTP development; leave unset (default) for any real deployment, where the cookie must stay `Secure`. |
 
+For both LinkKeys modes, Reactorcide reads the `_linkkeys_apis` TXT record for
+the identity domain. It uses the published `https` endpoint for the browser
+login route. If the record does not contain an HTTPS endpoint, Reactorcide uses
+the identity domain.
+
 ## First admin and bootstrap-admin
 
 You need *some* way to get your first global admin, since global admin is what grants
