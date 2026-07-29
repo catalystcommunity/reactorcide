@@ -161,6 +161,8 @@ cython_debug/
 #  option (not recommended) you can uncomment the following to ignore the entire idea folder.
 #.idea/
 
+.playwright-mcp/
+
 # Deployment configuration (actual files, not examples)
 deploy-vm.job.yaml
 deploy-vm.env
