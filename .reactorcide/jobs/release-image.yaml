@@ -1,0 +1,17 @@
+name: release-image
+description: "Build and push one Reactorcide release image group"
+job:
+  image: containers.catalystsquad.com/public/reactorcide/runnerbase:dev
+  command: "runnerlib run --job-command true"
+  timeout: 1800
+  priority: 15
+  working_dir: /job
+  disable_run_local: true
+  capabilities:
+    - builder
+environment:
+  REACTORCIDE_RELEASE_JOB: images
+  REGISTRY_INTERNAL: "10.16.0.1:5000"
+  GITHUB_PAT: "${secret:catalystcommunity/ci:githubpat}"
+  REGISTRY_USER: "${secret:catalystcommunity/ci:registry_user}"
+  REGISTRY_PASSWORD: "${secret:catalystcommunity/ci:registry_password}"

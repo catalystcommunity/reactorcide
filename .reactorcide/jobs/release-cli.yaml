@@ -1,0 +1,12 @@
+name: release-cli
+description: "Build and upload one Reactorcide CLI platform archive"
+job:
+  image: containers.catalystsquad.com/public/reactorcide/runnerbase:dev
+  command: "runnerlib run --job-command true"
+  timeout: 1800
+  priority: 15
+  working_dir: /job
+  disable_run_local: true
+environment:
+  REACTORCIDE_RELEASE_JOB: cli
+  GITHUB_PAT: "${secret:catalystcommunity/ci:githubpat}"

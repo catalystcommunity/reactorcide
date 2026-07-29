@@ -1,5 +1,5 @@
 name: Reactorcide Release
-description: "Build containers, cross-compile the CLI, version with semver-tags, and publish a GitHub release on merge to main."
+description: "Prepare a draft release, build images and CLI archives in parallel, and publish after all builds succeed."
 
 on:
   events:
@@ -8,5 +8,85 @@ on:
     - main
 
 jobs:
-  release:
-    job_file: release.yaml
+  prepare:
+    job_file: release-control.yaml
+    environment:
+      REACTORCIDE_RELEASE_JOB: prepare
+
+  image-runnerbase:
+    job_file: release-image.yaml
+    depends_on:
+      - prepare
+    environment:
+      REACTORCIDE_RELEASE_IMAGE: runnerbase
+
+  images-coordinator-worker:
+    job_file: release-image.yaml
+    depends_on:
+      - prepare
+    environment:
+      REACTORCIDE_RELEASE_IMAGE: coordinator-worker
+
+  image-web:
+    job_file: release-image.yaml
+    depends_on:
+      - prepare
+    environment:
+      REACTORCIDE_RELEASE_IMAGE: web
+
+  cli-linux-amd64:
+    job_file: release-cli.yaml
+    depends_on:
+      - prepare
+    environment:
+      REACTORCIDE_RELEASE_PLATFORM: linux/amd64
+
+  cli-linux-arm64:
+    job_file: release-cli.yaml
+    depends_on:
+      - prepare
+    environment:
+      REACTORCIDE_RELEASE_PLATFORM: linux/arm64
+
+  cli-darwin-amd64:
+    job_file: release-cli.yaml
+    depends_on:
+      - prepare
+    environment:
+      REACTORCIDE_RELEASE_PLATFORM: darwin/amd64
+
+  cli-darwin-arm64:
+    job_file: release-cli.yaml
+    depends_on:
+      - prepare
+    environment:
+      REACTORCIDE_RELEASE_PLATFORM: darwin/arm64
+
+  cli-windows-amd64:
+    job_file: release-cli.yaml
+    depends_on:
+      - prepare
+    environment:
+      REACTORCIDE_RELEASE_PLATFORM: windows/amd64
+
+  cli-windows-arm64:
+    job_file: release-cli.yaml
+    depends_on:
+      - prepare
+    environment:
+      REACTORCIDE_RELEASE_PLATFORM: windows/arm64
+
+  publish:
+    job_file: release-control.yaml
+    depends_on:
+      - image-runnerbase
+      - images-coordinator-worker
+      - image-web
+      - cli-linux-amd64
+      - cli-linux-arm64
+      - cli-darwin-amd64
+      - cli-darwin-arm64
+      - cli-windows-amd64
+      - cli-windows-arm64
+    environment:
+      REACTORCIDE_RELEASE_JOB: publish
