@@ -24,6 +24,7 @@ import (
 // CredentialStore.
 type LocalRPBackend struct {
 	identity *localrp.LocalRpKeyMaterial
+	dns      localrp.DnsResolver
 	now      func() time.Time
 }
 
@@ -71,7 +72,11 @@ func NewLocalRPBackend(ctx context.Context, credStore CredentialStore, keys *sec
 		return nil, fmt.Errorf("auth: local-rp identity bundle expired at %s; generate a new one (fingerprint %s)", status.ExpiresAt, identity.Fingerprint)
 	}
 
-	return &LocalRPBackend{identity: identity, now: time.Now}, nil
+	return &LocalRPBackend{
+		identity: identity,
+		dns:      localrp.DefaultDNSResolver(),
+		now:      time.Now,
+	}, nil
 }
 
 // Fingerprint returns this backend's local-RP identity fingerprint (the
@@ -99,11 +104,18 @@ func (b *LocalRPBackend) BeginLogin(_ context.Context, identitySelector, callbac
 		return "", nil, fmt.Errorf("auth: local-rp begin login: %w", err)
 	}
 
+	sdkRedirect, err := url.Parse(redirect.RedirectURL)
+	if err != nil {
+		return "", nil, fmt.Errorf("auth: parse local-rp redirect: %w", err)
+	}
+	discoveredRedirect := resolveBrowserEndpoint(b.dns, domain, "/auth/local-rp")
+	discoveredRedirect.RawQuery = sdkRedirect.RawQuery
+
 	blob, err := json.Marshal(pending)
 	if err != nil {
 		return "", nil, fmt.Errorf("auth: marshal pending local-rp login: %w", err)
 	}
-	return redirect.RedirectURL, blob, nil
+	return discoveredRedirect.String(), blob, nil
 }
 
 func (b *LocalRPBackend) CompleteLogin(_ context.Context, pendingBlob []byte, arrivedURL string) (*VerifiedIdentity, error) {

@@ -4,10 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/url"
 	"strings"
 	"testing"
 	"time"
 
+	localrp "github.com/catalystcommunity/linkkeys/sdks/local-rp/go"
 	api "github.com/catalystcommunity/linkkeys/sdks/local-rp/go/generated"
 )
 
@@ -55,6 +57,18 @@ func (fakeDNSResolver) TxtLookup(string) ([]string, error) {
 	return nil, fmt.Errorf("no DNS in tests")
 }
 
+type staticDNSResolver struct {
+	records map[string][]string
+}
+
+func (r staticDNSResolver) TxtLookup(name string) ([]string, error) {
+	records, ok := r.records[name]
+	if !ok {
+		return nil, fmt.Errorf("no TXT record for %s", name)
+	}
+	return records, nil
+}
+
 func newTestRPBackend(transport *fakeRPTransport) *RPBackend {
 	return &RPBackend{transport: transport, dns: fakeDNSResolver{}, now: time.Now}
 }
@@ -89,6 +103,78 @@ func TestRPBackendBeginLogin(t *testing.T) {
 	}
 	if pending.Nonce == "" {
 		t.Fatal("pending.Nonce must not be empty")
+	}
+}
+
+func TestRPBackendBeginLoginUsesDiscoveredHTTPSBase(t *testing.T) {
+	transport := newFakeRPTransport()
+	transport.responses["sign-request"] = api.EncodeRpSignResponse(api.RpSignResponse{SignedRequest: "signed-request-blob"})
+	backend := newTestRPBackend(transport)
+	backend.dns = staticDNSResolver{records: map[string][]string{
+		localrp.LinkKeysApisDNSName("idp.example.com"): {
+			"v=lk1 tcp=linkkeys.example.com https=login.example.com/linkkeys",
+		},
+	}}
+
+	redirectURL, _, err := backend.BeginLogin(
+		context.Background(),
+		"alice@idp.example.com",
+		"https://app.example.com/auth/callback",
+	)
+	if err != nil {
+		t.Fatalf("BeginLogin() error = %v", err)
+	}
+	u, err := url.Parse(redirectURL)
+	if err != nil {
+		t.Fatalf("parse redirect URL: %v", err)
+	}
+	if got, want := u.Scheme+"://"+u.Host+u.Path, "https://login.example.com/linkkeys/auth/authorize"; got != want {
+		t.Fatalf("redirect endpoint = %q, want %q", got, want)
+	}
+	if u.Query().Get("signed_request") != "signed-request-blob" {
+		t.Fatalf("redirectURL = %q, missing signed_request", redirectURL)
+	}
+	if u.Query().Get("user_hint") != "alice" {
+		t.Fatalf("redirectURL = %q, missing user_hint", redirectURL)
+	}
+}
+
+func TestLocalRPBackendBeginLoginUsesDiscoveredHTTPSBase(t *testing.T) {
+	now := time.Date(2026, 7, 29, 12, 0, 0, 0, time.UTC)
+	identity, err := localrp.GenerateLocalRpIdentity(localrp.GenerateLocalRpIdentityConfig{
+		AppName: "test-app",
+		Now:     now,
+	})
+	if err != nil {
+		t.Fatalf("GenerateLocalRpIdentity() error = %v", err)
+	}
+	backend := &LocalRPBackend{
+		identity: identity,
+		dns: staticDNSResolver{records: map[string][]string{
+			localrp.LinkKeysApisDNSName("idp.example.com"): {
+				"v=lk1 tcp=linkkeys.example.com https=login.example.com/linkkeys",
+			},
+		}},
+		now: func() time.Time { return now },
+	}
+
+	redirectURL, _, err := backend.BeginLogin(
+		context.Background(),
+		"alice@idp.example.com",
+		"https://app.example.com/auth/callback",
+	)
+	if err != nil {
+		t.Fatalf("BeginLogin() error = %v", err)
+	}
+	u, err := url.Parse(redirectURL)
+	if err != nil {
+		t.Fatalf("parse redirect URL: %v", err)
+	}
+	if got, want := u.Scheme+"://"+u.Host+u.Path, "https://login.example.com/linkkeys/auth/local-rp"; got != want {
+		t.Fatalf("redirect endpoint = %q, want %q", got, want)
+	}
+	if u.Query().Get("signed_request") == "" {
+		t.Fatalf("redirectURL = %q, missing signed_request", redirectURL)
 	}
 }
 

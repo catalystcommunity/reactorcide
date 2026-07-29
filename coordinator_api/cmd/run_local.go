@@ -131,25 +131,34 @@ func resolveRunAsUserFromArgs(userFlag string, asRunnerFlag bool, specUser strin
 		return 0, 0, false, fmt.Errorf("--as-runner and --user are mutually exclusive")
 	}
 
+	selectedUser := ""
 	switch {
 	case userFlag != "":
+		selectedUser = userFlag
 		uid, gid, err = parseUserGroup(userFlag)
 	case asRunnerFlag:
 		uid, gid = runnerUID, runnerGID
 	case specUser != "":
+		selectedUser = specUser
 		uid, gid, err = parseUserGroup(specUser)
 	case specAsRunner:
 		uid, gid = runnerUID, runnerGID
 	case runAsUser != "":
+		selectedUser = runAsUser
 		uid, gid, err = parseUserGroup(runAsUser)
 	default:
+		selectedUser = "host"
 		uid, gid = hostRunAsUser()
 	}
 	if err != nil {
 		return 0, 0, false, err
 	}
 
-	asRunner = uid == runnerUID && gid == runnerGID
+	// A host user can also have the numeric identity 1001:1001. Preserve
+	// the requested host behavior in that case instead of treating it as
+	// the image's runner account.
+	asRunner = !strings.EqualFold(strings.TrimSpace(selectedUser), "host") &&
+		uid == runnerUID && gid == runnerGID
 	return uid, gid, asRunner, nil
 }
 
