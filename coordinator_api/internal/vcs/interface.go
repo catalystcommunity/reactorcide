@@ -16,7 +16,7 @@ const (
 // WebhookEvent represents a parsed webhook event from a VCS provider
 type WebhookEvent struct {
 	Provider     Provider
-	EventType    string // raw event type from the VCS provider (e.g., "pull_request", "push")
+	EventType    string    // raw event type from the VCS provider (e.g., "pull_request", "push")
 	GenericEvent EventType // VCS-agnostic event type (e.g., EventPullRequestOpened)
 	Repository   RepositoryInfo
 	PullRequest  *PullRequestInfo
@@ -26,10 +26,10 @@ type WebhookEvent struct {
 
 // RepositoryInfo contains repository information
 type RepositoryInfo struct {
-	FullName  string // e.g., "owner/repo"
-	CloneURL  string
-	SSHURL    string
-	HTMLURL   string
+	FullName      string // e.g., "owner/repo"
+	CloneURL      string
+	SSHURL        string
+	HTMLURL       string
 	DefaultBranch string
 }
 
@@ -41,6 +41,7 @@ type PullRequestInfo struct {
 	State       string // open, closed
 	Merged      bool
 	HeadSHA     string
+	MergeSHA    string // commit created on the target branch after a merge
 	HeadRef     string // branch name
 	BaseSHA     string
 	BaseRef     string // target branch
@@ -59,29 +60,29 @@ type PullRequestInfo struct {
 
 // PushInfo contains push event information
 type PushInfo struct {
-	Ref        string   // e.g., "refs/heads/main"
-	Before     string   // previous commit SHA
-	After      string   // new commit SHA
-	Created    bool
-	Deleted    bool
-	Forced     bool
-	Compare    string   // URL to compare changes
-	Commits    []Commit
-	Pusher     string
+	Ref         string // e.g., "refs/heads/main"
+	Before      string // previous commit SHA
+	After       string // new commit SHA
+	Created     bool
+	Deleted     bool
+	Forced      bool
+	Compare     string // URL to compare changes
+	Commits     []Commit
+	Pusher      string
 	PusherEmail string
 }
 
 // Commit represents a commit in a push event
 type Commit struct {
-	ID        string
-	Message   string
-	Author    string
+	ID          string
+	Message     string
+	Author      string
 	AuthorEmail string
-	Timestamp string
-	URL       string
-	Added     []string
-	Modified  []string
-	Removed   []string
+	Timestamp   string
+	URL         string
+	Added       []string
+	Modified    []string
+	Removed     []string
 }
 
 // StatusUpdate represents a commit status update
@@ -97,11 +98,11 @@ type StatusUpdate struct {
 type StatusState string
 
 const (
-	StatusPending StatusState = "pending"
-	StatusRunning StatusState = "running"
-	StatusSuccess StatusState = "success"
-	StatusFailure StatusState = "failure"
-	StatusError   StatusState = "error"
+	StatusPending   StatusState = "pending"
+	StatusRunning   StatusState = "running"
+	StatusSuccess   StatusState = "success"
+	StatusFailure   StatusState = "failure"
+	StatusError     StatusState = "error"
 	StatusCancelled StatusState = "cancelled"
 )
 

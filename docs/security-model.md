@@ -35,7 +35,10 @@ For a pull request from a fork:
 - `SourceURL` points to the fork.
 - `SourceRef` points to the pull-request head.
 - `CISourceURL` points to the trusted upstream repository.
-- `CISourceRef` points to the trusted base commit.
+- For an open or updated pull request, `CISourceRef` points to the trusted base
+  commit.
+- For a merged pull request, `CISourceRef` points to the trusted revision on the
+  target branch.
 
 This design prevents the pull request from changing the CI definition that
 starts the job.

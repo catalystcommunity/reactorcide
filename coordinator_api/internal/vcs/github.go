@@ -169,9 +169,9 @@ func (c *GitHubClient) UpdateCommitStatus(ctx context.Context, repo string, upda
 	}
 
 	c.logger.WithFields(logrus.Fields{
-		"repo":   repo,
-		"sha":    update.SHA,
-		"state":  githubState,
+		"repo":    repo,
+		"sha":     update.SHA,
+		"state":   githubState,
 		"context": update.Context,
 	}).Info("Updated GitHub commit status")
 
@@ -375,6 +375,7 @@ func (c *GitHubClient) parsePullRequestEvent(body []byte, event *WebhookEvent) e
 		State:       payload.PullRequest.State,
 		Merged:      payload.PullRequest.Merged,
 		HeadSHA:     payload.PullRequest.Head.SHA,
+		MergeSHA:    payload.PullRequest.MergeCommitSHA,
 		HeadRef:     payload.PullRequest.Head.Ref,
 		BaseSHA:     payload.PullRequest.Base.SHA,
 		BaseRef:     payload.PullRequest.Base.Ref,
@@ -473,6 +474,7 @@ func (c *GitHubClient) convertPRInfo(pr githubPullRequest) *PullRequestInfo {
 		State:       pr.State,
 		Merged:      pr.Merged,
 		HeadSHA:     pr.Head.SHA,
+		MergeSHA:    pr.MergeCommitSHA,
 		HeadRef:     pr.Head.Ref,
 		BaseSHA:     pr.Base.SHA,
 		BaseRef:     pr.Base.Ref,
@@ -483,22 +485,23 @@ func (c *GitHubClient) convertPRInfo(pr githubPullRequest) *PullRequestInfo {
 
 // GitHub API structures
 type githubPullRequestEvent struct {
-	Action      string              `json:"action"`
-	Number      int                 `json:"number"`
-	PullRequest githubPullRequest   `json:"pull_request"`
-	Repository  githubRepository    `json:"repository"`
+	Action      string            `json:"action"`
+	Number      int               `json:"number"`
+	PullRequest githubPullRequest `json:"pull_request"`
+	Repository  githubRepository  `json:"repository"`
 }
 
 type githubPullRequest struct {
-	Number  int              `json:"number"`
-	Title   string           `json:"title"`
-	Body    string           `json:"body"`
-	State   string           `json:"state"`
-	Merged  bool             `json:"merged"`
-	HTMLURL string           `json:"html_url"`
-	Head    githubRef        `json:"head"`
-	Base    githubRef        `json:"base"`
-	User    githubUser       `json:"user"`
+	Number         int        `json:"number"`
+	Title          string     `json:"title"`
+	Body           string     `json:"body"`
+	State          string     `json:"state"`
+	Merged         bool       `json:"merged"`
+	MergeCommitSHA string     `json:"merge_commit_sha"`
+	HTMLURL        string     `json:"html_url"`
+	Head           githubRef  `json:"head"`
+	Base           githubRef  `json:"base"`
+	User           githubUser `json:"user"`
 }
 
 type githubRef struct {

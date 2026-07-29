@@ -1,7 +1,7 @@
 name: release-control
 description: "Prepare or publish a coordinated Reactorcide release"
 job:
-  image: containers.catalystsquad.com/public/reactorcide/runnerbase:dev
+  image: containers.catalystsquad.com/public/reactorcide/runnerbase:latest
   command: "runnerlib run --job-command true"
   timeout: 600
   priority: 15

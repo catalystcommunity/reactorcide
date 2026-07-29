@@ -81,7 +81,8 @@ Set `PullRequestInfo.HeadRepository` when the head branch is in a fork.
 The handler then uses:
 
 - Fork URL and head SHA for application source.
-- Base repository URL and trusted base SHA for CI source.
+- Base repository URL and trusted base SHA for open or updated pull requests.
+- Base repository URL and trusted target revision for merged pull requests.
 
 Tests must cover a fork whose branch name does not exist in the base
 repository.

@@ -11,18 +11,18 @@ import (
 
 func evalTestProject() *models.Project {
 	return &models.Project{
-		ProjectID:              "proj-123",
-		Name:                   "test-project",
-		RepoURL:                "github.com/org/repo",
-		Enabled:                true,
-		TargetBranches:         []string{"main"},
-		AllowedEventTypes:      []string{"push", "pull_request_opened", "pull_request_updated", "tag_created"},
-		DefaultCISourceType:    models.SourceTypeGit,
-		DefaultCISourceURL:     "https://github.com/org/ci-repo.git",
-		DefaultCISourceRef:     "main",
-		DefaultRunnerImage:     "quay.io/catalystcommunity/reactorcide_runner",
-		DefaultTimeoutSeconds:  1800,
-		DefaultQueueName:       "reactorcide-jobs",
+		ProjectID:             "proj-123",
+		Name:                  "test-project",
+		RepoURL:               "github.com/org/repo",
+		Enabled:               true,
+		TargetBranches:        []string{"main"},
+		AllowedEventTypes:     []string{"push", "pull_request_opened", "pull_request_updated", "tag_created"},
+		DefaultCISourceType:   models.SourceTypeGit,
+		DefaultCISourceURL:    "https://github.com/org/ci-repo.git",
+		DefaultCISourceRef:    "main",
+		DefaultRunnerImage:    "quay.io/catalystcommunity/reactorcide_runner",
+		DefaultTimeoutSeconds: 1800,
+		DefaultQueueName:      "reactorcide-jobs",
 	}
 }
 
@@ -226,6 +226,8 @@ func TestBuildEvalJob_PRUpdated(t *testing.T) {
 
 func TestBuildEvalJob_PRMerged(t *testing.T) {
 	project := evalTestProject()
+	project.DefaultCISourceURL = ""
+	project.DefaultCISourceRef = ""
 	event := &vcs.WebhookEvent{
 		Provider:     vcs.GitHub,
 		EventType:    "pull_request",
@@ -235,13 +237,15 @@ func TestBuildEvalJob_PRMerged(t *testing.T) {
 			CloneURL: "https://github.com/org/repo.git",
 		},
 		PullRequest: &vcs.PullRequestInfo{
-			Number:  10,
-			Title:   "Merged PR",
-			Action:  "closed",
-			Merged:  true,
-			HeadSHA: "merge-sha",
-			HeadRef: "feature",
-			BaseRef: "main",
+			Number:   10,
+			Title:    "Merged PR",
+			Action:   "closed",
+			Merged:   true,
+			HeadSHA:  "pr-head-sha",
+			MergeSHA: "target-merge-sha",
+			HeadRef:  "feature",
+			BaseSHA:  "pre-merge-base-sha",
+			BaseRef:  "main",
 		},
 	}
 
@@ -249,6 +253,10 @@ func TestBuildEvalJob_PRMerged(t *testing.T) {
 
 	assert.Equal(t, "eval: PR #10 merged on org/repo", job.Name)
 	assert.Equal(t, "pull_request_merged", job.JobEnvVars["REACTORCIDE_EVENT_TYPE"])
+	assert.Equal(t, "target-merge-sha", *job.SourceRef)
+	assert.Equal(t, "target-merge-sha", *job.CISourceRef)
+	assert.Equal(t, "target-merge-sha", job.JobEnvVars["REACTORCIDE_SHA"])
+	assert.Equal(t, "target-merge-sha", job.JobEnvVars["REACTORCIDE_CI_SOURCE_REF"])
 }
 
 func TestBuildEvalJob_PRClosed(t *testing.T) {

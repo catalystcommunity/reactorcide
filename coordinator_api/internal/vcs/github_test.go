@@ -180,6 +180,7 @@ func TestGitHubClient_ParseWebhook(t *testing.T) {
 					"body": "Test description",
 					"state": "closed",
 					"merged": true,
+					"merge_commit_sha": "merged789",
 					"html_url": "https://github.com/test/repo/pull/123",
 					"head": {
 						"ref": "feature-branch",
@@ -205,6 +206,7 @@ func TestGitHubClient_ParseWebhook(t *testing.T) {
 			checkResult: func(t *testing.T, event *WebhookEvent) {
 				assert.Equal(t, EventPullRequestMerged, event.GenericEvent)
 				assert.True(t, event.PullRequest.Merged)
+				assert.Equal(t, "merged789", event.PullRequest.MergeSHA)
 				assert.Equal(t, "closed", event.PullRequest.Action)
 			},
 		},
@@ -402,7 +404,7 @@ func TestGitHubClient_ParseWebhook_FormEncoded(t *testing.T) {
 
 func TestGitHubClient_ValidateWebhook(t *testing.T) {
 	client, err := NewGitHubClient(Config{
-		Provider:      GitHub,
+		Provider: GitHub,
 	})
 	require.NoError(t, err)
 

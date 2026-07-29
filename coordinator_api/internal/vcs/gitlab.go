@@ -137,9 +137,9 @@ func (c *GitLabClient) UpdateCommitStatus(ctx context.Context, repo string, upda
 	}
 
 	c.logger.WithFields(logrus.Fields{
-		"repo":   repo,
-		"sha":    update.SHA,
-		"state":  gitlabState,
+		"repo":    repo,
+		"sha":     update.SHA,
+		"state":   gitlabState,
 		"context": update.Context,
 	}).Info("Updated GitLab commit status")
 
@@ -338,6 +338,7 @@ func (c *GitLabClient) parseMergeRequestEvent(body []byte, event *WebhookEvent) 
 		Description: payload.ObjectAttributes.Description,
 		State:       state,
 		HeadSHA:     payload.ObjectAttributes.LastCommit.ID,
+		MergeSHA:    payload.ObjectAttributes.MergeCommitSHA,
 		HeadRef:     payload.ObjectAttributes.SourceBranch,
 		BaseSHA:     "", // Not provided in webhook
 		BaseRef:     payload.ObjectAttributes.TargetBranch,
@@ -450,6 +451,7 @@ func (c *GitLabClient) convertMRInfo(mr gitlabMergeRequest) *PullRequestInfo {
 		Description: mr.Description,
 		State:       state,
 		HeadSHA:     mr.SHA,
+		MergeSHA:    mr.MergeCommitSHA,
 		HeadRef:     mr.SourceBranch,
 		BaseSHA:     mr.DiffRefs.BaseSHA,
 		BaseRef:     mr.TargetBranch,
@@ -468,38 +470,40 @@ type gitlabMergeRequestEvent struct {
 }
 
 type gitlabMergeRequestAttrs struct {
-	ID           int                 `json:"id"`
-	IID          int                 `json:"iid"`
-	Title        string              `json:"title"`
-	Description  string              `json:"description"`
-	State        string              `json:"state"`
-	MergeStatus  string              `json:"merge_status"`
-	SourceBranch string              `json:"source_branch"`
-	TargetBranch string              `json:"target_branch"`
-	LastCommit   gitlabCommit        `json:"last_commit"`
-	URL          string              `json:"url"`
-	Action       string              `json:"action"`
-	OldRev       string              `json:"oldrev"`
+	ID             int          `json:"id"`
+	IID            int          `json:"iid"`
+	Title          string       `json:"title"`
+	Description    string       `json:"description"`
+	State          string       `json:"state"`
+	MergeStatus    string       `json:"merge_status"`
+	MergeCommitSHA string       `json:"merge_commit_sha"`
+	SourceBranch   string       `json:"source_branch"`
+	TargetBranch   string       `json:"target_branch"`
+	LastCommit     gitlabCommit `json:"last_commit"`
+	URL            string       `json:"url"`
+	Action         string       `json:"action"`
+	OldRev         string       `json:"oldrev"`
 }
 
 type gitlabMergeRequest struct {
-	ID           int              `json:"id"`
-	IID          int              `json:"iid"`
-	Title        string           `json:"title"`
-	Description  string           `json:"description"`
-	State        string           `json:"state"`
-	MergeStatus  string           `json:"merge_status"`
-	SHA          string           `json:"sha"`
-	SourceBranch string           `json:"source_branch"`
-	TargetBranch string           `json:"target_branch"`
-	WebURL       string           `json:"web_url"`
-	Author       gitlabUser       `json:"author"`
-	DiffRefs     gitlabDiffRefs   `json:"diff_refs"`
+	ID             int            `json:"id"`
+	IID            int            `json:"iid"`
+	Title          string         `json:"title"`
+	Description    string         `json:"description"`
+	State          string         `json:"state"`
+	MergeStatus    string         `json:"merge_status"`
+	MergeCommitSHA string         `json:"merge_commit_sha"`
+	SHA            string         `json:"sha"`
+	SourceBranch   string         `json:"source_branch"`
+	TargetBranch   string         `json:"target_branch"`
+	WebURL         string         `json:"web_url"`
+	Author         gitlabUser     `json:"author"`
+	DiffRefs       gitlabDiffRefs `json:"diff_refs"`
 }
 
 type gitlabDiffRefs struct {
-	BaseSHA string `json:"base_sha"`
-	HeadSHA string `json:"head_sha"`
+	BaseSHA  string `json:"base_sha"`
+	HeadSHA  string `json:"head_sha"`
 	StartSHA string `json:"start_sha"`
 }
 

@@ -22,15 +22,21 @@ import (
 func BuildEvalJob(project *models.Project, event *vcs.WebhookEvent) *models.Job {
 	sourceType := models.SourceTypeGit
 
-	// Code source URL: for fork PRs, points at the fork; otherwise upstream.
+	// Code source URL: for open fork PRs, points at the fork; otherwise
+	// upstream. A merged PR runs from the revision that now belongs to the
+	// upstream target branch.
 	// Existing job YAMLs that do `git clone $REACTORCIDE_SOURCE_URL` keep
 	// working unchanged for fork PRs because SOURCE_URL now resolves to the
 	// repo where the branch actually lives.
 	upstreamURL := event.Repository.CloneURL
 	sourceURL := upstreamURL
+	headURL := upstreamURL
 	isForkPR := false
 	if event.PullRequest != nil && event.PullRequest.HeadRepository != nil {
-		sourceURL = event.PullRequest.HeadRepository.CloneURL
+		headURL = event.PullRequest.HeadRepository.CloneURL
+		if event.GenericEvent != vcs.EventPullRequestMerged {
+			sourceURL = headURL
+		}
 		isForkPR = true
 	}
 
@@ -47,10 +53,13 @@ func BuildEvalJob(project *models.Project, event *vcs.WebhookEvent) *models.Job 
 	if event.PullRequest != nil {
 		pr := event.PullRequest
 		sourceRef = pr.HeadSHA
+		if event.GenericEvent == vcs.EventPullRequestMerged && pr.MergeSHA != "" {
+			sourceRef = pr.MergeSHA
+		}
 		branch = pr.BaseRef
 		jobName = fmt.Sprintf("eval: PR #%d %s on %s", pr.Number, actionLabel(event.GenericEvent), event.Repository.FullName)
 
-		envVars["REACTORCIDE_SHA"] = pr.HeadSHA
+		envVars["REACTORCIDE_SHA"] = sourceRef
 		envVars["REACTORCIDE_BRANCH"] = pr.BaseRef
 		envVars["REACTORCIDE_PR_NUMBER"] = fmt.Sprintf("%d", pr.Number)
 		envVars["REACTORCIDE_PR_REF"] = pr.HeadRef
@@ -59,7 +68,7 @@ func BuildEvalJob(project *models.Project, event *vcs.WebhookEvent) *models.Job 
 
 		// Explicit head/base URL pair lets job authors set up both remotes
 		// (e.g. for `git log base..head`) without overloading SOURCE_URL.
-		envVars["REACTORCIDE_HEAD_URL"] = sourceURL
+		envVars["REACTORCIDE_HEAD_URL"] = headURL
 		envVars["REACTORCIDE_HEAD_REF"] = pr.HeadRef
 		envVars["REACTORCIDE_BASE_URL"] = upstreamURL
 		envVars["REACTORCIDE_BASE_REF"] = pr.BaseRef
@@ -93,17 +102,17 @@ func BuildEvalJob(project *models.Project, event *vcs.WebhookEvent) *models.Job 
 		envVars["REACTORCIDE_CI_SOURCE_URL"] = project.DefaultCISourceURL
 		envVars["REACTORCIDE_CI_SOURCE_REF"] = project.DefaultCISourceRef
 	} else {
-		// Same-repo mode: use the upstream repo for job definitions. For PR
-		// events, anchor at the base branch's SHA (trusted state of the
-		// target) rather than the PR head — otherwise a fork PR could ship
-		// malicious .reactorcide/jobs/*.yaml that the eval job would execute.
-		// For push events, the push has already passed the project's commit
-		// gates, so the pushed SHA is trusted.
+		// Same-repo mode uses the upstream repository for job definitions.
+		// Open and updated PRs use the base SHA, so untrusted PR content cannot
+		// change the CI definition. Merged PRs use the revision that is now on
+		// the target branch. Push events use the pushed SHA.
 		st := models.SourceTypeGit
 		ciSourceType = &st
 		ciSourceURL = &upstreamURL
 		var ciRef string
-		if event.PullRequest != nil {
+		if event.GenericEvent == vcs.EventPullRequestMerged {
+			ciRef = sourceRef
+		} else if event.PullRequest != nil {
 			ciRef = event.PullRequest.BaseSHA
 		} else {
 			ciRef = sourceRef

@@ -164,7 +164,9 @@ The normal paths are:
 ```
 
 For a pull request from a fork, the application source URL points to the fork.
-The CI source URL points to the upstream repository at a trusted base commit.
+For an open or updated pull request, the CI source URL points to the upstream
+repository at a trusted base commit. For a merged pull request, it points to the
+trusted revision on the target branch.
 This prevents the pull request from replacing its own CI definition.
 
 This separation is not a complete sandbox. Source code and CI code can still
