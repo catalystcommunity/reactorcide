@@ -1,7 +1,7 @@
 name: release-cli
 description: "Build and upload one Reactorcide CLI platform archive"
 job:
-  image: containers.catalystsquad.com/public/reactorcide/runnerbase:dev
+  image: containers.catalystsquad.com/public/reactorcide/runnerbase:latest
   command: "runnerlib run --job-command true"
   timeout: 1800
   priority: 15

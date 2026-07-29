@@ -1,7 +1,7 @@
 name: release-image
 description: "Build and push one Reactorcide release image group"
 job:
-  image: containers.catalystsquad.com/public/reactorcide/runnerbase:dev
+  image: containers.catalystsquad.com/public/reactorcide/runnerbase:latest
   command: "runnerlib run --job-command true"
   timeout: 1800
   priority: 15
