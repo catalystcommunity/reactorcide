@@ -1,11 +1,12 @@
 # Reactorcide
 
-Reactorcide is a small CI/CD system for isolated container jobs. You can run
+Reactorcide is a small CI/CD system for ephemeral container or vm jobs. You can run
 the same job on a workstation, a VM worker, or a Kubernetes worker.
 
 Reactorcide supports trusted CI definitions for source from outside
 contributors. It also supports named workflows, job dependencies, secret
-grants, authenticated workers, and GitHub webhooks.
+grants, authenticated workers, and GitHub webhooks. It is not attached to git, but
+git is the current implemented VCS, others may follow if needed.
 
 ## Choose a Starting Point
 

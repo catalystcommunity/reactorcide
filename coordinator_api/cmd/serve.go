@@ -19,7 +19,7 @@ var flags = []cli.Flag{
 		Name:        "db-uri",
 		Aliases:     []string{"db"},
 		Value:       "postgresql://devuser:devpass@monodemo-postgresql:5432/monodemopg?sslmode=disable",
-		Usage:       "The uri to use to connect to the db",
+		Usage:       "The uri to use to connect to the postgres db",
 		Destination: &config.DbUri,
 		EnvVars:     []string{"REACTORCIDE_DB_URI", "DB_URI"},
 	},
