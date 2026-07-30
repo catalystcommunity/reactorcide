@@ -73,6 +73,21 @@ def _run(
     )
 
 
+def _semver_failure(error: subprocess.CalledProcessError) -> RuntimeError:
+    """Return a safe error with the captured semver-tags output."""
+    output = "\n".join(
+        part.strip()
+        for part in (error.stdout or "", error.stderr or "")
+        if part.strip()
+    )
+    for name in SECRET_ENVIRONMENT_NAMES:
+        value = os.environ.get(name, "")
+        if value:
+            output = output.replace(value, "***")
+    detail = output[-4000:] if output else str(error)
+    return RuntimeError(f"semver-tags failed: {detail}")
+
+
 def _required_environment(name: str) -> str:
     value = os.environ.get(name, "").strip()
     if not value:
@@ -241,13 +256,82 @@ def _install_buildctl() -> Path:
     )
 
 
-def _release_metadata(code_dir: Path) -> Optional[Dict[str, str]]:
-    semver_tags = _install_semver_tags()
+def _git_push_environment(code_dir: Path) -> Dict[str, str]:
+    """Build an environment that lets Git authenticate without exposing a token."""
+    repository = _release_repository()
     result = _run(
-        [str(semver_tags), "run", "--output_json"],
+        ["git", "remote", "get-url", "origin"],
         cwd=code_dir,
         capture_output=True,
     )
+    remote = urllib.parse.urlsplit(result.stdout.strip())
+    remote_repository = remote.path.strip("/")
+    if remote_repository.endswith(".git"):
+        remote_repository = remote_repository[:-4]
+    if (
+        remote.scheme != "https"
+        or remote.hostname != "github.com"
+        or remote.username is not None
+        or remote_repository.lower() != repository.lower()
+    ):
+        raise RuntimeError(
+            "The origin remote must be the configured GitHub repository"
+        )
+
+    askpass = Path("/tmp/reactorcide-release-tools/git-askpass.py")
+    askpass.parent.mkdir(parents=True, exist_ok=True)
+    askpass.write_text(
+        """#!/usr/bin/env python3
+import os
+import sys
+
+prompt = sys.argv[1].lower() if len(sys.argv) > 1 else ""
+name = (
+    "REACTORCIDE_GIT_USERNAME"
+    if "username" in prompt
+    else "REACTORCIDE_GIT_PASSWORD"
+)
+sys.stdout.write(os.environ[name] + "\\n")
+""",
+        encoding="utf-8",
+    )
+    askpass.chmod(0o700)
+
+    environment = _sanitized_environment()
+    environment.pop("GIT_CONFIG_GLOBAL", None)
+    environment["GIT_CONFIG_COUNT"] = "1"
+    environment["GIT_CONFIG_KEY_0"] = "credential.helper"
+    environment["GIT_CONFIG_VALUE_0"] = ""
+    environment["GIT_ASKPASS"] = str(askpass)
+    environment["GIT_TERMINAL_PROMPT"] = "0"
+    environment["REACTORCIDE_GIT_USERNAME"] = "x-access-token"
+    environment["REACTORCIDE_GIT_PASSWORD"] = _required_environment(
+        "GITHUB_PAT"
+    )
+    return environment
+
+
+def _release_metadata(
+    code_dir: Path,
+    *,
+    push: bool = False,
+) -> Optional[Dict[str, str]]:
+    semver_tags = _install_semver_tags()
+    command = [str(semver_tags), "run", "--output_json"]
+    environment = None
+    if push:
+        environment = _git_push_environment(code_dir)
+    else:
+        command.append("--dry_run")
+    try:
+        result = _run(
+            command,
+            cwd=code_dir,
+            env=environment,
+            capture_output=True,
+        )
+    except subprocess.CalledProcessError as error:
+        raise _semver_failure(error) from error
     output_lines = [
         line.strip()
         for line in (result.stdout + "\n" + result.stderr).splitlines()
@@ -272,26 +356,16 @@ def _release_metadata(code_dir: Path) -> Optional[Dict[str, str]]:
     raise RuntimeError("semver-tags did not return release metadata")
 
 
-def prepare_release(code_dir: Path) -> None:
-    """Create or reuse the draft release for this source commit."""
-    repository = _release_repository()
-    source_sha = _source_sha(code_dir)
-    existing = _find_draft_release(repository, source_sha)
-    if existing:
-        log_stdout(
-            f"Reusing draft release {existing.get('tag_name', existing.get('id'))}"
-        )
-        return
-
-    metadata = _release_metadata(code_dir)
-    if metadata is None:
-        log_stdout("No release is required for this source commit")
-        return
-
+def _create_draft_release(
+    repository: str,
+    source_sha: str,
+    metadata: Dict[str, str],
+) -> Dict[str, Any]:
+    """Create the draft that authorizes a later tag-push release workflow."""
     notes = metadata["notes"] or "Released by Reactorcide CI."
     body = f"{notes}\n\n{_release_marker(source_sha)}"
     encoded_repository = urllib.parse.quote(repository, safe="/")
-    release = _github_request(
+    return _github_request(
         "POST",
         f"/repos/{encoded_repository}/releases",
         payload={
@@ -303,7 +377,65 @@ def prepare_release(code_dir: Path) -> None:
             "prerelease": False,
         },
     )
-    log_stdout(f"Created draft release {release['tag_name']}")
+
+
+def tag_release(code_dir: Path) -> None:
+    """Create a draft release, then push its semver tag with CI credentials."""
+    repository = _release_repository()
+    source_sha = _source_sha(code_dir)
+    metadata = _release_metadata(code_dir)
+    if metadata is None:
+        log_stdout("No release is required for this source commit")
+        return
+
+    release = _find_draft_release(repository, source_sha)
+    if release:
+        if release.get("tag_name") != metadata["tag"]:
+            raise RuntimeError(
+                "The existing draft release tag does not match semver-tags"
+            )
+        log_stdout(f"Reusing draft release {release['tag_name']}")
+    else:
+        release = _create_draft_release(repository, source_sha, metadata)
+        log_stdout(f"Created draft release {release['tag_name']}")
+
+    pushed = _release_metadata(code_dir, push=True)
+    if pushed is None or pushed["tag"] != metadata["tag"]:
+        raise RuntimeError("semver-tags did not push the planned release tag")
+    log_stdout(f"Pushed release tag {pushed['tag']}")
+
+
+def prepare_release(code_dir: Path) -> None:
+    """Verify that a CI-created draft authorizes this tag-push release."""
+    event_type = _required_environment("REACTORCIDE_EVENT_TYPE")
+    if event_type != "tag_created":
+        raise RuntimeError("Release preparation requires a tag_created event")
+
+    tag = _required_environment("REACTORCIDE_BRANCH")
+    if not RELEASE_TAG_PATTERN.fullmatch(tag):
+        raise RuntimeError(f"The pushed tag is not a release tag: {tag}")
+
+    source_sha = _source_sha(code_dir)
+    release = _release_for_source(code_dir)
+    if release is None:
+        raise RuntimeError(
+            "No CI-created draft release authorizes this tag and source commit"
+        )
+    if release.get("tag_name") != tag:
+        raise RuntimeError(
+            "The pushed tag does not match the CI-created draft release"
+        )
+
+    tag_result = _run(
+        ["git", "rev-parse", f"refs/tags/{tag}^{{commit}}"],
+        cwd=code_dir,
+        capture_output=True,
+    )
+    if tag_result.stdout.strip() != source_sha:
+        raise RuntimeError(
+            "The pushed tag does not point at the checked-out source commit"
+        )
+    log_stdout(f"Verified CI-created draft release {tag}")
 
 
 def _registry_environment() -> Dict[str, str]:
@@ -620,6 +752,7 @@ def publish_release(code_dir: Path) -> None:
 
 
 RELEASE_JOBS = {
+    "tag": tag_release,
     "prepare": prepare_release,
     "images": build_release_images,
     "cli": build_release_cli,

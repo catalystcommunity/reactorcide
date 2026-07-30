@@ -43,6 +43,8 @@ Use this page to select the correct guide.
 
 - [System Design](../DESIGN.md): Read the implemented architecture and trust
   boundaries.
+- [Release Process](./release-process.md): Create release tags, build
+  artifacts, and recover a failed release.
 - [Runnerlib Design](../runnerlib/DESIGN.md): Read runnerlib responsibilities.
 - [VCS Provider Integration](../coordinator_api/docs/vcs_integration.md): Add a
   VCS adapter.

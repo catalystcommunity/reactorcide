@@ -1,11 +1,11 @@
 name: Reactorcide Release
-description: "Prepare a draft release, build images and CLI archives in parallel, and publish after all builds succeed."
+description: "Verify a CI release tag, build artifacts in parallel, and publish the release."
 
 on:
   events:
-    - pull_request_merged
+    - tag_created
   branches:
-    - main
+    - "v*"
 
 jobs:
   prepare:

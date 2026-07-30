@@ -1,0 +1,14 @@
+name: Reactorcide Release Tag
+description: "Calculate and push the next release tag after a pull request merge."
+
+on:
+  events:
+    - pull_request_merged
+  branches:
+    - main
+
+jobs:
+  tag:
+    job_file: release-control.yaml
+    environment:
+      REACTORCIDE_RELEASE_JOB: tag
