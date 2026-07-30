@@ -79,6 +79,17 @@ func TestProject_ShouldProcessEvent(t *testing.T) {
 			shouldProcess: true,
 		},
 		{
+			name: "Allowed tag does not use target branch filter",
+			project: &Project{
+				Enabled:           true,
+				TargetBranches:    []string{"main"},
+				AllowedEventTypes: []string{"tag_created"},
+			},
+			eventType:     "tag_created",
+			targetBranch:  "v1.2.3",
+			shouldProcess: true,
+		},
+		{
 			name: "Case sensitive branch matching",
 			project: &Project{
 				Enabled:           true,

@@ -780,11 +780,10 @@ func TestWebhookHandler_TagCreated_AllowedByDefault(t *testing.T) {
 	handler.HandleGitHubWebhook(w, req)
 
 	assert.Equal(t, http.StatusOK, w.Code)
-	// tag_created is in the default AllowedEventTypes, but target branch filtering
-	// uses the tag name stripped of refs/tags/ prefix - project has TargetBranches=["main"]
-	// so the tag "v1.0.0" won't match. Let's verify no job was created.
-	// To test that tag_created events ARE processed, we need empty TargetBranches.
-	assert.Len(t, mockStore.CreateJobCalls, 0)
+	// The explicit tag_created grant is the project-level tag gate.
+	// TargetBranches applies only to branches and pull request targets.
+	require.Len(t, mockStore.CreateJobCalls, 1)
+	assert.Equal(t, "tag_created", mockStore.CreateJobCalls[0].JobEnvVars["REACTORCIDE_EVENT_TYPE"])
 }
 
 func TestWebhookHandler_TagCreated_WithEmptyTargetBranches(t *testing.T) {

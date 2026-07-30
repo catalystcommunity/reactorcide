@@ -122,6 +122,13 @@ func (p *Project) ShouldProcessEvent(eventType string, targetBranch string) bool
 		return false
 	}
 
+	// TargetBranches limits branch and pull request events. A tag has no
+	// target branch. The explicit tag_created event grant is its project-level
+	// gate, and the trusted workflow definition can apply a tag pattern.
+	if eventType == "tag_created" {
+		return true
+	}
+
 	// Check if branch is in target branches
 	// Empty target branches means allow all branches
 	if len(p.TargetBranches) == 0 {

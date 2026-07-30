@@ -462,8 +462,8 @@ func (h *WebhookHandler) processPushEvent(event *vcs.WebhookEvent, client vcs.Cl
 		return nil
 	}
 
-	// Extract branch name from ref
-	branch := strings.TrimPrefix(push.Ref, "refs/heads/")
+	// Extract the branch or tag name from the full Git ref.
+	branch := extractBranchOrTag(push.Ref)
 
 	// Use the pre-fetched project or look it up now
 	if project == nil {
