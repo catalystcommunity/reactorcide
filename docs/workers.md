@@ -351,6 +351,13 @@ See `helm_chart/values.yaml` (`worker:` section) and
 `helm_chart/DEPLOYMENT.md` ("Deploying Workers") for the full set of knobs,
 including the optional persistent data directory for `worker_key`.
 
+The chart has three worker data directory modes. The default `emptyDir` and
+the generic ephemeral PVC mode survive a container restart in the same Pod.
+They do not survive Pod deletion. The generic ephemeral PVC mode can use a
+cloud network storage class. The retained PVC mode can survive Pod deletion,
+but it is only safe for one worker replica. See `TELEMETRY_DESIGN.md` for the
+telemetry spool and recovery boundary.
+
 ### Docker Compose (dev bootstrap)
 
 The local dev stack (`docker-compose.yml`) needs a running coordinator

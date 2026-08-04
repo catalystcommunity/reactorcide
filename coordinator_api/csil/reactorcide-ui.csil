@@ -844,6 +844,60 @@ DeactivateEnrollmentTokenResponse = {
     summary: EnrollmentTokenSummary
 }
 
+;;; Graph-ready job resource metrics. All values are integer-scaled by unit.
+;;; Timestamps are RFC3339 UTC text, matching other UI service timestamps.
+GetJobMetricsRequest = {
+    job_id: text,
+    ? from_time: text,
+    ? to_time: text,
+    metrics: [* text],
+    max_points: int
+}
+
+JobMetricLabel = {
+    key: text,
+    value: text
+}
+
+JobMetricUnavailable = {
+    metric_prefix: text,
+    reason: text
+}
+
+JobMetricPoint = {
+    observed_at: text,
+    value: int,
+    ? min: int,
+    ? max: int
+}
+
+JobMetricSeries = {
+    name: text,
+    unit: text,
+    labels: [* JobMetricLabel],
+    points: [* JobMetricPoint]
+}
+
+GetJobMetricsResponse = {
+    series: [* JobMetricSeries],
+    unavailable: [* JobMetricUnavailable],
+    complete: bool
+}
+
+GetJobLogsRequest = {
+    job_id: text,
+    stream: text
+}
+JobLogEntry = {
+    timestamp: text,
+    stream: text,
+    level: text,
+    message: text
+}
+GetJobLogsResponse = {
+    entries: [* JobLogEntry]
+}
+
 service ReactorcideUi {
     get-capabilities: GetCapabilitiesRequest -> GetCapabilitiesResponse / ServiceError,
     list-orgs: ListOrgsRequest -> ListOrgsResponse / ServiceError,
@@ -904,5 +958,7 @@ service ReactorcideUi {
     delete-pool: DeletePoolRequest -> DeletePoolResponse / ServiceError,
     create-enrollment-token: CreateEnrollmentTokenRequest -> CreateEnrollmentTokenResponse / ServiceError,
     list-enrollment-tokens: ListEnrollmentTokensRequest -> ListEnrollmentTokensResponse / ServiceError,
-    deactivate-enrollment-token: DeactivateEnrollmentTokenRequest -> DeactivateEnrollmentTokenResponse / ServiceError
+    deactivate-enrollment-token: DeactivateEnrollmentTokenRequest -> DeactivateEnrollmentTokenResponse / ServiceError,
+    get-job-metrics: GetJobMetricsRequest -> GetJobMetricsResponse / ServiceError,
+    get-job-logs: GetJobLogsRequest -> GetJobLogsResponse / ServiceError
 }

@@ -75,6 +75,21 @@ func (p *Publisher) PublishLogAvailable(ctx context.Context, jobID, stream strin
 	})
 }
 
+// PublishMetricsAvailable signals that a metric range is durable. The event
+// carries no metric values. Authorized clients fetch the range separately.
+func (p *Publisher) PublishMetricsAvailable(ctx context.Context, jobID, from, to string, sequence int64) {
+	if p == nil || p.pool == nil {
+		return
+	}
+	_ = Publish(ctx, p.pool, Event{
+		Type:     EventMetricsAvailable,
+		JobID:    jobID,
+		From:     from,
+		To:       to,
+		Sequence: sequence,
+	})
+}
+
 // NotifyListener holds a dedicated Postgres connection that LISTENs on
 // NotifyChannel and forwards every notification into the local Bus.
 //

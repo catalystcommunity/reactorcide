@@ -210,6 +210,11 @@ func TestJobDetailTemplate(t *testing.T) {
 	if !strings.Contains(html, "secret access denied") {
 		t.Error("job_detail.html should contain last_error")
 	}
+	for _, marker := range []string{"metrics-open", "metrics-dialog", "Metric group", "Last 15 minutes", "ArrowLeft"} {
+		if !strings.Contains(html, marker) {
+			t.Errorf("job_detail.html should contain interactive metrics marker %q", marker)
+		}
+	}
 }
 
 func TestWorkflowDetailTemplateShowsJobLastError(t *testing.T) {

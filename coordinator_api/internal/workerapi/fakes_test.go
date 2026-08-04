@@ -206,11 +206,12 @@ func (f *fakeStore) CreateWorkerLease(ctx context.Context, workerID, jobID strin
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	lease := &models.WorkerLease{
-		LeaseID:    uuid.NewString(),
-		WorkerID:   workerID,
-		JobID:      jobID,
-		QueueUUID:  queueUUID,
-		AcquiredAt: time.Now().UTC(),
+		LeaseID:         uuid.NewString(),
+		WorkerID:        workerID,
+		JobID:           jobID,
+		QueueUUID:       queueUUID,
+		AcquiredAt:      time.Now().UTC(),
+		LastHeartbeatAt: time.Now().UTC(),
 	}
 	f.leases[lease.LeaseID] = lease
 	return lease, nil
@@ -224,6 +225,17 @@ func (f *fakeStore) GetWorkerLeaseByID(ctx context.Context, leaseID string) (*mo
 		return nil, store.ErrNotFound
 	}
 	return l, nil
+}
+
+func (f *fakeStore) TouchWorkerLeaseHeartbeat(ctx context.Context, leaseID string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	lease, ok := f.leases[leaseID]
+	if !ok {
+		return store.ErrNotFound
+	}
+	lease.LastHeartbeatAt = time.Now().UTC()
+	return nil
 }
 
 func (f *fakeStore) ReleaseWorkerLease(ctx context.Context, leaseID, outcome string) error {
@@ -258,7 +270,7 @@ func (f *fakeStore) ListStaleActiveLeases(ctx context.Context, olderThan time.Ti
 	defer f.mu.Unlock()
 	var out []models.WorkerLease
 	for _, l := range f.leases {
-		if l.ReleasedAt == nil && l.AcquiredAt.Before(olderThan) {
+		if l.ReleasedAt == nil && l.LastHeartbeatAt.Before(olderThan) {
 			out = append(out, *l)
 		}
 	}

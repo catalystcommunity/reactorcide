@@ -210,6 +210,67 @@ AppendLogsResponse = {
     ok: bool
 }
 
+;;; LogEntry is one already-masked worker log record. observed_at is an
+;;; RFC3339 UTC timestamp. sequence is scoped to one lease and stream.
+LogBatchEntry = {
+    observed_at: text,
+    level: text,
+    message: text
+}
+
+AppendLogBatchRequest = {
+    lease_id: text,
+    stream: text,
+    sequence: int,
+    entries: [* LogBatchEntry]
+}
+AppendLogBatchResponse = {
+    ok: bool,
+    accepted_sequence: int
+}
+
+;;; Job metrics use integer values with an explicit unit. series_id is local
+;;; to one self-contained batch. sequence is scoped to one lease.
+MetricLabel = {
+    key: text,
+    value: text
+}
+
+MetricSeriesDefinition = {
+    series_id: int,
+    name: text,
+    unit: text,
+    kind: text,
+    labels: [* MetricLabel]
+}
+
+MetricValue = {
+    series_id: int,
+    value: int
+}
+
+MetricSample = {
+    observed_at: text,
+    values: [* MetricValue]
+}
+
+MetricUnavailable = {
+    metric_prefix: text,
+    reason: text
+}
+
+AppendMetricBatchRequest = {
+    lease_id: text,
+    sequence: int,
+    series: [* MetricSeriesDefinition],
+    samples: [* MetricSample],
+    unavailable: [* MetricUnavailable]
+}
+AppendMetricBatchResponse = {
+    ok: bool,
+    accepted_sequence: int
+}
+
 ;;; ReportResult is terminal: it finalizes the job's status via the existing
 ;;; guarded transition + corndogs Complete/Cancel/Fail path, exactly like
 ;;; internal/worker/corndogs_worker.go's own finalize step, and releases the
@@ -229,5 +290,7 @@ service ReactorcideWorker {
     request-job: RequestJobRequest -> RequestJobResponse / ServiceError,
     heartbeat: HeartbeatRequest -> HeartbeatResponse / ServiceError,
     append-logs: AppendLogsRequest -> AppendLogsResponse / ServiceError,
+    append-log-batch: AppendLogBatchRequest -> AppendLogBatchResponse / ServiceError,
+    append-metric-batch: AppendMetricBatchRequest -> AppendMetricBatchResponse / ServiceError,
     report-result: ReportResultRequest -> ReportResultResponse / ServiceError
 }

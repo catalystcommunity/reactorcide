@@ -205,7 +205,7 @@ func TestWorkerFoundation_FullChain(t *testing.T) {
 		backdated := time.Now().UTC().Add(-2 * time.Hour)
 		require.NoError(t, tx.Model(&models.WorkerLease{}).
 			Where("lease_id = ?", staleLease.LeaseID).
-			Update("acquired_at", backdated).Error)
+			Update("last_heartbeat_at", backdated).Error)
 
 		stale, err := postgres_store.PostgresStore.ListStaleActiveLeases(ctx, time.Now().UTC().Add(-1*time.Hour))
 		require.NoError(t, err)

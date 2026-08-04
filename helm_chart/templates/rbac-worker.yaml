@@ -18,6 +18,10 @@ rules:
   - apiGroups: [""]
     resources: ["pods/log"]
     verbs: ["get"]
+  # Read CPU and memory data from metrics-server.
+  - apiGroups: ["metrics.k8s.io"]
+    resources: ["pods"]
+    verbs: ["get"]
   # Permission to create and clean up short-lived VCS auth Secrets for jobs
   # that need private/trusted checkout credentials.
   - apiGroups: [""]
@@ -34,6 +38,34 @@ roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: Role
   name: {{ include "worker.name" . }}-job-manager
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "worker.serviceAccountName" . }}
+    namespace: {{ .Release.Namespace }}
+---
+# Kubelet summary data supplies per-volume and ephemeral-storage values.
+# nodes/proxy is cluster-scoped, so a namespace Role cannot grant it.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ include "worker.name" . }}-resource-metrics
+  labels:
+    {{- include "worker.labels" . | nindent 4 }}
+rules:
+  - apiGroups: [""]
+    resources: ["nodes/proxy"]
+    verbs: ["get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ include "worker.name" . }}-resource-metrics
+  labels:
+    {{- include "worker.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ include "worker.name" . }}-resource-metrics
 subjects:
   - kind: ServiceAccount
     name: {{ include "worker.serviceAccountName" . }}

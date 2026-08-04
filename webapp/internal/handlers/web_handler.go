@@ -256,6 +256,9 @@ func (h *WebHandler) JobDetail(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
+	if !h.authorizeJobView(w, r, jobID) {
+		return
+	}
 
 	job, err := h.client.GetJob(jobID)
 	if err != nil {
@@ -273,7 +276,7 @@ func (h *WebHandler) JobDetail(w http.ResponseWriter, r *http.Request) {
 		stream = "combined"
 	}
 
-	logs, err := h.client.GetJobLogs(jobID, stream)
+	logs, err := h.getJobLogs(r, jobID, stream)
 	if err != nil {
 		logrus.WithError(err).Warn("Failed to fetch logs")
 		// Don't fail the whole page, just show no logs
@@ -306,13 +309,16 @@ func (h *WebHandler) JobLogs(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
+	if !h.authorizeJobView(w, r, jobID) {
+		return
+	}
 
 	stream := r.URL.Query().Get("stream")
 	if stream == "" {
 		stream = "combined"
 	}
 
-	logs, err := h.client.GetJobLogs(jobID, stream)
+	logs, err := h.getJobLogs(r, jobID, stream)
 	if err != nil {
 		h.renderError(w, r, http.StatusBadGateway, "Failed to fetch logs", err)
 		return

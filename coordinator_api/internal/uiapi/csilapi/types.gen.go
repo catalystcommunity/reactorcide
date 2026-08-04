@@ -982,3 +982,66 @@ type DeactivateEnrollmentTokenRequest struct {
 type DeactivateEnrollmentTokenResponse struct {
 	Summary EnrollmentTokenSummary `json:"summary" yaml:"summary"`
 }
+
+// GetJobMetricsRequest represents a structured data type
+type GetJobMetricsRequest struct {
+	JobId     string   `json:"job_id" yaml:"job_id"`
+	FromTime  *string  `json:"from_time,omitempty" yaml:"from_time,omitempty"`
+	ToTime    *string  `json:"to_time,omitempty" yaml:"to_time,omitempty"`
+	Metrics   []string `json:"metrics" yaml:"metrics"`
+	MaxPoints int64    `json:"max_points" yaml:"max_points"`
+}
+
+// JobMetricLabel represents a structured data type
+type JobMetricLabel struct {
+	Key   string `json:"key" yaml:"key"`
+	Value string `json:"value" yaml:"value"`
+}
+
+// JobMetricUnavailable represents a structured data type
+type JobMetricUnavailable struct {
+	MetricPrefix string `json:"metric_prefix" yaml:"metric_prefix"`
+	Reason       string `json:"reason" yaml:"reason"`
+}
+
+// JobMetricPoint represents a structured data type
+type JobMetricPoint struct {
+	ObservedAt string `json:"observed_at" yaml:"observed_at"`
+	Value      int64  `json:"value" yaml:"value"`
+	Min        *int64 `json:"min,omitempty" yaml:"min,omitempty"`
+	Max        *int64 `json:"max,omitempty" yaml:"max,omitempty"`
+}
+
+// JobMetricSeries represents a structured data type
+type JobMetricSeries struct {
+	Name   string           `json:"name" yaml:"name"`
+	Unit   string           `json:"unit" yaml:"unit"`
+	Labels []JobMetricLabel `json:"labels" yaml:"labels"`
+	Points []JobMetricPoint `json:"points" yaml:"points"`
+}
+
+// GetJobMetricsResponse represents a structured data type
+type GetJobMetricsResponse struct {
+	Series      []JobMetricSeries      `json:"series" yaml:"series"`
+	Unavailable []JobMetricUnavailable `json:"unavailable" yaml:"unavailable"`
+	Complete    bool                   `json:"complete" yaml:"complete"`
+}
+
+// GetJobLogsRequest represents a structured data type
+type GetJobLogsRequest struct {
+	JobId  string `json:"job_id" yaml:"job_id"`
+	Stream string `json:"stream" yaml:"stream"`
+}
+
+// JobLogEntry represents a structured data type
+type JobLogEntry struct {
+	Timestamp string `json:"timestamp" yaml:"timestamp"`
+	Stream    string `json:"stream" yaml:"stream"`
+	Level     string `json:"level" yaml:"level"`
+	Message   string `json:"message" yaml:"message"`
+}
+
+// GetJobLogsResponse represents a structured data type
+type GetJobLogsResponse struct {
+	Entries []JobLogEntry `json:"entries" yaml:"entries"`
+}

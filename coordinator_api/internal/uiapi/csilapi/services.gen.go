@@ -79,4 +79,6 @@ type ReactorcideUi interface {
 	CreateEnrollmentToken(ctx context.Context, req CreateEnrollmentTokenRequest) (CreateEnrollmentTokenResponse, error)
 	ListEnrollmentTokens(ctx context.Context, req ListEnrollmentTokensRequest) (ListEnrollmentTokensResponse, error)
 	DeactivateEnrollmentToken(ctx context.Context, req DeactivateEnrollmentTokenRequest) (DeactivateEnrollmentTokenResponse, error)
+	GetJobMetrics(ctx context.Context, req GetJobMetricsRequest) (GetJobMetricsResponse, error)
+	GetJobLogs(ctx context.Context, req GetJobLogsRequest) (GetJobLogsResponse, error)
 }

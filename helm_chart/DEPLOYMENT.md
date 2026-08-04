@@ -288,6 +288,23 @@ worker:
     size: 1Gi
 ```
 
+The retained PVC in this example keeps the worker identity after Pod deletion.
+Use a Pod-owned ephemeral PVC when the spool must use cloud network storage but
+must not survive Pod deletion:
+
+```yaml
+worker:
+  dataDirEphemeralPVC:
+    enabled: true
+    storageClass: network-ssd
+    size: 2Gi
+```
+
+The ephemeral PVC survives a container restart in the same Pod. Kubernetes
+deletes the PVC when it deletes the Pod. A new Pod gets a new PVC and a new
+worker identity. Do not enable `dataDirPersistence` and
+`dataDirEphemeralPVC` together.
+
 The chart creates a worker enrollment Secret by default. The coordinator and
 worker read the same Secret. Helm keeps it after uninstall.
 
@@ -301,7 +318,8 @@ worker:
 ```
 
 The worker Role can create and delete Jobs and temporary checkout Secrets. It
-can read Pods and Pod logs in its namespace. Review
+can read Pods, Pod logs, and Pod resource metrics in its namespace. A cluster
+role permits reads from `nodes/proxy` for volume statistics. Review
 `templates/rbac-worker.yaml` before you change its namespace or service
 account.
 

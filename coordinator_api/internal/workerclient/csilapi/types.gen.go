@@ -132,6 +132,75 @@ type AppendLogsResponse struct {
 	Ok bool `json:"ok" yaml:"ok"`
 }
 
+// LogBatchEntry represents a structured data type
+type LogBatchEntry struct {
+	ObservedAt string `json:"observed_at" yaml:"observed_at"`
+	Level      string `json:"level" yaml:"level"`
+	Message    string `json:"message" yaml:"message"`
+}
+
+// AppendLogBatchRequest represents a structured data type
+type AppendLogBatchRequest struct {
+	LeaseId  string          `json:"lease_id" yaml:"lease_id"`
+	Stream   string          `json:"stream" yaml:"stream"`
+	Sequence int64           `json:"sequence" yaml:"sequence"`
+	Entries  []LogBatchEntry `json:"entries" yaml:"entries"`
+}
+
+// AppendLogBatchResponse represents a structured data type
+type AppendLogBatchResponse struct {
+	Ok               bool  `json:"ok" yaml:"ok"`
+	AcceptedSequence int64 `json:"accepted_sequence" yaml:"accepted_sequence"`
+}
+
+// MetricLabel represents a structured data type
+type MetricLabel struct {
+	Key   string `json:"key" yaml:"key"`
+	Value string `json:"value" yaml:"value"`
+}
+
+// MetricSeriesDefinition represents a structured data type
+type MetricSeriesDefinition struct {
+	SeriesId int64         `json:"series_id" yaml:"series_id"`
+	Name     string        `json:"name" yaml:"name"`
+	Unit     string        `json:"unit" yaml:"unit"`
+	Kind     string        `json:"kind" yaml:"kind"`
+	Labels   []MetricLabel `json:"labels" yaml:"labels"`
+}
+
+// MetricValue represents a structured data type
+type MetricValue struct {
+	SeriesId int64 `json:"series_id" yaml:"series_id"`
+	Value    int64 `json:"value" yaml:"value"`
+}
+
+// MetricSample represents a structured data type
+type MetricSample struct {
+	ObservedAt string        `json:"observed_at" yaml:"observed_at"`
+	Values     []MetricValue `json:"values" yaml:"values"`
+}
+
+// MetricUnavailable represents a structured data type
+type MetricUnavailable struct {
+	MetricPrefix string `json:"metric_prefix" yaml:"metric_prefix"`
+	Reason       string `json:"reason" yaml:"reason"`
+}
+
+// AppendMetricBatchRequest represents a structured data type
+type AppendMetricBatchRequest struct {
+	LeaseId     string                   `json:"lease_id" yaml:"lease_id"`
+	Sequence    int64                    `json:"sequence" yaml:"sequence"`
+	Series      []MetricSeriesDefinition `json:"series" yaml:"series"`
+	Samples     []MetricSample           `json:"samples" yaml:"samples"`
+	Unavailable []MetricUnavailable      `json:"unavailable" yaml:"unavailable"`
+}
+
+// AppendMetricBatchResponse represents a structured data type
+type AppendMetricBatchResponse struct {
+	Ok               bool  `json:"ok" yaml:"ok"`
+	AcceptedSequence int64 `json:"accepted_sequence" yaml:"accepted_sequence"`
+}
+
 // ReportResultRequest represents a structured data type
 type ReportResultRequest struct {
 	LeaseId  string  `json:"lease_id" yaml:"lease_id"`

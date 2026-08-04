@@ -39,6 +39,9 @@ var (
 	ObjectStoreBucket   = env.GetEnvOrDefault("REACTORCIDE_OBJECT_STORE_BUCKET", "reactorcide-objects")
 	ObjectStoreBasePath = env.GetEnvOrDefault("REACTORCIDE_OBJECT_STORE_BASE_PATH", "./objects") // for filesystem
 	ObjectStorePrefix   = env.GetEnvOrDefault("REACTORCIDE_OBJECT_STORE_PREFIX", "reactorcide/") // for s3/gcs
+	// TelemetryRetentionDays is zero by default. In that mode, telemetry has
+	// the same lifetime as its job and job deletion removes it.
+	TelemetryRetentionDays = env.GetEnvAsIntOrDefault("REACTORCIDE_TELEMETRY_RETENTION_DAYS", "0")
 
 	// VCS Integration configuration
 	VCSGitHubToken   = env.GetEnvOrDefault("REACTORCIDE_VCS_GITHUB_TOKEN", "")

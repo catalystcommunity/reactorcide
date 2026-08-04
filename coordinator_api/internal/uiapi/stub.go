@@ -295,3 +295,11 @@ func (StubUi) ListEnrollmentTokens(ctx context.Context, req csilapi.ListEnrollme
 func (StubUi) DeactivateEnrollmentToken(ctx context.Context, req csilapi.DeactivateEnrollmentTokenRequest) (csilapi.DeactivateEnrollmentTokenResponse, error) {
 	return csilapi.DeactivateEnrollmentTokenResponse{}, ErrUnimplemented("ReactorcideUi/deactivate-enrollment-token")
 }
+
+func (StubUi) GetJobMetrics(ctx context.Context, req csilapi.GetJobMetricsRequest) (csilapi.GetJobMetricsResponse, error) {
+	return csilapi.GetJobMetricsResponse{}, ErrUnimplemented("ReactorcideUi/get-job-metrics")
+}
+
+func (StubUi) GetJobLogs(ctx context.Context, req csilapi.GetJobLogsRequest) (csilapi.GetJobLogsResponse, error) {
+	return csilapi.GetJobLogsResponse{}, ErrUnimplemented("ReactorcideUi/get-job-logs")
+}

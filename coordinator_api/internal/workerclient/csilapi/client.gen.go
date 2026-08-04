@@ -79,6 +79,24 @@ func (c *ReactorcideWorkerClient) AppendLogs(ctx context.Context, req AppendLogs
 	return DecodeAppendLogsResponse(csilResp)
 }
 
+func (c *ReactorcideWorkerClient) AppendLogBatch(ctx context.Context, req AppendLogBatchRequest) (AppendLogBatchResponse, error) {
+	var csilZero AppendLogBatchResponse
+	csilResp, csilErr := c.transport.Call(ctx, "ReactorcideWorker", "append-log-batch", EncodeAppendLogBatchRequest(req))
+	if csilErr != nil {
+		return csilZero, csilErr
+	}
+	return DecodeAppendLogBatchResponse(csilResp)
+}
+
+func (c *ReactorcideWorkerClient) AppendMetricBatch(ctx context.Context, req AppendMetricBatchRequest) (AppendMetricBatchResponse, error) {
+	var csilZero AppendMetricBatchResponse
+	csilResp, csilErr := c.transport.Call(ctx, "ReactorcideWorker", "append-metric-batch", EncodeAppendMetricBatchRequest(req))
+	if csilErr != nil {
+		return csilZero, csilErr
+	}
+	return DecodeAppendMetricBatchResponse(csilResp)
+}
+
 func (c *ReactorcideWorkerClient) ReportResult(ctx context.Context, req ReportResultRequest) (ReportResultResponse, error) {
 	var csilZero ReportResultResponse
 	csilResp, csilErr := c.transport.Call(ctx, "ReactorcideWorker", "report-result", EncodeReportResultRequest(req))

@@ -27,6 +27,9 @@ const (
 	// EventLogAvailable fires when a new log chunk has been flushed to
 	// object storage and is ready to be read.
 	EventLogAvailable EventType = "log_available"
+	// EventMetricsAvailable fires when a metric batch is durable in object
+	// storage and is ready for an authorized range query.
+	EventMetricsAvailable EventType = "metrics_available"
 )
 
 // Event is the unit of work on the bus. Not all fields are meaningful for
@@ -39,6 +42,9 @@ type Event struct {
 	Stream    string    `json:"stream,omitempty"`
 	Offset    int64     `json:"offset,omitempty"`
 	Length    int64     `json:"length,omitempty"`
+	From      string    `json:"from,omitempty"`
+	To        string    `json:"to,omitempty"`
+	Sequence  int64     `json:"sequence,omitempty"`
 }
 
 // Subscription is the handle a caller holds onto while listening. Close

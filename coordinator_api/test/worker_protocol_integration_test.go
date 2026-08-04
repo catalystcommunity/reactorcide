@@ -23,7 +23,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"strings"
 	"sync"
 	"testing"
@@ -34,12 +33,12 @@ import (
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/characteristics"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/corndogs"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/handlers"
+	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/jobtelemetry"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/objects"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/pubsub"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/secrets"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store/models"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store/postgres_store"
-	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/worker"
 	workercsilapi "github.com/catalystcommunity/reactorcide/coordinator_api/internal/workerapi/csilapi"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/workerauth"
 	"github.com/google/uuid"
@@ -296,13 +295,8 @@ func TestWorkerProtocolIntegration(t *testing.T) {
 
 	waitForEvent(t, jobSub, func(e pubsub.Event) bool { return e.Type == pubsub.EventLogAvailable && e.Stream == "stdout" })
 
-	objKey := fmt.Sprintf("logs/%s/stdout.json", job.JobID)
-	r, err := memStore.Get(ctx, objKey)
+	entries, err := jobtelemetry.ReadLogEntries(ctx, memStore, job.JobID, "stdout")
 	require.NoError(t, err)
-	data, err := io.ReadAll(r)
-	require.NoError(t, err)
-	var entries []worker.LogEntry
-	require.NoError(t, json.Unmarshal(data, &entries))
 	require.Len(t, entries, 1)
 	require.Equal(t, "hello from worker", entries[0].Message)
 

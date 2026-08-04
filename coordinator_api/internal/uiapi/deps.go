@@ -6,6 +6,7 @@ import (
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/auth"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/authz"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/corndogs"
+	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/objects"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/secrets"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store/models"
@@ -25,6 +26,7 @@ type Deps struct {
 	Admission      *auth.Admission
 	KeyManager     *secrets.MasterKeyManager
 	CorndogsClient corndogs.ClientInterface
+	ObjectStore    objects.ObjectStore
 
 	// SecretsProvider resolves a secrets.Provider scoped to an org.
 	// NewDeps wires this to the real DB-backed default

@@ -162,14 +162,18 @@ func NewHandlerWithWorker(auth csilapi.ReactorcideAuth, ui csilapi.ReactorcideUi
 		"create-enrollment-token":       wrapOp(csilapi.DecodeCreateEnrollmentTokenRequest, csilapi.EncodeCreateEnrollmentTokenResponse, "CreateEnrollmentTokenResponse", ui.CreateEnrollmentToken),
 		"list-enrollment-tokens":        wrapOp(csilapi.DecodeListEnrollmentTokensRequest, csilapi.EncodeListEnrollmentTokensResponse, "ListEnrollmentTokensResponse", ui.ListEnrollmentTokens),
 		"deactivate-enrollment-token":   wrapOp(csilapi.DecodeDeactivateEnrollmentTokenRequest, csilapi.EncodeDeactivateEnrollmentTokenResponse, "DeactivateEnrollmentTokenResponse", ui.DeactivateEnrollmentToken),
+		"get-job-metrics":               wrapOp(csilapi.DecodeGetJobMetricsRequest, csilapi.EncodeGetJobMetricsResponse, "GetJobMetricsResponse", ui.GetJobMetrics),
+		"get-job-logs":                  wrapOp(csilapi.DecodeGetJobLogsRequest, csilapi.EncodeGetJobLogsResponse, "GetJobLogsResponse", ui.GetJobLogs),
 	}
 	if worker != nil {
 		h.ops["ReactorcideWorker"] = map[string]opFunc{
-			"register":      wrapOp(workercsilapi.DecodeRegisterRequest, workercsilapi.EncodeRegisterResponse, "RegisterResponse", worker.Register),
-			"request-job":   wrapOp(workercsilapi.DecodeRequestJobRequest, workercsilapi.EncodeRequestJobResponse, "RequestJobResponse", worker.RequestJob),
-			"heartbeat":     wrapOp(workercsilapi.DecodeHeartbeatRequest, workercsilapi.EncodeHeartbeatResponse, "HeartbeatResponse", worker.Heartbeat),
-			"append-logs":   wrapOp(workercsilapi.DecodeAppendLogsRequest, workercsilapi.EncodeAppendLogsResponse, "AppendLogsResponse", worker.AppendLogs),
-			"report-result": wrapOp(workercsilapi.DecodeReportResultRequest, workercsilapi.EncodeReportResultResponse, "ReportResultResponse", worker.ReportResult),
+			"register":            wrapOp(workercsilapi.DecodeRegisterRequest, workercsilapi.EncodeRegisterResponse, "RegisterResponse", worker.Register),
+			"request-job":         wrapOp(workercsilapi.DecodeRequestJobRequest, workercsilapi.EncodeRequestJobResponse, "RequestJobResponse", worker.RequestJob),
+			"heartbeat":           wrapOp(workercsilapi.DecodeHeartbeatRequest, workercsilapi.EncodeHeartbeatResponse, "HeartbeatResponse", worker.Heartbeat),
+			"append-logs":         wrapOp(workercsilapi.DecodeAppendLogsRequest, workercsilapi.EncodeAppendLogsResponse, "AppendLogsResponse", worker.AppendLogs),
+			"append-log-batch":    wrapOp(workercsilapi.DecodeAppendLogBatchRequest, workercsilapi.EncodeAppendLogBatchResponse, "AppendLogBatchResponse", worker.AppendLogBatch),
+			"append-metric-batch": wrapOp(workercsilapi.DecodeAppendMetricBatchRequest, workercsilapi.EncodeAppendMetricBatchResponse, "AppendMetricBatchResponse", worker.AppendMetricBatch),
+			"report-result":       wrapOp(workercsilapi.DecodeReportResultRequest, workercsilapi.EncodeReportResultResponse, "ReportResultResponse", worker.ReportResult),
 		}
 	}
 	return h

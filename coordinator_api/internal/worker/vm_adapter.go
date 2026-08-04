@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/jobtelemetry"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/worker/vmrunner"
 	"oras.land/oras-go/v2/registry/remote/credentials"
 )
@@ -258,6 +259,42 @@ func (a *vmRunnerAdapter) Stop(ctx context.Context, jobID string, grace time.Dur
 
 func (a *vmRunnerAdapter) Cleanup(ctx context.Context, jobID string) error {
 	return a.inner.Cleanup(ctx, jobID)
+}
+
+func (a *vmRunnerAdapter) SampleResources(ctx context.Context, jobID string) (ResourceSnapshot, error) {
+	sample, ok, err := a.inner.LatestResourceSample(jobID)
+	if err != nil {
+		return ResourceSnapshot{}, err
+	}
+	if !ok {
+		return ResourceSnapshot{
+			ObservedAt: time.Now().UTC(),
+			Unavailable: []jobtelemetry.Unavailable{{
+				MetricPrefix: "cpu.usage",
+				Reason:       "guest_helper_not_installed",
+			}},
+		}, nil
+	}
+	snapshot := ResourceSnapshot{ObservedAt: sample.Timestamp.UTC()}
+	add := func(name, unit, kind string, value int64, labels ...jobtelemetry.Label) {
+		id := int64(len(snapshot.Series))
+		snapshot.Series = append(snapshot.Series, jobtelemetry.SeriesDefinition{SeriesID: id, Name: name, Unit: unit, Kind: kind, Labels: labels})
+		snapshot.Values = append(snapshot.Values, jobtelemetry.Value{SeriesID: id, Value: value})
+	}
+	jobLabels := []jobtelemetry.Label{{Key: "scope", Value: "job"}}
+	add("cpu.utilization", "millicores", "gauge", int64(sample.CPUPercent*10), jobLabels...)
+	add("memory.usage", "bytes", "gauge", int64(sample.MemoryUsedBytes), jobLabels...)
+	add("memory.limit", "bytes", "gauge", int64(sample.MemoryTotalBytes), jobLabels...)
+	if sample.MemoryCommittedBytes > 0 {
+		add("memory.committed", "bytes", "gauge", int64(sample.MemoryCommittedBytes), jobLabels...)
+	}
+	if sample.SwapUsedBytes > 0 {
+		add("memory.swap.usage", "bytes", "gauge", int64(sample.SwapUsedBytes), jobLabels...)
+	}
+	storageLabels := []jobtelemetry.Label{{Key: "scope", Value: "job"}, {Key: "volume", Value: "rootfs"}, {Key: "kind", Value: "rootfs"}}
+	add("storage.used", "bytes", "gauge", int64(sample.StorageUsedBytes), storageLabels...)
+	add("storage.capacity", "bytes", "gauge", int64(sample.StorageTotalBytes), storageLabels...)
+	return snapshot, nil
 }
 
 func (a *vmRunnerAdapter) PrefetchImages(ctx context.Context, imageRefs []string) error {

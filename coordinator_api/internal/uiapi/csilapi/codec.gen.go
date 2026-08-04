@@ -8854,6 +8854,567 @@ func DecodeDeactivateEnrollmentTokenResponse(csilData []byte) (DeactivateEnrollm
 	return csilDecDeactivateEnrollmentTokenResponse(csilRoot)
 }
 
+// csilEncGetJobMetricsRequest builds the canonical CBOR value tree for a GetJobMetricsRequest.
+func csilEncGetJobMetricsRequest(csilV GetJobMetricsRequest) cborValue {
+	csilEntries := make(cborMap, 0, 5)
+	csilEntries = append(csilEntries, cborEntry{cborText("job_id"), cborText(csilV.JobId)})
+	csilEntries = append(csilEntries, cborEntry{cborText("metrics"), cborEncArray(csilV.Metrics, func(csilElem string) cborValue { return cborText(csilElem) })})
+	if csilV.ToTime != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("to_time"), cborText((*csilV.ToTime))})
+	}
+	if csilV.FromTime != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("from_time"), cborText((*csilV.FromTime))})
+	}
+	csilEntries = append(csilEntries, cborEntry{cborText("max_points"), cborInt(csilV.MaxPoints)})
+	return csilEntries
+}
+
+// csilDecGetJobMetricsRequest reconstructs a GetJobMetricsRequest from a decoded CBOR value tree.
+func csilDecGetJobMetricsRequest(csilRoot cborValue) (GetJobMetricsRequest, error) {
+	var csilOut GetJobMetricsRequest
+	{
+		csilField, csilErr := cborRequire(csilRoot, "job_id")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.JobId = csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "from_time"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.FromTime = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "to_time"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.ToTime = &csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "metrics")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (func(csilV cborValue) ([]string, error) { return cborDecArray(csilV, cborAsText) })(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Metrics = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "max_points")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsI64)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.MaxPoints = csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeGetJobMetricsRequest encodes a GetJobMetricsRequest to canonical CSIL CBOR bytes.
+func EncodeGetJobMetricsRequest(csilV GetJobMetricsRequest) []byte {
+	return cborEncode(csilEncGetJobMetricsRequest(csilV))
+}
+
+// DecodeGetJobMetricsRequest decodes canonical CSIL CBOR bytes into a GetJobMetricsRequest.
+func DecodeGetJobMetricsRequest(csilData []byte) (GetJobMetricsRequest, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero GetJobMetricsRequest
+		return csilZero, csilErr
+	}
+	return csilDecGetJobMetricsRequest(csilRoot)
+}
+
+// csilEncJobMetricLabel builds the canonical CBOR value tree for a JobMetricLabel.
+func csilEncJobMetricLabel(csilV JobMetricLabel) cborValue {
+	csilEntries := make(cborMap, 0, 2)
+	csilEntries = append(csilEntries, cborEntry{cborText("key"), cborText(csilV.Key)})
+	csilEntries = append(csilEntries, cborEntry{cborText("value"), cborText(csilV.Value)})
+	return csilEntries
+}
+
+// csilDecJobMetricLabel reconstructs a JobMetricLabel from a decoded CBOR value tree.
+func csilDecJobMetricLabel(csilRoot cborValue) (JobMetricLabel, error) {
+	var csilOut JobMetricLabel
+	{
+		csilField, csilErr := cborRequire(csilRoot, "key")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Key = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "value")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Value = csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeJobMetricLabel encodes a JobMetricLabel to canonical CSIL CBOR bytes.
+func EncodeJobMetricLabel(csilV JobMetricLabel) []byte {
+	return cborEncode(csilEncJobMetricLabel(csilV))
+}
+
+// DecodeJobMetricLabel decodes canonical CSIL CBOR bytes into a JobMetricLabel.
+func DecodeJobMetricLabel(csilData []byte) (JobMetricLabel, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero JobMetricLabel
+		return csilZero, csilErr
+	}
+	return csilDecJobMetricLabel(csilRoot)
+}
+
+// csilEncJobMetricUnavailable builds the canonical CBOR value tree for a JobMetricUnavailable.
+func csilEncJobMetricUnavailable(csilV JobMetricUnavailable) cborValue {
+	csilEntries := make(cborMap, 0, 2)
+	csilEntries = append(csilEntries, cborEntry{cborText("reason"), cborText(csilV.Reason)})
+	csilEntries = append(csilEntries, cborEntry{cborText("metric_prefix"), cborText(csilV.MetricPrefix)})
+	return csilEntries
+}
+
+// csilDecJobMetricUnavailable reconstructs a JobMetricUnavailable from a decoded CBOR value tree.
+func csilDecJobMetricUnavailable(csilRoot cborValue) (JobMetricUnavailable, error) {
+	var csilOut JobMetricUnavailable
+	{
+		csilField, csilErr := cborRequire(csilRoot, "metric_prefix")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.MetricPrefix = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "reason")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Reason = csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeJobMetricUnavailable encodes a JobMetricUnavailable to canonical CSIL CBOR bytes.
+func EncodeJobMetricUnavailable(csilV JobMetricUnavailable) []byte {
+	return cborEncode(csilEncJobMetricUnavailable(csilV))
+}
+
+// DecodeJobMetricUnavailable decodes canonical CSIL CBOR bytes into a JobMetricUnavailable.
+func DecodeJobMetricUnavailable(csilData []byte) (JobMetricUnavailable, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero JobMetricUnavailable
+		return csilZero, csilErr
+	}
+	return csilDecJobMetricUnavailable(csilRoot)
+}
+
+// csilEncJobMetricPoint builds the canonical CBOR value tree for a JobMetricPoint.
+func csilEncJobMetricPoint(csilV JobMetricPoint) cborValue {
+	csilEntries := make(cborMap, 0, 4)
+	if csilV.Max != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("max"), cborInt((*csilV.Max))})
+	}
+	if csilV.Min != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("min"), cborInt((*csilV.Min))})
+	}
+	csilEntries = append(csilEntries, cborEntry{cborText("value"), cborInt(csilV.Value)})
+	csilEntries = append(csilEntries, cborEntry{cborText("observed_at"), cborText(csilV.ObservedAt)})
+	return csilEntries
+}
+
+// csilDecJobMetricPoint reconstructs a JobMetricPoint from a decoded CBOR value tree.
+func csilDecJobMetricPoint(csilRoot cborValue) (JobMetricPoint, error) {
+	var csilOut JobMetricPoint
+	{
+		csilField, csilErr := cborRequire(csilRoot, "observed_at")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.ObservedAt = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "value")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsI64)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Value = csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "min"); csilOk {
+		csilVal, csilErr := (cborAsI64)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Min = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "max"); csilOk {
+		csilVal, csilErr := (cborAsI64)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Max = &csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeJobMetricPoint encodes a JobMetricPoint to canonical CSIL CBOR bytes.
+func EncodeJobMetricPoint(csilV JobMetricPoint) []byte {
+	return cborEncode(csilEncJobMetricPoint(csilV))
+}
+
+// DecodeJobMetricPoint decodes canonical CSIL CBOR bytes into a JobMetricPoint.
+func DecodeJobMetricPoint(csilData []byte) (JobMetricPoint, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero JobMetricPoint
+		return csilZero, csilErr
+	}
+	return csilDecJobMetricPoint(csilRoot)
+}
+
+// csilEncJobMetricSeries builds the canonical CBOR value tree for a JobMetricSeries.
+func csilEncJobMetricSeries(csilV JobMetricSeries) cborValue {
+	csilEntries := make(cborMap, 0, 4)
+	csilEntries = append(csilEntries, cborEntry{cborText("name"), cborText(csilV.Name)})
+	csilEntries = append(csilEntries, cborEntry{cborText("unit"), cborText(csilV.Unit)})
+	csilEntries = append(csilEntries, cborEntry{cborText("labels"), cborEncArray(csilV.Labels, func(csilElem JobMetricLabel) cborValue { return csilEncJobMetricLabel(csilElem) })})
+	csilEntries = append(csilEntries, cborEntry{cborText("points"), cborEncArray(csilV.Points, func(csilElem JobMetricPoint) cborValue { return csilEncJobMetricPoint(csilElem) })})
+	return csilEntries
+}
+
+// csilDecJobMetricSeries reconstructs a JobMetricSeries from a decoded CBOR value tree.
+func csilDecJobMetricSeries(csilRoot cborValue) (JobMetricSeries, error) {
+	var csilOut JobMetricSeries
+	{
+		csilField, csilErr := cborRequire(csilRoot, "name")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Name = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "unit")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Unit = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "labels")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (func(csilV cborValue) ([]JobMetricLabel, error) { return cborDecArray(csilV, csilDecJobMetricLabel) })(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Labels = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "points")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (func(csilV cborValue) ([]JobMetricPoint, error) { return cborDecArray(csilV, csilDecJobMetricPoint) })(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Points = csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeJobMetricSeries encodes a JobMetricSeries to canonical CSIL CBOR bytes.
+func EncodeJobMetricSeries(csilV JobMetricSeries) []byte {
+	return cborEncode(csilEncJobMetricSeries(csilV))
+}
+
+// DecodeJobMetricSeries decodes canonical CSIL CBOR bytes into a JobMetricSeries.
+func DecodeJobMetricSeries(csilData []byte) (JobMetricSeries, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero JobMetricSeries
+		return csilZero, csilErr
+	}
+	return csilDecJobMetricSeries(csilRoot)
+}
+
+// csilEncGetJobMetricsResponse builds the canonical CBOR value tree for a GetJobMetricsResponse.
+func csilEncGetJobMetricsResponse(csilV GetJobMetricsResponse) cborValue {
+	csilEntries := make(cborMap, 0, 3)
+	csilEntries = append(csilEntries, cborEntry{cborText("series"), cborEncArray(csilV.Series, func(csilElem JobMetricSeries) cborValue { return csilEncJobMetricSeries(csilElem) })})
+	csilEntries = append(csilEntries, cborEntry{cborText("complete"), cborBool(csilV.Complete)})
+	csilEntries = append(csilEntries, cborEntry{cborText("unavailable"), cborEncArray(csilV.Unavailable, func(csilElem JobMetricUnavailable) cborValue { return csilEncJobMetricUnavailable(csilElem) })})
+	return csilEntries
+}
+
+// csilDecGetJobMetricsResponse reconstructs a GetJobMetricsResponse from a decoded CBOR value tree.
+func csilDecGetJobMetricsResponse(csilRoot cborValue) (GetJobMetricsResponse, error) {
+	var csilOut GetJobMetricsResponse
+	{
+		csilField, csilErr := cborRequire(csilRoot, "series")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (func(csilV cborValue) ([]JobMetricSeries, error) { return cborDecArray(csilV, csilDecJobMetricSeries) })(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Series = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "unavailable")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (func(csilV cborValue) ([]JobMetricUnavailable, error) {
+			return cborDecArray(csilV, csilDecJobMetricUnavailable)
+		})(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Unavailable = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "complete")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsBool)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Complete = csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeGetJobMetricsResponse encodes a GetJobMetricsResponse to canonical CSIL CBOR bytes.
+func EncodeGetJobMetricsResponse(csilV GetJobMetricsResponse) []byte {
+	return cborEncode(csilEncGetJobMetricsResponse(csilV))
+}
+
+// DecodeGetJobMetricsResponse decodes canonical CSIL CBOR bytes into a GetJobMetricsResponse.
+func DecodeGetJobMetricsResponse(csilData []byte) (GetJobMetricsResponse, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero GetJobMetricsResponse
+		return csilZero, csilErr
+	}
+	return csilDecGetJobMetricsResponse(csilRoot)
+}
+
+// csilEncGetJobLogsRequest builds the canonical CBOR value tree for a GetJobLogsRequest.
+func csilEncGetJobLogsRequest(csilV GetJobLogsRequest) cborValue {
+	csilEntries := make(cborMap, 0, 2)
+	csilEntries = append(csilEntries, cborEntry{cborText("job_id"), cborText(csilV.JobId)})
+	csilEntries = append(csilEntries, cborEntry{cborText("stream"), cborText(csilV.Stream)})
+	return csilEntries
+}
+
+// csilDecGetJobLogsRequest reconstructs a GetJobLogsRequest from a decoded CBOR value tree.
+func csilDecGetJobLogsRequest(csilRoot cborValue) (GetJobLogsRequest, error) {
+	var csilOut GetJobLogsRequest
+	{
+		csilField, csilErr := cborRequire(csilRoot, "job_id")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.JobId = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "stream")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Stream = csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeGetJobLogsRequest encodes a GetJobLogsRequest to canonical CSIL CBOR bytes.
+func EncodeGetJobLogsRequest(csilV GetJobLogsRequest) []byte {
+	return cborEncode(csilEncGetJobLogsRequest(csilV))
+}
+
+// DecodeGetJobLogsRequest decodes canonical CSIL CBOR bytes into a GetJobLogsRequest.
+func DecodeGetJobLogsRequest(csilData []byte) (GetJobLogsRequest, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero GetJobLogsRequest
+		return csilZero, csilErr
+	}
+	return csilDecGetJobLogsRequest(csilRoot)
+}
+
+// csilEncJobLogEntry builds the canonical CBOR value tree for a JobLogEntry.
+func csilEncJobLogEntry(csilV JobLogEntry) cborValue {
+	csilEntries := make(cborMap, 0, 4)
+	csilEntries = append(csilEntries, cborEntry{cborText("level"), cborText(csilV.Level)})
+	csilEntries = append(csilEntries, cborEntry{cborText("stream"), cborText(csilV.Stream)})
+	csilEntries = append(csilEntries, cborEntry{cborText("message"), cborText(csilV.Message)})
+	csilEntries = append(csilEntries, cborEntry{cborText("timestamp"), cborText(csilV.Timestamp)})
+	return csilEntries
+}
+
+// csilDecJobLogEntry reconstructs a JobLogEntry from a decoded CBOR value tree.
+func csilDecJobLogEntry(csilRoot cborValue) (JobLogEntry, error) {
+	var csilOut JobLogEntry
+	{
+		csilField, csilErr := cborRequire(csilRoot, "timestamp")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Timestamp = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "stream")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Stream = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "level")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Level = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "message")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Message = csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeJobLogEntry encodes a JobLogEntry to canonical CSIL CBOR bytes.
+func EncodeJobLogEntry(csilV JobLogEntry) []byte {
+	return cborEncode(csilEncJobLogEntry(csilV))
+}
+
+// DecodeJobLogEntry decodes canonical CSIL CBOR bytes into a JobLogEntry.
+func DecodeJobLogEntry(csilData []byte) (JobLogEntry, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero JobLogEntry
+		return csilZero, csilErr
+	}
+	return csilDecJobLogEntry(csilRoot)
+}
+
+// csilEncGetJobLogsResponse builds the canonical CBOR value tree for a GetJobLogsResponse.
+func csilEncGetJobLogsResponse(csilV GetJobLogsResponse) cborValue {
+	csilEntries := make(cborMap, 0, 1)
+	csilEntries = append(csilEntries, cborEntry{cborText("entries"), cborEncArray(csilV.Entries, func(csilElem JobLogEntry) cborValue { return csilEncJobLogEntry(csilElem) })})
+	return csilEntries
+}
+
+// csilDecGetJobLogsResponse reconstructs a GetJobLogsResponse from a decoded CBOR value tree.
+func csilDecGetJobLogsResponse(csilRoot cborValue) (GetJobLogsResponse, error) {
+	var csilOut GetJobLogsResponse
+	{
+		csilField, csilErr := cborRequire(csilRoot, "entries")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (func(csilV cborValue) ([]JobLogEntry, error) { return cborDecArray(csilV, csilDecJobLogEntry) })(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Entries = csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeGetJobLogsResponse encodes a GetJobLogsResponse to canonical CSIL CBOR bytes.
+func EncodeGetJobLogsResponse(csilV GetJobLogsResponse) []byte {
+	return cborEncode(csilEncGetJobLogsResponse(csilV))
+}
+
+// DecodeGetJobLogsResponse decodes canonical CSIL CBOR bytes into a GetJobLogsResponse.
+func DecodeGetJobLogsResponse(csilData []byte) (GetJobLogsResponse, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero GetJobLogsResponse
+		return csilZero, csilErr
+	}
+	return csilDecGetJobLogsResponse(csilRoot)
+}
+
 // csilEncCharacteristicScalar encodes a CharacteristicScalar union as a tagged sum [variant_index, value].
 func csilEncCharacteristicScalar(csilV CharacteristicScalar) cborValue {
 	switch csilX := csilV.(type) {

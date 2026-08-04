@@ -13,5 +13,7 @@ type ReactorcideWorker interface {
 	RequestJob(ctx context.Context, req RequestJobRequest) (RequestJobResponse, error)
 	Heartbeat(ctx context.Context, req HeartbeatRequest) (HeartbeatResponse, error)
 	AppendLogs(ctx context.Context, req AppendLogsRequest) (AppendLogsResponse, error)
+	AppendLogBatch(ctx context.Context, req AppendLogBatchRequest) (AppendLogBatchResponse, error)
+	AppendMetricBatch(ctx context.Context, req AppendMetricBatchRequest) (AppendMetricBatchResponse, error)
 	ReportResult(ctx context.Context, req ReportResultRequest) (ReportResultResponse, error)
 }
