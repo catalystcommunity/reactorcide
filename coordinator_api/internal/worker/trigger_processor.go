@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/catalystcommunity/app-utils-go/logging"
@@ -43,7 +44,9 @@ func (tp *TriggerProcessor) SetStatusUpdater(u vcs.JobStatusUpdaterInterface) {
 
 // triggersFile represents the top-level structure of triggers.json.
 type triggersFile struct {
-	Type string `json:"type"`
+	Type        string `json:"type"`
+	OperationID string `json:"operation_id,omitempty"`
+	TriggerType string `json:"trigger_type,omitempty"`
 	// Workflows is the multi-workflow form: an eval emits one entry per matched
 	// .reactorcide workflow YAML, so one event can spawn several independently
 	// named workflows (per team/product/etc). Takes precedence over the legacy
@@ -56,8 +59,10 @@ type triggersFile struct {
 }
 
 type triggerWorkflowSpec struct {
-	Name string                 `json:"name"`
-	Vars map[string]interface{} `json:"vars"`
+	Name        string                 `json:"name"`
+	Vars        map[string]interface{} `json:"vars"`
+	OperationID string                 `json:"-"`
+	TriggerType string                 `json:"-"`
 	// Jobs are this workflow's nodes (multi-workflow form). Empty in the legacy
 	// single-workflow form, where jobs live in triggersFile.Jobs instead.
 	Jobs []triggerJobSpec `json:"jobs,omitempty"`
@@ -172,6 +177,13 @@ func (tp *TriggerProcessor) ProcessTriggersFromData(ctx context.Context, data []
 		}
 		batches = []triggerWorkflowSpec{batch}
 	}
+	for i := range batches {
+		batches[i].OperationID = strings.TrimSpace(tf.OperationID)
+		batches[i].TriggerType = strings.TrimSpace(tf.TriggerType)
+		if batches[i].TriggerType == "" {
+			batches[i].TriggerType = "runnerlib"
+		}
+	}
 
 	logger := logging.Log.WithField("parent_job_id", parentJob.JobID).WithField("workflow_count", len(batches))
 	logger.Info("Processing triggers from eval job")
@@ -253,8 +265,22 @@ func (tp *TriggerProcessor) processWorkflowBatch(ctx context.Context, parentJob 
 			return nil, fmt.Errorf("failed to add workflow vars: %w", err)
 		}
 	}
+	existingNodes, err := tp.workflowStore()
+	if err != nil {
+		return nil, err
+	}
+	registered, err := existingNodes.ListWorkflowNodes(ctx, wf.WorkflowID)
+	if err != nil {
+		return nil, err
+	}
+	if len(registered) > 0 {
+		return tp.evaluateWorkflow(ctx, wf)
+	}
 	if err := tp.createWorkflowNodes(ctx, wf, specs); err != nil {
 		return nil, fmt.Errorf("failed to create workflow nodes: %w", err)
+	}
+	if err := tp.refreshRootForChildRegistration(ctx, wf); err != nil {
+		return nil, fmt.Errorf("failed to register child workflow with root: %w", err)
 	}
 	return tp.evaluateWorkflow(ctx, wf)
 }

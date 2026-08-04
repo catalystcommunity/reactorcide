@@ -221,6 +221,22 @@ Runnerlib can create triggers with:
 The coordinator records all nodes. It submits only nodes whose dependencies
 are ready. A blocked node does not occupy a worker.
 
+A workflow job can start a child workflow. The coordinator stores the parent
+workflow, the root workflow, the job that started the child, and the trigger
+operation ID. A root workflow does not set `root_workflow_id`. Each child sets
+`root_workflow_id` to the root ID. This rule prevents a self-reference on the
+root row.
+
+The coordinator calculates the root status from all nodes in the workflow
+graph. Only the root workflow publishes the aggregate VCS status. The root
+status stays pending while a node in the graph is not complete. A failed or
+timed-out node fails the root. The root can report success only after all
+required nodes in the graph complete successfully.
+
+Runnerlib adds an operation ID to each trigger request. The coordinator uses
+this ID with the parent job and workflow name to process a repeated request
+only one time.
+
 Supported dependency conditions are:
 
 - `all_success`

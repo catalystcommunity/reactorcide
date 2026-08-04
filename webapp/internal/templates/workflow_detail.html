@@ -33,6 +33,30 @@
             <dt>Workflow ID</dt>
             <dd><code>{{.Workflow.WorkflowID}}</code></dd>
         </div>
+        {{if .Workflow.RootWorkflowID}}
+        <div>
+            <dt>Root workflow</dt>
+            <dd><a href="/app/workflows/{{derefStr .Workflow.RootWorkflowID}}"><code>{{derefStr .Workflow.RootWorkflowID}}</code></a></dd>
+        </div>
+        {{end}}
+        {{if .Workflow.ParentWorkflowID}}
+        <div>
+            <dt>Parent workflow</dt>
+            <dd><a href="/app/workflows/{{derefStr .Workflow.ParentWorkflowID}}"><code>{{derefStr .Workflow.ParentWorkflowID}}</code></a></dd>
+        </div>
+        {{end}}
+        {{if .Workflow.ParentJobID}}
+        <div>
+            <dt>Started by job</dt>
+            <dd><a href="/app/jobs/{{derefStr .Workflow.ParentJobID}}"><code>{{derefStr .Workflow.ParentJobID}}</code></a></dd>
+        </div>
+        {{end}}
+        {{if .Workflow.OriginType}}
+        <div>
+            <dt>Origin</dt>
+            <dd>{{.Workflow.OriginType}}{{if .Workflow.OriginJobID}} from <a href="/app/jobs/{{derefStr .Workflow.OriginJobID}}"><code>{{derefStr .Workflow.OriginJobID}}</code></a>{{end}}</dd>
+        </div>
+        {{end}}
         <div>
             <dt>Jobs</dt>
             <dd>{{.Workflow.CompletedCount}}/{{.Workflow.JobCount}} done</dd>
@@ -60,6 +84,16 @@
     </dl>
 </div>
 
+{{if .Groups}}
+{{range .Groups}}
+<div class="card" style="margin-left: {{.Depth}}rem; margin-top: 12px;">
+    <div style="display: flex; justify-content: space-between; align-items: center; gap: 12px;">
+        <h3>{{if .Depth}}Child workflow: {{end}}<a href="/app/workflows/{{.Workflow.WorkflowID}}">{{.Workflow.Name}}</a></h3>
+        <span class="status-badge {{statusClass .Workflow.Status}}">{{.Workflow.Status}}</span>
+    </div>
+    {{if .Workflow.ParentJobID}}
+    <p class="meta">Started by <a href="/app/jobs/{{derefStr .Workflow.ParentJobID}}">job {{derefStr .Workflow.ParentJobID}}</a>{{if .Workflow.TriggerType}} with {{.Workflow.TriggerType}}{{end}} at {{formatTime .Workflow.CreatedAt}}.</p>
+    {{end}}
 {{if .Jobs}}
 <table>
     <thead>
@@ -96,9 +130,12 @@
     </tbody>
 </table>
 {{else}}
-<div class="card">
     <p class="meta">No jobs found for this workflow.</p>
+{{end}}
 </div>
+{{end}}
+{{else}}
+<div class="card"><p class="meta">No workflows found.</p></div>
 {{end}}
 
 {{template "foot" .}}

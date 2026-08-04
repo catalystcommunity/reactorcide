@@ -51,6 +51,16 @@ type workflowHistoryStore interface {
 	GetLastSuccessfulWorkflowNodeDuration(ctx context.Context, wf *models.WorkflowInstance, nodeName string) (*int64, error)
 }
 
+type workflowGraphStore interface {
+	ListWorkflowDescendants(ctx context.Context, rootWorkflowID string) ([]models.WorkflowInstance, error)
+	ListWorkflowNodesBySubtree(ctx context.Context, workflowID string) ([]models.WorkflowNode, error)
+}
+
+type workflowTriggerStore interface {
+	GetWorkflowInstanceByTriggerOperation(ctx context.Context, parentJobID, operationID, name string) (*models.WorkflowInstance, error)
+	CreateWorkflowInstanceForTrigger(ctx context.Context, wf *models.WorkflowInstance) error
+}
+
 type workflowOutputFile struct {
 	Vars    map[string]interface{} `json:"vars"`
 	Outputs map[string]interface{} `json:"outputs"`
@@ -105,13 +115,19 @@ func (tp *TriggerProcessor) ensureWorkflow(ctx context.Context, parentJob *model
 		name = strings.TrimSpace(spec.Name)
 	}
 
-	// Find-or-create by (parent eval, name): one eval spawns one workflow per
-	// distinct name, and reprocessing the same triggers (retry / at-least-once
-	// delivery) reuses them instead of duplicating. The eval is the parent but
-	// does NOT join any of them (no parentJob.WorkflowID write) -- it's the
-	// spawner; each spawned workflow is independent, keeping the eval's own
-	// "reactorcide/eval" check separate from the workflows' checks.
-	if existing, err := ws.GetWorkflowInstanceByParentJobAndName(ctx, parentJob.JobID, name); err == nil && existing != nil {
+	// Find-or-create by the caller's operation identity when it supplies one.
+	// The legacy (parent job, name) key remains for old runnerlib clients.
+	// Reprocessing the same operation reuses its workflow. An eval job that is
+	// not in a workflow creates a root. A workflow job creates a child.
+	if spec != nil && spec.OperationID != "" {
+		if ts, ok := tp.store.(workflowTriggerStore); ok {
+			if existing, err := ts.GetWorkflowInstanceByTriggerOperation(ctx, parentJob.JobID, spec.OperationID, name); err == nil && existing != nil {
+				return existing, nil
+			} else if err != nil && !errors.Is(err, store.ErrNotFound) {
+				return nil, err
+			}
+		}
+	} else if existing, err := ws.GetWorkflowInstanceByParentJobAndName(ctx, parentJob.JobID, name); err == nil && existing != nil {
 		return existing, nil
 	} else if err != nil && !errors.Is(err, store.ErrNotFound) {
 		return nil, err
@@ -126,6 +142,41 @@ func (tp *TriggerProcessor) ensureWorkflow(ctx context.Context, parentJob *model
 		Status:        "evaluating",
 		QueueName:     parentJob.QueueName,
 		StatusContext: name,
+		TriggerType:   "runnerlib",
+	}
+	if spec != nil {
+		wf.TriggerOperationID = spec.OperationID
+		if spec.TriggerType != "" {
+			wf.TriggerType = spec.TriggerType
+		}
+	}
+
+	if parentJob.WorkflowID != nil && *parentJob.WorkflowID != "" {
+		parentWorkflow, getErr := ws.GetWorkflowInstance(ctx, *parentJob.WorkflowID)
+		if getErr != nil {
+			return nil, fmt.Errorf("load parent workflow: %w", getErr)
+		}
+		parentWorkflowID := parentWorkflow.WorkflowID
+		wf.ParentWorkflowID = &parentWorkflowID
+		rootID := parentWorkflow.WorkflowID
+		if parentWorkflow.RootWorkflowID != nil && *parentWorkflow.RootWorkflowID != "" {
+			rootID = *parentWorkflow.RootWorkflowID
+		}
+		wf.RootWorkflowID = &rootID
+		wf.OriginJobID = parentWorkflow.OriginJobID
+		wf.OriginType = parentWorkflow.OriginType
+		rootWorkflow, rootErr := ws.GetWorkflowInstance(ctx, rootID)
+		if rootErr == nil {
+			wf.StatusContext = rootWorkflow.StatusContext
+			wf.CommentMarker = rootWorkflow.CommentMarker
+			wf.VCSProvider = rootWorkflow.VCSProvider
+			wf.VCSRepo = rootWorkflow.VCSRepo
+			wf.PRNumber = rootWorkflow.PRNumber
+			wf.CommitSHA = rootWorkflow.CommitSHA
+		}
+	} else {
+		wf.OriginJobID = &parentJobID
+		wf.OriginType = string(workflowEventType(parentJob))
 	}
 
 	if metadata, err := vcs.MetadataFromJob(parentJob); err == nil && metadata != nil {
@@ -137,7 +188,7 @@ func (tp *TriggerProcessor) ensureWorkflow(ctx context.Context, parentJob *model
 		}
 		wf.CommitSHA = metadata.CommitSHA
 	}
-	if wf.CommitSHA != "" {
+	if wf.CommitSHA != "" && wf.ParentWorkflowID == nil {
 		// Key the comment marker on both the commit and the triggering event
 		// type so distinct workflows landing on the same commit (e.g. PR checks
 		// vs a post-merge release run — common with rebase merges that preserve
@@ -147,12 +198,25 @@ func (tp *TriggerProcessor) ensureWorkflow(ctx context.Context, parentJob *model
 		wf.CommentMarker = fmt.Sprintf("<!-- reactorcide:workflows:%s:%s -->", wf.CommitSHA, workflowEventType(parentJob))
 	}
 
-	if err := ws.CreateWorkflowInstance(ctx, wf); err != nil {
-		return nil, err
+	var createErr error
+	if wf.TriggerOperationID != "" {
+		if ts, ok := tp.store.(workflowTriggerStore); ok {
+			createErr = ts.CreateWorkflowInstanceForTrigger(ctx, wf)
+		} else {
+			createErr = ws.CreateWorkflowInstance(ctx, wf)
+		}
+	} else {
+		createErr = ws.CreateWorkflowInstance(ctx, wf)
+	}
+	if createErr != nil {
+		return nil, createErr
 	}
 	tp.recordWorkflowEvent(ctx, wf.WorkflowID, nil, nil, "workflow_evaluated", "created workflow from triggers", models.JSONB{
-		"parent_job_id": parentJob.JobID,
-		"name":          wf.Name,
+		"parent_job_id":        parentJob.JobID,
+		"name":                 wf.Name,
+		"root_workflow_id":     wf.RootWorkflowID,
+		"parent_workflow_id":   wf.ParentWorkflowID,
+		"trigger_operation_id": wf.TriggerOperationID,
 	})
 	return wf, nil
 }
@@ -572,14 +636,67 @@ func (tp *TriggerProcessor) refreshWorkflowStatus(ctx context.Context, wf *model
 		return err
 	}
 	nodes, err := ws.ListWorkflowNodes(ctx, wf.WorkflowID)
+	if gs, ok := tp.store.(workflowGraphStore); ok {
+		nodes, err = gs.ListWorkflowNodesBySubtree(ctx, wf.WorkflowID)
+	}
 	if err != nil {
 		return err
 	}
+	if err := tp.updateWorkflowAggregate(ctx, ws, wf, nodes, wf.ParentWorkflowID == nil); err != nil {
+		return err
+	}
+	if wf.ParentWorkflowID != nil {
+		return tp.refreshWorkflowAncestors(ctx, ws, *wf.ParentWorkflowID)
+	}
+	return nil
+}
+
+func (tp *TriggerProcessor) refreshRootForChildRegistration(ctx context.Context, wf *models.WorkflowInstance) error {
+	if wf == nil || wf.ParentWorkflowID == nil {
+		return nil
+	}
+	return tp.refreshWorkflowStatus(ctx, wf)
+}
+
+func (tp *TriggerProcessor) refreshWorkflowAncestors(ctx context.Context, ws workflowStore, workflowID string) error {
+	seen := map[string]bool{}
+	for workflowID != "" {
+		if seen[workflowID] {
+			return fmt.Errorf("cycle in workflow graph at %s", workflowID)
+		}
+		seen[workflowID] = true
+		wf, err := ws.GetWorkflowInstance(ctx, workflowID)
+		if err != nil {
+			return err
+		}
+		nodes, err := ws.ListWorkflowNodes(ctx, workflowID)
+		if gs, ok := tp.store.(workflowGraphStore); ok {
+			nodes, err = gs.ListWorkflowNodesBySubtree(ctx, workflowID)
+		}
+		if err != nil {
+			return err
+		}
+		if err := tp.updateWorkflowAggregate(ctx, ws, wf, nodes, wf.ParentWorkflowID == nil); err != nil {
+			return err
+		}
+		if wf.ParentWorkflowID == nil {
+			return nil
+		}
+		workflowID = *wf.ParentWorkflowID
+	}
+	return nil
+}
+
+func (tp *TriggerProcessor) updateWorkflowAggregate(ctx context.Context, ws workflowStore, wf *models.WorkflowInstance, nodes []models.WorkflowNode, publish bool) error {
 	old := wf.Status
 	wf.Status = computeWorkflowStatus(nodes)
-	if wf.Status == "success" || wf.Status == "failed" || wf.Status == "skipped" {
-		now := time.Now().UTC()
-		wf.CompletedAt = &now
+	if isWorkflowStatusTerminal(wf.Status) {
+		if wf.CompletedAt == nil {
+			now := time.Now().UTC()
+			wf.CompletedAt = &now
+		}
+	} else {
+		wf.CompletedAt = nil
 	}
 	if old != wf.Status {
 		if err := ws.UpdateWorkflowInstance(ctx, wf); err != nil {
@@ -587,12 +704,18 @@ func (tp *TriggerProcessor) refreshWorkflowStatus(ctx context.Context, wf *model
 		}
 		tp.recordWorkflowEvent(ctx, wf.WorkflowID, nil, nil, "workflow_status_changed", fmt.Sprintf("%s -> %s", old, wf.Status), nil)
 	}
-	if updater, ok := tp.statusUpdater.(workflowStatusUpdater); ok {
-		if err := updater.UpdateWorkflowStatus(ctx, wf, nodes); err != nil {
-			logging.Log.WithError(err).WithField("workflow_id", wf.WorkflowID).Warn("Failed to update workflow VCS status")
+	if publish {
+		if updater, ok := tp.statusUpdater.(workflowStatusUpdater); ok {
+			if err := updater.UpdateWorkflowStatus(ctx, wf, nodes); err != nil {
+				logging.Log.WithError(err).WithField("workflow_id", wf.WorkflowID).Warn("Failed to update root workflow VCS status")
+			}
 		}
 	}
 	return nil
+}
+
+func isWorkflowStatusTerminal(status string) bool {
+	return status == "success" || status == "failed" || status == "skipped" || status == "cancelled"
 }
 
 func (tp *TriggerProcessor) recordWorkflowEvent(ctx context.Context, workflowID string, nodeID *string, jobID *string, eventType, reason string, details models.JSONB) {

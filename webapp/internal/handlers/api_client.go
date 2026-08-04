@@ -59,26 +59,34 @@ type ListJobsResponse struct {
 }
 
 type WorkflowSummary struct {
-	WorkflowID      string     `json:"workflow_id"`
-	Kind            string     `json:"kind"`
-	Name            string     `json:"name"`
-	Status          string     `json:"status"`
-	ProjectID       *string    `json:"project_id,omitempty"`
-	CreatedAt       time.Time  `json:"created_at"`
-	UpdatedAt       time.Time  `json:"updated_at"`
-	CompletedAt     *time.Time `json:"completed_at,omitempty"`
-	QueueName       string     `json:"queue_name"`
-	VCSRepo         string     `json:"vcs_repo,omitempty"`
-	PRNumber        *int       `json:"pr_number,omitempty"`
-	CommitSHA       string     `json:"commit_sha,omitempty"`
-	JobCount        int        `json:"job_count"`
-	RunningCount    int        `json:"running_count"`
-	CompletedCount  int        `json:"completed_count"`
-	FailedCount     int        `json:"failed_count"`
-	SkippedCount    int        `json:"skipped_count"`
-	LooseJobID      *string    `json:"loose_job_id,omitempty"`
-	LooseJobExit    *int       `json:"loose_job_exit,omitempty"`
-	DecisionSummary string     `json:"decision_summary,omitempty"`
+	WorkflowID         string            `json:"workflow_id"`
+	Kind               string            `json:"kind"`
+	Name               string            `json:"name"`
+	Status             string            `json:"status"`
+	ProjectID          *string           `json:"project_id,omitempty"`
+	CreatedAt          time.Time         `json:"created_at"`
+	UpdatedAt          time.Time         `json:"updated_at"`
+	CompletedAt        *time.Time        `json:"completed_at,omitempty"`
+	QueueName          string            `json:"queue_name"`
+	VCSRepo            string            `json:"vcs_repo,omitempty"`
+	PRNumber           *int              `json:"pr_number,omitempty"`
+	CommitSHA          string            `json:"commit_sha,omitempty"`
+	JobCount           int               `json:"job_count"`
+	RunningCount       int               `json:"running_count"`
+	CompletedCount     int               `json:"completed_count"`
+	FailedCount        int               `json:"failed_count"`
+	SkippedCount       int               `json:"skipped_count"`
+	LooseJobID         *string           `json:"loose_job_id,omitempty"`
+	LooseJobExit       *int              `json:"loose_job_exit,omitempty"`
+	DecisionSummary    string            `json:"decision_summary,omitempty"`
+	ParentJobID        *string           `json:"parent_job_id,omitempty"`
+	RootWorkflowID     *string           `json:"root_workflow_id,omitempty"`
+	ParentWorkflowID   *string           `json:"parent_workflow_id,omitempty"`
+	OriginJobID        *string           `json:"origin_job_id,omitempty"`
+	OriginType         string            `json:"origin_type,omitempty"`
+	TriggerOperationID string            `json:"trigger_operation_id,omitempty"`
+	TriggerType        string            `json:"trigger_type,omitempty"`
+	Children           []WorkflowSummary `json:"children,omitempty"`
 }
 
 type ListWorkflowsResponse struct {

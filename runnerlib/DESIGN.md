@@ -172,6 +172,14 @@ A trigger can include:
 - Priority and timeout
 - `for_each` values
 
+Runnerlib creates one operation ID for each trigger payload. It uses the same
+ID for the API request and the local fallback file. The coordinator can then
+ignore a repeated submission of the same payload.
+
+When a workflow job submits the payload, the coordinator attaches each new
+workflow to the current workflow graph. Runnerlib does not calculate the graph
+or its aggregate status.
+
 The coordinator owns dependency evaluation and workflow state. Runnerlib only
 creates requests and reads the context that the coordinator provides.
 
