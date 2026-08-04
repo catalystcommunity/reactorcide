@@ -20,10 +20,7 @@ package test
 
 import (
 	"context"
-	"fmt"
-	"io"
 	"net/http/httptest"
-	"strings"
 	"testing"
 	"time"
 
@@ -31,6 +28,7 @@ import (
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/coordinatorworker"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/corndogs"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/handlers"
+	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/jobtelemetry"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/objects"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/secrets"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store/models"
@@ -136,14 +134,8 @@ func TestWorkerRunLoopDockerIntegration(t *testing.T) {
 	require.NotNil(t, finalJob.ExitCode)
 	require.Equal(t, 0, *finalJob.ExitCode)
 
-	objKey := fmt.Sprintf("logs/%s/stdout.json", job.JobID)
 	require.Eventually(t, func() bool {
-		r, err := memStore.Get(ctx, objKey)
-		if err != nil {
-			return false
-		}
-		defer r.Close()
-		data, err := io.ReadAll(r)
-		return err == nil && strings.Contains(string(data), "hello")
-	}, 15*time.Second, 200*time.Millisecond, "expected the real container's stdout to be shipped to object storage via AppendLogs")
+		entries, err := jobtelemetry.ReadLogEntries(ctx, memStore, job.JobID, "stdout")
+		return err == nil && len(entries) > 0 && entries[0].Message == "hello"
+	}, 15*time.Second, 200*time.Millisecond, "expected the real container's stdout to be shipped to immutable telemetry storage")
 }

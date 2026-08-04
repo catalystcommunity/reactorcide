@@ -19,6 +19,7 @@ import (
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/config"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/corndogs"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/jobcontrol"
+	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/jobtelemetry"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/metrics"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/objects"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/resources"
@@ -660,12 +661,72 @@ func (h *JobHandler) DeleteJob(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if h.objectStore != nil {
+		if err := jobtelemetry.DeleteJob(r.Context(), h.objectStore, jobID); err != nil {
+			h.respondWithError(w, http.StatusInternalServerError, err)
+			return
+		}
+	}
+
 	if err := h.store.DeleteJob(r.Context(), jobID); err != nil {
 		h.respondWithError(w, http.StatusInternalServerError, err)
 		return
 	}
 
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// GetJobMetrics handles GET /api/v1/jobs/{job_id}/metrics.
+func (h *JobHandler) GetJobMetrics(w http.ResponseWriter, r *http.Request) {
+	jobID := h.getID(r, "job_id")
+	if jobID == "" {
+		h.respondWithError(w, http.StatusBadRequest, store.ErrInvalidInput)
+		return
+	}
+	job, err := h.store.GetJobByID(r.Context(), jobID)
+	if err != nil {
+		h.respondWithError(w, http.StatusNotFound, err)
+		return
+	}
+	user := checkauth.GetUserFromContext(r.Context())
+	if user == nil {
+		h.respondWithError(w, http.StatusUnauthorized, store.ErrUnauthorized)
+		return
+	}
+	if !h.canUserViewJob(r.Context(), user, job) {
+		h.respondWithError(w, http.StatusForbidden, store.ErrForbidden)
+		return
+	}
+	if h.objectStore == nil {
+		h.respondWithError(w, http.StatusServiceUnavailable, store.ErrServiceUnavailable)
+		return
+	}
+	from, err := jobtelemetry.ParseOptionalTime(r.URL.Query().Get("from"))
+	if err != nil {
+		h.respondWithError(w, http.StatusBadRequest, store.ErrInvalidInput)
+		return
+	}
+	to, err := jobtelemetry.ParseOptionalTime(r.URL.Query().Get("to"))
+	if err != nil || (from != nil && to != nil && from.After(*to)) {
+		h.respondWithError(w, http.StatusBadRequest, store.ErrInvalidInput)
+		return
+	}
+	maxPoints := 0
+	if raw := r.URL.Query().Get("max_points"); raw != "" {
+		maxPoints, err = strconv.Atoi(raw)
+		if err != nil || maxPoints < 1 || maxPoints > jobtelemetry.MaxPointsPerSeries {
+			h.respondWithError(w, http.StatusBadRequest, store.ErrInvalidInput)
+			return
+		}
+	}
+	result, err := jobtelemetry.QueryMetrics(r.Context(), h.objectStore, jobtelemetry.Query{
+		JobID: jobID, From: from, To: to, Metrics: r.URL.Query()["metric"], MaxPoints: maxPoints,
+	})
+	if err != nil {
+		h.respondWithError(w, http.StatusInternalServerError, err)
+		return
+	}
+	h.respondWithJSON(w, http.StatusOK, result)
 }
 
 // GetJobLogs handles GET /api/v1/jobs/{job_id}/logs
@@ -712,6 +773,46 @@ func (h *JobHandler) GetJobLogs(w http.ResponseWriter, r *http.Request) {
 	// Validate stream parameter
 	if stream != "stdout" && stream != "stderr" && stream != "combined" {
 		h.respondWithError(w, http.StatusBadRequest, store.ErrInvalidInput)
+		return
+	}
+
+	// New workers write immutable batches. Read these first. Keep the old
+	// objects as a compatibility fallback for jobs that ran before this format.
+	type streamedEntry struct {
+		entry  jobtelemetry.LogEntry
+		stream string
+	}
+	var immutable []streamedEntry
+	streams := []string{stream}
+	if stream == "combined" {
+		streams = []string{"stdout", "stderr"}
+	}
+	for _, selected := range streams {
+		entries, readErr := jobtelemetry.ReadLogEntries(r.Context(), h.objectStore, jobID, selected)
+		if readErr != nil {
+			h.respondWithError(w, http.StatusInternalServerError, readErr)
+			return
+		}
+		for _, entry := range entries {
+			immutable = append(immutable, streamedEntry{entry: entry, stream: selected})
+		}
+	}
+	if len(immutable) > 0 {
+		sort.SliceStable(immutable, func(i, j int) bool {
+			return immutable[i].entry.ObservedAt.Before(immutable[j].entry.ObservedAt)
+		})
+		apiEntries := make([]LogEntry, 0, len(immutable))
+		for _, item := range immutable {
+			apiEntries = append(apiEntries, LogEntry{Timestamp: item.entry.ObservedAt.Format(time.RFC3339Nano), Stream: item.stream, Level: item.entry.Level, Message: item.entry.Message})
+		}
+		content, marshalErr := json.Marshal(apiEntries)
+		if marshalErr != nil {
+			h.respondWithError(w, http.StatusInternalServerError, marshalErr)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write(content)
 		return
 	}
 

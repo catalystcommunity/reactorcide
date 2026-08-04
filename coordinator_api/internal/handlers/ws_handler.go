@@ -5,8 +5,11 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/authz"
+	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/checkauth"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/pubsub"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store"
+	storemodels "github.com/catalystcommunity/reactorcide/coordinator_api/internal/store/models"
 	"github.com/gorilla/websocket"
 	"github.com/sirupsen/logrus"
 )
@@ -14,17 +17,18 @@ import (
 // WSHandler serves WebSocket streams that let clients watch job status
 // and logs live without polling.
 type WSHandler struct {
-	bus      *pubsub.Bus
-	store    store.Store
-	logger   *logrus.Logger
-	upgrader websocket.Upgrader
+	bus        *pubsub.Bus
+	store      store.Store
+	logger     *logrus.Logger
+	upgrader   websocket.Upgrader
+	visibility *authz.Resolver
 }
 
 // NewWSHandler constructs a WSHandler. The upgrader accepts any origin
 // because the webapp reverse-proxies browser WS connections via its own
 // origin — the coordinator only receives requests from the webapp.
 func NewWSHandler(bus *pubsub.Bus, s store.Store) *WSHandler {
-	return &WSHandler{
+	h := &WSHandler{
 		bus:    bus,
 		store:  s,
 		logger: logrus.New(),
@@ -36,6 +40,10 @@ func NewWSHandler(bus *pubsub.Bus, s store.Store) *WSHandler {
 			},
 		},
 	}
+	if roleStore, ok := s.(authz.RoleStore); ok {
+		h.visibility = authz.NewResolver(roleStore)
+	}
+	return h
 }
 
 // WS heartbeat tuning. Chosen so a dead peer is detected within a minute
@@ -50,6 +58,11 @@ const (
 // the client. No initial snapshot — the caller is expected to have fetched
 // the list via REST first and then uses this stream for updates.
 func (h *WSHandler) StreamAllJobs(w http.ResponseWriter, r *http.Request) {
+	user := checkauth.GetUserFromContext(r.Context())
+	if user == nil {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
 	ws, err := h.upgrader.Upgrade(w, r, nil)
 	if err != nil {
 		h.logger.WithError(err).Warn("WS upgrade failed")
@@ -59,7 +72,11 @@ func (h *WSHandler) StreamAllJobs(w http.ResponseWriter, r *http.Request) {
 
 	// Listen for all job_update events (no per-job filter).
 	sub := h.bus.Subscribe(func(evt pubsub.Event) bool {
-		return evt.Type == pubsub.EventJobUpdate
+		if evt.Type != pubsub.EventJobUpdate {
+			return false
+		}
+		job, err := h.store.GetJobByID(r.Context(), evt.JobID)
+		return err == nil && h.canViewJob(r.Context(), user, job)
 	})
 	defer h.bus.Unsubscribe(sub)
 
@@ -75,6 +92,16 @@ func (h *WSHandler) StreamJob(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "missing job id", http.StatusBadRequest)
 		return
 	}
+	user := checkauth.GetUserFromContext(r.Context())
+	job, err := h.store.GetJobByID(r.Context(), jobID)
+	if err != nil {
+		http.Error(w, "Not found", http.StatusNotFound)
+		return
+	}
+	if user == nil || !h.canViewJob(r.Context(), user, job) {
+		http.Error(w, "Forbidden", http.StatusForbidden)
+		return
+	}
 
 	ws, err := h.upgrader.Upgrade(w, r, nil)
 	if err != nil {
@@ -88,7 +115,7 @@ func (h *WSHandler) StreamJob(w http.ResponseWriter, r *http.Request) {
 
 	// Send current status as the initial frame. Failures here are non-fatal
 	// — the client still gets subsequent live events.
-	if job, err := h.store.GetJobByID(r.Context(), jobID); err == nil && job != nil {
+	if job != nil {
 		initial := pubsub.Event{
 			Type:      pubsub.EventJobUpdate,
 			JobID:     job.JobID,
@@ -102,6 +129,25 @@ func (h *WSHandler) StreamJob(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.runStream(r.Context(), ws, sub, jobID)
+}
+
+func (h *WSHandler) canViewJob(ctx context.Context, user *storemodels.User, job *storemodels.Job) bool {
+	if user == nil || job == nil {
+		return false
+	}
+	if user.UserID == job.UserID {
+		return true
+	}
+	if h.visibility == nil {
+		for _, role := range user.Roles {
+			if role == "admin" || role == "system_admin" {
+				return true
+			}
+		}
+		return false
+	}
+	ok, err := h.visibility.CanViewJob(ctx, authz.IdentityFromUser(user), job)
+	return err == nil && ok
 }
 
 // runStream drives the read/write loops until either the client closes the
@@ -159,4 +205,3 @@ func (h *WSHandler) runStream(ctx context.Context, ws *websocket.Conn, sub *pubs
 		}
 	}
 }
-

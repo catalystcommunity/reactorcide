@@ -51,7 +51,7 @@ func TestReapStaleLeases_ReleasesOrphanedLeaseAndDropsSecretCache(t *testing.T) 
 	if err != nil {
 		t.Fatalf("failed to load lease: %v", err)
 	}
-	lease.AcquiredAt = time.Now().Add(-leaseStaleAfter - time.Minute)
+	lease.LastHeartbeatAt = time.Now().Add(-leaseStaleAfter - time.Minute)
 
 	h.service.reapStaleLeases(context.Background())
 

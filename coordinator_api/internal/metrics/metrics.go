@@ -132,6 +132,23 @@ var (
 		},
 		[]string{"queue", "error_type", "retryable"},
 	)
+
+	TelemetryBatches = promauto.NewCounterVec(
+		prometheus.CounterOpts{Name: "reactorcide_telemetry_batches_total", Help: "Telemetry batches by kind and result"},
+		[]string{"kind", "result"},
+	)
+	TelemetryBatchBytes = promauto.NewCounterVec(
+		prometheus.CounterOpts{Name: "reactorcide_telemetry_batch_bytes_total", Help: "Accepted telemetry bytes by kind"},
+		[]string{"kind"},
+	)
+	TelemetryWriteDuration = promauto.NewHistogramVec(
+		prometheus.HistogramOpts{Name: "reactorcide_telemetry_write_duration_seconds", Help: "Telemetry object write duration", Buckets: prometheus.DefBuckets},
+		[]string{"kind", "result"},
+	)
+	TelemetryQueryDuration = promauto.NewHistogramVec(
+		prometheus.HistogramOpts{Name: "reactorcide_telemetry_query_duration_seconds", Help: "Telemetry query duration", Buckets: prometheus.DefBuckets},
+		[]string{"kind", "result"},
+	)
 )
 
 // Handler returns the Prometheus metrics handler

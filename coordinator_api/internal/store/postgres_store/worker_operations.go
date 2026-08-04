@@ -546,6 +546,17 @@ func (ps PostgresDbStore) GetWorkerLeaseByID(ctx context.Context, leaseID string
 	return &l, nil
 }
 
+// TouchWorkerLeaseHeartbeat records liveness for one reported active lease.
+func (ps PostgresDbStore) TouchWorkerLeaseHeartbeat(ctx context.Context, leaseID string) error {
+	result := ps.getDB(ctx).Model(&models.WorkerLease{}).
+		Where("lease_id = ? AND released_at IS NULL", leaseID).
+		Update("last_heartbeat_at", time.Now().UTC())
+	if result.Error != nil {
+		return fmt.Errorf("touch worker lease heartbeat: %w", result.Error)
+	}
+	return nil
+}
+
 // ReleaseWorkerLease marks a lease released with the given outcome.
 // Idempotent: releasing an already-released lease is a no-op success (the
 // first release's outcome wins), mirroring DeactivatePoolEnrollmentToken's
@@ -603,15 +614,15 @@ func (ps PostgresDbStore) ListActiveLeasesForWorker(ctx context.Context, workerI
 // touch corndogs.
 func (ps PostgresDbStore) ListStaleActiveLeases(ctx context.Context, olderThan time.Time) ([]models.WorkerLease, error) {
 	var leases []models.WorkerLease
-	// Reap by the WORKER's liveness (last heartbeat), NOT the lease's age: a
+	// Reap by the LEASE's liveness, not the worker row. A replacement process
+	// can use the same worker key without keeping an unreported old lease open.
 	// legitimately long-running job (e.g. a multi-arch release build) holds an
 	// open lease for a long time while its worker keeps heartbeating, and must
 	// NOT be reaped -- reaping it releases the lease and AppendLogs then rejects
 	// the job's remaining output. Only leases whose worker has actually gone
 	// silent (last_seen_at older than the threshold) are stale.
 	if err := ps.getDB(ctx).
-		Joins("JOIN workers ON workers.worker_id = worker_leases.worker_id").
-		Where("worker_leases.released_at IS NULL AND workers.last_seen_at < ?", olderThan).
+		Where("worker_leases.released_at IS NULL AND worker_leases.last_heartbeat_at < ?", olderThan).
 		Order("worker_leases.acquired_at ASC").
 		Find(&leases).Error; err != nil {
 		return nil, fmt.Errorf("failed to list stale active leases: %w", err)

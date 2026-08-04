@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/url"
 	"strings"
@@ -40,7 +41,13 @@ func NewWSProxy() *WSProxy {
 
 // AllJobsStream proxies /app/ws/jobs → coordinator /api/v1/jobs/stream.
 func (p *WSProxy) AllJobsStream(w http.ResponseWriter, r *http.Request) {
-	p.proxy(w, r, upstreamWSURL("/api/v1/jobs/stream"))
+	p.proxy(w, r, upstreamWSURL("/api/v1/jobs/stream"), nil)
+}
+
+// AllJobsStreamAuthorized drops each event that the browser session cannot
+// view. The coordinator service token is transport authentication only.
+func (p *WSProxy) AllJobsStreamAuthorized(w http.ResponseWriter, r *http.Request, canView func(string) bool) {
+	p.proxy(w, r, upstreamWSURL("/api/v1/jobs/stream"), canView)
 }
 
 // JobStream proxies /app/ws/jobs/{id} → coordinator /api/v1/jobs/stream/{id}.
@@ -50,13 +57,13 @@ func (p *WSProxy) JobStream(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "missing job id", http.StatusBadRequest)
 		return
 	}
-	p.proxy(w, r, upstreamWSURL("/api/v1/jobs/stream/"+url.PathEscape(jobID)))
+	p.proxy(w, r, upstreamWSURL("/api/v1/jobs/stream/"+url.PathEscape(jobID)), nil)
 }
 
 // proxy accepts the browser upgrade, dials the coordinator with the
 // service token, and copies frames both directions until either side
 // closes. Terminates the matching half when its peer goes away.
-func (p *WSProxy) proxy(w http.ResponseWriter, r *http.Request, upstream string) {
+func (p *WSProxy) proxy(w http.ResponseWriter, r *http.Request, upstream string, canView func(string) bool) {
 	clientConn, err := p.upgrader.Upgrade(w, r, nil)
 	if err != nil {
 		p.logger.WithError(err).Warn("Browser WS upgrade failed")
@@ -86,8 +93,33 @@ func (p *WSProxy) proxy(w http.ResponseWriter, r *http.Request, upstream string)
 	var wg sync.WaitGroup
 	wg.Add(2)
 	go proxyFrames(ctx, cancel, &wg, clientConn, upstreamConn)
-	go proxyFrames(ctx, cancel, &wg, upstreamConn, clientConn)
+	go proxyFramesFiltered(ctx, cancel, &wg, upstreamConn, clientConn, canView)
 	wg.Wait()
+}
+
+func proxyFramesFiltered(ctx context.Context, cancel context.CancelFunc, wg *sync.WaitGroup, src, dst *websocket.Conn, canView func(string) bool) {
+	defer wg.Done()
+	defer cancel()
+	for {
+		if ctx.Err() != nil {
+			return
+		}
+		msgType, msg, err := src.ReadMessage()
+		if err != nil {
+			return
+		}
+		if canView != nil {
+			var event struct {
+				JobID string `json:"job_id"`
+			}
+			if json.Unmarshal(msg, &event) != nil || event.JobID == "" || !canView(event.JobID) {
+				continue
+			}
+		}
+		if err := dst.WriteMessage(msgType, msg); err != nil {
+			return
+		}
+	}
 }
 
 // proxyFrames copies messages from src to dst. When src errors (close,

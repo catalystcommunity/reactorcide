@@ -80,6 +80,14 @@ type Config struct {
 	// bare-metal worker and for run-local, where there is no namespace split).
 	WorkspaceRoot string
 
+	// DataDir holds the worker identity and its same-instance telemetry spool.
+	DataDir string
+
+	// MetricsInterval controls CPU and memory sampling. TelemetrySendInterval
+	// controls batch flushes. Non-positive values use safe defaults.
+	MetricsInterval       time.Duration
+	TelemetrySendInterval time.Duration
+
 	// VMImagePrefetch lists OCI VM image references to pull before this worker
 	// registers with the coordinator.
 	VMImagePrefetch []string

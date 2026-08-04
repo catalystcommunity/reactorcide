@@ -77,6 +77,7 @@ type DataStore interface {
 	// --- worker_leases ---
 	CreateWorkerLease(ctx context.Context, workerID, jobID string, queueUUID *string) (*models.WorkerLease, error)
 	GetWorkerLeaseByID(ctx context.Context, leaseID string) (*models.WorkerLease, error)
+	TouchWorkerLeaseHeartbeat(ctx context.Context, leaseID string) error
 	ReleaseWorkerLease(ctx context.Context, leaseID, outcome string) error
 	ListActiveLeasesForWorker(ctx context.Context, workerID string) ([]models.WorkerLease, error)
 	ListStaleActiveLeases(ctx context.Context, olderThan time.Time) ([]models.WorkerLease, error)

@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/catalystcommunity/app-utils-go/logging"
+	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/jobtelemetry"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store/models"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/uiapi"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/workerapi/csilapi"
@@ -111,6 +112,13 @@ func (s *WorkerService) ReportResult(ctx context.Context, req csilapi.ReportResu
 		logging.Log.WithError(err).WithField("lease_id", lease.LeaseID).Warn("Failed to release worker lease")
 	}
 	s.secrets.delete(lease.LeaseID)
+	if s.deps.ObjectStore != nil {
+		compactCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		if err := jobtelemetry.CompactJob(compactCtx, s.deps.ObjectStore, job.JobID, true); err != nil {
+			logging.Log.WithError(err).WithField("job_id", job.JobID).Warn("Failed to compact terminal job telemetry")
+		}
+		cancel()
+	}
 
 	return csilapi.ReportResultResponse{Ok: true}, nil
 }

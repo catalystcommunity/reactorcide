@@ -1,16 +1,15 @@
 package workerapi
 
 import (
-	"bytes"
 	"context"
+	"crypto/rand"
+	"encoding/binary"
 	"encoding/json"
-	"fmt"
-	"io"
 	"strings"
 	"time"
 
 	"github.com/catalystcommunity/app-utils-go/logging"
-	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/objects"
+	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/jobtelemetry"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/secrets"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/uiapi"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/worker"
@@ -19,12 +18,8 @@ import (
 
 // AppendLogs is push log ingestion (WORKERS_PLAN.md "Workers"): resolves
 // the caller's session, verifies the lease belongs to it and is still
-// active, and accumulates the chunk into the SAME object layout
-// internal/worker/log_shipper.go's pull-based LogShipper writes --
-// logs/{jobID}/{stdout|stderr}.json, a JSON array of worker.LogEntry --  so
-// the UI's existing log reader needs no changes regardless of which path
-// produced a job's logs. Applies a value-based secret-masking backstop
-// (leaseSecretCache) before writing, then publishes PublishLogAvailable.
+// active, and converts the old request to one immutable batch. New workers
+// use AppendLogBatch directly. This operation remains for old workers.
 func (s *WorkerService) AppendLogs(ctx context.Context, req csilapi.AppendLogsRequest) (csilapi.AppendLogsResponse, error) {
 	wkr, _, err := s.resolveSession(ctx)
 	if err != nil {
@@ -56,55 +51,39 @@ func (s *WorkerService) AppendLogs(ctx context.Context, req csilapi.AppendLogsRe
 		return csilapi.AppendLogsResponse{Ok: true}, nil
 	}
 
-	objectKey := fmt.Sprintf("logs/%s/%s.json", lease.JobID, stream)
-	totalBytes, err := s.appendLogEntries(ctx, objectKey, entries)
+	sequence := legacyLogSequence()
+	batch := jobtelemetry.LogBatch{LeaseID: lease.LeaseID, Stream: stream, Sequence: sequence}
+	for _, entry := range entries {
+		observedAt, parseErr := time.Parse(time.RFC3339Nano, entry.Timestamp)
+		if parseErr != nil {
+			observedAt = time.Now().UTC()
+		}
+		batch.Entries = append(batch.Entries, jobtelemetry.LogEntry{
+			ObservedAt: observedAt.UTC(), Level: entry.Level, Message: entry.Message,
+		})
+	}
+	if err := jobtelemetry.ValidateLogBatch(&batch); err != nil {
+		return csilapi.AppendLogsResponse{}, uiapi.NewServiceError("invalid_argument", err.Error())
+	}
+	err = jobtelemetry.PutLogBatch(ctx, s.deps.ObjectStore, lease.JobID, batch)
 	if err != nil {
 		logging.Log.WithError(err).WithFields(map[string]interface{}{"job_id": lease.JobID, "stream": stream}).Error("Failed to append log chunk")
 		return csilapi.AppendLogsResponse{}, uiapi.NewServiceError("internal", "failed to persist log chunk")
 	}
 
 	if s.deps.Publisher != nil {
-		s.deps.Publisher.PublishLogAvailable(ctx, lease.JobID, stream, 0, totalBytes)
+		s.deps.Publisher.PublishLogAvailable(ctx, lease.JobID, stream, sequence, int64(len(req.Chunk)))
 	}
 
 	return csilapi.AppendLogsResponse{Ok: true}, nil
 }
 
-// appendLogEntries reads the existing JSON-array object at key (if any),
-// appends entries, and writes the merged array back -- a read-modify-write
-// accumulator, mirroring internal/worker/log_shipper.go's uploadChunk
-// exactly (same object layout, same "start fresh on unparsable existing
-// data" fallback), just driven by pushed chunks instead of a periodic
-// ticker. Returns the new total object size in bytes.
-func (s *WorkerService) appendLogEntries(ctx context.Context, objectKey string, entries []worker.LogEntry) (int64, error) {
-	var all []worker.LogEntry
-
-	existing, err := s.deps.ObjectStore.Get(ctx, objectKey)
-	if err != nil && err != objects.ErrNotFound {
-		return 0, fmt.Errorf("failed to read existing log content: %w", err)
+func legacyLogSequence() int64 {
+	var raw [8]byte
+	if _, err := rand.Read(raw[:]); err == nil {
+		return int64(binary.BigEndian.Uint64(raw[:]) & (1<<63 - 1))
 	}
-	if err == nil {
-		defer existing.Close()
-		data, readErr := io.ReadAll(existing)
-		if readErr != nil {
-			return 0, fmt.Errorf("failed to read existing log data: %w", readErr)
-		}
-		if jsonErr := json.Unmarshal(data, &all); jsonErr != nil {
-			logging.Log.WithError(jsonErr).WithField("object_key", objectKey).Warn("Failed to parse existing log data as JSON array, starting fresh")
-			all = nil
-		}
-	}
-
-	all = append(all, entries...)
-
-	jsonData, err := json.Marshal(all)
-	if err != nil {
-		return 0, fmt.Errorf("failed to marshal log entries: %w", err)
-	}
-	if err := s.deps.ObjectStore.Put(ctx, objectKey, bytes.NewReader(jsonData), "application/json"); err != nil {
-		return 0, fmt.Errorf("failed to upload log chunk: %w", err)
-	}
-	return int64(len(jsonData)), nil
+	return time.Now().UTC().UnixNano()
 }
 
 // chunkToLogEntries splits a pushed AppendLogs chunk into worker.LogEntry

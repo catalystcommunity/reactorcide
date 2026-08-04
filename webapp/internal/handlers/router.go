@@ -5,6 +5,7 @@ import (
 
 	"github.com/catalystcommunity/reactorcide/webapp/internal/config"
 	"github.com/catalystcommunity/reactorcide/webapp/internal/uiclient"
+	"github.com/catalystcommunity/reactorcide/webapp/internal/uiclient/csilapi"
 )
 
 // NewRouter creates the HTTP handler with all routes
@@ -32,6 +33,7 @@ func NewRouter() http.Handler {
 	mux.HandleFunc("POST /app/workflows/{id}/retry-unsuccessful", webHandler.withSession(webHandler.WorkflowRetryUnsuccessful))
 	mux.HandleFunc("GET /app/jobs/{id}", webHandler.withSession(webHandler.JobDetail))
 	mux.HandleFunc("GET /app/jobs/{id}/logs", webHandler.withSession(webHandler.JobLogs))
+	mux.HandleFunc("GET /app/jobs/{id}/metrics", webHandler.withSession(webHandler.JobMetrics))
 	mux.HandleFunc("POST /app/jobs/{id}/cancel", webHandler.withSession(webHandler.JobCancel))
 	mux.HandleFunc("POST /app/jobs/{id}/kill", webHandler.withSession(webHandler.JobKill))
 	mux.HandleFunc("POST /app/jobs/{id}/retry", webHandler.withSession(webHandler.JobRetry))
@@ -114,8 +116,20 @@ func NewRouter() http.Handler {
 	// WebSocket streams. The browser connects here; we proxy to the
 	// coordinator's WS endpoints using the server-side service token so
 	// the token never reaches client JS.
-	mux.HandleFunc("GET /app/ws/jobs", wsProxy.AllJobsStream)
-	mux.HandleFunc("GET /app/ws/jobs/{id}", wsProxy.JobStream)
+	mux.HandleFunc("GET /app/ws/jobs", webHandler.withSession(func(w http.ResponseWriter, r *http.Request) {
+		wsProxy.AllJobsStreamAuthorized(w, r, func(jobID string) bool {
+			if webHandler.uiClients == nil {
+				return false
+			}
+			_, err := webHandler.uiClients.Ui.GetJobMetrics(webHandler.authContext(r), csilapi.GetJobMetricsRequest{JobId: jobID, MaxPoints: 1})
+			return err == nil
+		})
+	}))
+	mux.HandleFunc("GET /app/ws/jobs/{id}", webHandler.withSession(func(w http.ResponseWriter, r *http.Request) {
+		if webHandler.authorizeJobView(w, r, r.PathValue("id")) {
+			wsProxy.JobStream(w, r)
+		}
+	}))
 
 	return mux
 }

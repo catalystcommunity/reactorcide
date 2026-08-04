@@ -1602,6 +1602,628 @@ func DecodeAppendLogsResponse(csilData []byte) (AppendLogsResponse, error) {
 	return csilDecAppendLogsResponse(csilRoot)
 }
 
+// csilEncLogBatchEntry builds the canonical CBOR value tree for a LogBatchEntry.
+func csilEncLogBatchEntry(csilV LogBatchEntry) cborValue {
+	csilEntries := make(cborMap, 0, 3)
+	csilEntries = append(csilEntries, cborEntry{cborText("level"), cborText(csilV.Level)})
+	csilEntries = append(csilEntries, cborEntry{cborText("message"), cborText(csilV.Message)})
+	csilEntries = append(csilEntries, cborEntry{cborText("observed_at"), cborText(csilV.ObservedAt)})
+	return csilEntries
+}
+
+// csilDecLogBatchEntry reconstructs a LogBatchEntry from a decoded CBOR value tree.
+func csilDecLogBatchEntry(csilRoot cborValue) (LogBatchEntry, error) {
+	var csilOut LogBatchEntry
+	{
+		csilField, csilErr := cborRequire(csilRoot, "observed_at")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.ObservedAt = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "level")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Level = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "message")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Message = csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeLogBatchEntry encodes a LogBatchEntry to canonical CSIL CBOR bytes.
+func EncodeLogBatchEntry(csilV LogBatchEntry) []byte {
+	return cborEncode(csilEncLogBatchEntry(csilV))
+}
+
+// DecodeLogBatchEntry decodes canonical CSIL CBOR bytes into a LogBatchEntry.
+func DecodeLogBatchEntry(csilData []byte) (LogBatchEntry, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero LogBatchEntry
+		return csilZero, csilErr
+	}
+	return csilDecLogBatchEntry(csilRoot)
+}
+
+// csilEncAppendLogBatchRequest builds the canonical CBOR value tree for a AppendLogBatchRequest.
+func csilEncAppendLogBatchRequest(csilV AppendLogBatchRequest) cborValue {
+	csilEntries := make(cborMap, 0, 4)
+	csilEntries = append(csilEntries, cborEntry{cborText("stream"), cborText(csilV.Stream)})
+	csilEntries = append(csilEntries, cborEntry{cborText("entries"), cborEncArray(csilV.Entries, func(csilElem LogBatchEntry) cborValue { return csilEncLogBatchEntry(csilElem) })})
+	csilEntries = append(csilEntries, cborEntry{cborText("lease_id"), cborText(csilV.LeaseId)})
+	csilEntries = append(csilEntries, cborEntry{cborText("sequence"), cborInt(csilV.Sequence)})
+	return csilEntries
+}
+
+// csilDecAppendLogBatchRequest reconstructs a AppendLogBatchRequest from a decoded CBOR value tree.
+func csilDecAppendLogBatchRequest(csilRoot cborValue) (AppendLogBatchRequest, error) {
+	var csilOut AppendLogBatchRequest
+	{
+		csilField, csilErr := cborRequire(csilRoot, "lease_id")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.LeaseId = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "stream")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Stream = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "sequence")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsI64)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Sequence = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "entries")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (func(csilV cborValue) ([]LogBatchEntry, error) { return cborDecArray(csilV, csilDecLogBatchEntry) })(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Entries = csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeAppendLogBatchRequest encodes a AppendLogBatchRequest to canonical CSIL CBOR bytes.
+func EncodeAppendLogBatchRequest(csilV AppendLogBatchRequest) []byte {
+	return cborEncode(csilEncAppendLogBatchRequest(csilV))
+}
+
+// DecodeAppendLogBatchRequest decodes canonical CSIL CBOR bytes into a AppendLogBatchRequest.
+func DecodeAppendLogBatchRequest(csilData []byte) (AppendLogBatchRequest, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero AppendLogBatchRequest
+		return csilZero, csilErr
+	}
+	return csilDecAppendLogBatchRequest(csilRoot)
+}
+
+// csilEncAppendLogBatchResponse builds the canonical CBOR value tree for a AppendLogBatchResponse.
+func csilEncAppendLogBatchResponse(csilV AppendLogBatchResponse) cborValue {
+	csilEntries := make(cborMap, 0, 2)
+	csilEntries = append(csilEntries, cborEntry{cborText("ok"), cborBool(csilV.Ok)})
+	csilEntries = append(csilEntries, cborEntry{cborText("accepted_sequence"), cborInt(csilV.AcceptedSequence)})
+	return csilEntries
+}
+
+// csilDecAppendLogBatchResponse reconstructs a AppendLogBatchResponse from a decoded CBOR value tree.
+func csilDecAppendLogBatchResponse(csilRoot cborValue) (AppendLogBatchResponse, error) {
+	var csilOut AppendLogBatchResponse
+	{
+		csilField, csilErr := cborRequire(csilRoot, "ok")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsBool)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Ok = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "accepted_sequence")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsI64)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.AcceptedSequence = csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeAppendLogBatchResponse encodes a AppendLogBatchResponse to canonical CSIL CBOR bytes.
+func EncodeAppendLogBatchResponse(csilV AppendLogBatchResponse) []byte {
+	return cborEncode(csilEncAppendLogBatchResponse(csilV))
+}
+
+// DecodeAppendLogBatchResponse decodes canonical CSIL CBOR bytes into a AppendLogBatchResponse.
+func DecodeAppendLogBatchResponse(csilData []byte) (AppendLogBatchResponse, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero AppendLogBatchResponse
+		return csilZero, csilErr
+	}
+	return csilDecAppendLogBatchResponse(csilRoot)
+}
+
+// csilEncMetricLabel builds the canonical CBOR value tree for a MetricLabel.
+func csilEncMetricLabel(csilV MetricLabel) cborValue {
+	csilEntries := make(cborMap, 0, 2)
+	csilEntries = append(csilEntries, cborEntry{cborText("key"), cborText(csilV.Key)})
+	csilEntries = append(csilEntries, cborEntry{cborText("value"), cborText(csilV.Value)})
+	return csilEntries
+}
+
+// csilDecMetricLabel reconstructs a MetricLabel from a decoded CBOR value tree.
+func csilDecMetricLabel(csilRoot cborValue) (MetricLabel, error) {
+	var csilOut MetricLabel
+	{
+		csilField, csilErr := cborRequire(csilRoot, "key")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Key = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "value")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Value = csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeMetricLabel encodes a MetricLabel to canonical CSIL CBOR bytes.
+func EncodeMetricLabel(csilV MetricLabel) []byte {
+	return cborEncode(csilEncMetricLabel(csilV))
+}
+
+// DecodeMetricLabel decodes canonical CSIL CBOR bytes into a MetricLabel.
+func DecodeMetricLabel(csilData []byte) (MetricLabel, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero MetricLabel
+		return csilZero, csilErr
+	}
+	return csilDecMetricLabel(csilRoot)
+}
+
+// csilEncMetricSeriesDefinition builds the canonical CBOR value tree for a MetricSeriesDefinition.
+func csilEncMetricSeriesDefinition(csilV MetricSeriesDefinition) cborValue {
+	csilEntries := make(cborMap, 0, 5)
+	csilEntries = append(csilEntries, cborEntry{cborText("kind"), cborText(csilV.Kind)})
+	csilEntries = append(csilEntries, cborEntry{cborText("name"), cborText(csilV.Name)})
+	csilEntries = append(csilEntries, cborEntry{cborText("unit"), cborText(csilV.Unit)})
+	csilEntries = append(csilEntries, cborEntry{cborText("labels"), cborEncArray(csilV.Labels, func(csilElem MetricLabel) cborValue { return csilEncMetricLabel(csilElem) })})
+	csilEntries = append(csilEntries, cborEntry{cborText("series_id"), cborInt(csilV.SeriesId)})
+	return csilEntries
+}
+
+// csilDecMetricSeriesDefinition reconstructs a MetricSeriesDefinition from a decoded CBOR value tree.
+func csilDecMetricSeriesDefinition(csilRoot cborValue) (MetricSeriesDefinition, error) {
+	var csilOut MetricSeriesDefinition
+	{
+		csilField, csilErr := cborRequire(csilRoot, "series_id")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsI64)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.SeriesId = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "name")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Name = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "unit")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Unit = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "kind")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Kind = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "labels")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (func(csilV cborValue) ([]MetricLabel, error) { return cborDecArray(csilV, csilDecMetricLabel) })(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Labels = csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeMetricSeriesDefinition encodes a MetricSeriesDefinition to canonical CSIL CBOR bytes.
+func EncodeMetricSeriesDefinition(csilV MetricSeriesDefinition) []byte {
+	return cborEncode(csilEncMetricSeriesDefinition(csilV))
+}
+
+// DecodeMetricSeriesDefinition decodes canonical CSIL CBOR bytes into a MetricSeriesDefinition.
+func DecodeMetricSeriesDefinition(csilData []byte) (MetricSeriesDefinition, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero MetricSeriesDefinition
+		return csilZero, csilErr
+	}
+	return csilDecMetricSeriesDefinition(csilRoot)
+}
+
+// csilEncMetricValue builds the canonical CBOR value tree for a MetricValue.
+func csilEncMetricValue(csilV MetricValue) cborValue {
+	csilEntries := make(cborMap, 0, 2)
+	csilEntries = append(csilEntries, cborEntry{cborText("value"), cborInt(csilV.Value)})
+	csilEntries = append(csilEntries, cborEntry{cborText("series_id"), cborInt(csilV.SeriesId)})
+	return csilEntries
+}
+
+// csilDecMetricValue reconstructs a MetricValue from a decoded CBOR value tree.
+func csilDecMetricValue(csilRoot cborValue) (MetricValue, error) {
+	var csilOut MetricValue
+	{
+		csilField, csilErr := cborRequire(csilRoot, "series_id")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsI64)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.SeriesId = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "value")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsI64)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Value = csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeMetricValue encodes a MetricValue to canonical CSIL CBOR bytes.
+func EncodeMetricValue(csilV MetricValue) []byte {
+	return cborEncode(csilEncMetricValue(csilV))
+}
+
+// DecodeMetricValue decodes canonical CSIL CBOR bytes into a MetricValue.
+func DecodeMetricValue(csilData []byte) (MetricValue, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero MetricValue
+		return csilZero, csilErr
+	}
+	return csilDecMetricValue(csilRoot)
+}
+
+// csilEncMetricSample builds the canonical CBOR value tree for a MetricSample.
+func csilEncMetricSample(csilV MetricSample) cborValue {
+	csilEntries := make(cborMap, 0, 2)
+	csilEntries = append(csilEntries, cborEntry{cborText("values"), cborEncArray(csilV.Values, func(csilElem MetricValue) cborValue { return csilEncMetricValue(csilElem) })})
+	csilEntries = append(csilEntries, cborEntry{cborText("observed_at"), cborText(csilV.ObservedAt)})
+	return csilEntries
+}
+
+// csilDecMetricSample reconstructs a MetricSample from a decoded CBOR value tree.
+func csilDecMetricSample(csilRoot cborValue) (MetricSample, error) {
+	var csilOut MetricSample
+	{
+		csilField, csilErr := cborRequire(csilRoot, "observed_at")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.ObservedAt = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "values")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (func(csilV cborValue) ([]MetricValue, error) { return cborDecArray(csilV, csilDecMetricValue) })(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Values = csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeMetricSample encodes a MetricSample to canonical CSIL CBOR bytes.
+func EncodeMetricSample(csilV MetricSample) []byte {
+	return cborEncode(csilEncMetricSample(csilV))
+}
+
+// DecodeMetricSample decodes canonical CSIL CBOR bytes into a MetricSample.
+func DecodeMetricSample(csilData []byte) (MetricSample, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero MetricSample
+		return csilZero, csilErr
+	}
+	return csilDecMetricSample(csilRoot)
+}
+
+// csilEncMetricUnavailable builds the canonical CBOR value tree for a MetricUnavailable.
+func csilEncMetricUnavailable(csilV MetricUnavailable) cborValue {
+	csilEntries := make(cborMap, 0, 2)
+	csilEntries = append(csilEntries, cborEntry{cborText("reason"), cborText(csilV.Reason)})
+	csilEntries = append(csilEntries, cborEntry{cborText("metric_prefix"), cborText(csilV.MetricPrefix)})
+	return csilEntries
+}
+
+// csilDecMetricUnavailable reconstructs a MetricUnavailable from a decoded CBOR value tree.
+func csilDecMetricUnavailable(csilRoot cborValue) (MetricUnavailable, error) {
+	var csilOut MetricUnavailable
+	{
+		csilField, csilErr := cborRequire(csilRoot, "metric_prefix")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.MetricPrefix = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "reason")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Reason = csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeMetricUnavailable encodes a MetricUnavailable to canonical CSIL CBOR bytes.
+func EncodeMetricUnavailable(csilV MetricUnavailable) []byte {
+	return cborEncode(csilEncMetricUnavailable(csilV))
+}
+
+// DecodeMetricUnavailable decodes canonical CSIL CBOR bytes into a MetricUnavailable.
+func DecodeMetricUnavailable(csilData []byte) (MetricUnavailable, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero MetricUnavailable
+		return csilZero, csilErr
+	}
+	return csilDecMetricUnavailable(csilRoot)
+}
+
+// csilEncAppendMetricBatchRequest builds the canonical CBOR value tree for a AppendMetricBatchRequest.
+func csilEncAppendMetricBatchRequest(csilV AppendMetricBatchRequest) cborValue {
+	csilEntries := make(cborMap, 0, 5)
+	csilEntries = append(csilEntries, cborEntry{cborText("series"), cborEncArray(csilV.Series, func(csilElem MetricSeriesDefinition) cborValue { return csilEncMetricSeriesDefinition(csilElem) })})
+	csilEntries = append(csilEntries, cborEntry{cborText("samples"), cborEncArray(csilV.Samples, func(csilElem MetricSample) cborValue { return csilEncMetricSample(csilElem) })})
+	csilEntries = append(csilEntries, cborEntry{cborText("lease_id"), cborText(csilV.LeaseId)})
+	csilEntries = append(csilEntries, cborEntry{cborText("sequence"), cborInt(csilV.Sequence)})
+	csilEntries = append(csilEntries, cborEntry{cborText("unavailable"), cborEncArray(csilV.Unavailable, func(csilElem MetricUnavailable) cborValue { return csilEncMetricUnavailable(csilElem) })})
+	return csilEntries
+}
+
+// csilDecAppendMetricBatchRequest reconstructs a AppendMetricBatchRequest from a decoded CBOR value tree.
+func csilDecAppendMetricBatchRequest(csilRoot cborValue) (AppendMetricBatchRequest, error) {
+	var csilOut AppendMetricBatchRequest
+	{
+		csilField, csilErr := cborRequire(csilRoot, "lease_id")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.LeaseId = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "sequence")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsI64)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Sequence = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "series")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (func(csilV cborValue) ([]MetricSeriesDefinition, error) {
+			return cborDecArray(csilV, csilDecMetricSeriesDefinition)
+		})(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Series = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "samples")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (func(csilV cborValue) ([]MetricSample, error) { return cborDecArray(csilV, csilDecMetricSample) })(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Samples = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "unavailable")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (func(csilV cborValue) ([]MetricUnavailable, error) {
+			return cborDecArray(csilV, csilDecMetricUnavailable)
+		})(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Unavailable = csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeAppendMetricBatchRequest encodes a AppendMetricBatchRequest to canonical CSIL CBOR bytes.
+func EncodeAppendMetricBatchRequest(csilV AppendMetricBatchRequest) []byte {
+	return cborEncode(csilEncAppendMetricBatchRequest(csilV))
+}
+
+// DecodeAppendMetricBatchRequest decodes canonical CSIL CBOR bytes into a AppendMetricBatchRequest.
+func DecodeAppendMetricBatchRequest(csilData []byte) (AppendMetricBatchRequest, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero AppendMetricBatchRequest
+		return csilZero, csilErr
+	}
+	return csilDecAppendMetricBatchRequest(csilRoot)
+}
+
+// csilEncAppendMetricBatchResponse builds the canonical CBOR value tree for a AppendMetricBatchResponse.
+func csilEncAppendMetricBatchResponse(csilV AppendMetricBatchResponse) cborValue {
+	csilEntries := make(cborMap, 0, 2)
+	csilEntries = append(csilEntries, cborEntry{cborText("ok"), cborBool(csilV.Ok)})
+	csilEntries = append(csilEntries, cborEntry{cborText("accepted_sequence"), cborInt(csilV.AcceptedSequence)})
+	return csilEntries
+}
+
+// csilDecAppendMetricBatchResponse reconstructs a AppendMetricBatchResponse from a decoded CBOR value tree.
+func csilDecAppendMetricBatchResponse(csilRoot cborValue) (AppendMetricBatchResponse, error) {
+	var csilOut AppendMetricBatchResponse
+	{
+		csilField, csilErr := cborRequire(csilRoot, "ok")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsBool)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Ok = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "accepted_sequence")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsI64)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.AcceptedSequence = csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeAppendMetricBatchResponse encodes a AppendMetricBatchResponse to canonical CSIL CBOR bytes.
+func EncodeAppendMetricBatchResponse(csilV AppendMetricBatchResponse) []byte {
+	return cborEncode(csilEncAppendMetricBatchResponse(csilV))
+}
+
+// DecodeAppendMetricBatchResponse decodes canonical CSIL CBOR bytes into a AppendMetricBatchResponse.
+func DecodeAppendMetricBatchResponse(csilData []byte) (AppendMetricBatchResponse, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero AppendMetricBatchResponse
+		return csilZero, csilErr
+	}
+	return csilDecAppendMetricBatchResponse(csilRoot)
+}
+
 // csilEncReportResultRequest builds the canonical CBOR value tree for a ReportResultRequest.
 func csilEncReportResultRequest(csilV ReportResultRequest) cborValue {
 	csilEntries := make(cborMap, 0, 4)

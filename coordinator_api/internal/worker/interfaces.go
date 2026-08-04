@@ -4,6 +4,8 @@ import (
 	"context"
 	"io"
 	"time"
+
+	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/jobtelemetry"
 )
 
 // JobRunner defines the interface for container runtime backends
@@ -47,6 +49,18 @@ type JobRunner interface {
 	// Cleanup removes the job container and associated resources
 	// Should be called after the job completes (success or failure)
 	Cleanup(ctx context.Context, jobID string) error
+
+	// SampleResources returns one resource snapshot for a running job. A
+	// backend omits unavailable values and returns safe availability reasons.
+	SampleResources(ctx context.Context, jobID string) (ResourceSnapshot, error)
+}
+
+// ResourceSnapshot is one backend-neutral set of metrics at ObservedAt.
+type ResourceSnapshot struct {
+	ObservedAt  time.Time
+	Series      []jobtelemetry.SeriesDefinition
+	Values      []jobtelemetry.Value
+	Unavailable []jobtelemetry.Unavailable
 }
 
 // VMImageCacheManager is an optional capability implemented by an OCI-backed

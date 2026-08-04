@@ -47,6 +47,7 @@ data:
   REACTORCIDE_OBJECT_STORE_BUCKET: {{ .Values.objectStore.bucket | quote }}
   REACTORCIDE_OBJECT_STORE_BASE_PATH: {{ .Values.objectStore.basePath | quote }}
   REACTORCIDE_OBJECT_STORE_PREFIX: {{ .Values.objectStore.prefix | quote }}
+  REACTORCIDE_TELEMETRY_RETENTION_DAYS: {{ .Values.objectStore.telemetryRetentionDays | quote }}
   {{- if eq .Values.objectStore.type "s3" }}
   AWS_REGION: {{ .Values.objectStore.s3.region | quote }}
   REACTORCIDE_S3_ENDPOINT: {{ .Values.objectStore.s3.endpoint | quote }}

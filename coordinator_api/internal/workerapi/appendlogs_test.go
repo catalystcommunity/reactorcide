@@ -2,13 +2,10 @@ package workerapi
 
 import (
 	"context"
-	"encoding/json"
-	"fmt"
-	"io"
 	"strings"
 	"testing"
 
-	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/worker"
+	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/jobtelemetry"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/workerapi/csilapi"
 )
 
@@ -28,8 +25,7 @@ func TestAppendLogs_WritesExpectedObjectKeyAndAccumulates(t *testing.T) {
 		t.Fatalf("expected ok=true")
 	}
 
-	wantKey := fmt.Sprintf("logs/%s/stdout.json", job.JobID)
-	entries := readLogEntries(t, h, wantKey)
+	entries := readLogEntries(t, h, job.JobID, "stdout")
 	if len(entries) != 2 || entries[0].Message != "line one" || entries[1].Message != "line two" {
 		t.Fatalf("unexpected entries after first chunk: %+v", entries)
 	}
@@ -42,7 +38,7 @@ func TestAppendLogs_WritesExpectedObjectKeyAndAccumulates(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("AppendLogs (second chunk) failed: %v", err)
 	}
-	entries = readLogEntries(t, h, wantKey)
+	entries = readLogEntries(t, h, job.JobID, "stdout")
 	if len(entries) != 3 || entries[2].Message != "line three" {
 		t.Fatalf("expected accumulation across chunks, got %+v", entries)
 	}
@@ -55,8 +51,8 @@ func TestAppendLogs_WritesExpectedObjectKeyAndAccumulates(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("AppendLogs (stderr) failed: %v", err)
 	}
-	stderrEntries := readLogEntries(t, h, fmt.Sprintf("logs/%s/stderr.json", job.JobID))
-	if len(stderrEntries) != 1 || stderrEntries[0].Stream != "stderr" {
+	stderrEntries := readLogEntries(t, h, job.JobID, "stderr")
+	if len(stderrEntries) != 1 || stderrEntries[0].Message != "err line" {
 		t.Fatalf("unexpected stderr entries: %+v", stderrEntries)
 	}
 }
@@ -82,7 +78,7 @@ func TestAppendLogs_MasksCachedLeaseSecretsAsBackstop(t *testing.T) {
 		t.Fatalf("AppendLogs failed: %v", err)
 	}
 
-	entries := readLogEntries(t, h, fmt.Sprintf("logs/%s/stdout.json", job.JobID))
+	entries := readLogEntries(t, h, job.JobID, "stdout")
 	if len(entries) != 1 {
 		t.Fatalf("expected one entry, got %+v", entries)
 	}
@@ -106,20 +102,11 @@ func TestAppendLogs_RejectsLeaseNotOwnedByCaller(t *testing.T) {
 	}
 }
 
-func readLogEntries(t *testing.T, h *testHarness, key string) []worker.LogEntry {
+func readLogEntries(t *testing.T, h *testHarness, jobID, stream string) []jobtelemetry.LogEntry {
 	t.Helper()
-	r, err := h.objectStore.Get(context.Background(), key)
+	entries, err := jobtelemetry.ReadLogEntries(context.Background(), h.objectStore, jobID, stream)
 	if err != nil {
-		t.Fatalf("failed to read object %s: %v", key, err)
-	}
-	defer r.Close()
-	data, err := io.ReadAll(r)
-	if err != nil {
-		t.Fatalf("failed to read object body: %v", err)
-	}
-	var entries []worker.LogEntry
-	if err := json.Unmarshal(data, &entries); err != nil {
-		t.Fatalf("failed to parse log entries: %v", err)
+		t.Fatalf("failed to read %s entries: %v", stream, err)
 	}
 	return entries
 }

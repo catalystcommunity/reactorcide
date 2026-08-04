@@ -16,11 +16,13 @@ import (
 type fakeClient struct {
 	mu sync.Mutex
 
-	RegisterFunc     func(ctx context.Context, enrollmentToken string, info csilapi.WorkerInfo) (csilapi.RegisterResponse, error)
-	RequestJobFunc   func(ctx context.Context, characteristics csilapi.WorkerCharacteristics) (csilapi.RequestJobResponse, error)
-	HeartbeatFunc    func(ctx context.Context, status string, runningLeases []csilapi.RunningLease) (csilapi.HeartbeatResponse, error)
-	AppendLogsFunc   func(ctx context.Context, leaseID, stream, chunk string) (csilapi.AppendLogsResponse, error)
-	ReportResultFunc func(ctx context.Context, leaseID string, exitCode int, status string, errMsg string) (csilapi.ReportResultResponse, error)
+	RegisterFunc          func(ctx context.Context, enrollmentToken string, info csilapi.WorkerInfo) (csilapi.RegisterResponse, error)
+	RequestJobFunc        func(ctx context.Context, characteristics csilapi.WorkerCharacteristics) (csilapi.RequestJobResponse, error)
+	HeartbeatFunc         func(ctx context.Context, status string, runningLeases []csilapi.RunningLease) (csilapi.HeartbeatResponse, error)
+	AppendLogsFunc        func(ctx context.Context, leaseID, stream, chunk string) (csilapi.AppendLogsResponse, error)
+	AppendLogBatchFunc    func(ctx context.Context, req csilapi.AppendLogBatchRequest) (csilapi.AppendLogBatchResponse, error)
+	AppendMetricBatchFunc func(ctx context.Context, req csilapi.AppendMetricBatchRequest) (csilapi.AppendMetricBatchResponse, error)
+	ReportResultFunc      func(ctx context.Context, leaseID string, exitCode int, status string, errMsg string) (csilapi.ReportResultResponse, error)
 
 	RegisterCalls     []csilapi.WorkerInfo
 	RequestJobCalls   []csilapi.WorkerCharacteristics
@@ -85,6 +87,25 @@ func (f *fakeClient) AppendLogs(ctx context.Context, leaseID, stream, chunk stri
 		return f.AppendLogsFunc(ctx, leaseID, stream, chunk)
 	}
 	return csilapi.AppendLogsResponse{Ok: true}, nil
+}
+
+func (f *fakeClient) AppendLogBatch(ctx context.Context, req csilapi.AppendLogBatchRequest) (csilapi.AppendLogBatchResponse, error) {
+	f.mu.Lock()
+	for _, entry := range req.Entries {
+		f.AppendLogsCalls = append(f.AppendLogsCalls, appendLogsCall{LeaseID: req.LeaseId, Stream: req.Stream, Chunk: entry.Message + "\n"})
+	}
+	f.mu.Unlock()
+	if f.AppendLogBatchFunc != nil {
+		return f.AppendLogBatchFunc(ctx, req)
+	}
+	return csilapi.AppendLogBatchResponse{Ok: true, AcceptedSequence: req.Sequence}, nil
+}
+
+func (f *fakeClient) AppendMetricBatch(ctx context.Context, req csilapi.AppendMetricBatchRequest) (csilapi.AppendMetricBatchResponse, error) {
+	if f.AppendMetricBatchFunc != nil {
+		return f.AppendMetricBatchFunc(ctx, req)
+	}
+	return csilapi.AppendMetricBatchResponse{Ok: true, AcceptedSequence: req.Sequence}, nil
 }
 
 func (f *fakeClient) ReportResult(ctx context.Context, leaseID string, exitCode int, status string, errMsg string) (csilapi.ReportResultResponse, error) {
@@ -210,6 +231,10 @@ func (f *fakeRunner) Cleanup(ctx context.Context, jobID string) error {
 		return cleanupFunc(jobID)
 	}
 	return nil
+}
+
+func (f *fakeRunner) SampleResources(ctx context.Context, jobID string) (worker.ResourceSnapshot, error) {
+	return worker.ResourceSnapshot{}, nil
 }
 
 func (f *fakeRunner) snapshotSpawnCalls() []*worker.JobConfig {

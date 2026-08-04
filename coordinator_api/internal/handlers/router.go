@@ -8,11 +8,13 @@ import (
 	"net/http"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/auth"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/checkauth"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/config"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/corndogs"
+	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/jobtelemetry"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/metrics"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/middleware"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/objects"
@@ -105,6 +107,7 @@ func createAppMux() *http.ServeMux {
 			log.Printf("WARNING: Failed to initialize object store: %v - log retrieval will be unavailable", err)
 		}
 	}
+	startTelemetryRetentionOnce(singletonObjectStore, store.AppStore)
 
 	// Create handlers
 	jobHandler := NewJobHandlerWithObjectStore(store.AppStore, singletoncorndogsClient, singletonObjectStore)
@@ -330,6 +333,18 @@ func createAppMux() *http.ServeMux {
 				r = r.WithContext(setIDContext(r.Context(), "job_id", jobID))
 				if r.Method == http.MethodGet {
 					jobHandler.GetJobLogs(w, r)
+					return
+				}
+				http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+				return
+			}
+
+			// Handle the special case for job_id/metrics.
+			if strings.HasSuffix(path, "/metrics") {
+				jobID := strings.TrimSuffix(path, "/metrics")
+				r = r.WithContext(setIDContext(r.Context(), "job_id", jobID))
+				if r.Method == http.MethodGet {
+					jobHandler.GetJobMetrics(w, r)
 					return
 				}
 				http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
@@ -717,7 +732,7 @@ func createAppMux() *http.ServeMux {
 	var uiAuthImpl csilapi.ReactorcideAuth = uiapi.NewStubAuth()
 	var uiUiImpl csilapi.ReactorcideUi = uiapi.NewStubUi()
 	if uiStore, ok := store.AppStore.(uiapi.DataStore); ok {
-		if deps := buildUIAPIDeps(uiStore, singletonKeyManager, singletoncorndogsClient); deps != nil {
+		if deps := buildUIAPIDeps(uiStore, singletonKeyManager, singletoncorndogsClient, singletonObjectStore); deps != nil {
 			uiAuthImpl = uiapi.NewAuthService(deps)
 			uiUiImpl = uiapi.NewUiService(deps)
 		}
@@ -761,6 +776,26 @@ func createAppMux() *http.ServeMux {
 // createAppMux may run more than once in tests via ResetAppMux/
 // GetAppMuxWithClient.
 var workerLeaseReaperOnce sync.Once
+var telemetryRetentionOnce sync.Once
+
+func startTelemetryRetentionOnce(objectStore objects.ObjectStore, appStore store.Store) {
+	if objectStore == nil || appStore == nil || config.TelemetryRetentionDays <= 0 {
+		return
+	}
+	telemetryRetentionOnce.Do(func() {
+		go func() {
+			ticker := time.NewTicker(time.Hour)
+			defer ticker.Stop()
+			for {
+				cutoff := time.Now().UTC().Add(-time.Duration(config.TelemetryRetentionDays) * 24 * time.Hour)
+				if _, err := jobtelemetry.PruneBefore(context.Background(), objectStore, cutoff, appStore.GetJobByID); err != nil {
+					log.Printf("WARNING: telemetry retention failed: %v", err)
+				}
+				<-ticker.C
+			}
+		}()
+	})
+}
 
 func startWorkerLeaseReaperOnce(svc *workerapi.WorkerService) {
 	workerLeaseReaperOnce.Do(func() {
@@ -791,7 +826,7 @@ func buildWorkerAPIDeps(workerStore workerapi.DataStore, corndogsClient corndogs
 // ValidateUIAuthMode itself fails (a misconfigured auth mode), since in that
 // case none of the auth/authz surface can be trusted to behave as
 // configured.
-func buildUIAPIDeps(uiStore uiapi.DataStore, keyManager *secrets.MasterKeyManager, corndogsClient corndogs.ClientInterface) *uiapi.Deps {
+func buildUIAPIDeps(uiStore uiapi.DataStore, keyManager *secrets.MasterKeyManager, corndogsClient corndogs.ClientInterface, objectStore objects.ObjectStore) *uiapi.Deps {
 	if err := config.ValidateUIAuthMode(); err != nil {
 		log.Printf("WARNING: REACTORCIDE_UI_AUTH_MODE is misconfigured, CSIL UI service will return unimplemented: %v", err)
 		return nil
@@ -833,7 +868,9 @@ func buildUIAPIDeps(uiStore uiapi.DataStore, keyManager *secrets.MasterKeyManage
 		backend = b
 	}
 
-	return uiapi.NewDeps(uiStore, backend, keyManager, corndogsClient)
+	deps := uiapi.NewDeps(uiStore, backend, keyManager, corndogsClient)
+	deps.ObjectStore = objectStore
+	return deps
 }
 
 // setIDContext adds an ID to the context for handlers to use

@@ -347,6 +347,10 @@ func (s *WorkerService) Heartbeat(ctx context.Context, req csilapi.HeartbeatRequ
 		if err != nil || lease.WorkerID != wkr.WorkerID {
 			continue
 		}
+		if !lease.IsActive() {
+			continue
+		}
+		_ = s.deps.Store.TouchWorkerLeaseHeartbeat(ctx, lease.LeaseID)
 		job, err := s.deps.Store.GetJobByID(ctx, lease.JobID)
 		if err != nil {
 			continue

@@ -154,13 +154,19 @@ worker:
   managedEnrollmentTokenSecret:
     name: ""       # empty -> "<release>-worker-enrollment"
     key: "token"
-  # Directory used to persist this worker's stable identity (worker_key,
-  # not a secret, but used by the coordinator to recognize a reconnecting
-  # worker across restarts). emptyDir by default -- the worker generates a
-  # fresh worker_key (and re-enrolls as a "new" worker) every time the pod
-  # is recreated. Set dataDirPersistence.enabled to keep identity stable
-  # across restarts (only meaningful with replicaCount: 1 -- see below).
+  # The worker stores its identity and unsent telemetry in this directory.
+  # The default emptyDir survives a container restart in the same Pod. It
+  # does not survive Pod deletion. An ephemeral PVC has the same lifetime,
+  # but it can use cloud network storage. Kubernetes deletes that PVC with
+  # the Pod. A new Pod gets a new PVC and a new worker identity.
   dataDir: /var/lib/reactorcide-worker
+  dataDirEphemeralPVC:
+    enabled: false
+    size: 1Gi
+    storageClass: ""
+    accessMode: ReadWriteOnce
+  # This older mode creates a retained PVC. Do not enable it together with
+  # dataDirEphemeralPVC. It is only suitable for one worker replica.
   dataDirPersistence:
     enabled: false
     size: 1Gi
@@ -286,6 +292,9 @@ objectStore:
   bucket: reactorcide-objects
   basePath: /tmp/reactorcide-objects  # For filesystem type (emptyDir-backed, ephemeral - dev only)
   prefix: reactorcide/  # For s3 types
+  # Zero keeps telemetry until its job is deleted. A positive value removes
+  # logs and metrics for terminal jobs after this many days.
+  telemetryRetentionDays: 0
   s3:
     accessKeyId: ""
     secretAccessKey: ""

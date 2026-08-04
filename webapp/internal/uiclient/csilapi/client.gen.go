@@ -646,3 +646,21 @@ func (c *ReactorcideUiClient) DeactivateEnrollmentToken(ctx context.Context, req
 	}
 	return DecodeDeactivateEnrollmentTokenResponse(csilResp)
 }
+
+func (c *ReactorcideUiClient) GetJobMetrics(ctx context.Context, req GetJobMetricsRequest) (GetJobMetricsResponse, error) {
+	var csilZero GetJobMetricsResponse
+	csilResp, csilErr := c.transport.Call(ctx, "ReactorcideUi", "get-job-metrics", EncodeGetJobMetricsRequest(req))
+	if csilErr != nil {
+		return csilZero, csilErr
+	}
+	return DecodeGetJobMetricsResponse(csilResp)
+}
+
+func (c *ReactorcideUiClient) GetJobLogs(ctx context.Context, req GetJobLogsRequest) (GetJobLogsResponse, error) {
+	var csilZero GetJobLogsResponse
+	csilResp, csilErr := c.transport.Call(ctx, "ReactorcideUi", "get-job-logs", EncodeGetJobLogsRequest(req))
+	if csilErr != nil {
+		return csilZero, csilErr
+	}
+	return DecodeGetJobLogsResponse(csilResp)
+}

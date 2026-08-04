@@ -1,4 +1,7 @@
 {{- if .Values.worker.enabled }}
+{{- if and .Values.worker.dataDirPersistence.enabled .Values.worker.dataDirEphemeralPVC.enabled }}
+{{- fail "worker.dataDirPersistence.enabled and worker.dataDirEphemeralPVC.enabled cannot both be true" }}
+{{- end }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -151,7 +154,22 @@ spec:
         - name: work-dir
           emptyDir: {}
         - name: worker-data
-          {{- if .Values.worker.dataDirPersistence.enabled }}
+          {{- if .Values.worker.dataDirEphemeralPVC.enabled }}
+          ephemeral:
+            volumeClaimTemplate:
+              metadata:
+                labels:
+                  {{- include "worker.labels" . | nindent 18 }}
+              spec:
+                accessModes:
+                  - {{ .Values.worker.dataDirEphemeralPVC.accessMode | default "ReadWriteOnce" }}
+                {{- if .Values.worker.dataDirEphemeralPVC.storageClass }}
+                storageClassName: {{ .Values.worker.dataDirEphemeralPVC.storageClass }}
+                {{- end }}
+                resources:
+                  requests:
+                    storage: {{ .Values.worker.dataDirEphemeralPVC.size | default "1Gi" }}
+          {{- else if .Values.worker.dataDirPersistence.enabled }}
           persistentVolumeClaim:
             claimName: {{ include "worker.name" . }}-data
           {{- else }}

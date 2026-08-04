@@ -68,6 +68,7 @@ func runLoop(ctx context.Context, cfg Config, c client, newRunner runnerFactory)
 		return err
 	}
 	heartbeatInterval := time.Duration(reg.HeartbeatInterval) * time.Second
+	replayTelemetrySpool(c, cfg.DataDir)
 
 	tracker := newLeaseTracker()
 	sem := make(chan struct{}, concurrency)
@@ -76,6 +77,7 @@ func runLoop(ctx context.Context, cfg Config, c client, newRunner runnerFactory)
 	hbCtx, hbCancel := context.WithCancel(context.Background())
 	defer hbCancel()
 	go heartbeatLoop(hbCtx, c, runner, tracker, heartbeatInterval)
+	go telemetryReplayLoop(hbCtx, c, cfg.DataDir, cfg.TelemetrySendInterval)
 
 	errBackoff := reconnectBackoffMin
 
@@ -86,7 +88,6 @@ pollLoop:
 			break pollLoop
 		case sem <- struct{}{}:
 		}
-
 		wc, wcErr := workerCharacteristics(cfg)
 		if wcErr != nil {
 			<-sem
@@ -126,7 +127,7 @@ pollLoop:
 		go func() {
 			defer wg.Done()
 			defer func() { <-sem }()
-			runLease(c, runner, lease, tracker, cfg.WorkspaceRoot)
+			runLease(c, runner, lease, tracker, cfg)
 		}()
 	}
 

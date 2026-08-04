@@ -24,6 +24,9 @@ func (f *fakeCacheRunner) StreamLogs(context.Context, string) (io.ReadCloser, io
 func (f *fakeCacheRunner) WaitForCompletion(context.Context, string) (int, error) { return 0, nil }
 func (f *fakeCacheRunner) Stop(context.Context, string, time.Duration) error      { return nil }
 func (f *fakeCacheRunner) Cleanup(context.Context, string) error                  { return nil }
+func (f *fakeCacheRunner) SampleResources(context.Context, string) (worker.ResourceSnapshot, error) {
+	return worker.ResourceSnapshot{}, nil
+}
 func (f *fakeCacheRunner) PruneImages(context.Context, time.Duration, time.Time) (int, error) {
 	f.calls = append(f.calls, "prune")
 	return 2, nil

@@ -140,13 +140,14 @@ func (s *WorkerSession) IsValid() bool {
 // whether this table is even needed -- kept as a slim table for
 // multi-lease-per-worker display/audit).
 type WorkerLease struct {
-	LeaseID    string     `gorm:"column:lease_id;primaryKey;type:uuid;default:generate_ulid()" json:"lease_id"`
-	WorkerID   string     `gorm:"column:worker_id;type:uuid;not null" json:"worker_id"`
-	JobID      string     `gorm:"column:job_id;type:uuid;not null" json:"job_id"`
-	QueueUUID  *string    `gorm:"column:queue_uuid;type:uuid" json:"queue_uuid,omitempty"`
-	AcquiredAt time.Time  `gorm:"column:acquired_at;not null;default:timezone('utc', now())" json:"acquired_at"`
-	ReleasedAt *time.Time `gorm:"column:released_at" json:"released_at,omitempty"`
-	Outcome    string     `gorm:"column:outcome;type:text" json:"outcome,omitempty"`
+	LeaseID         string     `gorm:"column:lease_id;primaryKey;type:uuid;default:generate_ulid()" json:"lease_id"`
+	WorkerID        string     `gorm:"column:worker_id;type:uuid;not null" json:"worker_id"`
+	JobID           string     `gorm:"column:job_id;type:uuid;not null" json:"job_id"`
+	QueueUUID       *string    `gorm:"column:queue_uuid;type:uuid" json:"queue_uuid,omitempty"`
+	AcquiredAt      time.Time  `gorm:"column:acquired_at;not null;default:timezone('utc', now())" json:"acquired_at"`
+	LastHeartbeatAt time.Time  `gorm:"column:last_heartbeat_at;not null;default:timezone('utc', now())" json:"last_heartbeat_at"`
+	ReleasedAt      *time.Time `gorm:"column:released_at" json:"released_at,omitempty"`
+	Outcome         string     `gorm:"column:outcome;type:text" json:"outcome,omitempty"`
 }
 
 // TableName specifies the table name for the model.

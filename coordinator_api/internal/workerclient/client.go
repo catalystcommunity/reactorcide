@@ -89,6 +89,14 @@ func (c *Client) AppendLogs(ctx context.Context, leaseID, stream, chunk string) 
 	return c.raw.AppendLogs(ctx, csilapi.AppendLogsRequest{LeaseId: leaseID, Stream: stream, Chunk: chunk})
 }
 
+func (c *Client) AppendLogBatch(ctx context.Context, req csilapi.AppendLogBatchRequest) (csilapi.AppendLogBatchResponse, error) {
+	return c.raw.AppendLogBatch(ctx, req)
+}
+
+func (c *Client) AppendMetricBatch(ctx context.Context, req csilapi.AppendMetricBatchRequest) (csilapi.AppendMetricBatchResponse, error) {
+	return c.raw.AppendMetricBatch(ctx, req)
+}
+
 // ReportResult finalizes a lease's job with its terminal exit code/status.
 // errMsg is optional context (e.g. a runner-side error string) and may be
 // empty; it must never carry a secret value.

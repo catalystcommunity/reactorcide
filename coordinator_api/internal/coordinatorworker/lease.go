@@ -116,7 +116,7 @@ func (t *leaseTracker) runningLeaseIDs() []string {
 // work and waits for in-flight leases to finish rather than aborting them.
 // A directive-driven Stop/Cleanup (see heartbeat.go) is the only thing that
 // interrupts a lease early.
-func runLease(c client, runner worker.JobRunner, lease csilapi.Lease, tracker *leaseTracker, workspaceRoot string) {
+func runLease(c client, runner worker.JobRunner, lease csilapi.Lease, tracker *leaseTracker, cfg Config) {
 	logger := logging.Log.WithFields(map[string]interface{}{"lease_id": lease.LeaseId, "job_id": lease.JobId})
 
 	tl := &trackedLease{jobID: lease.JobId, graceSeconds: lease.CancelGraceSeconds}
@@ -157,14 +157,14 @@ func runLease(c client, runner worker.JobRunner, lease csilapi.Lease, tracker *l
 	// this worker and on the host when the worker drives a host container
 	// runtime, so the runtime can stat the /job bind-mount source. See
 	// Config.WorkspaceRoot.
-	if workspaceRoot != "" {
-		if err := os.MkdirAll(workspaceRoot, 0o755); err != nil {
+	if cfg.WorkspaceRoot != "" {
+		if err := os.MkdirAll(cfg.WorkspaceRoot, 0o755); err != nil {
 			logger.WithError(err).Error("failed to create lease workspace root")
 			reportResult(c, lease.LeaseId, 1, "failed", "failed to create workspace root: "+err.Error())
 			return
 		}
 	}
-	workspaceDir, err := os.MkdirTemp(workspaceRoot, "reactorcide-worker-lease-*")
+	workspaceDir, err := os.MkdirTemp(cfg.WorkspaceRoot, "reactorcide-worker-lease-*")
 	if err != nil {
 		logger.WithError(err).Error("failed to create lease workspace directory")
 		reportResult(c, lease.LeaseId, 1, "failed", "failed to create workspace: "+err.Error())
@@ -321,23 +321,33 @@ func runLease(c client, runner worker.JobRunner, lease csilapi.Lease, tracker *l
 	}
 
 	var pumpWg sync.WaitGroup
+	metricsCtx, stopMetrics := context.WithCancel(context.Background())
+	pumpWg.Add(1)
+	go func() {
+		defer pumpWg.Done()
+		pumpMetrics(metricsCtx, c, runner, lease.LeaseId, runnerID, cfg)
+	}()
 	if stdout != nil {
 		pumpWg.Add(1)
 		go func() {
 			defer pumpWg.Done()
-			pumpLogs(c, lease.LeaseId, "stdout", stdout, masker)
+			pumpLogs(c, lease.LeaseId, "stdout", stdout, masker, cfg.DataDir)
 		}()
 	}
 	if stderr != nil {
 		pumpWg.Add(1)
 		go func() {
 			defer pumpWg.Done()
-			pumpLogs(c, lease.LeaseId, "stderr", stderr, masker)
+			pumpLogs(c, lease.LeaseId, "stderr", stderr, masker, cfg.DataDir)
 		}()
 	}
 
 	exitCode, waitErr := runner.WaitForCompletion(runCtx, runnerID)
+	stopMetrics()
 	pumpWg.Wait()
+	// Give retained batches one final delivery attempt while the lease is
+	// still active. ReportResult releases the lease.
+	replayTelemetrySpool(c, cfg.DataDir)
 
 	status, errMsg := finalizeStatus(tl.getOutcome(), exitCode, waitErr)
 	if errMsg != "" {
@@ -385,7 +395,7 @@ func reportResult(c client, leaseID string, exitCode int, status, errMsg string)
 // happens before a line is ever buffered, so a secret value never reaches
 // the coordinator in a log chunk regardless of how batching splits lines
 // across calls.
-func pumpLogs(c client, leaseID, stream string, r io.ReadCloser, masker *secrets.Masker) {
+func pumpLogs(c client, leaseID, stream string, r io.ReadCloser, masker *secrets.Masker, dataDir string) {
 	defer r.Close()
 
 	lines := make(chan string, 64)
@@ -401,18 +411,24 @@ func pumpLogs(c client, leaseID, stream string, r io.ReadCloser, masker *secrets
 		}
 	}()
 
-	ctx := context.Background()
 	ticker := time.NewTicker(logPumpInterval)
 	defer ticker.Stop()
 
 	buf := make([]string, 0, logPumpMaxLines)
+	var sequence int64
 	flush := func() {
 		if len(buf) == 0 {
 			return
 		}
-		chunk := strings.Join(buf, "\n") + "\n"
+		observedAt := time.Now().UTC().Format(time.RFC3339Nano)
+		entries := make([]csilapi.LogBatchEntry, 0, len(buf))
+		for _, line := range buf {
+			entries = append(entries, csilapi.LogBatchEntry{ObservedAt: observedAt, Level: "info", Message: line})
+		}
 		buf = buf[:0]
-		if _, err := c.AppendLogs(ctx, leaseID, stream, chunk); err != nil {
+		req := csilapi.AppendLogBatchRequest{LeaseId: leaseID, Stream: stream, Sequence: sequence, Entries: entries}
+		sequence++
+		if err := persistAndSendLog(c, dataDir, req); err != nil {
 			logging.Log.WithError(err).WithFields(map[string]interface{}{"lease_id": leaseID, "stream": stream}).Warn("failed to append logs to coordinator")
 		}
 	}
