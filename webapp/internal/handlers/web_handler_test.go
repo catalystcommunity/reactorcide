@@ -234,6 +234,16 @@ func TestWorkflowDetailTemplateShowsJobLastError(t *testing.T) {
 			LastError: "Failed to resolve secrets: secret access denied for catalystcommunity/ci:githubpat",
 			CreatedAt: time.Date(2026, 3, 15, 14, 1, 0, 0, time.UTC),
 		}},
+		"Groups": []workflowGroup{{
+			Workflow: WorkflowSummary{WorkflowID: "workflow-123", Name: "Reactorcide Jobs", Status: "failed"},
+			Jobs: []JobResponse{{
+				JobID:     "job-123",
+				Name:      "release",
+				Status:    "failed",
+				LastError: "Failed to resolve secrets: secret access denied for catalystcommunity/ci:githubpat",
+				CreatedAt: time.Date(2026, 3, 15, 14, 1, 0, 0, time.UTC),
+			}},
+		}},
 	}
 
 	err := handler.templates.ExecuteTemplate(&buf, "workflow_detail.html", data)

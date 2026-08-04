@@ -9,6 +9,7 @@ import (
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store/models"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 func (ps PostgresDbStore) CreateWorkflowInstance(ctx context.Context, wf *models.WorkflowInstance) error {
@@ -16,6 +17,39 @@ func (ps PostgresDbStore) CreateWorkflowInstance(ctx context.Context, wf *models
 		return fmt.Errorf("failed to create workflow instance: %w", err)
 	}
 	return nil
+}
+
+func (ps PostgresDbStore) CreateWorkflowInstanceForTrigger(ctx context.Context, wf *models.WorkflowInstance) error {
+	result := ps.getDB(ctx).Clauses(clause.OnConflict{
+		Columns: []clause.Column{
+			{Name: "parent_job_id"},
+			{Name: "trigger_operation_id"},
+			{Name: "name"},
+		},
+		TargetWhere: clause.Where{Exprs: []clause.Expression{
+			clause.Expr{SQL: "trigger_operation_id IS NOT NULL"},
+		}},
+		DoNothing: true,
+	}).Create(wf)
+	if result.Error != nil {
+		return fmt.Errorf("failed to create workflow instance for trigger: %w", result.Error)
+	}
+	if result.RowsAffected > 0 {
+		return nil
+	}
+	existing, err := ps.GetWorkflowInstanceByTriggerOperation(ctx, derefWorkflowString(wf.ParentJobID), wf.TriggerOperationID, wf.Name)
+	if err != nil {
+		return err
+	}
+	*wf = *existing
+	return nil
+}
+
+func derefWorkflowString(value *string) string {
+	if value == nil {
+		return ""
+	}
+	return *value
 }
 
 func (ps PostgresDbStore) GetWorkflowInstance(ctx context.Context, workflowID string) (*models.WorkflowInstance, error) {
@@ -48,6 +82,58 @@ func (ps PostgresDbStore) GetWorkflowInstanceByParentJobAndName(ctx context.Cont
 		return nil, fmt.Errorf("failed to get workflow for parent %s name %q: %w", parentJobID, name, err)
 	}
 	return &wf, nil
+}
+
+func (ps PostgresDbStore) GetWorkflowInstanceByTriggerOperation(ctx context.Context, parentJobID, operationID, name string) (*models.WorkflowInstance, error) {
+	if !isValidUUID(parentJobID) || strings.TrimSpace(operationID) == "" {
+		return nil, store.ErrNotFound
+	}
+	var wf models.WorkflowInstance
+	if err := ps.getDB(ctx).Where("parent_job_id = ? AND trigger_operation_id = ? AND name = ?", parentJobID, operationID, name).First(&wf).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return nil, store.ErrNotFound
+		}
+		return nil, fmt.Errorf("failed to get workflow for trigger operation %q: %w", operationID, err)
+	}
+	return &wf, nil
+}
+
+func (ps PostgresDbStore) ListWorkflowDescendants(ctx context.Context, rootWorkflowID string) ([]models.WorkflowInstance, error) {
+	if !isValidUUID(rootWorkflowID) {
+		return nil, store.ErrNotFound
+	}
+	var workflows []models.WorkflowInstance
+	if err := ps.getDB(ctx).
+		Where("workflow_id = ? OR root_workflow_id = ?", rootWorkflowID, rootWorkflowID).
+		Order("created_at ASC").
+		Find(&workflows).Error; err != nil {
+		return nil, fmt.Errorf("failed to list workflow graph: %w", err)
+	}
+	return workflows, nil
+}
+
+func (ps PostgresDbStore) ListWorkflowNodesBySubtree(ctx context.Context, workflowID string) ([]models.WorkflowNode, error) {
+	if !isValidUUID(workflowID) {
+		return nil, store.ErrNotFound
+	}
+	var nodes []models.WorkflowNode
+	if err := ps.getDB(ctx).
+		Raw(`
+WITH RECURSIVE workflow_tree AS (
+	SELECT workflow_id FROM workflow_instances WHERE workflow_id = ?
+	UNION ALL
+	SELECT child.workflow_id
+	FROM workflow_instances child
+	JOIN workflow_tree parent ON child.parent_workflow_id = parent.workflow_id
+)
+SELECT wn.*
+FROM workflow_nodes wn
+JOIN workflow_tree tree ON tree.workflow_id = wn.workflow_id
+ORDER BY wn.created_at ASC`, workflowID).
+		Scan(&nodes).Error; err != nil {
+		return nil, fmt.Errorf("failed to list workflow subtree nodes: %w", err)
+	}
+	return nodes, nil
 }
 
 func (ps PostgresDbStore) UpdateWorkflowInstance(ctx context.Context, wf *models.WorkflowInstance) error {
@@ -218,6 +304,9 @@ func (ps PostgresDbStore) ListWorkflowSummaries(ctx context.Context, filters map
 		workflowArgs = append(workflowArgs, workflowID)
 		looseArgs = append(looseArgs, workflowID)
 	}
+	if _, gettingOne := filters["workflow_id"]; !gettingOne {
+		whereWorkflow = append(whereWorkflow, "wi.parent_workflow_id IS NULL")
+	}
 	if status, ok := filters["status"].(string); ok && status != "" {
 		workflowStatus := status
 		looseStatus := status
@@ -266,6 +355,13 @@ WITH workflow_rows AS (
 		NULL::uuid AS loose_job_id,
 		NULL::int AS loose_job_exit,
 		COALESCE(wi.last_error, '') AS decision_summary
+		,wi.parent_job_id
+		,wi.root_workflow_id
+		,wi.parent_workflow_id
+		,wi.origin_job_id
+		,COALESCE(wi.origin_type, '') AS origin_type
+		,COALESCE(wi.trigger_operation_id, '') AS trigger_operation_id
+		,COALESCE(wi.trigger_type, '') AS trigger_type
 	FROM workflow_instances wi
 	LEFT JOIN workflow_nodes wn ON wn.workflow_id = wi.workflow_id
 	%s
@@ -294,6 +390,13 @@ loose_rows AS (
 		j.job_id AS loose_job_id,
 		j.exit_code AS loose_job_exit,
 		COALESCE(j.last_error, '') AS decision_summary
+		,j.parent_job_id
+		,NULL::uuid AS root_workflow_id
+		,NULL::uuid AS parent_workflow_id
+		,j.parent_job_id AS origin_job_id
+		,'' AS origin_type
+		,'' AS trigger_operation_id
+		,'' AS trigger_type
 	FROM jobs j
 	%s
 )
@@ -322,6 +425,36 @@ func (ps PostgresDbStore) GetWorkflowSummary(ctx context.Context, workflowID str
 	}
 	for i := range rows {
 		if rows[i].WorkflowID == workflowID {
+			rootID := workflowID
+			if rows[i].RootWorkflowID != nil && *rows[i].RootWorkflowID != "" {
+				rootID = *rows[i].RootWorkflowID
+			}
+			graph, graphErr := ps.ListWorkflowDescendants(ctx, rootID)
+			if graphErr != nil {
+				return nil, graphErr
+			}
+			descendantOf := map[string]bool{workflowID: true}
+			for _, child := range graph {
+				if child.WorkflowID == workflowID {
+					continue
+				}
+				if child.ParentWorkflowID == nil || !descendantOf[*child.ParentWorkflowID] {
+					continue
+				}
+				descendantOf[child.WorkflowID] = true
+				childRows, childErr := ps.ListWorkflowSummaries(ctx, map[string]interface{}{"workflow_id": child.WorkflowID}, 1, 0)
+				if childErr != nil || len(childRows) == 0 {
+					continue
+				}
+				rows[i].Children = append(rows[i].Children, childRows[0])
+			}
+			for _, child := range rows[i].Children {
+				rows[i].JobCount += child.JobCount
+				rows[i].RunningCount += child.RunningCount
+				rows[i].CompletedCount += child.CompletedCount
+				rows[i].FailedCount += child.FailedCount
+				rows[i].SkippedCount += child.SkippedCount
+			}
 			return &rows[i], nil
 		}
 	}

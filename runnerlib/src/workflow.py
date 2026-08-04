@@ -17,6 +17,7 @@ import subprocess
 import sys
 import urllib.request
 import urllib.error
+import uuid
 from pathlib import Path
 from typing import Dict, List, Optional, Any, Union
 from dataclasses import dataclass, asdict, field
@@ -91,6 +92,7 @@ class WorkflowContext:
         self._api_token = os.getenv("REACTORCIDE_API_TOKEN")
         self._job_id = os.getenv("REACTORCIDE_JOB_ID")
         self._workflow_id = os.getenv("RC_WF_ID")
+        self._trigger_operation_id = str(uuid.uuid4())
 
     @property
     def job_id(self) -> Optional[str]:
@@ -245,6 +247,8 @@ class WorkflowContext:
         # Build trigger data
         trigger_data = {
             "type": "trigger_job",
+            "operation_id": self._trigger_operation_id,
+            "trigger_type": "runnerlib",
             "jobs": all_triggers
         }
 
@@ -292,6 +296,8 @@ class WorkflowContext:
 
         trigger_data = {
             "type": "trigger_job",
+            "operation_id": self._trigger_operation_id,
+            "trigger_type": "runnerlib_eval",
             "workflows": workflows_payload,
         }
 

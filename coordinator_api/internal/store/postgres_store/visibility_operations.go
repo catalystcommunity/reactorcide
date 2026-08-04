@@ -231,6 +231,9 @@ func (ps PostgresDbStore) ListWorkflowSummariesVisibleTo(ctx context.Context, vi
 		workflowArgs = append(workflowArgs, workflowID)
 		looseArgs = append(looseArgs, workflowID)
 	}
+	if _, gettingOne := filters["workflow_id"]; !gettingOne {
+		whereWorkflow = append(whereWorkflow, "wi.parent_workflow_id IS NULL")
+	}
 	if status, ok := filters["status"].(string); ok && status != "" {
 		workflowStatus := status
 		looseStatus := status
@@ -285,7 +288,14 @@ WITH workflow_rows AS (
 		COUNT(*) FILTER (WHERE wn.status = 'skipped')::int AS skipped_count,
 		NULL::uuid AS loose_job_id,
 		NULL::int AS loose_job_exit,
-		COALESCE(wi.last_error, '') AS decision_summary
+		COALESCE(wi.last_error, '') AS decision_summary,
+		wi.parent_job_id,
+		wi.root_workflow_id,
+		wi.parent_workflow_id,
+		wi.origin_job_id,
+		COALESCE(wi.origin_type, '') AS origin_type,
+		COALESCE(wi.trigger_operation_id, '') AS trigger_operation_id,
+		COALESCE(wi.trigger_type, '') AS trigger_type
 	FROM workflow_instances wi
 	LEFT JOIN projects wip ON wip.project_id = wi.project_id
 	LEFT JOIN users wipo ON wipo.user_id = wip.user_id
@@ -316,7 +326,14 @@ loose_rows AS (
 		0 AS skipped_count,
 		j.job_id AS loose_job_id,
 		j.exit_code AS loose_job_exit,
-		COALESCE(j.last_error, '') AS decision_summary
+		COALESCE(j.last_error, '') AS decision_summary,
+		j.parent_job_id,
+		NULL::uuid AS root_workflow_id,
+		NULL::uuid AS parent_workflow_id,
+		j.parent_job_id AS origin_job_id,
+		'' AS origin_type,
+		'' AS trigger_operation_id,
+		'' AS trigger_type
 	FROM jobs j
 	LEFT JOIN projects ljp ON ljp.project_id = j.project_id
 	LEFT JOIN users ljpo ON ljpo.user_id = ljp.user_id

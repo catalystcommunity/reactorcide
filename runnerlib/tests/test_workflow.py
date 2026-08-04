@@ -8,6 +8,7 @@ import subprocess
 import tempfile
 from pathlib import Path
 from unittest.mock import patch, MagicMock, call
+from uuid import UUID
 
 from src.workflow import (
     JobTrigger,
@@ -177,6 +178,8 @@ class TestWorkflowContext:
                 data = json.load(f)
 
             assert data["type"] == "trigger_job"
+            assert data["trigger_type"] == "runnerlib"
+            assert str(UUID(data["operation_id"])) == data["operation_id"]
             assert len(data["jobs"]) == 2
             assert data["jobs"][0]["job_name"] == "test"
             assert data["jobs"][1]["job_name"] == "deploy"
@@ -542,6 +545,8 @@ class TestAPITriggerSubmission:
                     # Verify body contains trigger data
                     body = json.loads(req.data.decode("utf-8"))
                     assert body["type"] == "trigger_job"
+                    assert body["trigger_type"] == "runnerlib"
+                    assert str(UUID(body["operation_id"])) == body["operation_id"]
                     assert len(body["jobs"]) == 1
                     assert body["jobs"][0]["job_name"] == "test"
 

@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store/models"
@@ -58,6 +59,54 @@ func (s *workflowRuntimeStore) GetWorkflowInstanceByParentJobAndName(ctx context
 		}
 	}
 	return nil, store.ErrNotFound
+}
+
+func (s *workflowRuntimeStore) GetWorkflowInstanceByTriggerOperation(ctx context.Context, parentJobID, operationID, name string) (*models.WorkflowInstance, error) {
+	for _, wf := range s.workflows {
+		if wf.ParentJobID != nil && *wf.ParentJobID == parentJobID && wf.TriggerOperationID == operationID && wf.Name == name {
+			cp := *wf
+			return &cp, nil
+		}
+	}
+	return nil, store.ErrNotFound
+}
+
+func (s *workflowRuntimeStore) CreateWorkflowInstanceForTrigger(ctx context.Context, wf *models.WorkflowInstance) error {
+	if existing, err := s.GetWorkflowInstanceByTriggerOperation(ctx, derefString(wf.ParentJobID), wf.TriggerOperationID, wf.Name); err == nil {
+		*wf = *existing
+		return nil
+	}
+	return s.CreateWorkflowInstance(ctx, wf)
+}
+
+func (s *workflowRuntimeStore) ListWorkflowDescendants(ctx context.Context, rootWorkflowID string) ([]models.WorkflowInstance, error) {
+	var out []models.WorkflowInstance
+	for _, wf := range s.workflows {
+		if wf.WorkflowID == rootWorkflowID || (wf.RootWorkflowID != nil && *wf.RootWorkflowID == rootWorkflowID) {
+			out = append(out, *wf)
+		}
+	}
+	return out, nil
+}
+
+func (s *workflowRuntimeStore) ListWorkflowNodesBySubtree(ctx context.Context, workflowID string) ([]models.WorkflowNode, error) {
+	inTree := map[string]bool{workflowID: true}
+	for changed := true; changed; {
+		changed = false
+		for _, wf := range s.workflows {
+			if wf.ParentWorkflowID != nil && inTree[*wf.ParentWorkflowID] && !inTree[wf.WorkflowID] {
+				inTree[wf.WorkflowID] = true
+				changed = true
+			}
+		}
+	}
+	var out []models.WorkflowNode
+	for _, node := range s.nodes {
+		if inTree[node.WorkflowID] {
+			out = append(out, *node)
+		}
+	}
+	return out, nil
 }
 
 func (s *workflowRuntimeStore) UpdateWorkflowInstance(ctx context.Context, wf *models.WorkflowInstance) error {
@@ -136,6 +185,93 @@ type workflowRuntimeStatusUpdater struct {
 	MockJobStatusUpdater
 	workflowCalls []models.WorkflowInstance
 	nodesCalls    [][]models.WorkflowNode
+}
+
+func TestChildWorkflowLinksToParentAndRoot(t *testing.T) {
+	st := newWorkflowRuntimeStore()
+	originJobID := "eval-job"
+	root := &models.WorkflowInstance{
+		WorkflowID:  "root-wf",
+		UserID:      "user-1",
+		Name:        "root",
+		Status:      "running",
+		OriginJobID: &originJobID,
+		OriginType:  "pull_request_updated",
+	}
+	st.workflows[root.WorkflowID] = root
+	parentJob := &models.Job{JobID: "parent-job", UserID: "user-1", WorkflowID: &root.WorkflowID}
+	tp := NewTriggerProcessor(st, nil)
+
+	child, err := tp.ensureWorkflow(context.Background(), parentJob, &triggerWorkflowSpec{
+		Name:        "child",
+		OperationID: "operation-1",
+		TriggerType: "runnerlib",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if child.ParentWorkflowID == nil || *child.ParentWorkflowID != root.WorkflowID {
+		t.Fatalf("parent workflow = %v, want %q", child.ParentWorkflowID, root.WorkflowID)
+	}
+	if child.RootWorkflowID == nil || *child.RootWorkflowID != root.WorkflowID {
+		t.Fatalf("root workflow = %v, want %q", child.RootWorkflowID, root.WorkflowID)
+	}
+	if child.ParentJobID == nil || *child.ParentJobID != parentJob.JobID {
+		t.Fatalf("parent job = %v, want %q", child.ParentJobID, parentJob.JobID)
+	}
+	if child.OriginJobID == nil || *child.OriginJobID != originJobID || child.OriginType != root.OriginType {
+		t.Fatalf("origin = (%v, %q), want (%q, %q)", child.OriginJobID, child.OriginType, originJobID, root.OriginType)
+	}
+
+	again, err := tp.ensureWorkflow(context.Background(), parentJob, &triggerWorkflowSpec{Name: "child", OperationID: "operation-1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if again.WorkflowID != child.WorkflowID {
+		t.Fatalf("same operation created %q after %q", again.WorkflowID, child.WorkflowID)
+	}
+}
+
+func TestRootWorkflowStatusIncludesChildNodes(t *testing.T) {
+	st := newWorkflowRuntimeStore()
+	completedAt := time.Now().UTC()
+	rootID := "root-wf"
+	parentID := rootID
+	st.workflows[rootID] = &models.WorkflowInstance{WorkflowID: rootID, Status: "success", CompletedAt: &completedAt}
+	st.workflows["child-wf"] = &models.WorkflowInstance{
+		WorkflowID:       "child-wf",
+		Status:           "running",
+		RootWorkflowID:   &rootID,
+		ParentWorkflowID: &parentID,
+	}
+	st.nodes["root-node"] = &models.WorkflowNode{NodeID: "root-node", WorkflowID: rootID, Status: "completed"}
+	st.nodes["child-node"] = &models.WorkflowNode{NodeID: "child-node", WorkflowID: "child-wf", Status: "running"}
+	updater := &workflowRuntimeStatusUpdater{}
+	tp := NewTriggerProcessor(st, nil)
+	tp.SetStatusUpdater(updater)
+
+	child, _ := st.GetWorkflowInstance(context.Background(), "child-wf")
+	if err := tp.refreshWorkflowStatus(context.Background(), child); err != nil {
+		t.Fatal(err)
+	}
+	if got := st.workflows[rootID].Status; got != "running" {
+		t.Fatalf("root status = %q, want running", got)
+	}
+	if st.workflows[rootID].CompletedAt != nil {
+		t.Fatal("root completion time was not cleared when child work was registered")
+	}
+	if len(updater.workflowCalls) != 1 || updater.workflowCalls[0].WorkflowID != rootID {
+		t.Fatalf("published workflows = %+v, want only root", updater.workflowCalls)
+	}
+
+	st.nodes["child-node"].Status = "failed"
+	child, _ = st.GetWorkflowInstance(context.Background(), "child-wf")
+	if err := tp.refreshWorkflowStatus(context.Background(), child); err != nil {
+		t.Fatal(err)
+	}
+	if got := st.workflows[rootID].Status; got != "failed" {
+		t.Fatalf("root status = %q, want failed", got)
+	}
 }
 
 func (u *workflowRuntimeStatusUpdater) UpdateWorkflowStatus(ctx context.Context, wf *models.WorkflowInstance, nodes []models.WorkflowNode) error {

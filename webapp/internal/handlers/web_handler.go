@@ -36,6 +36,12 @@ type WebHandler struct {
 	authConfigAt  time.Time
 }
 
+type workflowGroup struct {
+	Workflow WorkflowSummary
+	Jobs     []JobResponse
+	Depth    int
+}
+
 func NewWebHandler(client *APIClient, uiClients *uiclient.Clients) *WebHandler {
 	funcMap := template.FuncMap{
 		"statusClass": statusClass,
@@ -201,6 +207,24 @@ func (h *WebHandler) WorkflowDetail(w http.ResponseWriter, r *http.Request) {
 		h.renderError(w, r, http.StatusBadGateway, "Failed to fetch workflow jobs", err)
 		return
 	}
+	groups := []workflowGroup{{Workflow: *workflow, Jobs: jobs.Jobs}}
+	depths := map[string]int{workflow.WorkflowID: 0}
+	for _, child := range workflow.Children {
+		childJobs, childErr := h.client.ListJobsForWorkflow(child.WorkflowID, 200, 0)
+		if childErr != nil {
+			logrus.WithError(childErr).WithField("workflow_id", child.WorkflowID).Error("Failed to fetch child workflow jobs")
+			h.renderError(w, r, http.StatusBadGateway, "Failed to fetch child workflow jobs", childErr)
+			return
+		}
+		depth := 1
+		if child.ParentWorkflowID != nil {
+			if parentDepth, ok := depths[*child.ParentWorkflowID]; ok {
+				depth = parentDepth + 1
+			}
+		}
+		depths[child.WorkflowID] = depth
+		groups = append(groups, workflowGroup{Workflow: child, Jobs: childJobs.Jobs, Depth: depth})
+	}
 
 	// Capability hints for Task I's cancel/kill/retry buttons: scoped to this
 	// workflow's project when known, since cancel/kill/retry authorization is
@@ -214,6 +238,7 @@ func (h *WebHandler) WorkflowDetail(w http.ResponseWriter, r *http.Request) {
 		"Title":               workflow.Name,
 		"Workflow":            workflow,
 		"Jobs":                jobs.Jobs,
+		"Groups":              groups,
 		"CanCancel":           caps.CancelJob,
 		"CanKill":             caps.KillJob,
 		"CanRetry":            caps.RetryJob,

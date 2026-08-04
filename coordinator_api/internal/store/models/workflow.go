@@ -7,23 +7,29 @@ import (
 )
 
 type WorkflowInstance struct {
-	WorkflowID    string     `gorm:"primaryKey;type:uuid;default:generate_ulid()" json:"workflow_id"`
-	CreatedAt     time.Time  `gorm:"autoCreateTime:false;default:timezone('utc', now())" json:"created_at"`
-	UpdatedAt     time.Time  `gorm:"autoUpdateTime:false;default:timezone('utc', now())" json:"updated_at"`
-	UserID        string     `gorm:"type:uuid;not null" json:"user_id"`
-	ProjectID     *string    `gorm:"type:uuid" json:"project_id"`
-	ParentJobID   *string    `gorm:"type:uuid" json:"parent_job_id"`
-	Name          string     `gorm:"type:text;not null" json:"name"`
-	Status        string     `gorm:"type:text;not null;default:'evaluating'" json:"status"`
-	QueueName     string     `gorm:"type:text;not null;default:'reactorcide-jobs'" json:"queue_name"`
-	VCSProvider   string     `gorm:"type:text" json:"vcs_provider"`
-	VCSRepo       string     `gorm:"type:text" json:"vcs_repo"`
-	PRNumber      *int       `gorm:"type:integer" json:"pr_number"`
-	CommitSHA     string     `gorm:"type:text" json:"commit_sha"`
-	StatusContext string     `gorm:"type:text;not null;default:'Reactorcide Jobs'" json:"status_context"`
-	CommentMarker string     `gorm:"type:text" json:"comment_marker"`
-	CompletedAt   *time.Time `json:"completed_at"`
-	LastError     string     `gorm:"type:text" json:"last_error"`
+	WorkflowID         string     `gorm:"primaryKey;type:uuid;default:generate_ulid()" json:"workflow_id"`
+	CreatedAt          time.Time  `gorm:"autoCreateTime:false;default:timezone('utc', now())" json:"created_at"`
+	UpdatedAt          time.Time  `gorm:"autoUpdateTime:false;default:timezone('utc', now())" json:"updated_at"`
+	UserID             string     `gorm:"type:uuid;not null" json:"user_id"`
+	ProjectID          *string    `gorm:"type:uuid" json:"project_id"`
+	ParentJobID        *string    `gorm:"type:uuid" json:"parent_job_id"`
+	RootWorkflowID     *string    `gorm:"type:uuid" json:"root_workflow_id,omitempty"`
+	ParentWorkflowID   *string    `gorm:"type:uuid" json:"parent_workflow_id,omitempty"`
+	OriginJobID        *string    `gorm:"type:uuid" json:"origin_job_id,omitempty"`
+	OriginType         string     `gorm:"type:text" json:"origin_type,omitempty"`
+	TriggerOperationID string     `gorm:"type:text" json:"trigger_operation_id,omitempty"`
+	TriggerType        string     `gorm:"type:text;not null;default:'runnerlib'" json:"trigger_type,omitempty"`
+	Name               string     `gorm:"type:text;not null" json:"name"`
+	Status             string     `gorm:"type:text;not null;default:'evaluating'" json:"status"`
+	QueueName          string     `gorm:"type:text;not null;default:'reactorcide-jobs'" json:"queue_name"`
+	VCSProvider        string     `gorm:"type:text" json:"vcs_provider"`
+	VCSRepo            string     `gorm:"type:text" json:"vcs_repo"`
+	PRNumber           *int       `gorm:"type:integer" json:"pr_number"`
+	CommitSHA          string     `gorm:"type:text" json:"commit_sha"`
+	StatusContext      string     `gorm:"type:text;not null;default:'Reactorcide Jobs'" json:"status_context"`
+	CommentMarker      string     `gorm:"type:text" json:"comment_marker"`
+	CompletedAt        *time.Time `json:"completed_at"`
+	LastError          string     `gorm:"type:text" json:"last_error"`
 }
 
 func (WorkflowInstance) TableName() string {
@@ -99,25 +105,33 @@ func (WorkflowEvent) TableName() string {
 }
 
 type WorkflowSummary struct {
-	WorkflowID      string     `json:"workflow_id"`
-	Kind            string     `json:"kind"`
-	Name            string     `json:"name"`
-	Status          string     `json:"status"`
-	UserID          string     `json:"-"`
-	ProjectID       *string    `json:"project_id,omitempty"`
-	CreatedAt       time.Time  `json:"created_at"`
-	UpdatedAt       time.Time  `json:"updated_at"`
-	CompletedAt     *time.Time `json:"completed_at,omitempty"`
-	QueueName       string     `json:"queue_name"`
-	VCSRepo         string     `json:"vcs_repo,omitempty"`
-	PRNumber        *int       `json:"pr_number,omitempty"`
-	CommitSHA       string     `json:"commit_sha,omitempty"`
-	JobCount        int        `json:"job_count"`
-	RunningCount    int        `json:"running_count"`
-	CompletedCount  int        `json:"completed_count"`
-	FailedCount     int        `json:"failed_count"`
-	SkippedCount    int        `json:"skipped_count"`
-	LooseJobID      *string    `json:"loose_job_id,omitempty"`
-	LooseJobExit    *int       `json:"loose_job_exit,omitempty"`
-	DecisionSummary string     `json:"decision_summary,omitempty"`
+	WorkflowID         string            `json:"workflow_id"`
+	Kind               string            `json:"kind"`
+	Name               string            `json:"name"`
+	Status             string            `json:"status"`
+	UserID             string            `json:"-"`
+	ProjectID          *string           `json:"project_id,omitempty"`
+	CreatedAt          time.Time         `json:"created_at"`
+	UpdatedAt          time.Time         `json:"updated_at"`
+	CompletedAt        *time.Time        `json:"completed_at,omitempty"`
+	QueueName          string            `json:"queue_name"`
+	VCSRepo            string            `json:"vcs_repo,omitempty"`
+	PRNumber           *int              `json:"pr_number,omitempty"`
+	CommitSHA          string            `json:"commit_sha,omitempty"`
+	JobCount           int               `json:"job_count"`
+	RunningCount       int               `json:"running_count"`
+	CompletedCount     int               `json:"completed_count"`
+	FailedCount        int               `json:"failed_count"`
+	SkippedCount       int               `json:"skipped_count"`
+	LooseJobID         *string           `json:"loose_job_id,omitempty"`
+	LooseJobExit       *int              `json:"loose_job_exit,omitempty"`
+	DecisionSummary    string            `json:"decision_summary,omitempty"`
+	ParentJobID        *string           `json:"parent_job_id,omitempty"`
+	RootWorkflowID     *string           `json:"root_workflow_id,omitempty"`
+	ParentWorkflowID   *string           `json:"parent_workflow_id,omitempty"`
+	OriginJobID        *string           `json:"origin_job_id,omitempty"`
+	OriginType         string            `json:"origin_type,omitempty"`
+	TriggerOperationID string            `json:"trigger_operation_id,omitempty"`
+	TriggerType        string            `json:"trigger_type,omitempty"`
+	Children           []WorkflowSummary `gorm:"-" json:"children,omitempty"`
 }
