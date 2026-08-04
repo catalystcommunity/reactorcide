@@ -50,6 +50,13 @@ func runLoop(ctx context.Context, cfg Config, c client, newRunner runnerFactory)
 	if err != nil {
 		return fmt.Errorf("coordinatorworker: create job runner: %w", err)
 	}
+	if cache, ok, err := initializeVMImageCache(ctx, runner, cfg, time.Now()); err != nil {
+		return err
+	} else if ok {
+		if cfg.VMImagePruneInterval > 0 && cfg.VMImageMaxUnused > 0 {
+			go maintainVMImageCache(ctx, cache, cfg.VMImageMaxUnused, cfg.VMImagePruneInterval)
+		}
+	}
 
 	concurrency := cfg.Concurrency
 	if concurrency < 1 {
@@ -125,6 +132,44 @@ pollLoop:
 
 	wg.Wait()
 	return ctx.Err()
+}
+
+func initializeVMImageCache(ctx context.Context, runner worker.JobRunner, cfg Config, now time.Time) (worker.VMImageCacheManager, bool, error) {
+	cache, ok := runner.(worker.VMImageCacheManager)
+	if !ok {
+		return nil, false, nil
+	}
+	removed, err := cache.PruneImages(ctx, cfg.VMImageMaxUnused, now)
+	if err != nil {
+		return nil, true, fmt.Errorf("coordinatorworker: prune VM image cache: %w", err)
+	}
+	if removed > 0 {
+		logging.Log.WithField("images_removed", removed).Info("pruned unused VM images")
+	}
+	if err := cache.PrefetchImages(ctx, cfg.VMImagePrefetch); err != nil {
+		return nil, true, fmt.Errorf("coordinatorworker: prefetch VM images: %w", err)
+	}
+	return cache, true, nil
+}
+
+func maintainVMImageCache(ctx context.Context, cache worker.VMImageCacheManager, maxUnused, interval time.Duration) {
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case now := <-ticker.C:
+			removed, err := cache.PruneImages(ctx, maxUnused, now)
+			if err != nil {
+				logging.Log.WithError(err).Warn("failed to prune VM image cache")
+				continue
+			}
+			if removed > 0 {
+				logging.Log.WithField("images_removed", removed).Info("pruned unused VM images")
+			}
+		}
+	}
 }
 
 // registerWithBackoff calls Register with an escalating backoff until it

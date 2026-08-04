@@ -16,7 +16,7 @@
 // Run (the private key path is read from a file; its contents never go on the
 // command line or into logs):
 //
-//	./vmsmoke -bundle /path/to/base-bundle -user runner -key ~/.ssh/reactorcide_vm
+//	./vmsmoke -bundle /path/to/base-bundle -user reactorcide -key ~/.ssh/reactorcide_vm
 //
 // See docs/vm-runners-macos.md for producing the base bundle and baking in the
 // worker's SSH public key.
@@ -35,7 +35,7 @@ import (
 
 func main() {
 	bundle := flag.String("bundle", "", "path to the base image bundle directory (required)")
-	user := flag.String("user", "runner", "guest SSH user")
+	user := flag.String("user", "reactorcide", "guest SSH user")
 	keyFile := flag.String("key", "", "path to the worker's SSH private key file (PEM)")
 	password := flag.String("password", "", "guest SSH password (used only if -key is empty; discouraged)")
 	timeout := flag.Duration("timeout", 5*time.Minute, "overall timeout for the smoke run")

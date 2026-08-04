@@ -79,6 +79,15 @@ type Config struct {
 	// container creation fails. Empty means the OS temp dir (correct for a
 	// bare-metal worker and for run-local, where there is no namespace split).
 	WorkspaceRoot string
+
+	// VMImagePrefetch lists OCI VM image references to pull before this worker
+	// registers with the coordinator.
+	VMImagePrefetch []string
+
+	// VMImageMaxUnused controls cache retention. The worker prunes once at
+	// startup and then at VMImagePruneInterval.
+	VMImageMaxUnused     time.Duration
+	VMImagePruneInterval time.Duration
 }
 
 // defaultHeartbeatInterval is used only if Register's response carries a

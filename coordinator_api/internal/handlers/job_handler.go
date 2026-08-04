@@ -100,7 +100,7 @@ type CreateJobRequest struct {
 	// This is the untrusted source code being tested (e.g., PR code)
 	SourceURL  string `json:"source_url,omitempty"`
 	SourceRef  string `json:"source_ref,omitempty"`
-	SourceType string `json:"source_type" validate:"required,oneof=git copy"`
+	SourceType string `json:"source_type" validate:"required,oneof=git copy none"`
 	SourcePath string `json:"source_path,omitempty"`
 
 	// CI Source configuration (trusted CI pipeline code - optional)
@@ -905,7 +905,7 @@ func (h *JobHandler) validateCreateJobRequest(req *CreateJobRequest) error {
 		return store.ErrInvalidInput
 	}
 
-	if req.SourceType != "git" && req.SourceType != "copy" {
+	if req.SourceType != "git" && req.SourceType != "copy" && req.SourceType != "none" {
 		return store.ErrInvalidInput
 	}
 

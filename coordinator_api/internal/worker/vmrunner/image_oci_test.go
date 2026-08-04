@@ -23,6 +23,38 @@ import (
 	"oras.land/oras-go/v2/registry/remote"
 )
 
+func TestOCIImageSourceMaterializesMacBundleAndPrunesIt(t *testing.T) {
+	ctx := context.Background()
+	bundle := writeTestMacBundle(t)
+	var archive bytes.Buffer
+	require.NoError(t, WriteMacBundleArchive(ctx, bundle, &archive))
+
+	store := memory.New()
+	layerDesc, err := oras.PushBytes(ctx, store, VMMacBundleLayerMediaType, archive.Bytes())
+	require.NoError(t, err)
+	manifestDesc, err := oras.PackManifest(ctx, store, oras.PackManifestVersion1_1, VMImageArtifactType, oras.PackManifestOptions{Layers: []ocispec.Descriptor{layerDesc}})
+	require.NoError(t, err)
+	require.NoError(t, store.Tag(ctx, manifestDesc, "latest"))
+
+	cacheDir := t.TempDir()
+	source, err := NewOCIImageSource(cacheDir)
+	require.NoError(t, err)
+	source.sourceFactory = func(ref registry.Reference) (oras.ReadOnlyTarget, error) { return store, nil }
+
+	path, err := source.Resolve(ctx, "example.invalid/reactorcide/macos:latest")
+	require.NoError(t, err)
+	require.NoError(t, ValidateMacBundle(path))
+	accessPath := source.accessPath(manifestDesc)
+	old := time.Now().Add(-31 * 24 * time.Hour)
+	require.NoError(t, os.Chtimes(accessPath, old, old))
+
+	removed, err := source.Prune(ctx, 30*24*time.Hour, time.Now())
+	require.NoError(t, err)
+	require.Equal(t, 1, removed)
+	_, err = os.Stat(path)
+	require.ErrorIs(t, err, os.ErrNotExist)
+}
+
 // pushFakeVMImageArtifact packs a single-layer VM image artifact (per
 // image_oci.go's assumed layout) containing blob into store under tag, and
 // returns the layer's descriptor.

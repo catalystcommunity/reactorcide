@@ -9,6 +9,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/opencontainers/go-digest"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
@@ -27,28 +29,33 @@ import (
 //     ArtifactType/config blob are not inspected -- both the classic
 //     "unknown config" convention and the OCI 1.1 empty-config-artifact
 //     convention (as produced by oras.PackManifest) are accepted.
-//   - The manifest has exactly one layer whose MediaType is
-//     VMImageLayerMediaType. That single layer *is* the base VM disk image
-//     -- opaque bytes as far as this package is concerned; VMLifecycle
-//     (VM-3/VM-4) interprets/mounts the cached file once cloned.
+//   - The current macOS format has one VMMacBundleLayerMediaType layer. The
+//     layer is a tar+zstd archive that materializes as a four-file bundle.
+//   - VMImageLayerMediaType remains accepted for the prototype legacy
+//     single-disk format used by Windows and early tests.
 //
 // Resolve returns a clear, actionable error rather than guessing if a
 // manifest has zero or more than one layer of that media type.
 const (
 	// VMImageArtifactType is the OCI artifactType a reactorcide VM base
 	// image manifest is expected to declare. It is documentation/intent
-	// only -- Resolve does not reject a manifest for using a different (or
-	// absent) artifactType, since the load-bearing shape check is the
-	// single VMImageLayerMediaType layer described above.
+	// only -- Resolve uses the layer media type and shape as its load-bearing
+	// validation.
 	VMImageArtifactType = "application/vnd.reactorcide.vm-image.v1"
 
 	// VMImageLayerMediaType is the media type of the one layer Resolve
 	// expects a VM base image manifest to carry: the raw/compressed VM disk
 	// image blob.
 	VMImageLayerMediaType = "application/vnd.reactorcide.vm-image.layer.v1"
+
+	// VMMacBundleLayerMediaType is the current macOS image layer format. It
+	// contains the complete four-file bundle as a tar+zstd stream.
+	VMMacBundleLayerMediaType = "application/vnd.reactorcide.vm-image.macos.bundle.v1.tar+zstd"
 )
 
-// OCIImageSource resolves an imageRef to a locally cached base image file by
+const DefaultImageMaxUnused = 30 * 24 * time.Hour
+
+// OCIImageSource resolves an imageRef to a locally cached base image path by
 // pulling it as an OCI artifact from a registry (oras.land/oras-go/v2),
 // mirroring VM_RUNNERS_PLAN.md's "images = OCI artifacts, pulled by
 // ref+digest, cached locally by digest" decision. It implements the same
@@ -78,6 +85,7 @@ const (
 type OCIImageSource struct {
 	cacheDir string
 	cache    *ocistore.Store
+	mu       sync.Mutex
 
 	credentialStore credentials.Store
 	httpClient      *http.Client
@@ -86,8 +94,8 @@ type OCIImageSource struct {
 
 	// sourceFactory builds the read-only OCI target Resolve pulls from for
 	// a given parsed reference. It defaults to defaultSource, which wires a
-	// real registry/remote.Repository with ambient docker-config
-	// credentials; image_oci_test.go substitutes a fake in-memory target on
+	// real registry/remote.Repository with the configured credential store;
+	// image_oci_test.go substitutes a fake in-memory target on
 	// the same-package OCIImageSource value to exercise digest-mismatch
 	// rejection and artifact-shape handling without a live registry.
 	sourceFactory func(ref registry.Reference) (oras.ReadOnlyTarget, error)
@@ -97,9 +105,8 @@ type OCIImageSource struct {
 type OCIImageSourceOption func(*OCIImageSource)
 
 // WithCredentialStore overrides the credentials.Store used to resolve
-// registry auth, in place of the default ambient docker-config store (see
-// NewOCIImageSource). Never logs or otherwise surfaces the credentials it
-// returns.
+// registry auth. If this option is absent, NewOCIImageSource uses the ambient
+// Docker credential store for compatibility. It never logs credentials.
 func WithCredentialStore(store credentials.Store) OCIImageSourceOption {
 	return func(s *OCIImageSource) { s.credentialStore = store }
 }
@@ -153,6 +160,7 @@ func NewOCIImageSource(cacheDir string, opts ...OCIImageSourceOption) (*OCIImage
 	if err != nil {
 		return nil, fmt.Errorf("vmrunner: open OCI image cache %q: %w", cacheDir, err)
 	}
+	store.AutoGC = true
 
 	s := &OCIImageSource{
 		cacheDir:       cacheDir,
@@ -191,6 +199,12 @@ func (s *OCIImageSource) CacheDir() string {
 // doc comment for the caching semantics and this file's package-level doc
 // comment for the assumed artifact layout.
 func (s *OCIImageSource) Resolve(ctx context.Context, imageRef string) (string, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.resolveLocked(ctx, imageRef)
+}
+
+func (s *OCIImageSource) resolveLocked(ctx context.Context, imageRef string) (string, error) {
 	if imageRef == "" {
 		return "", errors.New("vmrunner: image reference must not be empty")
 	}
@@ -283,7 +297,7 @@ func (s *OCIImageSource) layerPath(ctx context.Context, manifestDesc ocispec.Des
 
 	var layer *ocispec.Descriptor
 	for i := range manifest.Layers {
-		if manifest.Layers[i].MediaType != VMImageLayerMediaType {
+		if manifest.Layers[i].MediaType != VMImageLayerMediaType && manifest.Layers[i].MediaType != VMMacBundleLayerMediaType {
 			continue
 		}
 		if layer != nil {
@@ -301,6 +315,17 @@ func (s *OCIImageSource) layerPath(ctx context.Context, manifestDesc ocispec.Des
 		)
 	}
 
+	if layer.MediaType == VMMacBundleLayerMediaType {
+		path, err := s.materializeMacBundle(ctx, manifestDesc, *layer)
+		if err != nil {
+			return "", err
+		}
+		if err := s.touchAccess(manifestDesc); err != nil {
+			return "", err
+		}
+		return path, nil
+	}
+
 	path, err := s.blobPath(layer.Digest)
 	if err != nil {
 		return "", err
@@ -312,7 +337,129 @@ func (s *OCIImageSource) layerPath(ctx context.Context, manifestDesc ocispec.Des
 	if info.IsDir() {
 		return "", fmt.Errorf("vmrunner: cached vm image layer at %s is a directory, expected a file", path)
 	}
+	if err := s.touchAccess(manifestDesc); err != nil {
+		return "", err
+	}
 	return path, nil
+}
+
+func (s *OCIImageSource) materializeMacBundle(ctx context.Context, manifestDesc, layer ocispec.Descriptor) (string, error) {
+	root := filepath.Join(s.cacheDir, "bundles", manifestDesc.Digest.Algorithm().String())
+	dst := filepath.Join(root, manifestDesc.Digest.Encoded())
+	if err := ValidateMacBundle(dst); err == nil {
+		return dst, nil
+	}
+	if err := os.Chmod(dst, 0o700); err != nil && !os.IsNotExist(err) {
+		return "", fmt.Errorf("vmrunner: unlock invalid materialized bundle: %w", err)
+	}
+	if err := os.RemoveAll(dst); err != nil {
+		return "", fmt.Errorf("vmrunner: remove invalid materialized bundle: %w", err)
+	}
+	if err := os.MkdirAll(root, 0o700); err != nil {
+		return "", fmt.Errorf("vmrunner: create materialized bundle root: %w", err)
+	}
+	tmp, err := os.MkdirTemp(root, ".extract-")
+	if err != nil {
+		return "", fmt.Errorf("vmrunner: create materialized bundle temp dir: %w", err)
+	}
+	defer os.RemoveAll(tmp)
+
+	r, err := s.cache.Fetch(ctx, layer)
+	if err != nil {
+		return "", fmt.Errorf("vmrunner: open cached macOS bundle layer: %w", err)
+	}
+	extractErr := ExtractMacBundleArchive(ctx, r, tmp)
+	closeErr := r.Close()
+	if err := errors.Join(extractErr, closeErr); err != nil {
+		return "", fmt.Errorf("vmrunner: materialize macOS bundle: %w", err)
+	}
+	if err := os.Rename(tmp, dst); err != nil {
+		if validateErr := ValidateMacBundle(dst); validateErr == nil {
+			return dst, nil
+		}
+		return "", fmt.Errorf("vmrunner: publish materialized macOS bundle: %w", err)
+	}
+	if err := os.Chmod(dst, 0o555); err != nil {
+		return "", fmt.Errorf("vmrunner: protect materialized macOS bundle: %w", err)
+	}
+	return dst, nil
+}
+
+func (s *OCIImageSource) accessPath(desc ocispec.Descriptor) string {
+	return filepath.Join(s.cacheDir, "access", desc.Digest.Algorithm().String(), desc.Digest.Encoded())
+}
+
+func (s *OCIImageSource) touchAccess(desc ocispec.Descriptor) error {
+	path := s.accessPath(desc)
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		return fmt.Errorf("vmrunner: create image access directory: %w", err)
+	}
+	now := time.Now()
+	if err := os.WriteFile(path, nil, 0o600); err != nil {
+		return fmt.Errorf("vmrunner: record image access: %w", err)
+	}
+	if err := os.Chtimes(path, now, now); err != nil {
+		return fmt.Errorf("vmrunner: update image access time: %w", err)
+	}
+	return nil
+}
+
+// Prune removes manifests, blobs, and materialized bundles that have not been
+// resolved within maxUnused. It returns the number of removed images.
+func (s *OCIImageSource) Prune(ctx context.Context, maxUnused time.Duration, now time.Time) (int, error) {
+	if maxUnused <= 0 {
+		return 0, nil
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	accessRoot := filepath.Join(s.cacheDir, "access")
+	removed := 0
+	err := filepath.WalkDir(accessRoot, func(path string, entry os.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			if os.IsNotExist(walkErr) {
+				return nil
+			}
+			return walkErr
+		}
+		if entry.IsDir() {
+			return nil
+		}
+		info, err := entry.Info()
+		if err != nil {
+			return err
+		}
+		if now.Sub(info.ModTime()) <= maxUnused {
+			return nil
+		}
+		algorithm := filepath.Base(filepath.Dir(path))
+		dgst := digest.Digest(algorithm + ":" + entry.Name())
+		if err := dgst.Validate(); err != nil {
+			return fmt.Errorf("vmrunner: invalid cache access record %q: %w", path, err)
+		}
+		desc, err := s.cache.Resolve(ctx, dgst.String())
+		if err == nil {
+			if err := s.cache.Delete(ctx, desc); err != nil {
+				return fmt.Errorf("vmrunner: delete cached image %s: %w", dgst, err)
+			}
+		}
+		bundlePath := filepath.Join(s.cacheDir, "bundles", algorithm, entry.Name())
+		if err := os.Chmod(bundlePath, 0o700); err != nil && !os.IsNotExist(err) {
+			return fmt.Errorf("vmrunner: unlock materialized bundle %s: %w", dgst, err)
+		}
+		if err := os.RemoveAll(bundlePath); err != nil {
+			return fmt.Errorf("vmrunner: remove materialized bundle %s: %w", dgst, err)
+		}
+		if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+			return fmt.Errorf("vmrunner: remove image access record %s: %w", dgst, err)
+		}
+		removed++
+		return nil
+	})
+	if os.IsNotExist(err) {
+		return 0, nil
+	}
+	return removed, err
 }
 
 // blobPath computes a digest's path in the cache's OCI Image Layout, per
@@ -337,6 +484,15 @@ func DefaultImageCacheDir() string {
 		return filepath.Join(home, ".cache", "reactorcide", "vm-images")
 	}
 	return filepath.Join(".reactorcide", "vm-images")
+}
+
+// DefaultRegistryAuthFile returns the dedicated Docker-compatible credential
+// file used by VM image CLI and worker operations.
+func DefaultRegistryAuthFile() string {
+	if home, err := os.UserHomeDir(); err == nil && home != "" {
+		return filepath.Join(home, ".config", "reactorcide", "oci-auth.json")
+	}
+	return filepath.Join(".reactorcide", "oci-auth.json")
 }
 
 var _ ImageSource = (*OCIImageSource)(nil)

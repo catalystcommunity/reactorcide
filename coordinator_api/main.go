@@ -23,6 +23,7 @@ func main() {
 			cmd.RunLocalCommand,
 			cmd.SubmitCommand,
 			cmd.LogsCommand,
+			cmd.VMImageCommand,
 		},
 	}
 	// Work around a urfave/cli/v2 parsing limitation for "secret-grants set":
