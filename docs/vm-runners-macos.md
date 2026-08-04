@@ -81,16 +81,25 @@ bundle by name:
 
 ```sh
 export REACTORCIDE_VM_IMAGE_DIR=/opt/reactorcide/vm-images
+export REACTORCIDE_VM_SCRATCH_DIR=/opt/reactorcide/vm-jobs
 # a job's image "macos-14-base" then resolves to
 #   /opt/reactorcide/vm-images/macos-14-base/  (the bundle dir)
 ```
 
-An absolute image reference is used as-is (`REACTORCIDE_VM_IMAGE_DIR` is
-ignored for that job). `LocalImageSource` (VM-1) accepts either a bundle
-directory or a single file; VM-2 will add an OCI-backed source with the same
-interface.
+When `REACTORCIDE_VM_IMAGE_DIR` is set, an image reference must be a relative
+path inside that directory. Absolute paths and paths that escape the image
+directory are rejected. `LocalImageSource` accepts a bundle directory or a
+single file. The lifecycle selects the required format.
+
+Set `REACTORCIDE_VM_SCRATCH_DIR` to a directory on the same APFS volume as the
+base images. This lets the worker use APFS copy-on-write clones. If the two
+directories are on different file systems, the worker copies the full disk
+image for each job.
 
 ## Producing the base bundle (golden image)
+
+For current image build, publish, pull, cache, and retention commands, see
+[`vm-images.md`](vm-images.md).
 
 You install macOS into a VM once, capture the four artifacts, then reuse that
 bundle as the read-only base for every job.
@@ -118,30 +127,24 @@ bundle as the read-only base for every job.
 3. **Boot the installed guest interactively once** to complete Setup Assistant
    (create the account the worker will SSH in as), then prepare it as below.
 
-### Recommended tooling: Packer + Tart (instead of hand-rolling)
+### Prototype image build path
 
-Reactorcide ships **no** base-image build tooling — the `reactorcide` binary
-only *boots* an existing bundle (and `cmd/vmsmoke` is just a smoke test). Rather
-than script `VZMacOSInstaller` yourself, the well-trodden path for reproducible
-Apple-Silicon macOS images is **Tart** (Cirrus Labs; built on the same
-Virtualization.framework) driven by **Packer** via `packer-plugin-tart`:
+The prototype does not use Packer or Tart. It uses the MIT-licensed
+[Code-Hex/vz macOS example](https://github.com/Code-Hex/vz/tree/main/example/macOS)
+to install an Apple IPSW. It then uses SSH to install tools after Setup
+Assistant enables an account and Remote Login.
 
-- `brew install cirruslabs/cli/tart`, then a Packer template (`tart-cli` builder)
-  installs macOS from an IPSW and provisions the guest (enable Remote Login, bake
-  toolchain + the worker's SSH public key) — no manual click-through.
-- Tart distributes images through **any OCI registry** (push/pull like Docker),
-  which lines up with our OCI `ImageSource` (VM-2) and your
-  `containers.catalystsquad.com` plan.
+The first prototype used a person to complete Setup Assistant for one
+bootstrap image. Derived images now use `reactorcide vm-image build macos` and
+do not use Setup Assistant.
 
-Caveat: Tart stores a VM as its **own** package layout (`disk.img` + `config.json`
-+ `nvram.bin`), not our four-file bundle (`disk.img`/`aux.img`/`hardwaremodel.bin`/
-`machineidentifier.bin`). So adopting Tart means either (a) a small conversion
-step producing our bundle, or (b) teaching the runner to read Tart's layout /
-consuming Tart's OCI images directly. That build-vs-adopt decision belongs to
-**VM-5 (image build + packaging)** — flagged, not decided. Given Tart overlaps
-heavily with what VM-3 already does (vz lifecycle + OCI images), VM-5 should
-weigh consuming Tart images/format vs. our own bundle before investing in a
-custom installer.
+Apple announced a Virtualization.framework guest-provisioning API in 2026. It
+can create the first user and enable Remote Login without Setup Assistant. The
+SDK on the prototype host does not contain this API. Reactorcide will use it
+for bootstrap image creation when it is present in the supported host SDK.
+Until then, maintainers create one bootstrap image for each supported macOS
+release and publish it. Users build their images from that bootstrap through
+the Reactorcide CLI.
 
 ### Prepare the guest (inside the VM)
 
@@ -155,8 +158,8 @@ Do this in the running guest before capturing it as the golden bundle:
 
    (Or System Settings → General → Sharing → Remote Login.)
 
-2. **Create the worker's login account** (e.g. `runner`) if you didn't during
-   Setup Assistant, and make sure it can run the jobs' toolchains.
+2. **Create the worker's `reactorcide` login account** if it was not created
+   during Setup Assistant. Make sure that it can run the job toolchains.
 
 3. **Bake the toolchain** the jobs need (Xcode / command line tools, language
    runtimes, `runnerlib` prerequisites, etc.). Everything a job uses must be
@@ -171,8 +174,8 @@ Do this in the running guest before capturing it as the golden bundle:
 
 ## Guest credentials (prototype)
 
-For the prototype, the guest authenticates the worker with a **baked-in SSH
-key pair**:
+For the prototype, the guest authenticates the worker with a public key in
+the image and a private key on the worker host:
 
 - Generate a dedicated key pair for the worker (do this on the host, keep the
   private key on the host only):
@@ -192,9 +195,15 @@ key pair**:
   | Env var                              | Meaning                                        | Default |
   | ------------------------------------ | ---------------------------------------------- | ------- |
   | `REACTORCIDE_VM_IMAGE_DIR`           | directory relative image refs resolve under    | `.`     |
-  | `REACTORCIDE_VM_SSH_USER`            | guest account the worker logs in as            | `runner`|
+  | `REACTORCIDE_VM_IMAGE_SOURCE`        | `local` or `oci` image source                   | `local` |
+  | `REACTORCIDE_VM_IMAGE_CACHE_DIR`     | OCI content and materialized bundle cache       | `~/.cache/reactorcide/vm-images` |
+  | `REACTORCIDE_VM_REGISTRY_AUTH_FILE`  | Docker-compatible multi-registry credential file | `~/.config/reactorcide/oci-auth.json` |
+  | `REACTORCIDE_VM_SCRATCH_DIR`         | directory for ephemeral per-job VM clones      | OS temporary directory |
+  | `REACTORCIDE_VM_SSH_USER`            | guest account the worker logs in as            | `reactorcide`|
   | `REACTORCIDE_VM_SSH_PRIVATE_KEY_FILE`| path to the worker's SSH private key (PEM)      | —       |
   | `REACTORCIDE_VM_SSH_PASSWORD`        | password auth (discouraged; key preferred)     | —       |
+  | `REACTORCIDE_VM_METRICS_DIR`         | local JSON Lines metrics directory              | `~/.local/state/reactorcide/vm-metrics` |
+  | `REACTORCIDE_VM_METRICS_INTERVAL`    | guest metrics sample interval                   | `5s`    |
 
   These are read by `worker.LoadVMConfig` and wired into the `GuestCreds` the
   VMRunner passes to the SSH transport. They apply to both the coordinator-
@@ -204,7 +213,7 @@ Example:
 
 ```sh
 export REACTORCIDE_VM_IMAGE_DIR=/opt/reactorcide/vm-images
-export REACTORCIDE_VM_SSH_USER=runner
+export REACTORCIDE_VM_SSH_USER=reactorcide
 export REACTORCIDE_VM_SSH_PRIVATE_KEY_FILE="$HOME/.ssh/reactorcide_vm"
 ```
 
@@ -217,13 +226,23 @@ export REACTORCIDE_VM_SSH_PRIVATE_KEY_FILE="$HOME/.ssh/reactorcide_vm"
 - The SSH transport does **not** verify the guest host key: guests are cloned
   fresh per job and have no stable identity to pin, and the host↔guest link
   runs over the VM's private NAT network the lifecycle controls end to end.
-- Baking a **shared** worker key into the golden image is a prototype
-  simplification: every job clone trusts the same key. **Per-job injected
-  keys** (a unique key pair minted per boot, delivered over a first-boot
-  channel so no long-lived secret lives in the image) are the intended
-  hardening and are out of scope for VM-3 — they need a first-boot delivery
-  mechanism (cloud-init-style config, a vsock channel, or a mounted seed
-  volume) that does not yet exist here.
+- The private SSH key stays on the worker host. The image builder does not
+  copy it into the image.
+- The public key stays in the guest's `authorized_keys` file. The guest
+  password state also stays in the cloned disk. The build process does not
+  remove or rotate these items automatically.
+- A public key is not confidential, but its `authorized_keys` entry permits
+  access to a person who has the matching private key.
+- Before handoff, replace the build key with the recipient's public key.
+  Change or disable the guest password, disable SSH password login, and remove
+  all build credentials and private signing material. The recipient must not
+  give its private key to the image publisher.
+- One image for many independent operators needs a boot-time channel that
+  injects a unique key. The current prototype does not have that channel. Do
+  not publish a runtime image with a shared access key outside its intended
+  trust domain.
+- See [VM Image Operations](./vm-images.md#bootstrap-credential-state) for the
+  complete image-handoff checklist.
 
 ## Smoke test (validate vz + networking + SSH)
 
@@ -237,7 +256,7 @@ codesign --force --entitlements ../deployment/macos/vz.entitlements -s - ./vmsmo
 
 ./vmsmoke \
   -bundle /opt/reactorcide/vm-images/macos-14-base \
-  -user runner \
+  -user reactorcide \
   -key "$HOME/.ssh/reactorcide_vm"
 ```
 
@@ -259,3 +278,72 @@ reactorcide run-local --backend vm ./jobs/my-macos-job.yaml
 
 A `{os: macos}` job should only be scheduled onto a macOS worker (see
 `VM_RUNNERS_PLAN.md`).
+
+## Worker service and privacy approval
+
+The prototype runs the worker as a user LaunchAgent. It does not run as a root
+LaunchDaemon. A root LaunchDaemon could not get the macOS host key that
+Virtualization.framework needs. The operation failed with
+`errSecInteractionNotAllowed`. The LaunchAgent works because it runs in a
+logged-in user security session. In this prototype, startup means startup of
+that user session, not startup before login.
+
+### Prompts seen during prototype installation
+
+macOS 26 displayed two approval prompts when the LaunchAgent first ran:
+
+- Allow `reactorcide` to access storage.
+- Allow `reactorcide` to find services on the local network.
+
+The user had to select **Allow** before the worker could complete its first
+job. A supported installer must account for both approvals. POSIX ownership and
+file modes do not replace macOS privacy approval.
+
+The prototype binary has an ad-hoc signature. It has no bound `Info.plist` and
+no Apple team identifier. Its generated code identifier can change after a
+rebuild. This can make macOS treat a new build as a new program.
+
+### Local Network access
+
+The worker connects to a coordinator on the local network. Apple states that a
+LaunchAgent is subject to Local Network privacy controls. The first connection
+can show a user prompt. A root process and a LaunchDaemon are normally exempt,
+but the Virtualization.framework host-key constraint prevents use of that model
+for this worker. Apple also states that MDM cannot set Local Network privacy
+approval. See [TN3179: Understanding local network privacy](https://developer.apple.com/documentation/technotes/tn3179-understanding-local-network-privacy).
+
+For the supported package:
+
+1. Put the worker in an application bundle with an `Info.plist`.
+2. Set `NSLocalNetworkUsageDescription` to explain the coordinator connection.
+3. Sign the package and its helper with a stable Apple-issued identity.
+4. Keep the worker alive while approval is pending, and show a clear health
+   state to the installer.
+
+These changes give the prompt a stable identity and useful text. They do not
+remove the required user choice on an unmanaged Mac.
+
+For a dedicated CI Mac, Apple documents a system setting that exempts selected
+Ethernet or Wi-Fi CIDR ranges from Local Network privacy checks. This setting
+needs root access and a restart, and it applies to all programs on the Mac. An
+installer can offer this as an explicit administrator option for the
+coordinator subnet. It must not enable a broad range by default.
+
+### Storage access
+
+The prototype stores images and job scratch data on `/opt/cispace`, which is a
+separate mounted APFS volume. The exact privacy service for the observed storage
+prompt was not recorded. On the next clean installation, record the full prompt
+text and the matching entry in **System Settings > Privacy & Security**. It can
+be Files & Folders, Full Disk Access, or mounted-volume access. Do not assume
+that Full Disk Access is required until this test identifies the service.
+
+Use a stable signed application identity before this test. For managed Macs,
+test an MDM Privacy Preferences Policy Control profile for the identified
+storage service. Apple supports policy control for several file-access classes,
+including network volumes. See [Privacy Preferences Policy Control payload settings](https://support.apple.com/guide/deployment/dep38df53c2a/web).
+
+For unmanaged Macs, the installer must open the correct Privacy & Security pane
+and wait for the user to approve access if macOS requires it. The installer
+must then run a read, write, clone, and delete test in the image and scratch
+directories before it starts the worker.

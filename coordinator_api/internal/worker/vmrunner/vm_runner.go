@@ -6,7 +6,10 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"os"
+	"path/filepath"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -54,9 +57,13 @@ type JobConfig struct {
 // vmJob is the in-memory record VMRunner keeps per spawned job, keyed by
 // the opaque ID SpawnJob returns.
 type vmJob struct {
-	handle  string
-	addr    GuestAddr
-	session GuestSession
+	handle        string
+	addr          GuestAddr
+	session       GuestSession
+	metricsMu     sync.Mutex
+	metricsCancel context.CancelFunc
+	metricsDone   chan struct{}
+	metricsPath   string
 }
 
 // VMRunner implements a JobRunner-shaped interface (SpawnJob/StreamLogs/
@@ -74,6 +81,8 @@ type VMRunner struct {
 
 	connectTimeout       time.Duration
 	connectRetryInterval time.Duration
+	metricsDir           string
+	metricsInterval      time.Duration
 
 	mu   sync.Mutex
 	jobs map[string]*vmJob
@@ -93,6 +102,15 @@ func WithConnectTimeout(d time.Duration) Option {
 // for guest reachability. Default: 2s.
 func WithConnectRetryInterval(d time.Duration) Option {
 	return func(r *VMRunner) { r.connectRetryInterval = d }
+}
+
+// WithMetrics enables guest resource samples in JSON Lines format. A sample
+// is written immediately and then once per interval until the job exits.
+func WithMetrics(dir string, interval time.Duration) Option {
+	return func(r *VMRunner) {
+		r.metricsDir = dir
+		r.metricsInterval = interval
+	}
 }
 
 // New builds a VMRunner from explicit collaborators. Tests use this
@@ -187,8 +205,12 @@ func (r *VMRunner) SpawnJob(ctx context.Context, config *JobConfig) (string, err
 
 	id := uuid.New().String()
 	r.mu.Lock()
-	r.jobs[id] = &vmJob{handle: handle, addr: addr, session: session}
+	job := &vmJob{handle: handle, addr: addr, session: session}
+	r.jobs[id] = job
 	r.mu.Unlock()
+	if r.metricsDir != "" && r.metricsInterval > 0 {
+		r.startMetrics(config.JobID, job)
+	}
 
 	return id, nil
 }
@@ -227,6 +249,7 @@ func (r *VMRunner) WaitForCompletion(ctx context.Context, jobID string) (int, er
 	case <-ctx.Done():
 		return -1, ctx.Err()
 	case res := <-ch:
+		r.stopMetrics(job)
 		return res.code, res.err
 	}
 }
@@ -245,6 +268,7 @@ func (r *VMRunner) Stop(ctx context.Context, jobID string, grace time.Duration) 
 	}
 
 	if grace <= 0 {
+		r.stopMetrics(job)
 		return r.lifecycle.Destroy(ctx, job.handle)
 	}
 
@@ -281,6 +305,7 @@ func (r *VMRunner) Cleanup(ctx context.Context, jobID string) error {
 	if !ok {
 		return nil
 	}
+	r.stopMetrics(job)
 
 	if job.session != nil {
 		_ = job.session.Close()
@@ -290,6 +315,42 @@ func (r *VMRunner) Cleanup(ctx context.Context, jobID string) error {
 		return fmt.Errorf("destroy vm: %w", err)
 	}
 	return nil
+}
+
+// MetricsPath returns the local JSON Lines path for a running or completed
+// job when metrics are enabled.
+func (r *VMRunner) MetricsPath(jobID string) (string, bool) {
+	job, ok := r.getJob(jobID)
+	if !ok {
+		return "", false
+	}
+	job.metricsMu.Lock()
+	defer job.metricsMu.Unlock()
+	if job.metricsPath == "" {
+		return "", false
+	}
+	return job.metricsPath, true
+}
+
+// DefaultMetricsDir returns the durable local directory for VM job samples.
+func DefaultMetricsDir() string {
+	if home, err := os.UserHomeDir(); err == nil && home != "" {
+		return filepath.Join(home, ".local", "state", "reactorcide", "vm-metrics")
+	}
+	return filepath.Join(".reactorcide", "vm-metrics")
+}
+
+func safeMetricName(jobID string) string {
+	jobID = strings.TrimSpace(jobID)
+	if jobID == "" {
+		return uuid.NewString()
+	}
+	return strings.Map(func(r rune) rune {
+		if r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || r == '-' || r == '_' {
+			return r
+		}
+		return '_'
+	}, jobID)
 }
 
 func (r *VMRunner) getJob(id string) (*vmJob, bool) {

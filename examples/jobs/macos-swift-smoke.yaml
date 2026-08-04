@@ -1,0 +1,35 @@
+name: macos-swift-smoke
+description: Compile and run a Swift program in an ephemeral macOS VM.
+
+image: macos-26-clt-26.6
+
+source:
+  type: none
+
+characteristics:
+  os: macos
+  arch: arm64
+
+resources:
+  cpu:
+    request: "2"
+    limit: "4"
+  memory:
+    limit: "8Gi"
+
+environment:
+  HOME: /Users/runner
+  REACTORCIDE_JOB_SHELLCMD: /bin/zsh -c
+
+timeout_seconds: 900
+
+command: |-
+  set -euo pipefail
+  sw_vers
+  uname -m
+  xcrun swiftc --version
+  workdir="$(mktemp -d)"
+  trap 'rm -rf "$workdir"' EXIT
+  printf 'print("Hello from ephemeral macOS CI")\n' > "$workdir/main.swift"
+  xcrun swiftc "$workdir/main.swift" -o "$workdir/hello"
+  "$workdir/hello"

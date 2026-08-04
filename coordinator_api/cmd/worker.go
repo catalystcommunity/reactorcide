@@ -11,6 +11,7 @@ import (
 	"sort"
 	"strings"
 	"syscall"
+	"time"
 
 	"github.com/catalystcommunity/app-utils-go/logging"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/characteristics"
@@ -115,6 +116,23 @@ var workerFlags = []cli.Flag{
 		Usage:   "Base directory for each job's ephemeral workspace (bind-mounted as /job). When the worker runs in a container and drives a host container runtime, set this to a path bind-mounted identically on host and in the worker (e.g. /tmp/reactorcide-jobs); empty uses the OS temp dir.",
 		EnvVars: []string{"REACTORCIDE_WORKER_WORKSPACE_DIR"},
 	},
+	&cli.StringSliceFlag{
+		Name:    "vm-image-prefetch",
+		Usage:   "OCI VM image reference to pull before worker registration (repeatable)",
+		EnvVars: []string{"REACTORCIDE_VM_IMAGE_PREFETCH"},
+	},
+	&cli.DurationFlag{
+		Name:    "vm-image-max-unused",
+		Value:   30 * 24 * time.Hour,
+		Usage:   "Remove cached VM images that have not been used for this duration",
+		EnvVars: []string{"REACTORCIDE_VM_IMAGE_MAX_UNUSED"},
+	},
+	&cli.DurationFlag{
+		Name:    "vm-image-prune-interval",
+		Value:   24 * time.Hour,
+		Usage:   "Interval between VM image cache retention checks; zero disables periodic checks",
+		EnvVars: []string{"REACTORCIDE_VM_IMAGE_PRUNE_INTERVAL"},
+	},
 }
 
 // RunWorker wires CLI flags/env into a coordinatorworker.Config and blocks
@@ -177,17 +195,20 @@ func RunWorker(ctx *cli.Context) error {
 	defer stop()
 
 	cfg := coordinatorworker.Config{
-		CoordinatorURL:   coordinatorURL,
-		EnrollmentToken:  enrollmentToken,
-		WorkerKey:        workerKey,
-		Hostname:         hostname,
-		OS:               workerOS,
-		Arch:             workerArch,
-		Custom:           custom,
-		WorkerVersion:    ctx.String("worker-version"),
-		ContainerRuntime: containerRuntime,
-		Concurrency:      concurrency,
-		WorkspaceRoot:    strings.TrimSpace(ctx.String("workspace-dir")),
+		CoordinatorURL:       coordinatorURL,
+		EnrollmentToken:      enrollmentToken,
+		WorkerKey:            workerKey,
+		Hostname:             hostname,
+		OS:                   workerOS,
+		Arch:                 workerArch,
+		Custom:               custom,
+		WorkerVersion:        ctx.String("worker-version"),
+		ContainerRuntime:     containerRuntime,
+		Concurrency:          concurrency,
+		WorkspaceRoot:        strings.TrimSpace(ctx.String("workspace-dir")),
+		VMImagePrefetch:      ctx.StringSlice("vm-image-prefetch"),
+		VMImageMaxUnused:     ctx.Duration("vm-image-max-unused"),
+		VMImagePruneInterval: ctx.Duration("vm-image-prune-interval"),
 	}
 
 	if err := coordinatorworker.Run(runCtx, cfg); err != nil && !errors.Is(err, context.Canceled) {

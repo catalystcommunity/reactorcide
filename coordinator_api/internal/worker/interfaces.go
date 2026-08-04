@@ -49,6 +49,14 @@ type JobRunner interface {
 	Cleanup(ctx context.Context, jobID string) error
 }
 
+// VMImageCacheManager is an optional capability implemented by an OCI-backed
+// VM runner. The coordinator-mediated worker uses it for startup prefetch and
+// periodic retention without coupling other runners to VM images.
+type VMImageCacheManager interface {
+	PrefetchImages(ctx context.Context, imageRefs []string) error
+	PruneImages(ctx context.Context, maxUnused time.Duration, now time.Time) (int, error)
+}
+
 // Capability constants for job requirements
 const (
 	// CapabilityDocker provides access to a docker CLI for running ad-hoc

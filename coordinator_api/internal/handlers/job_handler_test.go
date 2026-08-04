@@ -136,6 +136,18 @@ func (m *MockStore) IsPRMerged(ctx context.Context, repo string, prNumber int) (
 }
 func (m *MockStore) MarkPRMerged(ctx context.Context, repo string, prNumber int) error { return nil }
 
+func TestValidateCreateJobRequestAllowsNoSource(t *testing.T) {
+	handler := &JobHandler{}
+	err := handler.validateCreateJobRequest(&CreateJobRequest{
+		Name:       "native VM smoke test",
+		JobCommand: "sw_vers",
+		SourceType: "none",
+	})
+	if err != nil {
+		t.Fatalf("validate source type none: %v", err)
+	}
+}
+
 // Project operations (stubs for interface compliance)
 func (m *MockStore) CreateProject(ctx context.Context, project *models.Project) error { return nil }
 func (m *MockStore) GetProjectByID(ctx context.Context, projectID string) (*models.Project, error) {

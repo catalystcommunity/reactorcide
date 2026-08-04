@@ -33,24 +33,7 @@ import (
 	vz "github.com/Code-Hex/vz/v3"
 )
 
-// A base image is a BUNDLE: a directory holding the four artifacts a macOS
-// guest needs to boot. docs/vm-runners-macos.md covers producing one from an
-// IPSW install. LocalImageSource points imageRef at this directory.
-const (
-	// bundleDiskImage is the guest's main APFS disk image. Cloned
-	// copy-on-write per job and attached read-write.
-	bundleDiskImage = "disk.img"
-	// bundleAuxImage is the auxiliary storage (NVRAM/EFI-equivalent state).
-	// Also cloned per job because the guest mutates it at boot.
-	bundleAuxImage = "aux.img"
-	// bundleHardwareModel is the serialized VZMacHardwareModel produced during
-	// install. Read-only, shared straight from the base bundle.
-	bundleHardwareModel = "hardwaremodel.bin"
-	// bundleMachineIdentifier is the serialized VZMacMachineIdentifier. Also
-	// read-only from the base bundle; every clone shares the base identity for
-	// the prototype (a future hardening could randomize it per job).
-	bundleMachineIdentifier = "machineidentifier.bin"
-)
+const vmScratchDirEnv = "REACTORCIDE_VM_SCRATCH_DIR"
 
 const (
 	// defaultVMCPUs / minVMCPUs bound spec.CPUs (0 means "choose a default").
@@ -114,7 +97,13 @@ func (d *darwinVMLifecycle) Boot(ctx context.Context, baseImagePath string, spec
 		return "", GuestAddr{}, err
 	}
 
-	scratchDir, err := os.MkdirTemp("", "reactorcide-vm-")
+	scratchRoot := os.Getenv(vmScratchDirEnv)
+	if scratchRoot != "" {
+		if err := os.MkdirAll(scratchRoot, 0o700); err != nil {
+			return "", GuestAddr{}, fmt.Errorf("vmrunner/darwin: create scratch root: %w", err)
+		}
+	}
+	scratchDir, err := os.MkdirTemp(scratchRoot, "reactorcide-vm-")
 	if err != nil {
 		return "", GuestAddr{}, fmt.Errorf("vmrunner/darwin: create scratch dir: %w", err)
 	}
@@ -124,13 +113,21 @@ func (d *darwinVMLifecycle) Boot(ctx context.Context, baseImagePath string, spec
 		return "", GuestAddr{}, err
 	}
 
-	clonedDisk := filepath.Join(scratchDir, bundleDiskImage)
-	clonedAux := filepath.Join(scratchDir, bundleAuxImage)
-	if err := cloneFile(filepath.Join(baseImagePath, bundleDiskImage), clonedDisk); err != nil {
+	clonedDisk := filepath.Join(scratchDir, BundleDiskImage)
+	clonedAux := filepath.Join(scratchDir, BundleAuxImage)
+	if err := cloneFile(filepath.Join(baseImagePath, BundleDiskImage), clonedDisk); err != nil {
 		return fail(fmt.Errorf("vmrunner/darwin: clone disk image: %w", err))
 	}
-	if err := cloneFile(filepath.Join(baseImagePath, bundleAuxImage), clonedAux); err != nil {
+	if err := cloneFile(filepath.Join(baseImagePath, BundleAuxImage), clonedAux); err != nil {
 		return fail(fmt.Errorf("vmrunner/darwin: clone aux image: %w", err))
+	}
+	// clonefile preserves the base file mode. Production base bundles are
+	// read-only, but the guest must write to both per-job clones.
+	if err := os.Chmod(clonedDisk, 0o600); err != nil {
+		return fail(fmt.Errorf("vmrunner/darwin: make cloned disk writable: %w", err))
+	}
+	if err := os.Chmod(clonedAux, 0o600); err != nil {
+		return fail(fmt.Errorf("vmrunner/darwin: make cloned aux storage writable: %w", err))
 	}
 
 	config, mac, err := buildVMConfig(baseImagePath, clonedDisk, clonedAux, spec)
@@ -201,20 +198,7 @@ func (d *darwinVMLifecycle) Destroy(ctx context.Context, handle string) error {
 // validateBundle checks baseImagePath is a directory containing the four
 // required bundle artifacts.
 func validateBundle(baseImagePath string) error {
-	info, err := os.Stat(baseImagePath)
-	if err != nil {
-		return fmt.Errorf("vmrunner/darwin: base image bundle %q: %w", baseImagePath, err)
-	}
-	if !info.IsDir() {
-		return fmt.Errorf("vmrunner/darwin: base image %q must be a bundle directory containing %s/%s/%s/%s",
-			baseImagePath, bundleDiskImage, bundleAuxImage, bundleHardwareModel, bundleMachineIdentifier)
-	}
-	for _, name := range []string{bundleDiskImage, bundleAuxImage, bundleHardwareModel, bundleMachineIdentifier} {
-		if _, err := os.Stat(filepath.Join(baseImagePath, name)); err != nil {
-			return fmt.Errorf("vmrunner/darwin: bundle %q missing %s: %w", baseImagePath, name, err)
-		}
-	}
-	return nil
+	return ValidateMacBundle(baseImagePath)
 }
 
 // buildVMConfig assembles a VirtualMachineConfiguration: macOS boot loader,
@@ -227,11 +211,11 @@ func buildVMConfig(baseImagePath, clonedDisk, clonedAux string, spec BootSpec) (
 	if err != nil {
 		return nil, "", fmt.Errorf("open cloned aux storage: %w", err)
 	}
-	hwModel, err := vz.NewMacHardwareModelWithDataPath(filepath.Join(baseImagePath, bundleHardwareModel))
+	hwModel, err := vz.NewMacHardwareModelWithDataPath(filepath.Join(baseImagePath, BundleHardwareModel))
 	if err != nil {
 		return nil, "", fmt.Errorf("load hardware model: %w", err)
 	}
-	machineID, err := vz.NewMacMachineIdentifierWithDataPath(filepath.Join(baseImagePath, bundleMachineIdentifier))
+	machineID, err := vz.NewMacMachineIdentifierWithDataPath(filepath.Join(baseImagePath, BundleMachineIdentifier))
 	if err != nil {
 		return nil, "", fmt.Errorf("load machine identifier: %w", err)
 	}

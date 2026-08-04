@@ -27,6 +27,8 @@ Use this page to select the correct guide.
 - [Kubernetes Deployment](../helm_chart/DEPLOYMENT.md): Install and operate the
   Helm chart.
 - [macOS VM Runner](./vm-runners-macos.md): Configure the macOS VM backend.
+- [VM Image Operations](./vm-images.md): Build, publish, pull, prefetch, and
+  remove VM images.
 - [Windows VM Runner](./vm-runners-windows.md): Configure the Windows VM
   backend.
 

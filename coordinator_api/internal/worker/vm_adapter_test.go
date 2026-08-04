@@ -1,6 +1,7 @@
 package worker
 
 import (
+	"context"
 	"runtime"
 	"strings"
 	"testing"
@@ -16,6 +17,16 @@ func TestGetSupportedBackends_IncludesVM(t *testing.T) {
 	}
 	if !found {
 		t.Fatalf("GetSupportedBackends() = %v, want it to include %q", backends, BackendVM)
+	}
+}
+
+func TestVMRunnerAdapterLocalImagesAllowEmptyPrefetch(t *testing.T) {
+	adapter := &vmRunnerAdapter{}
+	if err := adapter.PrefetchImages(context.Background(), nil); err != nil {
+		t.Fatalf("empty prefetch with local images: %v", err)
+	}
+	if err := adapter.PrefetchImages(context.Background(), []string{"registry.example/image:tag"}); err == nil {
+		t.Fatal("configured OCI prefetch with local images succeeded")
 	}
 }
 
@@ -71,7 +82,7 @@ func TestToVMJobConfig_MapsRelevantFields(t *testing.T) {
 		WorkspaceDir: "/some/workspace",
 	}
 
-	vc := toVMJobConfig(config)
+	vc := toVMJobConfig(config, "runner")
 
 	if vc.Image != config.Image {
 		t.Errorf("Image = %q, want %q", vc.Image, config.Image)
@@ -81,6 +92,9 @@ func TestToVMJobConfig_MapsRelevantFields(t *testing.T) {
 	}
 	if vc.Env["K"] != "V" {
 		t.Errorf("Env[K] = %q, want %q", vc.Env["K"], "V")
+	}
+	if vc.Env["HOME"] != "/Users/runner" {
+		t.Errorf("Env[HOME] = %q, want %q", vc.Env["HOME"], "/Users/runner")
 	}
 	if vc.CPURequest != config.CPURequest || vc.CPULimit != config.CPULimit || vc.MemoryLimit != config.MemoryLimit {
 		t.Errorf("resource fields = (%q, %q, %q), want (%q, %q, %q)",

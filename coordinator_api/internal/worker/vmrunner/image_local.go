@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 // LocalImageSource resolves an imageRef to a pre-placed base image file on
@@ -38,13 +39,44 @@ func (s *LocalImageSource) Resolve(ctx context.Context, imageRef string) (string
 		return "", fmt.Errorf("vmrunner: image reference must not be empty")
 	}
 
-	path := imageRef
-	if !filepath.IsAbs(path) {
-		path = filepath.Join(s.BaseDir, imageRef)
+	path := filepath.Clean(imageRef)
+	if s.BaseDir != "" {
+		if filepath.IsAbs(path) {
+			return "", fmt.Errorf("vmrunner: absolute image reference %q is not allowed with image directory %q", imageRef, s.BaseDir)
+		}
+
+		basePath, err := filepath.Abs(s.BaseDir)
+		if err != nil {
+			return "", fmt.Errorf("vmrunner: resolve image directory %q: %w", s.BaseDir, err)
+		}
+		path, err = filepath.Abs(filepath.Join(basePath, path))
+		if err != nil {
+			return "", fmt.Errorf("vmrunner: resolve image reference %q: %w", imageRef, err)
+		}
+		rel, err := filepath.Rel(basePath, path)
+		if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+			return "", fmt.Errorf("vmrunner: image reference %q escapes image directory %q", imageRef, s.BaseDir)
+		}
 	}
 
 	if _, err := os.Stat(path); err != nil {
 		return "", fmt.Errorf("vmrunner: base image %q not found: %w", path, err)
+	}
+
+	if s.BaseDir != "" {
+		basePath, err := filepath.EvalSymlinks(s.BaseDir)
+		if err != nil {
+			return "", fmt.Errorf("vmrunner: resolve image directory %q: %w", s.BaseDir, err)
+		}
+		resolvedPath, err := filepath.EvalSymlinks(path)
+		if err != nil {
+			return "", fmt.Errorf("vmrunner: resolve base image %q: %w", path, err)
+		}
+		rel, err := filepath.Rel(basePath, resolvedPath)
+		if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+			return "", fmt.Errorf("vmrunner: image reference %q resolves outside image directory %q", imageRef, s.BaseDir)
+		}
+		path = resolvedPath
 	}
 
 	return path, nil

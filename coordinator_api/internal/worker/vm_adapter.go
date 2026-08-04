@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/worker/vmrunner"
+	"oras.land/oras-go/v2/registry/remote/credentials"
 )
 
 // isVMBackendImplemented reports whether the "vm" backend has a real
@@ -43,6 +44,10 @@ type VMConfig struct {
 	// "oci" (see vmrunner.NewOCIImageSource).
 	OCIImageCacheDir string
 
+	// OCIRegistryAuthFile is a Docker-compatible credential file. One file can
+	// hold credentials for several registry hosts.
+	OCIRegistryAuthFile string
+
 	// OCIPlainHTTPRegistries lists registry hosts (as they appear in an
 	// image reference, e.g. "registry.internal:5000") to reach over plain
 	// HTTP instead of HTTPS when ImageSource is "oci" -- for a local/dev
@@ -62,6 +67,9 @@ type VMConfig struct {
 	// REACTORCIDE_VM_SSH_PRIVATE_KEY_FILE, never itself taken directly from
 	// an env var so its contents can't leak into a printed environment.
 	SSHPrivateKeyPEM []byte
+
+	MetricsDir      string
+	MetricsInterval time.Duration
 }
 
 // LoadVMConfig resolves VMConfig from environment variables. This is the
@@ -76,17 +84,20 @@ type VMConfig struct {
 //   - REACTORCIDE_VM_IMAGE_CACHE_DIR           (default:
 //     vmrunner.DefaultImageCacheDir(), i.e. ~/.cache/reactorcide/vm-images;
 //     only used when REACTORCIDE_VM_IMAGE_SOURCE is "oci")
+//   - REACTORCIDE_VM_REGISTRY_AUTH_FILE         (default:
+//     ~/.config/reactorcide/oci-auth.json; Docker-compatible credentials for
+//     several registry hosts)
 //   - REACTORCIDE_VM_IMAGE_REGISTRY_PLAIN_HTTP (optional, comma-separated
 //     registry hosts to reach over plain HTTP instead of HTTPS; only used
-//     when REACTORCIDE_VM_IMAGE_SOURCE is "oci". Registry auth itself comes
-//     from the ambient docker config file -- see vmrunner.NewOCIImageSource
-//     -- never from an env var, so credentials never pass through a
-//     printable environment.)
-//   - REACTORCIDE_VM_SSH_USER              (default: "runner")
+//     when REACTORCIDE_VM_IMAGE_SOURCE is "oci")
+//   - REACTORCIDE_VM_SSH_USER              (default: "reactorcide")
 //   - REACTORCIDE_VM_SSH_PASSWORD          (optional, no default)
 //   - REACTORCIDE_VM_SSH_PRIVATE_KEY_FILE  (optional; path to a PEM private
 //     key file, read at load time -- the key material never passes through
 //     an env var directly)
+//   - REACTORCIDE_VM_METRICS_DIR            (default:
+//     ~/.local/state/reactorcide/vm-metrics)
+//   - REACTORCIDE_VM_METRICS_INTERVAL       (default: 5s)
 func LoadVMConfig() (VMConfig, error) {
 	imageSource := os.Getenv("REACTORCIDE_VM_IMAGE_SOURCE")
 	if imageSource == "" {
@@ -102,6 +113,10 @@ func LoadVMConfig() (VMConfig, error) {
 	if ociImageCacheDir == "" {
 		ociImageCacheDir = vmrunner.DefaultImageCacheDir()
 	}
+	ociRegistryAuthFile := os.Getenv("REACTORCIDE_VM_REGISTRY_AUTH_FILE")
+	if ociRegistryAuthFile == "" {
+		ociRegistryAuthFile = vmrunner.DefaultRegistryAuthFile()
+	}
 
 	var ociPlainHTTPRegistries []string
 	if raw := os.Getenv("REACTORCIDE_VM_IMAGE_REGISTRY_PLAIN_HTTP"); raw != "" {
@@ -114,16 +129,31 @@ func LoadVMConfig() (VMConfig, error) {
 
 	sshUser := os.Getenv("REACTORCIDE_VM_SSH_USER")
 	if sshUser == "" {
-		sshUser = "runner"
+		sshUser = "reactorcide"
+	}
+	metricsDir := os.Getenv("REACTORCIDE_VM_METRICS_DIR")
+	if metricsDir == "" {
+		metricsDir = vmrunner.DefaultMetricsDir()
+	}
+	metricsInterval := 5 * time.Second
+	if raw := strings.TrimSpace(os.Getenv("REACTORCIDE_VM_METRICS_INTERVAL")); raw != "" {
+		parsed, err := time.ParseDuration(raw)
+		if err != nil || parsed <= 0 {
+			return VMConfig{}, fmt.Errorf("invalid REACTORCIDE_VM_METRICS_INTERVAL %q", raw)
+		}
+		metricsInterval = parsed
 	}
 
 	cfg := VMConfig{
 		ImageSource:            imageSource,
 		ImageDir:               imageDir,
 		OCIImageCacheDir:       ociImageCacheDir,
+		OCIRegistryAuthFile:    ociRegistryAuthFile,
 		OCIPlainHTTPRegistries: ociPlainHTTPRegistries,
 		SSHUser:                sshUser,
 		SSHPassword:            os.Getenv("REACTORCIDE_VM_SSH_PASSWORD"),
+		MetricsDir:             metricsDir,
+		MetricsInterval:        metricsInterval,
 	}
 
 	if keyFile := os.Getenv("REACTORCIDE_VM_SSH_PRIVATE_KEY_FILE"); keyFile != "" {
@@ -147,8 +177,13 @@ func buildVMImageSource(cfg VMConfig) (vmrunner.ImageSource, error) {
 	case "", "local":
 		return vmrunner.NewLocalImageSource(cfg.ImageDir), nil
 	case "oci":
+		credentialStore, err := credentials.NewStore(cfg.OCIRegistryAuthFile, credentials.StoreOptions{})
+		if err != nil {
+			return nil, fmt.Errorf("open VM registry credential file %q: %w", cfg.OCIRegistryAuthFile, err)
+		}
 		return vmrunner.NewOCIImageSource(
 			cfg.OCIImageCacheDir,
+			vmrunner.WithCredentialStore(credentialStore),
 			vmrunner.WithPlainHTTPRegistries(cfg.OCIPlainHTTPRegistries...),
 		)
 	default:
@@ -186,21 +221,27 @@ func newVMRunner() (JobRunner, error) {
 		return nil, fmt.Errorf("build vm backend image source: %w", err)
 	}
 
-	inner, err := vmrunner.NewDefaultWithImages(images, creds)
+	inner, err := vmrunner.NewDefaultWithImages(images, creds, vmrunner.WithMetrics(cfg.MetricsDir, cfg.MetricsInterval))
 	if err != nil {
 		return nil, err
 	}
-	return &vmRunnerAdapter{inner: inner}, nil
+	adapter := &vmRunnerAdapter{inner: inner, guestUser: cfg.SSHUser}
+	if ociImages, ok := images.(*vmrunner.OCIImageSource); ok {
+		adapter.ociImages = ociImages
+	}
+	return adapter, nil
 }
 
 // vmRunnerAdapter wraps a *vmrunner.VMRunner to satisfy JobRunner exactly,
 // translating *JobConfig <-> *vmrunner.JobConfig at each call.
 type vmRunnerAdapter struct {
-	inner *vmrunner.VMRunner
+	inner     *vmrunner.VMRunner
+	guestUser string
+	ociImages *vmrunner.OCIImageSource
 }
 
 func (a *vmRunnerAdapter) SpawnJob(ctx context.Context, config *JobConfig) (string, error) {
-	return a.inner.SpawnJob(ctx, toVMJobConfig(config))
+	return a.inner.SpawnJob(ctx, toVMJobConfig(config, a.guestUser))
 }
 
 func (a *vmRunnerAdapter) StreamLogs(ctx context.Context, jobID string) (io.ReadCloser, io.ReadCloser, error) {
@@ -219,17 +260,50 @@ func (a *vmRunnerAdapter) Cleanup(ctx context.Context, jobID string) error {
 	return a.inner.Cleanup(ctx, jobID)
 }
 
+func (a *vmRunnerAdapter) PrefetchImages(ctx context.Context, imageRefs []string) error {
+	if a.ociImages == nil {
+		if len(imageRefs) == 0 {
+			return nil
+		}
+		return fmt.Errorf("VM image prefetch requires REACTORCIDE_VM_IMAGE_SOURCE=oci")
+	}
+	for _, imageRef := range imageRefs {
+		if _, err := a.ociImages.Resolve(ctx, imageRef); err != nil {
+			return fmt.Errorf("prefetch VM image %q: %w", imageRef, err)
+		}
+	}
+	return nil
+}
+
+func (a *vmRunnerAdapter) PruneImages(ctx context.Context, maxUnused time.Duration, now time.Time) (int, error) {
+	if a.ociImages == nil {
+		return 0, nil
+	}
+	return a.ociImages.Prune(ctx, maxUnused, now)
+}
+
 // toVMJobConfig translates the fields vmrunner.VMRunner needs out of the
 // full worker.JobConfig. Fields with no VM-guest equivalent yet (bind
 // mounts, VCSAuth file materialization, capabilities) are intentionally
 // left unmapped -- see VM_RUNNERS_PLAN.md's "Guest execution note" and
 // VM-6 ("wire the guest env/secret/VCS-auth injection to the lease
 // fields"), which is where that gets addressed.
-func toVMJobConfig(config *JobConfig) *vmrunner.JobConfig {
+
+func toVMJobConfig(config *JobConfig, guestUser string) *vmrunner.JobConfig {
+	env := make(map[string]string, len(config.Env))
+	for key, value := range config.Env {
+		env[key] = value
+	}
+	if env["HOME"] == "" || env["HOME"] == "/home/runner" {
+		if guestUser == "" {
+			guestUser = "reactorcide"
+		}
+		env["HOME"] = "/Users/" + guestUser
+	}
 	return &vmrunner.JobConfig{
 		Image:       config.Image,
 		Command:     config.Command,
-		Env:         config.Env,
+		Env:         env,
 		CPURequest:  config.CPURequest,
 		CPULimit:    config.CPULimit,
 		MemoryLimit: config.MemoryLimit,
@@ -238,3 +312,4 @@ func toVMJobConfig(config *JobConfig) *vmrunner.JobConfig {
 }
 
 var _ JobRunner = (*vmRunnerAdapter)(nil)
+var _ VMImageCacheManager = (*vmRunnerAdapter)(nil)
