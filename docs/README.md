@@ -15,6 +15,8 @@ Use this page to select the correct guide.
 
 ## Operator Guides
 
+- [CLI Reference](./cli-reference.md): Find the command for each coordinator
+  operation.
 - [Runtime Behavior](./runtime-behavior.md): Compare local, worker, and
   Kubernetes paths and users.
 - [Worker Operation](./workers.md): Enroll workers and configure queues,

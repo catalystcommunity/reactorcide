@@ -22,13 +22,15 @@ func main() {
 			cmd.SecretGrantsCommand,
 			cmd.RunLocalCommand,
 			cmd.SubmitCommand,
+			cmd.JobsCommand,
+			cmd.WorkflowsCommand,
+			cmd.ProjectsCommand,
 			cmd.LogsCommand,
 			cmd.VMImageCommand,
 		},
 	}
-	// Work around a urfave/cli/v2 parsing limitation for "secret-grants set":
-	// see the doc comment on cmd.NormalizeSecretGrantsArgs.
-	err := app.Run(cmd.NormalizeSecretGrantsArgs(os.Args))
+	// Let flags follow positional arguments: see cmd.NormalizeArgs.
+	err := app.Run(cmd.NormalizeArgs(app, os.Args))
 	if err != nil {
 		// log fatal so we exit with the proper exit code, this is important for containerized deployment health checks
 		logging.Log.WithError(err).Fatal("runtime error")

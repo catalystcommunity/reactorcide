@@ -1100,33 +1100,6 @@ func boolPtr(b bool) *bool {
 	return &b
 }
 
-// envMapToSlice converts an environment variable map to K8s EnvVar slice
-func envMapToK8sEnvVars(envMap map[string]string) []corev1.EnvVar {
-	if envMap == nil {
-		return nil
-	}
-
-	envVars := make([]corev1.EnvVar, 0, len(envMap))
-	for key, value := range envMap {
-		envVars = append(envVars, corev1.EnvVar{
-			Name:  key,
-			Value: value,
-		})
-	}
-	return envVars
-}
-
-// parseCPULimit parses a CPU limit string (e.g., "1.0") to Kubernetes format
-func parseCPULimit(cpuStr string) (string, error) {
-	f, err := strconv.ParseFloat(cpuStr, 64)
-	if err != nil {
-		return "", err
-	}
-	// Convert to millicores
-	millicores := int64(f * 1000)
-	return fmt.Sprintf("%dm", millicores), nil
-}
-
 // GetJobStatus returns the current status of a Kubernetes job
 // Returns: running, succeeded, failed, or pending
 // Also returns an error message if the job failed

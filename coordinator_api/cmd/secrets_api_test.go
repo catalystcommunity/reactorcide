@@ -132,11 +132,11 @@ func TestSecretsAPIClientOperations(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := &secretsAPIClient{
+	client := &secretsAPIClient{apiClient: &apiClient{
 		apiURL: server.URL,
 		token:  "api-token",
 		client: server.Client(),
-	}
+	}}
 	if err := client.Init(); err != nil {
 		t.Fatalf("Init failed: %v", err)
 	}

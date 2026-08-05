@@ -46,16 +46,6 @@ func NewDockerRunner() (*DockerRunner, error) {
 	return dr, nil
 }
 
-// NewDockerRunnerWithClient creates a DockerRunner with a custom Docker client
-// Useful for testing or custom configurations
-func NewDockerRunnerWithClient(cli *client.Client) *DockerRunner {
-	return &DockerRunner{
-		client:   cli,
-		builder:  LoadBuilderConfig(),
-		sidecars: make(map[string]string),
-	}
-}
-
 // sweepLeaked removes any job/sidecar containers left over from a prior
 // worker run. Assumes a single worker per host; multi-worker setups should
 // not share a runtime.

@@ -2,9 +2,8 @@
 
 The `vm` JobRunner backend runs native **macOS** jobs inside ephemeral, per-job
 guest VMs on an Apple Silicon host, using Apple's Virtualization.framework
-through [`github.com/Code-Hex/vz/v3`](https://github.com/Code-Hex/vz). This is
-phase VM-3 of [`VM_RUNNERS_PLAN.md`](../VM_RUNNERS_PLAN.md). It is the isolation
-boundary for macOS build/test/notarize jobs that cannot run in a Linux
+through [`github.com/Code-Hex/vz/v3`](https://github.com/Code-Hex/vz). It is the
+isolation boundary for macOS build/test/notarize jobs that cannot run in a Linux
 container.
 
 Terminology: the process that boots and drives guests is the **worker**.
@@ -163,8 +162,7 @@ Do this in the running guest before capturing it as the golden bundle:
 
 3. **Bake the toolchain** the jobs need (Xcode / command line tools, language
    runtimes, `runnerlib` prerequisites, etc.). Everything a job uses must be
-   present in the guest — there is no nested container inside the guest (see
-   the "Guest execution note" in `VM_RUNNERS_PLAN.md`).
+   present in the guest — there is no nested container inside the guest.
 
 4. **Install the worker's SSH public key** (see the credentials section next).
 
@@ -276,8 +274,7 @@ reactorcide run-local --backend vm ./jobs/my-macos-job.yaml
 # Worker (coordinator-mediated) selects the same backend via --container-runtime vm.
 ```
 
-A `{os: macos}` job should only be scheduled onto a macOS worker (see
-`VM_RUNNERS_PLAN.md`).
+A `{os: macos}` job should only be scheduled onto a macOS worker.
 
 ## Worker service and privacy approval
 

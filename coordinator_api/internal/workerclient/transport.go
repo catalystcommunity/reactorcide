@@ -1,19 +1,17 @@
 // Package workerclient is the worker-side CSIL-RPC carrier for the
-// coordinator's ReactorcideWorker service
-// (coordinator_api/csil/reactorcide-worker.csil, WORKERS_PLAN.md "Workers --
-// registration, auth, protocol"). It implements the generated client's
-// Transport interface (./csilapi/client.gen.go) with the envelope-in-body
-// HTTP profile (csilgen docs/csil-rpc-transport.md §2.1): POST
-// {baseURL}/csil/v1/rpc, application/cbor, envelope {v, service, op,
+// coordinator's ReactorcideWorker service. It implements the generated
+// client's Transport interface (/csilapi/client.gen.go) with the
+// envelope-in-body HTTP profile (csilgen docs/csil-rpc-transport.md §2.1):
+// POST {baseURL}/csil/v1/rpc, application/cbor, envelope {v, service, op,
 // payload: tag24(cbor), ?auth}. This mirrors
 // webapp/internal/uiclient/transport.go's shape (encode request, decode
 // response, translate a "ServiceError" variant into a structured client
-// error) with one difference: a worker process holds exactly one session at
-// a time (there is no per-request "which logged-in user" question the way
-// the webapp has), so the session token is carried as internal transport
-// state -- set once by Client.Register and refreshed by Client.Heartbeat --
-// rather than pulled from the call's context on every request. A caller that
-// needs to override the token for a single call (e.g. tests exercising a
+// error) with one difference: a worker process holds exactly one session at a
+// time (there is no per-request "which logged-in user" question the way the
+// webapp has), so the session token is carried as internal transport state --
+// set once by Client.Register and refreshed by Client.Heartbeat -- rather
+// than pulled from the call's context on every request. A caller that needs
+// to override the token for a single call (e.g. tests exercising a
 // stale/garbage session) can still do so via WithSessionToken.
 package workerclient
 
@@ -75,6 +73,11 @@ type sessionTokenKey struct{}
 // -- but tests exercising a stale, revoked, or forged session value use it
 // to make one call under a specific token without mutating shared transport
 // state.
+//
+// NOTE: nothing calls this yet. It is kept for the stale/revoked/forged
+// session tests it was written for; Call already reads the override via
+// sessionTokenFromContext, so those tests need no further plumbing. Delete
+// both if that coverage is dropped.
 func WithSessionToken(ctx context.Context, token string) context.Context {
 	return context.WithValue(ctx, sessionTokenKey{}, token)
 }

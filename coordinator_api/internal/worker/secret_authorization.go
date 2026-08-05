@@ -11,12 +11,10 @@ import (
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store/models"
 )
 
-// SecretGrantStore is the narrow store capability secret-grant
-// authorization needs. Exported (alongside AuthorizeSecretAccess) so
-// internal/workerapi's coordinator-mediated RequestJob can run the grant-
-// authorization decision without reimplementing it -- WORKERS_PLAN.md
-// requires secret resolution + grant authorization to happen coordinator-
-// side at lease hand-off using this same code path.
+// SecretGrantStore is the narrow store capability secret-grant authorization
+// needs. Exported (alongside AuthorizeSecretAccess) so internal/workerapi's
+// coordinator-mediated RequestJob can run the grant- authorization decision
+// without reimplementing it.
 type SecretGrantStore interface {
 	ListSecretGrantsForJob(ctx context.Context, userID string, projectID *string, jobName string) ([]models.SecretGrant, error)
 }

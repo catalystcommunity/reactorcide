@@ -120,8 +120,7 @@ func TestParseResources_InvalidQuantityRejected(t *testing.T) {
 
 func TestParseResources_MemoryGBAccepted(t *testing.T) {
 	// GB/MB are not valid k8s quantity grammar but our own parser accepts
-	// them (see WORKERS_PLAN.md "Resources") -- this is the whole point of
-	// replacing the k8s parser.
+	// them -- this is the whole point of replacing the k8s parser.
 	raw := map[string]any{
 		"memory": map[string]any{"limit": "4GB"},
 	}

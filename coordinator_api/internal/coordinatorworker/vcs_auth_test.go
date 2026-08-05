@@ -14,8 +14,7 @@ import (
 )
 
 // TestRunLoop_VCSAuth_WritesGitCredentialsAndMasksToken drives a lease that
-// carries a coordinator-resolved vcs_auth end-to-end (WORKERS_PLAN.md Wave 3
-// P3c) and asserts:
+// carries a coordinator-resolved vcs_auth end-to-end and asserts:
 //   - the expected gitconfig (credential.helper=store, useHttpPath=true) and
 //     credentials (git-credential-store lines embedding the token) files are
 //     written into the lease's ephemeral workspace at

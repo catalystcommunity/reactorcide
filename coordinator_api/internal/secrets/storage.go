@@ -27,11 +27,11 @@ import (
 
 const (
 	// scrypt parameters - matches Python implementation
-	scryptN    = 1 << 18 // 2^18 = 262144, ~256MB memory
-	scryptR    = 8
-	scryptP    = 1
+	scryptN      = 1 << 18 // 2^18 = 262144, ~256MB memory
+	scryptR      = 8
+	scryptP      = 1
 	scryptKeyLen = 32
-	saltSize   = 32
+	saltSize     = 32
 
 	// Fernet constants
 	fernetVersion    = 0x80

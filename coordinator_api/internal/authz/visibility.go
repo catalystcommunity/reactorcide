@@ -12,9 +12,9 @@ import (
 // visibilityBatch amortizes role-assignment and owning-user lookups across
 // many CanView*/FilterVisible* checks made for the same caller in one
 // request: the caller's principal (role assignments) is loaded once, and
-// owning-user / project lookups are cached as they're discovered. This is
-// the "avoid N+1: batch-load owning users" behavior FilterVisibleProjects
-// (and friends) need — see UI_AUTH_PLAN.md task D's brief.
+// owning-user / project lookups are cached as they're discovered. This is the
+// "avoid N+1: batch-load owning users" behavior FilterVisibleProjects (and
+// friends) need.
 type visibilityBatch struct {
 	resolver    *Resolver
 	id          Identity
@@ -84,8 +84,8 @@ func (vb *visibilityBatch) getProject(ctx context.Context, projectID string) (*m
 // canViewPrivate is the shared "resource is private, can id see it anyway"
 // check: the resource's own owner, project owners (direct or via group),
 // project members (direct or via group, "if assigned" in the matrix), org
-// admins of the owning org, and global admins can all see private
-// resources; everyone else (including any anonymous caller) cannot.
+// admins of the owning org, and global admins can all see private resources;
+// everyone else (including any anonymous caller) cannot.
 func (vb *visibilityBatch) canViewPrivate(ctx context.Context, ownerUserID string, projectID *string) (bool, error) {
 	if vb.id.Anonymous || vb.id.UserID == "" {
 		return false, nil
@@ -113,8 +113,8 @@ func (vb *visibilityBatch) canViewPrivate(ctx context.Context, ownerUserID strin
 	return false, nil
 }
 
-// canViewProject applies Project.IsEffectivelyPrivate (project.is_private
-// OR the owning org's is_private) and, if private, canViewPrivate.
+// canViewProject applies Project.IsEffectivelyPrivate (project.is_private OR
+// the owning org's is_private) and, if private, canViewPrivate.
 func (vb *visibilityBatch) canViewProject(ctx context.Context, project *models.Project) (bool, error) {
 	orgIsPrivate := false
 	if project.UserID != nil {
@@ -140,10 +140,8 @@ func (vb *visibilityBatch) canViewProject(ctx context.Context, project *models.P
 // belong to a project inherit that project's visibility in full (including
 // project-member "if assigned" access); resources with no project (loose
 // jobs, or a workflow with no project) are treated as belonging directly to
-// their owning org (ownerUserID) and are visible if that org is not
-// private, else to the owner/org-admins/global-admins only — per
-// UI_AUTH_PLAN.md task D's brief ("jobs with no project: treat as belonging
-// to the owning user org").
+// their owning org (ownerUserID) and are visible if that org is not private,
+// else to the owner/org-admins/global-admins only).
 func (vb *visibilityBatch) canViewOwned(ctx context.Context, ownerUserID string, projectID *string) (bool, error) {
 	if projectID != nil && *projectID != "" {
 		project, err := vb.getProject(ctx, *projectID)
@@ -153,8 +151,8 @@ func (vb *visibilityBatch) canViewOwned(ctx context.Context, ownerUserID string,
 		if project != nil {
 			return vb.canViewProject(ctx, project)
 		}
-		// Project referenced but no longer resolvable (deleted): fall
-		// through to the org-only treatment below rather than fail open.
+		// Project referenced but no longer resolvable (deleted): fall through
+		// to the org-only treatment below rather than fail open.
 	}
 	orgIsPrivate := false
 	owner, err := vb.getUser(ctx, ownerUserID)
@@ -172,8 +170,8 @@ func (vb *visibilityBatch) canViewOwned(ctx context.Context, ownerUserID string,
 
 // CanViewProject reports whether id may view project: public projects
 // (project.IsPrivate false and the owning org not private) are visible to
-// everyone; private projects are visible to assigned project
-// members/owners, org admins of the owning org, and global admins.
+// everyone; private projects are visible to assigned project members/owners,
+// org admins of the owning org, and global admins.
 func (r *Resolver) CanViewProject(ctx context.Context, id Identity, project *models.Project) (bool, error) {
 	vb, err := r.newVisibilityBatch(ctx, id)
 	if err != nil {
@@ -184,8 +182,8 @@ func (r *Resolver) CanViewProject(ctx context.Context, id Identity, project *mod
 
 // FilterVisibleProjects returns the subset of projects visible to id,
 // preserving order. Batches the caller's role-assignment lookup and
-// owning-user lookups (see visibilityBatch) so this is O(1) principal loads
-// + O(distinct owners) user loads rather than O(len(projects)) of either.
+// owning-user lookups (see visibilityBatch) so this is O(1) principal loads +
+// O(distinct owners) user loads rather than O(len(projects)) of either.
 func (r *Resolver) FilterVisibleProjects(ctx context.Context, id Identity, projects []models.Project) ([]models.Project, error) {
 	vb, err := r.newVisibilityBatch(ctx, id)
 	if err != nil {
@@ -234,9 +232,9 @@ func (r *Resolver) FilterVisibleJobs(ctx context.Context, id Identity, jobs []mo
 	return out, nil
 }
 
-// CanViewWorkflowInstance reports whether id may view wf, via
-// wf.ProjectID's project visibility, or (for a project-less workflow) the
-// owning org's visibility.
+// CanViewWorkflowInstance reports whether id may view wf, via wf.ProjectID's
+// project visibility, or (for a project-less workflow) the owning org's
+// visibility.
 func (r *Resolver) CanViewWorkflowInstance(ctx context.Context, id Identity, wf *models.WorkflowInstance) (bool, error) {
 	vb, err := r.newVisibilityBatch(ctx, id)
 	if err != nil {
@@ -257,8 +255,7 @@ func (r *Resolver) CanViewWorkflowSummary(ctx context.Context, id Identity, summ
 }
 
 // FilterVisibleWorkflowSummaries returns the subset of summaries visible to
-// id, preserving order. See FilterVisibleProjects for the batching
-// rationale.
+// id, preserving order. See FilterVisibleProjects for the batching rationale.
 func (r *Resolver) FilterVisibleWorkflowSummaries(ctx context.Context, id Identity, summaries []models.WorkflowSummary) ([]models.WorkflowSummary, error) {
 	vb, err := r.newVisibilityBatch(ctx, id)
 	if err != nil {
@@ -283,8 +280,7 @@ type SettingsStore interface {
 }
 
 // NewProjectIsPrivate reads the global_settings "new_projects_private" key
-// (see models.GlobalSettingNewProjectsPrivate), returning false (public,
-// per UI_AUTH_PLAN.md's "public/open-source friendly" default) when the
+// (see models.GlobalSettingNewProjectsPrivate), returning false when the
 // setting is absent, unreadable, or not a JSON boolean.
 func NewProjectIsPrivate(ctx context.Context, s SettingsStore) bool {
 	setting, err := s.GetGlobalSetting(ctx, models.GlobalSettingNewProjectsPrivate)

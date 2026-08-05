@@ -28,8 +28,8 @@ type LogEntry struct {
 func TestJobLogsAPI(t *testing.T) {
 	t.Run("GET /api/v1/jobs/{job_id}/logs returns stdout logs", func(t *testing.T) {
 		RunTransactionalTest(t, func(ctx context.Context, tx *gorm.DB) {
-			// Create and set up a memory object store for this test
-			// Reset app mux first, then set up a memory object store for this test
+			// Create and set up a memory object store for this test Reset app
+			// mux first, then set up a memory object store for this test
 			handlers.ResetAppMux()
 			memStore := objects.NewMemoryObjectStore()
 			handlers.SetObjectStore(memStore)
@@ -95,8 +95,8 @@ func TestJobLogsAPI(t *testing.T) {
 
 	t.Run("GET /api/v1/jobs/{job_id}/logs returns stderr logs", func(t *testing.T) {
 		RunTransactionalTest(t, func(ctx context.Context, tx *gorm.DB) {
-			// Create and set up a memory object store for this test
-			// Reset app mux first, then set up a memory object store for this test
+			// Create and set up a memory object store for this test Reset app
+			// mux first, then set up a memory object store for this test
 			handlers.ResetAppMux()
 			memStore := objects.NewMemoryObjectStore()
 			handlers.SetObjectStore(memStore)
@@ -161,8 +161,8 @@ func TestJobLogsAPI(t *testing.T) {
 
 	t.Run("GET /api/v1/jobs/{job_id}/logs returns combined logs by default", func(t *testing.T) {
 		RunTransactionalTest(t, func(ctx context.Context, tx *gorm.DB) {
-			// Create and set up a memory object store for this test
-			// Reset app mux first, then set up a memory object store for this test
+			// Create and set up a memory object store for this test Reset app
+			// mux first, then set up a memory object store for this test
 			handlers.ResetAppMux()
 			memStore := objects.NewMemoryObjectStore()
 			handlers.SetObjectStore(memStore)
@@ -240,8 +240,8 @@ func TestJobLogsAPI(t *testing.T) {
 
 	t.Run("GET /api/v1/jobs/{job_id}/logs returns 404 when no logs exist", func(t *testing.T) {
 		RunTransactionalTest(t, func(ctx context.Context, tx *gorm.DB) {
-			// Create and set up a memory object store for this test
-			// Reset app mux first, then set up a memory object store for this test
+			// Create and set up a memory object store for this test Reset app
+			// mux first, then set up a memory object store for this test
 			handlers.ResetAppMux()
 			memStore := objects.NewMemoryObjectStore()
 			handlers.SetObjectStore(memStore)
@@ -286,8 +286,8 @@ func TestJobLogsAPI(t *testing.T) {
 
 	t.Run("GET /api/v1/jobs/{job_id}/logs returns 404 for non-existent job", func(t *testing.T) {
 		RunTransactionalTest(t, func(ctx context.Context, tx *gorm.DB) {
-			// Create and set up a memory object store for this test
-			// Reset app mux first, then set up a memory object store for this test
+			// Create and set up a memory object store for this test Reset app
+			// mux first, then set up a memory object store for this test
 			handlers.ResetAppMux()
 			memStore := objects.NewMemoryObjectStore()
 			handlers.SetObjectStore(memStore)
@@ -322,8 +322,8 @@ func TestJobLogsAPI(t *testing.T) {
 
 	t.Run("GET /api/v1/jobs/{job_id}/logs returns 401 without auth", func(t *testing.T) {
 		RunTransactionalTest(t, func(ctx context.Context, tx *gorm.DB) {
-			// Create and set up a memory object store for this test
-			// Reset app mux first, then set up a memory object store for this test
+			// Create and set up a memory object store for this test Reset app
+			// mux first, then set up a memory object store for this test
 			handlers.ResetAppMux()
 			memStore := objects.NewMemoryObjectStore()
 			handlers.SetObjectStore(memStore)
@@ -361,8 +361,8 @@ func TestJobLogsAPI(t *testing.T) {
 
 	t.Run("GET /api/v1/jobs/{job_id}/logs returns 403 for other user's job", func(t *testing.T) {
 		RunTransactionalTest(t, func(ctx context.Context, tx *gorm.DB) {
-			// Create and set up a memory object store for this test
-			// Reset app mux first, then set up a memory object store for this test
+			// Create and set up a memory object store for this test Reset app
+			// mux first, then set up a memory object store for this test
 			handlers.ResetAppMux()
 			memStore := objects.NewMemoryObjectStore()
 			handlers.SetObjectStore(memStore)
@@ -373,11 +373,7 @@ func TestJobLogsAPI(t *testing.T) {
 			dataUtils := &DataUtils{db: tx}
 
 			// Create two users. user1 is IsPrivate so their job isn't
-			// visible-by-default to unrelated user2 (see
-			// internal/authz/visibility.go's canViewOwned: a project-less
-			// job falls back to its owning org's visibility, and orgs are
-			// public by default per UI_AUTH_PLAN.md's visibility model —
-			// this test is specifically about a *private* org's isolation).
+			// visible-by-default to unrelated user2.
 			user1, err := dataUtils.CreateUser(DataSetup{
 				"Username":  "user1",
 				"Email":     "user1@example.com",
@@ -429,8 +425,8 @@ func TestJobLogsAPI(t *testing.T) {
 
 	t.Run("GET /api/v1/jobs/{job_id}/logs returns 400 for invalid stream parameter", func(t *testing.T) {
 		RunTransactionalTest(t, func(ctx context.Context, tx *gorm.DB) {
-			// Create and set up a memory object store for this test
-			// Reset app mux first, then set up a memory object store for this test
+			// Create and set up a memory object store for this test Reset app
+			// mux first, then set up a memory object store for this test
 			handlers.ResetAppMux()
 			memStore := objects.NewMemoryObjectStore()
 			handlers.SetObjectStore(memStore)
@@ -474,8 +470,8 @@ func TestJobLogsAPI(t *testing.T) {
 
 	t.Run("GET /api/v1/jobs/{job_id}/logs returns only stdout when stderr is missing", func(t *testing.T) {
 		RunTransactionalTest(t, func(ctx context.Context, tx *gorm.DB) {
-			// Create and set up a memory object store for this test
-			// Reset app mux first, then set up a memory object store for this test
+			// Create and set up a memory object store for this test Reset app
+			// mux first, then set up a memory object store for this test
 			handlers.ResetAppMux()
 			memStore := objects.NewMemoryObjectStore()
 			handlers.SetObjectStore(memStore)
@@ -541,8 +537,8 @@ func TestJobLogsAPI(t *testing.T) {
 func TestJobLogsAdminAccess(t *testing.T) {
 	t.Run("admin can access other user's job logs", func(t *testing.T) {
 		RunTransactionalTest(t, func(ctx context.Context, tx *gorm.DB) {
-			// Create and set up a memory object store for this test
-			// Reset app mux first, then set up a memory object store for this test
+			// Create and set up a memory object store for this test Reset app
+			// mux first, then set up a memory object store for this test
 			handlers.ResetAppMux()
 			memStore := objects.NewMemoryObjectStore()
 			handlers.SetObjectStore(memStore)

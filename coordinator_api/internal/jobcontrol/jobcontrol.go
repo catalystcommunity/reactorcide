@@ -1,9 +1,6 @@
 // Package jobcontrol holds the execution-layer cancel/kill primitives for
 // jobs and workflows, shared between the REST handlers (internal/handlers)
-// and — in a later wave — the CSIL-RPC UI service. See UI_AUTH_PLAN.md's
-// "Cancel vs Kill" architecture section for the end-to-end design; this
-// package is the one place that decides *what a cancel/kill request does to
-// the DB rows*, so REST and CSIL callers can't drift from each other.
+// and — in a later wave — the CSIL-RPC UI service.
 //
 // The actual container-level termination (SIGTERM/SIGKILL, or force-remove)
 // happens in the worker, not here: this package only ever flips job/workflow
@@ -13,10 +10,10 @@
 // trusting internal/worker/job_processor.go's cancel-poll (see
 // JobProcessor.pollForCancel) to observe it and act. For a job that hasn't
 // started yet (submitted/queued), this package races the worker to dequeue
-// the Corndogs task before any worker claims it: if that race is won, the
-// job lands directly on "cancelled"; if lost (a worker claimed the task
-// first), the job is left "cancelling" for the claiming worker to finalize
-// (see internal/worker/corndogs_worker.go's claim-path check).
+// the Corndogs task before any worker claims it: if that race is won, the job
+// lands directly on "cancelled"; if lost (a worker claimed the task first),
+// the job is left "cancelling" for the claiming worker to finalize (see
+// internal/worker/corndogs_worker.go's claim-path check).
 package jobcontrol
 
 import (
@@ -32,17 +29,18 @@ import (
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/worker"
 )
 
-// ErrNotCancellable is returned when the target job is already in a
-// terminal state and cannot be cancelled/killed, or the requested
-// transition doesn't apply (e.g. a graceful cancel against a job that's
-// already cancelling — see models.Job.CanBeCancelled vs CanBeKilled).
+// ErrNotCancellable is returned when the target job is already in a terminal
+// state and cannot be cancelled/killed, or the requested transition doesn't
+// apply (e.g. a graceful cancel against a job that's already cancelling — see
+// models.Job.CanBeCancelled vs CanBeKilled).
 var ErrNotCancellable = errors.New("job cannot be cancelled in its current state")
 
 // ErrWorkflowsUnsupported is returned when the configured store does not
-// implement the narrow workflow-control interface this package needs (e.g.
-// a minimal test store). Matches the "consumer-defined narrow interface"
+// implement the narrow workflow-control interface this package needs (e.g. a
+// minimal test store). Matches the "consumer-defined narrow interface"
 // pattern used elsewhere (see internal/worker/workflow_runtime.go's
-// workflowStore, internal/handlers/workflow_handler.go's workflowSummaryStore).
+// workflowStore, internal/handlers/workflow_handler.go's
+// workflowSummaryStore).
 var ErrWorkflowsUnsupported = errors.New("store does not support workflows")
 
 // workflowControlStore is the narrow slice of store.Store's workflow
@@ -63,8 +61,8 @@ type workflowControlStore interface {
 	GetWorkflowNodeByJobID(ctx context.Context, jobID string) (*models.WorkflowNode, error)
 }
 
-// guardedJobStore is the narrow store capability CancelJob/KillJob need for
-// a race-safe status transition (Finding 1: CancelJob TOCTOU — a stale
+// guardedJobStore is the narrow store capability CancelJob/KillJob need for a
+// race-safe status transition (Finding 1: CancelJob TOCTOU — a stale
 // in-memory job.Status could otherwise let a cancel request and a worker
 // claim both "win" against the same row). Reached via type assertion since
 // it's not part of store.Store, same narrow-interface pattern as
@@ -79,29 +77,28 @@ type guardedJobStore interface {
 }
 
 // CancelJob transitions job into the graceful-cancel flow and persists the
-// change. Submitted/queued jobs (no container exists yet) race the worker
-// to dequeue the Corndogs task before it's claimed; if that race is won the
-// job lands directly on "cancelled", otherwise it's left "cancelling" for
-// the claiming worker to finalize. Running jobs are marked "cancelling" so
-// the worker's cancel-poll drives JobRunner.Stop and eventually lands the
-// job on "cancelled". Returns store.ErrNotFound-wrapping errors as-is;
-// returns ErrNotCancellable if job is already terminal or already
-// cancelling (a second graceful cancel has nothing new to do — see
-// KillJob, which can escalate a stuck "cancelling" job).
+// change. Submitted/queued jobs (no container exists yet) race the worker to
+// dequeue the Corndogs task before it's claimed; if that race is won the job
+// lands directly on "cancelled", otherwise it's left "cancelling" for the
+// claiming worker to finalize. Running jobs are marked "cancelling" so the
+// worker's cancel-poll drives JobRunner.Stop and eventually lands the job on
+// "cancelled". Returns store.ErrNotFound-wrapping errors as-is; returns
+// ErrNotCancellable if job is already terminal or already cancelling (a
+// second graceful cancel has nothing new to do — see KillJob, which can
+// escalate a stuck "cancelling" job).
 func CancelJob(ctx context.Context, st store.Store, corndogsClient corndogs.ClientInterface, job *models.Job) (*models.Job, error) {
 	return transitionJob(ctx, st, corndogsClient, job, false)
 }
 
 // KillJob is CancelJob's immediate-force sibling: submitted/queued jobs are
-// cancelled the same way (there's no container to kill yet), but running
-// (or already-"cancelling") jobs are marked "cancelling" with
-// cancel_mode="kill", which routes the worker's cancel-poll into an
-// immediate forced Cleanup instead of a graceful JobRunner.Stop — no
-// SIGTERM, no grace period, no guarantee runnerlib's cleanup hooks run.
-// Unlike CancelJob, KillJob is also valid against a job that's already
-// "cancelling" (models.Job.CanBeKilled): it escalates a stuck graceful
-// cancel to an immediate kill rather than being refused. See
-// UI_AUTH_PLAN.md's Cancel vs Kill section.
+// cancelled the same way (there's no container to kill yet), but running (or
+// already-"cancelling") jobs are marked "cancelling" with cancel_mode="kill",
+// which routes the worker's cancel-poll into an immediate forced Cleanup
+// instead of a graceful JobRunner.Stop — no SIGTERM, no grace period, no
+// guarantee runnerlib's cleanup hooks run. Unlike CancelJob, KillJob is also
+// valid against a job that's already "cancelling" (models.Job.CanBeKilled):
+// it escalates a stuck graceful cancel to an immediate kill rather than being
+// refused.
 func KillJob(ctx context.Context, st store.Store, corndogsClient corndogs.ClientInterface, job *models.Job) (*models.Job, error) {
 	return transitionJob(ctx, st, corndogsClient, job, true)
 }
@@ -118,20 +115,19 @@ func cancellableFromStatuses(kill bool) []string {
 }
 
 // transitionJob drives a job into (or through) the cancel/kill flow. It
-// prefers a guarded (race-safe) store transition — see guardedJobStore —
-// and falls back to a best-effort blind Save (logging a warning) if the
+// prefers a guarded (race-safe) store transition — see guardedJobStore — and
+// falls back to a best-effort blind Save (logging a warning) if the
 // configured store doesn't support it, e.g. a minimal test store.
 func transitionJob(ctx context.Context, st store.Store, corndogsClient corndogs.ClientInterface, job *models.Job, kill bool) (*models.Job, error) {
 	if job == nil {
 		return nil, ErrNotCancellable
 	}
 
-	// Fast local pre-check against the caller's (possibly stale) copy of
-	// the job, purely to short-circuit an obviously-terminal job without a
-	// DB round trip. The authoritative decision is always the guarded
-	// transition below (or, in the fallback path, the switch inside
-	// transitionJobBestEffort) — this is not where the TOCTOU race is
-	// closed.
+	// Fast local pre-check against the caller's (possibly stale) copy of the
+	// job, purely to short-circuit an obviously-terminal job without a DB
+	// round trip. The authoritative decision is always the guarded transition
+	// below (or, in the fallback path, the switch inside
+	// transitionJobBestEffort) — this is not where the TOCTOU race is closed.
 	allowed := job.CanBeCancelled()
 	if kill {
 		allowed = job.CanBeKilled()
@@ -164,16 +160,16 @@ func transitionJob(ctx context.Context, st store.Store, corndogsClient corndogs.
 	if !matched {
 		// The row's status had already moved past what we expected by the
 		// time the lock was acquired (e.g. a concurrent cancel/kill beat us
-		// to it, or the job reached a terminal state) — nothing left for
-		// this request to do.
+		// to it, or the job reached a terminal state) — nothing left for this
+		// request to do.
 		return job, ErrNotCancellable
 	}
 
 	if priorStatus != "submitted" && priorStatus != "queued" {
-		// Running (or already-"cancelling", for a kill escalation): hand
-		// off to the worker. job_processor.go's cancel-poll (or, for a
-		// worker that hasn't claimed the task yet, corndogs_worker.go's
-		// claim-path check) does the rest.
+		// Running (or already-"cancelling", for a kill escalation): hand off
+		// to the worker. job_processor.go's cancel-poll (or, for a worker
+		// that hasn't claimed the task yet, corndogs_worker.go's claim-path
+		// check) does the rest.
 		return updated, nil
 	}
 
@@ -213,9 +209,9 @@ func transitionJob(ctx context.Context, st store.Store, corndogsClient corndogs.
 }
 
 // transitionJobBestEffort is the pre-guarded-store fallback: a blind
-// load-mutate-Save with no protection against a concurrent worker claim.
-// Kept for stores that don't implement guardedJobStore (e.g. minimal test
-// mocks); production always runs against postgres_store, which does.
+// load-mutate-Save with no protection against a concurrent worker claim. Kept
+// for stores that don't implement guardedJobStore (e.g. minimal test mocks);
+// production always runs against postgres_store, which does.
 func transitionJobBestEffort(ctx context.Context, st store.Store, corndogsClient corndogs.ClientInterface, job *models.Job, kill bool) (*models.Job, error) {
 	switch job.Status {
 	case "submitted", "queued":
@@ -257,12 +253,12 @@ func transitionJobBestEffort(ctx context.Context, st store.Store, corndogsClient
 
 // CancelWorkflow cancels (or kills) a workflow instance: every non-terminal
 // node's underlying job is transitioned via CancelJob/KillJob, and
-// pending/waiting nodes that never had a job submitted are marked
-// "cancelled" outright. The workflow instance itself is marked "cancelling"
-// while any node's job is still winding down (graceful stop in progress),
-// or directly to its final computed status ("cancelled", or occasionally
-// "success"/"skipped"/"failed" if the cascade turns out to be a no-op)
-// when every node is already terminal by the time the cascade finishes.
+// pending/waiting nodes that never had a job submitted are marked "cancelled"
+// outright. The workflow instance itself is marked "cancelling" while any
+// node's job is still winding down (graceful stop in progress), or directly
+// to its final computed status ("cancelled", or occasionally
+// "success"/"skipped"/"failed" if the cascade turns out to be a no-op) when
+// every node is already terminal by the time the cascade finishes.
 func CancelWorkflow(ctx context.Context, st store.Store, corndogsClient corndogs.ClientInterface, workflowID string, kill bool) (*models.WorkflowInstance, error) {
 	ws, ok := st.(workflowControlStore)
 	if !ok {
@@ -312,11 +308,11 @@ func CancelWorkflow(ctx context.Context, st store.Store, corndogsClient corndogs
 			continue
 		}
 		if job.IsCancelling() && !kill {
-			// Already being gracefully cancelled by a prior request, and
-			// this is another graceful cancel — nothing new to do. A kill
-			// request, though, can still escalate it (see
-			// models.Job.CanBeKilled), so fall through to transitionJob in
-			// that case instead of skipping the node.
+			// Already being gracefully cancelled by a prior request, and this
+			// is another graceful cancel — nothing new to do. A kill request,
+			// though, can still escalate it (see models.Job.CanBeKilled), so
+			// fall through to transitionJob in that case instead of skipping
+			// the node.
 			continue
 		}
 		if _, err := transitionJob(ctx, st, corndogsClient, job, kill); err != nil && !errors.Is(err, ErrNotCancellable) {
@@ -325,15 +321,15 @@ func CancelWorkflow(ctx context.Context, st store.Store, corndogsClient corndogs
 		recordCancelEvent(ctx, ws, wf.WorkflowID, &node.NodeID, node.JobID, kill)
 	}
 
-	// If every node is already terminal (either it was before we started,
-	// or the pending/waiting ones above resolved synchronously and no node
-	// was actually mid-run), resolve the workflow's final status now instead
-	// of leaving it on the transient "cancelling" value — nothing else will
+	// If every node is already terminal (either it was before we started, or
+	// the pending/waiting ones above resolved synchronously and no node was
+	// actually mid-run), resolve the workflow's final status now instead of
+	// leaving it on the transient "cancelling" value — nothing else will
 	// trigger a refresh if no job is still in flight. Otherwise leave
-	// "cancelling": the still-running node(s) will drive their own
-	// completion through the normal ProcessWorkflowCompletion path (worker
-	// package), whose refreshWorkflowStatus call will land on "cancelled"
-	// via worker.ComputeWorkflowStatus once they finish stopping.
+	// "cancelling": the still-running node(s) will drive their own completion
+	// through the normal ProcessWorkflowCompletion path (worker package),
+	// whose refreshWorkflowStatus call will land on "cancelled" via
+	// worker.ComputeWorkflowStatus once they finish stopping.
 	if final := worker.ComputeWorkflowStatus(nodes); final != "running" {
 		wf.Status = final
 		now := time.Now().UTC()

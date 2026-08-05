@@ -9,20 +9,18 @@ import (
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store/models"
 )
 
-// Scope narrows a Capabilities computation to an org and/or a project.
-// Leave both nil for the global scope (only GlobalAdmin-tier capabilities
-// can ever be true there). Set ProjectID alone to have the project's owning
-// org resolved automatically; set OrgID to skip that lookup, or to ask
-// about org-level capabilities with no specific project in view.
+// Scope narrows a Capabilities computation to an org and/or a project. Leave
+// both nil for the global scope (only GlobalAdmin-tier capabilities can ever
+// be true there). Set ProjectID alone to have the project's owning org
+// resolved automatically; set OrgID to skip that lookup, or to ask about
+// org-level capabilities with no specific project in view.
 type Scope struct {
 	OrgID     *string
 	ProjectID *string
 }
 
 // Caps is the full set of boolean capabilities a caller has at a Scope.
-// Fields correspond 1:1 to the non-trivial rows of UI_AUTH_PLAN.md's
-// permission matrix ("view public" is omitted — it is unconditionally true
-// for every caller and isn't gated by anything in this struct).
+// Fields correspond 1:1 to the non-trivial rows of).
 type Caps struct {
 	// ViewPrivate: view private orgs/projects/jobs/workflows/logs within
 	// Scope. See CanViewProject/CanViewJob/etc for the actual per-resource
@@ -36,10 +34,7 @@ type Caps struct {
 	// Retry: retry a failed/cancelled/timeout job, or a failed/cancelled
 	// workflow (single job, a whole workflow as a fresh instance, or every
 	// unsuccessful member job of a workflow in place). Same permission tier
-	// as Cancel — see
-	// jobcontrol.RetryJob/RetryWorkflow/RetryUnsuccessfulJobs and
-	// UI_AUTH_PLAN.md's permission matrix, which lists retry alongside
-	// cancel.
+	// as Cancel — see jobcontrol.RetryJob/RetryWorkflow/RetryUnsuccessfulJobs.
 	Retry bool
 	// CreateProject: create a new project in Scope's org.
 	CreateProject bool
@@ -55,22 +50,20 @@ type Caps struct {
 	// ManageGroupsRoles: manage groups and assign/revoke role assignments.
 	ManageGroupsRoles bool
 	// ManageWorkers: manage worker pools, workers, enrollment tokens, and
-	// queues (WORKERS_PLAN.md Wave-4 P4 admin ops) — create/rename/delete
-	// queues, quarantine/disable/drain a worker, pool + enrollment-token
-	// CRUD. Same org-admin/global-admin tier as ManageSecrets/
-	// ManageGroupsRoles; there is no separate "view" capability for this
-	// surface.
+	// queues — create/rename/delete queues, quarantine/disable/drain a
+	// worker, pool + enrollment-token CRUD. Same org-admin/global-admin tier
+	// as ManageSecrets/ ManageGroupsRoles; there is no separate "view"
+	// capability for this surface.
 	ManageWorkers bool
 	// ProjectSettings: edit project settings (visibility, defaults).
 	ProjectSettings bool
-	// GlobalAdmin: the global-admin-only surface — trusted
-	// identities/domain patterns, global settings.
+	// GlobalAdmin: the global-admin-only surface — trusted identities/domain
+	// patterns, global settings.
 	GlobalAdmin bool
 }
 
-// orgAdminCaps is what every org-admin-tier scope grants (matrix column
-// "org admin", minus GlobalAdmin which only the true global-admin tier
-// gets).
+// orgAdminCaps is what every org-admin-tier scope grants (matrix column "org
+// admin", minus GlobalAdmin which only the true global-admin tier gets).
 func orgAdminCaps() Caps {
 	return Caps{
 		ViewPrivate:          true,
@@ -88,13 +81,12 @@ func orgAdminCaps() Caps {
 	}
 }
 
-// Capabilities computes id's full Caps at scope, per UI_AUTH_PLAN.md's
-// permission matrix. mode is read from auth.CurrentMode() (Task C) to apply
-// the anonymous-caller rows: in ModeNone, every caller is anonymous and may
-// Cancel and Retry (trusted-LAN posture) but nothing else; in local-rp/rp
-// mode, an anonymous (not-logged-in) caller gets an all-false Caps
-// (view-public is implicit and unconditional, and is not represented in
-// Caps).
+// Capabilities computes id's full Caps at scope. mode is read from
+// auth.CurrentMode (Task C) to apply the anonymous-caller rows: in ModeNone,
+// every caller is anonymous and may Cancel and Retry (trusted-LAN posture)
+// but nothing else; in local-rp/rp mode, an anonymous (not-logged-in) caller
+// gets an all-false Caps (view-public is implicit and unconditional, and is
+// not represented in Caps).
 func (r *Resolver) Capabilities(ctx context.Context, id Identity, scope Scope) (Caps, error) {
 	if id.Anonymous || id.UserID == "" {
 		if auth.CurrentMode() == auth.ModeNone {

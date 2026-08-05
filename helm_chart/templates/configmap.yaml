@@ -54,7 +54,7 @@ data:
   {{- end }}
 
   # NOTE: this configmap is mounted via envFrom on the app (coordinator)
-  # deployment only. The worker deployment (WORKERS_PLAN.md, coordinator-
+  # deployment only. The worker deployment (, coordinator-
   # mediated) sets its own explicit, minimal env in deployment-worker.yaml --
   # it does not use envFrom here, since almost none of this configmap
   # (corndogs, object store, default queue/timeout, UI auth) applies to a

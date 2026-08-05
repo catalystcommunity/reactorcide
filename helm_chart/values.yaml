@@ -118,7 +118,7 @@ worker:
   terminationGracePeriodSeconds: 3600
   containerRuntime: "auto"
 
-  # --- Coordinator-mediated worker (WORKERS_PLAN.md) ---
+  # --- Coordinator-mediated worker ---
   # The worker authenticates to the coordinator over CSIL-RPC and pulls work
   # through it; it has no direct corndogs, Postgres, or object-store
   # dependency of its own. See docs/workers.md ("Deploying workers") and
@@ -129,7 +129,7 @@ worker:
   # (http://<app-name>.<namespace>.svc.cluster.local:<app.service.port>);
   # only set this for out-of-cluster or cross-namespace workers.
   coordinatorUrl: ""
-  # Enrollment token (secret) -- ZERO-TOUCH by default (WORKERS_PLAN.md).
+  # Enrollment token (secret) -- ZERO-TOUCH by default.
   #
   # Leave enrollmentTokenSecret.name EMPTY (the default) and the chart
   # auto-provisions everything: it generates a stable enrollment token once
@@ -172,7 +172,7 @@ worker:
     size: 1Gi
     storageClass: ""
     accessMode: ReadWriteOnce
-  # Worker characteristics used for queue matching (WORKERS_PLAN.md). Leave
+  # Worker characteristics used for queue matching. Leave
   # os/arch empty to auto-detect from the running container (linux/amd64 for
   # the stock image).
   os: ""

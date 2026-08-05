@@ -44,13 +44,11 @@ func (h *fakeCoordinatorHandler) ServeHTTP(w http.ResponseWriter, r *http.Reques
 	_, _ = w.Write(encoded)
 }
 
-// TestClient_RegisterThenRequestJob_CarriesSessionInAuth drives Register
-// over a real HTTP+CBOR round trip against a fake coordinator, then asserts
-// the session Register returned is automatically attached to the envelope
-// "auth" field on the very next call (RequestJob) without the caller having
-// to do anything -- this is the behavior WORKERS_PLAN.md's protocol
-// depends on ("Rides the CSIL envelope auth field on every subsequent
-// call").
+// TestClient_RegisterThenRequestJob_CarriesSessionInAuth drives Register over
+// a real HTTP+CBOR round trip against a fake coordinator, then asserts the
+// session Register returned is automatically attached to the envelope "auth"
+// field on the very next call (RequestJob) without the caller having to do
+// anything -- this is the behavior).
 func TestClient_RegisterThenRequestJob_CarriesSessionInAuth(t *testing.T) {
 	const wantSession = "sess-abc123"
 

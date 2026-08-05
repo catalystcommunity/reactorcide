@@ -30,13 +30,11 @@ func mapJobControlErr(err error) error {
 	return NewServiceError("internal", "an internal error occurred")
 }
 
-// CancelJob requests a graceful cancel (cleanup hooks run). Per
-// UI_AUTH_PLAN.md's permission matrix: anonymous callers may cancel ONLY
-// when REACTORCIDE_UI_AUTH_MODE=none (trusted-LAN posture — see
-// auth.CurrentMode()); everywhere else the caller needs at least project
-// owner (of the job's project) or org admin (of the job's org) — exactly
-// what authz.Capabilities.Cancel already encodes, so this is a single
-// Capabilities check with no separate anonymous-mode branch needed.
+// CancelJob requests a graceful cancel (cleanup hooks run).CurrentMode);
+// everywhere else the caller needs at least project owner (of the job's
+// project) or org admin (of the job's org) — exactly what
+// authz.Capabilities.Cancel already encodes, so this is a single Capabilities
+// check with no separate anonymous-mode branch needed.
 func (s *UiService) CancelJob(ctx context.Context, req csilapi.CancelJobRequest) (csilapi.CancelJobResponse, error) {
 	if err := requireNonEmpty("job_id", req.JobId, 64); err != nil {
 		return csilapi.CancelJobResponse{}, err
@@ -63,8 +61,8 @@ func (s *UiService) CancelJob(ctx context.Context, req csilapi.CancelJobRequest)
 }
 
 // KillJob requests an immediate forced kill (no cleanup guarantee). Always
-// requires org admin (of the job's org) or global admin — never available
-// to an anonymous caller, in any auth mode (authz.Resolver.RequireOrgAdmin
+// requires org admin (of the job's org) or global admin — never available to
+// an anonymous caller, in any auth mode (authz.Resolver.RequireOrgAdmin
 // returns false for an anonymous identity unconditionally).
 func (s *UiService) KillJob(ctx context.Context, req csilapi.KillJobRequest) (csilapi.KillJobResponse, error) {
 	if err := requireNonEmpty("job_id", req.JobId, 64); err != nil {
@@ -90,15 +88,15 @@ func (s *UiService) KillJob(ctx context.Context, req csilapi.KillJobRequest) (cs
 // workflowInstanceGetter is the narrow store capability CancelWorkflow needs
 // to load a workflow instance for the pre-mutation authz check, mirroring
 // handlers/workflow_handler.go's own workflowInstanceGetter (workflow
-// persistence is a postgres_store-only capability reached via type
-// assertion, not part of store.Store or this package's DataStore).
+// persistence is a postgres_store-only capability reached via type assertion,
+// not part of store.Store or this package's DataStore).
 type workflowInstanceGetter interface {
 	GetWorkflowInstance(ctx context.Context, workflowID string) (*models.WorkflowInstance, error)
 }
 
 // CancelWorkflow requests a graceful cancel of every non-terminal node's job
-// in a workflow. Authorization mirrors CancelJob's Capabilities.Cancel
-// check, scoped to the workflow's own org/project.
+// in a workflow. Authorization mirrors CancelJob's Capabilities.Cancel check,
+// scoped to the workflow's own org/project.
 func (s *UiService) CancelWorkflow(ctx context.Context, req csilapi.CancelWorkflowRequest) (csilapi.CancelWorkflowResponse, error) {
 	if err := requireNonEmpty("workflow_instance_id", req.WorkflowInstanceId, 64); err != nil {
 		return csilapi.CancelWorkflowResponse{}, err
@@ -204,8 +202,8 @@ type workflowNodesGetter interface {
 	ListWorkflowNodes(ctx context.Context, workflowID string) ([]models.WorkflowNode, error)
 }
 
-// RetryUnsuccessfulJobs requests a retry of every failed/cancelled member
-// job of a workflow, in place (same instance, same nodes) — see
+// RetryUnsuccessfulJobs requests a retry of every failed/cancelled member job
+// of a workflow, in place (same instance, same nodes) — see
 // jobcontrol.RetryUnsuccessfulJobs. Authorization mirrors CancelWorkflow's
 // Capabilities.Retry check. A partial failure inside jobcontrol (some jobs
 // retried, others errored) is not surfaced as a ServiceError: the response's

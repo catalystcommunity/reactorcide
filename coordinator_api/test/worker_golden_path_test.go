@@ -1,9 +1,7 @@
 package test
 
-// TestWorkerGoldenPathE2E is the Wave-5 P5 closeout test for WORKERS_PLAN.md:
-// one cohesive, golden-path run of the WHOLE coordinator-mediated worker
-// pipeline end to end, over the REAL router-mounted CSIL-RPC dispatcher
-// (handlers.GetAppMuxWithClient -> uiapi.NewHandlerWithWorker) against real
+// TestWorkerGoldenPathE2E is the Wave-5 P5 closeout test
+// for.GetAppMuxWithClient -> uiapi.NewHandlerWithWorker) against real
 // Postgres (this package's shared testcontainers instance) and a shared
 // in-memory Corndogs backend (see newIntegrationCorndogsClient in
 // worker_protocol_integration_test.go) -- admin setup, job submission/queue

@@ -69,7 +69,7 @@ const (
 	// an IPv4 address via Get-VMNetworkAdapter. This needs the guest's Hyper-V
 	// integration (Data Exchange) service running and DHCP to complete, so it
 	// can take a while after Start-VM returns -- and is the single most likely
-	// first-hardware snag (see VM_RUNNERS_PLAN.md).
+	// first-hardware snag.
 	ipResolveTimeout = 120 * time.Second
 	ipResolvePoll    = 2 * time.Second
 )

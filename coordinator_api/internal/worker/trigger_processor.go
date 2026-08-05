@@ -94,9 +94,8 @@ type triggerJobSpec struct {
 	ItemVar        string            `json:"item_var"`
 
 	// Characteristics/Resources, when set, override the parent (eval) job's
-	// characteristics/resources for this triggered job (WORKERS_PLAN.md:
-	// "Triggered/workflow child jobs inherit the PARENT's characteristics
-	// unless the child spec overrides"). See buildJobFromTrigger.
+	// characteristics/resources for this triggered job. See
+	// buildJobFromTrigger.
 	Characteristics map[string]interface{} `json:"characteristics"`
 	Resources       map[string]interface{} `json:"resources"`
 }
@@ -412,11 +411,10 @@ func (tp *TriggerProcessor) overlaySpec(base, overlay triggerJobSpec) triggerJob
 
 // queueResolvingStore is the narrow store capability trigger/workflow job
 // submission uses to resolve a job's characteristics to a queue UUID
-// (find-or-create) before it is persisted/submitted -- WORKERS_PLAN.md
-// "Find-or-create at submit". Defined here on the consumer side (repo
-// convention: narrow interface + type assertion on the store), mirroring
-// internal/handlers/job_handler.go's identical interface for the REST
-// submit path. The concrete PostgresDbStore satisfies it via
+// (find-or-create) before it is persisted/submitted. Defined here on the
+// consumer side (repo convention: narrow interface + type assertion on the
+// store), mirroring internal/handlers/job_handler.go's identical interface
+// for the REST submit path. The concrete PostgresDbStore satisfies it via
 // internal/store/postgres_store/queue_operations.go.
 type queueResolvingStore interface {
 	FindOrCreateQueueByCharacteristics(ctx context.Context, chars characteristics.Characteristics) (*models.Queue, error)
@@ -531,14 +529,12 @@ func (tp *TriggerProcessor) buildJobFromTrigger(spec triggerJobSpec, parentJob *
 		JobDir:      DefaultJobDir(parentJob.CodeDir, parentJob.JobDir),
 	}
 
-	// Characteristics: the child spec overrides the parent's when it
-	// declares its own `characteristics` block, otherwise it inherits the
-	// parent (eval) job's characteristics wholesale -- WORKERS_PLAN.md
-	// "Triggered/workflow child jobs inherit the PARENT's characteristics
-	// unless the child spec overrides". This mirrors QueueName's inheritance
-	// above; createAndSubmitJob/submitWorkflowNode re-resolve QueueName from
-	// this value right before submitting, so QueueName here is only a
-	// starting point for stores that don't support queue resolution.
+	// Characteristics: the child spec overrides the parent's when it declares
+	// its own `characteristics` block, otherwise it inherits the parent
+	// (eval) job's characteristics wholesale. This mirrors QueueName's
+	// inheritance above; createAndSubmitJob/submitWorkflowNode re-resolve
+	// QueueName from this value right before submitting, so QueueName here is
+	// only a starting point for stores that don't support queue resolution.
 	if len(spec.Characteristics) > 0 {
 		chars, err := characteristics.ParseJobCharacteristics(spec.Characteristics)
 		if err != nil {

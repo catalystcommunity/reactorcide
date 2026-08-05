@@ -48,8 +48,7 @@ func lookupSignal(sig string) (ssh.Signal, error) {
 }
 
 // SSHTransport implements GuestTransport over SSH (golang.org/x/crypto/ssh)
-// -- the VM-1 prototype guest channel (VM_RUNNERS_PLAN.md notes vsock as a
-// possible future replacement behind the same GuestTransport interface).
+// -- the VM-1 prototype guest channel.
 //
 // Host key verification: guests are freshly copy-on-write cloned per job
 // from a known base image and have no persistent identity to pin against

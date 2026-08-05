@@ -5,9 +5,9 @@ using typer.testing.CliRunner, which runs in-process and can't receive a
 real signal) and send it SIGTERM while it's blocked running a long-lived job
 command — mirroring exactly what the coordinator's graceful cancel path does
 to a job container's PID 1 (see coordinator_api's JobRunner.Stop /
-job_processor.go's pollForCancel, and UI_AUTH_PLAN.md's "Cancel vs Kill"
-section). Verifies: the child job process is actually killed (not left
-running until the job's own timeout), PluginPhase.CLEANUP still runs, and
+job_processor.go's pollForCancel). Verifies: the child job process is
+actually killed (not left running until the job's own timeout),
+PluginPhase.CLEANUP still runs, and
 the process exits with the distinct TERM_EXIT_CODE (143) rather than a
 generic error code.
 """

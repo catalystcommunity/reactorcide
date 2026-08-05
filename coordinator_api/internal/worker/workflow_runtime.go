@@ -916,50 +916,6 @@ func stringifyWorkflowValue(value interface{}) string {
 	}
 }
 
-func unwrapWorkflowJSONB(value models.JSONB) interface{} {
-	if value == nil {
-		return nil
-	}
-	if len(value) == 1 {
-		if wrapped, ok := value["value"]; ok {
-			return wrapped
-		}
-	}
-	return map[string]interface{}(value)
-}
-
-func workflowScalarString(value interface{}) (string, bool) {
-	switch v := value.(type) {
-	case string:
-		return v, true
-	case bool:
-		return strconv.FormatBool(v), true
-	case int:
-		return strconv.Itoa(v), true
-	case int64:
-		return strconv.FormatInt(v, 10), true
-	case float64:
-		return strconv.FormatFloat(v, 'f', -1, 64), true
-	case nil:
-		return "", false
-	default:
-		return "", false
-	}
-}
-
-func workflowUserEnvName(key string) string {
-	var b strings.Builder
-	b.WriteString("RC_WFU_")
-	for _, r := range strings.ToUpper(key) {
-		if (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') {
-			b.WriteRune(r)
-			continue
-		}
-		b.WriteByte('_')
-	}
-	return b.String()
-}
-
 func derefString(s *string) string {
 	if s == nil {
 		return ""

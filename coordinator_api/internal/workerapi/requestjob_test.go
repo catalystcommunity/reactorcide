@@ -254,9 +254,7 @@ func TestRequestJob_UngrantedSecret_NotLeasedAndNotLeaked(t *testing.T) {
 // package makes (SubmitTaskToQueue -- test setup only, UpdateTask --
 // RequestJob's processing/failed transitions) and fails the test if
 // secretValue appears anywhere in them. This is the "assert on the payload
-// bytes" check WORKERS_PLAN.md calls for: secrets must reach a worker only
-// through the lease response's dedicated `secrets` field, never through
-// anything workerapi hands to corndogs.
+// bytes" check.
 func assertNoSecretInCorndogsPayloads(t *testing.T, h *testHarness, secretValue string) {
 	t.Helper()
 	for _, call := range h.corndogs.SubmitTaskToQueueCalls {

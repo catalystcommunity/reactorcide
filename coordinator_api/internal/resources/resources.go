@@ -7,7 +7,7 @@
 // small grammar (ParseCPU / ParseMemory below) rather than
 // k8s.io/apimachinery/pkg/api/resource -- fewer deps, and it additionally
 // accepts decimal-with-"B" memory suffixes (GB/MB/...) that the k8s parser
-// rejects. See WORKERS_PLAN.md "Resources" for the grammar this implements.
+// rejects.
 //
 // This package only parses/validates and applies defaults. Storing the
 // values on a Job and plumbing them into a submitted job spec is owned by

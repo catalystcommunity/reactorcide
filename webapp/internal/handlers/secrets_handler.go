@@ -7,10 +7,8 @@ import (
 )
 
 // OrgSecretsPage renders GET /app/org/secrets: gated on ManageSecrets.
-// Secrets are write-only through this UI (list-secret-paths returns paths
-// and key names only, never values — see UI_AUTH_PLAN.md's "Secrets are
-// write-only through the UI" architecture note), plus the secret grants
-// management section.
+// Secrets are write-only through this UI, plus the secret grants management
+// section.
 func (h *WebHandler) OrgSecretsPage(w http.ResponseWriter, r *http.Request) {
 	si := h.sessionInfo(r)
 	orgID := h.resolveOrgID(r, si)

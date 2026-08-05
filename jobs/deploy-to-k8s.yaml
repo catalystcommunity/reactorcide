@@ -60,7 +60,7 @@ environment:
     # Default user ID
     REACTORCIDE_DEFAULT_USER_ID: "${env:REACTORCIDE_DEFAULT_USER_ID}"
 
-    # Worker: coordinator-mediated (WORKERS_PLAN.md). Create a worker pool +
+    # Worker: coordinator-mediated. Create a worker pool +
     # enrollment token via the coordinator admin UI/CLI first (see
     # docs/workers.md), put the token value in a Kubernetes Secret yourself
     # (kubectl create secret ...), and reference that Secret's name/key here

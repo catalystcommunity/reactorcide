@@ -105,7 +105,7 @@ Create the name of the secret. Default to the service name, allow overriding.
 {{- end }}
 
 {{/*
-Worker enrollment token Secret (WORKERS_PLAN.md, zero-touch auto-provision).
+Worker enrollment token Secret (zero-touch auto-provision).
 
 The enrollment token is generated ONCE, in secret-worker-enrollment.yaml, and
 BOTH the coordinator (app) deployment (as REACTORCIDE_DEFAULT_WORKER_ENROLLMENT_TOKEN,

@@ -1,24 +1,24 @@
 package test
 
-// UI-auth / RBAC / visibility / credential-rotation integration tests
-// (UI_AUTH_PLAN.md Task J). These run against the real, testcontainers-backed
-// Postgres from setup_test.go and the real coordinator router/store/CSIL
-// dispatcher wiring (handlers.GetAppMux(), internal/uiapi, internal/auth,
-// internal/authz) — no mocks or fakes. Unlike most tests in this package,
-// most CSIL-RPC and webhook writes here are NOT wrapped in a rollback-able
-// transaction (uiapi's dispatcher and webhook_handler.go's rotation lookups
-// both intentionally bypass request-scoped transactions — see this file's
-// per-test comments), so they commit for real against the shared test
-// container; each test uses unique, randomized names so it never collides
-// with another test's data, and nothing here needs manual cleanup since the
-// whole container is discarded when the test binary exits.
+// UI-auth / RBAC / visibility / credential-rotation integration tests. These
+// run against the real, testcontainers-backed Postgres from setup_test.go and
+// the real coordinator router/store/CSIL dispatcher wiring
+// (handlers.GetAppMux(), internal/uiapi, internal/auth, internal/authz) — no
+// mocks or fakes. Unlike most tests in this package, most CSIL-RPC and
+// webhook writes here are NOT wrapped in a rollback-able transaction (uiapi's
+// dispatcher and webhook_handler.go's rotation lookups both intentionally
+// bypass request-scoped transactions — see this file's per-test comments), so
+// they commit for real against the shared test container; each test uses
+// unique, randomized names so it never collides with another test's data, and
+// nothing here needs manual cleanup since the whole container is discarded
+// when the test binary exits.
 //
 // TestUIAuthMigrationRoundTrip is deliberately the first test declared in
 // this file (Go runs a single file's tests top-to-bottom) because it drops
 // and recreates the 000017/000018 tables in an *isolated* scratch database —
-// isolated precisely so it can never race with this file's other tests,
-// which commit real 'cancelling'-status jobs and other 000017/000018 rows
-// against the *shared* test database that would otherwise violate the
+// isolated precisely so it can never race with this file's other tests, which
+// commit real 'cancelling'-status jobs and other 000017/000018 rows against
+// the *shared* test database that would otherwise violate the
 // down-migration's constraints if the tables were shared.
 
 import (
@@ -53,10 +53,10 @@ import (
 	"github.com/catalystcommunity/reactorcide/coredb"
 )
 
-// uniqueName returns a per-call-unique suffix for test fixtures (project
-// repo URLs, group names, trusted-identity domains, ...) so these tests
-// never collide with each other or with leftover data from a previous run
-// against the same long-lived test container.
+// uniqueName returns a per-call-unique suffix for test fixtures (project repo
+// URLs, group names, trusted-identity domains, ...) so these tests never
+// collide with each other or with leftover data from a previous run against
+// the same long-lived test container.
 var uniqueCounter int64
 
 func uniqueName(prefix string) string {
@@ -67,9 +67,9 @@ func uniqueName(prefix string) string {
 // requireDataStore asserts store.AppStore implements uiapi.DataStore — the
 // same type assertion handlers/router.go performs to decide whether to wire
 // the real CSIL implementations or the unimplemented stubs. Every test in
-// this file depends on the real implementations being wired, so failing
-// fast here with a clear message beats a confusing "unimplemented"
-// ServiceError deep in a later assertion.
+// this file depends on the real implementations being wired, so failing fast
+// here with a clear message beats a confusing "unimplemented" ServiceError
+// deep in a later assertion.
 func requireDataStore(t *testing.T) uiapi.DataStore {
 	t.Helper()
 	ds, ok := store.AppStore.(uiapi.DataStore)
@@ -77,14 +77,15 @@ func requireDataStore(t *testing.T) uiapi.DataStore {
 	return ds
 }
 
-// mintSessionForUser mints a real ui_sessions-backed session token for
-// userID by calling internal/auth directly, bypassing the LinkKeys login
-// flow entirely (no local-rp/rp identity provider is available in this test
+// mintSessionForUser mints a real ui_sessions-backed session token for userID
+// by calling internal/auth directly, bypassing the LinkKeys login flow
+// entirely (no local-rp/rp identity provider is available in this test
 // environment). This is legitimate for testing purposes only insofar as it
 // exercises exactly the same Sessions.MintSession/ResolveSession machinery
 // AuthService.CompleteLogin/BootstrapAdmin use — what's skipped is only the
-// LinkKeys protocol handshake that would normally produce the VerifiedIdentity
-// feeding into provisioning, not the session/authorization machinery itself.
+// LinkKeys protocol handshake that would normally produce the
+// VerifiedIdentity feeding into provisioning, not the session/authorization
+// machinery itself.
 func mintSessionForUser(t *testing.T, userID string) string {
 	t.Helper()
 	sessions := auth.NewSessions(requireDataStore(t))
@@ -129,11 +130,11 @@ func createTestJob(t *testing.T, userID, status string) *models.Job {
 	return job
 }
 
-// ---------------------------------------------------------------------
-// (a) Migration round trip: 000017/000018 apply and roll back cleanly,
-// in an isolated scratch database so it can never race with this file's
-// other tests committing real rows (including 'cancelling'-status jobs)
-// against the shared test database.
+// --------------------------------------------------------------------- (a)
+// Migration round trip: 000017/000018 apply and roll back cleanly, in an
+// isolated scratch database so it can never race with this file's other tests
+// committing real rows (including 'cancelling'-status jobs) against the
+// shared test database.
 // ---------------------------------------------------------------------
 
 func tableExists(t *testing.T, db *sql.DB, name string) bool {
@@ -175,9 +176,10 @@ func TestUIAuthMigrationRoundTrip(t *testing.T) {
 	goose.SetBaseFS(coredb.Migrations)
 	require.NoError(t, goose.SetDialect("postgres"))
 
-	// Up to latest: 000017_ui_auth_rbac.sql and 000018_credential_rotation.sql
-	// must apply cleanly from a schema that already has everything through
-	// 000016 available via goose's normal ordered-migration application.
+	// Up to latest: 000017_ui_auth_rbac.sql and
+	// 000018_credential_rotation.sql must apply cleanly from a schema that
+	// already has everything through 000016 available via goose's normal
+	// ordered-migration application.
 	require.NoError(t, goose.Up(scratchDB, "migrations"), "goose Up to latest must apply 000017/000018 cleanly")
 	for _, table := range []string{
 		"global_settings", "groups", "group_members", "role_assignments",
@@ -201,8 +203,8 @@ func TestUIAuthMigrationRoundTrip(t *testing.T) {
 	assert.NoError(t, err, "'cancelling' must be a valid jobs.status per the 000017 CHECK constraint")
 
 	// The 000017 Down migration restores the pre-'cancelling' CHECK
-	// constraint, which the row inserted above would now violate — resolve
-	// it to a terminal status first, exactly as a real graceful-cancel flow
+	// constraint, which the row inserted above would now violate — resolve it
+	// to a terminal status first, exactly as a real graceful-cancel flow
 	// eventually would, so the round trip below exercises a clean rollback
 	// rather than a data-migration concern that's out of scope here.
 	_, err = scratchDB.Exec(`UPDATE jobs SET status = 'cancelled' WHERE user_id = $1`, userID)
@@ -217,18 +219,18 @@ func TestUIAuthMigrationRoundTrip(t *testing.T) {
 	}
 
 	// Up again: must re-apply cleanly (proves the Down migrations left no
-	// residue that would break a subsequent Up, e.g. a dangling enum value
-	// or leftover index).
+	// residue that would break a subsequent Up, e.g. a dangling enum value or
+	// leftover index).
 	require.NoError(t, goose.Up(scratchDB, "migrations"), "goose Up must re-apply 000017/000018 cleanly after DownTo 16")
 	for _, table := range []string{"role_assignments", "project_webhook_secrets"} {
 		assert.True(t, tableExists(t, scratchDB, table), "table %q should exist again after re-Up", table)
 	}
 }
 
-// ---------------------------------------------------------------------
-// (b) Mode "none": CSIL auth config, anonymous cancel-job success, kill-job
-// and set-secret forbidden, and the 'cancelling' transition on a running job
-// (the CHECK-constraint fix this task's migration exercises).
+// --------------------------------------------------------------------- (b)
+// Mode "none": CSIL auth config, anonymous cancel-job success, kill-job and
+// set-secret forbidden, and the 'cancelling' transition on a running job (the
+// CHECK-constraint fix this task's migration exercises).
 // ---------------------------------------------------------------------
 
 func TestUIAuthModeNonePermissions(t *testing.T) {
@@ -326,18 +328,16 @@ func TestUIAuthModeNonePermissions(t *testing.T) {
 		// Deps.requireUser rejects an anonymous (no-session) caller with
 		// "unauthorized" before the capability check ever runs (see
 		// uiapi/ui_secrets.go's SetSecret / deps.go's requireUser) — every
-		// other write op in this service behaves the same way. UI_AUTH_PLAN's
-		// permission-matrix table labels this row "no" without distinguishing
-		// unauthorized from forbidden; this assertion pins the actual,
-		// intentional code so a future regression to "forbidden" (or to
-		// silently succeeding) is caught either way.
+		// other write op in this service behaves the same way. This
+		// assertion pins the actual, intentional code so a future regression
+		// to "forbidden" (or to silently succeeding) is caught either way.
 		assert.Equal(t, "unauthorized", svcErr.Code)
 	})
 }
 
-// ---------------------------------------------------------------------
-// (c) Bootstrap flow + a compact permission-matrix spot check over the real
-// DB and real authz.Resolver (not the uiapi unit fakes).
+// --------------------------------------------------------------------- (c)
+// Bootstrap flow + a compact permission-matrix spot check over the real DB
+// and real authz.Resolver (not the uiapi unit fakes).
 // ---------------------------------------------------------------------
 
 func TestUIAuthBootstrapAndPermissionMatrix(t *testing.T) {
@@ -466,8 +466,8 @@ func TestUIAuthBootstrapAndPermissionMatrix(t *testing.T) {
 	assert.Equal(t, "unauthorized", svcErr.Code)
 }
 
-// ---------------------------------------------------------------------
-// (d) Visibility: public project visible to a second authenticated user via
+// --------------------------------------------------------------------- (d)
+// Visibility: public project visible to a second authenticated user via
 // list-projects; private project invisible (not_found on get).
 // ---------------------------------------------------------------------
 
@@ -513,10 +513,10 @@ func TestUIAuthProjectVisibility(t *testing.T) {
 	assert.Equal(t, publicProject.ProjectID, getResp.Project.ProjectId)
 }
 
-// ---------------------------------------------------------------------
-// (e) Webhook secret rotation: two active secrets, deliver a signed webhook
-// with the OLDER one, assert 200 and that only the matching row's
-// last_used_at got stamped.
+// --------------------------------------------------------------------- (e)
+// Webhook secret rotation: two active secrets, deliver a signed webhook with
+// the OLDER one, assert 200 and that only the matching row's last_used_at got
+// stamped.
 // ---------------------------------------------------------------------
 
 func TestUIAuthWebhookSecretRotation(t *testing.T) {
@@ -535,10 +535,10 @@ func TestUIAuthWebhookSecretRotation(t *testing.T) {
 
 	// Secrets require an org encryption key before any Set/AddWebhookSecret
 	// call can succeed (secrets.MasterKeyManager.GetOrgEncryptionKey returns
-	// ErrNotInitialized otherwise — the same one-time-per-org step the
-	// REST POST /api/v1/secrets/init endpoint performs). LoadOrCreateMasterKeys
-	// is idempotent (env -> DB -> auto-generate), so this reuses whatever
-	// master keys the router's own startup already established.
+	// ErrNotInitialized otherwise — the same one-time-per-org step the REST
+	// POST /api/v1/secrets/init endpoint performs). LoadOrCreateMasterKeys is
+	// idempotent (env -> DB -> auto-generate), so this reuses whatever master
+	// keys the router's own startup already established.
 	keyManager, err := secrets.LoadOrCreateMasterKeys(store.GetDB())
 	require.NoError(t, err)
 	require.NoError(t, keyManager.InitializeOrgSecrets(store.GetDB(), org.UserID))
@@ -557,8 +557,8 @@ func TestUIAuthWebhookSecretRotation(t *testing.T) {
 		csilapi.AddWebhookSecretRequest{ProjectId: project.ProjectID, Provider: "github", Name: "old", Value: oldSecretValue}, orgToken)
 	require.Nil(t, svcErr, "add-webhook-secret (old) failed: %+v", svcErr)
 
-	// Ensure the two rows have distinct created_at ordering regardless of
-	// the store's sort granularity.
+	// Ensure the two rows have distinct created_at ordering regardless of the
+	// store's sort granularity.
 	time.Sleep(20 * time.Millisecond)
 
 	newSecretResp, svcErr := csilCall(t, mux, "ReactorcideUi", "add-webhook-secret",
@@ -592,8 +592,8 @@ func TestUIAuthWebhookSecretRotation(t *testing.T) {
 	// verification (what this test checks) happens before event-type
 	// dispatch, so this still exercises it fully, but GenericEventFromGitHub
 	// maps it to EventUnknown, which short-circuits before job creation and
-	// the outbound commit-status update — keeping this test hermetic (no
-	// real network call to the GitHub API).
+	// the outbound commit-status update — keeping this test hermetic (no real
+	// network call to the GitHub API).
 	req.Header.Set("X-GitHub-Event", "issues")
 	req.Header.Set("X-Hub-Signature-256", signature)
 	rr := httptest.NewRecorder()

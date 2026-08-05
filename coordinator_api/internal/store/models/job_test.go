@@ -3,10 +3,10 @@ package models
 import "testing"
 
 // TestJob_StatusHelpers covers the full job status lifecycle, including the
-// "cancelling" transient status introduced for graceful cancel/kill (see
-// UI_AUTH_PLAN.md's Cancel vs Kill section): CanBeCancelled admits
-// submitted/queued/running; IsCancelling identifies the transient state;
-// IsCompleted deliberately excludes "cancelling" (it is not terminal).
+// "cancelling" transient status introduced for graceful cancel/kill:
+// CanBeCancelled admits submitted/queued/running; IsCancelling identifies the
+// transient state; IsCompleted deliberately excludes "cancelling" (it is not
+// terminal).
 func TestJob_StatusHelpers(t *testing.T) {
 	tests := []struct {
 		status             string
@@ -52,8 +52,8 @@ func TestJob_StatusHelpers(t *testing.T) {
 }
 
 // TestJob_CanBeCancelled_ExcludesCancelling verifies that a job already in
-// the "cancelling" transient state cannot be cancelled again (there's
-// nothing new to do — the worker is already driving it to "cancelled").
+// the "cancelling" transient state cannot be cancelled again (there's nothing
+// new to do — the worker is already driving it to "cancelled").
 func TestJob_CanBeCancelled_ExcludesCancelling(t *testing.T) {
 	job := &Job{Status: "cancelling"}
 	if job.CanBeCancelled() {
@@ -62,8 +62,8 @@ func TestJob_CanBeCancelled_ExcludesCancelling(t *testing.T) {
 }
 
 // TestJob_CanBeKilled verifies kill can escalate a stuck graceful cancel
-// (CanBeKilled admits "cancelling" in addition to everything
-// CanBeCancelled admits), but still refuses terminal jobs.
+// (CanBeKilled admits "cancelling" in addition to everything CanBeCancelled
+// admits), but still refuses terminal jobs.
 func TestJob_CanBeKilled(t *testing.T) {
 	tests := []struct {
 		status          string
@@ -90,9 +90,9 @@ func TestJob_CanBeKilled(t *testing.T) {
 }
 
 // TestJob_IsRetryable verifies the retry feature's rule: "failed",
-// "cancelled", and "timeout" are retryable; nothing else is. Notably
-// narrower than IsCompleted only in that "completed" (nothing to retry) is
-// excluded — every other terminal-but-unsuccessful status IS retryable.
+// "cancelled", and "timeout" are retryable; nothing else is. Notably narrower
+// than IsCompleted only in that "completed" (nothing to retry) is excluded —
+// every other terminal-but-unsuccessful status IS retryable.
 func TestJob_IsRetryable(t *testing.T) {
 	tests := []struct {
 		status        string
@@ -118,9 +118,9 @@ func TestJob_IsRetryable(t *testing.T) {
 	}
 }
 
-// TestJob_IsKillRequested verifies IsKillRequested reflects CancelMode
-// rather than the old LastError-sentinel scheme (see Finding 3: cancel_mode
-// is a dedicated column now, not smuggled through last_error).
+// TestJob_IsKillRequested verifies IsKillRequested reflects CancelMode rather
+// than the old LastError-sentinel scheme (see Finding 3: cancel_mode is a
+// dedicated column now, not smuggled through last_error).
 func TestJob_IsKillRequested(t *testing.T) {
 	if (&Job{CancelMode: "kill"}).IsKillRequested() != true {
 		t.Error("expected IsKillRequested() to be true for CancelMode 'kill'")

@@ -247,7 +247,10 @@ Examples of valid keys: `password`, `api_key`, `db-password`
 
 ## Master Key Administration
 
-These endpoints require the `admin` role.
+These endpoints require the `admin` role. Each one has a CLI equivalent under
+`reactorcide secrets master-keys`. Key material never travels over the API.
+The coordinator reads it from `REACTORCIDE_MASTER_KEYS`. These commands only
+control which key is registered, primary, or decommissioned.
 
 ### Environment Variable Format
 
@@ -266,6 +269,13 @@ If no environment variable is set and no keys exist in the database, three keys 
 ### Register a Master Key
 
 Register an environment-provided key in the database for tracking and rotation management.
+
+```bash
+reactorcide secrets master-keys create primary-key \
+  --description "Production primary key"
+```
+
+Equivalent REST call:
 
 ```bash
 curl -X POST "https://reactorcide.example.com/api/v1/admin/secrets/master-keys" \
@@ -289,6 +299,12 @@ curl -X POST "https://reactorcide.example.com/api/v1/admin/secrets/master-keys" 
 The key must already exist in the `REACTORCIDE_MASTER_KEYS` environment variable. Returns `409 Conflict` if the name is already registered or the key is not in the environment.
 
 ### List Master Keys
+
+```bash
+reactorcide secrets master-keys list
+```
+
+Equivalent REST call:
 
 ```bash
 curl "https://reactorcide.example.com/api/v1/admin/secrets/master-keys" \
@@ -316,6 +332,12 @@ curl "https://reactorcide.example.com/api/v1/admin/secrets/master-keys" \
 Re-encrypt all organization keys with a different master key. Use this when transitioning to a new primary key.
 
 ```bash
+reactorcide secrets master-keys rotate new-key
+```
+
+Equivalent REST call:
+
+```bash
 curl -X POST "https://reactorcide.example.com/api/v1/admin/secrets/master-keys/new-key/rotate" \
   -H "Authorization: Bearer $ADMIN_TOKEN"
 ```
@@ -330,6 +352,12 @@ The target key must be registered and present in the environment. Returns `404 N
 ### Decommission a Key
 
 Mark a key as inactive after rotation. This removes its associated organization encryption key entries.
+
+```bash
+reactorcide secrets master-keys decommission old-key
+```
+
+Equivalent REST call:
 
 ```bash
 curl -X DELETE "https://reactorcide.example.com/api/v1/admin/secrets/master-keys/old-key" \
@@ -348,6 +376,12 @@ You **cannot** decommission the primary key — rotate to a different key first.
 Update the database to match the current `REACTORCIDE_MASTER_KEYS` environment variable (first key becomes primary).
 
 ```bash
+reactorcide secrets master-keys sync-primary
+```
+
+Equivalent REST call:
+
+```bash
 curl -X POST "https://reactorcide.example.com/api/v1/admin/secrets/sync-primary" \
   -H "Authorization: Bearer $ADMIN_TOKEN"
 ```
@@ -359,13 +393,14 @@ curl -X POST "https://reactorcide.example.com/api/v1/admin/secrets/sync-primary"
 
 ### Key Rotation Workflow
 
-1. Add the new key to `REACTORCIDE_MASTER_KEYS` (keep old key listed too)
-2. Restart the Coordinator API
-3. Register the new key: `POST /api/v1/admin/secrets/master-keys`
-4. Rotate all orgs to the new key: `POST /api/v1/admin/secrets/master-keys/{new}/rotate`
-5. Sync primary if the new key should be primary: `POST /api/v1/admin/secrets/sync-primary`
-6. Decommission the old key: `DELETE /api/v1/admin/secrets/master-keys/{old}`
-7. Remove the old key from `REACTORCIDE_MASTER_KEYS` and restart
+1. Add the new key to `REACTORCIDE_MASTER_KEYS`. Keep the old key listed.
+2. Restart the Coordinator API.
+3. Register the new key: `reactorcide secrets master-keys create <new>`
+4. Rotate all orgs: `reactorcide secrets master-keys rotate <new>`
+5. Make the new key primary: `reactorcide secrets master-keys sync-primary`
+6. Decommission the old key:
+   `reactorcide secrets master-keys decommission <old>`
+7. Remove the old key from `REACTORCIDE_MASTER_KEYS` and restart.
 
 ## Troubleshooting
 

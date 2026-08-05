@@ -1,5 +1,5 @@
 -- +goose Up
--- Per-job compute resource columns (WORKERS_PLAN.md "Resources").
+-- Per-job compute resource columns.
 --
 -- Values are Kubernetes-style quantity strings ("1", "2", "500m" for CPU;
 -- "4Gi", "512Mi" for memory) so they map directly onto k8s

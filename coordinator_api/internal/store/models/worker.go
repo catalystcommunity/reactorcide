@@ -9,8 +9,7 @@ import (
 // WorkerPool maps to worker_pools (coredb/migrations/000022_workers.sql).
 // Pools are an admin grouping/ownership surface only -- they group workers
 // for display and (future) permission scoping, and own enrollment tokens.
-// Pools do NOT participate in characteristic matching (WORKERS_PLAN.md
-// "Workers -- registration, auth, protocol").
+// Pools do NOT participate in characteristic matching.
 type WorkerPool struct {
 	PoolID      string    `gorm:"column:pool_id;primaryKey;type:uuid;default:generate_ulid()" json:"pool_id"`
 	OrgID       *string   `gorm:"column:org_id;type:uuid" json:"org_id,omitempty"`
@@ -74,15 +73,14 @@ type Worker struct {
 	OS        string `gorm:"column:os;type:text;not null" json:"os"`
 	Arch      string `gorm:"column:arch;type:text;not null" json:"arch"`
 
-	// Characteristics is this worker's full characteristic set (os, arch,
-	// and free-form custom kv pairs -- WORKERS_PLAN.md "Characteristics &
-	// matching"), as sent on Register/RequestJob. Uses
-	// characteristics.Characteristics' own type-preserving JSON
-	// MarshalJSON/UnmarshalJSON via GORM's json serializer, exactly like
-	// models.Queue.Characteristics and models.Job.Characteristics -- so a
-	// StringValue("1") and an IntValue(1) never round-trip into each other,
-	// and worker characteristics (which may hold list Values) use the same
-	// wire encoding as job/queue characteristics (which may not).
+	// Characteristics is this worker's full characteristic set, as sent on
+	// Register/RequestJob. Uses characteristics.Characteristics' own
+	// type-preserving JSON MarshalJSON/UnmarshalJSON via GORM's json
+	// serializer, exactly like models.Queue.Characteristics and
+	// models.Job.Characteristics -- so a StringValue("1") and an IntValue(1)
+	// never round-trip into each other, and worker characteristics (which may
+	// hold list Values) use the same wire encoding as job/queue
+	// characteristics (which may not).
 	Characteristics characteristics.Characteristics `gorm:"column:characteristics;type:jsonb;serializer:json;not null" json:"characteristics"`
 
 	WorkerVersion string     `gorm:"column:worker_version;type:text" json:"worker_version,omitempty"`
@@ -134,11 +132,8 @@ func (s *WorkerSession) IsValid() bool {
 
 // WorkerLease maps to worker_leases -- a display/audit ledger row per
 // worker<->job claim, created when RequestJob hands a job to a worker. Its
-// lifetime tracks the corndogs task timeout/heartbeat, not an invented
-// lease TTL: there is deliberately no deadline column here (WORKERS_PLAN.md
-// "Workers", "Schema", and the "Still worth a quick confirm" note on
-// whether this table is even needed -- kept as a slim table for
-// multi-lease-per-worker display/audit).
+// lifetime tracks the corndogs task timeout/heartbeat, not an invented lease
+// TTL: there is deliberately no deadline column here.
 type WorkerLease struct {
 	LeaseID         string     `gorm:"column:lease_id;primaryKey;type:uuid;default:generate_ulid()" json:"lease_id"`
 	WorkerID        string     `gorm:"column:worker_id;type:uuid;not null" json:"worker_id"`

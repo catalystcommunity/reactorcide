@@ -17,11 +17,8 @@ import (
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/workerclient/csilapi"
 )
 
-// logPumpInterval/logPumpMaxLines bound how long a batch of masked log
-// lines sits in memory before an AppendLogs push, mirroring
-// internal/worker/log_shipper.go's periodic-chunk-upload shape (there: a
-// ticker driving uploads to object storage; here: the same ticker shape
-// driving pushes to the coordinator instead).
+// logPumpInterval/logPumpMaxLines bound how long a batch of masked log lines
+// sits in memory before an AppendLogs push.
 const (
 	logPumpInterval = 2 * time.Second
 	logPumpMaxLines = 200
@@ -29,12 +26,11 @@ const (
 
 // trackedLease is the run loop's bookkeeping for one lease currently being
 // executed: which runner handle it maps to (for Heartbeat's directive
-// handling to call Stop/Cleanup on the right container/pod) and the
-// grace period a "cancel" directive should honor. outcome records which
-// directive (if any) acted on this lease, so runLease's finalize step
-// reports the right terminal status even though the container's exit code
-// alone can't distinguish "the job's own command exited" from "we
-// SIGTERM'd/killed it".
+// handling to call Stop/Cleanup on the right container/pod) and the grace
+// period a "cancel" directive should honor. outcome records which directive
+// (if any) acted on this lease, so runLease's finalize step reports the right
+// terminal status even though the container's exit code alone can't
+// distinguish "the job's own command exited" from "we SIGTERM'd/killed it".
 type trackedLease struct {
 	mu           sync.Mutex
 	jobID        string
@@ -101,20 +97,20 @@ func (t *leaseTracker) runningLeaseIDs() []string {
 	return ids
 }
 
-// runLease executes one claimed lease end-to-end: build a JobConfig from
-// the lease, inject env + secrets (masked, kept out of every log line),
-// spawn via runner, pump masked stdout/stderr to AppendLogs, wait for
-// completion, and ReportResult. It never returns an error -- every failure
-// path (spawn failure, stream failure, wait failure) is itself reported to
-// the coordinator via ReportResult so the job reaches a terminal state
-// instead of hanging as "running" forever.
+// runLease executes one claimed lease end-to-end: build a JobConfig from the
+// lease, inject env + secrets (masked, kept out of every log line), spawn via
+// runner, pump masked stdout/stderr to AppendLogs, wait for completion, and
+// ReportResult. It never returns an error -- every failure path (spawn
+// failure, stream failure, wait failure) is itself reported to the
+// coordinator via ReportResult so the job reaches a terminal state instead of
+// hanging as "running" forever.
 //
 // The lease's own execution (SpawnJob/StreamLogs/WaitForCompletion) uses a
 // context independent of the poll loop's ctx, so an already-claimed lease
 // keeps running (and reports its real result) even if the caller's Run
 // context is cancelled for a graceful shutdown -- Run stops polling for new
-// work and waits for in-flight leases to finish rather than aborting them.
-// A directive-driven Stop/Cleanup (see heartbeat.go) is the only thing that
+// work and waits for in-flight leases to finish rather than aborting them. A
+// directive-driven Stop/Cleanup (see heartbeat.go) is the only thing that
 // interrupts a lease early.
 func runLease(c client, runner worker.JobRunner, lease csilapi.Lease, tracker *leaseTracker, cfg Config) {
 	logger := logging.Log.WithFields(map[string]interface{}{"lease_id": lease.LeaseId, "job_id": lease.JobId})
@@ -129,14 +125,13 @@ func runLease(c client, runner worker.JobRunner, lease csilapi.Lease, tracker *l
 	for _, e := range lease.Env {
 		env[e.Key] = e.Value
 	}
-	// Secrets are merged into the container's env (the job process needs
-	// them as real env vars to run) but registered with the masker BEFORE
-	// anything is spawned or streamed, so every log line pumped to
-	// AppendLogs below has secret values scrubbed. They are never logged,
-	// never written to disk unmasked (JobConfig.Env only ever lives in
-	// process memory / the container's own env, same as a normal job), and
-	// never echoed back to the coordinator outside the container's own
-	// output (which is masked).
+	// Secrets are merged into the container's env (the job process needs them
+	// as real env vars to run) but registered with the masker BEFORE anything
+	// is spawned or streamed, so every log line pumped to AppendLogs below
+	// has secret values scrubbed. They are never logged, never written to
+	// disk unmasked (JobConfig.Env only ever lives in process memory / the
+	// container's own env, same as a normal job), and never echoed back to
+	// the coordinator outside the container's own output (which is masked).
 	for _, s := range lease.Secrets {
 		env[s.Key] = s.Value
 		masker.RegisterSecret(s.Value)
@@ -147,8 +142,8 @@ func runLease(c client, runner worker.JobRunner, lease csilapi.Lease, tracker *l
 	// tooling that resolves the home dir via $HOME / os.UserHomeDir() (helm,
 	// kubectl, pip --user, git) fails -- os.UserHomeDir() errors on an empty
 	// $HOME rather than falling back to /etc/passwd, and whether the runtime
-	// populates HOME from passwd differs between docker and containerd. Default
-	// it here (a job may still override via its own env).
+	// populates HOME from passwd differs between docker and containerd.
+	// Default it here (a job may still override via its own env).
 	if _, ok := env["HOME"]; !ok {
 		env["HOME"] = "/home/runner"
 	}
@@ -172,17 +167,16 @@ func runLease(c client, runner worker.JobRunner, lease csilapi.Lease, tracker *l
 	}
 	// workspaceDir (and any VCS auth credential material written under it
 	// below by prepareVCSAuth) is discarded here on every return path --
-	// there is no separate VCS-auth cleanup step, per WORKERS_PLAN.md P3c:
-	// the credential file only ever exists inside this ephemeral workspace.
+	// there is no separate VCS-auth cleanup step.
 	defer os.RemoveAll(workspaceDir)
 
 	// The job container runs as RunAsUser (default 1001:1001), not as the
 	// worker process that just created this dir (root under the privileged
 	// deploy compose). MkdirTemp makes it 0700 owned by the creator, so the
-	// job uid cannot even traverse /job -- the runner then fails with
-	// "[Errno 13] Permission denied: '/job/src'". Make the workspace owned by
-	// / writable for the job uid, mirroring run-local's makeWritableFor:
-	// prefer chown; fall back to world-writable where chown is not permitted
+	// job uid cannot even traverse /job -- the runner then fails with "[Errno
+	// 13] Permission denied: '/job/src'". Make the workspace owned by /
+	// writable for the job uid, mirroring run-local's makeWritableFor: prefer
+	// chown; fall back to world-writable where chown is not permitted
 	// (rootless / user namespaces).
 	wsUID, wsGID := authFileOwner(lease.RunAsUser)
 	if err := makeWritableFor(workspaceDir, wsUID, wsGID); err != nil {
@@ -257,11 +251,11 @@ func runLease(c client, runner worker.JobRunner, lease csilapi.Lease, tracker *l
 	}
 
 	// Set up git checkout auth BEFORE spawning, registering the resolved
-	// token with masker so any log line the container emits (e.g. a
-	// checkout command that echoes its own URL) is masked from the very
-	// first chunk pumped to AppendLogs. Absent for jobs whose source needs
-	// no checkout credential -- see internal/workerapi/vcs_auth.go for how
-	// the coordinator decides whether to populate lease.vcs_auth at all.
+	// token with masker so any log line the container emits (e.g. a checkout
+	// command that echoes its own URL) is masked from the very first chunk
+	// pumped to AppendLogs. Absent for jobs whose source needs no checkout
+	// credential -- see internal/workerapi/vcs_auth.go for how the
+	// coordinator decides whether to populate lease.vcs_auth at all.
 	vcsAuth, err := prepareVCSAuth(lease.VcsAuth, workspaceDir, lease.RunAsUser, masker)
 	if err != nil {
 		logger.WithError(err).Error("failed to prepare VCS checkout auth")
@@ -356,11 +350,11 @@ func runLease(c client, runner worker.JobRunner, lease csilapi.Lease, tracker *l
 	reportResult(c, lease.LeaseId, exitCode, status, errMsg)
 }
 
-// finalizeStatus turns a lease's raw execution outcome into the
-// status/error ReportResult reports. A directive outcome ("cancel"/"kill")
-// always wins over the raw exit code, since Stop/Cleanup deliberately
-// terminated the container -- its exit code reflects SIGTERM/SIGKILL, not
-// the job's own success or failure.
+// finalizeStatus turns a lease's raw execution outcome into the status/error
+// ReportResult reports. A directive outcome ("cancel"/"kill") always wins
+// over the raw exit code, since Stop/Cleanup deliberately terminated the
+// container -- its exit code reflects SIGTERM/SIGKILL, not the job's own
+// success or failure.
 func finalizeStatus(outcome string, exitCode int, waitErr error) (status, errMsg string) {
 	switch outcome {
 	case "cancel":
@@ -377,12 +371,11 @@ func finalizeStatus(outcome string, exitCode int, waitErr error) (status, errMsg
 	return "completed", ""
 }
 
-// reportResult calls ReportResult on a context independent of the lease's
-// own execution context (which may already be torn down) so a result is
-// still delivered even after a directive-driven Stop/Cleanup. Best-effort:
-// a failure here is logged, not retried -- the coordinator's own lease/task
-// timeout reaper is the backstop for a worker that can no longer reach it
-// (WORKERS_PLAN.md "Lease expiry").
+// reportResult calls ReportResult on a context independent of the lease's own
+// execution context (which may already be torn down) so a result is still
+// delivered even after a directive-driven Stop/Cleanup. Best-effort: a
+// failure here is logged, not retried -- the coordinator's own lease/task
+// timeout reaper is the backstop for a worker that can no longer reach it.
 func reportResult(c client, leaseID string, exitCode int, status, errMsg string) {
 	if _, err := c.ReportResult(context.Background(), leaseID, exitCode, status, errMsg); err != nil {
 		logging.Log.WithError(err).WithField("lease_id", leaseID).Error("failed to report job result to coordinator")
@@ -392,9 +385,9 @@ func reportResult(c client, leaseID string, exitCode int, status, errMsg string)
 // pumpLogs reads newline-delimited lines from r, masks each line, batches
 // them, and pushes batches to AppendLogs on a ticker (or when the batch
 // fills), flushing whatever remains when r reaches EOF/closes. Masking
-// happens before a line is ever buffered, so a secret value never reaches
-// the coordinator in a log chunk regardless of how batching splits lines
-// across calls.
+// happens before a line is ever buffered, so a secret value never reaches the
+// coordinator in a log chunk regardless of how batching splits lines across
+// calls.
 func pumpLogs(c client, leaseID, stream string, r io.ReadCloser, masker *secrets.Masker, dataDir string) {
 	defer r.Close()
 

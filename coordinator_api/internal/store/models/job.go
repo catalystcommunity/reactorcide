@@ -94,13 +94,13 @@ type Job struct {
 	QueueName       string `gorm:"type:text;not null;default:'reactorcide-jobs'" json:"queue_name"`
 	AutoTargetState string `gorm:"type:text;default:'running'" json:"auto_target_state"`
 
-	// Characteristics is this job's characteristic set (WORKERS_PLAN.md
-	// "Characteristics & matching"), used to find-or-create the queue
-	// QueueName resolves to. Parsed from a job spec's `characteristics`
-	// block via internal/characteristics.ParseJobCharacteristics, which
-	// injects "os":"linux" when the spec omits "os" -- so this is never
-	// meaningfully empty once a job has gone through the submit path, even
-	// though the NOT NULL DEFAULT on the column itself is '{}' (see
+	// Characteristics is this job's characteristic set, used to
+	// find-or-create the queue QueueName resolves to. Parsed from a job
+	// spec's `characteristics` block via
+	// internal/characteristics.ParseJobCharacteristics, which injects
+	// "os":"linux" when the spec omits "os" -- so this is never meaningfully
+	// empty once a job has gone through the submit path, even though the NOT
+	// NULL DEFAULT on the column itself is '{}' (see
 	// coredb/migrations/000020_queues.sql for why the default lives in Go,
 	// not SQL). Uses characteristics.Characteristics' own type-preserving
 	// JSON encoding via GORM's json serializer (see models/queue.go).
@@ -162,14 +162,14 @@ type Job struct {
 	Project   *Project `gorm:"foreignKey:ProjectID" json:"project,omitempty"`
 	ParentJob *Job     `gorm:"foreignKey:ParentJobID" json:"parent_job,omitempty"`
 
-	// Resource requests/limits (WORKERS_PLAN.md "Resources"). Kubernetes-style
-	// quantity strings ("1", "2", "500m" for CPU; "4Gi", "512Mi" for memory).
-	// Memory is limit-only -- no memory request field, mirroring JobConfig and
-	// the runner shape. NOT-NULL DEFAULTs in
-	// coredb/migrations/000021_job_resources.sql mean a row inserted without
-	// setting these already lands on cpu.request=1/cpu.limit=2/memory.limit=4Gi
-	// at the DB layer; internal/resources.ParseResources validates explicit
-	// values supplied via a job spec's `resources` block before they reach here.
+	// Resource requests/limits. Kubernetes-style quantity strings ("1", "2",
+	// "500m" for CPU; "4Gi", "512Mi" for memory). Memory is limit-only -- no
+	// memory request field, mirroring JobConfig and the runner shape.
+	// NOT-NULL DEFAULTs in coredb/migrations/000021_job_resources.sql mean a
+	// row inserted without setting these already lands on
+	// cpu.request=1/cpu.limit=2/memory.limit=4Gi at the DB layer;
+	// internal/resources.ParseResources validates explicit values supplied
+	// via a job spec's `resources` block before they reach here.
 	ResourceCPURequest  string `gorm:"column:resource_cpu_request;type:text;not null;default:'1'" json:"resource_cpu_request"`
 	ResourceCPULimit    string `gorm:"column:resource_cpu_limit;type:text;not null;default:'2'" json:"resource_cpu_limit"`
 	ResourceMemoryLimit string `gorm:"column:resource_memory_limit;type:text;not null;default:'4Gi'" json:"resource_memory_limit"`

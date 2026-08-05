@@ -130,44 +130,54 @@ The command uses the API because `REACTORCIDE_API_URL` and
 
 Use the canonical repository URL. It has no scheme and no `.git` suffix.
 
-GitHub example:
+Write the project definition to a file. GitHub example:
 
-```bash
-curl --fail-with-body \
-  -X POST "${REACTORCIDE_API_URL}/api/v1/projects" \
-  -H "Authorization: Bearer ${REACTORCIDE_API_TOKEN}" \
-  -H "Content-Type: application/json" \
-  --data '{
-    "name": "example-repo",
-    "repo_url": "github.com/example/repo",
-    "enabled": true,
-    "target_branches": ["main"],
-    "allowed_event_types": [
-      "push",
-      "pull_request_opened",
-      "pull_request_updated",
-      "pull_request_merged",
-      "pull_request_closed",
-      "tag_created"
-    ],
-    "vcs_token_secrets": {
-      "github": "vcs/example/repo:api_token"
-    },
-    "webhook_secrets": {
-      "github": "webhooks/example/repo:secret"
-    }
-  }'
+```yaml
+# example-repo.yaml
+name: example-repo
+repo_url: github.com/example/repo
+enabled: true
+target_branches:
+  - main
+allowed_event_types:
+  - push
+  - pull_request_opened
+  - pull_request_updated
+  - pull_request_merged
+  - pull_request_closed
+  - tag_created
+vcs_token_secrets:
+  github: "vcs/example/repo:api_token"
+webhook_secrets:
+  github: "webhooks/example/repo:secret"
 ```
 
-Use `default_ci_source_url` and `default_ci_source_ref` when CI definitions
+The secret fields hold references in `path:key` format. They do not hold
+secret values.
+
+Create the project:
+
+```bash
+./coordinator_api/reactorcide projects create --file example-repo.yaml
+```
+
+For a project with no secret references, use flags instead of a file:
+
+```bash
+./coordinator_api/reactorcide projects create \
+  --name example-repo \
+  --repo-url github.com/example/repo \
+  --enabled \
+  --target-branch main
+```
+
+Add `default_ci_source_url` and `default_ci_source_ref` when CI definitions
 are in a separate trusted repository:
 
-```json
-{
-  "default_ci_source_type": "git",
-  "default_ci_source_url": "https://github.com/example/ci-definitions.git",
-  "default_ci_source_ref": "main"
-}
+```yaml
+default_ci_source_type: git
+default_ci_source_url: https://github.com/example/ci-definitions.git
+default_ci_source_ref: main
 ```
 
 For same-repository pull requests, Reactorcide uses trusted base content for
@@ -229,9 +239,7 @@ Push a branch or open a pull request.
 Check recent jobs:
 
 ```bash
-curl --fail-with-body \
-  -H "Authorization: Bearer ${REACTORCIDE_API_TOKEN}" \
-  "${REACTORCIDE_API_URL}/api/v1/jobs?limit=10"
+./coordinator_api/reactorcide jobs list --limit 10
 ```
 
 Check these results:

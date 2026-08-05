@@ -19,7 +19,7 @@ import urllib.request
 import urllib.error
 import uuid
 from pathlib import Path
-from typing import Dict, List, Optional, Any, Union
+from typing import Dict, List, Optional, Any
 from dataclasses import dataclass, asdict, field
 
 

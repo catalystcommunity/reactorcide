@@ -1,15 +1,13 @@
 package test
 
-// End-to-end coverage for the coordinator-mediated worker protocol
-// (WORKERS_PLAN.md "Workers -- registration, auth, protocol", P2-A2):
-// Register -> RequestJob -> Heartbeat -> AppendLogs -> ReportResult driven
-// over the REAL, router-mounted CSIL-RPC dispatcher
-// (handlers.GetAppMuxWithClient -> uiapi.NewHandlerWithWorker) via
-// net/http/httptest, against real Postgres (this package's shared
-// testcontainers instance, see setup_test.go) and a real internal/pubsub
-// NOTIFY round trip, using an in-memory object store and an in-memory
-// corndogs backend (this package has no live corndogs server to test
-// against, so this fake -- built on corndogs.MockClient's Func hooks,
+// End-to-end coverage for the coordinator-mediated worker protocol: Register
+// -> RequestJob -> Heartbeat -> AppendLogs -> ReportResult driven over the
+// REAL, router-mounted CSIL-RPC dispatcher (handlers.GetAppMuxWithClient ->
+// uiapi.NewHandlerWithWorker) via net/http/httptest, against real Postgres
+// (this package's shared testcontainers instance, see setup_test.go) and a
+// real internal/pubsub NOTIFY round trip, using an in-memory object store and
+// an in-memory corndogs backend (this package has no live corndogs server to
+// test against, so this fake -- built on corndogs.MockClient's Func hooks,
 // mirroring internal/workerapi's own equivalent test fake -- exercises the
 // real corndogs.Client.GetNextTaskGroup/UpdateTask/etc. wrapper methods
 // against real claim/state-transition semantics rather than a canned
@@ -131,9 +129,9 @@ func TestWorkerProtocolIntegration(t *testing.T) {
 	ctx := context.Background()
 
 	// --- master keys + org secrets, set up BEFORE the app mux is built so
-	// router.go's own singletonKeyManager (LoadOrCreateMasterKeys) finds
-	// the same already-persisted key material rather than generating a
-	// second, different key. ---
+	// router.go's own singletonKeyManager (LoadOrCreateMasterKeys) finds the
+	// same already-persisted key material rather than generating a second,
+	// different key. ---
 	keyMgr, err := secrets.LoadOrCreateMasterKeys(testDB)
 	require.NoError(t, err)
 
@@ -172,7 +170,8 @@ func TestWorkerProtocolIntegration(t *testing.T) {
 	// A unique marker characteristic keeps this queue's hash from colliding
 	// with the shared {"os":"linux"} default queue (or another test's own
 	// linux queue) in this long-lived test container -- queue characteristics
-	// are globally unique by hash (characteristics_hash), not per-test-scoped.
+	// are globally unique by hash (characteristics_hash), not
+	// per-test-scoped.
 	marker := uniqueName("marker")
 	chars, err := characteristics.ParseJobCharacteristics(map[string]any{"os": "linux", "integration_marker": marker})
 	require.NoError(t, err)
@@ -323,14 +322,14 @@ func TestWorkerProtocolIntegration(t *testing.T) {
 }
 
 // TestWorkerProtocolIntegration_VCSAuth is the end-to-end touch for WORKERS_
-// PLAN.md Wave 3 P3c ("VCS checkout credentials through the worker lease"):
-// a job whose project has a configured GitHub VCS credential gets that
-// credential resolved into RequestJobResponse's Lease.vcs_auth over the
-// REAL, router-mounted CSIL-RPC dispatcher against real Postgres -- no
-// actual git clone needed, this only asserts the lease field is populated
-// correctly and that the resolved token stays isolated from every other
-// surface a worker or corndogs task ever sees (Env, Secrets, corndogs task
-// payloads), exactly like the sibling job-secret isolation assertions above.
+// PLAN.md Wave 3 P3c ("VCS checkout credentials through the worker lease"): a
+// job whose project has a configured GitHub VCS credential gets that
+// credential resolved into RequestJobResponse's Lease.vcs_auth over the REAL,
+// router-mounted CSIL-RPC dispatcher against real Postgres -- no actual git
+// clone needed, this only asserts the lease field is populated correctly and
+// that the resolved token stays isolated from every other surface a worker or
+// corndogs task ever sees (Env, Secrets, corndogs task payloads), exactly
+// like the sibling job-secret isolation assertions above.
 func TestWorkerProtocolIntegration_VCSAuth(t *testing.T) {
 	ctx := context.Background()
 

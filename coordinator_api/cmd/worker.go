@@ -27,14 +27,13 @@ import (
 // this way -- use --custom for those.
 const customCharacteristicEnvPrefix = "REACTORCIDE_WORKER_CUSTOM_"
 
-// WorkerCommand runs a coordinator-mediated worker (WORKERS_PLAN.md Wave 3,
-// P3): it authenticates to a coordinator over CSIL-RPC and pulls work
-// through it (Register -> RequestJob -> run -> AppendLogs -> ReportResult ->
-// Heartbeat, see internal/coordinatorworker). It has no corndogs, Postgres,
-// or object-store dependency of its own -- the coordinator is the only
-// thing that talks to those. The legacy direct-corndogs worker path (which
-// polled corndogs/Postgres directly) has been removed; this is the only
-// worker mode.
+// WorkerCommand runs a coordinator-mediated worker: it authenticates to a
+// coordinator over CSIL-RPC and pulls work through it (Register -> RequestJob
+// -> run -> AppendLogs -> ReportResult -> Heartbeat, see
+// internal/coordinatorworker). It has no corndogs, Postgres, or object-store
+// dependency of its own -- the coordinator is the only thing that talks to
+// those. The legacy direct-corndogs worker path (which polled
+// corndogs/Postgres directly) has been removed; this is the only worker mode.
 var WorkerCommand = &cli.Command{
 	Name:  "worker",
 	Usage: "Run a coordinator-mediated job worker",
@@ -287,8 +286,8 @@ func loadOrCreateWorkerKey(path string) (string, error) {
 
 // detectWorkerOS maps runtime.GOOS to the worker "os" characteristic's
 // default value: linux and windows pass through verbatim, darwin becomes
-// "macos" (WORKERS_PLAN.md's worker characteristics section). An operator
-// override via --os/REACTORCIDE_WORKER_OS is never normalized.
+// "macos". An operator override via --os/REACTORCIDE_WORKER_OS is never
+// normalized.
 func detectWorkerOS() string {
 	if runtime.GOOS == "darwin" {
 		return "macos"

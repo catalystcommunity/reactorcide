@@ -9,10 +9,8 @@ import (
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/workerapi/csilapi"
 )
 
-// TestRequestJob_QuarantinedWorkerGetsNoLease drives WORKERS_PLAN.md Wave-4
-// P4's offer-guard: a worker whose status is not "active" (set by the admin
-// set-worker-status/drain-worker ops -- internal/uiapi) must never be
-// offered a job, even when a satisfying queue has work waiting.
+// TestRequestJob_QuarantinedWorkerGetsNoLease drives) must never be offered a
+// job, even when a satisfying queue has work waiting.
 func TestRequestJob_QuarantinedWorkerGetsNoLease(t *testing.T) {
 	h := newTestHarness()
 	ctx := context.Background()

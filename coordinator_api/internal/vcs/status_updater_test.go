@@ -74,9 +74,9 @@ func TestJobStatusUpdater_UpdateJobStatus(t *testing.T) {
 		{
 			name: "job_with_vcs_metadata_success",
 			job: &models.Job{
-				JobID:  "test-job-1",
-				Status: "completed",
-				Notes: `{"vcs_provider":"github","repo":"test/repo","commit_sha":"abc123"}`,
+				JobID:    "test-job-1",
+				Status:   "completed",
+				Notes:    `{"vcs_provider":"github","repo":"test/repo","commit_sha":"abc123"}`,
 				ExitCode: func() *int { i := 0; return &i }(),
 			},
 			expectUpdate:   true,
@@ -105,11 +105,11 @@ func TestJobStatusUpdater_UpdateJobStatus(t *testing.T) {
 		{
 			name: "job_with_pr_metadata",
 			job: &models.Job{
-				JobID:  "test-job-4",
-				Status: "completed",
-				Notes:  `{"vcs_provider":"github","repo":"test/repo","pr_number":123,"commit_sha":"ghi789"}`,
-				ExitCode: func() *int { i := 0; return &i }(),
-				StartedAt: func() *time.Time { t := time.Now().Add(-5 * time.Minute); return &t }(),
+				JobID:       "test-job-4",
+				Status:      "completed",
+				Notes:       `{"vcs_provider":"github","repo":"test/repo","pr_number":123,"commit_sha":"ghi789"}`,
+				ExitCode:    func() *int { i := 0; return &i }(),
+				StartedAt:   func() *time.Time { t := time.Now().Add(-5 * time.Minute); return &t }(),
 				CompletedAt: func() *time.Time { t := time.Now(); return &t }(),
 			},
 			expectUpdate:   true,
@@ -186,7 +186,7 @@ func TestJobStatusUpdater_GetStatusDescription(t *testing.T) {
 		{
 			name: "completed_success",
 			job: &models.Job{
-				Status: "completed",
+				Status:   "completed",
 				ExitCode: func() *int { i := 0; return &i }(),
 			},
 			expected: "CI build passed",
@@ -194,7 +194,7 @@ func TestJobStatusUpdater_GetStatusDescription(t *testing.T) {
 		{
 			name: "completed_with_exit_code",
 			job: &models.Job{
-				Status: "completed",
+				Status:   "completed",
 				ExitCode: func() *int { i := 1; return &i }(),
 			},
 			expected: "CI build completed with exit code 1",

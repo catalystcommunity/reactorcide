@@ -14,20 +14,19 @@ import (
 )
 
 // resolveVCSAuth resolves a coordinator-side git checkout credential for a
-// job's source repo (WORKERS_PLAN.md Wave 3 P3c "VCS checkout credentials
-// through the worker lease"). It reuses internal/vcs's rotation-aware
-// resolution helpers (HighestPrecedenceActiveVCSCredential,
+// job's source repo. It reuses internal/vcs's rotation-aware resolution
+// helpers (HighestPrecedenceActiveVCSCredential,
 // ProjectVCSCredentialSecretRef, UserVCSCredentialSecretRef) and mirrors the
 // precedence order the deleted internal/worker/vcs_checkout_auth.go's
 // (*JobProcessor).resolveVCSCheckoutToken used: highest-precedence active
 // project_vcs_credentials rotation row -> project's static ref -> owning
 // user/org's ref -> global deployment config. Only the JobProcessor glue was
 // deleted (P3b removed the direct-corndogs worker); the resolution logic
-// itself lives on unchanged in internal/vcs and is reused here verbatim,
-// just moved coordinator-side and narrowed to the job's single primary
-// checkout URL (job.SourceURL, falling back to the denormalized
-// job.VCSRepo) instead of enumerating every REACTORCIDE_*_URL env var,
-// because a Lease carries at most one vcs_auth entry.
+// itself lives on unchanged in internal/vcs and is reused here verbatim, just
+// moved coordinator-side and narrowed to the job's single primary checkout
+// URL (job.SourceURL, falling back to the denormalized job.VCSRepo) instead
+// of enumerating every REACTORCIDE_*_URL env var, because a Lease carries at
+// most one vcs_auth entry.
 //
 // Returns (nil, nil) when the job has no recognizable git-hosting checkout
 // URL, or one exists but no credential is configured for it (a public repo

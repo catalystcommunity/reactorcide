@@ -55,7 +55,6 @@ func logsAction(ctx *cli.Context) error {
 	stream := ctx.String("stream")
 	outputFile := ctx.String("output")
 
-	// Validate required flags
 	if apiURL == "" {
 		return fmt.Errorf("API URL is required (use --api-url or REACTORCIDE_API_URL)")
 	}
@@ -63,12 +62,10 @@ func logsAction(ctx *cli.Context) error {
 	// Normalize API URL (remove trailing slash)
 	apiURL = strings.TrimSuffix(apiURL, "/")
 
-	// Validate stream parameter
 	if stream != "stdout" && stream != "stderr" && stream != "combined" {
 		return fmt.Errorf("invalid stream value: %s (must be stdout, stderr, or combined)", stream)
 	}
 
-	// Get API token
 	var err error
 	if token == "" {
 		token, err = promptForSecret("REACTORCIDE_API_TOKEN", "API token: ")
@@ -81,13 +78,11 @@ func logsAction(ctx *cli.Context) error {
 		return fmt.Errorf("API token is required (use --token or REACTORCIDE_API_TOKEN)")
 	}
 
-	// Fetch logs from API
 	logs, err := fetchJobLogs(apiURL, token, jobID, stream)
 	if err != nil {
 		return fmt.Errorf("failed to fetch logs: %w", err)
 	}
 
-	// Output logs
 	if outputFile != "" {
 		if err := os.WriteFile(outputFile, logs, 0644); err != nil {
 			return fmt.Errorf("failed to write logs to file: %w", err)

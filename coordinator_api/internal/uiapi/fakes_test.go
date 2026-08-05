@@ -1111,7 +1111,7 @@ func (f *fakeStore) CreateWorkflowEvent(_ context.Context, event *models.Workflo
 	return nil
 }
 
-// --- queues (WORKERS_PLAN.md Wave-4 P4 admin ops) --------------------------
+// --- queues --------------------------
 
 func (f *fakeStore) ListQueues(_ context.Context, limit, offset int) ([]models.Queue, error) {
 	f.mu.Lock()
@@ -1444,19 +1444,6 @@ func (f *fakeStore) putWorker(w models.Worker) models.Worker {
 	}
 	f.workers[w.WorkerID] = w
 	return w
-}
-
-func (f *fakeStore) putActiveLease(l models.WorkerLease) models.WorkerLease {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	if l.LeaseID == "" {
-		l.LeaseID = f.genID("lease")
-	}
-	if l.AcquiredAt.IsZero() {
-		l.AcquiredAt = fakeNow()
-	}
-	f.leasesByWorker[l.WorkerID] = append(f.leasesByWorker[l.WorkerID], l)
-	return l
 }
 
 var _ DataStore = (*fakeStore)(nil)

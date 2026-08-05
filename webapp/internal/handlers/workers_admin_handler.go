@@ -8,14 +8,13 @@ import (
 	"github.com/catalystcommunity/reactorcide/webapp/internal/uiclient/csilapi"
 )
 
-// This file implements WORKERS_PLAN.md Wave-4 P4's webapp admin pages: pools
-// (+ enrollment tokens), workers, and queues. Every op here is gated on
+// This file implements), workers, and queues. Every op here is gated on
 // authz.Caps.ManageWorkers (org-admin of the target org, or global admin);
 // queues have no owning-org concept yet (see coordinator_api's
-// requireManageWorkers doc comment), so every queue op is global-admin only
-// — QueuesPage and the queue mutation handlers gate on si.IsGlobalAdmin
-// specifically rather than the (possibly org-scoped) ManageWorkers capability,
-// matching what the coordinator will actually authorize.
+// requireManageWorkers doc comment), so every queue op is global-admin only —
+// QueuesPage and the queue mutation handlers gate on si.IsGlobalAdmin
+// specifically rather than the (possibly org-scoped) ManageWorkers
+// capability, matching what the coordinator will actually authorize.
 //
 // SECURITY: CreateEnrollmentToken's raw token value is returned by the
 // coordinator exactly once, in that op's response only — never by

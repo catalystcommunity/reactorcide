@@ -102,33 +102,6 @@ func RunTransactionalTest(t *testing.T, testFunc func(ctx context.Context, tx *g
 	testFunc(ctx, tx)
 }
 
-// testMain can be used in test packages to set up and tear down the global test database
-// This is renamed to avoid conflict with the TestMain in setup_test.go
-func testMain(m *testing.M) {
-	// Initialize DB before running tests
-	initTestDB()
-	if initErr != nil {
-		// If initialization failed, report and exit
-		panic("Failed to initialize test database: " + initErr.Error())
-	}
-
-	// Run all tests
-	code := m.Run()
-
-	// Clean up the database connection
-	if cleanupFunc != nil {
-		cleanupFunc()
-	}
-
-	// Exit with the test status code
-	os.Exit(code)
-}
-
-// GetTestContext returns a context suitable for use in tests
-func GetTestContext() context.Context {
-	return context.Background()
-}
-
 // GetTestMux returns the application's HTTP mux for use in tests
 // This uses the same server configuration as the actual application
 func GetTestMux() *http.ServeMux {

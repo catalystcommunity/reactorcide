@@ -57,9 +57,8 @@ func (ps PostgresDbStore) ListWorkerPools(ctx context.Context, orgID *string) ([
 	return pools, nil
 }
 
-// UpdateWorkerPool updates a pool's mutable fields (name, description).
-// OrgID is immutable once set -- a pool doesn't change ownership through
-// this path.
+// UpdateWorkerPool updates a pool's mutable fields (name, description). OrgID
+// is immutable once set -- a pool doesn't change ownership through this path.
 func (ps PostgresDbStore) UpdateWorkerPool(ctx context.Context, poolID, name, description string) error {
 	if !isValidUUID(poolID) {
 		return store.ErrNotFound
@@ -82,9 +81,9 @@ func (ps PostgresDbStore) UpdateWorkerPool(ctx context.Context, poolID, name, de
 }
 
 // DeleteWorkerPool deletes a worker pool row. Enrollment tokens for the pool
-// cascade-delete (ON DELETE CASCADE); workers referencing the pool do NOT
-// (no ON DELETE clause on workers.pool_id), so a pool with existing workers
-// fails this delete with a foreign key violation -- callers that need
+// cascade-delete (ON DELETE CASCADE); workers referencing the pool do NOT (no
+// ON DELETE clause on workers.pool_id), so a pool with existing workers fails
+// this delete with a foreign key violation -- callers that need
 // delete-orphaned-workers orchestration must do it themselves before/around
 // calling this, mirroring DeleteQueue's row-level-only contract.
 func (ps PostgresDbStore) DeleteWorkerPool(ctx context.Context, poolID string) error {
@@ -128,13 +127,13 @@ func (ps PostgresDbStore) CreatePoolEnrollmentToken(ctx context.Context, poolID,
 	return t, nil
 }
 
-// GetPoolEnrollmentTokenByID retrieves an enrollment token by its primary
-// key (active or not). Added alongside internal/uiapi (WORKERS_PLAN.md
-// Wave-4 P4): deactivate-enrollment-token targets a token by ID alone (no
-// pool_id in the request), so it must load the row first to discover its
-// owning pool (and, through that, its owning org) before it can run an
-// authorization check against that scope -- the same "additive bare-ID
-// lookup" pattern documented on uiapi.DataStore for its other mutating ops.
+// GetPoolEnrollmentTokenByID retrieves an enrollment token by its primary key
+// (active or not). Added alongside internal/uiapi:
+// deactivate-enrollment-token targets a token by ID alone (no pool_id in the
+// request), so it must load the row first to discover its owning pool (and,
+// through that, its owning org) before it can run an authorization check
+// against that scope -- the same "additive bare-ID lookup" pattern documented
+// on uiapi.DataStore for its other mutating ops.
 func (ps PostgresDbStore) GetPoolEnrollmentTokenByID(ctx context.Context, tokenID string) (*models.PoolEnrollmentToken, error) {
 	if !isValidUUID(tokenID) {
 		return nil, store.ErrNotFound
@@ -168,8 +167,8 @@ func (ps PostgresDbStore) ListPoolEnrollmentTokens(ctx context.Context, poolID s
 // token by its SHA-256 hash. A deactivated token's hash never matches here
 // even if otherwise correct -- mirrors GetActiveUISessionByTokenHash's
 // active-only semantics. Returns store.ErrNotFound on no match; callers in
-// internal/workerauth translate that into the deliberately
-// non-distinguishing ErrEnrollmentRejected.
+// internal/workerauth translate that into the deliberately non-distinguishing
+// ErrEnrollmentRejected.
 func (ps PostgresDbStore) GetActiveEnrollmentTokenByHash(ctx context.Context, tokenHash []byte) (*models.PoolEnrollmentToken, error) {
 	var t models.PoolEnrollmentToken
 	if err := ps.getDB(ctx).
@@ -202,8 +201,8 @@ func (ps PostgresDbStore) TouchEnrollmentTokenLastUsed(ctx context.Context, toke
 	return nil
 }
 
-// DeactivatePoolEnrollmentToken marks an enrollment token inactive and
-// stamps deactivated_at. Idempotent, mirroring
+// DeactivatePoolEnrollmentToken marks an enrollment token inactive and stamps
+// deactivated_at. Idempotent, mirroring
 // DeactivateProjectWebhookSecret/DeactivateProjectVCSCredential: an
 // already-inactive-but-existing row succeeds as a no-op (original
 // deactivated_at preserved) rather than reporting store.ErrNotFound; only a
@@ -245,14 +244,12 @@ func (ps PostgresDbStore) DeactivatePoolEnrollmentToken(ctx context.Context, tok
 // WorkerKey already exists -- refreshes its pool, hostname, os, arch,
 // characteristics, worker_version, status (when worker.Status is set), and
 // last_seen_at, leaving WorkerID/EnrolledAt/CreatedAt untouched. This is the
-// Register upsert primitive (WORKERS_PLAN.md "Workers" -- "Upserts a
-// workers row keyed by a stable worker-provided worker_key").
+// Register upsert primitive.
 //
 // Concurrent-insert race: two Registers racing on the SAME never-before-seen
 // worker_key will have one INSERT succeed and the other fail on the unique
-// worker_key index; the loser re-selects and updates the winner's row
-// instead of erroring, mirroring FindOrCreateQueueByCharacteristics'
-// race-handling.
+// worker_key index; the loser re-selects and updates the winner's row instead
+// of erroring, mirroring FindOrCreateQueueByCharacteristics' race-handling.
 func (ps PostgresDbStore) UpsertWorkerByKey(ctx context.Context, worker *models.Worker) (*models.Worker, error) {
 	if worker.WorkerKey == "" {
 		return nil, fmt.Errorf("worker_operations: worker_key is required: %w", store.ErrInvalidInput)
@@ -279,9 +276,9 @@ func (ps PostgresDbStore) UpsertWorkerByKey(ctx context.Context, worker *models.
 			if !isUniqueViolation(createErr) {
 				return nil, fmt.Errorf("failed to create worker: %w", createErr)
 			}
-			// Lost the race to a concurrent Register with the same
-			// worker_key -- fall through to the update path below against
-			// the winner's row.
+			// Lost the race to a concurrent Register with the same worker_key
+			// -- fall through to the update path below against the winner's
+			// row.
 			existing, err = ps.GetWorkerByKey(ctx, worker.WorkerKey)
 			if err != nil {
 				return nil, fmt.Errorf("worker upsert create raced but re-select failed: %w", err)
@@ -352,13 +349,13 @@ func (ps PostgresDbStore) ListWorkersByPool(ctx context.Context, poolID string) 
 	return workers, nil
 }
 
-// ListWorkers lists workers, newest first, optionally scoped to a single
-// pool (nil poolID lists across every pool) -- the admin list-workers op's
-// "optional pool filter" (WORKERS_PLAN.md Wave-4 P4). Distinct from
-// ListWorkersByPool (which always requires a pool): kept as its own method
-// rather than changing ListWorkersByPool's signature, since RequestJob's
-// matching path and any other existing caller of ListWorkersByPool always
-// has a concrete pool in hand.
+// ListWorkers lists workers, newest first, optionally scoped to a single pool
+// (nil poolID lists across every pool) -- the admin list-workers op's
+// "optional pool filter". Distinct from ListWorkersByPool (which always
+// requires a pool): kept as its own method rather than changing
+// ListWorkersByPool's signature, since RequestJob's matching path and any
+// other existing caller of ListWorkersByPool always has a concrete pool in
+// hand.
 func (ps PostgresDbStore) ListWorkers(ctx context.Context, poolID *string) ([]models.Worker, error) {
 	query := ps.getDB(ctx).Order("created_at DESC")
 	if poolID != nil {
@@ -373,7 +370,7 @@ func (ps PostgresDbStore) ListWorkers(ctx context.Context, poolID *string) ([]mo
 }
 
 // UpdateWorkerStatus sets a worker's status (active/quarantined/disabled) --
-// the admin quarantine/disable/enable surface (WORKERS_PLAN.md P4).
+// the admin quarantine/disable/enable surface.
 func (ps PostgresDbStore) UpdateWorkerStatus(ctx context.Context, workerID, status string) error {
 	if !isValidUUID(workerID) {
 		return store.ErrNotFound
@@ -412,8 +409,9 @@ func (ps PostgresDbStore) TouchWorkerLastSeen(ctx context.Context, workerID stri
 // --- worker_sessions --------------------------------------------------------
 
 // CreateWorkerSession creates a new worker session row. Session.TokenHash
-// must already be a SHA-256 hash (see internal/workerauth.WorkerSessions.Mint)
-// -- this layer never sees or stores the raw token.
+// must already be a SHA-256 hash (see
+// internal/workerauth.WorkerSessions.Mint) -- this layer never sees or stores
+// the raw token.
 func (ps PostgresDbStore) CreateWorkerSession(ctx context.Context, session *models.WorkerSession) error {
 	if err := ps.getDB(ctx).Create(session).Error; err != nil {
 		return fmt.Errorf("failed to create worker session: %w", err)
@@ -422,10 +420,8 @@ func (ps PostgresDbStore) CreateWorkerSession(ctx context.Context, session *mode
 }
 
 // GetActiveWorkerSessionByTokenHash looks up a non-revoked, non-expired
-// worker session by its token hash, and returns it together with its
-// owning worker row (a "join" in the sense the caller gets both without a
-// second explicit lookup -- see WORKERS_PLAN.md P2-A's ask for this
-// signature). Returns store.ErrNotFound if no active session matches the
+// worker session by its token hash, and returns it together with its owning
+// worker row. Returns store.ErrNotFound if no active session matches the
 // hash, or if the session's worker row is somehow missing.
 func (ps PostgresDbStore) GetActiveWorkerSessionByTokenHash(ctx context.Context, tokenHash []byte) (*models.WorkerSession, *models.Worker, error) {
 	var session models.WorkerSession
@@ -467,8 +463,8 @@ func (ps PostgresDbStore) TouchWorkerSessionLastSeen(ctx context.Context, sessio
 	return nil
 }
 
-// RevokeWorkerSession revokes a worker session by ID. Idempotent: revoking
-// an already-revoked (but existing) session succeeds as a no-op, mirroring
+// RevokeWorkerSession revokes a worker session by ID. Idempotent: revoking an
+// already-revoked (but existing) session succeeds as a no-op, mirroring
 // internal/auth.Sessions.RevokeSession's caller-facing idempotency. Only a
 // wholly missing session row returns store.ErrNotFound.
 func (ps PostgresDbStore) RevokeWorkerSession(ctx context.Context, sessionID string) error {
@@ -499,8 +495,8 @@ func (ps PostgresDbStore) RevokeWorkerSession(ctx context.Context, sessionID str
 }
 
 // DeleteExpiredWorkerSessions deletes worker sessions whose expires_at has
-// passed, returning the number of rows removed. Housekeeping primitive for
-// a future scheduled reaper -- P2-A does not wire a caller for this yet.
+// passed, returning the number of rows removed. Housekeeping primitive for a
+// future scheduled reaper -- P2-A does not wire a caller for this yet.
 func (ps PostgresDbStore) DeleteExpiredWorkerSessions(ctx context.Context) (int64, error) {
 	result := ps.getDB(ctx).Where("expires_at < ?", time.Now().UTC()).Delete(&models.WorkerSession{})
 	if result.Error != nil {
@@ -591,9 +587,9 @@ func (ps PostgresDbStore) ReleaseWorkerLease(ctx context.Context, leaseID, outco
 	return nil
 }
 
-// ListActiveLeasesForWorker lists a worker's still-open (released_at IS
-// NULL) leases, most recently acquired first. Used by Heartbeat to know
-// which corndogs tasks to extend.
+// ListActiveLeasesForWorker lists a worker's still-open (released_at IS NULL)
+// leases, most recently acquired first. Used by Heartbeat to know which
+// corndogs tasks to extend.
 func (ps PostgresDbStore) ListActiveLeasesForWorker(ctx context.Context, workerID string) ([]models.WorkerLease, error) {
 	var leases []models.WorkerLease
 	if err := ps.getDB(ctx).
@@ -605,22 +601,22 @@ func (ps PostgresDbStore) ListActiveLeasesForWorker(ctx context.Context, workerI
 	return leases, nil
 }
 
-// ListStaleActiveLeases returns every still-open lease (released_at IS
-// NULL) acquired before olderThan -- for the future reaper that mirrors
-// runCancellingReaper (WORKERS_PLAN.md "Workers"): a lease this old with no
-// release almost certainly belongs to a worker that stopped heartbeating,
-// whose corndogs task has already timed out and requeued on its own; the
-// reaper's job here is just to mark the display/audit row released, not to
-// touch corndogs.
+// ListStaleActiveLeases returns every still-open lease (released_at IS NULL)
+// acquired before olderThan -- for the future reaper that mirrors
+// runCancellingReaper: a lease this old with no release almost certainly
+// belongs to a worker that stopped heartbeating, whose corndogs task has
+// already timed out and requeued on its own; the reaper's job here is just to
+// mark the display/audit row released, not to touch corndogs.
 func (ps PostgresDbStore) ListStaleActiveLeases(ctx context.Context, olderThan time.Time) ([]models.WorkerLease, error) {
 	var leases []models.WorkerLease
 	// Reap by the LEASE's liveness, not the worker row. A replacement process
-	// can use the same worker key without keeping an unreported old lease open.
-	// legitimately long-running job (e.g. a multi-arch release build) holds an
-	// open lease for a long time while its worker keeps heartbeating, and must
-	// NOT be reaped -- reaping it releases the lease and AppendLogs then rejects
-	// the job's remaining output. Only leases whose worker has actually gone
-	// silent (last_seen_at older than the threshold) are stale.
+	// can use the same worker key without keeping an unreported old lease
+	// open. legitimately long-running job (e.g. a multi-arch release build)
+	// holds an open lease for a long time while its worker keeps
+	// heartbeating, and must NOT be reaped -- reaping it releases the lease
+	// and AppendLogs then rejects the job's remaining output. Only leases
+	// whose worker has actually gone silent (last_seen_at older than the
+	// threshold) are stale.
 	if err := ps.getDB(ctx).
 		Where("worker_leases.released_at IS NULL AND worker_leases.last_heartbeat_at < ?", olderThan).
 		Order("worker_leases.acquired_at ASC").
@@ -634,7 +630,7 @@ func (ps PostgresDbStore) ListStaleActiveLeases(ctx context.Context, olderThan t
 
 // DefaultWorkerPoolName is the pool name EnsureDefaultWorkerPool
 // finds-or-creates: a global (org_id NULL) pool reserved for the dev/alpha
-// enrollment bootstrap (WORKERS_PLAN.md Wave-4 P4).
+// enrollment bootstrap.
 const DefaultWorkerPoolName = "default"
 
 // defaultWorkerEnrollmentTokenName is the pool_enrollment_tokens.name stamped
@@ -642,8 +638,8 @@ const DefaultWorkerPoolName = "default"
 // an admin-created token) in the admin list-enrollment-tokens view.
 const defaultWorkerEnrollmentTokenName = "dev-bootstrap"
 
-// EnsureDefaultWorkerPool is the dev/alpha worker enrollment bootstrap
-// (WORKERS_PLAN.md Wave-4 P4): if config.DefaultWorkerEnrollmentToken (env
+// EnsureDefaultWorkerPool is the dev/alpha worker enrollment bootstrap: if
+// config.DefaultWorkerEnrollmentToken (env
 // REACTORCIDE_DEFAULT_WORKER_ENROLLMENT_TOKEN) is set, ensure a global pool
 // named "default" exists and that this token's SHA-256 hash is registered as
 // an active pool_enrollment_tokens row for it -- so a dev/compose worker can
@@ -718,9 +714,9 @@ func (ps PostgresDbStore) ensureDefaultWorkerPoolRow(ctx context.Context) (*mode
 	newPool := &models.WorkerPool{Name: DefaultWorkerPoolName}
 	if err := ps.CreateWorkerPool(ctx, newPool); err != nil {
 		if errors.Is(err, store.ErrAlreadyExists) {
-			// Lost a race with a concurrent coordinator pod creating the
-			// same pool between our SELECT and our INSERT -- re-select
-			// rather than surfacing a spurious error.
+			// Lost a race with a concurrent coordinator pod creating the same
+			// pool between our SELECT and our INSERT -- re-select rather than
+			// surfacing a spurious error.
 			var winner models.WorkerPool
 			if selErr := ps.getDB(ctx).Where("org_id IS NULL AND name = ?", DefaultWorkerPoolName).First(&winner).Error; selErr != nil {
 				return nil, fmt.Errorf("default worker pool create lost race but re-select failed: %w", selErr)

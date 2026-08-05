@@ -1,5 +1,5 @@
 -- +goose Up
--- Characteristic-routed queues (WORKERS_PLAN.md "Queues").
+-- Characteristic-routed queues.
 --
 -- A queue's identity in Corndogs is exactly its queue_uuid string -- nothing
 -- else. This table is the source of truth for what characteristics that

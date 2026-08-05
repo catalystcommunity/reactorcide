@@ -12,8 +12,8 @@ import (
 
 // fakeStore is a hand-rolled in-memory RoleStore + SettingsStore for authz
 // unit tests — this package's convention (see internal/auth's fakes_test.go)
-// rather than a generated mock, since the surface is small and the tests
-// want full control over role-assignment/group shape.
+// rather than a generated mock, since the surface is small and the tests want
+// full control over role-assignment/group shape.
 type fakeStore struct {
 	users        map[string]*models.User
 	projects     map[string]*models.Project
@@ -139,8 +139,8 @@ func TestCapabilities_Matrix(t *testing.T) {
 		{"self-org (owns the project's org directly)", config.UIAuthModeLocalRP, UserIdentity(orgID), fullOrgAdmin()},
 		{"org admin", config.UIAuthModeLocalRP, UserIdentity(orgAdminID), fullOrgAdmin()},
 		{"global admin", config.UIAuthModeLocalRP, UserIdentity(globalAdmID), fullGlobalAdmin()},
-		// none-mode doesn't gate a resolved, logged-in identity's tier —
-		// only anonymous callers are special-cased to Cancel-only.
+		// none-mode doesn't gate a resolved, logged-in identity's tier — only
+		// anonymous callers are special-cased to Cancel-only.
 		{"org admin still full caps in none-mode", config.UIAuthModeNone, UserIdentity(orgAdminID), fullOrgAdmin()},
 	}
 
@@ -158,10 +158,10 @@ func TestCapabilities_Matrix(t *testing.T) {
 	}
 }
 
-// TestCapabilities_ManageWorkers drives the ManageWorkers field on its own
-// (WORKERS_PLAN.md Wave-4 P4): org-admin/global-admin tier only, same as
-// ManageSecrets/ManageGroupsRoles — a plain member or project owner never
-// gets it, even though a project owner does get other Caps fields true.
+// TestCapabilities_ManageWorkers drives the ManageWorkers field on its own:
+// org-admin/global-admin tier only, same as ManageSecrets/ManageGroupsRoles —
+// a plain member or project owner never gets it, even though a project owner
+// does get other Caps fields true.
 func TestCapabilities_ManageWorkers(t *testing.T) {
 	origMode := config.UIAuthMode
 	config.UIAuthMode = config.UIAuthModeLocalRP
@@ -484,8 +484,8 @@ func TestFilterVisibleProjects_BatchesOwnerLookups(t *testing.T) {
 	if len(visible) != 3 {
 		t.Fatalf("expected 3 visible projects, got %d: %+v", len(visible), visible)
 	}
-	// Two distinct owners across 4 projects: GetUserByID should be called
-	// at most twice, not once per project.
+	// Two distinct owners across 4 projects: GetUserByID should be called at
+	// most twice, not once per project.
 	if fs.getUserCalls > 2 {
 		t.Fatalf("expected owner lookups to be batched (<=2 calls for 2 distinct owners), got %d", fs.getUserCalls)
 	}

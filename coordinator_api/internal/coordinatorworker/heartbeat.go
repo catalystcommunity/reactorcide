@@ -10,10 +10,10 @@ import (
 )
 
 // heartbeatLoop sends a Heartbeat on every tick of interval until ctx is
-// cancelled, reporting every lease currently tracked as running and acting
-// on any directive the coordinator returns. It always heartbeats (even with
-// zero running leases) because Heartbeat also renews the worker session
-// server-side (WORKERS_PLAN.md "Workers -- registration, auth, protocol").
+// cancelled, reporting every lease currently tracked as running and acting on
+// any directive the coordinator returns. It always heartbeats (even with zero
+// running leases) because Heartbeat also renews the worker session
+// server-side.
 func heartbeatLoop(ctx context.Context, c client, runner worker.JobRunner, tracker *leaseTracker, interval time.Duration) {
 	if interval <= 0 {
 		interval = defaultHeartbeatInterval
@@ -55,16 +55,14 @@ func heartbeatOnce(ctx context.Context, c client, runner worker.JobRunner, track
 
 // applyDirective resolves a directive's lease_id to the runner handle this
 // worker is actually executing and acts on it: "cancel" calls Stop with the
-// lease's cancel-grace period (graceful SIGTERM, forced kill after grace,
-// per JobRunner.Stop's own contract); "kill" calls Cleanup immediately
-// (WORKERS_PLAN.md Directive: "action is cancel ... or kill ... immediate").
-// A lease_id the tracker no longer holds (the lease already finished and
-// was removed) is silently ignored -- a race between the job's own
-// completion and a stale directive is expected, not an error. Each action
-// only ever applies once per lease (trackedLease.setOutcome), so a
-// heartbeat tick that repeats an already-actioned directive (the
-// coordinator may keep returning it until it observes the lease released)
-// does not double-Stop/double-Cleanup.
+// lease's cancel-grace period (graceful SIGTERM, forced kill after grace, per
+// JobRunner.Stop's own contract); "kill" calls Cleanup immediately. A
+// lease_id the tracker no longer holds (the lease already finished and was
+// removed) is silently ignored -- a race between the job's own completion and
+// a stale directive is expected, not an error. Each action only ever applies
+// once per lease (trackedLease.setOutcome), so a heartbeat tick that repeats
+// an already-actioned directive (the coordinator may keep returning it until
+// it observes the lease released) does not double-Stop/double-Cleanup.
 func applyDirective(runner worker.JobRunner, tracker *leaseTracker, d csilapi.Directive) {
 	tl, ok := tracker.get(d.LeaseId)
 	if !ok {

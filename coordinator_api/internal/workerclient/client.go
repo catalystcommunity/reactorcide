@@ -12,10 +12,8 @@ import (
 // worker session lifecycle: Register mints a session and stores it on the
 // transport; every subsequent call (RequestJob/Heartbeat/AppendLogs/
 // ReportResult) rides that stored session in the envelope "auth" field
-// automatically, per WORKERS_PLAN.md's "Workers -- registration, auth,
-// protocol" ("Rides the CSIL envelope auth field on every subsequent
-// call"). Register itself carries the enrollment token in the request body,
-// never in auth -- there is no session yet at that point.
+// automatically). Register itself carries the enrollment token in the request
+// body, never in auth -- there is no session yet at that point.
 type Client struct {
 	transport *CSILRPCTransport
 	raw       *csilapi.ReactorcideWorkerClient

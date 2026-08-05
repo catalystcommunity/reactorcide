@@ -25,59 +25,6 @@ const (
 	testFernetHMACSize = 32
 )
 
-// setupTestMasterKeyAndOrg creates a master key and org encryption key for testing.
-// Returns the org encryption key bytes that can be used with DatabaseProvider.
-func setupTestMasterKeyAndOrg(t *testing.T, tx *gorm.DB, userID string) []byte {
-	t.Helper()
-
-	// Create a 32-byte master key
-	masterKeyBytes := make([]byte, 32)
-	for i := range masterKeyBytes {
-		masterKeyBytes[i] = byte(i + 1) // Simple deterministic key for testing
-	}
-
-	// Create master key in database - let database generate key_id
-	masterKey := &models.MasterKey{
-		Name:        "test-master-key",
-		IsActive:    true,
-		IsPrimary:   true,
-		Description: "Test master key",
-	}
-	err := tx.Create(masterKey).Error
-	require.NoError(t, err)
-
-	// Create a 32-byte org encryption key
-	orgKeyBytes := make([]byte, 32)
-	for i := range orgKeyBytes {
-		orgKeyBytes[i] = byte(i + 100) // Different from master key
-	}
-
-	// Encrypt the org key with the master key using Fernet
-	encodedMasterKey := make([]byte, base64.URLEncoding.EncodedLen(len(masterKeyBytes)))
-	base64.URLEncoding.Encode(encodedMasterKey, masterKeyBytes)
-
-	encryptedOrgKey, err := createTestFernetToken(encodedMasterKey, orgKeyBytes)
-	require.NoError(t, err)
-
-	// Create org encryption key in database
-	salt := make([]byte, 32)
-	for i := range salt {
-		salt[i] = byte(i + 200)
-	}
-
-	// Let database generate id
-	orgEncKey := &models.OrgEncryptionKey{
-		UserID:       userID,
-		MasterKeyID:  masterKey.KeyID,
-		EncryptedKey: encryptedOrgKey,
-		Salt:         salt,
-	}
-	err = tx.Create(orgEncKey).Error
-	require.NoError(t, err)
-
-	return orgKeyBytes
-}
-
 // createTestFernetToken creates a Fernet-compatible token for testing.
 // This is a test-only implementation that mirrors the production code.
 func createTestFernetToken(encodedKey, plaintext []byte) ([]byte, error) {

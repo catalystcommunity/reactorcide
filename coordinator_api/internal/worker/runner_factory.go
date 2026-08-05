@@ -23,10 +23,10 @@ const (
 	// BackendAuto automatically detects the best backend
 	BackendAuto RunnerBackend = "auto"
 
-	// BackendVM uses ephemeral guest VMs to run native macOS/Windows jobs
-	// (see VM_RUNNERS_PLAN.md). It is a recognized backend name on every
-	// OS, but only actually implemented on darwin/windows once VM-3/VM-4
-	// land -- see IsBackendImplemented and vmrunner.newVMLifecycle.
+	// BackendVM uses ephemeral guest VMs to run native macOS/Windows jobs. It
+	// is a recognized backend name on every OS, but only actually implemented
+	// on darwin/windows once VM-3/VM-4 land -- see IsBackendImplemented and
+	// vmrunner.newVMLifecycle.
 	BackendVM RunnerBackend = "vm"
 )
 
@@ -60,8 +60,8 @@ func NewJobRunner(backend string) (JobRunner, error) {
 	}
 }
 
-// NewJobRunnerAuto automatically detects the best runner backend
-// It checks if running in Kubernetes first, then falls back to Docker
+// NewJobRunnerAuto automatically detects the best runner backend It checks if
+// running in Kubernetes first, then falls back to Docker
 func NewJobRunnerAuto() (JobRunner, error) {
 	logger := logging.Log
 

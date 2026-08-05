@@ -9,12 +9,11 @@ import (
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store/models"
 )
 
-// RoleStore is the narrow store surface Resolver consumes: group
-// membership + role-assignment lookups (Task A's
-// postgres_store/rbac_operations.go), plus the user/project lookups
-// visibility and org-membership checks need. Satisfied by
-// *postgres_store.PostgresDbStore in production; consumers (REST handlers)
-// type-assert their store.Store onto this interface (this repo's
+// RoleStore is the narrow store surface Resolver consumes: group membership +
+// role-assignment lookups (Task A's postgres_store/rbac_operations.go), plus
+// the user/project lookups visibility and org-membership checks need.
+// Satisfied by *postgres_store.PostgresDbStore in production; consumers (REST
+// handlers) type-assert their store.Store onto this interface (this repo's
 // consumer-defined-narrow-interface convention — see
 // handlers/project_handler.go, worker/secret_authorization.go) rather than
 // this package importing postgres_store directly.
@@ -40,11 +39,10 @@ func NewResolver(s RoleStore) *Resolver {
 // principal is every role_assignments row that applies to one user (direct
 // user grants union'd with grants on any group the user belongs to —
 // ListRoleAssignmentsForPrincipal already does that union query-side).
-// Loading it once per top-level call (Capabilities, the visibility batch)
-// and deriving every boolean from the same slice is this package's
-// "per-request memoization" — see UI_AUTH_PLAN.md task D's brief. It is not
-// cached across calls: Resolver itself holds no state, so role-assignment
-// changes are always picked up on the next call.
+// Loading it once per top-level call (Capabilities, the visibility batch) and
+// deriving every boolean from the same slice is this package's "per-request
+// memoization". It is not cached across calls: Resolver itself holds no
+// state, so role-assignment changes are always picked up on the next call.
 type principal struct {
 	userID      string
 	assignments []models.RoleAssignment
@@ -125,12 +123,11 @@ func (r *Resolver) IsGlobalAdmin(ctx context.Context, id Identity) (bool, error)
 }
 
 // IsOrgAdmin reports whether id is an admin of orgID: global admin, an
-// explicit org/admin role assignment (direct or via group), or orgID is
-// id's own org. Users act as orgs in this schema (there is no first-class
-// orgs table — "user_id IS the org id everywhere", per UI_AUTH_PLAN.md) so
-// a user is always the admin of their own org; this preserves today's
-// pre-authz behavior where any authenticated user freely manages resources
-// they created under their own user_id.
+// explicit org/admin role assignment (direct or via group), or orgID is id's
+// own org. Users act as orgs in this schema so a user is always the admin of
+// their own org; this preserves today's pre-authz behavior where any
+// authenticated user freely manages resources they created under their own
+// user_id.
 func (r *Resolver) IsOrgAdmin(ctx context.Context, id Identity, orgID string) (bool, error) {
 	if id.Anonymous || id.UserID == "" || orgID == "" {
 		return false, nil
@@ -150,8 +147,7 @@ func (r *Resolver) IsOrgAdmin(ctx context.Context, id Identity, orgID string) (b
 
 // IsProjectOwner reports whether id is an owner of projectID: an explicit
 // project/owner role assignment (direct or via group), the admin of the
-// project's owning org, or a global admin. Per UI_AUTH_PLAN.md's role
-// semantics, org admins and global admins imply project ownership.
+// project's owning org, or a global admin.
 func (r *Resolver) IsProjectOwner(ctx context.Context, id Identity, projectID string) (bool, error) {
 	if id.Anonymous || id.UserID == "" || projectID == "" {
 		return false, nil
@@ -183,9 +179,9 @@ func (r *Resolver) IsProjectOwner(ctx context.Context, id Identity, projectID st
 }
 
 // EffectiveRoleForProject returns the highest role id holds at projectID:
-// models.RoleAdmin (global admin or the owning org's admin),
-// models.RoleOwner (project owner), models.RoleMember (any role assignment
-// scoped directly to the project), or "" (none).
+// models.RoleAdmin (global admin or the owning org's admin), models.RoleOwner
+// (project owner), models.RoleMember (any role assignment scoped directly to
+// the project), or "" (none).
 func (r *Resolver) EffectiveRoleForProject(ctx context.Context, id Identity, projectID string) (string, error) {
 	if id.Anonymous || id.UserID == "" || projectID == "" {
 		return "", nil
@@ -223,8 +219,8 @@ func (r *Resolver) EffectiveRoleForProject(ctx context.Context, id Identity, pro
 }
 
 // EffectiveRoleForOrg returns the highest role id holds at orgID:
-// models.RoleAdmin, models.RoleMember (any role assignment scoped directly
-// to the org), or "" (none).
+// models.RoleAdmin, models.RoleMember (any role assignment scoped directly to
+// the org), or "" (none).
 func (r *Resolver) EffectiveRoleForOrg(ctx context.Context, id Identity, orgID string) (string, error) {
 	if id.Anonymous || id.UserID == "" || orgID == "" {
 		return "", nil
@@ -270,8 +266,8 @@ func IsPermissionError(err error) bool {
 }
 
 // RequireGlobalAdmin returns nil if id is a global admin, otherwise a
-// *PermissionError. Store failures are returned unwrapped so callers can
-// tell "denied" apart from "couldn't check".
+// *PermissionError. Store failures are returned unwrapped so callers can tell
+// "denied" apart from "couldn't check".
 func (r *Resolver) RequireGlobalAdmin(ctx context.Context, id Identity) error {
 	ok, err := r.IsGlobalAdmin(ctx, id)
 	if err != nil {

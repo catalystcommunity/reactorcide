@@ -8,46 +8,46 @@ import (
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/jobtelemetry"
 )
 
-// JobRunner defines the interface for container runtime backends
-// This abstraction allows the worker to spawn job containers using different runtimes
-// (Docker, containerd, Kubernetes) without changing the core worker logic.
+// JobRunner defines the interface for container runtime backends This
+// abstraction allows the worker to spawn job containers using different
+// runtimes (Docker, containerd, Kubernetes) without changing the core worker
+// logic.
 type JobRunner interface {
-	// SpawnJob creates and starts a job container with the specified configuration
-	// Returns a unique job ID/handle and any error encountered
+	// SpawnJob creates and starts a job container with the specified
+	// configuration Returns a unique job ID/handle and any error encountered
 	SpawnJob(ctx context.Context, config *JobConfig) (string, error)
 
-	// StreamLogs streams stdout/stderr from a running job container
-	// Returns separate readers for stdout and stderr
+	// StreamLogs streams stdout/stderr from a running job container Returns
+	// separate readers for stdout and stderr
 	StreamLogs(ctx context.Context, jobID string) (stdout io.ReadCloser, stderr io.ReadCloser, err error)
 
-	// WaitForCompletion blocks until the job container exits
-	// Returns the exit code and any error encountered
+	// WaitForCompletion blocks until the job container exits Returns the exit
+	// code and any error encountered
 	WaitForCompletion(ctx context.Context, jobID string) (int, error)
 
 	// Stop requests a graceful shutdown of a running job: SIGTERM to the
 	// container's PID 1 (giving runnerlib's SIGTERM trap a chance to run
 	// PluginPhase.CLEANUP/ON_ERROR and cleanup_vcs_auth), then a forced kill
 	// if the container/pod hasn't exited within grace. Stop does not remove
-	// the container/pod — callers still call Cleanup afterward (WaitForCompletion
-	// unblocking is what tells the caller it's safe to do so).
+	// the container/pod — callers still call Cleanup afterward
+	// (WaitForCompletion unblocking is what tells the caller it's safe to do
+	// so).
 	//
 	// grace == 0 requests immediate forced termination (no SIGTERM wait) —
 	// used by the admin "kill" path when it needs an unambiguous immediate
 	// stop rather than going through Cleanup directly (e.g. to unblock a
 	// stuck WaitForCompletion caller). Cleanup remains the primary "kill"
-	// primitive at the caller layer (coordinatorworker's run loop; see
-	// AGENTS.md / UI_AUTH_PLAN.md Cancel vs Kill) — Stop(grace=0) exists so
-	// runner backends have a single, testable primitive for "terminate now".
+	// primitive at the caller layer — Stop(grace=0) exists so runner backends
+	// have a single, testable primitive for "terminate now".
 	//
-	// Calling Stop on a container/pod that has already exited or been
-	// removed must be a safe no-op (implementations should tolerate
-	// "not found" style errors rather than returning them as failures),
-	// since the worker's cancel-poll and the container's own natural
-	// completion can race.
+	// Calling Stop on a container/pod that has already exited or been removed
+	// must be a safe no-op (implementations should tolerate "not found" style
+	// errors rather than returning them as failures), since the worker's
+	// cancel-poll and the container's own natural completion can race.
 	Stop(ctx context.Context, jobID string, grace time.Duration) error
 
-	// Cleanup removes the job container and associated resources
-	// Should be called after the job completes (success or failure)
+	// Cleanup removes the job container and associated resources Should be
+	// called after the job completes (success or failure)
 	Cleanup(ctx context.Context, jobID string) error
 
 	// SampleResources returns one resource snapshot for a running job. A
@@ -88,10 +88,9 @@ const (
 	// the job.
 	CapabilityBuilder = "builder"
 
-	// CapabilityGPU provides access to GPU resources.
-	// NOT YET IMPLEMENTED - placeholder for future development.
-	// DockerRunner: would use --gpus all flag
-	// KubernetesRunner: would add nvidia.com/gpu resource request
+	// CapabilityGPU provides access to GPU resources. NOT YET IMPLEMENTED -
+	// placeholder for future development. DockerRunner: would use --gpus all
+	// flag KubernetesRunner: would add nvidia.com/gpu resource request
 	CapabilityGPU = "gpu"
 )
 
@@ -136,26 +135,29 @@ type JobConfig struct {
 	// WorkspaceDir is the host directory to mount into the container at /job
 	WorkspaceDir string
 
-	// SourceDir is an optional host directory to mount at /job/src in the container.
-	// Used by run-local to mount user's source into the standard production layout.
+	// SourceDir is an optional host directory to mount at /job/src in the
+	// container. Used by run-local to mount user's source into the standard
+	// production layout.
 	SourceDir string
 
-	// SourceMountPath is the container path where SourceDir is mounted. Defaults
-	// to /job/src when empty.
+	// SourceMountPath is the container path where SourceDir is mounted.
+	// Defaults to /job/src when empty.
 	SourceMountPath string
 
-	// WorkingDir is the working directory inside the container (default: /job)
+	// WorkingDir is the working directory inside the container (default:
+	// /job)
 	WorkingDir string
 
 	// Capabilities declares what the job needs from the runtime environment.
-	// Each runner interprets these appropriately for its environment.
-	// See CapabilityDocker, CapabilityGPU constants.
+	// Each runner interprets these appropriately for its environment. See
+	// CapabilityDocker, CapabilityGPU constants.
 	Capabilities []string
 
 	// RunAsUser optionally overrides the container user ("uid:gid"). When
 	// empty, runners default to RunnerUser. Capabilities provision runtime
 	// services/privileges but do not implicitly change the job user.
-	// run-local sets this to the host uid so bind-mounted sources are writable.
+	// run-local sets this to the host uid so bind-mounted sources are
+	// writable.
 	RunAsUser string
 
 	// ExtraMounts are additional bind mounts in "hostpath:containerpath[:ro]"

@@ -1,8 +1,8 @@
 package test
 
-// UI-auth integration tests (UI_AUTH_PLAN.md Task J) driving the real
-// webapp server against the real coordinator subprocess started by
-// setup_test.go's TestMain (REACTORCIDE_UI_AUTH_MODE unset -> "none",
+// UI-auth integration tests driving the real webapp server against the real
+// coordinator subprocess started by setup_test.go's TestMain
+// (REACTORCIDE_UI_AUTH_MODE unset -> "none",
 // REACTORCIDE_BOOTSTRAP_ADMIN_TOKEN=testBootstrapAdminToken). These are the
 // highest-value end-to-end flows; the unit fakes (internal/handlers's
 // fake_coordinator_test.go) cover template/handler breadth.
@@ -18,9 +18,7 @@ import (
 
 // TestUIAuthModeNoneLoginDisabledAndAnonymousCancel covers: with
 // REACTORCIDE_UI_AUTH_MODE=none (the default), the login page says so, and
-// the job-detail cancel button's POST works with no session cookie at all
-// (anonymous graceful cancel is allowed in mode none — see
-// UI_AUTH_PLAN.md's permission matrix).
+// the job-detail cancel button's POST works with no session cookie at all.
 func TestUIAuthModeNoneLoginDisabledAndAnonymousCancel(t *testing.T) {
 	resp, err := http.Get(webBaseURL + "/app/login")
 	if err != nil {

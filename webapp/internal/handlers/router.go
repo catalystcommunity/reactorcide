@@ -73,15 +73,14 @@ func NewRouter() http.Handler {
 	mux.HandleFunc("POST /app/org/secrets/grants/{id}", webHandler.withSession(webHandler.SecretGrantUpdate))
 	mux.HandleFunc("POST /app/org/secrets/grants/{id}/delete", webHandler.withSession(webHandler.SecretGrantDelete))
 
-	// Workers: pools + enrollment tokens, workers, and queues
-	// (WORKERS_PLAN.md Wave-4 P4). Gated on the ManageWorkers capability;
-	// queues are global-admin only (see workers_admin_handler.go's file
-	// doc comment). Worker item routes live under the literal "worker/"
-	// segment (not "/app/workers/{id}/...") so they can't collide with
-	// "/app/workers/pools/{id}/..." — Go's ServeMux rejects two patterns
-	// that could both match the same concrete path (e.g. a pool id of
-	// "worker" or a worker id of "pools") when neither is strictly more
-	// specific than the other.
+	// Workers: pools + enrollment tokens, workers, and queues. Gated on the
+	// ManageWorkers capability; queues are global-admin only (see
+	// workers_admin_handler.go's file doc comment). Worker item routes live
+	// under the literal "worker/" segment (not "/app/workers/{id}/...") so
+	// they can't collide with "/app/workers/pools/{id}/..." — Go's ServeMux
+	// rejects two patterns that could both match the same concrete path (e.g.
+	// a pool id of "worker" or a worker id of "pools") when neither is
+	// strictly more specific than the other.
 	mux.HandleFunc("GET /app/workers", webHandler.withSession(webHandler.WorkersPage))
 	mux.HandleFunc("POST /app/workers/pools", webHandler.withSession(webHandler.PoolCreate))
 	mux.HandleFunc("POST /app/workers/pools/{id}", webHandler.withSession(webHandler.PoolUpdate))

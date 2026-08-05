@@ -19,8 +19,8 @@ func seedOrgMember(st *fakeStore, userID, orgID string) {
 }
 
 // --- authz matrix: create-pool, create-enrollment-token, delete-queue,
-// set-worker-status (WORKERS_PLAN.md Wave-4 P4) -- only org-admin (of the
-// resource's org) / global-admin may ever perform these ops. -------------
+// set-worker-status -- only org-admin (of the resource's org) / global-admin
+// may ever perform these ops. -------------
 
 func TestCreatePool_PermissionMatrix(t *testing.T) {
 	req := csilapi.CreatePoolRequest{OrgId: strPtr("org-1"), Name: "ci-pool"}
@@ -263,8 +263,7 @@ func TestSetWorkerStatus_PermissionMatrix(t *testing.T) {
 // --- secret handling: raw token once, never re-returned -------------------
 
 // TestCreateEnrollmentToken_RawOnceValidatesAndNeverLeaksAgain drives the
-// SECURITY contract from WORKERS_PLAN.md Wave-4 P4: create-enrollment-token
-// returns the raw token exactly once; it must hash-validate through
+// SECURITY contract from; it must hash-validate through
 // internal/workerauth.Enrollment (the same path a real worker Register call
 // uses) and must never reappear, in any form, from list-enrollment-tokens.
 func TestCreateEnrollmentToken_RawOnceValidatesAndNeverLeaksAgain(t *testing.T) {

@@ -8,9 +8,8 @@ import (
 
 // Queue maps to the queues table (coredb/migrations/000020_queues.sql). A
 // queue's identity in Corndogs is exactly its QueueUUID string; this row is
-// the source of truth for what characteristics that UUID represents. See
-// WORKERS_PLAN.md "Queues" and internal/store/postgres_store/
-// queue_operations.go's FindOrCreateQueueByCharacteristics.
+// the source of truth for what characteristics that UUID represents.go's
+// FindOrCreateQueueByCharacteristics.
 type Queue struct {
 	QueueID   string    `gorm:"column:queue_id;primaryKey;type:uuid;default:generate_ulid()" json:"queue_id"`
 	CreatedAt time.Time `gorm:"autoCreateTime:false;default:timezone('utc', now())" json:"created_at"`
@@ -20,8 +19,7 @@ type Queue struct {
 	// else. Distinct from QueueID (the row's own ULID primary key) so the
 	// routing identifier can be regenerated/reasoned about independently of
 	// row identity, though in practice it is set once at creation and never
-	// changes (characteristics, and therefore the queue a job resolves to,
-	// are immutable per WORKERS_PLAN.md "Operator control").
+	// changes.
 	QueueUUID string `gorm:"column:queue_uuid;type:uuid;not null;default:gen_random_uuid()" json:"queue_uuid"`
 
 	// Characteristics is this queue's immutable characteristic set. Uses

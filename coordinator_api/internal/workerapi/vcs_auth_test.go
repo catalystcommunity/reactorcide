@@ -33,12 +33,11 @@ func seedQueueAndVCSJob(t *testing.T, h *testHarness, job *models.Job, queueUUID
 	return sessionToken
 }
 
-// TestRequestJob_GrantedVCSCredential_ResolvedIntoLeaseVcsAuth asserts that
-// a job whose project has a configured GitHub VCS credential gets that
+// TestRequestJob_GrantedVCSCredential_ResolvedIntoLeaseVcsAuth asserts that a
+// job whose project has a configured GitHub VCS credential gets that
 // credential resolved into the lease's dedicated vcs_auth field -- and that
-// the resolved token value never appears anywhere else: not in Lease.Env,
-// not in Lease.Secrets, and not in any corndogs task payload byte slice
-// (WORKERS_PLAN.md "Secrets... never in the corndogs payload").
+// the resolved token value never appears anywhere else: not in Lease.Env, not
+// in Lease.Secrets, and not in any corndogs task payload byte slice.
 func TestRequestJob_GrantedVCSCredential_ResolvedIntoLeaseVcsAuth(t *testing.T) {
 	h := newTestHarness()
 	const vcsToken = "sooper-seekrit-ghp-token"
@@ -108,8 +107,8 @@ func TestRequestJob_GrantedVCSCredential_ResolvedIntoLeaseVcsAuth(t *testing.T) 
 }
 
 // TestRequestJob_NoVCSCredentialConfigured_VcsAuthAbsent asserts a job whose
-// source repo has a recognizable provider but no configured credential
-// (a public repo) still gets a lease, just without vcs_auth -- credential
+// source repo has a recognizable provider but no configured credential (a
+// public repo) still gets a lease, just without vcs_auth -- credential
 // absence is not an error.
 func TestRequestJob_NoVCSCredentialConfigured_VcsAuthAbsent(t *testing.T) {
 	h := newTestHarness()
@@ -269,9 +268,9 @@ func TestRequestJob_VCSAuthResolutionError_FailsClaimCleanly(t *testing.T) {
 }
 
 // assertNoSecretInLeaseJSON is a defense-in-depth check: marshal the whole
-// Lease to JSON (as if it were being serialized) and assert the secret
-// value only appears where expected (vcs_auth.token), never leaking into
-// any other field via a copy/paste mistake in buildLease.
+// Lease to JSON (as if it were being serialized) and assert the secret value
+// only appears where expected (vcs_auth.token), never leaking into any other
+// field via a copy/paste mistake in buildLease.
 func assertNoSecretInLeaseJSON(t *testing.T, lease *csilapi.Lease, secretValue string) {
 	t.Helper()
 	b, err := json.Marshal(lease)

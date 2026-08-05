@@ -29,7 +29,8 @@ import (
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/worker"
 )
 
-// LogEntry represents a single log line in JSON format (matches worker.LogEntry)
+// LogEntry represents a single log line in JSON format (matches
+// worker.LogEntry)
 type LogEntry struct {
 	Timestamp string `json:"timestamp"`
 	Stream    string `json:"stream"`
@@ -46,18 +47,17 @@ type JobHandler struct {
 	triggerProcessor *worker.TriggerProcessor
 	// visibility is non-nil only when store also satisfies authz.RoleStore
 	// (true for *postgres_store.PostgresDbStore; nil for the narrower test
-	// mocks in job_handler_test.go — construction now logs a WARNING in
-	// that case, see roleStoreResolver). It's consulted additively by read
+	// mocks in job_handler_test.go — construction now logs a WARNING in that
+	// case, see roleStoreResolver). It's consulted additively by read
 	// endpoints (GetJob, ListJobs, GetJobLogs) to extend the pre-existing
-	// owner-or-admin access check with "or the resource is publicly
-	// visible" — see canUserViewJob. Most mutation endpoints (cancel,
-	// delete, triggers) intentionally keep using the original
-	// canUserAccessJob (owner-or-admin only): a wider *view* grant must
-	// never widen who can *mutate* a job. KillJob is the one exception —
-	// see canUserKillJob and cancelOrKillJob — because the permission
-	// matrix (UI_AUTH_PLAN.md) restricts kill to an org admin of the job's
-	// org or a global admin, which is a NARROWER grant than owner-or-admin,
-	// not a wider one. See UI_AUTH_PLAN.md task D.
+	// owner-or-admin access check with "or the resource is publicly visible"
+	// — see canUserViewJob. Most mutation endpoints (cancel, delete,
+	// triggers) intentionally keep using the original canUserAccessJob
+	// (owner-or-admin only): a wider *view* grant must never widen who can
+	// *mutate* a job. KillJob is the one exception — see canUserKillJob and
+	// cancelOrKillJob — because the permission matrix restricts kill to an
+	// org admin of the job's org or a global admin, which is a NARROWER grant
+	// than owner-or-admin, not a wider one.
 	visibility *authz.Resolver
 }
 
@@ -71,7 +71,8 @@ func NewJobHandler(store store.Store, corndogsClient corndogs.ClientInterface) *
 	}
 }
 
-// NewJobHandlerWithObjectStore creates a new job handler with object store support
+// NewJobHandlerWithObjectStore creates a new job handler with object store
+// support
 func NewJobHandlerWithObjectStore(store store.Store, corndogsClient corndogs.ClientInterface, objectStore objects.ObjectStore) *JobHandler {
 	return &JobHandler{
 		store:            store,
@@ -83,8 +84,8 @@ func NewJobHandlerWithObjectStore(store store.Store, corndogsClient corndogs.Cli
 }
 
 // SetStatusUpdater wires a VCS status updater so that child jobs created via
-// the /api/v1/jobs/{id}/triggers callback register as pending checks on
-// their commit immediately.
+// the /api/v1/jobs/{id}/triggers callback register as pending checks on their
+// commit immediately.
 func (h *JobHandler) SetStatusUpdater(u vcs.JobStatusUpdaterInterface) {
 	if h.triggerProcessor != nil {
 		h.triggerProcessor.SetStatusUpdater(u)
@@ -97,15 +98,16 @@ type CreateJobRequest struct {
 	Description string `json:"description,omitempty"`
 	JobFile     string `json:"job_file,omitempty"`
 
-	// Source configuration (VCS-agnostic: works with git, mercurial, svn, etc.)
-	// This is the untrusted source code being tested (e.g., PR code)
+	// Source configuration (VCS-agnostic: works with git, mercurial, svn,
+	// etc.) This is the untrusted source code being tested (e.g., PR code)
 	SourceURL  string `json:"source_url,omitempty"`
 	SourceRef  string `json:"source_ref,omitempty"`
 	SourceType string `json:"source_type" validate:"required,oneof=git copy none"`
 	SourcePath string `json:"source_path,omitempty"`
 
-	// CI Source configuration (trusted CI pipeline code - optional)
-	// This is the trusted code that defines the job (e.g., test scripts, build config)
+	// CI Source configuration (trusted CI pipeline code - optional) This is
+	// the trusted code that defines the job (e.g., test scripts, build
+	// config)
 	CISourceType string `json:"ci_source_type,omitempty" validate:"omitempty,oneof=git copy"`
 	CISourceURL  string `json:"ci_source_url,omitempty"`
 	CISourceRef  string `json:"ci_source_ref,omitempty"`
@@ -126,20 +128,18 @@ type CreateJobRequest struct {
 	RunAsUser      string `json:"run_as_user,omitempty"`
 	QueueName      string `json:"queue_name,omitempty"`
 
-	// Characteristics routes this job to a queue (WORKERS_PLAN.md
-	// "Characteristics & matching"); values must be scalar (string, int, or
-	// bool -- see internal/characteristics.ParseJobCharacteristics). Omitted
-	// or missing "os" defaults to "linux". Overrides any QueueName set
-	// above: the submit path resolves Characteristics to a queue UUID and
-	// that UUID becomes the job's QueueName immediately before the Corndogs
-	// submit.
+	// Characteristics routes this job to a queue; values must be scalar
+	// (string, int, or bool -- see
+	// internal/characteristics.ParseJobCharacteristics). Omitted or missing
+	// "os" defaults to "linux". Overrides any QueueName set above: the submit
+	// path resolves Characteristics to a queue UUID and that UUID becomes the
+	// job's QueueName immediately before the Corndogs submit.
 	Characteristics map[string]interface{} `json:"characteristics,omitempty"`
 
 	// Resources declares per-job compute resource cpu.request/cpu.limit/
 	// memory.limit as Kubernetes-style quantity strings (see
-	// internal/resources.ParseResources). Any field left unset falls back
-	// to the DB column default (cpu.request=1, cpu.limit=2,
-	// memory.limit=4Gi).
+	// internal/resources.ParseResources). Any field left unset falls back to
+	// the DB column default (cpu.request=1, cpu.limit=2, memory.limit=4Gi).
 	Resources map[string]interface{} `json:"resources,omitempty"`
 }
 
@@ -202,14 +202,13 @@ type ListJobsResponse struct {
 	Offset int           `json:"offset"`
 }
 
-// queueResolvingStore is the narrow store capability the submit path uses
-// to resolve a job's characteristics to a queue UUID (find-or-create) before
-// the job is persisted/submitted -- WORKERS_PLAN.md "Find-or-create at
-// submit". Defined here on the consumer side (repo convention: narrow
-// interface + type assertion on the store) so job_handler_test.go's mock
-// store doesn't need to implement queue storage to exercise the rest of
-// this handler. The concrete PostgresDbStore satisfies it via
-// internal/store/postgres_store/queue_operations.go.
+// queueResolvingStore is the narrow store capability the submit path uses to
+// resolve a job's characteristics to a queue UUID (find-or-create) before the
+// job is persisted/submitted. Defined here on the consumer side (repo
+// convention: narrow interface + type assertion on the store) so
+// job_handler_test.go's mock store doesn't need to implement queue storage to
+// exercise the rest of this handler. The concrete PostgresDbStore satisfies
+// it via internal/store/postgres_store/queue_operations.go.
 type queueResolvingStore interface {
 	FindOrCreateQueueByCharacteristics(ctx context.Context, chars characteristics.Characteristics) (*models.Queue, error)
 }
@@ -231,7 +230,8 @@ func (h *JobHandler) CreateJob(w http.ResponseWriter, r *http.Request) {
 
 	// Validate required fields
 	if err := h.validateCreateJobRequest(&req); err != nil {
-		// Check if this is a forbidden error (e.g., CI code URL not in allowlist)
+		// Check if this is a forbidden error (e.g., CI code URL not in
+		// allowlist)
 		if err == store.ErrForbidden {
 			h.respondWithError(w, http.StatusForbidden, err)
 		} else {
@@ -247,10 +247,9 @@ func (h *JobHandler) CreateJob(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Resolve the job's characteristics to a queue (find-or-create) and
-	// route it there before anything is persisted or submitted -- see
-	// WORKERS_PLAN.md "Find-or-create at submit". queueResolvingStore is a
-	// narrow interface (defined below) so tests that supply a plain
+	// Resolve the job's characteristics to a queue (find-or-create) and route
+	// it there before anything is persisted or submitted. queueResolvingStore
+	// is a narrow interface (defined below) so tests that supply a plain
 	// store.Store mock still compile; production always satisfies it via
 	// postgres_store.PostgresDbStore.
 	if qs, ok := h.store.(queueResolvingStore); ok {
@@ -391,25 +390,24 @@ func (h *JobHandler) GetJob(w http.ResponseWriter, r *http.Request) {
 
 // jobsVisibleToStore is the narrow store capability that lets ListJobs push
 // visibility filtering into SQL instead of fetching a LIMIT/OFFSET page and
-// then filtering it down in Go. See
-// postgres_store/visibility_operations.go's ListJobsVisibleTo.
+// then filtering it down in Go. See postgres_store/visibility_operations.go's
+// ListJobsVisibleTo.
 //
 // Why this exists (code-review finding, "pagination before visibility
 // filtering breaks lists"): ListJobs used to always fetch a page via
 // h.store.ListJobs(filters, limit, offset) and THEN call
 // authz.FilterVisibleJobs on the page — when the store also relaxed
 // parseFilters' forced user_id scoping (see roleStoreResolver), that
-// combination could return a page shorter than `limit` (or empty) even
-// though more visible rows existed past the offset, and reported Total as
-// the post-filtered page length instead of a real count. ListJobs now only
-// ever does ONE of two things: (1) when the store implements
-// jobsVisibleToStore and h.visibility is non-nil, push the visibility
-// predicate into SQL via ListJobsVisibleTo, so LIMIT/OFFSET and COUNT(*)
-// both operate on the already-filtered set — exact pagination, exact
-// Total; or (2) fall back to the pre-authz behavior in full (parseFilters'
-// STRICT own-jobs-only scoping, no post-filter at all) via
-// parseFiltersStrict — never the broken middle combination of relaxed SQL
-// scoping plus a post-query filter.
+// combination could return a page shorter than `limit` (or empty) even though
+// more visible rows existed past the offset, and reported Total as the
+// post-filtered page length instead of a real count. ListJobs now only ever
+// does ONE of two things: (1) when the store implements jobsVisibleToStore
+// and h.visibility is non-nil, push the visibility predicate into SQL via
+// ListJobsVisibleTo, so LIMIT/OFFSET and COUNT(*) both operate on the
+// already-filtered set — exact pagination, exact Total; or (2) fall back to
+// the pre-authz behavior in full (parseFilters' STRICT own-jobs-only scoping,
+// no post-filter at all) via parseFiltersStrict — never the broken middle
+// combination of relaxed SQL scoping plus a post-query filter.
 type jobsVisibleToStore interface {
 	ListJobsVisibleTo(ctx context.Context, viewerID string, isGlobalAdmin bool, filters map[string]interface{}, limit, offset int) ([]models.Job, int64, error)
 }
@@ -456,10 +454,10 @@ func (h *JobHandler) ListJobs(w http.ResponseWriter, r *http.Request) {
 
 	// Fallback: the wired store doesn't support SQL-side visibility (or
 	// h.visibility is nil). Use the strict pre-authz own-jobs-only scoping
-	// unconditionally — see parseFiltersStrict — and no post-query filter,
-	// so pagination and Total (still an approximation: Total is the page
-	// length, same as always in this fallback) are at least self-consistent
-	// again instead of silently short-paging.
+	// unconditionally — see parseFiltersStrict — and no post-query filter, so
+	// pagination and Total (still an approximation: Total is the page length,
+	// same as always in this fallback) are at least self-consistent again
+	// instead of silently short-paging.
 	filters := h.parseFiltersStrict(r, user)
 	jobs, err := h.store.ListJobs(r.Context(), filters, limit, offset)
 	if err != nil {
@@ -484,14 +482,12 @@ func (h *JobHandler) ListJobs(w http.ResponseWriter, r *http.Request) {
 // Graceful cancel: submitted/queued jobs (never started) are cancelled
 // outright; running jobs are moved to "cancelling" so the worker's
 // cancel-poll drives a graceful JobRunner.Stop (SIGTERM, runnerlib cleanup
-// hooks, then forced kill after the configured grace). See
-// UI_AUTH_PLAN.md's Cancel vs Kill section and internal/jobcontrol.CancelJob,
-// which is the shared implementation this handler and the future CSIL UI
-// service both call.
+// hooks, then forced kill after the configured grace).CancelJob, which is the
+// shared implementation this handler and the future CSIL UI service both
+// call.
 //
 // Authz here is unchanged from the pre-existing behavior (owner or admin) —
-// this matches UI_AUTH_PLAN.md's permission matrix, which grants cancel to
-// (at least) the resource owner; finer-grained project-owner/org-admin
+// this matches) the resource owner; finer-grained project-owner/org-admin
 // scoping is what authz.Resolver.Capabilities computes for the CSIL UI
 // service (internal/uiapi/ui_jobcontrol.go's CancelJob).
 func (h *JobHandler) CancelJob(w http.ResponseWriter, r *http.Request) {
@@ -503,11 +499,9 @@ func (h *JobHandler) CancelJob(w http.ResponseWriter, r *http.Request) {
 // Admin kill: immediate forced container/pod removal, no SIGTERM grace, no
 // guarantee runnerlib's cleanup hooks run. See internal/jobcontrol.KillJob.
 //
-// Authz: per UI_AUTH_PLAN.md's permission matrix, kill is restricted to an
-// org admin of the job's org (job.UserID — org == user in this schema, so
-// unlike cancel this is NOT the same as "the job's creator") or a global
-// admin — see canUserKillJob, which mirrors
-// internal/uiapi/ui_jobcontrol.go's KillJob
+// Authz:UserID — org == user in this schema, so unlike cancel this is NOT the
+// same as "the job's creator") or a global admin — see canUserKillJob, which
+// mirrors internal/uiapi/ui_jobcontrol.go's KillJob
 // (authz.Resolver.RequireOrgAdmin(ctx, id, job.UserID)) exactly so REST and
 // the CSIL UI service can't drift apart on this security-sensitive check.
 func (h *JobHandler) KillJob(w http.ResponseWriter, r *http.Request) {
@@ -549,8 +543,8 @@ func (h *JobHandler) cancelOrKillJob(w http.ResponseWriter, r *http.Request, kil
 	// stuck graceful cancel to an immediate kill, whereas a second graceful
 	// cancel request has nothing new to do (models.Job.CanBeCancelled stays
 	// false for "cancelling"). See internal/jobcontrol.transitionJob, which
-	// re-checks this same distinction race-safely at the guarded-update
-	// layer — this is just a fast local pre-check.
+	// re-checks this same distinction race-safely at the guarded-update layer
+	// — this is just a fast local pre-check.
 	allowed := job.CanBeCancelled()
 	if kill {
 		allowed = job.CanBeKilled()
@@ -581,14 +575,13 @@ func (h *JobHandler) cancelOrKillJob(w http.ResponseWriter, r *http.Request, kil
 
 // RetryJob handles POST /api/v1/jobs/{job_id}/retry.
 //
-// Retries a single job in place — same workflow, same workflow node (if
-// any) — by cloning its spec into a brand-new job row and resubmitting. See
+// Retries a single job in place — same workflow, same workflow node (if any)
+// — by cloning its spec into a brand-new job row and resubmitting. See
 // internal/jobcontrol.RetryJob, the shared implementation this handler and
 // the future CSIL UI service both call.
 //
-// Authz: same tier as CancelJob (owner-or-admin via canUserAccessJob) —
-// per UI_AUTH_PLAN.md's permission matrix, retry is not the
-// admin-restricted operation kill is; it's scoped like cancel.
+// Authz: same tier as CancelJob (owner-or-admin via canUserAccessJob); it's
+// scoped like cancel.
 func (h *JobHandler) RetryJob(w http.ResponseWriter, r *http.Request) {
 	jobID := h.getID(r, "job_id")
 	if jobID == "" {
@@ -733,8 +726,7 @@ func (h *JobHandler) GetJobMetrics(w http.ResponseWriter, r *http.Request) {
 	h.respondWithJSON(w, http.StatusOK, result)
 }
 
-// GetJobLogs handles GET /api/v1/jobs/{job_id}/logs
-// Query parameters:
+// GetJobLogs handles GET /api/v1/jobs/{job_id}/logs Query parameters:
 //   - stream: "stdout", "stderr", or "combined" (default: "combined")
 func (h *JobHandler) GetJobLogs(w http.ResponseWriter, r *http.Request) {
 	jobID := h.getID(r, "job_id")
@@ -774,14 +766,14 @@ func (h *JobHandler) GetJobLogs(w http.ResponseWriter, r *http.Request) {
 		stream = "combined"
 	}
 
-	// Validate stream parameter
 	if stream != "stdout" && stream != "stderr" && stream != "combined" {
 		h.respondWithError(w, http.StatusBadRequest, store.ErrInvalidInput)
 		return
 	}
 
 	// New workers write immutable batches. Read these first. Keep the old
-	// objects as a compatibility fallback for jobs that ran before this format.
+	// objects as a compatibility fallback for jobs that ran before this
+	// format.
 	type streamedEntry struct {
 		entry  jobtelemetry.LogEntry
 		stream string
@@ -820,8 +812,8 @@ func (h *JobHandler) GetJobLogs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Build log object keys based on job ID
-	// Log format: logs/{job_id}/{stdout|stderr}.json (JSON array format)
+	// Build log object keys based on job ID Log format:
+	// logs/{job_id}/{stdout|stderr}.json (JSON array format)
 	var logContent []byte
 
 	switch stream {
@@ -852,7 +844,8 @@ func (h *JobHandler) GetJobLogs(w http.ResponseWriter, r *http.Request) {
 		logContent = content
 
 	case "combined":
-		// Fetch both stdout and stderr, combine them into a single sorted array
+		// Fetch both stdout and stderr, combine them into a single sorted
+		// array
 		stdoutKey := fmt.Sprintf("logs/%s/stdout.json", jobID)
 		stderrKey := fmt.Sprintf("logs/%s/stderr.json", jobID)
 
@@ -999,8 +992,6 @@ func (h *JobHandler) mergeAndSortLogArrays(stdoutContent, stderrContent []byte) 
 	return result, nil
 }
 
-// Helper methods
-
 func (h *JobHandler) validateCreateJobRequest(req *CreateJobRequest) error {
 	if req.Name == "" {
 		return store.ErrInvalidInput
@@ -1036,7 +1027,8 @@ func (h *JobHandler) validateCreateJobRequest(req *CreateJobRequest) error {
 		}
 
 		if req.CISourceType == "copy" {
-			// Copy type not supported for security - could allow local path injection
+			// Copy type not supported for security - could allow local path
+			// injection
 			log.Printf("WARNING: Rejected ci_source_type 'copy' - not yet supported for security reasons")
 			return store.ErrInvalidInput
 		}
@@ -1156,9 +1148,8 @@ func (h *JobHandler) createJobFromRequest(req *CreateJobRequest, userID string) 
 		}
 	}
 
-	// Set defaults
-	// Note: CodeDir is intentionally not defaulted - if not specified,
-	// the container will use its own WORKDIR from the image
+	// Set defaults Note: CodeDir is intentionally not defaulted - if not
+	// specified, the container will use its own WORKDIR from the image
 	if job.RunnerImage == "" && config.DefaultRunnerImage != "" {
 		job.RunnerImage = config.DefaultRunnerImage
 	}
@@ -1185,10 +1176,9 @@ func (h *JobHandler) createJobFromRequest(req *CreateJobRequest, userID string) 
 		}
 	}
 
-	// Characteristics (WORKERS_PLAN.md "Characteristics & matching"):
-	// scalars only, "os" defaults to "linux" when omitted. CreateJob resolves
-	// this to a queue UUID (queueResolvingStore) and overwrites job.QueueName
-	// with it before submitting.
+	// Characteristics: scalars only, "os" defaults to "linux" when omitted.
+	// CreateJob resolves this to a queue UUID (queueResolvingStore) and
+	// overwrites job.QueueName with it before submitting.
 	chars, err := characteristics.ParseJobCharacteristics(req.Characteristics)
 	if err != nil {
 		// Wrap store.ErrInvalidInput (not just the raw parse error) so
@@ -1198,9 +1188,9 @@ func (h *JobHandler) createJobFromRequest(req *CreateJobRequest, userID string) 
 	}
 	job.Characteristics = chars
 
-	// Resources (WORKERS_PLAN.md "Resources"): unset fields are left empty
-	// so the resource_cpu_request/resource_cpu_limit/resource_memory_limit
-	// column defaults apply on insert.
+	// Resources: unset fields are left empty so the
+	// resource_cpu_request/resource_cpu_limit/resource_memory_limit column
+	// defaults apply on insert.
 	cpuRequest, cpuLimit, memoryLimit, err := resources.ParseResources(req.Resources)
 	if err != nil {
 		return nil, fmt.Errorf("%w: invalid resources: %w", store.ErrInvalidInput, err)
@@ -1313,9 +1303,9 @@ func (h *JobHandler) canUserAccessJob(user *models.User, job *models.Job) bool {
 }
 
 // canUserViewJob is canUserAccessJob plus public visibility (additive, read
-// endpoints only — see the JobHandler.visibility field doc). h.visibility
-// is nil whenever the wired store doesn't support authz role/visibility
-// lookups (e.g. the test mocks in job_handler_test.go), so this is exactly
+// endpoints only — see the JobHandler.visibility field doc). h.visibility is
+// nil whenever the wired store doesn't support authz role/visibility lookups
+// (e.g. the test mocks in job_handler_test.go), so this is exactly
 // canUserAccessJob's original owner-or-admin check in that case.
 func (h *JobHandler) canUserViewJob(ctx context.Context, user *models.User, job *models.Job) bool {
 	if h.canUserAccessJob(user, job) {
@@ -1328,21 +1318,19 @@ func (h *JobHandler) canUserViewJob(ctx context.Context, user *models.User, job 
 	return err == nil && visible
 }
 
-// canUserKillJob reports whether user may force-kill job. Per
-// UI_AUTH_PLAN.md's permission matrix, kill is restricted to an org admin
-// of the job's org (job.UserID) or a global admin — plain job ownership is
-// NOT by itself sufficient (unlike cancel), though in practice a job's
-// creator is also their own org's admin (users act as orgs in this schema
-// — see authz.Resolver.IsOrgAdmin's doc comment), so the common case of "I
-// killed my own job" still works via that reflexive org-admin rule, not via
-// a separate ownership check here.
+// canUserKillJob reports whether user may force-kill job.UserID) or a global
+// admin — plain job ownership is NOT by itself sufficient (unlike cancel),
+// though in practice a job's creator is also their own org's admin (users act
+// as orgs in this schema — see authz.Resolver.IsOrgAdmin's doc comment), so
+// the common case of "I killed my own job" still works via that reflexive
+// org-admin rule, not via a separate ownership check here.
 //
-// When h.visibility is nil (the wired store doesn't satisfy authz.RoleStore
-// — see the JobHandler.visibility field doc, now logged loudly at
-// construction time by roleStoreResolver), this FAILS CLOSED: only the
-// legacy isAdmin(user) check (user.Roles contains "admin"/"system_admin")
-// is honored. Job ownership alone is deliberately NOT enough to kill in
-// that fallback, unlike canUserAccessJob — kill is the one mutation where a
+// When h.visibility is nil (the wired store doesn't satisfy authz.RoleStore —
+// see the JobHandler.visibility field doc, now logged loudly at construction
+// time by roleStoreResolver), this FAILS CLOSED: only the legacy
+// isAdmin(user) check (user.Roles contains "admin"/"system_admin") is
+// honored. Job ownership alone is deliberately NOT enough to kill in that
+// fallback, unlike canUserAccessJob — kill is the one mutation where a
 // missing authz resolver must narrow access, not just skip an additive
 // widening.
 func (h *JobHandler) canUserKillJob(ctx context.Context, user *models.User, job *models.Job) bool {
@@ -1421,16 +1409,15 @@ func (h *JobHandler) commonJobQueryFilters(r *http.Request) map[string]interface
 
 // parseFilters builds ListJobs' filter set for the SQL-side-visibility
 // primary path (jobsVisibleToStore — see ListJobs). Non-admins are NOT
-// restricted to their own jobs here, with or without an explicit
-// ?user_id=: the visibility predicate ListJobsVisibleTo evaluates in SQL is
-// the actual authorization decision for every row this query can return
-// (own jobs, public jobs, and anything the caller has an org-admin/
-// project-role grant on), so leaving user_id unset lets that predicate
-// determine the full breadth, and an explicit ?user_id= override is always
-// safe to honor too (it can only narrow the visible set further, never
-// widen it). Do not call this for a store that lacks jobsVisibleToStore —
-// see parseFiltersStrict for that fallback, which forces the pre-authz
-// own-jobs-only scoping instead.
+// restricted to their own jobs here, with or without an explicit ?user_id=:
+// the visibility predicate ListJobsVisibleTo evaluates in SQL is the actual
+// authorization decision for every row this query can return (own jobs,
+// public jobs, and anything the caller has an org-admin/ project-role grant
+// on), so leaving user_id unset lets that predicate determine the full
+// breadth, and an explicit ?user_id= override is always safe to honor too (it
+// can only narrow the visible set further, never widen it). Do not call this
+// for a store that lacks jobsVisibleToStore — see parseFiltersStrict for that
+// fallback, which forces the pre-authz own-jobs-only scoping instead.
 func (h *JobHandler) parseFilters(r *http.Request, user *models.User) map[string]interface{} {
 	filters := h.commonJobQueryFilters(r)
 	if userID := r.URL.Query().Get("user_id"); userID != "" {
@@ -1439,9 +1426,9 @@ func (h *JobHandler) parseFilters(r *http.Request, user *models.User) map[string
 	return filters
 }
 
-// parseFiltersStrict is ListJobs' fallback-path filter builder (store
-// doesn't implement jobsVisibleToStore, or h.visibility is nil): non-admins
-// are unconditionally restricted to their own jobs at the SQL layer — the
+// parseFiltersStrict is ListJobs' fallback-path filter builder (store doesn't
+// implement jobsVisibleToStore, or h.visibility is nil): non-admins are
+// unconditionally restricted to their own jobs at the SQL layer — the
 // original pre-authz behavior — since there is no SQL-side (or post-query)
 // visibility check backing a wider query in this path. See ListJobs and
 // jobsVisibleToStore's doc comment for why this must never be paired with a

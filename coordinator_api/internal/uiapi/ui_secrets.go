@@ -12,8 +12,7 @@ import (
 
 // requireManageSecrets requires org admin/global admin (manage-secrets
 // capability) at orgID. Every secrets op (write-only: set/delete/list-paths,
-// plus secret grants) is gated the same way — UI_AUTH_PLAN.md's matrix has
-// no separate "view" tier for these.
+// plus secret grants) is gated the same way.
 func (s *UiService) requireManageSecrets(ctx context.Context, id authz.Identity, orgID string) error {
 	caps, err := s.deps.Resolver.Capabilities(ctx, id, authz.Scope{OrgID: &orgID})
 	if err != nil {
@@ -25,9 +24,9 @@ func (s *UiService) requireManageSecrets(ctx context.Context, id authz.Identity,
 	return nil
 }
 
-// SetSecret writes a secret value (write-only: this op never returns a
-// value, including on subsequent reads through this service — there is no
-// get-secret op).
+// SetSecret writes a secret value (write-only: this op never returns a value,
+// including on subsequent reads through this service — there is no get-secret
+// op).
 func (s *UiService) SetSecret(ctx context.Context, req csilapi.SetSecretRequest) (csilapi.SetSecretResponse, error) {
 	id, _, authErr := s.deps.requireUser(ctx)
 	if authErr != nil {
@@ -150,8 +149,8 @@ func validSecretPathMatch(s string) bool {
 	}
 }
 
-// ListSecretGrants lists every secret grant (global and project-scoped)
-// under an org.
+// ListSecretGrants lists every secret grant (global and project-scoped) under
+// an org.
 func (s *UiService) ListSecretGrants(ctx context.Context, req csilapi.ListSecretGrantsRequest) (csilapi.ListSecretGrantsResponse, error) {
 	id, _, authErr := s.deps.requireUser(ctx)
 	if authErr != nil {

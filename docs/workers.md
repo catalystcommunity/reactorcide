@@ -2,9 +2,8 @@
 
 This is the operator-facing guide to Reactorcide's coordinator-mediated worker model: how
 jobs get routed to workers, how workers enroll and authenticate, what resources a job can
-request, and how to manage all of it from the admin UI. It's the companion to
-`WORKERS_PLAN.md` (the implementation plan/architecture record) — this doc describes the
-shipped behavior, not the build history.
+request, and how to manage all of it from the admin UI. This doc describes the
+shipped behavior.
 
 ## Topology
 
@@ -457,7 +456,7 @@ worker (`coordinator_api/cmd/worker.go`):
 | `--concurrency` / `-c` | `REACTORCIDE_WORKER_CONCURRENCY` | concurrent leases per worker process |
 
 The worker process also still reads a few runner/job-execution env vars that
-are unrelated to the coordinator protocol (unchanged by WORKERS_PLAN.md):
+are unrelated to the coordinator protocol:
 `REACTORCIDE_JOB_API_URL` / `REACTORCIDE_API_TOKEN` (let job containers
 submit triggers), `REACTORCIDE_K8S_JOB_NAMESPACE` /
 `REACTORCIDE_K8S_JOB_SERVICE_ACCOUNT` / `REACTORCIDE_K8S_JOB_IMAGE_PULL_SECRETS`
@@ -494,9 +493,6 @@ with:
 
 ## See also
 
-- `WORKERS_PLAN.md` — the architecture/implementation plan this feature was built from
-  (schema, CSIL service definitions, phased task breakdown). Useful if you're extending this
-  system, not just operating it.
 - `docs/ui-auth.md` — the full RBAC permission matrix `ManageWorkers` sits in, plus login
   modes and session mechanics the worker-session model reuses.
 - `docs/security-model.md` — the broader untrusted-code / secret-isolation security model

@@ -247,9 +247,8 @@ func (h *WebHandler) WorkflowDetail(w http.ResponseWriter, r *http.Request) {
 
 	// Capability hints for Task I's cancel/kill/retry buttons: scoped to this
 	// workflow's project when known, since cancel/kill/retry authorization is
-	// project/org-scoped (see UI_AUTH_PLAN.md's permission matrix). Display
-	// only — the coordinator re-authorizes the actual cancel-workflow/
-	// retry-workflow/retry-unsuccessful-jobs call.
+	// project/org-scoped. Display only — the coordinator re-authorizes the
+	// actual cancel-workflow/ retry-workflow/retry-unsuccessful-jobs call.
 	caps := h.capabilitiesForProject(r, workflow.ProjectID)
 	msg, errMsg := flashFromQuery(r)
 

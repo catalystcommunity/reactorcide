@@ -35,7 +35,7 @@ type JobConfig struct {
 
 	// Command is the full command to execute in the guest. There is no
 	// container-style entrypoint to clear for VM guests -- this runs
-	// directly (see VM_RUNNERS_PLAN.md's "Guest execution note").
+	// directly.
 	Command []string
 
 	// Env is injected into the guest process. May contain secrets/VCS-auth
@@ -132,29 +132,14 @@ func New(images ImageSource, lifecycle VMLifecycle, transport GuestTransport, cr
 	return r
 }
 
-// NewDefault builds a VMRunner using this platform's VMLifecycle
+// NewDefaultWithImages builds a VMRunner from this platform's VMLifecycle
 // (newVMLifecycle -- build-tag selected: errors on Linux today via
-// lifecycle_other.go, real once VM-3/VM-4 land on darwin/windows), the SSH
-// GuestTransport, and a local pre-placed-file ImageSource rooted at
-// baseImageDir. newVMLifecycle's error is returned unchanged so callers
-// like worker.NewJobRunner("vm") can surface a clear "not supported on
-// this OS" message rather than a generic failure.
-//
-// NewDefaultWithImages is the same constructor generalized over ImageSource
-// -- use it instead when the caller needs to choose LocalImageSource vs.
-// image_oci.go's OCIImageSource (or another implementation) itself, as
-// internal/worker/vm_adapter.go's REACTORCIDE_VM_IMAGE_SOURCE selection
-// does.
-func NewDefault(baseImageDir string, creds GuestCreds, opts ...Option) (*VMRunner, error) {
-	return NewDefaultWithImages(NewLocalImageSource(baseImageDir), creds, opts...)
-}
-
-// NewDefaultWithImages builds a VMRunner the same way NewDefault does --
-// this platform's VMLifecycle plus the SSH GuestTransport -- but takes an
-// already-constructed ImageSource rather than always building a
-// LocalImageSource, so callers can plug in image_oci.go's OCIImageSource
-// (or any other ImageSource) without vmrunner needing to know which. See
-// NewDefault's doc comment.
+// lifecycle_other.go), the SSH GuestTransport, and the given ImageSource, so
+// callers pick LocalImageSource vs. image_oci.go's OCIImageSource
+// themselves, as internal/worker/vm_adapter.go's REACTORCIDE_VM_IMAGE_SOURCE
+// selection does. newVMLifecycle's error is returned unchanged so callers
+// like worker.NewJobRunner("vm") can surface a clear "not supported on this
+// OS" message rather than a generic failure.
 func NewDefaultWithImages(images ImageSource, creds GuestCreds, opts ...Option) (*VMRunner, error) {
 	lifecycle, err := newVMLifecycle()
 	if err != nil {

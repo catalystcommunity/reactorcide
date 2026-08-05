@@ -169,10 +169,9 @@ func LoadVMConfig() (VMConfig, error) {
 }
 
 // buildVMImageSource constructs the vmrunner.ImageSource cfg.ImageSource
-// selects. This is the one place that translates VMConfig's ImageSource
-// knob into a concrete vmrunner.ImageSource, keeping LocalImageSource and
-// OCIImageSource swappable purely via configuration (see VM_RUNNERS_PLAN.md
-// VM-2's "wire selection" requirement).
+// selects. This is the one place that translates VMConfig's ImageSource knob
+// into a concrete vmrunner.ImageSource, keeping LocalImageSource and
+// OCIImageSource swappable purely via configuration.
 func buildVMImageSource(cfg VMConfig) (vmrunner.ImageSource, error) {
 	switch strings.ToLower(strings.TrimSpace(cfg.ImageSource)) {
 	case "", "local":
@@ -322,12 +321,10 @@ func (a *vmRunnerAdapter) PruneImages(ctx context.Context, maxUnused time.Durati
 	return a.ociImages.Prune(ctx, maxUnused, now)
 }
 
-// toVMJobConfig translates the fields vmrunner.VMRunner needs out of the
-// full worker.JobConfig. Fields with no VM-guest equivalent yet (bind
-// mounts, VCSAuth file materialization, capabilities) are intentionally
-// left unmapped -- see VM_RUNNERS_PLAN.md's "Guest execution note" and
-// VM-6 ("wire the guest env/secret/VCS-auth injection to the lease
-// fields"), which is where that gets addressed.
+// toVMJobConfig translates the fields vmrunner.VMRunner needs out of the full
+// worker.JobConfig. Fields with no VM-guest equivalent yet (bind mounts,
+// VCSAuth file materialization, capabilities) are intentionally left
+// unmapped), which is where that gets addressed.
 
 func toVMJobConfig(config *JobConfig, guestUser string) *vmrunner.JobConfig {
 	env := make(map[string]string, len(config.Env))

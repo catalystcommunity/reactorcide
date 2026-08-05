@@ -1,8 +1,7 @@
-// Package workerauth provides the worker-side counterparts to
-// internal/auth's UI session/credential primitives (WORKERS_PLAN.md
-// "Workers -- registration, auth, protocol"): enrollment-token validation
-// (the only human-handled worker credential) and ephemeral, process-
-// lifetime worker sessions. Every token this package handles is hashed with
+// Package workerauth provides the worker-side counterparts to internal/auth's
+// UI session/credential primitives: enrollment-token validation (the only
+// human-handled worker credential) and ephemeral, process- lifetime worker
+// sessions. Every token this package handles is hashed with
 // internal/checkauth.HashAPIToken before it ever reaches a store call or a
 // log line -- raw token values are returned to a caller exactly once (at
 // generation) and never persisted or logged.
@@ -56,11 +55,10 @@ func generateRawToken() (string, error) {
 // persists only hash via postgres_store.CreatePoolEnrollmentToken -- raw is
 // never stored or logged.
 //
-// Note for callers: unlike WORKERS_PLAN.md's literal
-// `GenerateEnrollmentToken() (raw string, hash []byte)` sketch, this
-// returns a third `error` (crypto/rand.Read can fail), matching
-// internal/auth's own generateToken -- silently swallowing that possibility
-// would be worse than a slightly wider signature.
+// Note for callers: unlike) (raw string, hash []byte)` sketch, this returns a
+// third `error` (crypto/rand.Read can fail), matching internal/auth's own
+// generateToken -- silently swallowing that possibility would be worse than a
+// slightly wider signature.
 func GenerateEnrollmentToken() (raw string, hash []byte, err error) {
 	raw, err = generateRawToken()
 	if err != nil {

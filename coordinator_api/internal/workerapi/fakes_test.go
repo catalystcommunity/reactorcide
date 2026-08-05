@@ -380,8 +380,7 @@ func (f *fakeStore) ListSecretGrantsForJob(ctx context.Context, userID string, p
 	return out, nil
 }
 
-// --- projects/users/vcs credentials (VCS checkout credential resolution --
-// see vcs_auth.go, WORKERS_PLAN.md Wave 3 P3c) ---
+// --- projects/users/vcs credentials ---
 
 func (f *fakeStore) seedProject(p *models.Project) {
 	f.mu.Lock()
@@ -390,15 +389,6 @@ func (f *fakeStore) seedProject(p *models.Project) {
 		p.ProjectID = uuid.NewString()
 	}
 	f.projects[p.ProjectID] = p
-}
-
-func (f *fakeStore) seedUser(u *models.User) {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	if u.UserID == "" {
-		u.UserID = uuid.NewString()
-	}
-	f.users[u.UserID] = u
 }
 
 func (f *fakeStore) seedVCSCredential(c models.ProjectVCSCredential) {

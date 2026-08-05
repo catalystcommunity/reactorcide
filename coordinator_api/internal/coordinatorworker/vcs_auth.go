@@ -21,11 +21,11 @@ import (
 // "/job/.reactorcide/vcs-auth" layout.
 const vcsAuthContainerDir = "/job/.reactorcide/vcs-auth"
 
-// prepareVCSAuth turns a lease's coordinator-resolved VCSAuth (WORKERS_PLAN.md
-// Wave 3 P3c) into per-lease git checkout credential material and registers
-// the token with masker so it is scrubbed from every log line pumped to
-// AppendLogs from this point on -- BEFORE the job container is ever spawned,
-// exactly like lease.Secrets values are registered in runLease.
+// prepareVCSAuth turns a lease's coordinator-resolved VCSAuth into per-lease
+// git checkout credential material and registers the token with masker so it
+// is scrubbed from every log line pumped to AppendLogs from this point on --
+// BEFORE the job container is ever spawned, exactly like lease.Secrets values
+// are registered in runLease.
 //
 // The credential files are written under workspaceDir/.reactorcide/vcs-auth
 // (host path). That placement does double duty:

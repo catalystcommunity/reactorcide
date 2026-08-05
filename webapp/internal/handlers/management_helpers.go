@@ -9,8 +9,7 @@ package handlers
 // Query-param flash convention: GET pages read ?msg=<text> (success) and
 // ?err=<text> (failure) and render them next to the relevant form/section.
 // Both are always passed through html/template, which auto-escapes, so no
-// manual HTML-escaping is needed here to satisfy AGENTS.md/UI_AUTH_PLAN.md's
-// "html-escape everything" instruction for redirect-carried messages.
+// manual HTML-escaping is needed here to satisfy AGENTS.md.
 
 import (
 	"errors"

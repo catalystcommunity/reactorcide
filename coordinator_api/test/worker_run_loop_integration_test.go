@@ -1,17 +1,14 @@
 package test
 
-// End-to-end proof for the coordinator-mediated worker run loop
-// (WORKERS_PLAN.md Wave 3, P3a): the REAL internal/coordinatorworker.Run
-// loop, talking real CSIL-RPC/HTTP to the REAL router-mounted dispatcher
-// (handlers.GetAppMuxWithClient -> uiapi.NewHandlerWithWorker) served over
-// an httptest.Server, against real Postgres (this package's shared
-// testcontainers instance) and the REAL Docker JobRunner backend --
-// Register -> RequestJob -> spawn a real "alpine" container -> stream its
-// real stdout back via AppendLogs -> ReportResult -> job row completed with
-// its logs in object storage. This is the P2-B "run the claimed spec via
-// the real Docker runner" proof folded into P3a per WORKERS_PLAN.md's task
-// note, layered on top of internal/workerapi's own
-// TestWorkerProtocolIntegration (worker_protocol_integration_test.go),
+// End-to-end proof for the coordinator-mediated worker run loop: the REAL
+// internal/coordinatorworker.Run loop, talking real CSIL-RPC/HTTP to the REAL
+// router-mounted dispatcher (handlers.GetAppMuxWithClient ->
+// uiapi.NewHandlerWithWorker) served over an httptest.Server, against real
+// Postgres (this package's shared testcontainers instance) and the REAL
+// Docker JobRunner backend -- Register -> RequestJob -> spawn a real "alpine"
+// container -> stream its real stdout back via AppendLogs -> ReportResult ->
+// job row completed with its logs in object storage. This is the P2-B "run
+// the claimed spec via the real Docker runner" proof folded into P3a.go),
 // which already covers the CSIL-RPC protocol itself with a fake Client.
 //
 // Skips (not fails) if Docker is unavailable in the environment running the
@@ -41,17 +38,16 @@ import (
 func TestWorkerRunLoopDockerIntegration(t *testing.T) {
 	ctx := context.Background()
 
-	// Guard: skip (not fail) when Docker isn't reachable in this
-	// environment, exactly like internal/worker's own Docker integration
-	// tests.
+	// Guard: skip (not fail) when Docker isn't reachable in this environment,
+	// exactly like internal/worker's own Docker integration tests.
 	if _, err := worker.NewDockerRunner(); err != nil {
 		t.Skipf("Docker not available: %v", err)
 	}
 
 	// Master keys must exist before the app mux is built, same reasoning as
 	// TestWorkerProtocolIntegration: router.go's own singleton key manager
-	// must find already-persisted key material. This job carries no
-	// secrets, but resolveJobSecrets still runs over its (empty) env.
+	// must find already-persisted key material. This job carries no secrets,
+	// but resolveJobSecrets still runs over its (empty) env.
 	_, err := secrets.LoadOrCreateMasterKeys(testDB)
 	require.NoError(t, err)
 
@@ -122,11 +118,11 @@ func TestWorkerRunLoopDockerIntegration(t *testing.T) {
 
 	cancel()
 	<-done // Run returns ctx.Err() once the loop observes cancellation; the
-	// point of this test is the job's/logs' state, asserted below, not
-	// Run's own return value.
+	// point of this test is the job's/logs' state, asserted below, not Run's
+	// own return value.
 
-	// --- assert: job completed, exit code 0, real container stdout landed
-	// in object storage exactly like a pull-based worker's logs would ------
+	// --- assert: job completed, exit code 0, real container stdout landed in
+	// object storage exactly like a pull-based worker's logs would ------
 
 	finalJob, err := postgres_store.PostgresStore.GetJobByID(ctx, job.JobID)
 	require.NoError(t, err)

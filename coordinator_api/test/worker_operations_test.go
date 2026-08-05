@@ -1,12 +1,11 @@
 package test
 
-// Postgres-backed integration coverage for the Wave-2 worker foundation
-// (WORKERS_PLAN.md "Workers -- registration, auth, protocol", "Schema",
-// task P2-A): postgres_store/worker_operations.go and
-// internal/workerauth against a real database, covering the full chain
-// pool create -> enrollment token create+validate-by-hash -> worker upsert
-// (insert then update the same worker_key) -> session create+resolve+
-// revoke -> lease create+release+stale-list.
+// Postgres-backed integration coverage for the Wave-2 worker foundation:
+// postgres_store/worker_operations.go and internal/workerauth against a real
+// database, covering the full chain pool create -> enrollment token
+// create+validate-by-hash -> worker upsert (insert then update the same
+// worker_key) -> session create+resolve+ revoke -> lease
+// create+release+stale-list.
 //
 // Like queue_operations_test.go, these run inside RunTransactionalTest so
 // every row created here rolls back and never leaks into other tests
