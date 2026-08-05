@@ -2,6 +2,7 @@ package uiapi
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/jobtelemetry"
@@ -41,17 +42,26 @@ func (s *UiService) GetJobMetrics(ctx context.Context, req csilapi.GetJobMetrics
 	if from != nil && to != nil && from.After(*to) {
 		return csilapi.GetJobMetricsResponse{}, NewServiceError("invalid_argument", "from_time must not be after to_time")
 	}
+	var cursor string
+	if req.Cursor != nil {
+		cursor = *req.Cursor
+	}
 	result, err := jobtelemetry.QueryMetrics(ctx, s.deps.ObjectStore, jobtelemetry.Query{
 		JobID:     job.JobID,
 		From:      from,
 		To:        to,
 		Metrics:   req.Metrics,
 		MaxPoints: int(req.MaxPoints),
+		Cursor:    cursor,
 	})
 	if err != nil {
+		if errors.Is(err, jobtelemetry.ErrInvalidCursor) {
+			return csilapi.GetJobMetricsResponse{}, NewServiceError("invalid_argument", "cursor is invalid for this metric query")
+		}
 		return csilapi.GetJobMetricsResponse{}, NewServiceError("internal", "failed to read job metrics")
 	}
-	response := csilapi.GetJobMetricsResponse{Complete: result.Complete}
+	nextCursor := result.NextCursor
+	response := csilapi.GetJobMetricsResponse{Complete: result.Complete, NextCursor: &nextCursor}
 	for _, series := range result.Series {
 		converted := csilapi.JobMetricSeries{Name: series.Name, Unit: series.Unit}
 		for _, label := range series.Labels {

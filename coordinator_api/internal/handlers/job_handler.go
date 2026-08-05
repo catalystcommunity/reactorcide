@@ -720,9 +720,13 @@ func (h *JobHandler) GetJobMetrics(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	result, err := jobtelemetry.QueryMetrics(r.Context(), h.objectStore, jobtelemetry.Query{
-		JobID: jobID, From: from, To: to, Metrics: r.URL.Query()["metric"], MaxPoints: maxPoints,
+		JobID: jobID, From: from, To: to, Metrics: r.URL.Query()["metric"], MaxPoints: maxPoints, Cursor: r.URL.Query().Get("cursor"),
 	})
 	if err != nil {
+		if errors.Is(err, jobtelemetry.ErrInvalidCursor) {
+			h.respondWithError(w, http.StatusBadRequest, store.ErrInvalidInput)
+			return
+		}
 		h.respondWithError(w, http.StatusInternalServerError, err)
 		return
 	}

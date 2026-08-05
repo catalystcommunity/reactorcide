@@ -65,6 +65,7 @@ func Serve() error {
 	if pool := postgres_store.PgxPool(); pool != nil {
 		bus := pubsub.NewBus(logrus.StandardLogger(), 256)
 		listener := pubsub.NewNotifyListener(pool, bus, logrus.StandardLogger())
+		bus.SetJobTopicController(listener)
 		listener.Start(context.Background())
 		handlers.SetPubSubBus(bus)
 		logging.Log.Info("Pub/sub bus initialized; WebSocket streams enabled")

@@ -33,20 +33,34 @@ func (s *UiService) GetJobLogs(ctx context.Context, req csilapi.GetJobLogsReques
 	if s.deps.ObjectStore == nil {
 		return csilapi.GetJobLogsResponse{}, NewServiceError("internal", "object storage is not configured")
 	}
-	streams := []string{req.Stream}
-	if req.Stream == "combined" {
-		streams = []string{"stdout", "stderr"}
+	var cursor string
+	if req.Cursor != nil {
+		cursor = *req.Cursor
+	}
+	maxEntries := jobtelemetry.DefaultLogPageSize
+	if req.MaxEntries != nil {
+		maxEntries = int(*req.MaxEntries)
+		if maxEntries < 1 || maxEntries > jobtelemetry.MaxLogPageSize {
+			return csilapi.GetJobLogsResponse{}, NewServiceError("invalid_argument", "max_entries is outside the allowed range")
+		}
+	}
+	page, err := jobtelemetry.QueryLogs(ctx, s.deps.ObjectStore, job.JobID, req.Stream, cursor, maxEntries)
+	if err != nil {
+		if errors.Is(err, jobtelemetry.ErrInvalidCursor) {
+			return csilapi.GetJobLogsResponse{}, NewServiceError("invalid_argument", "cursor is invalid for this log query")
+		}
+		return csilapi.GetJobLogsResponse{}, NewServiceError("internal", "failed to read job logs")
 	}
 	var entries []csilapi.JobLogEntry
-	for _, stream := range streams {
-		batchEntries, readErr := jobtelemetry.ReadLogEntries(ctx, s.deps.ObjectStore, job.JobID, stream)
-		if readErr != nil {
-			return csilapi.GetJobLogsResponse{}, NewServiceError("internal", "failed to read job logs")
+	for _, entry := range page.Entries {
+		entries = append(entries, csilapi.JobLogEntry{Timestamp: entry.ObservedAt.Format(timeLayout), Stream: entry.Stream, Level: entry.Level, Message: entry.Message})
+	}
+	if len(entries) == 0 && req.Cursor == nil {
+		streams := []string{req.Stream}
+		if req.Stream == "combined" {
+			streams = []string{"stdout", "stderr"}
 		}
-		for _, entry := range batchEntries {
-			entries = append(entries, csilapi.JobLogEntry{Timestamp: entry.ObservedAt.Format(timeLayout), Stream: stream, Level: entry.Level, Message: entry.Message})
-		}
-		if len(batchEntries) == 0 {
+		for _, stream := range streams {
 			legacy, legacyErr := readLegacyLogs(ctx, s.deps.ObjectStore, job.JobID, stream)
 			if legacyErr != nil {
 				return csilapi.GetJobLogsResponse{}, NewServiceError("internal", "failed to read job logs")
@@ -55,7 +69,8 @@ func (s *UiService) GetJobLogs(ctx context.Context, req csilapi.GetJobLogsReques
 		}
 	}
 	sort.SliceStable(entries, func(i, j int) bool { return entries[i].Timestamp < entries[j].Timestamp })
-	return csilapi.GetJobLogsResponse{Entries: entries}, nil
+	nextCursor, hasMore, complete := page.NextCursor, page.HasMore, page.Complete
+	return csilapi.GetJobLogsResponse{Entries: entries, NextCursor: &nextCursor, HasMore: &hasMore, Complete: &complete}, nil
 }
 
 const timeLayout = "2006-01-02T15:04:05.999999999Z07:00"

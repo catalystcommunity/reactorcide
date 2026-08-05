@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -83,6 +84,16 @@ func (s *S3ObjectStore) fullKey(key string) string {
 		return key
 	}
 	return s.prefix + key
+}
+
+// logicalKey removes the storage prefix from a physical S3 object key.
+// ObjectStore callers always use logical keys. In particular, a key returned
+// by List must be safe to pass to Get, Delete, Exists, and GetURL.
+func (s *S3ObjectStore) logicalKey(key string) string {
+	if s.prefix == "" {
+		return key
+	}
+	return strings.TrimPrefix(key, s.prefix)
 }
 
 // Put stores an object in S3
@@ -202,7 +213,7 @@ func (s *S3ObjectStore) List(ctx context.Context, prefix string) ([]ObjectInfo, 
 
 		for _, obj := range page.Contents {
 			objects = append(objects, ObjectInfo{
-				Key:          aws.ToString(obj.Key),
+				Key:          s.logicalKey(aws.ToString(obj.Key)),
 				Size:         aws.ToInt64(obj.Size),
 				LastModified: aws.ToTime(obj.LastModified),
 			})

@@ -103,10 +103,13 @@
 <div class="card">
     <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:8px;">
         <h2>Logs</h2>
-        <button id="metrics-open" type="button" title="Open resource graphs" aria-label="Open resource graphs" style="padding:8px 12px;display:flex;align-items:center;gap:8px;">
-            <svg width="26" height="26" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 19V5M4 19H21M7 15l4-5 4 3 5-7" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
-            Metrics
-        </button>
+        <div style="display:flex;align-items:center;gap:12px;">
+            <span id="telemetry-status" class="meta" role="status" aria-live="polite"></span>
+            <button id="metrics-open" type="button" title="Open resource graphs" aria-label="Open resource graphs" style="padding:8px 12px;display:flex;align-items:center;gap:8px;">
+                <svg width="26" height="26" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 19V5M4 19H21M7 15l4-5 4 3 5-7" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                Metrics
+            </button>
+        </div>
     </div>
     <div class="stream-tabs">
         <a href="/app/jobs/{{.Job.JobID}}?stream=combined" {{if eq .Stream "combined"}}class="active"{{end}}>Combined</a>
@@ -140,11 +143,9 @@
 </dialog>
 
 <script>
-// Live-update this job's status and logs over a single WebSocket. The
-// coordinator pushes job_update frames on state changes and log_available
-// frames when a new log chunk has been flushed to object storage. We
-// refetch the full log on each log_available (cheap) and replace the
-// viewer content, then preserve auto-scroll.
+// Live-update this job over one WebSocket. Availability frames contain no
+// private telemetry. Cursor queries fetch only durable data that this UI
+// session can view. A low-frequency poll repairs missed notifications.
 (function() {
     var statusClasses = {
         completed: 'status-completed',
@@ -159,6 +160,12 @@
     var stream = {{.Stream}};
     var statusBadge = document.getElementById('job-status');
     var viewer = document.getElementById('log-viewer');
+    var telemetryStatus = document.getElementById('telemetry-status');
+    var currentStatus = statusBadge ? statusBadge.textContent.trim() : '';
+    var logCursor = null;
+    var logFetchInFlight = false;
+    var logFetchPending = false;
+    var logsInitialized = false;
 
     var metricsDialog = document.getElementById('metrics-dialog');
     var metricsCanvas = document.getElementById('metrics-chart');
@@ -167,6 +174,9 @@
     var metricsTooltip = document.getElementById('metrics-tooltip');
     var metricsSeries = [];
     var metricsEnabled = {};
+	var metricsCursor = null;
+	var metricsFetchInFlight = false;
+	var metricsFetchPending = false;
 	var metricsKind = 'cpu';
 	var metricsWindow = 0;
 	var metricsKeyboardX = null;
@@ -176,6 +186,7 @@
         var labels = (series.labels || []).filter(function(l) { return l.key !== 'attempt'; }).map(function(l) { return l.key + '=' + l.value; });
         return series.name + (labels.length ? ' (' + labels.join(', ') + ')' : '') + ' [' + series.unit + ']';
     }
+	function seriesKey(series){return series.name+'\x00'+series.unit+'\x00'+JSON.stringify(series.labels||[]);}
 	function metricValue(series,value){if(series.unit==='bytes'){var units=['B','KiB','MiB','GiB','TiB'],n=value,i=0;while(Math.abs(n)>=1024&&i<units.length-1){n/=1024;i++;}return n.toFixed(i?2:0)+' '+units[i];}if(series.unit==='millicores')return value.toLocaleString()+' mCPU';return value.toLocaleString()+' '+series.unit;}
 
     function renderMetricControls() {
@@ -191,8 +202,9 @@
             var label = document.createElement('label');
             label.style.cssText = 'display:flex;align-items:center;gap:5px;font-size:13px;cursor:pointer';
             var input = document.createElement('input');
-            input.type = 'checkbox'; input.checked = metricsEnabled[index] !== false;
-            input.addEventListener('change', function() { metricsEnabled[index] = input.checked; drawMetrics(); });
+            var key=seriesKey(series);
+            input.type = 'checkbox'; input.checked = metricsEnabled[key] !== false;
+            input.addEventListener('change', function() { metricsEnabled[key] = input.checked; drawMetrics(); });
             var swatch = document.createElement('span');
             swatch.style.cssText = 'width:10px;height:10px;border-radius:50%;background:' + metricsColors[index % metricsColors.length];
             label.appendChild(input); label.appendChild(swatch); label.appendChild(document.createTextNode(seriesTitle(series)));
@@ -201,7 +213,7 @@
     }
 
     function visibleMetricSeries() {
-		return metricsSeries.filter(function(series, index) { return series.name.indexOf(metricsKind + '.') === 0 && metricsEnabled[index] !== false; });
+		return metricsSeries.filter(function(series) { return series.name.indexOf(metricsKind + '.') === 0 && metricsEnabled[seriesKey(series)] !== false; });
     }
 	function displayedPoints(series) { if(!metricsWindow)return series.points||[];var latest=0;metricsSeries.forEach(function(s){(s.points||[]).forEach(function(p){latest=Math.max(latest,Date.parse(p.observed_at));});});return (series.points||[]).filter(function(p){return Date.parse(p.observed_at)>=latest-metricsWindow;}); }
 
@@ -240,11 +252,25 @@
         }
     }
 
-    function loadMetrics() {
-        fetch('/app/jobs/' + encodeURIComponent(jobID) + '/metrics?max_points=900', {headers:{'Accept':'application/json'}}).then(function(r){if(!r.ok)throw new Error('metrics unavailable');return r.json();}).then(function(data){metricsSeries=data.series||[];metricsEnabled={};if(!metricsSeries.some(function(s){return s.name.indexOf(metricsKind+'.')===0;})){metricsKind=metricsSeries.some(function(s){return s.name.indexOf('memory.')===0;})?'memory':'storage';}renderMetricControls();drawMetrics();}).catch(function(){metricsSeries=[];drawMetrics();});
+    function mergeMetricData(data, reset) {
+        if (reset) { metricsSeries=[]; metricsEnabled={}; }
+        var existing={};metricsSeries.forEach(function(series){existing[seriesKey(series)]=series;});
+        (data.series||[]).forEach(function(incoming){var key=seriesKey(incoming),series=existing[key];if(!series){series={name:incoming.name,unit:incoming.unit,labels:incoming.labels||[],points:[]};metricsSeries.push(series);existing[key]=series;}var points={};(series.points||[]).forEach(function(point){points[point.observed_at]=point;});(incoming.points||[]).forEach(function(point){points[point.observed_at]=point;});series.points=Object.keys(points).sort().map(function(timestamp){return points[timestamp];});});
+        metricsCursor=data.next_cursor||metricsCursor;
+        if(!metricsSeries.some(function(s){return s.name.indexOf(metricsKind+'.')===0;})){metricsKind=metricsSeries.some(function(s){return s.name.indexOf('memory.')===0;})?'memory':'storage';}
+        renderMetricControls();drawMetrics();
+        if(data.complete===false)setTelemetryStatus('Some telemetry could not be read. Retrying.');
     }
 
-    document.getElementById('metrics-open').addEventListener('click', function(){metricsDialog.showModal();loadMetrics();});
+    function loadMetrics(reset) {
+        if(reset){metricsCursor=null;}
+        if(metricsFetchInFlight){metricsFetchPending=true;return;}
+        metricsFetchInFlight=true;
+        var url='/app/jobs/'+encodeURIComponent(jobID)+'/metrics?max_points=900';if(metricsCursor)url+='&cursor='+encodeURIComponent(metricsCursor);
+        fetch(url,{headers:{'Accept':'application/json'}}).then(function(r){if(!r.ok)throw new Error('metrics unavailable');return r.json();}).then(function(data){mergeMetricData(data,reset);setTelemetryStatus('Live');}).catch(function(){setTelemetryStatus('Live metrics are delayed. Retrying.');}).finally(function(){metricsFetchInFlight=false;if(metricsFetchPending){metricsFetchPending=false;loadMetrics(false);}});
+    }
+
+    document.getElementById('metrics-open').addEventListener('click', function(){metricsDialog.showModal();loadMetrics(true);});
     document.getElementById('metrics-close').addEventListener('click', function(){metricsDialog.close();});
     metricsDialog.addEventListener('click', function(e){if(e.target===metricsDialog)metricsDialog.close();});
     metricsCanvas.addEventListener('mousemove', function(e){drawMetrics(e.clientX-metricsCanvas.getBoundingClientRect().left);});
@@ -256,33 +282,47 @@
         return el.scrollHeight - el.scrollTop - el.clientHeight < 40;
     }
 
-    function refreshLogs() {
-        var url = '/app/jobs/' + encodeURIComponent(jobID) + '/logs?stream=' + encodeURIComponent(stream);
-        fetch(url, { headers: { 'Accept': 'text/html' } }).then(function(r) {
-            if (!r.ok) return;
-            return r.text();
-        }).then(function(html) {
-            if (!html) return;
-            var wasAtBottom = atBottom(viewer);
-            viewer.innerHTML = html;
-            if (wasAtBottom) { viewer.scrollTop = viewer.scrollHeight; }
-        }).catch(function() {});
+    function setTelemetryStatus(message) { if (telemetryStatus) telemetryStatus.textContent=message; }
+    function isTerminal(status){return status==='completed'||status==='failed'||status==='cancelled'||status==='timeout';}
+    function appendLogEntry(entry) {
+        var empty=viewer.querySelector('.meta');if(empty)empty.remove();
+        var line=document.createElement('div');line.className='log-line '+(entry.stream==='stderr'?'log-stderr':'log-stdout');
+        var timestamp=document.createElement('span');timestamp.className='log-timestamp';timestamp.textContent=entry.timestamp;
+        line.appendChild(timestamp);line.appendChild(document.createTextNode(entry.message));viewer.appendChild(line);
+    }
+    function fetchLogDelta(reset) {
+        if(reset){logCursor=null;logsInitialized=false;}
+        if(logFetchInFlight){logFetchPending=true;return;}
+        logFetchInFlight=true;
+        var url='/app/jobs/'+encodeURIComponent(jobID)+'/logs?stream='+encodeURIComponent(stream)+'&max_entries=1000';if(logCursor)url+='&cursor='+encodeURIComponent(logCursor);
+        fetch(url,{headers:{'Accept':'application/json'}}).then(function(r){if(!r.ok)throw new Error('logs unavailable');return r.json();}).then(function(data){
+            var wasAtBottom=atBottom(viewer);
+            var cursorSupported=typeof data.next_cursor==='string';
+            if(!logsInitialized||!cursorSupported){viewer.innerHTML='';logsInitialized=true;}
+            (data.entries||[]).forEach(appendLogEntry);
+            if(!viewer.children.length){var empty=document.createElement('div');empty.className='meta';empty.textContent='No logs available yet.';viewer.appendChild(empty);}
+            if(cursorSupported)logCursor=data.next_cursor;
+            if(wasAtBottom)viewer.scrollTop=viewer.scrollHeight;
+            setTelemetryStatus(data.complete===false?'Some logs could not be read. Retrying.':'Live');
+            if(data.has_more)logFetchPending=true;
+        }).catch(function(){setTelemetryStatus('Live logs are delayed. Retrying.');}).finally(function(){logFetchInFlight=false;if(logFetchPending){logFetchPending=false;fetchLogDelta(false);}});
     }
 
     function applyEvent(evt) {
         if (evt.type === 'job_update' && evt.job_id === jobID) {
+            currentStatus=evt.status;
             if (statusBadge) {
                 statusBadge.className = 'status-badge ' + classFor(evt.status);
                 statusBadge.textContent = evt.status;
             }
-            // Terminal states mean no more logs will arrive — one final refresh.
-            if (evt.status === 'completed' || evt.status === 'failed' || evt.status === 'cancelled' || evt.status === 'timeout') {
-                refreshLogs();
-            }
+            // The coordinator subscribes before it sends this status frame.
+            // A cursor query here closes the initial subscription race.
+            fetchLogDelta(false);
+            if(metricsDialog.open)loadMetrics(false);
         } else if (evt.type === 'log_available' && evt.job_id === jobID) {
-            refreshLogs();
+            fetchLogDelta(false);
 		} else if (evt.type === 'metrics_available' && evt.job_id === jobID && metricsDialog.open) {
-			loadMetrics();
+			loadMetrics(false);
         }
     }
 
@@ -292,7 +332,7 @@
 
     function connect() {
         var ws = new WebSocket(wsURL);
-        ws.onopen = function() { backoff = 1000; };
+        ws.onopen = function() { backoff = 1000;setTelemetryStatus('Live');fetchLogDelta(false);if(metricsDialog.open)loadMetrics(false); };
         ws.onmessage = function(e) {
             try { applyEvent(JSON.parse(e.data)); } catch (_) {}
         };
@@ -302,7 +342,9 @@
         };
         ws.onerror = function() { ws.close(); };
     }
+    fetchLogDelta(false);
     connect();
+    setInterval(function(){if(document.visibilityState!=='visible')return;if(!isTerminal(currentStatus)||!logsInitialized)fetchLogDelta(false);if(metricsDialog.open&&!isTerminal(currentStatus))loadMetrics(false);},3000);
 })();
 </script>
 {{template "foot" .}}

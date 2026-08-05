@@ -8856,7 +8856,10 @@ func DecodeDeactivateEnrollmentTokenResponse(csilData []byte) (DeactivateEnrollm
 
 // csilEncGetJobMetricsRequest builds the canonical CBOR value tree for a GetJobMetricsRequest.
 func csilEncGetJobMetricsRequest(csilV GetJobMetricsRequest) cborValue {
-	csilEntries := make(cborMap, 0, 5)
+	csilEntries := make(cborMap, 0, 6)
+	if csilV.Cursor != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("cursor"), cborText((*csilV.Cursor))})
+	}
 	csilEntries = append(csilEntries, cborEntry{cborText("job_id"), cborText(csilV.JobId)})
 	csilEntries = append(csilEntries, cborEntry{cborText("metrics"), cborEncArray(csilV.Metrics, func(csilElem string) cborValue { return cborText(csilElem) })})
 	if csilV.ToTime != nil {
@@ -8896,6 +8899,13 @@ func csilDecGetJobMetricsRequest(csilRoot cborValue) (GetJobMetricsRequest, erro
 			return csilOut, csilErr
 		}
 		csilOut.ToTime = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "cursor"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Cursor = &csilVal
 	}
 	{
 		csilField, csilErr := cborRequire(csilRoot, "metrics")
@@ -9187,9 +9197,12 @@ func DecodeJobMetricSeries(csilData []byte) (JobMetricSeries, error) {
 
 // csilEncGetJobMetricsResponse builds the canonical CBOR value tree for a GetJobMetricsResponse.
 func csilEncGetJobMetricsResponse(csilV GetJobMetricsResponse) cborValue {
-	csilEntries := make(cborMap, 0, 3)
+	csilEntries := make(cborMap, 0, 4)
 	csilEntries = append(csilEntries, cborEntry{cborText("series"), cborEncArray(csilV.Series, func(csilElem JobMetricSeries) cborValue { return csilEncJobMetricSeries(csilElem) })})
 	csilEntries = append(csilEntries, cborEntry{cborText("complete"), cborBool(csilV.Complete)})
+	if csilV.NextCursor != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("next_cursor"), cborText((*csilV.NextCursor))})
+	}
 	csilEntries = append(csilEntries, cborEntry{cborText("unavailable"), cborEncArray(csilV.Unavailable, func(csilElem JobMetricUnavailable) cborValue { return csilEncJobMetricUnavailable(csilElem) })})
 	return csilEntries
 }
@@ -9232,6 +9245,13 @@ func csilDecGetJobMetricsResponse(csilRoot cborValue) (GetJobMetricsResponse, er
 		}
 		csilOut.Complete = csilVal
 	}
+	if csilField, csilOk := cborMapGet(csilRoot, "next_cursor"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.NextCursor = &csilVal
+	}
 	return csilOut, nil
 }
 
@@ -9252,9 +9272,15 @@ func DecodeGetJobMetricsResponse(csilData []byte) (GetJobMetricsResponse, error)
 
 // csilEncGetJobLogsRequest builds the canonical CBOR value tree for a GetJobLogsRequest.
 func csilEncGetJobLogsRequest(csilV GetJobLogsRequest) cborValue {
-	csilEntries := make(cborMap, 0, 2)
+	csilEntries := make(cborMap, 0, 4)
+	if csilV.Cursor != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("cursor"), cborText((*csilV.Cursor))})
+	}
 	csilEntries = append(csilEntries, cborEntry{cborText("job_id"), cborText(csilV.JobId)})
 	csilEntries = append(csilEntries, cborEntry{cborText("stream"), cborText(csilV.Stream)})
+	if csilV.MaxEntries != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("max_entries"), cborInt((*csilV.MaxEntries))})
+	}
 	return csilEntries
 }
 
@@ -9282,6 +9308,20 @@ func csilDecGetJobLogsRequest(csilRoot cborValue) (GetJobLogsRequest, error) {
 			return csilOut, csilErr
 		}
 		csilOut.Stream = csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "cursor"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Cursor = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "max_entries"); csilOk {
+		csilVal, csilErr := (cborAsI64)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.MaxEntries = &csilVal
 	}
 	return csilOut, nil
 }
@@ -9378,8 +9418,17 @@ func DecodeJobLogEntry(csilData []byte) (JobLogEntry, error) {
 
 // csilEncGetJobLogsResponse builds the canonical CBOR value tree for a GetJobLogsResponse.
 func csilEncGetJobLogsResponse(csilV GetJobLogsResponse) cborValue {
-	csilEntries := make(cborMap, 0, 1)
+	csilEntries := make(cborMap, 0, 4)
 	csilEntries = append(csilEntries, cborEntry{cborText("entries"), cborEncArray(csilV.Entries, func(csilElem JobLogEntry) cborValue { return csilEncJobLogEntry(csilElem) })})
+	if csilV.Complete != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("complete"), cborBool((*csilV.Complete))})
+	}
+	if csilV.HasMore != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("has_more"), cborBool((*csilV.HasMore))})
+	}
+	if csilV.NextCursor != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("next_cursor"), cborText((*csilV.NextCursor))})
+	}
 	return csilEntries
 }
 
@@ -9396,6 +9445,27 @@ func csilDecGetJobLogsResponse(csilRoot cborValue) (GetJobLogsResponse, error) {
 			return csilOut, csilErr
 		}
 		csilOut.Entries = csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "next_cursor"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.NextCursor = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "has_more"); csilOk {
+		csilVal, csilErr := (cborAsBool)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.HasMore = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "complete"); csilOk {
+		csilVal, csilErr := (cborAsBool)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Complete = &csilVal
 	}
 	return csilOut, nil
 }

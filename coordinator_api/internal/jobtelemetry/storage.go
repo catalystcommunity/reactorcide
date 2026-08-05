@@ -10,7 +10,6 @@ import (
 	"fmt"
 	"io"
 	"sort"
-	"strings"
 
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/objects"
 )
@@ -71,40 +70,57 @@ func ReadLogEntries(ctx context.Context, store objects.ObjectStore, jobID, strea
 	if stream != "stdout" && stream != "stderr" {
 		return nil, errors.New("stream must be stdout or stderr")
 	}
+	batches, err := readLogBatches(ctx, store, jobID)
+	if err != nil {
+		return nil, err
+	}
+	entries := make([]LogEntry, 0)
+	for _, batch := range batches {
+		if batch.Stream == stream {
+			entries = append(entries, batch.Entries...)
+		}
+	}
+	sort.SliceStable(entries, func(i, j int) bool { return entries[i].ObservedAt.Before(entries[j].ObservedAt) })
+	return entries, nil
+}
+
+func readLogBatches(ctx context.Context, store objects.ObjectStore, jobID string) ([]LogBatch, error) {
+	if store == nil {
+		return nil, errors.New("object storage is not configured")
+	}
+	batches := make([]LogBatch, 0)
+	seen := map[string]bool{}
+	for _, stream := range []string{"stdout", "stderr"} {
+		archiveInfos, err := store.List(ctx, fmt.Sprintf("%s/%s/compacted/logs/%s/", ObjectPrefix, jobID, stream))
+		if err != nil {
+			return nil, err
+		}
+		for _, info := range archiveInfos {
+			reader, getErr := store.Get(ctx, info.Key)
+			if getErr != nil {
+				return nil, getErr
+			}
+			var archive logArchive
+			decodeErr := json.NewDecoder(reader).Decode(&archive)
+			reader.Close()
+			if decodeErr != nil {
+				return nil, decodeErr
+			}
+			for _, batch := range archive.Batches {
+				id := fmt.Sprintf("%s\x00%d\x00%s", batch.LeaseID, batch.Sequence, batch.Stream)
+				if !seen[id] {
+					batches = append(batches, batch)
+					seen[id] = true
+				}
+			}
+		}
+	}
 	infos, err := store.List(ctx, fmt.Sprintf("%s/%s/logs/", ObjectPrefix, jobID))
 	if err != nil {
 		return nil, err
 	}
 	sort.Slice(infos, func(i, j int) bool { return infos[i].Key < infos[j].Key })
-	entries := []LogEntry{}
-	seen := map[string]bool{}
-	archiveInfos, err := store.List(ctx, fmt.Sprintf("%s/%s/compacted/logs/%s/", ObjectPrefix, jobID, stream))
-	if err != nil {
-		return nil, err
-	}
-	for _, info := range archiveInfos {
-		reader, getErr := store.Get(ctx, info.Key)
-		if getErr != nil {
-			return nil, getErr
-		}
-		var archive logArchive
-		decodeErr := json.NewDecoder(reader).Decode(&archive)
-		reader.Close()
-		if decodeErr != nil {
-			return nil, decodeErr
-		}
-		for _, batch := range archive.Batches {
-			id := fmt.Sprintf("%s\x00%d\x00%s", batch.LeaseID, batch.Sequence, batch.Stream)
-			if batch.Stream == stream && !seen[id] {
-				entries = append(entries, batch.Entries...)
-				seen[id] = true
-			}
-		}
-	}
 	for _, info := range infos {
-		if !strings.Contains(info.Key, "/"+stream+"/") {
-			continue
-		}
 		reader, getErr := store.Get(ctx, info.Key)
 		if getErr != nil {
 			return nil, getErr
@@ -117,12 +133,20 @@ func ReadLogEntries(ctx context.Context, store objects.ObjectStore, jobID, strea
 		}
 		id := fmt.Sprintf("%s\x00%d\x00%s", batch.LeaseID, batch.Sequence, batch.Stream)
 		if !seen[id] {
-			entries = append(entries, batch.Entries...)
+			batches = append(batches, batch)
 			seen[id] = true
 		}
 	}
-	sort.SliceStable(entries, func(i, j int) bool { return entries[i].ObservedAt.Before(entries[j].ObservedAt) })
-	return entries, nil
+	sort.SliceStable(batches, func(i, j int) bool {
+		if batches[i].LeaseID != batches[j].LeaseID {
+			return batches[i].LeaseID < batches[j].LeaseID
+		}
+		if batches[i].Stream != batches[j].Stream {
+			return batches[i].Stream < batches[j].Stream
+		}
+		return batches[i].Sequence < batches[j].Sequence
+	})
+	return batches, nil
 }
 
 func readMetricBatches(ctx context.Context, store objects.ObjectStore, jobID string) ([]MetricBatch, bool, error) {

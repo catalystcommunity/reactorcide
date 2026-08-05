@@ -110,7 +110,7 @@ func (h *WSHandler) StreamJob(w http.ResponseWriter, r *http.Request) {
 	}
 	defer ws.Close()
 
-	sub := h.bus.Subscribe(pubsub.FilterByJobID(jobID))
+	sub := h.bus.SubscribeJob(jobID)
 	defer h.bus.Unsubscribe(sub)
 
 	// Send current status as the initial frame. Failures here are non-fatal
@@ -185,9 +185,8 @@ func (h *WSHandler) runStream(ctx context.Context, ws *websocket.Conn, sub *pubs
 			if !ok {
 				return
 			}
-			// log_available events are sent through as a ping; the client
-			// refreshes logs via REST when it receives one. Cleaner than
-			// streaming bytes while log storage still rewrites full files.
+			// Availability events contain batch metadata, not telemetry values.
+			// The client reads durable deltas through an authorized API.
 			payload, err := pubsub.EncodeEvent(evt)
 			if err != nil {
 				h.logger.WithError(err).Warn("Failed to serialize WS event")

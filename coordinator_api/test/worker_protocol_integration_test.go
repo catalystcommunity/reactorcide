@@ -154,6 +154,7 @@ func TestWorkerProtocolIntegration(t *testing.T) {
 	require.NotNil(t, pool, "worker protocol integration test requires a live pgx pool")
 	bus := pubsub.NewBus(logrus.StandardLogger(), 64)
 	listener := pubsub.NewNotifyListener(pool, bus, logrus.StandardLogger())
+	bus.SetJobTopicController(listener)
 	listenCtx, cancelListen := context.WithCancel(ctx)
 	defer cancelListen()
 	listener.Start(listenCtx)
@@ -235,8 +236,9 @@ func TestWorkerProtocolIntegration(t *testing.T) {
 
 	// --- RequestJob: claims the seeded task, secrets isolated --------------
 
-	jobSub := bus.Subscribe(pubsub.FilterByJobID(job.JobID))
+	jobSub := bus.SubscribeJob(job.JobID)
 	defer bus.Unsubscribe(jobSub)
+	time.Sleep(1200 * time.Millisecond) // let the listener add the per-job channel
 
 	reqResp, svcErr := csilCall(t, mux, "ReactorcideWorker", "request-job",
 		workercsilapi.EncodeRequestJobRequest, workercsilapi.DecodeRequestJobResponse,

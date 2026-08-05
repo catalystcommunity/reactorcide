@@ -12,13 +12,21 @@ func (h *WebHandler) getJobLogs(r *http.Request, jobID, stream string) ([]LogEnt
 	if h.uiClients == nil {
 		return h.client.GetJobLogs(jobID, stream)
 	}
-	response, err := h.uiClients.Ui.GetJobLogs(h.authContext(r), csilapi.GetJobLogsRequest{JobId: jobID, Stream: stream})
-	if err != nil {
-		return nil, err
-	}
-	entries := make([]LogEntry, 0, len(response.Entries))
-	for _, entry := range response.Entries {
-		entries = append(entries, LogEntry{Timestamp: entry.Timestamp, Stream: entry.Stream, Level: entry.Level, Message: entry.Message})
+	entries := make([]LogEntry, 0)
+	var cursor *string
+	pageSize := int64(5000)
+	for {
+		response, err := h.uiClients.Ui.GetJobLogs(h.authContext(r), csilapi.GetJobLogsRequest{JobId: jobID, Stream: stream, Cursor: cursor, MaxEntries: &pageSize})
+		if err != nil {
+			return nil, err
+		}
+		for _, entry := range response.Entries {
+			entries = append(entries, LogEntry{Timestamp: entry.Timestamp, Stream: entry.Stream, Level: entry.Level, Message: entry.Message})
+		}
+		if response.HasMore == nil || !*response.HasMore || response.NextCursor == nil {
+			break
+		}
+		cursor = response.NextCursor
 	}
 	return entries, nil
 }
@@ -66,6 +74,9 @@ func (h *WebHandler) JobMetrics(w http.ResponseWriter, r *http.Request) {
 	}
 	if value := query.Get("to"); value != "" {
 		req.ToTime = &value
+	}
+	if value := query.Get("cursor"); value != "" {
+		req.Cursor = &value
 	}
 	response, err := h.uiClients.Ui.GetJobMetrics(h.authContext(r), req)
 	if err != nil {

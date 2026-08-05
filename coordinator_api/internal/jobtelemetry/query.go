@@ -38,37 +38,66 @@ func QueryMetrics(ctx context.Context, store objects.ObjectStore, query Query) (
 	if err != nil {
 		return response, err
 	}
+	sort.SliceStable(batches, func(i, j int) bool {
+		if batches[i].LeaseID == batches[j].LeaseID {
+			return batches[i].Sequence < batches[j].Sequence
+		}
+		return batches[i].LeaseID < batches[j].LeaseID
+	})
+	cursor, err := decodeCursor(query.Cursor, "metrics", query.JobID, "")
+	if err != nil {
+		return response, err
+	}
+	tracks := cursorTracks(&cursor)
 	response.Complete = complete
 	accumulators := map[string]*seriesAccumulator{}
 	unavailable := map[string]Unavailable{}
+	priorCounters := map[string]Point{}
 	for _, batch := range batches {
 		definitions := make(map[int64]SeriesDefinition, len(batch.Series))
 		for _, definition := range batch.Series {
 			definitions[definition.SeriesID] = definition
 		}
+		track := ensureCursorTrack(&cursor, tracks, batch.LeaseID, "")
+		emitBatch := !trackHasSequence(track, batch.Sequence)
 		for _, item := range batch.Unavailable {
-			unavailable[item.MetricPrefix+"\x00"+item.Reason] = item
+			if emitBatch {
+				unavailable[item.MetricPrefix+"\x00"+item.Reason] = item
+			}
 		}
 		for _, sample := range batch.Samples {
-			if query.From != nil && sample.ObservedAt.Before(*query.From) {
-				continue
-			}
-			if query.To != nil && sample.ObservedAt.After(*query.To) {
-				continue
-			}
 			for _, value := range sample.Values {
 				definition, ok := definitions[value.SeriesID]
-				if !ok || !metricSelected(definition.Name, query.Metrics) {
+				if !ok {
 					continue
 				}
 				key := stableSeriesKey(batch.LeaseID, definition)
+				point := Point{ObservedAt: sample.ObservedAt, Value: value.Value}
+				if !emitBatch || (query.From != nil && sample.ObservedAt.Before(*query.From)) {
+					if definition.Kind == "counter" {
+						priorCounters[key] = point
+					}
+					continue
+				}
+				if query.To != nil && sample.ObservedAt.After(*query.To) {
+					continue
+				}
+				if !metricSelected(definition.Name, query.Metrics) {
+					continue
+				}
 				acc := accumulators[key]
 				if acc == nil {
 					acc = &seriesAccumulator{definition: definition, leaseID: batch.LeaseID}
+					if prior, ok := priorCounters[key]; ok && definition.Kind == "counter" {
+						acc.points = append(acc.points, prior)
+					}
 					accumulators[key] = acc
 				}
-				acc.points = append(acc.points, Point{ObservedAt: sample.ObservedAt, Value: value.Value})
+				acc.points = append(acc.points, point)
 			}
+		}
+		if emitBatch {
+			markSequenceSeen(track, batch.Sequence)
 		}
 	}
 	keys := make([]string, 0, len(accumulators))
@@ -102,6 +131,10 @@ func QueryMetrics(ctx context.Context, store objects.ObjectStore, query Query) (
 		}
 		return response.Unavailable[i].MetricPrefix < response.Unavailable[j].MetricPrefix
 	})
+	response.NextCursor, err = encodeCursor(cursor)
+	if err != nil {
+		return response, err
+	}
 	queryResult = "success"
 	return response, nil
 }

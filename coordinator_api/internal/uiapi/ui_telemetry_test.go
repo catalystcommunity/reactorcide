@@ -40,11 +40,23 @@ func TestJobTelemetryUsesProjectVisibilityForMetricsAndLogs(t *testing.T) {
 	}
 	ownerCtx := mintSessionCtx(t, deps, "org-1")
 	metrics, err := service.GetJobMetrics(ownerCtx, csilapi.GetJobMetricsRequest{JobId: job.JobID, MaxPoints: 10})
-	if err != nil || len(metrics.Series) != 1 {
+	if err != nil || len(metrics.Series) != 1 || metrics.NextCursor == nil || *metrics.NextCursor == "" {
 		t.Fatalf("owner metrics: response=%+v err=%v", metrics, err)
 	}
 	logs, err := service.GetJobLogs(ownerCtx, csilapi.GetJobLogsRequest{JobId: job.JobID, Stream: "combined"})
-	if err != nil || len(logs.Entries) != 1 || logs.Entries[0].Message != "private" {
+	if err != nil || len(logs.Entries) != 1 || logs.Entries[0].Message != "private" || logs.NextCursor == nil || *logs.NextCursor == "" {
 		t.Fatalf("owner logs: response=%+v err=%v", logs, err)
+	}
+	logDelta, err := service.GetJobLogs(ownerCtx, csilapi.GetJobLogsRequest{JobId: job.JobID, Stream: "combined", Cursor: logs.NextCursor})
+	if err != nil || len(logDelta.Entries) != 0 {
+		t.Fatalf("log delta: response=%+v err=%v", logDelta, err)
+	}
+	metricDelta, err := service.GetJobMetrics(ownerCtx, csilapi.GetJobMetricsRequest{JobId: job.JobID, MaxPoints: 10, Cursor: metrics.NextCursor})
+	if err != nil || len(metricDelta.Series) != 0 {
+		t.Fatalf("metric delta: response=%+v err=%v", metricDelta, err)
+	}
+	badCursor := "not-a-cursor"
+	if _, err := service.GetJobLogs(ownerCtx, csilapi.GetJobLogsRequest{JobId: job.JobID, Stream: "combined", Cursor: &badCursor}); serviceErrCode(t, err) != "invalid_argument" {
+		t.Fatalf("bad log cursor error = %v", err)
 	}
 }

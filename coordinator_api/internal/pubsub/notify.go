@@ -2,21 +2,37 @@ package pubsub
 
 import (
 	"context"
+	"crypto/sha256"
+	"errors"
 	"fmt"
+	"sync"
 	"time"
 
 	"github.com/jackc/pgx/v4/pgxpool"
 	"github.com/sirupsen/logrus"
 )
 
-// NotifyChannel is the Postgres NOTIFY channel name all Reactorcide events
-// flow through. Single channel, many event types — discriminated by the
-// Event.Type JSON field.
+// NotifyChannel carries global job-status events. High-volume telemetry
+// availability events use per-job channels.
 const NotifyChannel = "reactorcide_events"
+
+// JobNotifyChannel returns a fixed-size PostgreSQL channel for one job.
+func JobNotifyChannel(jobID string) string {
+	digest := sha256.Sum256([]byte(jobID))
+	return fmt.Sprintf("reactorcide_job_%x", digest[:16])
+}
 
 // Publish emits evt via Postgres pg_notify so every replica's LISTEN picks
 // it up. Safe to call from any context that has access to the pool.
 func Publish(ctx context.Context, pool *pgxpool.Pool, evt Event) error {
+	return publishChannel(ctx, pool, NotifyChannel, evt)
+}
+
+func publishJob(ctx context.Context, pool *pgxpool.Pool, jobID string, evt Event) error {
+	return publishChannel(ctx, pool, JobNotifyChannel(jobID), evt)
+}
+
+func publishChannel(ctx context.Context, pool *pgxpool.Pool, channel string, evt Event) error {
 	payload, err := EncodeEvent(evt)
 	if err != nil {
 		return fmt.Errorf("encoding event: %w", err)
@@ -24,7 +40,7 @@ func Publish(ctx context.Context, pool *pgxpool.Pool, evt Event) error {
 	// pg_notify's payload is limited to 8000 bytes in the default build.
 	// Our events are well under that — log chunks carry only offset/length,
 	// not bytes.
-	if _, err := pool.Exec(ctx, "SELECT pg_notify($1, $2)", NotifyChannel, string(payload)); err != nil {
+	if _, err := pool.Exec(ctx, "SELECT pg_notify($1, $2)", channel, string(payload)); err != nil {
 		return fmt.Errorf("pg_notify: %w", err)
 	}
 	return nil
@@ -66,7 +82,7 @@ func (p *Publisher) PublishLogAvailable(ctx context.Context, jobID, stream strin
 	if p == nil || p.pool == nil {
 		return
 	}
-	_ = Publish(ctx, p.pool, Event{
+	_ = publishJob(ctx, p.pool, jobID, Event{
 		Type:   EventLogAvailable,
 		JobID:  jobID,
 		Stream: stream,
@@ -81,7 +97,7 @@ func (p *Publisher) PublishMetricsAvailable(ctx context.Context, jobID, from, to
 	if p == nil || p.pool == nil {
 		return
 	}
-	_ = Publish(ctx, p.pool, Event{
+	_ = publishJob(ctx, p.pool, jobID, Event{
 		Type:     EventMetricsAvailable,
 		JobID:    jobID,
 		From:     from,
@@ -99,6 +115,8 @@ type NotifyListener struct {
 	pool   *pgxpool.Pool
 	bus    *Bus
 	logger *logrus.Logger
+	mu     sync.Mutex
+	jobs   map[string]int
 }
 
 // NewNotifyListener constructs a listener. Call Start to run it.
@@ -106,7 +124,36 @@ func NewNotifyListener(pool *pgxpool.Pool, bus *Bus, logger *logrus.Logger) *Not
 	if logger == nil {
 		logger = logrus.New()
 	}
-	return &NotifyListener{pool: pool, bus: bus, logger: logger}
+	return &NotifyListener{pool: pool, bus: bus, logger: logger, jobs: map[string]int{}}
+}
+
+func (l *NotifyListener) AddJobTopic(jobID string) {
+	if jobID == "" {
+		return
+	}
+	l.mu.Lock()
+	l.jobs[jobID]++
+	l.mu.Unlock()
+}
+
+func (l *NotifyListener) RemoveJobTopic(jobID string) {
+	l.mu.Lock()
+	if l.jobs[jobID] <= 1 {
+		delete(l.jobs, jobID)
+	} else {
+		l.jobs[jobID]--
+	}
+	l.mu.Unlock()
+}
+
+func (l *NotifyListener) desiredJobChannels() map[string]bool {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	channels := make(map[string]bool, len(l.jobs))
+	for jobID := range l.jobs {
+		channels[JobNotifyChannel(jobID)] = true
+	}
+	return channels
 }
 
 // Start runs the listen loop in a goroutine. It returns immediately;
@@ -157,11 +204,35 @@ func (l *NotifyListener) runOnce(ctx context.Context) error {
 
 	l.logger.WithField("channel", NotifyChannel).Info("NotifyListener subscribed")
 
+	listened := map[string]bool{}
 	for {
-		notification, err := conn.Conn().WaitForNotification(ctx)
+		desired := l.desiredJobChannels()
+		for channel := range desired {
+			if !listened[channel] {
+				if _, err := conn.Exec(ctx, "LISTEN "+channel); err != nil {
+					return fmt.Errorf("listen on job channel: %w", err)
+				}
+				listened[channel] = true
+			}
+		}
+		for channel := range listened {
+			if !desired[channel] {
+				if _, err := conn.Exec(ctx, "UNLISTEN "+channel); err != nil {
+					return fmt.Errorf("unlisten from job channel: %w", err)
+				}
+				delete(listened, channel)
+			}
+		}
+
+		waitCtx, cancel := context.WithTimeout(ctx, time.Second)
+		notification, err := conn.Conn().WaitForNotification(waitCtx)
+		cancel()
 		if err != nil {
 			if ctx.Err() != nil {
 				return nil
+			}
+			if errors.Is(err, context.DeadlineExceeded) {
+				continue
 			}
 			return fmt.Errorf("waiting for notification: %w", err)
 		}
