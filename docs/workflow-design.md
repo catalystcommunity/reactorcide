@@ -86,7 +86,8 @@ One event can produce more than one workflow. Use the `workflows` array. Each en
 }
 ```
 
-The parent (eval) job spawns each workflow. It does not join any of them. Each workflow gets its own name and its own status check.
+The parent evaluation job spawns each workflow. It is not a workflow member in
+the execution model. Each workflow gets its own name and status check.
 
 The `workflows` array takes precedence. When it is absent, the legacy `workflow` plus `jobs` form collapses to one workflow. When the workflow name is empty, the coordinator uses the default name `Reactorcide Jobs, repo: <name>`.
 
@@ -254,6 +255,12 @@ The UI should show workflows first and jobs underneath them:
 
 - Workflow list filtered by repo, PR, commit, or event.
 - Workflow detail with node graph/table, current vars, and events.
+- If an evaluation job creates one root workflow, do not show a separate loose
+  job row. Show the evaluation job as the first step in that workflow. Label it
+  as the step that spawns the workflow jobs.
+- If an evaluation job creates no workflow or more than one workflow, show the
+  evaluation job as a separate loose job. A single workflow cannot represent
+  these results.
 - Node detail linked to existing job logs.
 - Skip/reason panel sourced from `workflow_events`.
 - Var history with source node/job and conflict events.

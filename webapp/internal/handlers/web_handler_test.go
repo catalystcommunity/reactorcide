@@ -2,12 +2,79 @@ package handlers
 
 import (
 	"html/template"
+	"io"
+	"net/http"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/catalystcommunity/reactorcide/webapp/internal/templates"
 )
+
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (fn roundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) {
+	return fn(req)
+}
+
+func TestWorkflowEntryJobsPrependsRootEvaluation(t *testing.T) {
+	client := NewAPIClient()
+	client.httpClient.Transport = roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		if req.URL.Path != "/api/v1/jobs/eval-1" {
+			t.Fatalf("request path = %q", req.URL.Path)
+		}
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Body:       io.NopCloser(strings.NewReader(`{"job_id":"eval-1","name":"eval: push","status":"completed"}`)),
+			Header:     make(http.Header),
+		}, nil
+	})
+	handler := NewWebHandler(client, nil)
+	parentID := "eval-1"
+	jobs, err := handler.workflowEntryJobs(&WorkflowSummary{WorkflowID: "wf-1", ParentJobID: &parentID}, []JobResponse{{JobID: "build-1"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(jobs) != 2 || jobs[0].JobID != "eval-1" || jobs[1].JobID != "build-1" {
+		t.Fatalf("workflow jobs = %+v; want evaluation first", jobs)
+	}
+	if jobs[0].WorkflowNodeName != "evaluation (spawns workflow)" {
+		t.Errorf("evaluation node label = %q", jobs[0].WorkflowNodeName)
+	}
+}
+
+func TestWorkflowEntryJobsDoesNotAddEntryToChildWorkflow(t *testing.T) {
+	client := NewAPIClient()
+	client.httpClient.Transport = roundTripFunc(func(*http.Request) (*http.Response, error) {
+		t.Fatal("child workflow must not fetch a separate evaluation job")
+		return nil, nil
+	})
+	handler := NewWebHandler(client, nil)
+	parentID, parentWorkflowID := "job-1", "parent-wf"
+	want := []JobResponse{{JobID: "child-job"}}
+	got, err := handler.workflowEntryJobs(&WorkflowSummary{
+		WorkflowID: "child-wf", ParentJobID: &parentID, ParentWorkflowID: &parentWorkflowID,
+	}, want)
+	if err != nil || len(got) != 1 || got[0].JobID != "child-job" {
+		t.Fatalf("child workflow jobs = %+v, err=%v", got, err)
+	}
+}
+
+func TestWorkflowEntryJobsReportsMissingEvaluation(t *testing.T) {
+	client := NewAPIClient()
+	client.httpClient.Transport = roundTripFunc(func(*http.Request) (*http.Response, error) {
+		return &http.Response{
+			StatusCode: http.StatusNotFound,
+			Body:       io.NopCloser(strings.NewReader(`{"error":"not found"}`)),
+			Header:     make(http.Header),
+		}, nil
+	})
+	handler := NewWebHandler(client, nil)
+	parentID := "missing"
+	if _, err := handler.workflowEntryJobs(&WorkflowSummary{ParentJobID: &parentID}, nil); err == nil {
+		t.Fatal("missing evaluation job must return an error")
+	}
+}
 
 func TestStatusClass(t *testing.T) {
 	tests := []struct {
@@ -210,7 +277,7 @@ func TestJobDetailTemplate(t *testing.T) {
 	if !strings.Contains(html, "secret access denied") {
 		t.Error("job_detail.html should contain last_error")
 	}
-	for _, marker := range []string{"metrics-open", "metrics-dialog", "Metric group", "Last 15 minutes", "ArrowLeft", "next_cursor", "max_entries=1000", "Live logs are delayed"} {
+	for _, marker := range []string{"metrics-open", "metrics-dialog", "Metric group", "Last 15 minutes", "ArrowLeft", "metricsSeriesStyle", "drawMetricMarker", "drawHighlightedMetricPoint", "positionMetricsTooltip", "translate(-50%, -50%)", "next_cursor", "max_entries=1000", "Live logs are delayed"} {
 		if !strings.Contains(html, marker) {
 			t.Errorf("job_detail.html should contain interactive metrics marker %q", marker)
 		}

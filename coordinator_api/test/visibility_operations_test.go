@@ -38,6 +38,11 @@ type jobsVisibleToStore interface {
 	ListJobsVisibleTo(ctx context.Context, viewerID string, isGlobalAdmin bool, filters map[string]interface{}, limit, offset int) ([]models.Job, int64, error)
 }
 
+type workflowListStore interface {
+	CreateWorkflowInstance(ctx context.Context, workflow *models.WorkflowInstance) error
+	ListWorkflowSummariesVisibleTo(ctx context.Context, viewerID string, isGlobalAdmin bool, filters map[string]interface{}, limit, offset int) ([]models.WorkflowSummary, int64, error)
+}
+
 func requireJobsVisibleToStore(t *testing.T) jobsVisibleToStore {
 	t.Helper()
 	vs, ok := store.AppStore.(jobsVisibleToStore)
@@ -223,4 +228,39 @@ func TestListJobsVisibleTo_PaginationReturnsFullPages(t *testing.T) {
 	for _, id := range seeded {
 		require.True(t, seen[id], "expected job %s to be visible across the paginated set", id)
 	}
+}
+
+func TestListWorkflowSummaries_EvaluationJobCardinality(t *testing.T) {
+	ctx := context.Background()
+	ws, ok := store.AppStore.(workflowListStore)
+	require.True(t, ok)
+	owner := createTestUser(t)
+
+	noWorkflow := createTestJob(t, owner.UserID, "completed")
+	oneWorkflow := createTestJob(t, owner.UserID, "completed")
+	manyWorkflows := createTestJob(t, owner.UserID, "completed")
+
+	createWorkflow := func(parent *models.Job, name string) {
+		t.Helper()
+		parentID := parent.JobID
+		require.NoError(t, ws.CreateWorkflowInstance(ctx, &models.WorkflowInstance{
+			UserID: owner.UserID, ParentJobID: &parentID, Name: name,
+			Status: "success", QueueName: "reactorcide-jobs",
+		}))
+	}
+	createWorkflow(oneWorkflow, "single")
+	createWorkflow(manyWorkflows, "first")
+	createWorkflow(manyWorkflows, "second")
+
+	summaries, _, err := ws.ListWorkflowSummariesVisibleTo(ctx, owner.UserID, true, map[string]interface{}{"user_id": owner.UserID}, 100, 0)
+	require.NoError(t, err)
+	loose := map[string]bool{}
+	for _, summary := range summaries {
+		if summary.Kind == "job" {
+			loose[summary.WorkflowID] = true
+		}
+	}
+	require.True(t, loose[noWorkflow.JobID], "an evaluation with no workflow remains a separate job")
+	require.False(t, loose[oneWorkflow.JobID], "an evaluation with one workflow is part of that workflow")
+	require.True(t, loose[manyWorkflows.JobID], "an evaluation with many workflows remains a separate job")
 }

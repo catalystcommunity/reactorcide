@@ -20,6 +20,7 @@ type ResourceSample struct {
 	Timestamp            time.Time `json:"timestamp"`
 	JobID                string    `json:"job_id"`
 	CPUPercent           float64   `json:"cpu_percent"`
+	CPUCount             uint64    `json:"cpu_count,omitempty"`
 	Load1                float64   `json:"load_1"`
 	MemoryUsedBytes      uint64    `json:"memory_used_bytes"`
 	MemoryTotalBytes     uint64    `json:"memory_total_bytes"`
@@ -29,9 +30,9 @@ type ResourceSample struct {
 	SwapUsedBytes        uint64    `json:"swap_used_bytes,omitempty"`
 }
 
-const macOSMetricsCommand = `cpu=$(ps -A -o %cpu= | awk '{s+=$1} END {printf "%.2f", s+0}'); load=$(sysctl -n vm.loadavg | awk '{print $2}'); mt=$(sysctl -n hw.memsize); fp=$(memory_pressure -Q | awk -F': ' '/free percentage/ {gsub(/%/, "", $2); print $2}'); mu=$(awk -v t="$mt" -v f="$fp" 'BEGIN {printf "%.0f", t*(100-f)/100}'); disk=$(df -k / | awk 'NR==2 {printf "%.0f %.0f", $2*1024, $3*1024}'); set -- $disk; printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$cpu" "$load" "$mu" "$mt" "$2" "$1"`
+const macOSMetricsCommand = `cpu=$(ps -A -o %cpu= | awk '{s+=$1} END {printf "%.2f", s+0}'); load=$(sysctl -n vm.loadavg | awk '{print $2}'); mt=$(sysctl -n hw.memsize); ncpu=$(sysctl -n hw.ncpu); fp=$(memory_pressure -Q | awk -F': ' '/free percentage/ {gsub(/%/, "", $2); print $2}'); mu=$(awk -v t="$mt" -v f="$fp" 'BEGIN {printf "%.0f", t*(100-f)/100}'); disk=$(df -k / | awk 'NR==2 {printf "%.0f %.0f", $2*1024, $3*1024}'); set -- $disk; printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$cpu" "$load" "$mu" "$mt" "$2" "$1" "$ncpu"`
 
-const windowsMetricsCommand = `$cpu=(Get-Counter '\Processor(_Total)\% Processor Time').CounterSamples.CookedValue; $os=Get-CimInstance Win32_OperatingSystem; $disk=Get-CimInstance Win32_LogicalDisk -Filter "DeviceID='C:'"; $mt=[uint64]$os.TotalVisibleMemorySize*1024; $mu=$mt-([uint64]$os.FreePhysicalMemory*1024); $committed=([uint64]$os.TotalVirtualMemorySize-[uint64]$os.FreeVirtualMemory)*1024; $swap=[Math]::Max(0,$committed-$mu); $du=[uint64]$disk.Size-[uint64]$disk.FreeSpace; Write-Output ([string]::Join([char]9,@(("{0:F2}" -f $cpu),0,$mu,$mt,$du,[uint64]$disk.Size,$committed,$swap)))`
+const windowsMetricsCommand = `$cpu=(Get-Counter '\Processor(_Total)\% Processor Time').CounterSamples.CookedValue; $os=Get-CimInstance Win32_OperatingSystem; $disk=Get-CimInstance Win32_LogicalDisk -Filter "DeviceID='C:'"; $mt=[uint64]$os.TotalVisibleMemorySize*1024; $mu=$mt-([uint64]$os.FreePhysicalMemory*1024); $committed=([uint64]$os.TotalVirtualMemorySize-[uint64]$os.FreeVirtualMemory)*1024; $swap=[Math]::Max(0,$committed-$mu); $du=[uint64]$disk.Size-[uint64]$disk.FreeSpace; Write-Output ([string]::Join([char]9,@(("{0:F2}" -f $cpu),0,$mu,$mt,$du,[uint64]$disk.Size,$committed,$swap,[uint64]$env:NUMBER_OF_PROCESSORS)))`
 
 func (r *VMRunner) startMetrics(jobID string, job *vmJob) {
 	if err := os.MkdirAll(r.metricsDir, 0o700); err != nil {
@@ -116,8 +117,8 @@ func (r *VMRunner) sampleMetrics(ctx context.Context, jobID string, job *vmJob, 
 
 func parseResourceSample(line, jobID string, timestamp time.Time) (ResourceSample, error) {
 	fields := strings.Split(line, "\t")
-	if len(fields) != 6 && len(fields) != 8 {
-		return ResourceSample{}, fmt.Errorf("expected 6 or 8 resource fields, got %d", len(fields))
+	if len(fields) != 6 && len(fields) != 7 && len(fields) != 8 && len(fields) != 9 {
+		return ResourceSample{}, fmt.Errorf("expected 6 to 9 resource fields, got %d", len(fields))
 	}
 	cpu, err1 := strconv.ParseFloat(fields[0], 64)
 	load, err2 := strconv.ParseFloat(fields[1], 64)
@@ -133,7 +134,7 @@ func parseResourceSample(line, jobID string, timestamp time.Time) (ResourceSampl
 		MemoryUsedBytes: memUsed, MemoryTotalBytes: memTotal,
 		StorageUsedBytes: diskUsed, StorageTotalBytes: diskTotal,
 	}
-	if len(fields) == 8 {
+	if len(fields) == 8 || len(fields) == 9 {
 		committed, err7 := strconv.ParseUint(fields[6], 10, 64)
 		swap, err8 := strconv.ParseUint(fields[7], 10, 64)
 		if err := errorsJoin(err7, err8); err != nil {
@@ -141,6 +142,13 @@ func parseResourceSample(line, jobID string, timestamp time.Time) (ResourceSampl
 		}
 		sample.MemoryCommittedBytes = committed
 		sample.SwapUsedBytes = swap
+	}
+	if len(fields) == 7 || len(fields) == 9 {
+		cpuCount, countErr := strconv.ParseUint(fields[len(fields)-1], 10, 64)
+		if countErr != nil {
+			return ResourceSample{}, countErr
+		}
+		sample.CPUCount = cpuCount
 	}
 	return sample, nil
 }

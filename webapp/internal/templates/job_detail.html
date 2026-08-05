@@ -127,7 +127,7 @@
     </div>
 </div>
 
-<dialog id="metrics-dialog" role="dialog" aria-modal="true" aria-labelledby="metrics-title" style="width:min(1100px,94vw);height:min(760px,90vh);border:1px solid #46515f;border-radius:8px;padding:0;background:#151a21;color:#e8edf2;">
+<dialog id="metrics-dialog" role="dialog" aria-modal="true" aria-labelledby="metrics-title" style="position:fixed;inset:auto;left:50%;top:50%;transform:translate(-50%, -50%);margin:0;box-sizing:border-box;width:min(1100px,94vw);height:min(760px,90vh);border:1px solid #46515f;border-radius:8px;padding:0;background:#151a21;color:#e8edf2;">
     <div style="display:flex;flex-direction:column;height:100%;">
         <header style="display:flex;align-items:center;justify-content:space-between;padding:16px 20px;border-bottom:1px solid #303944;">
             <div><h2 id="metrics-title">Resource metrics</h2><div id="metrics-range" class="meta"></div></div>
@@ -137,7 +137,7 @@
         <div style="position:relative;flex:1;min-height:300px;padding:16px 20px 24px;">
             <canvas id="metrics-chart" tabindex="0" aria-label="Interactive resource metrics graph. Use the left and right arrow keys to inspect values." style="width:100%;height:100%;"></canvas>
             <div id="metrics-empty" class="meta" style="position:absolute;inset:0;display:none;align-items:center;justify-content:center;">No resource metrics are available.</div>
-            <div id="metrics-tooltip" style="display:none;position:absolute;pointer-events:none;background:#0d1117;border:1px solid #596575;border-radius:4px;padding:7px 9px;font-size:12px;white-space:pre;z-index:2;"></div>
+            <div id="metrics-tooltip" style="display:none;position:absolute;pointer-events:none;box-sizing:border-box;max-width:calc(100% - 24px);max-height:calc(100% - 24px);overflow:hidden;background:#0d1117;border:1px solid #768496;border-radius:5px;padding:8px 10px;font-size:12px;white-space:normal;overflow-wrap:anywhere;z-index:2;box-shadow:0 8px 24px rgba(0,0,0,.45);"></div>
         </div>
     </div>
 </dialog>
@@ -180,7 +180,9 @@
 	var metricsKind = 'cpu';
 	var metricsWindow = 0;
 	var metricsKeyboardX = null;
-    var metricsColors = ['#58a6ff','#3fb950','#d29922','#f778ba','#a371f7','#ff7b72','#39c5cf','#dbab09'];
+    var metricsColors = ['#56b4e9','#e69f00','#00c48c','#ff6f61','#cc79a7','#4d8cff','#f0e442','#ff9da7','#7bdff2','#b8f26d','#c6a0f6','#ffffff'];
+    var metricsDashes = [[],[10,4],[3,4],[12,3,2,3],[2,3,2,7],[14,4,3,4]];
+    var metricsMarkers = ['circle','square','diamond','triangle','cross','plus'];
 
     function seriesTitle(series) {
         var labels = (series.labels || []).filter(function(l) { return l.key !== 'attempt'; }).map(function(l) { return l.key + '=' + l.value; });
@@ -188,6 +190,10 @@
     }
 	function seriesKey(series){return series.name+'\x00'+series.unit+'\x00'+JSON.stringify(series.labels||[]);}
 	function metricValue(series,value){if(series.unit==='bytes'){var units=['B','KiB','MiB','GiB','TiB'],n=value,i=0;while(Math.abs(n)>=1024&&i<units.length-1){n/=1024;i++;}return n.toFixed(i?2:0)+' '+units[i];}if(series.unit==='millicores')return value.toLocaleString()+' mCPU';return value.toLocaleString()+' '+series.unit;}
+	function metricGroupSeries(){return metricsSeries.filter(function(series){return series.name.indexOf(metricsKind+'.')===0;});}
+	function metricsSeriesStyle(series){var index=metricGroupSeries().indexOf(series);if(index<0)index=0;return {color:metricsColors[index%metricsColors.length],dash:metricsDashes[index%metricsDashes.length],marker:metricsMarkers[index%metricsMarkers.length],index:index};}
+	function drawMetricMarker(ctx,x,y,style,size){ctx.save();ctx.strokeStyle=style.color;ctx.fillStyle='#151a21';ctx.lineWidth=2;ctx.setLineDash([]);ctx.beginPath();if(style.marker==='circle'){ctx.arc(x,y,size,0,Math.PI*2);}else if(style.marker==='square'){ctx.rect(x-size,y-size,size*2,size*2);}else if(style.marker==='diamond'){ctx.moveTo(x,y-size-1);ctx.lineTo(x+size+1,y);ctx.lineTo(x,y+size+1);ctx.lineTo(x-size-1,y);ctx.closePath();}else if(style.marker==='triangle'){ctx.moveTo(x,y-size-1);ctx.lineTo(x+size+1,y+size);ctx.lineTo(x-size-1,y+size);ctx.closePath();}else{ctx.moveTo(x-size,y);ctx.lineTo(x+size,y);if(style.marker==='cross'){ctx.moveTo(x,y-size);ctx.lineTo(x,y+size);}else{ctx.moveTo(x-size*.75,y-size*.75);ctx.lineTo(x+size*.75,y+size*.75);ctx.moveTo(x+size*.75,y-size*.75);ctx.lineTo(x-size*.75,y+size*.75);}}ctx.fill();ctx.stroke();ctx.restore();}
+	function drawHighlightedMetricPoint(ctx,x,y,color){ctx.save();ctx.setLineDash([]);ctx.beginPath();ctx.arc(x,y,7,0,Math.PI*2);ctx.fillStyle='#0d1117';ctx.fill();ctx.beginPath();ctx.arc(x,y,4.5,0,Math.PI*2);ctx.fillStyle='#f8fafc';ctx.fill();ctx.lineWidth=3;ctx.strokeStyle=color;ctx.stroke();ctx.restore();}
 
     function renderMetricControls() {
         metricsControls.innerHTML = '';
@@ -197,7 +203,7 @@
 		var rangeSelect=document.createElement('select');rangeSelect.setAttribute('aria-label','Time range');
 		[[0,'Full job'],[300000,'Last 5 minutes'],[900000,'Last 15 minutes']].forEach(function(item){var option=document.createElement('option');option.value=item[0];option.textContent=item[1];option.selected=item[0]===metricsWindow;rangeSelect.appendChild(option);});
 		rangeSelect.addEventListener('change',function(){metricsWindow=Number(rangeSelect.value);drawMetrics();});metricsControls.appendChild(rangeSelect);
-        metricsSeries.forEach(function(series, index) {
+        metricsSeries.forEach(function(series) {
 			if (series.name.indexOf(metricsKind + '.') !== 0) return;
             var label = document.createElement('label');
             label.style.cssText = 'display:flex;align-items:center;gap:5px;font-size:13px;cursor:pointer';
@@ -206,7 +212,8 @@
             input.type = 'checkbox'; input.checked = metricsEnabled[key] !== false;
             input.addEventListener('change', function() { metricsEnabled[key] = input.checked; drawMetrics(); });
             var swatch = document.createElement('span');
-            swatch.style.cssText = 'width:10px;height:10px;border-radius:50%;background:' + metricsColors[index % metricsColors.length];
+            var style=metricsSeriesStyle(series), markerText={circle:'●',square:'■',diamond:'◆',triangle:'▲',cross:'＋',plus:'×'}[style.marker];
+            swatch.textContent=markerText;swatch.setAttribute('aria-hidden','true');swatch.style.cssText='width:20px;color:'+style.color+';font-size:15px;font-weight:bold;text-align:center;text-shadow:0 1px #000';
             label.appendChild(input); label.appendChild(swatch); label.appendChild(document.createTextNode(seriesTitle(series)));
             metricsControls.appendChild(label);
         });
@@ -240,17 +247,24 @@
         ctx.strokeStyle='#303944'; ctx.fillStyle='#9aa7b4'; ctx.font='11px sans-serif'; ctx.lineWidth=1;
         for (var g=0;g<=4;g++) { var y=pad.t+g*(height-pad.t-pad.b)/4; ctx.beginPath();ctx.moveTo(pad.l,y);ctx.lineTo(width-pad.r,y);ctx.stroke(); var value=maxV-g*(maxV-minV)/4;ctx.fillText(Math.round(value).toLocaleString(),4,y+4); }
         selected.forEach(function(series) {
-            var index=metricsSeries.indexOf(series); ctx.strokeStyle=metricsColors[index%metricsColors.length];ctx.lineWidth=2;ctx.setLineDash([[],[7,3],[2,3]][index%3]);
+            var style=metricsSeriesStyle(series),seriesPoints=displayedPoints(series);ctx.strokeStyle=style.color;ctx.lineWidth=2.5;ctx.setLineDash(style.dash);
 			displayedPoints(series).forEach(function(point){if(point.min==null||point.max==null)return;var x=xOf(Date.parse(point.observed_at));ctx.globalAlpha=.25;ctx.beginPath();ctx.moveTo(x,yOf(point.min));ctx.lineTo(x,yOf(point.max));ctx.stroke();ctx.globalAlpha=1;});
-			ctx.beginPath();displayedPoints(series).forEach(function(point,i) { var x=xOf(Date.parse(point.observed_at)),y=yOf(point.value);if(i)ctx.lineTo(x,y);else ctx.moveTo(x,y); });ctx.stroke();ctx.setLineDash([]);
+			ctx.beginPath();seriesPoints.forEach(function(point,i) { var x=xOf(Date.parse(point.observed_at)),y=yOf(point.value);if(i)ctx.lineTo(x,y);else ctx.moveTo(x,y); });ctx.stroke();ctx.setLineDash([]);
+			var lastMarkerX=-Infinity;seriesPoints.forEach(function(point){var x=xOf(Date.parse(point.observed_at));if(x-lastMarkerX>=46){drawMetricMarker(ctx,x,yOf(point.value),style,3.5);lastMarkerX=x;}});
         });
         document.getElementById('metrics-range').textContent = new Date(minT).toLocaleString() + ' – ' + new Date(maxT).toLocaleString();
         if (typeof mouseX === 'number') {
-            var targetT=minT+Math.max(0,Math.min(1,(mouseX-pad.l)/(width-pad.l-pad.r)))*(maxT-minT), lines=[];
-            selected.forEach(function(series) { var nearest=null,distance=Infinity;displayedPoints(series).forEach(function(p){var d=Math.abs(Date.parse(p.observed_at)-targetT);if(d<distance){distance=d;nearest=p;}});if(nearest)lines.push(seriesTitle(series)+': '+metricValue(series,nearest.value)); });
-            metricsTooltip.textContent=new Date(targetT).toLocaleString()+'\n'+lines.join('\n');metricsTooltip.style.display='block';metricsTooltip.style.left=Math.min(width-280,Math.max(6,mouseX+14))+'px';metricsTooltip.style.top='12px';
+            var targetT=minT+Math.max(0,Math.min(1,(mouseX-pad.l)/(width-pad.l-pad.r)))*(maxT-minT), nearestPoints=[];
+            selected.forEach(function(series) { var nearest=null,distance=Infinity;displayedPoints(series).forEach(function(p){var d=Math.abs(Date.parse(p.observed_at)-targetT);if(d<distance){distance=d;nearest=p;}});if(nearest)nearestPoints.push({series:series,point:nearest}); });
+            var guideX=xOf(targetT);ctx.strokeStyle='#aab7c4';ctx.lineWidth=1;ctx.setLineDash([4,4]);ctx.beginPath();ctx.moveTo(guideX,pad.t);ctx.lineTo(guideX,height-pad.b);ctx.stroke();ctx.setLineDash([]);
+            nearestPoints.forEach(function(item){drawHighlightedMetricPoint(ctx,xOf(Date.parse(item.point.observed_at)),yOf(item.point.value),metricsSeriesStyle(item.series).color);});
+            metricsTooltip.innerHTML='';var timeLine=document.createElement('div');timeLine.style.cssText='font-weight:700;margin-bottom:5px';timeLine.textContent=new Date(targetT).toLocaleString();metricsTooltip.appendChild(timeLine);
+            nearestPoints.forEach(function(item){var row=document.createElement('div');row.style.cssText='display:grid;grid-template-columns:14px minmax(0,1fr);gap:6px;align-items:start;margin-top:3px';var marker=document.createElement('span'),style=metricsSeriesStyle(item.series);marker.textContent={circle:'●',square:'■',diamond:'◆',triangle:'▲',cross:'＋',plus:'×'}[style.marker];marker.style.color=style.color;var value=document.createElement('span');value.textContent=seriesTitle(item.series)+': '+metricValue(item.series,item.point.value);row.appendChild(marker);row.appendChild(value);metricsTooltip.appendChild(row);});
+            metricsTooltip.style.display='block';positionMetricsTooltip(mouseX);
         }
     }
+
+	function positionMetricsTooltip(mouseX){var parent=metricsTooltip.parentElement,margin=12,canvasLeft=metricsCanvas.offsetLeft,desiredLeft=canvasLeft+mouseX+14,tooltipWidth=metricsTooltip.offsetWidth,parentWidth=parent.clientWidth;if(desiredLeft+tooltipWidth>parentWidth-margin)desiredLeft=canvasLeft+mouseX-tooltipWidth-14;metricsTooltip.style.left=Math.max(margin,Math.min(desiredLeft,parentWidth-tooltipWidth-margin))+'px';metricsTooltip.style.top=margin+'px';}
 
     function mergeMetricData(data, reset) {
         if (reset) { metricsSeries=[]; metricsEnabled={}; }

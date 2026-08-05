@@ -261,6 +261,15 @@ func (ps PostgresDbStore) ListWorkflowSummariesVisibleTo(ctx context.Context, vi
 		workflowClause = "WHERE " + strings.Join(whereWorkflow, " AND ")
 	}
 	looseClause := "WHERE j.workflow_id IS NULL"
+	if _, gettingOne := filters["workflow_id"]; !gettingOne {
+		// A loose evaluation job that creates one root workflow is the entry
+		// step of that workflow. Keep zero-workflow and fan-out evaluations.
+		looseClause += ` AND (
+			SELECT COUNT(*) FROM workflow_instances spawned
+			WHERE spawned.parent_job_id = j.job_id
+			  AND spawned.parent_workflow_id IS NULL
+		) <> 1`
+	}
 	if len(whereLoose) > 0 {
 		looseClause += " AND " + strings.Join(whereLoose, " AND ")
 	}
