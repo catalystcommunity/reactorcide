@@ -12,9 +12,8 @@ import (
 
 // TestKubernetesRunnerResourceRequirements verifies SpawnJob sets the job
 // container's resources.requests.cpu, resources.limits.cpu, and
-// resources.limits.memory straight from JobConfig's Kubernetes-style
-// quantity strings, and -- critically -- sets NO memory request (memory is
-// limit-only in reactorcide; see WORKERS_PLAN.md "Resources").
+// resources.limits.memory straight from JobConfig's Kubernetes-style quantity
+// strings, and -- critically -- sets NO memory request.
 func TestKubernetesRunnerResourceRequirements(t *testing.T) {
 	clientset := fake.NewSimpleClientset()
 	runner := &KubernetesRunner{
@@ -84,10 +83,9 @@ func TestKubernetesRunnerResourceRequirements(t *testing.T) {
 // TestKubernetesRunnerResourceRequirementsGBSuffix verifies the Kubernetes
 // runner accepts our own memory grammar's decimal "GB"/"G" suffixes -- which
 // resource.ParseQuantity rejects -- by building the resource.Quantity from
-// our parsed byte count (resource.NewQuantity) rather than parsing the
-// string with the k8s quantity parser. This is the whole point of replacing
-// k8s.io/apimachinery/.../resource string parsing with internal/resources
-// (see WORKERS_PLAN.md "Resources").
+// our parsed byte count (resource.NewQuantity) rather than parsing the string
+// with the k8s quantity parser. This is the whole point of replacing
+// k8s.io/apimachinery/.../resource string parsing with internal/resources.
 func TestKubernetesRunnerResourceRequirementsGBSuffix(t *testing.T) {
 	clientset := fake.NewSimpleClientset()
 	runner := &KubernetesRunner{

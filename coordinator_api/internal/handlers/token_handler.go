@@ -129,14 +129,12 @@ func (h *TokenHandler) ListTokens(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Get tokens for the user
 	tokens, err := h.store.GetAPITokensByUser(r.Context(), user.UserID)
 	if err != nil {
 		h.respondWithError(w, http.StatusInternalServerError, err)
 		return
 	}
 
-	// Convert to response format
 	tokenResponses := make([]TokenResponse, len(tokens))
 	for i, token := range tokens {
 		tokenResponses[i] = h.tokenToResponse(&token)
@@ -185,7 +183,6 @@ func (h *TokenHandler) DeleteToken(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Delete the token
 	if err := h.store.DeleteAPIToken(r.Context(), tokenID); err != nil {
 		h.respondWithError(w, http.StatusNotFound, err)
 		return
@@ -193,8 +190,6 @@ func (h *TokenHandler) DeleteToken(w http.ResponseWriter, r *http.Request) {
 
 	w.WriteHeader(http.StatusNoContent)
 }
-
-// Helper methods
 
 func (h *TokenHandler) tokenToResponse(token *models.APIToken) TokenResponse {
 	return TokenResponse{

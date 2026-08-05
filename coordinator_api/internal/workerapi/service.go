@@ -63,7 +63,7 @@ func NewWorkerService(deps *Deps) *WorkerService {
 // Never reactivates a disabled worker's status, and never resets an
 // existing worker's status at all (UpsertWorkerByKey only overwrites status
 // when explicitly given a non-empty one) -- Register must not undo an
-// admin's quarantine/disable decision (WORKERS_PLAN.md P4).
+// admin's quarantine/disable decision.
 func (s *WorkerService) Register(ctx context.Context, req csilapi.RegisterRequest) (csilapi.RegisterResponse, error) {
 	pool, err := s.deps.Enrollment.ValidateEnrollmentToken(ctx, req.EnrollmentToken)
 	if err != nil {
@@ -124,15 +124,14 @@ func (s *WorkerService) RequestJob(ctx context.Context, req csilapi.RequestJobRe
 	if err != nil {
 		return csilapi.RequestJobResponse{}, err
 	}
-	// A quarantined/disabled worker (WORKERS_PLAN.md Wave-4 P4's
-	// set-worker-status/drain-worker admin ops) is offered no further
-	// work: this is what makes quarantine/drain actually stop new job
-	// offers, rather than only affecting admin-surface display. Returned
-	// as an ordinary has_lease=false rather than a ServiceError -- a
-	// non-active worker is not a caller error, it's just "no work right
-	// now", exactly like every other no-match path in this method (no
-	// satisfying queue, empty task group, claim-race loss), so the
-	// worker's poll loop doesn't need special-case error handling for it.
+	// A quarantined/disabled worker is offered no further work: this is what
+	// makes quarantine/drain actually stop new job offers, rather than only
+	// affecting admin-surface display. Returned as an ordinary
+	// has_lease=false rather than a ServiceError -- a non-active worker is
+	// not a caller error, it's just "no work right now", exactly like every
+	// other no-match path in this method (no satisfying queue, empty task
+	// group, claim-race loss), so the worker's poll loop doesn't need
+	// special-case error handling for it.
 	if wkr.Status != models.WorkerStatusActive {
 		return csilapi.RequestJobResponse{HasLease: false}, nil
 	}
@@ -331,14 +330,12 @@ func (s *WorkerService) Heartbeat(ctx context.Context, req csilapi.HeartbeatRequ
 	_ = s.deps.Store.TouchWorkerLastSeen(ctx, wkr.WorkerID)
 
 	// draining mirrors RequestJob's status guard: a quarantined/disabled
-	// worker (WORKERS_PLAN.md Wave-4 P4's set-worker-status/drain-worker
-	// admin ops) is already offered no new work, but a worker sitting in
-	// its RequestJob long-poll or mid-lease needs a signal on its
-	// existing Heartbeat cadence to learn it should finish up and shut
-	// down rather than keep polling forever. Derived from the worker's
-	// current status on every call, not a separate persisted state --
-	// drain and quarantine are the same status, distinguished only by
-	// admin intent, not by data model.
+	// worker is already offered no new work, but a worker sitting in its
+	// RequestJob long-poll or mid-lease needs a signal on its existing
+	// Heartbeat cadence to learn it should finish up and shut down rather
+	// than keep polling forever. Derived from the worker's current status on
+	// every call, not a separate persisted state -- drain and quarantine are
+	// the same status, distinguished only by admin intent, not by data model.
 	draining := wkr.Status != models.WorkerStatusActive
 
 	var directives []csilapi.Directive
@@ -470,12 +467,11 @@ func derefOrEmpty(s *string) string {
 
 // buildLease assembles the Lease returned to a worker on a successful
 // RequestJob claim, mirroring internal/worker.(*JobProcessor).buildJobConfig
-// exactly for image/command/working_dir/resources/capabilities/run_as_user
-// -- except env/secrets, which come from the already-split
-// resolvedLeaseSecrets rather than a single unresolved env map, per
-// WORKERS_PLAN.md's secret-isolation requirement. vcsAuth is nil for a job
-// whose source needs no checkout credential; when non-nil it becomes the
-// Lease's own optional vcs_auth field (see vcs_auth.go), never folded into
+// exactly for image/command/working_dir/resources/capabilities/run_as_user --
+// except env/secrets, which come from the already-split resolvedLeaseSecrets
+// rather than a single unresolved env map. vcsAuth is nil for a job whose
+// source needs no checkout credential; when non-nil it becomes the Lease's
+// own optional vcs_auth field (see vcs_auth.go), never folded into
 // Env/Secrets.
 func buildLease(leaseID string, job *models.Job, resolved *resolvedLeaseSecrets, vcsAuth *csilapi.VCSAuth) *csilapi.Lease {
 	image := worker.DefaultRunnerImage

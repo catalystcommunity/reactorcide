@@ -10,13 +10,12 @@ import (
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/uiapi/csilapi"
 )
 
-// requireGlobalAdmin is a small wrapper so every global-admin-only op in
-// this file (settings, trusted identities, trusted domain patterns — the
-// entirety of UI_AUTH_PLAN.md's matrix's last row) shares one authorization
-// call site. An anonymous caller (no valid session at all) is rejected with
-// "unauthorized" rather than "forbidden", matching every other
-// identity-required op in this service (see Deps.requireUser) — "forbidden"
-// is reserved for an authenticated-but-insufficiently-privileged caller.
+// requireGlobalAdmin is a small wrapper so every global-admin-only op in this
+// file shares one authorization call site. An anonymous caller (no valid
+// session at all) is rejected with "unauthorized" rather than "forbidden",
+// matching every other identity-required op in this service (see
+// Deps.requireUser) — "forbidden" is reserved for an
+// authenticated-but-insufficiently-privileged caller.
 func (s *UiService) requireGlobalAdmin(ctx context.Context) (authz.Identity, error) {
 	id, _, err := s.deps.requireUser(ctx)
 	if err != nil {
@@ -54,11 +53,10 @@ func (s *UiService) GetGlobalSettings(ctx context.Context, req csilapi.GetGlobal
 	}, nil
 }
 
-// UpdateGlobalSettings requires global admin. new_projects_private, if
-// given, is written under models.GlobalSettingNewProjectsPrivate; any other
-// entries in settings are written verbatim under their own key (a generic
-// escape hatch for future settings this service doesn't have a named field
-// for yet).
+// UpdateGlobalSettings requires global admin. new_projects_private, if given,
+// is written under models.GlobalSettingNewProjectsPrivate; any other entries
+// in settings are written verbatim under their own key (a generic escape
+// hatch for future settings this service doesn't have a named field for yet).
 func (s *UiService) UpdateGlobalSettings(ctx context.Context, req csilapi.UpdateGlobalSettingsRequest) (csilapi.UpdateGlobalSettingsResponse, error) {
 	if _, err := s.requireGlobalAdmin(ctx); err != nil {
 		return csilapi.UpdateGlobalSettingsResponse{}, err
@@ -180,10 +178,10 @@ func (s *UiService) ListTrustedDomainPatterns(ctx context.Context, req csilapi.L
 }
 
 // AddTrustedDomainPattern requires global admin. pattern is validated as a
-// compilable RE2 pattern (auth.ValidateDomainPattern) before it is
-// persisted — an admission-list regex that fails to compile would silently
-// admit nobody (see auth.Admission.compiledPatterns, which skips
-// non-compiling rows rather than failing every check).
+// compilable RE2 pattern (auth.ValidateDomainPattern) before it is persisted
+// — an admission-list regex that fails to compile would silently admit nobody
+// (see auth.Admission.compiledPatterns, which skips non-compiling rows rather
+// than failing every check).
 func (s *UiService) AddTrustedDomainPattern(ctx context.Context, req csilapi.AddTrustedDomainPatternRequest) (csilapi.AddTrustedDomainPatternResponse, error) {
 	id, err := s.requireGlobalAdmin(ctx)
 	if err != nil {

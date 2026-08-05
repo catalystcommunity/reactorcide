@@ -15,9 +15,9 @@ import (
 func TestDialAddrStripsScheme(t *testing.T) {
 	cases := map[string]string{
 		"http://corndogs.reactorcide.svc.cluster.local:5080": "corndogs.reactorcide.svc.cluster.local:5080",
-		"tcp://corndogs:5080":   "corndogs:5080",
-		"corndogs:5080":         "corndogs:5080",
-		"http://host:5080/path": "host:5080",
+		"tcp://corndogs:5080":                                "corndogs:5080",
+		"corndogs:5080":                                      "corndogs:5080",
+		"http://host:5080/path":                              "host:5080",
 	}
 	for in, want := range cases {
 		if got := dialAddr(in); got != want {

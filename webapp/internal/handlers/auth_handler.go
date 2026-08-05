@@ -14,9 +14,7 @@ import (
 
 // defaultSessionTTL is the cookie lifetime used when a CompleteLogin/
 // BootstrapAdmin response's expires_at can't be parsed. It mirrors the
-// 30-day session expiry documented in UI_AUTH_PLAN.md so a parse failure
-// degrades to the same lifetime the coordinator actually enforces server
-// side, not something shorter or longer.
+// coordinator's 30-day session expiry.
 const defaultSessionTTL = 30 * 24 * time.Hour
 
 // LoginPage renders GET /app/login: a login-disabled notice when the

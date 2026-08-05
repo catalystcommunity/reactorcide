@@ -734,10 +734,9 @@ func globalWebhookSecret(provider vcs.Provider) string {
 
 // resolveJobQueue resolves job.Characteristics to a queue (find-or-create)
 // and sets job.QueueName to the resolved Queue.QueueUUID, mutating job in
-// place before it is persisted -- WORKERS_PLAN.md "Find-or-create at
-// submit". A no-op (job.QueueName left as BuildEvalJob set it) when the
-// store doesn't implement queueResolvingStore, matching job_handler.go's
-// CreateJob so tests with a narrower store mock still work.
+// place before it is persisted. A no-op (job.QueueName left as BuildEvalJob
+// set it) when the store doesn't implement queueResolvingStore, matching
+// job_handler.go's CreateJob so tests with a narrower store mock still work.
 func (h *WebhookHandler) resolveJobQueue(ctx context.Context, job *models.Job) error {
 	qs, ok := h.store.(queueResolvingStore)
 	if !ok {

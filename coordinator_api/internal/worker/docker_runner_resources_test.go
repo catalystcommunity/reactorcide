@@ -63,8 +63,8 @@ func TestDockerResourceLimits(t *testing.T) {
 		},
 		{
 			// GB is not valid k8s quantity grammar but IS valid in our own
-			// parser (see WORKERS_PLAN.md "Resources") -- this is the
-			// end-to-end round trip the custom parser exists for.
+			// parser -- this is the end-to-end round trip the custom parser
+			// exists for.
 			name:            "memory limit GB suffix (rejected by k8s parser, accepted by ours)",
 			config:          &JobConfig{MemoryLimit: "4GB"},
 			wantNanoCPUs:    0,

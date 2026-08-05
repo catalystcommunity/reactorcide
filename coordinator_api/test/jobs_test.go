@@ -21,8 +21,8 @@ type JobResponse struct {
 	Name        string            `json:"name"`
 	Description string            `json:"description"`
 	Status      string            `json:"status"`
-	SourceURL      string            `json:"source_url,omitempty"`
-	SourceRef      string            `json:"source_ref,omitempty"`
+	SourceURL   string            `json:"source_url,omitempty"`
+	SourceRef   string            `json:"source_ref,omitempty"`
 	SourceType  string            `json:"source_type"`
 	SourcePath  string            `json:"source_path,omitempty"`
 	CodeDir     string            `json:"code_dir"`
@@ -40,8 +40,8 @@ type JobResponse struct {
 type CreateJobRequest struct {
 	Name           string            `json:"name"`
 	Description    string            `json:"description,omitempty"`
-	SourceURL         string            `json:"source_url,omitempty"`
-	SourceRef         string            `json:"source_ref,omitempty"`
+	SourceURL      string            `json:"source_url,omitempty"`
+	SourceRef      string            `json:"source_ref,omitempty"`
 	SourceType     string            `json:"source_type"`
 	SourcePath     string            `json:"source_path,omitempty"`
 	CodeDir        string            `json:"code_dir,omitempty"`
@@ -108,8 +108,8 @@ func TestJobsAPI(t *testing.T) {
 				Name:        "Test Job",
 				Description: "A test job for API testing",
 				SourceType:  "git",
-				SourceURL:      "https://github.com/test/repo.git",
-				SourceRef:      "main",
+				SourceURL:   "https://github.com/test/repo.git",
+				SourceRef:   "main",
 				JobCommand:  "echo 'Hello World'",
 			}
 
@@ -148,7 +148,7 @@ func TestJobsAPI(t *testing.T) {
 			jobRequest := CreateJobRequest{
 				Name:       "Test Job",
 				SourceType: "git",
-				SourceURL:     "https://github.com/test/repo.git",
+				SourceURL:  "https://github.com/test/repo.git",
 				JobCommand: "echo test",
 			}
 
@@ -428,11 +428,7 @@ func TestJobsAPIAuthorizationAndOwnership(t *testing.T) {
 			dataUtils := &DataUtils{db: tx}
 
 			// Create two different users. user1 is IsPrivate so their job
-			// isn't visible-by-default to unrelated user2 (see
-			// internal/authz/visibility.go's canViewOwned: a project-less
-			// job falls back to its owning org's visibility, and orgs are
-			// public by default per UI_AUTH_PLAN.md's visibility model —
-			// this test is specifically about a *private* org's isolation).
+			// isn't visible-by-default to unrelated user2.
 			user1, err := dataUtils.CreateUser(DataSetup{
 				"Username":  "user1",
 				"Email":     "user1@example.com",
@@ -704,7 +700,8 @@ func TestJobsAPIValidation(t *testing.T) {
 			authHeader, err := createAuthTokenHeader(ctx, tx, user.UserID)
 			require.NoError(t, err)
 
-			// Test with empty job ID (should return 400 due to path validation)
+			// Test with empty job ID (should return 400 due to path
+			// validation)
 			req, err := http.NewRequestWithContext(ctx, "GET", "/api/v1/jobs/", nil)
 			require.NoError(t, err)
 			req.Header.Set("Authorization", authHeader)

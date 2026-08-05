@@ -748,9 +748,7 @@ func TestBuildJobFromTrigger_MinimalSpec(t *testing.T) {
 
 // TestBuildJobFromTrigger_InheritsParentCharacteristics verifies a triggered
 // job with no `characteristics` block of its own inherits the parent (eval)
-// job's characteristics wholesale (WORKERS_PLAN.md "Triggered/workflow child
-// jobs inherit the PARENT's characteristics unless the child spec
-// overrides").
+// job's characteristics wholesale.
 func TestBuildJobFromTrigger_InheritsParentCharacteristics(t *testing.T) {
 	mockStore := &MockStore{}
 	tp := NewTriggerProcessor(mockStore, nil)

@@ -10,31 +10,29 @@ import (
 )
 
 // This file implements SQL-side visibility filtering for job/workflow list
-// endpoints (UI_AUTH_PLAN.md's Visibility section; see the code-review
-// finding this fixes, referenced from internal/handlers/job_handler.go's
-// jobsVisibleToStore doc comment): ListJobs/ListWorkflows used to fetch a
-// LIMIT/OFFSET page and THEN filter it down to visible rows in Go
+// endpoints: ListJobs/ListWorkflows used to fetch a LIMIT/OFFSET page and
+// THEN filter it down to visible rows in Go
 // (authz.FilterVisibleJobs/FilterVisibleWorkflowSummaries), which can return
-// short or empty pages even when more visible rows exist past the offset,
-// and reported Total as the filtered page length rather than a real count.
+// short or empty pages even when more visible rows exist past the offset, and
+// reported Total as the filtered page length rather than a real count.
 // ListJobsVisibleTo/ListWorkflowSummariesVisibleTo push the exact same
 // visibility predicate authz.CanViewJob evaluates in Go
 // (internal/authz/visibility.go's canViewOwned/canViewProject/
 // canViewPrivate) into the SQL WHERE clause instead, so LIMIT/OFFSET and
 // COUNT(*) both operate on the already-visibility-filtered row set.
 //
-// This package intentionally does not import internal/authz (authz depends
-// on store via the narrow RoleStore interface, not the other way around —
-// see authz/resolver.go's doc comment). Callers resolve "is this viewer a
-// global admin" once via authz.Resolver.IsGlobalAdmin and pass the bool in.
+// This package intentionally does not import internal/authz (authz depends on
+// store via the narrow RoleStore interface, not the other way around — see
+// authz/resolver.go's doc comment). Callers resolve "is this viewer a global
+// admin" once via authz.Resolver.IsGlobalAdmin and pass the bool in.
 
 // visibilityJoins returns the LEFT JOIN clauses needed to evaluate
 // visibilityPredicateSQL for an "owned resource" row aliased entAlias (must
 // expose <entAlias>.project_id and <entAlias>.user_id — both jobs and
 // workflow_instances do). projAlias/projOwnerAlias/entOwnerAlias name the
 // three additionally-joined tables the predicate references: the resource's
-// project (if any), that project's owning org (user) row, and the
-// resource's own owning-org (user) row.
+// project (if any), that project's owning org (user) row, and the resource's
+// own owning-org (user) row.
 func visibilityJoins(entAlias, projAlias, projOwnerAlias, entOwnerAlias string) []string {
 	return []string{
 		fmt.Sprintf("LEFT JOIN projects %s ON %s.project_id = %s.project_id", projAlias, projAlias, entAlias),
@@ -47,8 +45,8 @@ func visibilityJoins(entAlias, projAlias, projOwnerAlias, entOwnerAlias string) 
 // authz.visibilityBatch.canViewOwned (internal/authz/visibility.go) for an
 // owned-resource row exposed via entAlias/projAlias/projOwnerAlias/
 // entOwnerAlias (see visibilityJoins). The returned expression contains
-// exactly 8 `?` placeholders, ALL of which must be bound to the same
-// viewer's user ID, in order — see visibilityArgs.
+// exactly 8 `?` placeholders, ALL of which must be bound to the same viewer's
+// user ID, in order — see visibilityArgs.
 //
 // Clause-by-clause mapping back to internal/authz/visibility.go:
 //
@@ -72,10 +70,10 @@ func visibilityJoins(entAlias, projAlias, projOwnerAlias, entOwnerAlias string) 
 //     this branch.
 //
 // Global-admin and anonymous-caller handling are deliberately NOT part of
-// this predicate: callers short-circuit it entirely for a global admin
-// (pass isGlobalAdmin=true to the exported List*VisibleTo functions, which
-// skip calling this at all), and REST callers reaching these methods are
-// always authenticated (no anonymous viewerID reaches here).
+// this predicate: callers short-circuit it entirely for a global admin (pass
+// isGlobalAdmin=true to the exported List*VisibleTo functions, which skip
+// calling this at all), and REST callers reaching these methods are always
+// authenticated (no anonymous viewerID reaches here).
 func visibilityPredicateSQL(entAlias, projAlias, projOwnerAlias, entOwnerAlias string) string {
 	return fmt.Sprintf(`(
 		( %[1]s.project_id IS NOT NULL AND NOT (%[1]s.is_private OR COALESCE(%[2]s.is_private, false)) )
@@ -140,8 +138,8 @@ func visibilityArgs(viewerID string) []interface{} {
 // already-visibility-filtered row set. filters honors the same keys as
 // ListJobs (status, user_id, queue_name, source_type, project_id,
 // workflow_id). isGlobalAdmin, resolved once by the caller via
-// authz.Resolver.IsGlobalAdmin, bypasses the visibility predicate entirely
-// (a global admin sees every row that matches filters).
+// authz.Resolver.IsGlobalAdmin, bypasses the visibility predicate entirely (a
+// global admin sees every row that matches filters).
 func (ps PostgresDbStore) ListJobsVisibleTo(ctx context.Context, viewerID string, isGlobalAdmin bool, filters map[string]interface{}, limit, offset int) ([]models.Job, int64, error) {
 	if limit <= 0 {
 		limit = 20
@@ -193,13 +191,13 @@ func (ps PostgresDbStore) ListJobsVisibleTo(ctx context.Context, viewerID string
 	return jobs, total, nil
 }
 
-// ListWorkflowSummariesVisibleTo is ListWorkflowSummaries' (workflow_operations.go)
-// counterpart for SQL-side visibility filtering: same "workflow_instances
-// UNION ALL loose (project-less/workflow-less) jobs" shape, with the same
-// visibilityPredicateSQL applied to each branch (mirroring
-// authz.CanViewWorkflowSummary / CanViewJob for the loose-job branch), and
-// LIMIT/OFFSET plus COUNT(*) evaluated over the combined, already-filtered
-// result so pagination and Total are both exact.
+// ListWorkflowSummariesVisibleTo is ListWorkflowSummaries'
+// (workflow_operations.go) counterpart for SQL-side visibility filtering:
+// same "workflow_instances UNION ALL loose (project-less/workflow-less) jobs"
+// shape, with the same visibilityPredicateSQL applied to each branch
+// (mirroring authz.CanViewWorkflowSummary / CanViewJob for the loose-job
+// branch), and LIMIT/OFFSET plus COUNT(*) evaluated over the combined,
+// already-filtered result so pagination and Total are both exact.
 func (ps PostgresDbStore) ListWorkflowSummariesVisibleTo(ctx context.Context, viewerID string, isGlobalAdmin bool, filters map[string]interface{}, limit, offset int) ([]models.WorkflowSummary, int64, error) {
 	if limit <= 0 {
 		limit = 20

@@ -8,13 +8,13 @@ import (
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/uiapi/csilapi"
 )
 
-// requireManageWorkers requires org admin (of orgID) or global admin --
-// every worker/pool/queue admin op (WORKERS_PLAN.md Wave-4 P4) is gated the
-// same way, via authz.Caps.ManageWorkers; there is no separate "view"
-// capability for this surface. orgID is nil when the target resource has no
-// owning org (a global pool, or every queue today -- queues have no
-// creation path that sets one yet): only a true global admin may manage it,
-// since there is no org scope left to check Capabilities against.
+// requireManageWorkers requires org admin (of orgID) or global admin -- every
+// worker/pool/queue admin op is gated the same way, via
+// authz.Caps.ManageWorkers; there is no separate "view" capability for this
+// surface. orgID is nil when the target resource has no owning org (a global
+// pool, or every queue today -- queues have no creation path that sets one
+// yet): only a true global admin may manage it, since there is no org scope
+// left to check Capabilities against.
 func (s *UiService) requireManageWorkers(ctx context.Context, id authz.Identity, orgID *string) error {
 	if orgID == nil {
 		if err := s.deps.Resolver.RequireGlobalAdmin(ctx, id); err != nil {

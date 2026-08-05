@@ -14,22 +14,21 @@ import (
 )
 
 const (
-	// SessionTokenBytes is the raw session token size: 256 bits, per
-	// UI_AUTH_PLAN.md's "Sessions" section.
+	// SessionTokenBytes is the raw session token size: 256 bits.
 	SessionTokenBytes = 32
 
 	// SessionExpiry is how long a freshly minted session is valid for.
 	SessionExpiry = 30 * 24 * time.Hour
 
 	// sessionTouchThrottle bounds how often ResolveSession writes
-	// last_seen_at back to the store: once per 5 minutes of session
-	// activity, so routine polling doesn't hammer ui_sessions.
+	// last_seen_at back to the store: once per 5 minutes of session activity,
+	// so routine polling doesn't hammer ui_sessions.
 	sessionTouchThrottle = 5 * time.Minute
 )
 
 // SessionStore is the narrow store surface Sessions consumes, satisfied by
-// Task A's postgres_store/auth_operations.go (ui_sessions) plus the
-// existing user lookup.
+// Task A's postgres_store/auth_operations.go (ui_sessions) plus the existing
+// user lookup.
 type SessionStore interface {
 	CreateUISession(ctx context.Context, session *models.UISession) error
 	GetActiveUISessionByTokenHash(ctx context.Context, tokenHash []byte) (*models.UISession, error)
@@ -58,8 +57,8 @@ func hashToken(token string) []byte {
 }
 
 // generateToken returns a fresh cryptographically random hex token of
-// SessionTokenBytes bytes. Shared by session minting and login-attempt
-// token minting (login_service.go) — both want the same 256-bit strength.
+// SessionTokenBytes bytes. Shared by session minting and login-attempt token
+// minting (login_service.go) — both want the same 256-bit strength.
 func generateToken() (string, error) {
 	buf := make([]byte, SessionTokenBytes)
 	if _, err := rand.Read(buf); err != nil {
@@ -93,8 +92,8 @@ func (s *Sessions) MintSession(ctx context.Context, userID string) (string, erro
 // ResolveSession looks up the active session for a raw bearer token and its
 // owning user. Returns store.ErrNotFound if the token is empty, unknown,
 // expired, or revoked. Lazily (and best-effort) touches last_seen_at,
-// throttled to once per sessionTouchThrottle so routine polling doesn't
-// write on every call.
+// throttled to once per sessionTouchThrottle so routine polling doesn't write
+// on every call.
 func (s *Sessions) ResolveSession(ctx context.Context, token string) (*models.User, *models.UISession, error) {
 	if token == "" {
 		return nil, nil, store.ErrNotFound
@@ -113,9 +112,9 @@ func (s *Sessions) ResolveSession(ctx context.Context, token string) (*models.Us
 			session.LastSeenAt = s.now()
 		}
 		// A touch failure (including store.ErrNotFound if the session was
-		// concurrently revoked) is not fatal to this resolution: the
-		// caller already holds a validly-resolved session and user as of
-		// the GetActiveUISessionByTokenHash call above.
+		// concurrently revoked) is not fatal to this resolution: the caller
+		// already holds a validly-resolved session and user as of the
+		// GetActiveUISessionByTokenHash call above.
 	}
 	return user, session, nil
 }

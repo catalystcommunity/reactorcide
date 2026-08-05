@@ -16,10 +16,10 @@ import (
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/workerapi/csilapi"
 )
 
-// AppendLogs is push log ingestion (WORKERS_PLAN.md "Workers"): resolves
-// the caller's session, verifies the lease belongs to it and is still
-// active, and converts the old request to one immutable batch. New workers
-// use AppendLogBatch directly. This operation remains for old workers.
+// AppendLogs is push log ingestion: resolves the caller's session, verifies
+// the lease belongs to it and is still active, and converts the old request
+// to one immutable batch. New workers use AppendLogBatch directly. This
+// operation remains for old workers.
 func (s *WorkerService) AppendLogs(ctx context.Context, req csilapi.AppendLogsRequest) (csilapi.AppendLogsResponse, error) {
 	wkr, _, err := s.resolveSession(ctx)
 	if err != nil {
@@ -88,9 +88,8 @@ func legacyLogSequence() int64 {
 
 // chunkToLogEntries splits a pushed AppendLogs chunk into worker.LogEntry
 // rows, masking secrets as a backstop. A line that is itself a valid
-// worker.LogEntry JSON object (matching internal/worker/log_shipper.go's
-// parseLogLine behavior for a runnerlib-structured line) is passed through
-// with its own timestamp/level; anything else becomes a fresh entry
+// worker.LogEntry JSON object (a runnerlib-structured line) is passed
+// through with its own timestamp/level; anything else becomes a fresh entry
 // timestamped on arrival at the coordinator.
 func chunkToLogEntries(chunk, stream string, masker *secrets.Masker) []worker.LogEntry {
 	lines := strings.Split(chunk, "\n")

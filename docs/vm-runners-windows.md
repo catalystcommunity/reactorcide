@@ -2,9 +2,8 @@
 
 The `vm` JobRunner backend runs native **Windows** jobs inside ephemeral,
 per-job guest VMs on a Windows host, using **Hyper-V driven through PowerShell**
-(`New-VHD` / `New-VM` / `Start-VM` / `Get-VMNetworkAdapter` / `Remove-VM`). This
-is phase VM-4 of [`VM_RUNNERS_PLAN.md`](../VM_RUNNERS_PLAN.md). It is the
-isolation boundary for Windows build/test jobs that cannot run in a Linux
+(`New-VHD` / `New-VM` / `Start-VM` / `Get-VMNetworkAdapter` / `Remove-VM`). It is
+the isolation boundary for Windows build/test jobs that cannot run in a Linux
 container.
 
 Terminology: the process that boots and drives guests is the **worker**.
@@ -135,7 +134,7 @@ is running *and* DHCP has assigned a lease. So:
 - The lifecycle **polls** with a timeout (it does not expect an IP immediately).
 - If the guest image lacks integration services, or the switch has no DHCP,
   discovery times out with a message pointing at Data Exchange. **This is the
-  single most likely first-hardware snag** (flagged in `VM_RUNNERS_PLAN.md`).
+  single most likely first-hardware snag.**
 - Windows self-assigned **APIPA** addresses (`169.254.0.0/16`) and IPv6 entries
   are skipped so a half-booted guest never resolves to a dead address.
 
@@ -182,8 +181,7 @@ VHDX as the read-only base for every job.
 
 4. **Bake the toolchain** the jobs need (language runtimes, build tools,
    `runnerlib` prerequisites, etc.). Everything a job uses must be present in the
-   guest — there is no nested container inside the guest (see the "Guest
-   execution note" in `VM_RUNNERS_PLAN.md`).
+   guest — there is no nested container inside the guest.
 
 5. **Install the worker's SSH public key** (see Guest credentials).
 
@@ -281,13 +279,12 @@ Once the bundle, key, and env are in place:
 
 ```powershell
 # Local:
-reactorcide run-local --container-runtime vm .\jobs\my-windows-job.yaml
+reactorcide run-local --backend vm .\jobs\my-windows-job.yaml
 
 # Worker (coordinator-mediated) selects the same backend via --container-runtime vm.
 ```
 
-A `{os: windows}` job should only be scheduled onto a Windows worker (see
-`VM_RUNNERS_PLAN.md`).
+A `{os: windows}` job should only be scheduled onto a Windows worker.
 
 ## What is not yet verified
 

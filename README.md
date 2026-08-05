@@ -41,6 +41,19 @@ Add `--backend containerd` when you use nerdctl.
 `run-local` bind-mounts `--job-dir` and uses the host user by default. Use
 `--as-runner` to use the deployed runner user.
 
+## Operate a Coordinator
+
+The CLI covers every coordinator operation. Set `REACTORCIDE_API_URL` and
+`REACTORCIDE_API_TOKEN`, then use commands such as:
+
+```bash
+./coordinator_api/reactorcide jobs list --status failed
+./coordinator_api/reactorcide workflows retry <workflow-id>
+./coordinator_api/reactorcide projects create --file my-repo.yaml
+```
+
+See the [CLI Reference](./docs/cli-reference.md).
+
 ## Develop Reactorcide
 
 You need Python 3.13 or later, `uv`, Go, and a container runtime.

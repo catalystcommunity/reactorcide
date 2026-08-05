@@ -8,11 +8,8 @@ import (
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/uiapi/csilapi"
 )
 
-// TestRetryJob_PermissionMatrix drives UI_AUTH_PLAN.md's permission matrix
-// "retry" row across every caller tier and both relevant auth modes: the
-// same tier as cancel — anonymous may retry ONLY in mode none; a plain
-// member may never retry; project owner/org admin/global admin may always
-// retry.
+// TestRetryJob_PermissionMatrix drives; a plain member may never retry;
+// project owner/org admin/global admin may always retry.
 func TestRetryJob_PermissionMatrix(t *testing.T) {
 	newFailedJob := func(t *testing.T, st *fakeStore, orgID, projectID string) models.Job {
 		t.Helper()

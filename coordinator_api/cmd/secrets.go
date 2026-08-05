@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"bufio"
-	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -12,7 +11,6 @@ import (
 	"os"
 	"sort"
 	"strings"
-	"time"
 
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/secrets"
 	"github.com/urfave/cli/v2"
@@ -72,7 +70,7 @@ var SecretsCommand = &cli.Command{
 				},
 			},
 			Action: func(ctx *cli.Context) error {
-				if secretsAPIEnabled(ctx) {
+				if apiURLConfigured(ctx) {
 					client, err := newSecretsAPIClient(ctx)
 					if err != nil {
 						return err
@@ -151,7 +149,7 @@ var SecretsCommand = &cli.Command{
 					}
 				}
 
-				if secretsAPIEnabled(ctx) {
+				if apiURLConfigured(ctx) {
 					client, err := newSecretsAPIClient(ctx)
 					if err != nil {
 						return err
@@ -329,13 +327,13 @@ var SecretsCommand = &cli.Command{
 				return nil
 			},
 		},
+		masterKeysCommand,
 	},
 }
 
+// secretsAPIClient adds the secrets endpoints to the shared apiClient.
 type secretsAPIClient struct {
-	apiURL string
-	token  string
-	client *http.Client
+	*apiClient
 }
 
 type secretValueAPIResponse struct {
@@ -354,44 +352,16 @@ type batchGetAPIResponse struct {
 	Secrets map[string]string `json:"secrets"`
 }
 
-type secretsAPIError struct {
-	StatusCode int
-	Body       string
-}
-
-func (e *secretsAPIError) Error() string {
-	return fmt.Sprintf("API error (%d): %s", e.StatusCode, e.Body)
-}
-
-func secretsAPIEnabled(ctx *cli.Context) bool {
-	return strings.TrimSpace(ctx.String("api-url")) != ""
-}
-
 func newSecretsAPIClient(ctx *cli.Context) (*secretsAPIClient, error) {
-	apiURL := strings.TrimSpace(ctx.String("api-url"))
-	if apiURL == "" {
-		return nil, fmt.Errorf("API URL is required (use --api-url or REACTORCIDE_API_URL)")
+	client, err := newAPIClient(ctx)
+	if err != nil {
+		return nil, err
 	}
-	token := strings.TrimSpace(ctx.String("token"))
-	var err error
-	if token == "" {
-		token, err = promptForSecret("REACTORCIDE_API_TOKEN", "API token: ")
-		if err != nil {
-			return nil, err
-		}
-	}
-	if token == "" {
-		return nil, fmt.Errorf("API token is required (use --token or REACTORCIDE_API_TOKEN)")
-	}
-	return &secretsAPIClient{
-		apiURL: strings.TrimSuffix(apiURL, "/"),
-		token:  token,
-		client: &http.Client{Timeout: 30 * time.Second},
-	}, nil
+	return &secretsAPIClient{apiClient: client}, nil
 }
 
 func getSecretValue(ctx *cli.Context, path, key string) (string, error) {
-	if secretsAPIEnabled(ctx) {
+	if apiURLConfigured(ctx) {
 		client, err := newSecretsAPIClient(ctx)
 		if err != nil {
 			return "", err
@@ -408,7 +378,7 @@ func getSecretValue(ctx *cli.Context, path, key string) (string, error) {
 }
 
 func deleteSecretValue(ctx *cli.Context, path, key string) (bool, error) {
-	if secretsAPIEnabled(ctx) {
+	if apiURLConfigured(ctx) {
 		client, err := newSecretsAPIClient(ctx)
 		if err != nil {
 			return false, err
@@ -425,7 +395,7 @@ func deleteSecretValue(ctx *cli.Context, path, key string) (bool, error) {
 }
 
 func listSecretKeys(ctx *cli.Context, path string) ([]string, error) {
-	if secretsAPIEnabled(ctx) {
+	if apiURLConfigured(ctx) {
 		client, err := newSecretsAPIClient(ctx)
 		if err != nil {
 			return nil, err
@@ -442,7 +412,7 @@ func listSecretKeys(ctx *cli.Context, path string) ([]string, error) {
 }
 
 func listSecretPaths(ctx *cli.Context) ([]string, error) {
-	if secretsAPIEnabled(ctx) {
+	if apiURLConfigured(ctx) {
 		client, err := newSecretsAPIClient(ctx)
 		if err != nil {
 			return nil, err
@@ -459,7 +429,7 @@ func listSecretPaths(ctx *cli.Context) ([]string, error) {
 }
 
 func getMultiSecrets(ctx *cli.Context, refs []secrets.SecretRef) (map[string]string, error) {
-	if secretsAPIEnabled(ctx) {
+	if apiURLConfigured(ctx) {
 		client, err := newSecretsAPIClient(ctx)
 		if err != nil {
 			return nil, err
@@ -495,7 +465,7 @@ func (c *secretsAPIClient) Get(path, key string) (string, error) {
 func (c *secretsAPIClient) Delete(path, key string) (bool, error) {
 	err := c.doJSON(http.MethodDelete, "/api/v1/secrets/value?"+secretQuery(path, key), nil, http.StatusOK, nil)
 	if err != nil {
-		var apiErr *secretsAPIError
+		var apiErr *apiError
 		if errors.As(err, &apiErr) && apiErr.StatusCode == http.StatusNotFound {
 			return false, nil
 		}
@@ -538,44 +508,6 @@ func (c *secretsAPIClient) GetMulti(refs []secrets.SecretRef) (map[string]string
 		results[ref.Key] = response.Secrets[fmt.Sprintf("%s:%s", ref.Path, ref.Key)]
 	}
 	return results, nil
-}
-
-func (c *secretsAPIClient) doJSON(method, path string, requestBody interface{}, expectedStatus int, responseBody interface{}) error {
-	var body io.Reader
-	if requestBody != nil {
-		data, err := json.Marshal(requestBody)
-		if err != nil {
-			return fmt.Errorf("failed to marshal request: %w", err)
-		}
-		body = bytes.NewReader(data)
-	}
-
-	req, err := http.NewRequest(method, c.apiURL+path, body)
-	if err != nil {
-		return fmt.Errorf("failed to create request: %w", err)
-	}
-	req.Header.Set("Authorization", "Bearer "+c.token)
-	if requestBody != nil {
-		req.Header.Set("Content-Type", "application/json")
-	}
-
-	resp, err := c.client.Do(req)
-	if err != nil {
-		return fmt.Errorf("failed to send request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	data, _ := io.ReadAll(resp.Body)
-	if resp.StatusCode != expectedStatus {
-		return &secretsAPIError{StatusCode: resp.StatusCode, Body: strings.TrimSpace(string(data))}
-	}
-	if responseBody == nil {
-		return nil
-	}
-	if err := json.Unmarshal(data, responseBody); err != nil {
-		return fmt.Errorf("failed to parse response: %w", err)
-	}
-	return nil
 }
 
 func secretQuery(path, key string) string {

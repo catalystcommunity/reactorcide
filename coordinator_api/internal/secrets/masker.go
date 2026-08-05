@@ -49,15 +49,6 @@ func (m *Masker) RegisterEnvVars(envVars map[string]interface{}) {
 	}
 }
 
-// RegisterStringEnvVars registers string map environment variable values
-func (m *Masker) RegisterStringEnvVars(envVars map[string]string) {
-	for _, value := range envVars {
-		if value != "" {
-			m.RegisterSecret(value)
-		}
-	}
-}
-
 // MaskString replaces all known secret values in a string with [REDACTED]
 // This is the core masking function - it finds and replaces actual secret values
 func (m *Masker) MaskString(text string) string {
@@ -92,13 +83,6 @@ func (m *Masker) Clear() {
 	m.secrets = make(map[string]bool)
 }
 
-// Size returns the number of registered secrets (useful for debugging)
-func (m *Masker) Size() int {
-	m.mu.RLock()
-	defer m.mu.RUnlock()
-	return len(m.secrets)
-}
-
 // DefaultMasker is a global instance that can be used throughout the application
 var DefaultMasker = NewMasker()
 
@@ -110,11 +94,6 @@ func RegisterSecret(value string) {
 // RegisterSecrets adds multiple secrets to the default masker
 func RegisterSecrets(values []string) {
 	DefaultMasker.RegisterSecrets(values)
-}
-
-// RegisterEnvVars registers environment variable values with the default masker
-func RegisterEnvVars(envVars map[string]interface{}) {
-	DefaultMasker.RegisterEnvVars(envVars)
 }
 
 // MaskString masks secrets in a string using the default masker

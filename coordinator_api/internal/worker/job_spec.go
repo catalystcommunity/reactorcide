@@ -15,27 +15,28 @@ import (
 const DefaultRunnerImage = "containers.catalystsquad.com/public/reactorcide/runnerbase:dev"
 
 // JobSpec represents a job definition that can be loaded from YAML/JSON files
-// or constructed programmatically. This is the canonical representation of a job
-// that gets converted to JobConfig for execution.
+// or constructed programmatically. This is the canonical representation of a
+// job that gets converted to JobConfig for execution.
 type JobSpec struct {
 	// Name is a human-readable name for the job
 	Name string `json:"name" yaml:"name"`
 
-	// Command is the full command to execute.
-	// Single-line commands are parsed and split on whitespace.
-	// Multiline commands are wrapped with "sh -c" by default (see CommandPrefix).
+	// Command is the full command to execute. Single-line commands are parsed
+	// and split on whitespace. Multiline commands are wrapped with "sh -c" by
+	// default (see CommandPrefix).
 	Command string `json:"command" yaml:"command"`
 
-	// CommandPrefix overrides the default shell wrapper for multiline commands.
-	// Default is "sh -c". Examples: "bash -c", "zsh -c", "/bin/ash -c"
-	// Only applies to multiline commands that don't already start with a shell invocation.
+	// CommandPrefix overrides the default shell wrapper for multiline
+	// commands. Default is "sh -c". Examples: "bash -c", "zsh -c", "/bin/ash
+	// -c" Only applies to multiline commands that don't already start with a
+	// shell invocation.
 	CommandPrefix string `json:"command_prefix" yaml:"command_prefix"`
 
 	// Image is the container image to use (defaults to DefaultRunnerImage)
 	Image string `json:"image" yaml:"image"`
 
-	// Environment variables to set in the container
-	// Values can contain ${secret:path:key} references that get resolved
+	// Environment variables to set in the container Values can contain
+	// ${secret:path:key} references that get resolved
 	Environment map[string]string `json:"environment" yaml:"environment"`
 
 	// Source defines how to prepare the source code
@@ -45,7 +46,8 @@ type JobSpec struct {
 	WorkingDir string `json:"working_dir" yaml:"working_dir"`
 
 	// CodeDir is where source code is expected inside the job container.
-	// run-local mounts local code here; runnerlib checks out remote source here.
+	// run-local mounts local code here; runnerlib checks out remote source
+	// here.
 	CodeDir string `json:"code_dir" yaml:"code_dir"`
 
 	// JobDir is the directory runnerlib treats as the job working directory.
@@ -79,24 +81,23 @@ type JobSpec struct {
 	DisableRunLocal bool `json:"disable_run_local" yaml:"disable_run_local"`
 
 	// RunLocal holds settings that only affect `reactorcide run-local`. The
-	// worker ignores this block entirely (ToJobConfig never reads it), so it's
-	// the place to pin local-only behavior — e.g. the container uid — without
-	// changing how the job runs in CI. Defining it here makes a job behave
-	// consistently across local invocations without per-command flags.
+	// worker ignores this block entirely (ToJobConfig never reads it), so
+	// it's the place to pin local-only behavior — e.g. the container uid —
+	// without changing how the job runs in CI. Defining it here makes a job
+	// behave consistently across local invocations without per-command flags.
 	RunLocal *RunLocalSpec `json:"run_local" yaml:"run_local"`
 
-	// Characteristics routes this job to a queue when submitted remotely
-	// (WORKERS_PLAN.md "Characteristics & matching"); raw map, validated by
-	// internal/characteristics.ParseJobCharacteristics at submit time. Not
-	// consumed by run-local/ToJobConfig -- queue routing only applies to
-	// jobs submitted through the coordinator API (see cmd/submit.go).
+	// Characteristics routes this job to a queue when submitted remotely; raw
+	// map, validated by internal/characteristics.ParseJobCharacteristics at
+	// submit time. Not consumed by run-local/ToJobConfig -- queue routing
+	// only applies to jobs submitted through the coordinator API (see
+	// cmd/submit.go).
 	Characteristics map[string]interface{} `json:"characteristics" yaml:"characteristics"`
 
 	// Resources declares per-job compute resource cpu.request/cpu.limit/
-	// memory.limit (WORKERS_PLAN.md "Resources"); raw map, validated by
-	// internal/resources.ParseResources at submit time. Not consumed by
-	// run-local/ToJobConfig -- see the flat CPULimit/MemoryLimit fields
-	// above for that path.
+	// memory.limit; raw map, validated by internal/resources.ParseResources
+	// at submit time. Not consumed by run-local/ToJobConfig -- see the flat
+	// CPULimit/MemoryLimit fields above for that path.
 	Resources map[string]interface{} `json:"resources" yaml:"resources"`
 }
 
@@ -115,8 +116,9 @@ type RunLocalSpec struct {
 	// sudo and HOME parity for jobs that rely on the image's runner user.
 	AsRunner bool `json:"as_runner" yaml:"as_runner"`
 
-	// User pins an explicit uid[:gid] for the job container (e.g. "1001:1001").
-	// Takes precedence over AsRunner when both are set. Empty means unset.
+	// User pins an explicit uid[:gid] for the job container (e.g.
+	// "1001:1001"). Takes precedence over AsRunner when both are set. Empty
+	// means unset.
 	User string `json:"user" yaml:"user"`
 }
 
@@ -185,8 +187,8 @@ func normalizeEvalFormat(data []byte, isYAML bool) []byte {
 	return result
 }
 
-// LoadJobSpec reads a job specification from a YAML or JSON file.
-// Supports both flat format (image/command at top level) and eval format
+// LoadJobSpec reads a job specification from a YAML or JSON file. Supports
+// both flat format (image/command at top level) and eval format
 // (image/command nested under a "job" block with triggers/description).
 func LoadJobSpec(path string) (*JobSpec, error) {
 	data, err := os.ReadFile(path)
@@ -265,9 +267,9 @@ func ContainerPathInsideJob(path string) string {
 	return containerPathInsideJob(path)
 }
 
-// ToJobConfig converts a JobSpec to a JobConfig for execution
-// workspaceDir is the host directory to mount into the container
-// jobID is a unique identifier for this job execution
+// ToJobConfig converts a JobSpec to a JobConfig for execution workspaceDir is
+// the host directory to mount into the container jobID is a unique identifier
+// for this job execution
 func (s *JobSpec) ToJobConfig(workspaceDir, jobID, queueName string) *JobConfig {
 	// Parse command into args, using CommandPrefix for multiline commands
 	command := ParseCommandWithPrefix(s.Command, s.CommandPrefix)
@@ -298,8 +300,9 @@ func (s *JobSpec) ToJobConfig(workspaceDir, jobID, queueName string) *JobConfig 
 	// Add triggers file path
 	env["REACTORCIDE_TRIGGERS_FILE"] = "/job/triggers.json"
 
-	// Standard container environment: tell runnerlib it's running inside a container
-	// and where source code is mounted. True for both local and production containers.
+	// Standard container environment: tell runnerlib it's running inside a
+	// container and where source code is mounted. True for both local and
+	// production containers.
 	env["REACTORCIDE_IN_CONTAINER"] = "true"
 	env["REACTORCIDE_CODE_DIR"] = codeDir
 	env["REACTORCIDE_JOB_DIR"] = jobDir
@@ -337,9 +340,10 @@ var shellPrefixes = []string{
 	"/usr/bin/zsh -c",
 }
 
-// ParseCommandWithPrefix converts a command string to []string for container execution.
-// For multiline commands, wraps with the specified prefix (default "sh -c").
-// For single-line commands, splits on whitespace respecting basic quoting.
+// ParseCommandWithPrefix converts a command string to []string for container
+// execution. For multiline commands, wraps with the specified prefix (default
+// "sh -c"). For single-line commands, splits on whitespace respecting basic
+// quoting.
 func ParseCommandWithPrefix(cmd, prefix string) []string {
 	cmd = strings.TrimSpace(cmd)
 
@@ -349,8 +353,8 @@ func ParseCommandWithPrefix(cmd, prefix string) []string {
 		cmdLower := strings.ToLower(cmd)
 		for _, shellPrefix := range shellPrefixes {
 			if strings.HasPrefix(cmdLower, shellPrefix) {
-				// Already has shell prefix, parse normally
-				// (this handles cases like "sh -c '\n script \n'")
+				// Already has shell prefix, parse normally (this handles
+				// cases like "sh -c '\n script \n'")
 				return parseSimpleCommand(cmd)
 			}
 		}
@@ -369,8 +373,9 @@ func ParseCommandWithPrefix(cmd, prefix string) []string {
 		return []string{"sh", "-c", cmd}
 	}
 
-	// Single-line command with environment variable references needs shell expansion.
-	// Without a shell, $VAR is passed as a literal string by K8s and container runtimes.
+	// Single-line command with environment variable references needs shell
+	// expansion. Without a shell, $VAR is passed as a literal string by K8s
+	// and container runtimes.
 	if containsEnvVarRef(cmd) {
 		// Check if command already starts with a shell invocation
 		cmdLower := strings.ToLower(cmd)
@@ -397,14 +402,14 @@ func ParseCommandWithPrefix(cmd, prefix string) []string {
 	return parseSimpleCommand(cmd)
 }
 
-// ParseCommand splits a command string for container execution.
-// Uses default "sh -c" prefix for multiline commands.
+// ParseCommand splits a command string for container execution. Uses default
+// "sh -c" prefix for multiline commands.
 func ParseCommand(cmd string) []string {
 	return ParseCommandWithPrefix(cmd, "")
 }
 
-// containsEnvVarRef checks if a command string contains shell environment variable
-// references like $VAR or ${VAR} that need shell expansion.
+// containsEnvVarRef checks if a command string contains shell environment
+// variable references like $VAR or ${VAR} that need shell expansion.
 func containsEnvVarRef(cmd string) bool {
 	for i := 0; i < len(cmd)-1; i++ {
 		if cmd[i] == '$' {
@@ -418,8 +423,8 @@ func containsEnvVarRef(cmd string) bool {
 	return false
 }
 
-// parseSimpleCommand splits a single-line command on whitespace,
-// respecting basic shell quoting rules.
+// parseSimpleCommand splits a single-line command on whitespace, respecting
+// basic shell quoting rules.
 func parseSimpleCommand(cmd string) []string {
 	var args []string
 	var current strings.Builder
@@ -475,8 +480,8 @@ func parseSimpleCommand(cmd string) []string {
 // SecretRefPattern matches ${secret:path:key} references in strings
 var SecretRefPattern = regexp.MustCompile(`\$\{secret:([^:}]+):([^}]+)\}`)
 
-// EnvRefPattern matches ${env:VAR_NAME} references in strings
-// This allows job YAMLs to reference host environment variables
+// EnvRefPattern matches ${env:VAR_NAME} references in strings This allows job
+// YAMLs to reference host environment variables
 var EnvRefPattern = regexp.MustCompile(`\$\{env:([^}]+)\}`)
 
 // HasSecretRefs checks if a string contains secret references
@@ -489,8 +494,8 @@ func HasEnvRefs(s string) bool {
 	return EnvRefPattern.MatchString(s)
 }
 
-// ResolveEnvRefs resolves ${env:VAR_NAME} references in a string
-// using os.Getenv to get values from the host environment
+// ResolveEnvRefs resolves ${env:VAR_NAME} references in a string using
+// os.Getenv to get values from the host environment
 func ResolveEnvRefs(value string) string {
 	result := value
 	matches := EnvRefPattern.FindAllStringSubmatch(value, -1)
@@ -508,8 +513,8 @@ func ResolveEnvRefs(value string) string {
 	return result
 }
 
-// ResolveSecretRefs resolves ${secret:path:key} references in a string
-// using the provided getter function
+// ResolveSecretRefs resolves ${secret:path:key} references in a string using
+// the provided getter function
 func ResolveSecretRefs(value string, getSecret func(path, key string) (string, error)) (string, error) {
 	result := value
 	matches := SecretRefPattern.FindAllStringSubmatch(value, -1)
@@ -556,9 +561,9 @@ type SecretResolutionResult struct {
 }
 
 // ResolveSecretsInEnv resolves all secret references in environment variables
-// Returns a new map with resolved values, a list of resolved secret values for masking,
-// and a list of env var names that contained secrets.
-// Note: ${env:VAR} references should be resolved first using ResolveEnvInMap
+// Returns a new map with resolved values, a list of resolved secret values
+// for masking, and a list of env var names that contained secrets. Note:
+// ${env:VAR} references should be resolved first using ResolveEnvInMap
 func ResolveSecretsInEnv(env map[string]string, getSecret func(path, key string) (string, error)) (map[string]string, []string, error) {
 	result, err := ResolveSecretsInEnvFull(env, getSecret)
 	if err != nil {
@@ -624,9 +629,9 @@ type SecretOverride struct {
 	OverlayFile string
 }
 
-// MergeJobSpecs merges overlay specs onto a base spec.
-// Overlays are applied in order, with later overlays taking precedence.
-// Returns the merged spec and any warnings about secret overrides.
+// MergeJobSpecs merges overlay specs onto a base spec. Overlays are applied
+// in order, with later overlays taking precedence. Returns the merged spec
+// and any warnings about secret overrides.
 func MergeJobSpecs(base *JobSpec, overlays []*JobSpec, overlayFiles []string) (*JobSpec, []SecretOverride) {
 	result := &JobSpec{
 		Name:           base.Name,
@@ -641,8 +646,8 @@ func MergeJobSpecs(base *JobSpec, overlays []*JobSpec, overlayFiles []string) (*
 		MemoryLimit:    base.MemoryLimit,
 	}
 
-	// Deep copy characteristics/resources (whole-map replace on overlay,
-	// like Capabilities below -- these are validated as a unit by
+	// Deep copy characteristics/resources (whole-map replace on overlay, like
+	// Capabilities below -- these are validated as a unit by
 	// internal/characteristics.ParseJobCharacteristics/
 	// internal/resources.ParseResources, so a partial per-key merge would
 	// risk producing a combination neither the base nor the overlay author
@@ -800,9 +805,10 @@ func MergeJobSpecs(base *JobSpec, overlays []*JobSpec, overlayFiles []string) (*
 	return result, secretOverrides
 }
 
-// LoadJobSpecWithOverlays loads a job spec and applies overlay files in order.
-// The overlay files are specified from highest to lowest priority (first file wins).
-// Returns the merged spec and any warnings about secret overrides.
+// LoadJobSpecWithOverlays loads a job spec and applies overlay files in
+// order. The overlay files are specified from highest to lowest priority
+// (first file wins). Returns the merged spec and any warnings about secret
+// overrides.
 func LoadJobSpecWithOverlays(jobPath string, overlayPaths []string) (*JobSpec, []SecretOverride, error) {
 	// Load base job spec
 	base, err := LoadJobSpec(jobPath)

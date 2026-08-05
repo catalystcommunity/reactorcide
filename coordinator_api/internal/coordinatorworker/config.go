@@ -1,21 +1,20 @@
-// Package coordinatorworker is the coordinator-mediated worker run loop
-// (WORKERS_PLAN.md Wave 3, P3a): Register -> RequestJob -> run via the
-// existing internal/worker.JobRunner -> stream logs to the coordinator via
-// AppendLogs -> ReportResult, with a concurrent Heartbeat that renews the
-// worker session and applies cancel/kill directives. It is deliberately
-// additive: cmd/worker.go and internal/worker/corndogs_worker.go (the
-// legacy direct-corndogs path) are untouched here -- wiring this package
-// into the worker binary and removing the legacy path is P3b.
+// Package coordinatorworker is the coordinator-mediated worker run loop:
+// Register -> RequestJob -> run via the existing internal/worker.JobRunner ->
+// stream logs to the coordinator via AppendLogs -> ReportResult, with a
+// concurrent Heartbeat that renews the worker session and applies cancel/kill
+// directives. It is deliberately additive: cmd/worker.go and
+// internal/worker/corndogs_worker.go (the legacy direct-corndogs path) are
+// untouched here -- wiring this package into the worker binary and removing
+// the legacy path is P3b.
 //
-// VCS checkout credentials (WORKERS_PLAN.md Wave 3 P3c): when a lease
-// carries a coordinator-resolved vcs_auth (see
-// internal/workerapi/vcs_auth.go for how the coordinator decides whether to
-// populate it), runLease (see lease.go/vcs_auth.go) writes per-job git
-// credential material into the lease's ephemeral workspace and registers
-// the token with the masker before spawning, mirroring the deleted
+// VCS checkout credentials: when a lease carries a coordinator-resolved
+// vcs_auth (see internal/workerapi/vcs_auth.go for how the coordinator
+// decides whether to populate it), runLease (see lease.go/vcs_auth.go) writes
+// per-job git credential material into the lease's ephemeral workspace and
+// registers the token with the masker before spawning, mirroring the deleted
 // internal/worker/vcs_checkout_auth.go's approach exactly, just fed from the
-// lease's already-resolved (url, username, token) tuple instead of
-// resolving credentials itself.
+// lease's already-resolved (url, username, token) tuple instead of resolving
+// credentials itself.
 package coordinatorworker
 
 import (
@@ -25,17 +24,17 @@ import (
 )
 
 // Config configures a single coordinator-mediated worker run loop instance.
-// One Config/Run call corresponds to one worker process (one worker_key,
-// one CSIL-RPC session at a time).
+// One Config/Run call corresponds to one worker process (one worker_key, one
+// CSIL-RPC session at a time).
 type Config struct {
 	// CoordinatorURL is the coordinator's base URL, e.g.
-	// "https://coordinator.example.com". The CSIL-RPC path
-	// ("/csil/v1/rpc") is appended by the transport.
+	// "https://coordinator.example.com". The CSIL-RPC path ("/csil/v1/rpc")
+	// is appended by the transport.
 	CoordinatorURL string
 
 	// EnrollmentToken is the durable, per-pool credential presented to
-	// Register. It is never logged and never persisted by this package --
-	// the caller (P3b's cmd/worker.go) owns how it is sourced/stored.
+	// Register. It is never logged and never persisted by this package -- the
+	// caller (P3b's cmd/worker.go) owns how it is sourced/stored.
 	EnrollmentToken string
 
 	// WorkerKey is a stable, worker-provided identifier (generated and
@@ -46,23 +45,22 @@ type Config struct {
 	// Hostname is optional identifying metadata sent on Register.
 	Hostname string
 
-	// OS and Arch are this worker's characteristic values, taken verbatim
-	// (no normalization -- WORKERS_PLAN.md "Characteristics & matching").
+	// OS and Arch are this worker's characteristic values, taken verbatim.
 	// Both are required; auto-detection is the caller's responsibility.
 	OS   string
 	Arch string
 
 	// Custom is this worker's free-form custom characteristics. Values must
-	// be a Go string/int-family/bool scalar, or a homogeneous slice of one
-	// of those (see toCharacteristicValue).
+	// be a Go string/int-family/bool scalar, or a homogeneous slice of one of
+	// those (see toCharacteristicValue).
 	Custom []characteristics.KV
 
 	// WorkerVersion is optional identifying metadata sent on Register.
 	WorkerVersion string
 
-	// ContainerRuntime selects the JobRunner backend ("docker",
-	// "containerd", "kubernetes", "auto", or "" which behaves like "auto").
-	// See internal/worker.NewJobRunner.
+	// ContainerRuntime selects the JobRunner backend ("docker", "containerd",
+	// "kubernetes", "auto", or "" which behaves like "auto"). See
+	// internal/worker.NewJobRunner.
 	ContainerRuntime string
 
 	// Concurrency bounds how many leases this worker runs at once. Values
@@ -77,7 +75,8 @@ type Config struct {
 	// (e.g. a `-v /tmp/reactorcide-jobs:/tmp/reactorcide-jobs` bind mount) --
 	// otherwise the host runtime cannot stat the bind-mount source and
 	// container creation fails. Empty means the OS temp dir (correct for a
-	// bare-metal worker and for run-local, where there is no namespace split).
+	// bare-metal worker and for run-local, where there is no namespace
+	// split).
 	WorkspaceRoot string
 
 	// DataDir holds the worker identity and its same-instance telemetry spool.
@@ -88,8 +87,8 @@ type Config struct {
 	MetricsInterval       time.Duration
 	TelemetrySendInterval time.Duration
 
-	// VMImagePrefetch lists OCI VM image references to pull before this worker
-	// registers with the coordinator.
+	// VMImagePrefetch lists OCI VM image references to pull before this
+	// worker registers with the coordinator.
 	VMImagePrefetch []string
 
 	// VMImageMaxUnused controls cache retention. The worker prunes once at
@@ -113,8 +112,8 @@ const noLeaseBackoff = 2 * time.Second
 // coordinator call fails outright (network error, non-2xx, undecodable
 // response, or a ServiceError other than the ones RequestJob already turns
 // into has_lease=false). Escalating (vs. noLeaseBackoff's fixed pause)
-// because a failing coordinator connection is the case where hammering it
-// is actually harmful.
+// because a failing coordinator connection is the case where hammering it is
+// actually harmful.
 const (
 	reconnectBackoffMin = 1 * time.Second
 	reconnectBackoffMax = 30 * time.Second

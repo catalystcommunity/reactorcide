@@ -1,4 +1,4 @@
-;; Reactorcide Worker CSIL-RPC service definitions (WORKERS_PLAN.md "Workers
+;; Reactorcide Worker CSIL-RPC service definitions ( "Workers
 ;; -- registration, auth, protocol").
 ;;
 ;; ReactorcideWorker is the coordinator-mediated worker protocol: a worker
@@ -42,7 +42,7 @@ ServiceError = {
 }
 
 ;;; CharacteristicValue is a worker/job characteristic value
-;;; (WORKERS_PLAN.md "Characteristics & matching"): a scalar string/int/bool,
+;;;: a scalar string/int/bool,
 ;;; or -- worker-side only -- a homogeneous list of one of those. Wire shape
 ;;; is CSIL's tagged-sum union ([variant_index, value]); the Go generator
 ;;; renders an unnamed union of concrete types as a bare `interface{}` alias,
@@ -84,7 +84,7 @@ RegisterResponse = {
 
 ;;; WorkerCharacteristics is the worker's full characteristic set as of this
 ;;; RequestJob call (os/arch plus free-form custom), sent on every poll so
-;;; any coordinator pod can match statelessly (WORKERS_PLAN.md "Queues --
+;;; any coordinator pod can match statelessly ( "Queues --
 ;;; Matching at pull").
 WorkerCharacteristics = {
     os: text,
@@ -107,7 +107,7 @@ EnvVar = {
 ;;; Resources mirrors the job's resource_cpu_request/resource_cpu_limit/
 ;;; resource_memory_limit columns: Kubernetes-flavored quantity strings
 ;;; ("1", "500m" for CPU; "4Gi", "512Mi" for memory), parsed and applied by
-;;; the worker's own runner, not by the coordinator (WORKERS_PLAN.md
+;;; the worker's own runner, not by the coordinator (
 ;;; "Resources").
 Resources = {
     cpu_request: text,
@@ -116,7 +116,7 @@ Resources = {
 }
 
 ;;; VCSAuth is a resolved git-checkout credential for a leased job's source
-;;; repo (WORKERS_PLAN.md Wave 3 P3c "VCS checkout credentials through the
+;;; repo ( Wave 3 P3c "VCS checkout credentials through the
 ;;; worker lease"), delivered ONLY on this authenticated Lease response --
 ;;; never in the corndogs task payload, never logged. token is the resolved
 ;;; secret value; the coordinator resolves it (project rotation credential ->
@@ -185,7 +185,7 @@ Directive = {
 }
 
 ;;; draining is true when the coordinator has quarantined/disabled this
-;;; worker (WORKERS_PLAN.md Wave-4 P4's drain-worker admin op models drain as
+;;; worker ( Wave-4 P4's drain-worker admin op models drain as
 ;;; the existing "quarantined" status: RequestJob already refuses further
 ;;; job offers to a non-active worker, and this heartbeat-carried flag is the
 ;;; signal a worker uses to finish its currently-running leases and then shut

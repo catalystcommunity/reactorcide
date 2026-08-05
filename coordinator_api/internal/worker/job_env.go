@@ -19,10 +19,8 @@ const DefaultCancelGrace = 60 * time.Second
 // BuildJobEnv builds a job's base environment map (system REACTORCIDE_*/
 // RC_WF_* vars, source/CI-source config, API credentials, and the job's own
 // JobEnvVars). Exported so internal/workerapi's coordinator-mediated
-// RequestJob can build an identical base env for a lease without
-// duplicating this logic -- WORKERS_PLAN.md's secret-isolation requirement
-// means the coordinator, not the worker, is the one resolving
-// ${secret:...} refs out of this map (see AuthorizeSecretAccess and
+// RequestJob can build an identical base env for a lease without duplicating
+// this logic...} refs out of this map (see AuthorizeSecretAccess and
 // ResolveSecretsInEnvFull).
 func BuildJobEnv(job *models.Job) map[string]string {
 	env := make(map[string]string)

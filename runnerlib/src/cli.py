@@ -6,7 +6,6 @@ import subprocess
 import shlex
 import sys
 import threading
-import time
 import getpass
 import typer
 from pathlib import Path
@@ -461,8 +460,8 @@ def run(
         # Re-raise typer.Exit to avoid catching it as a generic exception
         raise
     except TermRequested:
-        # SIGTERM was received (graceful cancel/kill from the coordinator —
-        # see UI_AUTH_PLAN.md's Cancel vs Kill section). The child process
+        # SIGTERM was received (graceful cancel from the coordinator). The
+        # child process
         # has already been terminated and PluginPhase.CLEANUP has already run
         # (both via the try/finally above); cleanup_vcs_auth already ran in
         # the source-prep try/finally earlier in this function regardless of
@@ -904,7 +903,6 @@ def eval_cmd(
         load_job_definitions,
         load_workflow_definitions,
         evaluate_event,
-        evaluate_workflows,
         workflow_match_reason,
         generate_triggers,
         EventContext,

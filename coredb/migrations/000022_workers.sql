@@ -1,5 +1,5 @@
 -- +goose Up
--- Workers: registration, auth, protocol (WORKERS_PLAN.md "Workers --
+-- Workers: registration, auth, protocol ( "Workers --
 -- registration, auth, protocol", "Schema"). Five tables land together here
 -- (Wave-2 P2-A): worker_pools (admin grouping only -- pools do NOT
 -- participate in characteristic matching), pool_enrollment_tokens (the only

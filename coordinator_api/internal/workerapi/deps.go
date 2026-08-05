@@ -1,6 +1,5 @@
 // Package workerapi implements the coordinator side of the ReactorcideWorker
-// CSIL-RPC protocol (WORKERS_PLAN.md "Workers -- registration, auth,
-// protocol", Wave 2 P2-A2): Register, RequestJob, Heartbeat, AppendLogs, and
+// CSIL-RPC protocol: Register, RequestJob, Heartbeat, AppendLogs, and
 // ReportResult. All state (corndogs, Postgres, object storage) lives behind
 // this package; a worker's only capability is an authenticated CSIL-RPC
 // connection built from internal/workerapi/csilapi (generated from
@@ -82,15 +81,14 @@ type DataStore interface {
 	ListActiveLeasesForWorker(ctx context.Context, workerID string) ([]models.WorkerLease, error)
 	ListStaleActiveLeases(ctx context.Context, olderThan time.Time) ([]models.WorkerLease, error)
 
-	// --- queues (WORKERS_PLAN.md "Matching at pull") ---
+	// --- queues ---
 	ListQueues(ctx context.Context, limit, offset int) ([]models.Queue, error)
 
 	// --- jobs ---
 	GetJobByID(ctx context.Context, jobID string) (*models.Job, error)
 	UpdateJob(ctx context.Context, job *models.Job) error
 
-	// --- projects/users (VCS checkout credential resolution -- see
-	// vcs_auth.go, WORKERS_PLAN.md Wave 3 P3c) ---
+	// --- projects/users ---
 	GetProjectByID(ctx context.Context, projectID string) (*models.Project, error)
 	GetUserByID(ctx context.Context, userID string) (*models.User, error)
 

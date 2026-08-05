@@ -38,13 +38,13 @@ func (d *Deps) defaultSecretsProviderForOrg(ctx context.Context, orgID string) (
 }
 
 // resolvedLeaseSecrets is the coordinator-side outcome of resolving a job's
-// ${secret:path:key} references at lease hand-off (WORKERS_PLAN.md
-// "Workers"): Env holds every base env var that did NOT reference a secret
-// (safe to put in the lease's `env` field), Secrets holds exactly the
-// resolved values for var names that DID (destined for the lease's SEPARATE
-// `secrets` field only), and SecretValues is the flat list of resolved
-// values alone -- used solely to seed the coordinator's log-masking backstop
-// cache (see leaseSecretCache in service.go), never returned to any caller.
+// ${secret:path:key} references at lease hand-off: Env holds every base env
+// var that did NOT reference a secret (safe to put in the lease's `env`
+// field), Secrets holds exactly the resolved values for var names that DID
+// (destined for the lease's SEPARATE `secrets` field only), and SecretValues
+// is the flat list of resolved values alone -- used solely to seed the
+// coordinator's log-masking backstop cache (see leaseSecretCache in
+// service.go), never returned to any caller.
 type resolvedLeaseSecrets struct {
 	Env          map[string]string
 	Secrets      map[string]string

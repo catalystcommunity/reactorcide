@@ -27,9 +27,9 @@ type workflowSummaryStore interface {
 }
 
 // workflowSummaryVisibleToStore is workflowSummaryStore's SQL-side-visibility
-// counterpart to jobsVisibleToStore (see job_handler.go's doc comment on
-// that type for the full "pagination before visibility filtering breaks
-// lists" rationale). See postgres_store/visibility_operations.go's
+// counterpart to jobsVisibleToStore (see job_handler.go's doc comment on that
+// type for the full "pagination before visibility filtering breaks lists"
+// rationale). See postgres_store/visibility_operations.go's
 // ListWorkflowSummariesVisibleTo.
 type workflowSummaryVisibleToStore interface {
 	ListWorkflowSummariesVisibleTo(ctx context.Context, viewerID string, isGlobalAdmin bool, filters map[string]interface{}, limit, offset int) ([]models.WorkflowSummary, int64, error)
@@ -40,9 +40,9 @@ type WorkflowHandler struct {
 	store          store.Store
 	corndogsClient corndogs.ClientInterface
 	// visibility is the same additive, read-only authz hook as
-	// JobHandler.visibility (see job_handler.go) — nil unless store
-	// satisfies authz.RoleStore. CancelWorkflow (a mutation) never consults
-	// it; only ListWorkflows/GetWorkflow do.
+	// JobHandler.visibility (see job_handler.go) — nil unless store satisfies
+	// authz.RoleStore. CancelWorkflow (a mutation) never consults it; only
+	// ListWorkflows/GetWorkflow do.
 	visibility *authz.Resolver
 }
 
@@ -138,13 +138,12 @@ func (h *WorkflowHandler) ListWorkflows(w http.ResponseWriter, r *http.Request) 
 //
 // Marks the workflow instance cancelling, cancels every non-terminal member
 // job via the same jobcontrol.CancelJob logic used by JobHandler.CancelJob,
-// and marks pending/waiting nodes (no job ever submitted) cancelled
-// directly. See internal/jobcontrol.CancelWorkflow — the shared
-// implementation this handler and the future CSIL UI service both call —
-// and UI_AUTH_PLAN.md's Cancel vs Kill section for the full design.
+// and marks pending/waiting nodes (no job ever submitted) cancelled directly.
+// See internal/jobcontrol.CancelWorkflow — the shared implementation this
+// handler and the CSIL UI service both call.
 //
-// Authz here is unchanged from the pre-existing job/workflow ownership
-// check (owner or admin) — real RBAC lands in a later wave.
+// Authz here is unchanged from the pre-existing job/workflow ownership check
+// (owner or admin) — real RBAC lands in a later wave.
 func (h *WorkflowHandler) CancelWorkflow(w http.ResponseWriter, r *http.Request) {
 	user := checkauth.GetUserFromContext(r.Context())
 	if user == nil {
@@ -189,9 +188,9 @@ func (h *WorkflowHandler) CancelWorkflow(w http.ResponseWriter, r *http.Request)
 // RetryWorkflow handles POST /api/v1/workflows/{workflow_id}/retry.
 //
 // Retries an entire workflow as a brand-new instance (fresh workflow_id,
-// fresh nodes, fresh jobs) — the old instance is left untouched for
-// history. See internal/jobcontrol.RetryWorkflow, the shared implementation
-// this handler and the future CSIL UI service both call.
+// fresh nodes, fresh jobs) — the old instance is left untouched for history.
+// See internal/jobcontrol.RetryWorkflow, the shared implementation this
+// handler and the future CSIL UI service both call.
 //
 // Authz here matches CancelWorkflow's pre-existing owner-or-admin check.
 func (h *WorkflowHandler) RetryWorkflow(w http.ResponseWriter, r *http.Request) {
@@ -243,12 +242,12 @@ func (h *WorkflowHandler) RetryWorkflow(w http.ResponseWriter, r *http.Request) 
 	h.respondWithJSON(w, http.StatusCreated, wf)
 }
 
-// RetryUnsuccessfulResponse is RetryUnsuccessfulJobs' response body: the
-// jobs that were successfully retried, plus (if any individual retry
-// failed) an aggregated error description. A partial success still returns
-// 200 with both fields populated — see RetryUnsuccessfulJobs' doc comment
-// for why an all-or-nothing failure would be the wrong shape for a bulk
-// operation like this one.
+// RetryUnsuccessfulResponse is RetryUnsuccessfulJobs' response body: the jobs
+// that were successfully retried, plus (if any individual retry failed) an
+// aggregated error description. A partial success still returns 200 with both
+// fields populated — see RetryUnsuccessfulJobs' doc comment for why an
+// all-or-nothing failure would be the wrong shape for a bulk operation like
+// this one.
 type RetryUnsuccessfulResponse struct {
 	Jobs  []*models.Job `json:"jobs"`
 	Error string        `json:"error,omitempty"`
@@ -258,14 +257,14 @@ type RetryUnsuccessfulResponse struct {
 // /api/v1/workflows/{workflow_id}/retry-unsuccessful.
 //
 // Job-retries every failed/cancelled member job of the workflow in place
-// (same workflow instance, same nodes) — compare RetryWorkflow, which
-// starts an entirely new instance instead. See
+// (same workflow instance, same nodes) — compare RetryWorkflow, which starts
+// an entirely new instance instead. See
 // internal/jobcontrol.RetryUnsuccessfulJobs.
 //
 // Authz matches RetryWorkflow/CancelWorkflow's owner-or-admin check. The
-// workflow itself must also be failed/cancelled (same gate as
-// RetryWorkflow): bulk-retrying member jobs of a workflow that's still
-// actively running/evaluating isn't a supported operation.
+// workflow itself must also be failed/cancelled (same gate as RetryWorkflow):
+// bulk-retrying member jobs of a workflow that's still actively
+// running/evaluating isn't a supported operation.
 func (h *WorkflowHandler) RetryUnsuccessfulJobs(w http.ResponseWriter, r *http.Request) {
 	user := checkauth.GetUserFromContext(r.Context())
 	if user == nil {
@@ -305,9 +304,9 @@ func (h *WorkflowHandler) RetryUnsuccessfulJobs(w http.ResponseWriter, r *http.R
 			return
 		}
 		if len(jobs) == 0 {
-			// Every retry attempted failed outright (as opposed to a
-			// partial success) — surface it as a real error rather than a
-			// 200 with an empty jobs array and a buried error string.
+			// Every retry attempted failed outright (as opposed to a partial
+			// success) — surface it as a real error rather than a 200 with an
+			// empty jobs array and a buried error string.
 			h.respondWithError(w, http.StatusInternalServerError, retryErr)
 			return
 		}
@@ -375,8 +374,8 @@ func (h *WorkflowHandler) parsePagination(r *http.Request) (limit, offset int) {
 	return limit, offset
 }
 
-// commonWorkflowQueryFilters parses the filter query parameters
-// ListWorkflows honors regardless of user-scoping policy.
+// commonWorkflowQueryFilters parses the filter query parameters ListWorkflows
+// honors regardless of user-scoping policy.
 func (h *WorkflowHandler) commonWorkflowQueryFilters(r *http.Request) map[string]interface{} {
 	filters := make(map[string]interface{})
 	if status := r.URL.Query().Get("status"); status != "" {
@@ -391,9 +390,9 @@ func (h *WorkflowHandler) commonWorkflowQueryFilters(r *http.Request) map[string
 // parseWorkflowFilters builds ListWorkflows' filter set for the
 // SQL-side-visibility primary path (workflowSummaryVisibleToStore). See
 // JobHandler.parseFilters — the visibility predicate
-// ListWorkflowSummariesVisibleTo evaluates in SQL is the actual
-// authorization decision for every row, so user_id is left unset unless the
-// caller explicitly asks to narrow it.
+// ListWorkflowSummariesVisibleTo evaluates in SQL is the actual authorization
+// decision for every row, so user_id is left unset unless the caller
+// explicitly asks to narrow it.
 func (h *WorkflowHandler) parseWorkflowFilters(r *http.Request, user *models.User) map[string]interface{} {
 	filters := h.commonWorkflowQueryFilters(r)
 	if userID := r.URL.Query().Get("user_id"); userID != "" {
@@ -402,8 +401,8 @@ func (h *WorkflowHandler) parseWorkflowFilters(r *http.Request, user *models.Use
 	return filters
 }
 
-// parseWorkflowFiltersStrict is ListWorkflows' fallback-path filter builder
-// — see JobHandler.parseFiltersStrict.
+// parseWorkflowFiltersStrict is ListWorkflows' fallback-path filter builder —
+// see JobHandler.parseFiltersStrict.
 func (h *WorkflowHandler) parseWorkflowFiltersStrict(r *http.Request, user *models.User) map[string]interface{} {
 	filters := h.commonWorkflowQueryFilters(r)
 	if !h.isAdmin(user) {

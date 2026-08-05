@@ -150,15 +150,3 @@ type Config struct {
 	Token    string // API token for status updates
 	BaseURL  string // Base URL for Enterprise instances (optional)
 }
-
-// NewClient creates a new VCS client based on the provider
-func NewClient(config Config) (Client, error) {
-	switch config.Provider {
-	case GitHub:
-		return NewGitHubClient(config)
-	case GitLab:
-		return NewGitLabClient(config)
-	default:
-		return nil, ErrUnsupportedProvider
-	}
-}

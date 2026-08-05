@@ -1,8 +1,7 @@
 // Package characteristics implements the pure logic for reactorcide's
 // characteristic model: parsing/validation, canonicalization, hashing, and
-// the worker-satisfies-queue matching predicate described in WORKERS_PLAN.md
-// ("Characteristics & matching" and "Queues"). This package does no I/O (no
-// DB, no network) and holds no secrets.
+// the worker-satisfies-queue matching predicate described in). This package
+// does no I/O (no DB, no network) and holds no secrets.
 package characteristics
 
 import "fmt"

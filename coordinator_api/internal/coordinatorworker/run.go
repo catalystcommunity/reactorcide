@@ -16,16 +16,15 @@ import (
 // substitute a fake JobRunner without touching Docker/containerd/k8s.
 type runnerFactory func(backend string) (worker.JobRunner, error)
 
-// Run is the coordinator-mediated worker run loop's entry point
-// (WORKERS_PLAN.md Wave 3 P3a). It blocks until ctx is cancelled (a
-// graceful shutdown: stop polling for new work, let already-claimed leases
-// finish and report their result, then return) or a fatal setup error
-// occurs (e.g. the configured ContainerRuntime backend can't be
-// constructed, or the very first Register never succeeds because ctx was
-// already cancelled). A resumable connection failure (RequestJob/Heartbeat
-// erroring against a coordinator that's down or a session that expired)
-// does not return an error -- it backs off and re-registers, per
-// WORKERS_PLAN.md's "worker reconnects and loses nothing" topology note.
+// Run is the coordinator-mediated worker run loop's entry point. It blocks
+// until ctx is cancelled (a graceful shutdown: stop polling for new work, let
+// already-claimed leases finish and report their result, then return) or a
+// fatal setup error occurs (e.g. the configured ContainerRuntime backend
+// can't be constructed, or the very first Register never succeeds because ctx
+// was already cancelled). A resumable connection failure
+// (RequestJob/Heartbeat erroring against a coordinator that's down or a
+// session that expired) does not return an error -- it backs off and
+// re-registers.
 func Run(ctx context.Context, cfg Config) error {
 	transport := &workerclient.CSILRPCTransport{BaseURL: cfg.CoordinatorURL}
 	c := workerclient.NewWithTransport(transport)
@@ -102,11 +101,11 @@ pollLoop:
 				break pollLoop
 			}
 			errBackoff = nextBackoff(errBackoff, reconnectBackoffMax)
-			// The session may have expired (or the coordinator restarted
-			// and lost in-memory state); re-Register to mint a fresh one.
+			// The session may have expired (or the coordinator restarted and
+			// lost in-memory state); re-Register to mint a fresh one.
 			// registerWithBackoff itself only returns on success or ctx
-			// cancellation, so a persistently-down coordinator keeps
-			// retrying here rather than propagating an error out of Run.
+			// cancellation, so a persistently-down coordinator keeps retrying
+			// here rather than propagating an error out of Run.
 			if _, err := registerWithBackoff(ctx, cfg, c); err != nil {
 				return err
 			}
@@ -210,8 +209,8 @@ type registerResult struct {
 	WorkerID          string
 }
 
-// sleepOrDone waits for d or ctx cancellation, whichever comes first.
-// Returns false if ctx was the reason it returned (caller should stop).
+// sleepOrDone waits for d or ctx cancellation, whichever comes first. Returns
+// false if ctx was the reason it returned (caller should stop).
 func sleepOrDone(ctx context.Context, d time.Duration) bool {
 	select {
 	case <-ctx.Done():

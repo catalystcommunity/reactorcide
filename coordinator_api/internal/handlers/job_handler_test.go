@@ -1575,8 +1575,7 @@ func TestGetJobLogsObjectStoreNotConfigured(t *testing.T) {
 	})
 }
 
-// ===== Characteristics / Resources submit-path wiring (WORKERS_PLAN.md
-// "Characteristics & matching" / "Resources") =====
+// ===== Characteristics / Resources submit-path wiring =====
 
 // queueResolvingMockStore layers a fake FindOrCreateQueueByCharacteristics
 // onto MockStore so CreateJob's queueResolvingStore type assertion succeeds,
@@ -1785,12 +1784,12 @@ func TestJobHandler_CreateJob_ResourcesAbsent_LeavesFieldsEmpty(t *testing.T) {
 	assert.Empty(t, got.ResourceMemoryLimit)
 }
 
-// TestJobHandler_CreateJob_ResolvesQueueUUID_SubmitsToIt verifies the
-// submit path resolves the job's characteristics to a queue (find-or-create)
-// and submits the Corndogs task to that queue's UUID -- WORKERS_PLAN.md
-// "Find-or-create at submit". Uses queueResolvingMockStore since the plain
-// MockStore doesn't implement queueResolvingStore (that's the point being
-// tested: production's PostgresDbStore does, via
+// TestJobHandler_CreateJob_ResolvesQueueUUID_SubmitsToIt verifies the submit
+// path resolves the job's characteristics to a queue (find-or-create) and
+// submits the Corndogs task to that queue's UUID. Uses
+// queueResolvingMockStore since the plain MockStore doesn't implement
+// queueResolvingStore (that's the point being tested: production's
+// PostgresDbStore does, via
 // internal/store/postgres_store/queue_operations.go).
 func TestJobHandler_CreateJob_ResolvesQueueUUID_SubmitsToIt(t *testing.T) {
 	qStore := newQueueResolvingMockStore()

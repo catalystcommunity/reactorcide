@@ -57,16 +57,6 @@ func APITokenMiddleware(appStore store.Store) func(http.Handler) http.Handler {
 	}
 }
 
-// VerificationMiddleware is a placeholder that was referenced in the existing code
-// For now, it just passes through to the next handler since we're using API tokens
-func VerificationMiddleware(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// This was referenced in the existing router.go but not implemented
-		// For coordinator API, we're using API token middleware instead
-		next.ServeHTTP(w, r)
-	})
-}
-
 // RequireRoleMiddleware creates middleware that checks if the authenticated user has a required role
 func RequireRoleMiddleware(role string) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {

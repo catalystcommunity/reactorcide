@@ -11,9 +11,8 @@ import (
 
 // listAllLimit bounds the "list everything, filter client-side" queries this
 // file uses (ListOrgs' project scan, ListProjects with no org filter) — a
-// generous ceiling rather than real pagination, matching UI_AUTH_PLAN.md's
-// "keep it simple" guidance for list-orgs. See ListOrgs' doc comment for the
-// full rationale.
+// generous ceiling rather than real pagination, matching. See ListOrgs' doc
+// comment for the full rationale.
 const listAllLimit = 10000
 
 func projectToSummary(p *models.Project) csilapi.ProjectSummary {
@@ -65,12 +64,11 @@ func projectToDetail(p *models.Project) csilapi.ProjectDetail {
 // distinct owning orgs of every visibility-filtered project, plus every org
 // the caller directly belongs to (their own org, and any org they hold a
 // direct role_assignments row in). This is a deliberately simple
-// approximation — there is no first-class orgs table this schema version
-// (see UI_AUTH_PLAN.md's "no orgs table" note), so "every org" has no
-// authoritative source short of "every users row", which would leak
-// unrelated users' existence. Group-derived org membership is not included
-// (only direct user role_assignments) to keep this to one query beyond the
-// project scan.
+// approximation — there is no first-class orgs table this schema version, so
+// "every org" has no authoritative source short of "every users row", which
+// would leak unrelated users' existence. Group-derived org membership is not
+// included (only direct user role_assignments) to keep this to one query
+// beyond the project scan.
 func (s *UiService) ListOrgs(ctx context.Context, req csilapi.ListOrgsRequest) (csilapi.ListOrgsResponse, error) {
 	id, user := s.deps.resolveIdentity(ctx)
 
@@ -145,10 +143,10 @@ func (s *UiService) ListProjects(ctx context.Context, req csilapi.ListProjectsRe
 	return csilapi.ListProjectsResponse{Projects: out}, nil
 }
 
-// GetProject fetches one project, applying visibility. A project that
-// exists but is not visible to the caller reports not_found rather than
-// forbidden, so an unauthorized caller can't distinguish "doesn't exist"
-// from "exists but private".
+// GetProject fetches one project, applying visibility. A project that exists
+// but is not visible to the caller reports not_found rather than forbidden,
+// so an unauthorized caller can't distinguish "doesn't exist" from "exists
+// but private".
 func (s *UiService) GetProject(ctx context.Context, req csilapi.GetProjectRequest) (csilapi.GetProjectResponse, error) {
 	if err := requireNonEmpty("project_id", req.ProjectId, 64); err != nil {
 		return csilapi.GetProjectResponse{}, err

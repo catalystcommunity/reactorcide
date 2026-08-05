@@ -30,11 +30,8 @@ func validRole(s string) bool {
 	}
 }
 
-// authorizeRoleScope requires org admin (of the scope's owning org) or
-// global admin to manage a role assignment at (scopeType, scopeID) —
-// UI_AUTH_PLAN.md's "manage groups / assign roles" matrix row is org
-// admin/global admin only at every scope, including project scope (a plain
-// project owner may not grant themselves or others further roles).
+// authorizeRoleScope requires org admin (of the scope's owning org) or global
+// admin to manage a role assignment at (scopeType, scopeID)).
 // authorizeRoleScope always returns either nil or an already-mapped
 // *ServiceErr (invalid_argument/not_found/forbidden/internal), so callers
 // never need to distinguish a validation failure from a permission failure
@@ -78,11 +75,9 @@ func roleAssignmentToCsil(a *models.RoleAssignment) csilapi.RoleAssignment {
 	}
 }
 
-// ListRoleAssignments requires scope_type (a bare "list every assignment"
-// with no scope is not supported — see UI_AUTH_PLAN.md task G's "keep it
-// simple" guidance) and lists (optionally further filtered by
-// principal_id) the assignments at that scope. Authorization mirrors
-// authorizeRoleScope: viewing a scope's assignments requires the same
+// ListRoleAssignments requires scope_type and lists (optionally further
+// filtered by principal_id) the assignments at that scope. Authorization
+// mirrors authorizeRoleScope: viewing a scope's assignments requires the same
 // org-admin/global-admin capability managing it does.
 func (s *UiService) ListRoleAssignments(ctx context.Context, req csilapi.ListRoleAssignmentsRequest) (csilapi.ListRoleAssignmentsResponse, error) {
 	id, _, authErr := s.deps.requireUser(ctx)
@@ -163,9 +158,9 @@ func (s *UiService) AssignRole(ctx context.Context, req csilapi.AssignRoleReques
 	return csilapi.AssignRoleResponse{Assignment: roleAssignmentToCsil(assignment)}, nil
 }
 
-// RevokeRole deletes a role assignment by ID. Requires org admin/global
-// admin of the assignment's own scope (loaded first, since the request
-// carries only the assignment ID).
+// RevokeRole deletes a role assignment by ID. Requires org admin/global admin
+// of the assignment's own scope (loaded first, since the request carries only
+// the assignment ID).
 func (s *UiService) RevokeRole(ctx context.Context, req csilapi.RevokeRoleRequest) (csilapi.RevokeRoleResponse, error) {
 	id, _, authErr := s.deps.requireUser(ctx)
 	if authErr != nil {

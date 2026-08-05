@@ -13,13 +13,12 @@ import (
 const leaseReapInterval = 60 * time.Second
 
 // leaseStaleAfter bounds how old an open lease's acquired_at must be before
-// the reaper treats it as orphaned. Generous relative to HeartbeatInterval:
-// a lease this old with no release almost certainly belongs to a worker
-// that stopped heartbeating, whose corndogs task has ALREADY timed out and
-// requeued on its own (WORKERS_PLAN.md "Workers" -- worker lease expiry ==
-// corndogs task timeout, there is no separate invented lease TTL). The
-// reaper's only job is bookkeeping: mark the display/audit row released so
-// it stops showing as an open lease for a worker that is, in fact, gone.
+// the reaper treats it as orphaned. Generous relative to HeartbeatInterval: a
+// lease this old with no release almost certainly belongs to a worker that
+// stopped heartbeating, whose corndogs task has ALREADY timed out and
+// requeued on its own. The reaper's only job is bookkeeping: mark the
+// display/audit row released so it stops showing as an open lease for a
+// worker that is, in fact, gone.
 const leaseStaleAfter = 15 * time.Minute
 
 // RunLeaseReaper drives reapStaleLeases on leaseReapInterval until ctx is

@@ -152,7 +152,7 @@ spec:
                 secretKeyRef:
                   name: {{ .Values.defaults.userSecretName }}
                   key: user-id
-            {{- /* Zero-touch worker enrollment (WORKERS_PLAN.md): seed the
+            {{- /* Zero-touch worker enrollment: seed the
             default worker pool from the SAME enrollment token the worker
             enrolls with. Sourced from the chart-managed auto-generated Secret
             (secret-worker-enrollment.yaml) or the operator override -- see the

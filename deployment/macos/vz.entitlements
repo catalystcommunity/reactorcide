@@ -4,7 +4,7 @@
 <dict>
 	<!--
 	  Required to use Apple's Virtualization.framework (the macOS "vm" JobRunner
-	  backend, VM_RUNNERS_PLAN.md VM-3). Without this entitlement on the signed
+	  backend). Without this entitlement on the signed
 	  binary, VZVirtualMachine creation fails at runtime. Ad-hoc signing with
 	  `codesign -s -` (see scripts/build-macos-worker.sh) is sufficient for
 	  local/dev use on Apple Silicon; distribution builds would use a real

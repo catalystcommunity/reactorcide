@@ -3,17 +3,16 @@
 // backends, encrypted credential storage, trusted-identity/domain-pattern
 // admission, single-use login attempts, identity->user provisioning
 // (including first-admin and bootstrap-admin grants), and opaque session
-// tokens. See UI_AUTH_PLAN.md's "Auth modes" and "Identity & RBAC model"
-// sections for the architecture this package implements (Task C).
+// tokens.
 //
 // This package deliberately knows nothing about HTTP, CSIL-RPC, or the
-// coordinator's REST handlers — those are Wave 3 (Task G)'s job, wiring
-// this package's LoginService/Sessions/Admission against the
-// ReactorcideAuth CSIL service. Every store dependency here is a narrow,
-// consumer-defined interface (this repo's convention — see
-// handlers/project_handler.go, worker/secret_authorization.go) satisfied
-// by *postgres_store.PostgresDbStore in production and by hand-rolled fakes
-// in this package's tests.
+// coordinator's REST handlers — those are Wave 3 (Task G)'s job, wiring this
+// package's LoginService/Sessions/Admission against the ReactorcideAuth CSIL
+// service. Every store dependency here is a narrow, consumer-defined
+// interface (this repo's convention — see handlers/project_handler.go,
+// worker/secret_authorization.go) satisfied by
+// *postgres_store.PostgresDbStore in production and by hand-rolled fakes in
+// this package's tests.
 package auth
 
 import (
@@ -23,9 +22,9 @@ import (
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/config"
 )
 
-// Mode is a validated UI auth mode. Values mirror config.UIAuthMode*
-// 1:1 — see config.ValidateUIAuthMode, which must be called (and must
-// succeed) before CurrentMode/NewBackend are used in anger.
+// Mode is a validated UI auth mode. Values mirror config.UIAuthMode* 1:1 —
+// see config.ValidateUIAuthMode, which must be called (and must succeed)
+// before CurrentMode/NewBackend are used in anger.
 type Mode string
 
 const (
@@ -60,17 +59,17 @@ var (
 	ErrAttemptExpired = errors.New("auth: login attempt has expired")
 
 	// ErrAssertionNotVerified is returned by RPBackend.CompleteLogin when
-	// Rp/verify-assertion round-trips successfully but reports
-	// verified=false — a nil transport error alone must never be treated
-	// as a trustworthy assertion (see example.md's step 5).
+	// Rp/verify-assertion round-trips successfully but reports verified=false
+	// — a nil transport error alone must never be treated as a trustworthy
+	// assertion (see example.md's step 5).
 	ErrAssertionNotVerified = errors.New("auth: rp assertion did not verify against the issuing domain's published keys")
 )
 
 // VerifiedIdentity is the backend-agnostic result of a completed login:
-// protocol facts only. Session creation, user provisioning, and
-// authorization decisions are LoginService's job, never a LoginBackend's —
-// mirroring the LinkKeys SDK's own "SDKs must not own application storage,
-// sessions, database writes, or local user authorization" boundary.
+// protocol facts only. Session creation, user provisioning, and authorization
+// decisions are LoginService's job, never a LoginBackend's — mirroring the
+// LinkKeys SDK's own "SDKs must not own application storage, sessions,
+// database writes, or local user authorization" boundary.
 type VerifiedIdentity struct {
 	// Subject is the LinkKeys subject identifier: a uuid or handle, unique
 	// within Domain (local-rp: VerifiedLocalLogin.UserID; rp:
@@ -78,36 +77,36 @@ type VerifiedIdentity struct {
 	Subject string
 	Domain  string
 	// Handle is the verified "handle" claim, when the backend returned one
-	// (local-rp: always requested by default; rp: fetched via
-	// userinfo-fetch, best-effort). May be empty.
+	// (local-rp: always requested by default; rp: fetched via userinfo-fetch,
+	// best-effort). May be empty.
 	Handle string
 	// DisplayName is the verified display name, when available.
 	DisplayName string
-	// Claims is the raw claim-type -> claim-value map the backend
-	// returned, for whatever the caller wants beyond handle/display_name
-	// (e.g. "email").
+	// Claims is the raw claim-type -> claim-value map the backend returned,
+	// for whatever the caller wants beyond handle/display_name (e.g.
+	// "email").
 	Claims map[string]string
 }
 
-// LoginBackend is the common interface both LinkKeys login modes
-// (local-rp, rp) implement, plus a "none"-mode sentinel (NewNoneBackend)
-// so callers never need a nil check.
+// LoginBackend is the common interface both LinkKeys login modes (local-rp,
+// rp) implement, plus a "none"-mode sentinel (NewNoneBackend) so callers
+// never need a nil check.
 type LoginBackend interface {
 	// Mode reports which auth mode this backend implements.
 	Mode() Mode
 	// BeginLogin starts a login for identitySelector (a "[handle@]domain"
 	// selector — see ParseSelector; the domain is where the browser gets
-	// redirected, the handle if present is passed as a best-effort user
-	// hint) and callbackURL (this app's own callback route, passed through
-	// to the identity provider). Returns the URL to redirect the user's
-	// browser to, and an opaque blob the caller must persist and pass
-	// unchanged, once, to CompleteLogin.
+	// redirected, the handle if present is passed as a best-effort user hint)
+	// and callbackURL (this app's own callback route, passed through to the
+	// identity provider). Returns the URL to redirect the user's browser to,
+	// and an opaque blob the caller must persist and pass unchanged, once, to
+	// CompleteLogin.
 	BeginLogin(ctx context.Context, identitySelector, callbackURL string) (redirectURL string, pendingBlob []byte, err error)
 	// CompleteLogin verifies the callback the browser arrived with
 	// (arrivedURL: the full URL the request actually arrived at, including
-	// whatever query parameters the identity provider appended) against
-	// the pendingBlob BeginLogin returned. Returns verified protocol facts
-	// only — never a session, never a store write.
+	// whatever query parameters the identity provider appended) against the
+	// pendingBlob BeginLogin returned. Returns verified protocol facts only —
+	// never a session, never a store write.
 	CompleteLogin(ctx context.Context, pendingBlob []byte, arrivedURL string) (*VerifiedIdentity, error)
 }
 

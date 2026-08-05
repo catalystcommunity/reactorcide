@@ -89,8 +89,7 @@ type DataStore interface {
 	DeleteSecretGrant(ctx context.Context, userID string, projectID *string, ref string) error
 	GetSecretGrantByID(ctx context.Context, grantID string) (*models.SecretGrant, error)
 
-	// --- queues (WORKERS_PLAN.md Wave-4 P4 admin ops -- list-queues/
-	// create-queue/rename-queue/delete-queue) ---
+	// --- queues ---
 	ListQueues(ctx context.Context, limit, offset int) ([]models.Queue, error)
 	GetQueueByID(ctx context.Context, queueID string) (*models.Queue, error)
 	CreateQueue(ctx context.Context, chars characteristics.Characteristics, displayName string) (*models.Queue, error)
@@ -104,10 +103,7 @@ type DataStore interface {
 	// needs it" pattern as this interface's other additive methods.
 	ListNonTerminalJobsByQueue(ctx context.Context, queueUUID string) ([]models.Job, error)
 
-	// --- worker_pools / pool_enrollment_tokens (WORKERS_PLAN.md Wave-4 P4
-	// admin ops -- list-pools/create-pool/update-pool/delete-pool,
-	// create-enrollment-token/list-enrollment-tokens/
-	// deactivate-enrollment-token) ---
+	// --- worker_pools / pool_enrollment_tokens ---
 	ListWorkerPools(ctx context.Context, orgID *string) ([]models.WorkerPool, error)
 	GetWorkerPoolByID(ctx context.Context, poolID string) (*models.WorkerPool, error)
 	CreateWorkerPool(ctx context.Context, pool *models.WorkerPool) error
@@ -118,8 +114,7 @@ type DataStore interface {
 	GetPoolEnrollmentTokenByID(ctx context.Context, tokenID string) (*models.PoolEnrollmentToken, error)
 	DeactivatePoolEnrollmentToken(ctx context.Context, tokenID string) error
 
-	// --- workers / worker_leases (WORKERS_PLAN.md Wave-4 P4 admin ops --
-	// list-workers/set-worker-status/drain-worker) ---
+	// --- workers / worker_leases ---
 	ListWorkers(ctx context.Context, poolID *string) ([]models.Worker, error)
 	GetWorkerByID(ctx context.Context, workerID string) (*models.Worker, error)
 	UpdateWorkerStatus(ctx context.Context, workerID, status string) error

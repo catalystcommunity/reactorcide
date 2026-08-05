@@ -84,28 +84,9 @@ func (m *Manager) initializeClients() {
 	}
 }
 
-// GetClient returns a VCS client for the specified provider
-func (m *Manager) GetClient(provider Provider) (Client, error) {
-	if !m.enabled {
-		return nil, fmt.Errorf("VCS integration is disabled")
-	}
-
-	client, ok := m.clients[provider]
-	if !ok {
-		return nil, fmt.Errorf("VCS client not configured for provider: %s", provider)
-	}
-
-	return client, nil
-}
-
 // GetStatusUpdater returns the job status updater
 func (m *Manager) GetStatusUpdater() *JobStatusUpdater {
 	return m.statusUpdater
-}
-
-// IsEnabled returns whether VCS integration is enabled
-func (m *Manager) IsEnabled() bool {
-	return m.enabled
 }
 
 // CreateClientWithToken creates a new VCS client for the given provider

@@ -132,9 +132,8 @@ func TestDockerRunner_envMapToSlice(t *testing.T) {
 }
 
 // TestParseMemoryString tests memory string parsing via
-// resources.MemoryBytes, which is what dockerResourceLimits now calls
-// instead of the removed local parseMemoryString/k8s quantity parser (see
-// internal/resources.ParseMemory and WORKERS_PLAN.md "Resources").
+// resources.MemoryBytes, which is what dockerResourceLimits now calls instead
+// of the removed local parseMemoryString/k8s quantity parser.
 func TestParseMemoryString(t *testing.T) {
 	tests := []struct {
 		name        string

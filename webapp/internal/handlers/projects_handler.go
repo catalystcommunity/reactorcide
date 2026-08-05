@@ -68,8 +68,7 @@ func (h *WebHandler) ProjectNewForm(w http.ResponseWriter, r *http.Request) {
 // ProjectCreate handles POST /app/projects. name/repo_url/org_id are
 // required; is_private is only sent (as an explicit true) when the checkbox
 // is checked — leaving it unchecked omits the field entirely so the
-// coordinator's new_projects_private global default applies, per
-// UI_AUTH_PLAN.md task I's brief.
+// coordinator's new_projects_private global default applies.
 func (h *WebHandler) ProjectCreate(w http.ResponseWriter, r *http.Request) {
 	si := h.sessionInfo(r)
 	if !si.Caps.CreateProject {

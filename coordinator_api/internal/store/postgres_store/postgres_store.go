@@ -21,29 +21,6 @@ import (
 	"gorm.io/gorm/logger"
 )
 
-type txError struct {
-	cause error
-}
-
-// Error implements the error interface.
-func (e *txError) Error() string { return e.cause.Error() }
-
-// Cause implements the pkg/errors causer interface.
-func (e *txError) Cause() error { return e.cause }
-
-// Unwrap implements the go error causer interface.
-func (e *txError) Unwrap() error { return e.cause }
-
-// AmbiguousCommitError represents an error that left a transaction in an
-// ambiguous state: unclear if it committed or not.
-type AmbiguousCommitError struct {
-	txError
-}
-
-func newAmbiguousCommitError(err error) *AmbiguousCommitError {
-	return &AmbiguousCommitError{txError{cause: err}}
-}
-
 var (
 	PostgresStore = PostgresDbStore{}
 	db            *gorm.DB

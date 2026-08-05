@@ -87,8 +87,7 @@ type CreateJobRequest struct {
 	RunAsUser      string `json:"run_as_user,omitempty"`
 	QueueName      string `json:"queue_name,omitempty"`
 
-	// Characteristics/Resources -- see WORKERS_PLAN.md "Characteristics &
-	// matching" / "Resources". Passed through verbatim from the job spec's
+	// Characteristics/Resources. Passed through verbatim from the job spec's
 	// top-level `characteristics`/`resources` blocks; the coordinator
 	// validates and applies them (queue routing, resource defaults).
 	Characteristics map[string]interface{} `json:"characteristics,omitempty"`
@@ -133,7 +132,6 @@ func submitAction(ctx *cli.Context) error {
 	wait := ctx.Bool("wait")
 	pollInterval := ctx.Int("poll-interval")
 
-	// Validate required flags
 	if apiURL == "" {
 		return fmt.Errorf("API URL is required (use --api-url or REACTORCIDE_API_URL)")
 	}
@@ -163,7 +161,6 @@ func submitAction(ctx *cli.Context) error {
 	// 3. REACTORCIDE_SECRET_ENV_NAMES is set so runnerlib masks them too
 	// 4. Audit trail is maintained on the server side
 
-	// Get API token
 	if token == "" {
 		token, err = promptForSecret("REACTORCIDE_API_TOKEN", "API token: ")
 		if err != nil {

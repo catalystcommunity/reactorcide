@@ -152,18 +152,18 @@ func (h *WebHandler) resolveSession(r *http.Request) SessionInfo {
 //
 // This matters because authz.Resolver.Capabilities only special-cases a
 // global admin independent of scope; a plain org admin only gets their
-// org-admin capabilities back when the request's org_id matches their org
-// (or the request is project-scoped to one of their projects) — see
-// coordinator_api/internal/authz/capabilities.go's "orgID != nil &&
-// (*orgID == id.UserID || ...)" branch. An unscoped call (org_id and
-// project_id both omitted) therefore reports an org admin's own
+// org-admin capabilities back when the request's org_id matches their org (or
+// the request is project-scoped to one of their projects) — see
+// coordinator_api/internal/authz/capabilities.go's "orgID != nil && (*orgID
+// == id.UserID ||...)" branch. An unscoped call (org_id and project_id both
+// omitted) therefore reports an org admin's own
 // ManageGroups/ManageSecrets/CreateProject/etc. as false, which would hide
 // every nav link and management-page entry point for that org admin even
 // though they can use it once inside the org-scoped page. Recall "user_id IS
-// the org id everywhere" (UI_AUTH_PLAN.md) — a logged-in caller's own org id
-// is simply their own user id, so scoping to it here is exact, not a guess.
-// Global admins and anonymous/logged-out callers get an unscoped request
-// (global admin capabilities are scope-independent; anonymous has no org).
+// the org id everywhere" — a logged-in caller's own org id is simply their
+// own user id, so scoping to it here is exact, not a guess. Global admins and
+// anonymous/logged-out callers get an unscoped request (global admin
+// capabilities are scope-independent; anonymous has no org).
 func capabilitiesRequestForNav(si SessionInfo) csilapi.GetCapabilitiesRequest {
 	if si.LoggedIn && !si.IsGlobalAdmin && si.UserID != "" {
 		orgID := si.UserID

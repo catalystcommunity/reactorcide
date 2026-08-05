@@ -23,7 +23,7 @@ import (
 	"oras.land/oras-go/v2/registry/remote/credentials"
 )
 
-// Assumed VM base image artifact layout (VM_RUNNERS_PLAN.md's VM-2):
+// Assumed VM base image artifact layout:
 //
 //   - The manifest is a plain OCI Image Manifest (schemaVersion 2). Its
 //     ArtifactType/config blob are not inspected -- both the classic
@@ -57,11 +57,9 @@ const DefaultImageMaxUnused = 30 * 24 * time.Hour
 
 // OCIImageSource resolves an imageRef to a locally cached base image path by
 // pulling it as an OCI artifact from a registry (oras.land/oras-go/v2),
-// mirroring VM_RUNNERS_PLAN.md's "images = OCI artifacts, pulled by
-// ref+digest, cached locally by digest" decision. It implements the same
-// ImageSource interface as LocalImageSource (image_local.go) so the two are
-// swappable via config alone -- see internal/worker/vm_adapter.go's
-// REACTORCIDE_VM_IMAGE_SOURCE selection.
+// mirroring. It implements the same ImageSource interface as LocalImageSource
+// (image_local.go) so the two are swappable via config alone -- see
+// internal/worker/vm_adapter.go's REACTORCIDE_VM_IMAGE_SOURCE selection.
 //
 // Caching: the cache directory is a plain OCI Image Layout
 // (oras.land/oras-go/v2/content/oci.Store), so blobs land content-addressed
@@ -81,7 +79,7 @@ const DefaultImageMaxUnused = 30 * 24 * time.Hour
 // either resolve a fresh digest-pinned reference or clear/prune the cache
 // directory; pinning base images by digest sidesteps the question
 // entirely and is the recommended way to reference a VM base image once
-// published (see VM_RUNNERS_PLAN.md's VM-5).
+// published.
 type OCIImageSource struct {
 	cacheDir string
 	cache    *ocistore.Store
@@ -111,12 +109,6 @@ func WithCredentialStore(store credentials.Store) OCIImageSourceOption {
 	return func(s *OCIImageSource) { s.credentialStore = store }
 }
 
-// WithHTTPClient overrides the *http.Client used for registry requests. If
-// unset, a fresh http.Client (Go's zero-value defaults) is used.
-func WithHTTPClient(c *http.Client) OCIImageSourceOption {
-	return func(s *OCIImageSource) { s.httpClient = c }
-}
-
 // WithPlainHTTPRegistries marks the given registry hosts (as they appear in
 // an image reference, e.g. "127.0.0.1:5000" or "registry.internal:5000") as
 // reachable over plain HTTP instead of HTTPS -- for a local/dev registry
@@ -131,13 +123,6 @@ func WithPlainHTTPRegistries(hosts ...string) OCIImageSourceOption {
 			s.plainHTTPHosts[h] = struct{}{}
 		}
 	}
-}
-
-// WithCopyConcurrency overrides how many blobs Resolve pulls concurrently
-// while copying an artifact into the cache. <= 0 uses oras-go's own default
-// (3, matching dockerd/containerd).
-func WithCopyConcurrency(n int) OCIImageSourceOption {
-	return func(s *OCIImageSource) { s.copyConcurrency = n }
 }
 
 // NewOCIImageSource builds an OCIImageSource caching pulled base images

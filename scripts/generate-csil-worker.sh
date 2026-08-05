@@ -11,7 +11,7 @@
 #   - coordinator_api/internal/workerclient/csilapi/ (--target go-client:
 #     types + codec + typed client, consumed by the hand-written HTTP
 #     carrier in coordinator_api/internal/workerclient/transport.go, used by
-#     the coordinator-mediated worker binary/run loop, WORKERS_PLAN.md
+#     the coordinator-mediated worker binary/run loop
 #     Wave 3 P3a/P3b).
 #
 # Only the *.gen.go files in those two directories are touched; the

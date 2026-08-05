@@ -78,7 +78,7 @@ spec:
           {{- end }}
           resources:
             {{- toYaml .Values.worker.resources | nindent 12 }}
-          # Coordinator-mediated worker (WORKERS_PLAN.md): the worker's only
+          # Coordinator-mediated worker: the worker's only
           # dependency is an authenticated CSIL-RPC connection to the
           # coordinator, so -- unlike the app deployment -- it does NOT pull
           # in the shared app configmap/secret (no corndogs, DB, object-store,

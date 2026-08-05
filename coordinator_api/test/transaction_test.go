@@ -11,11 +11,6 @@ import (
 	"gorm.io/gorm"
 )
 
-// Create a test context with transaction
-func createTestContextWithTx(tx *gorm.DB) context.Context {
-	return context.WithValue(context.Background(), postgres_store.GetTxContextKey(), tx)
-}
-
 // TestTransactionMiddleware tests that the transaction middleware correctly handles commits and rollbacks
 func TestTransactionMiddleware(t *testing.T) {
 	RunTransactionalTest(t, func(ctx context.Context, tx *gorm.DB) {

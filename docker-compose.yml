@@ -69,7 +69,7 @@ services:
             # while no global admin exists yet. Obviously-fake dev-only value;
             # never reuse this for a real deployment.
             REACTORCIDE_BOOTSTRAP_ADMIN_TOKEN: dev-bootstrap-token-change-me
-            # Worker bootstrap (WORKERS_PLAN.md, coordinator-mediated workers):
+            # Worker bootstrap:
             # on first boot with no worker pools yet, the coordinator seeds a
             # default pool + enrollment token equal to this value so the dev
             # worker below can enroll without any manual admin step. Obviously-
@@ -92,7 +92,7 @@ services:
 
     # Worker
     #
-    # Coordinator-mediated (WORKERS_PLAN.md): the worker only needs a
+    # Coordinator-mediated: the worker only needs a
     # coordinator URL + enrollment token + a writable data dir for its
     # persisted worker_key. It no longer talks to corndogs, Postgres, or
     # object storage directly -- the coordinator brokers all of that.

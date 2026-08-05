@@ -53,14 +53,15 @@ func SetPubSubBus(b *pubsub.Bus) {
 }
 
 // GetAppMux returns the application's HTTP ServeMux for both API and tests
-// This ensures all tests use the same router configuration as the actual application
+// This ensures all tests use the same router configuration as the actual
+// application
 func GetAppMux() *http.ServeMux {
 	return GetAppMuxWithClient(nil)
 }
 
-// GetAppMuxWithClient returns the application's HTTP ServeMux with optional Corndogs client
+// GetAppMuxWithClient returns the application's HTTP ServeMux with optional
+// Corndogs client
 func GetAppMuxWithClient(corndogsClient corndogs.ClientInterface) *http.ServeMux {
-	// Only create the mux once
 	if appMux == nil {
 		singletoncorndogsClient = corndogsClient
 		appMux = createAppMux()
@@ -73,11 +74,6 @@ func SetObjectStore(store objects.ObjectStore) {
 	singletonObjectStore = store
 }
 
-// GetObjectStore returns the singleton object store
-func GetObjectStore() objects.ObjectStore {
-	return singletonObjectStore
-}
-
 // ResetAppMux resets the app mux singleton (useful for testing)
 func ResetAppMux() {
 	appMux = nil
@@ -87,7 +83,8 @@ func ResetAppMux() {
 	singletonBus = nil
 }
 
-// createAppMux creates and configures the application ServeMux with all routes
+// createAppMux creates and configures the application ServeMux with all
+// routes
 func createAppMux() *http.ServeMux {
 	mux := http.NewServeMux()
 
@@ -126,8 +123,8 @@ func createAppMux() *http.ServeMux {
 	jobHandler.SetStatusUpdater(vcsManager.GetStatusUpdater())
 	webhookHandler.SetStatusUpdater(vcsManager.GetStatusUpdater())
 
-	// Wire per-project VCS token resolution into webhook handler.
-	// Deferred until after the key manager is initialized below.
+	// Wire per-project VCS token resolution into webhook handler. Deferred
+	// until after the key manager is initialized below.
 	wireWebhookTokenResolver := func(keyMgr *secrets.MasterKeyManager) {
 		if keyMgr == nil || config.DefaultUserID == "" {
 			return
@@ -146,11 +143,13 @@ func createAppMux() *http.ServeMux {
 		log.Println("Per-project VCS token resolution enabled for webhook handler")
 	}
 
-	// Create secrets handler - keys are loaded from env, DB, or auto-generated
+	// Create secrets handler - keys are loaded from env, DB, or
+	// auto-generated
 	var secretsHandler *SecretsHandler
 	if singletonKeyManager == nil {
 		if db := store.GetDB(); db != nil {
-			// LoadOrCreateMasterKeys tries: env var → database → auto-generate
+			// LoadOrCreateMasterKeys tries: env var → database →
+			// auto-generate
 			if keyMgr, err := secrets.LoadOrCreateMasterKeys(db); err == nil {
 				singletonKeyManager = keyMgr
 			}
@@ -162,7 +161,6 @@ func createAppMux() *http.ServeMux {
 		wireWebhookTokenResolver(singletonKeyManager)
 	}
 
-	// Apply middleware to all handlers
 	transactionMiddleware := middleware.TransactionMiddleware
 	authMiddleware := middleware.APITokenMiddleware(store.AppStore)
 
@@ -578,10 +576,10 @@ func createAppMux() *http.ServeMux {
 
 	// Secrets routes (require auth and master keys to be configured)
 	if secretsHandler != nil {
-		// GET /api/v1/secrets?path=... - List keys in path
-		// GET /api/v1/secrets/value?path=...&key=... - Get secret value
-		// PUT /api/v1/secrets/value?path=...&key=... - Set secret value
-		// DELETE /api/v1/secrets/value?path=...&key=... - Delete secret
+		// GET    /api/v1/secrets?path=...                 - List keys in path
+		// GET    /api/v1/secrets/value?path=...&key=...   - Get secret value
+		// PUT    /api/v1/secrets/value?path=...&key=...   - Set secret value
+		// DELETE /api/v1/secrets/value?path=...&key=...   - Delete secret
 		mux.HandleFunc("/api/v1/secrets", func(w http.ResponseWriter, r *http.Request) {
 			handler := transactionMiddleware(authMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				if r.Method == http.MethodGet {
@@ -661,7 +659,7 @@ func createAppMux() *http.ServeMux {
 		adminMiddleware := middleware.RequireRoleMiddleware("admin")
 
 		// POST /api/v1/admin/secrets/master-keys - Create master key
-		// GET /api/v1/admin/secrets/master-keys - List master keys
+		// GET  /api/v1/admin/secrets/master-keys - List master keys
 		mux.HandleFunc("/api/v1/admin/secrets/master-keys", func(w http.ResponseWriter, r *http.Request) {
 			handler := transactionMiddleware(authMiddleware(adminMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				switch r.Method {
@@ -676,8 +674,8 @@ func createAppMux() *http.ServeMux {
 			handler.ServeHTTP(w, r)
 		})
 
-		// POST /api/v1/admin/secrets/master-keys/{name}/rotate - Rotate to key
-		// DELETE /api/v1/admin/secrets/master-keys/{name} - Decommission key
+		// POST   /api/v1/admin/secrets/master-keys/{name}/rotate - Rotate to key
+		// DELETE /api/v1/admin/secrets/master-keys/{name}        - Decommission key
 		mux.HandleFunc("/api/v1/admin/secrets/master-keys/", func(w http.ResponseWriter, r *http.Request) {
 			path := strings.TrimPrefix(r.URL.Path, "/api/v1/admin/secrets/master-keys/")
 			if path == "" {
@@ -722,13 +720,12 @@ func createAppMux() *http.ServeMux {
 		})
 	}
 
-	// CSIL-RPC UI/Auth endpoint (webapp <-> coordinator management surface,
-	// see UI_AUTH_PLAN.md "CSIL-RPC UI service"). Real auth/authz/store-backed
-	// implementations when store.AppStore satisfies uiapi.DataStore (always
-	// true for *postgres_store.PostgresDbStore in production); stub
-	// implementations (ServiceError{code:"unimplemented"} for every op)
-	// otherwise, e.g. against a minimal test store that doesn't implement
-	// the full rbac/rotation/settings/trusted-identity surface.
+	// CSIL-RPC UI/Auth endpoint. Real auth/authz/store-backed implementations
+	// when store.AppStore satisfies uiapi.DataStore (always true for
+	// *postgres_store.PostgresDbStore in production); stub implementations
+	// (ServiceError{code:"unimplemented"} for every op) otherwise, e.g.
+	// against a minimal test store that doesn't implement the full
+	// rbac/rotation/settings/trusted-identity surface.
 	var uiAuthImpl csilapi.ReactorcideAuth = uiapi.NewStubAuth()
 	var uiUiImpl csilapi.ReactorcideUi = uiapi.NewStubUi()
 	if uiStore, ok := store.AppStore.(uiapi.DataStore); ok {
@@ -738,8 +735,7 @@ func createAppMux() *http.ServeMux {
 		}
 	}
 
-	// ReactorcideWorker (WORKERS_PLAN.md "Workers -- registration, auth,
-	// protocol", P2-A2) is mounted on the SAME /csil/v1/rpc endpoint as
+	// ReactorcideWorker is mounted on the SAME /csil/v1/rpc endpoint as
 	// ReactorcideAuth/ReactorcideUi -- CSIL-RPC routes on the envelope's own
 	// `service` field, so one HTTP handler serves every service sharing this
 	// transport. nil (no worker ops registered; "ReactorcideWorker" resolves
@@ -748,17 +744,19 @@ func createAppMux() *http.ServeMux {
 	var workerImpl workercsilapi.ReactorcideWorker
 	if workerStore, ok := store.AppStore.(workerapi.DataStore); ok {
 		workerDeps := buildWorkerAPIDeps(workerStore, singletoncorndogsClient, singletonKeyManager, singletonObjectStore)
-		// Wire workflow progression into the coordinator-mediated job lifecycle
-		// (ReportResult/RequestJob): a TriggerProcessor over the concrete store +
-		// the same configured VCS status updater the webhook/job handlers use, so
-		// completing a job's node re-evaluates its workflow (submits ready
-		// downstream nodes, rolls workflow_instances status, updates the PR check)
-		// instead of leaving the workflow stuck "running".
+		// Wire workflow progression into the coordinator-mediated job
+		// lifecycle (ReportResult/RequestJob): a TriggerProcessor over the
+		// concrete store + the same configured VCS status updater the
+		// webhook/job handlers use, so completing a job's node re-evaluates
+		// its workflow (submits ready downstream nodes, rolls
+		// workflow_instances status, updates the PR check) instead of leaving
+		// the workflow stuck "running".
 		wfFinalizer := worker.NewTriggerProcessor(store.AppStore, singletoncorndogsClient)
 		wfFinalizer.SetStatusUpdater(vcsManager.GetStatusUpdater())
 		workerDeps.WorkflowFinalizer = wfFinalizer
 		// Resolve a completing job's own VCS check (e.g. the eval's
-		// "reactorcide/eval" pending check) to success/failure on ReportResult.
+		// "reactorcide/eval" pending check) to success/failure on
+		// ReportResult.
 		workerDeps.JobStatusReporter = vcsManager.GetStatusUpdater()
 		workerSvc := workerapi.NewWorkerService(workerDeps)
 		workerImpl = workerSvc
@@ -770,11 +768,8 @@ func createAppMux() *http.ServeMux {
 }
 
 // workerLeaseReaperOnce ensures the worker-lease reaper background loop
-// (internal/workerapi's WorkerService.RunLeaseReaper -- WORKERS_PLAN.md
-// "Workers", mirroring internal/worker/corndogs_worker.go's own
-// runCancellingReaper) starts at most once per process, even though
-// createAppMux may run more than once in tests via ResetAppMux/
-// GetAppMuxWithClient.
+// starts at most once per process, even though createAppMux may run more than
+// once in tests via ResetAppMux/ GetAppMuxWithClient.
 var workerLeaseReaperOnce sync.Once
 var telemetryRetentionOnce sync.Once
 
@@ -805,11 +800,10 @@ func startWorkerLeaseReaperOnce(svc *workerapi.WorkerService) {
 
 // buildWorkerAPIDeps wires the CSIL Worker service's dependencies (P2-A2),
 // reusing the exact same store/corndogs/key-manager/object-store singletons
-// buildUIAPIDeps wires for the sibling ReactorcideAuth/ReactorcideUi
-// service, plus a dedicated pubsub.Publisher built the same way other
-// coordinator-side publishers are wired (pubsub.NewPublisher is
-// nil-pool-safe, so a deployment without a pgx pool simply gets a Publisher
-// that drops every publish).
+// buildUIAPIDeps wires for the sibling ReactorcideAuth/ReactorcideUi service,
+// plus a dedicated pubsub.Publisher built the same way other coordinator-side
+// publishers are wired (pubsub.NewPublisher is nil-pool-safe, so a deployment
+// without a pgx pool simply gets a Publisher that drops every publish).
 func buildWorkerAPIDeps(workerStore workerapi.DataStore, corndogsClient corndogs.ClientInterface, keyManager *secrets.MasterKeyManager, objectStore objects.ObjectStore) *workerapi.Deps {
 	enrollment := workerauth.NewEnrollment(workerStore)
 	sessions := workerauth.NewWorkerSessions(workerStore)
@@ -817,15 +811,14 @@ func buildWorkerAPIDeps(workerStore workerapi.DataStore, corndogsClient corndogs
 	return workerapi.NewDeps(workerStore, corndogsClient, enrollment, sessions, keyManager, objectStore, publisher)
 }
 
-// buildUIAPIDeps wires the CSIL UI service's dependencies (Task G): seeds
-// the trusted-identity admission list from config, selects a LoginBackend
-// matching auth.CurrentMode() (falling back to the none-mode sentinel
-// backend — login unavailable, but every other op still works — if the
-// configured mode's backend can't be constructed, e.g. missing/invalid
-// LinkKeys config), and builds a *uiapi.Deps. Returns nil only if
-// ValidateUIAuthMode itself fails (a misconfigured auth mode), since in that
-// case none of the auth/authz surface can be trusted to behave as
-// configured.
+// buildUIAPIDeps wires the CSIL UI service's dependencies (Task G): seeds the
+// trusted-identity admission list from config, selects a LoginBackend
+// matching auth.CurrentMode() (falling back to the none-mode sentinel backend
+// — login unavailable, but every other op still works — if the configured
+// mode's backend can't be constructed, e.g. missing/invalid LinkKeys config),
+// and builds a *uiapi.Deps. Returns nil only if ValidateUIAuthMode itself
+// fails (a misconfigured auth mode), since in that case none of the
+// auth/authz surface can be trusted to behave as configured.
 func buildUIAPIDeps(uiStore uiapi.DataStore, keyManager *secrets.MasterKeyManager, corndogsClient corndogs.ClientInterface, objectStore objects.ObjectStore) *uiapi.Deps {
 	if err := config.ValidateUIAuthMode(); err != nil {
 		log.Printf("WARNING: REACTORCIDE_UI_AUTH_MODE is misconfigured, CSIL UI service will return unimplemented: %v", err)
@@ -873,8 +866,8 @@ func buildUIAPIDeps(uiStore uiapi.DataStore, keyManager *secrets.MasterKeyManage
 	return deps
 }
 
-// setIDContext adds an ID to the context for handlers to use
-// This replaces the mux.Vars functionality from gorilla/mux
+// setIDContext adds an ID to the context for handlers to use This replaces
+// the mux.Vars functionality from gorilla/mux
 type contextKey string
 
 func setIDContext(ctx context.Context, key, value string) context.Context {
@@ -894,12 +887,11 @@ func GetContextKey(key string) contextKey {
 	return contextKey(key)
 }
 
-// NewRouter creates a new router for the API with CORS handling
-// This is used by the API server
+// NewRouter creates a new router for the API with CORS handling This is used
+// by the API server
 func NewRouter(corndogsClient corndogs.ClientInterface) http.Handler {
 	mux := GetAppMuxWithClient(corndogsClient)
 
-	// Set up CORS
 	c := cors.New(cors.Options{
 		AllowedOrigins:   []string{"*"},
 		AllowedMethods:   []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
@@ -935,8 +927,9 @@ func healthHandler(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(response)
 }
 
-// makeTokenResolver creates a TokenResolverFunc that resolves "path:key" secret
-// references using the database secrets provider under the default user org.
+// makeTokenResolver creates a TokenResolverFunc that resolves "path:key"
+// secret references using the database secrets provider under the default
+// user org.
 func makeTokenResolver(keyManager *secrets.MasterKeyManager) vcs.TokenResolverFunc {
 	return func(ctx context.Context, secretRef string) (string, error) {
 		parts := strings.SplitN(secretRef, ":", 2)

@@ -9,7 +9,7 @@ import (
 
 // DefaultOS is the value injected for a job's "os" characteristic when the
 // job spec omits it. It is the one and only default in the characteristic
-// model (WORKERS_PLAN.md, "The one default assumption").
+// model.
 const DefaultOS = "linux"
 
 // ParseJobCharacteristics validates a job spec's raw `characteristics` map
@@ -47,12 +47,12 @@ func ParseJobCharacteristics(raw map[string]any) (Characteristics, error) {
 // Characteristics from its required os/arch and its custom key/value pairs.
 //
 // os and arch are taken verbatim from the caller (auto-detected or
-// operator-configured) with no normalization or capitalization fixups, per
-// WORKERS_PLAN.md; both must be non-empty. custom entries may be scalar or a
-// homogeneous list (mixed-type lists are rejected). "os" and "arch" may not
-// be repeated in custom (they are already supplied via the dedicated
-// parameters); duplicate custom keys are rejected. The custom key "queue" is
-// not special — it is validated and stored like any other key.
+// operator-configured) with no normalization or capitalization fixups; both
+// must be non-empty. custom entries may be scalar or a homogeneous list
+// (mixed-type lists are rejected). "os" and "arch" may not be repeated in
+// custom (they are already supplied via the dedicated parameters); duplicate
+// custom keys are rejected. The custom key "queue" is not special — it is
+// validated and stored like any other key.
 func ParseWorkerCharacteristics(os, arch string, custom []KV) (Characteristics, error) {
 	if os == "" {
 		return nil, fmt.Errorf("characteristics: worker os is required")

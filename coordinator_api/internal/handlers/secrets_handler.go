@@ -597,8 +597,8 @@ func (h *SecretsHandler) CreateMasterKey(w http.ResponseWriter, r *http.Request)
 	mk, err := h.keyManager.RegisterMasterKey(store.GetDBFromContext(r.Context()), req.Name, req.Description)
 	if err != nil {
 		if err.Error() == "UNIQUE constraint violation" ||
-		   (err != nil && (err.Error() == "master key "+req.Name+" not found in REACTORCIDE_MASTER_KEYS" ||
-		                   strings.Contains(err.Error(), "duplicate key value"))) {
+			(err != nil && (err.Error() == "master key "+req.Name+" not found in REACTORCIDE_MASTER_KEYS" ||
+				strings.Contains(err.Error(), "duplicate key value"))) {
 			h.respondWithJSON(w, http.StatusConflict, ErrorResponse{
 				Error:   "conflict",
 				Message: err.Error(),

@@ -15,11 +15,11 @@ func TestLoadMasterKeys(t *testing.T) {
 	encodedKey := base64.StdEncoding.EncodeToString(key)
 
 	tests := []struct {
-		name       string
-		envValue   string
-		wantErr    bool
-		wantCount  int
-		wantPrim   string
+		name      string
+		envValue  string
+		wantErr   bool
+		wantCount int
+		wantPrim  string
 	}{
 		{
 			name:      "empty env",
@@ -28,18 +28,18 @@ func TestLoadMasterKeys(t *testing.T) {
 			wantCount: 0,
 		},
 		{
-			name:       "single key",
-			envValue:   "mk-2026-01:" + encodedKey,
-			wantErr:    false,
-			wantCount:  1,
-			wantPrim:   "mk-2026-01",
+			name:      "single key",
+			envValue:  "mk-2026-01:" + encodedKey,
+			wantErr:   false,
+			wantCount: 1,
+			wantPrim:  "mk-2026-01",
 		},
 		{
-			name:       "multiple keys",
-			envValue:   "mk-2026-02:" + encodedKey + ",mk-2026-01:" + encodedKey,
-			wantErr:    false,
-			wantCount:  2,
-			wantPrim:   "mk-2026-02", // First in list is primary
+			name:      "multiple keys",
+			envValue:  "mk-2026-02:" + encodedKey + ",mk-2026-01:" + encodedKey,
+			wantErr:   false,
+			wantCount: 2,
+			wantPrim:  "mk-2026-02", // First in list is primary
 		},
 		{
 			name:      "invalid format",

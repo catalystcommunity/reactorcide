@@ -45,8 +45,7 @@ func workerInfo(cfg Config) (csilapi.WorkerInfo, error) {
 }
 
 // workerCharacteristics builds the WorkerCharacteristics sent on every
-// RequestJob poll from cfg (WORKERS_PLAN.md "Matching at pull": sent on
-// every call so any coordinator pod can match statelessly).
+// RequestJob poll from cfg.
 func workerCharacteristics(cfg Config) (csilapi.WorkerCharacteristics, error) {
 	custom, err := toCustomCharacteristics(cfg.Custom)
 	if err != nil {

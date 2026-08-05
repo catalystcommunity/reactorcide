@@ -51,4 +51,3 @@ Some integration tests need a container runtime. See
 - [Installation and Deployment](../docs/getting-started.md)
 - [Worker Operation](../docs/workers.md)
 - [VCS Provider Integration](./docs/vcs_integration.md)
-- [Advanced Corndogs Features](./docs/advanced_corndogs_features.md)

@@ -16,8 +16,8 @@ import (
 // pgUniqueViolationCode is the Postgres SQLSTATE for a unique constraint
 // violation (23505). Detected directly from *pgconn.PgError rather than
 // relying on GORM's error translation (gorm.Config.TranslateError is not
-// enabled for this store's connection -- see postgres_store.go's
-// gorm.Open), so this is the one place that has to know the raw code.
+// enabled for this store's connection -- see postgres_store.go's gorm.Open),
+// so this is the one place that has to know the raw code.
 const pgUniqueViolationCode = "23505"
 
 // isUniqueViolation reports whether err is a Postgres unique constraint
@@ -27,8 +27,8 @@ func isUniqueViolation(err error) bool {
 	return errors.As(err, &pgErr) && pgErr.Code == pgUniqueViolationCode
 }
 
-// GetQueueByID retrieves a queue by its row primary key (queue_id, a ULID
-// -- distinct from QueueUUID, the Corndogs routing identifier).
+// GetQueueByID retrieves a queue by its row primary key (queue_id, a ULID --
+// distinct from QueueUUID, the Corndogs routing identifier).
 func (ps PostgresDbStore) GetQueueByID(ctx context.Context, queueID string) (*models.Queue, error) {
 	if !isValidUUID(queueID) {
 		return nil, store.ErrNotFound
@@ -45,8 +45,8 @@ func (ps PostgresDbStore) GetQueueByID(ctx context.Context, queueID string) (*mo
 }
 
 // GetQueueByUUID retrieves a queue by its QueueUUID -- the literal Corndogs
-// queue name. Used at pull time (worker matching) and by admin surfaces
-// that reference a queue by its routing identifier.
+// queue name. Used at pull time (worker matching) and by admin surfaces that
+// reference a queue by its routing identifier.
 func (ps PostgresDbStore) GetQueueByUUID(ctx context.Context, queueUUID string) (*models.Queue, error) {
 	if !isValidUUID(queueUUID) {
 		return nil, store.ErrNotFound
@@ -76,9 +76,8 @@ func (ps PostgresDbStore) getQueueByHash(ctx context.Context, hash string) (*mod
 	return &q, nil
 }
 
-// ListQueues retrieves queues with pagination, newest first. The queue
-// table is small (operator/coordinator-created, not per-job -- see
-// WORKERS_PLAN.md "Matching at pull"), so this is mainly for admin listing.
+// ListQueues retrieves queues with pagination, newest first. The queue table
+// is small, so this is mainly for admin listing.
 func (ps PostgresDbStore) ListQueues(ctx context.Context, limit, offset int) ([]models.Queue, error) {
 	var queues []models.Queue
 	query := ps.getDB(ctx).Order("created_at DESC")
@@ -96,10 +95,9 @@ func (ps PostgresDbStore) ListQueues(ctx context.Context, limit, offset int) ([]
 
 // FindOrCreateQueueByCharacteristics resolves the queue for a job's
 // (already-defaulted) characteristics: canonicalize -> hash -> look up by
-// hash; on a miss, create a new queue row with a fresh QueueUUID. This is
-// the submit path's routing primitive (WORKERS_PLAN.md "Find-or-create at
-// submit") -- callers set job.QueueName to the returned Queue.QueueUUID
-// before submitting to Corndogs.
+// hash; on a miss, create a new queue row with a fresh QueueUUID. This is the
+// submit path's routing primitive -- callers set job.QueueName to the
+// returned Queue.QueueUUID before submitting to Corndogs.
 //
 // Concurrent-insert race: characteristics_hash is UNIQUE, so two submits
 // racing to create the same never-before-seen queue will have one INSERT
@@ -126,10 +124,9 @@ func (ps PostgresDbStore) FindOrCreateQueueByCharacteristics(ctx context.Context
 	if err := ps.getDB(ctx).Create(q).Error; err != nil {
 		if isUniqueViolation(err) {
 			// Lost the race to a concurrent submit that created this exact
-			// queue between our SELECT and our INSERT. Re-select rather
-			// than surfacing a spurious error -- the desired end state
-			// (exactly one queue row for these characteristics) holds
-			// either way.
+			// queue between our SELECT and our INSERT. Re-select rather than
+			// surfacing a spurious error -- the desired end state (exactly
+			// one queue row for these characteristics) holds either way.
 			winner, selErr := ps.getQueueByHash(ctx, hash)
 			if selErr != nil {
 				return nil, fmt.Errorf("queue create lost race but re-select by hash failed: %w", selErr)
@@ -142,11 +139,10 @@ func (ps PostgresDbStore) FindOrCreateQueueByCharacteristics(ctx context.Context
 }
 
 // CreateQueue lets an operator pre-create a queue (define characteristics +
-// display name up front, before any job needs it) -- WORKERS_PLAN.md
-// "Operator control (admin UI)". Unlike FindOrCreateQueueByCharacteristics,
-// a hash collision here is an error (characteristics are immutable and a
-// queue for this exact set already exists), not silently resolved to the
-// existing row.
+// display name up front, before any job needs it))". Unlike
+// FindOrCreateQueueByCharacteristics, a hash collision here is an error
+// (characteristics are immutable and a queue for this exact set already
+// exists), not silently resolved to the existing row.
 func (ps PostgresDbStore) CreateQueue(ctx context.Context, chars characteristics.Characteristics, displayName string) (*models.Queue, error) {
 	hash := characteristics.Hash(chars)
 
@@ -166,8 +162,7 @@ func (ps PostgresDbStore) CreateQueue(ctx context.Context, chars characteristics
 }
 
 // UpdateQueueDisplayName updates a queue's mutable display name.
-// Characteristics are immutable once created (WORKERS_PLAN.md "Operator
-// control") and have no update path.
+// Characteristics are immutable once created and have no update path.
 func (ps PostgresDbStore) UpdateQueueDisplayName(ctx context.Context, queueID, displayName string) error {
 	if !isValidUUID(queueID) {
 		return store.ErrNotFound
@@ -198,11 +193,11 @@ const DefaultQueueDisplayName = "Default (linux)"
 // comment): the characteristics come from
 // characteristics.ParseJobCharacteristics(map[string]any{}), the exact same
 // function every submit path uses to default an empty/omitted
-// `characteristics` block, so the seeded row's hash can never disagree with
-// a hash computed for a real bare job at submit time. Safe to call on every
+// `characteristics` block, so the seeded row's hash can never disagree with a
+// hash computed for a real bare job at submit time. Safe to call on every
 // startup (existing row -> no-op); safe under concurrent coordinator pods
-// starting simultaneously (unique characteristics_hash resolves the race
-// the same way FindOrCreateQueueByCharacteristics does).
+// starting simultaneously (unique characteristics_hash resolves the race the
+// same way FindOrCreateQueueByCharacteristics does).
 func (ps PostgresDbStore) EnsureDefaultQueue(ctx context.Context) error {
 	chars, err := characteristics.ParseJobCharacteristics(map[string]any{})
 	if err != nil {
@@ -228,8 +223,8 @@ func (ps PostgresDbStore) EnsureDefaultQueue(ctx context.Context) error {
 	if err := ps.getDB(ctx).Create(q).Error; err != nil {
 		if isUniqueViolation(err) {
 			// Another coordinator pod won the race to seed it first; the
-			// desired end state (exactly one default queue row) holds
-			// either way.
+			// desired end state (exactly one default queue row) holds either
+			// way.
 			return nil
 		}
 		return fmt.Errorf("failed to create default queue: %w", err)
@@ -237,22 +232,20 @@ func (ps PostgresDbStore) EnsureDefaultQueue(ctx context.Context) error {
 	return nil
 }
 
-// nonTerminalJobStatuses are every status a job can be cancelled from
-// (WORKERS_PLAN.md Wave-4 P4's delete-queue cancel-in-flight admin op):
+// nonTerminalJobStatuses are every status a job can be cancelled from:
 // submitted/queued/running (not yet claimed or currently executing) plus
 // cancelling (a cancel already in flight but not yet confirmed) — mirrors
-// models.Job.CanBeCancelled/IsCancelling/IsCompleted's status set rather
-// than redefining it, so this list can't silently drift from the
-// cancel/kill state machine those methods encode.
+// models.Job.CanBeCancelled/IsCancelling/IsCompleted's status set rather than
+// redefining it, so this list can't silently drift from the cancel/kill state
+// machine those methods encode.
 var nonTerminalJobStatuses = []string{"submitted", "queued", "running", "cancelling"}
 
 // ListNonTerminalJobsByQueue lists every job routed to queueUUID (the
 // Corndogs queue name, i.e. models.Job.QueueName) that is not yet in a
 // terminal state -- the set delete-queue's admin op must cancel before
-// removing the queue row (WORKERS_PLAN.md "Operator control": "Deleting a
-// queue cancels its in-flight corndogs tasks"). Ordered oldest first purely
-// for deterministic test/admin-log output; delete-queue processes the whole
-// set regardless of order.
+// removing the queue row. Ordered oldest first purely for deterministic
+// test/admin-log output; delete-queue processes the whole set regardless of
+// order.
 func (ps PostgresDbStore) ListNonTerminalJobsByQueue(ctx context.Context, queueUUID string) ([]models.Job, error) {
 	var jobs []models.Job
 	if err := ps.getDB(ctx).
@@ -264,15 +257,11 @@ func (ps PostgresDbStore) ListNonTerminalJobsByQueue(ctx context.Context, queueU
 	return jobs, nil
 }
 
-// DeleteQueue deletes a queue row only. It does NOT cancel or otherwise
-// touch any in-flight Corndogs tasks/jobs routed to this queue's UUID --
-// per WORKERS_PLAN.md "Operator control", deleting a queue is supposed to
-// cancel its in-flight tasks, but that cancel-in-flight orchestration
-// (finding affected jobs, driving them through the existing cancel path)
-// belongs to the P4 admin operation that calls this, not to the row-level
-// store primitive. Callers that need the full delete-cancels-in-flight
-// behavior must do that orchestration themselves before/around calling
-// this.
+// DeleteQueue deletes a queue row only. It does NOT cancel or otherwise touch
+// any in-flight Corndogs tasks/jobs routed to this queue's UUID) belongs to
+// the P4 admin operation that calls this, not to the row-level store
+// primitive. Callers that need the full delete-cancels-in-flight behavior
+// must do that orchestration themselves before/around calling this.
 func (ps PostgresDbStore) DeleteQueue(ctx context.Context, queueID string) error {
 	if !isValidUUID(queueID) {
 		return store.ErrNotFound

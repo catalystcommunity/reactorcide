@@ -8,10 +8,8 @@ import (
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/uiapi/csilapi"
 )
 
-// TestCancelJob_PermissionMatrix drives UI_AUTH_PLAN.md's permission matrix
-// "cancel job/workflow" row across every caller tier and both relevant auth
-// modes: anonymous may cancel ONLY in mode none; a plain member may never
-// cancel; project owner/org admin/global admin may always cancel.
+// TestCancelJob_PermissionMatrix drives; a plain member may never cancel;
+// project owner/org admin/global admin may always cancel.
 func TestCancelJob_PermissionMatrix(t *testing.T) {
 	newJob := func(t *testing.T, st *fakeStore, orgID, projectID string) models.Job {
 		t.Helper()
@@ -107,9 +105,9 @@ func TestCancelJob_PermissionMatrix(t *testing.T) {
 }
 
 // TestKillJob_PermissionMatrix drives the "kill job (force)" row: never
-// available to anonymous callers (in ANY auth mode, including none — kill
-// is a strictly stronger action than cancel), never to a plain member or
-// even a project owner; only org admin/global admin.
+// available to anonymous callers (in ANY auth mode, including none — kill is
+// a strictly stronger action than cancel), never to a plain member or even a
+// project owner; only org admin/global admin.
 func TestKillJob_PermissionMatrix(t *testing.T) {
 	setup := func(t *testing.T) (*Deps, *fakeStore, models.Job) {
 		t.Helper()
@@ -282,8 +280,8 @@ func TestSetSecret_PermissionMatrix(t *testing.T) {
 }
 
 // TestAddTrustedDomainPattern_PermissionMatrix drives the last matrix row
-// ("trusted users/domain-regexes, global settings"): global admin only —
-// even an org admin (of any org) may not manage the admission list.
+// ("trusted users/domain-regexes, global settings"): global admin only — even
+// an org admin (of any org) may not manage the admission list.
 func TestAddTrustedDomainPattern_PermissionMatrix(t *testing.T) {
 	req := csilapi.AddTrustedDomainPatternRequest{Pattern: `^.*\.example\.com$`}
 
@@ -342,9 +340,9 @@ func TestUnauthorizedSession(t *testing.T) {
 	_, err := ui.CreateProject(ctx, csilapi.CreateProjectRequest{OrgId: "org-1", Name: "p", RepoUrl: "r"})
 	requireCode(t, err, "unauthorized")
 
-	// GetCapabilities never requires a session (anonymous callers get a
-	// real, if empty/limited, capability set) — an invalid token there
-	// degrades to anonymous rather than erroring.
+	// GetCapabilities never requires a session (anonymous callers get a real,
+	// if empty/limited, capability set) — an invalid token there degrades to
+	// anonymous rather than erroring.
 	as := NewUiService(deps)
 	capsResp, err := as.GetCapabilities(ctx, csilapi.GetCapabilitiesRequest{})
 	requireOK(t, err)

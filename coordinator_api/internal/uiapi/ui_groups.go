@@ -23,8 +23,8 @@ func groupToSummary(g *models.Group) csilapi.GroupSummary {
 }
 
 // ListGroups requires org admin (of org_id) or global admin — group
-// membership is management surface, per UI_AUTH_PLAN.md's "manage groups /
-// assign roles" matrix row; there is no separate "view groups" capability.
+// membership is management surface; there is no separate "view groups"
+// capability.
 func (s *UiService) ListGroups(ctx context.Context, req csilapi.ListGroupsRequest) (csilapi.ListGroupsResponse, error) {
 	id, _, authErr := s.deps.requireUser(ctx)
 	if authErr != nil {

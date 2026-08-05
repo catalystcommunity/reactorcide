@@ -73,13 +73,10 @@ func Serve() error {
 		logging.Log.Warn("No pgx pool available; WebSocket streams disabled")
 	}
 
-	// Create the handler with routes
 	handler := handlers.NewRouter(corndogsClient)
 
-	// Log startup information
 	logging.Log.Infof("Starting HTTP server on port %d", config.Port)
 
-	// Start the HTTP server
 	err := http.ListenAndServe(fmt.Sprintf(":%d", config.Port), handler)
 
 	// ListenAndServe always eventually errors out, so we log it and return it
@@ -107,20 +104,20 @@ func initStores() []func() {
 			logging.Log.Info("Default user check completed")
 		}
 
-		// Ensure the default {"os":"linux"} queue exists (WORKERS_PLAN.md
-		// "Queues") -- untagged/os-less jobs resolve here.
+		// Ensure the default {"os":"linux"} queue exists -- untagged/os-less
+		// jobs resolve here.
 		if err := store.AppStore.EnsureDefaultQueue(context.Background()); err != nil {
 			logging.Log.WithError(err).Error("Failed to ensure default queue")
 		} else {
 			logging.Log.Info("Default queue check completed")
 		}
 
-		// Dev/alpha worker enrollment bootstrap (WORKERS_PLAN.md Wave-4 P4):
-		// if REACTORCIDE_DEFAULT_WORKER_ENROLLMENT_TOKEN is set, ensure a
+		// Dev/alpha worker enrollment bootstrap: if
+		// REACTORCIDE_DEFAULT_WORKER_ENROLLMENT_TOKEN is set, ensure a
 		// "default" worker pool exists and register that token's hash as an
 		// active enrollment token for it, so a dev/compose worker can enroll
-		// without an admin minting a token first. A no-op when the env var
-		// is unset. Reached via a narrow type assertion (this repo's
+		// without an admin minting a token first. A no-op when the env var is
+		// unset. Reached via a narrow type assertion (this repo's
 		// consumer-defined-narrow-interface convention -- see
 		// postgres_store.PostgresDbStore.EnsureDefaultWorkerPool's doc
 		// comment) rather than growing store.Store, since only this startup

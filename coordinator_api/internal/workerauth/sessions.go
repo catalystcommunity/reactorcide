@@ -13,28 +13,28 @@ import (
 )
 
 const (
-	// WorkerSessionTokenBytes is the raw worker session token size: 256
-	// bits, matching internal/auth.SessionTokenBytes.
+	// WorkerSessionTokenBytes is the raw worker session token size: 256 bits,
+	// matching internal/auth.SessionTokenBytes.
 	WorkerSessionTokenBytes = 32
 
 	// WorkerSessionTTL is how long a freshly minted or heartbeat-refreshed
 	// worker session remains valid without another heartbeat. Chosen
 	// generously relative to HeartbeatInterval (~2880x it) so a worker that
-	// misses a handful of heartbeats -- a GC pause, a transient network
-	// blip, a slow job holding up the loop -- doesn't get logged out;
-	// expiry only bites a worker that has gone silent for a long time.
-	// Refreshed on every successful Heartbeat (WORKERS_PLAN.md "Workers").
+	// misses a handful of heartbeats -- a GC pause, a transient network blip,
+	// a slow job holding up the loop -- doesn't get logged out; expiry only
+	// bites a worker that has gone silent for a long time. Refreshed on every
+	// successful Heartbeat.
 	WorkerSessionTTL = 24 * time.Hour
 
-	// HeartbeatInterval is the cadence a worker is told to call Heartbeat
-	// at -- returned as-is in Register's heartbeat_interval response field
-	// (WORKERS_PLAN.md "Workers"). It is a protocol-pacing constant, not a
-	// store/session mechanism: Resolve's session-validity check only cares
-	// about WorkerSessionTTL/expires_at, not this value.
+	// HeartbeatInterval is the cadence a worker is told to call Heartbeat at
+	// -- returned as-is in Register's heartbeat_interval response field. It
+	// is a protocol-pacing constant, not a store/session mechanism: Resolve's
+	// session-validity check only cares about WorkerSessionTTL/expires_at,
+	// not this value.
 	HeartbeatInterval = 30 * time.Second
 
-	// sessionTouchThrottle bounds how often Resolve writes last_seen_at
-	// back to the store: once per 5 minutes of session activity, matching
+	// sessionTouchThrottle bounds how often Resolve writes last_seen_at back
+	// to the store: once per 5 minutes of session activity, matching
 	// internal/auth's sessionTouchThrottle so routine heartbeat/RequestJob
 	// polling doesn't hammer worker_sessions on every call. This throttles
 	// the *last_seen_at bookkeeping write*, not session expiry -- expiry
@@ -54,9 +54,9 @@ type WorkerSessionStore interface {
 }
 
 // WorkerSessions mints, resolves, and revokes opaque worker session tokens.
-// Mirrors internal/auth.Sessions' shape exactly, for the worker side of
-// auth: only the SHA-256 hash of a token is ever persisted, and the raw
-// token is returned exactly once, by Mint, and must never be logged.
+// Mirrors internal/auth.Sessions' shape exactly, for the worker side of auth:
+// only the SHA-256 hash of a token is ever persisted, and the raw token is
+// returned exactly once, by Mint, and must never be logged.
 type WorkerSessions struct {
 	store WorkerSessionStore
 	now   func() time.Time
@@ -76,9 +76,9 @@ func generateWorkerSessionToken() (string, error) {
 }
 
 // Mint creates a new session for workerID, valid for WorkerSessionTTL, and
-// returns the raw bearer token. The token is returned exactly once; only
-// its SHA-256 hash is persisted. Callers (Register) ride this token in the
-// CSIL envelope's auth field on every subsequent worker call.
+// returns the raw bearer token. The token is returned exactly once; only its
+// SHA-256 hash is persisted. Callers (Register) ride this token in the CSIL
+// envelope's auth field on every subsequent worker call.
 func (ws *WorkerSessions) Mint(ctx context.Context, workerID string) (string, error) {
 	token, err := generateWorkerSessionToken()
 	if err != nil {
@@ -99,11 +99,11 @@ func (ws *WorkerSessions) Mint(ctx context.Context, workerID string) (string, er
 	return token, nil
 }
 
-// Resolve looks up the active session for a raw bearer token and its
-// owning worker. Returns store.ErrNotFound if the token is empty, unknown,
-// expired, or revoked. Lazily (and best-effort) touches last_seen_at,
-// throttled to once per sessionTouchThrottle so routine RequestJob
-// long-polling doesn't write on every call.
+// Resolve looks up the active session for a raw bearer token and its owning
+// worker. Returns store.ErrNotFound if the token is empty, unknown, expired,
+// or revoked. Lazily (and best-effort) touches last_seen_at, throttled to
+// once per sessionTouchThrottle so routine RequestJob long-polling doesn't
+// write on every call.
 func (ws *WorkerSessions) Resolve(ctx context.Context, token string) (*models.Worker, *models.WorkerSession, error) {
 	if token == "" {
 		return nil, nil, store.ErrNotFound
@@ -119,9 +119,9 @@ func (ws *WorkerSessions) Resolve(ctx context.Context, token string) (*models.Wo
 			session.LastSeenAt = ws.now()
 		}
 		// A touch failure (including store.ErrNotFound if the session was
-		// concurrently revoked) is not fatal to this resolution: the
-		// caller already holds a validly-resolved session and worker as of
-		// the GetActiveWorkerSessionByTokenHash call above.
+		// concurrently revoked) is not fatal to this resolution: the caller
+		// already holds a validly-resolved session and worker as of the
+		// GetActiveWorkerSessionByTokenHash call above.
 	}
 	return worker, session, nil
 }

@@ -75,10 +75,9 @@ func NewHandler(auth csilapi.ReactorcideAuth, ui csilapi.ReactorcideUi) *Handler
 
 // NewHandlerWithWorker builds the dispatcher for the given ReactorcideAuth /
 // ReactorcideUi implementations, additionally mounting a ReactorcideWorker
-// implementation (WORKERS_PLAN.md "Workers -- registration, auth,
-// protocol") on the SAME /csil/v1/rpc envelope-in-body endpoint -- CSIL-RPC
-// routes on the envelope's own `service` field, so one HTTP handler serves
-// every service sharing this transport. worker may be nil (no
+// implementation on the SAME /csil/v1/rpc envelope-in-body endpoint --
+// CSIL-RPC routes on the envelope's own `service` field, so one HTTP handler
+// serves every service sharing this transport. worker may be nil (no
 // "ReactorcideWorker" ops registered; a request naming that service resolves
 // as an unknown route, matching pre-worker-protocol behavior exactly).
 //

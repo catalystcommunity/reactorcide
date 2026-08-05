@@ -20,8 +20,8 @@ type AdmissionStore interface {
 	TrustedIdentityExists(ctx context.Context, domain, handle string) (bool, error)
 	// ListTrustedDomainPatterns lists every auth_trusted_domain_patterns row.
 	ListTrustedDomainPatterns(ctx context.Context) ([]models.AuthTrustedDomainPattern, error)
-	// UpsertTrustedIdentity creates or replaces a trusted-identity row
-	// keyed by (domain, handle).
+	// UpsertTrustedIdentity creates or replaces a trusted-identity row keyed
+	// by (domain, handle).
 	UpsertTrustedIdentity(ctx context.Context, identity *models.AuthTrustedIdentity) error
 }
 
@@ -96,9 +96,9 @@ func (a *Admission) compiledPatterns(ctx context.Context) ([]*regexp.Regexp, err
 		re, err := compileAnchoredDomainPattern(row.Pattern)
 		if err != nil {
 			// A row that fails to compile here means ValidateDomainPattern
-			// was bypassed when it was written (or a regexp package
-			// upgrade changed acceptance). Skip the one bad row rather
-			// than fail every admission check because of it.
+			// was bypassed when it was written (or a regexp package upgrade
+			// changed acceptance). Skip the one bad row rather than fail
+			// every admission check because of it.
 			continue
 		}
 		compiled = append(compiled, re)
@@ -117,11 +117,11 @@ func (a *Admission) compiledPatterns(ctx context.Context) ([]*regexp.Regexp, err
 // Wave 3) must call this before persisting a pattern.
 //
 // Validation compiles the pattern wrapped exactly the way compiledPatterns
-// wraps it for matching (full-string anchored — see compileAnchoredDomainPattern),
-// so a pattern that would fail to compile once anchored (e.g. unbalanced
-// grouping that only breaks when wrapped) is rejected at write time rather
-// than silently dropped later by compiledPatterns' skip-on-compile-error
-// fallback.
+// wraps it for matching (full-string anchored — see
+// compileAnchoredDomainPattern), so a pattern that would fail to compile once
+// anchored (e.g. unbalanced grouping that only breaks when wrapped) is
+// rejected at write time rather than silently dropped later by
+// compiledPatterns' skip-on-compile-error fallback.
 func ValidateDomainPattern(pattern string) error {
 	if strings.TrimSpace(pattern) == "" {
 		return fmt.Errorf("auth: domain pattern must not be empty")
@@ -145,12 +145,10 @@ func compileAnchoredDomainPattern(pattern string) (*regexp.Regexp, error) {
 	return regexp.Compile(`^(?:` + pattern + `)$`)
 }
 
-// ParseSelector splits a "[handle@]domain" identity selector (the shape
-// used throughout UI_AUTH_PLAN.md: REACTORCIDE_TRUSTED_IDENTITIES,
-// REACTORCIDE_FIRST_ADMIN, and login requests) into its handle and domain
-// parts. A bare domain (no "@") yields handle="". Splits on the last "@" so
-// a handle that itself contains "@" (unusual, but not disallowed by
-// LinkKeys) still parses the trailing domain correctly.
+// ParseSelector splits a "[handle@]domain" identity selector into its handle
+// and domain parts. A bare domain (no "@") yields handle="". Splits on the
+// last "@" so a handle that itself contains "@" (unusual, but not disallowed
+// by LinkKeys) still parses the trailing domain correctly.
 func ParseSelector(selector string) (handle, domain string, err error) {
 	s := strings.TrimSpace(selector)
 	if s == "" {

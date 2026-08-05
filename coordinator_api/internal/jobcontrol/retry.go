@@ -71,11 +71,11 @@ type workflowRetryStore interface {
 
 // queueResolvingStore is the narrow store capability RetryJob uses to
 // re-resolve a retried job's characteristics to a queue UUID before
-// resubmitting -- WORKERS_PLAN.md "Find-or-create at submit". Defined here
-// on the consumer side (repo convention: narrow interface + type assertion
-// on the store), mirroring internal/handlers/job_handler.go and
-// internal/worker/trigger_processor.go's identical interface for their own
-// submit paths. The concrete PostgresDbStore satisfies it via
+// resubmitting. Defined here on the consumer side (repo convention: narrow
+// interface + type assertion on the store), mirroring
+// internal/handlers/job_handler.go and internal/worker/trigger_processor.go's
+// identical interface for their own submit paths. The concrete
+// PostgresDbStore satisfies it via
 // internal/store/postgres_store/queue_operations.go.
 type queueResolvingStore interface {
 	FindOrCreateQueueByCharacteristics(ctx context.Context, chars characteristics.Characteristics) (*models.Queue, error)
@@ -109,11 +109,10 @@ func RetryJob(ctx context.Context, st store.Store, corndogsClient corndogs.Clien
 	newJob := cloneJobForRetry(job)
 
 	// Re-resolve the queue from the cloned characteristics rather than
-	// trusting the cloned QueueName verbatim (WORKERS_PLAN.md "Find-or-create
-	// at submit", same as every other submit path) -- this is a no-op in the
-	// common case (the original job's characteristics already resolved to a
-	// live queue row) but stays correct if that queue row was ever deleted
-	// and needs re-creating.
+	// trusting the cloned QueueName verbatim -- this is a no-op in the common
+	// case (the original job's characteristics already resolved to a live
+	// queue row) but stays correct if that queue row was ever deleted and
+	// needs re-creating.
 	if qs, ok := st.(queueResolvingStore); ok {
 		queue, err := qs.FindOrCreateQueueByCharacteristics(ctx, newJob.Characteristics)
 		if err != nil {

@@ -1,9 +1,8 @@
 # UI Auth, RBAC, and Management Suite
 
 This document covers the management UI's login system, role-based access control,
-public/private visibility, and credential-rotation workflow. It's the operator-facing
-companion to `UI_AUTH_PLAN.md` (the implementation plan/architecture record); this doc
-describes the shipped behavior, not the build history.
+public/private visibility, and credential-rotation workflow. This doc describes the
+shipped behavior.
 
 The webapp (`webapp/`) is a thin, server-rendered client: it renders pages and forms, but
 the **coordinator is the sole authorizer**. Every management action the webapp's forms
@@ -312,9 +311,6 @@ through REST and CSIL for a purely cosmetic gap.
 
 ## See also
 
-- `UI_AUTH_PLAN.md` — the architecture/implementation plan this feature was built from
-  (schema, CSIL service definitions, task breakdown). Useful if you're extending this
-  system, not just operating it.
 - `docs/vcs-credentials-and-secret-grants.md` — the underlying secret-grant model that
   authorizes which secrets a job can resolve at runtime (a different, job-execution-time
   concern from the management-UI secrets surface described above).

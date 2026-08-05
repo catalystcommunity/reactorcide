@@ -1,16 +1,16 @@
 package workerapi
 
-// This file closes a genuine test-coverage gap found while writing
-// WORKERS_PLAN.md's Wave-5 P5 closeout: reaper.go's RunLeaseReaper/
-// reapStaleLeases (owned by P2-A2, "lease reaper") had zero test coverage
-// anywhere in the repo, despite being wired into the coordinator's startup
-// path (handlers/router.go's startWorkerLeaseReaperOnce) and despite P5's
-// own scope explicitly calling out "lease-expiry-requeue" as integration
-// surface to cover. The reaper itself is display/audit bookkeeping only --
-// it never touches corndogs or the job row, since corndogs' own task
-// timeout is what actually requeues a dead worker's task -- so this is a
-// unit-level test against the fakeStore/fakeCorndogsClient harness the rest
-// of this package already uses, not a new integration test.
+// This file closes a genuine test-coverage gap found while writing.go's
+// RunLeaseReaper/ reapStaleLeases (owned by P2-A2, "lease reaper") had zero
+// test coverage anywhere in the repo, despite being wired into the
+// coordinator's startup path (handlers/router.go's
+// startWorkerLeaseReaperOnce) and despite P5's own scope explicitly calling
+// out "lease-expiry-requeue" as integration surface to cover. The reaper
+// itself is display/audit bookkeeping only -- it never touches corndogs or
+// the job row, since corndogs' own task timeout is what actually requeues a
+// dead worker's task -- so this is a unit-level test against the
+// fakeStore/fakeCorndogsClient harness the rest of this package already uses,
+// not a new integration test.
 
 import (
 	"context"

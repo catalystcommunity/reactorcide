@@ -11,12 +11,9 @@ import (
 )
 
 // webhookSecretPath/vcsCredentialPath are the generated secret-storage path
-// convention for rotation-managed values (see UI_AUTH_PLAN.md task G's
-// "add-webhook-secret/add-vcs-credential take a secret VALUE ... store the
-// value via the org's DatabaseProvider under a generated path"). The row's
-// "name" is the secret key within that path, so
-// UNIQUE(project_id, provider, name) on the rotation tables also keeps
-// secret storage collision-free.
+// convention for rotation-managed values. The row's "name" is the secret key
+// within that path, so UNIQUE(project_id, provider, name) on the rotation
+// tables also keeps secret storage collision-free.
 func webhookSecretPath(projectID, provider string) string {
 	return fmt.Sprintf("webhooks/%s/%s", projectID, provider)
 }
@@ -26,9 +23,7 @@ func vcsCredentialPath(projectID, provider string) string {
 }
 
 // requireProjectManage loads project and requires ManageWebhookSecrets/
-// ManageVCSCredentials-tier capability at it (org admin of the owning org,
-// or global admin — see UI_AUTH_PLAN.md's matrix; a plain project owner may
-// not manage credentials).
+// ManageVCSCredentials-tier capability at it.
 func (s *UiService) requireProjectManageCaps(ctx context.Context, id authz.Identity, projectID string) (*models.Project, authz.Caps, error) {
 	project, err := s.deps.Store.GetProjectByID(ctx, projectID)
 	if err != nil {
@@ -68,8 +63,8 @@ func vcsCredentialToCsil(r *models.ProjectVCSCredential) csilapi.VcsCredentialSu
 }
 
 // ListWebhookSecrets requires manage-webhook-secrets capability (org
-// admin/global admin of the project's owning org). Values are never
-// returned — only rotation metadata.
+// admin/global admin of the project's owning org). Values are never returned
+// — only rotation metadata.
 func (s *UiService) ListWebhookSecrets(ctx context.Context, req csilapi.ListWebhookSecretsRequest) (csilapi.ListWebhookSecretsResponse, error) {
 	id, _, authErr := s.deps.requireUser(ctx)
 	if authErr != nil {

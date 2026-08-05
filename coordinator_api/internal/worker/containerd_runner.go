@@ -1,7 +1,6 @@
 package worker
 
 import (
-	"bufio"
 	"context"
 	"fmt"
 	"io"
@@ -538,45 +537,6 @@ func (cr *ContainerdRunner) validateConfig(config *JobConfig) error {
 	if config.JobID == "" {
 		return fmt.Errorf("job ID is required")
 	}
-	return nil
-}
-
-// pullImage pulls an image using nerdctl if not present locally
-func (cr *ContainerdRunner) pullImage(ctx context.Context, imageName string) error {
-	logger := logging.Log.WithField("image", imageName)
-
-	// Check if image exists
-	checkCmd := exec.CommandContext(ctx, nerdctlBinary, "--namespace", containerdNamespace, "image", "inspect", imageName)
-	if err := checkCmd.Run(); err == nil {
-		logger.Debug("Image already exists locally")
-		return nil
-	}
-
-	logger.Info("Pulling container image")
-
-	cmd := exec.CommandContext(ctx, nerdctlBinary, "--namespace", containerdNamespace, "pull", imageName)
-
-	// Stream pull output to logs
-	stdout, _ := cmd.StdoutPipe()
-	stderr, _ := cmd.StderrPipe()
-
-	if err := cmd.Start(); err != nil {
-		return fmt.Errorf("failed to start image pull: %w", err)
-	}
-
-	// Log pull progress
-	go func() {
-		scanner := bufio.NewScanner(io.MultiReader(stdout, stderr))
-		for scanner.Scan() {
-			logger.Debug(scanner.Text())
-		}
-	}()
-
-	if err := cmd.Wait(); err != nil {
-		return fmt.Errorf("failed to pull image: %w", err)
-	}
-
-	logger.Info("Image pulled successfully")
 	return nil
 }
 

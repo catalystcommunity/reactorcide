@@ -1,7 +1,7 @@
 package test
 
 // Postgres-backed integration coverage for the dev/alpha worker enrollment
-// bootstrap (WORKERS_PLAN.md Wave-4 P4):
+// bootstrap:
 // postgres_store.PostgresDbStore.EnsureDefaultWorkerPool. Verifies it
 // creates a global "default" pool + an active enrollment token whose hash
 // matches config.DefaultWorkerEnrollmentToken, that the resulting raw token

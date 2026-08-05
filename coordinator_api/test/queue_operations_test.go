@@ -1,9 +1,9 @@
 package test
 
-// Postgres-backed integration coverage for queue routing (WORKERS_PLAN.md
-// "Queues"): postgres_store/queue_operations.go's FindOrCreateQueueByCharacteristics
-// and EnsureDefaultQueue against a real database, plus the end-to-end submit
-// path (internal/handlers/job_handler.go's CreateJob) resolving a job's
+// Postgres-backed integration coverage for queue routing:
+// postgres_store/queue_operations.go's FindOrCreateQueueByCharacteristics and
+// EnsureDefaultQueue against a real database, plus the end-to-end submit path
+// (internal/handlers/job_handler.go's CreateJob) resolving a job's
 // characteristics to a queue UUID and submitting the Corndogs task there.
 //
 // Like visibility_operations_test.go and ui_auth_integration_test.go, these
@@ -212,8 +212,7 @@ func submitTestJob(t *testing.T, ctx context.Context, h *handlers.JobHandler, us
 // TestCreateJob_BareCharacteristics_ResolvesDefaultQueueAndSubmits verifies
 // submitting a job with no `characteristics` block resolves to the seeded
 // default {"os":"linux"} queue and that the Corndogs task is submitted to
-// that queue's UUID -- WORKERS_PLAN.md "Default queue" / "Find-or-create at
-// submit". Wrapped in RunTransactionalTest (like jobs_test.go's own
+// that queue's UUID. Wrapped in RunTransactionalTest (like jobs_test.go's own
 // submit-path tests) so the job/user rows it creates roll back instead of
 // leaking into other tests' unscoped ListJobs queries.
 func TestCreateJob_BareCharacteristics_ResolvesDefaultQueueAndSubmits(t *testing.T) {

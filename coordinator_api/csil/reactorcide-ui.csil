@@ -1,7 +1,7 @@
 ;; Reactorcide UI/Auth CSIL-RPC service definitions.
 ;;
 ;; Two services back the webapp <-> coordinator CSIL-RPC channel described in
-;; UI_AUTH_PLAN.md ("CSIL-RPC UI service"):
+;; ("CSIL-RPC UI service"):
 ;;   - ReactorcideAuth: login/session lifecycle (LinkKeys local-rp/rp modes,
 ;;     bootstrap admin).
 ;;   - ReactorcideUi: everything else the management UI needs (capabilities,
@@ -641,7 +641,7 @@ RemoveTrustedDomainPatternResponse = {
 }
 
 ;; ---------------------------------------------------------------------------
-;; Worker/queue/pool admin (WORKERS_PLAN.md Wave-4 P4: admin CSIL ops for
+;; Worker/queue/pool admin ( Wave-4 P4: admin CSIL ops for
 ;; managing pools, workers, and queues). Gated by authz.Caps.ManageWorkers
 ;; (org-admin/global-admin tier) -- see get-capabilities' manage_workers
 ;; field above. Queues have no creation path that sets an owning org today,
@@ -651,7 +651,7 @@ RemoveTrustedDomainPatternResponse = {
 ;; ---------------------------------------------------------------------------
 
 ;;; Scalar-only characteristic value -- used for queues (job/queue
-;;; characteristics are always scalar, never lists, per WORKERS_PLAN.md
+;;; characteristics are always scalar, never lists, per
 ;;; "Characteristics & matching").
 CharacteristicScalar = text / int / bool
 
