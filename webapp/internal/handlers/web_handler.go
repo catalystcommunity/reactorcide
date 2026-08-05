@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"encoding/json"
 	"fmt"
 	"html/template"
 	"net/http"
@@ -309,13 +310,46 @@ func (h *WebHandler) JobLogs(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	if !h.authorizeJobView(w, r, jobID) {
+	jsonRequest := strings.Contains(r.Header.Get("Accept"), "application/json")
+	// GetJobLogs applies job visibility through the caller's UI session. Do
+	// not run a separate metrics query on every live JSON poll.
+	if !jsonRequest && !h.authorizeJobView(w, r, jobID) {
 		return
 	}
 
 	stream := r.URL.Query().Get("stream")
 	if stream == "" {
 		stream = "combined"
+	}
+	if jsonRequest {
+		if h.uiClients == nil {
+			h.renderError(w, r, http.StatusServiceUnavailable, "Live logs are unavailable", nil)
+			return
+		}
+		query := r.URL.Query()
+		req := csilapi.GetJobLogsRequest{JobId: jobID, Stream: stream}
+		if value := query.Get("cursor"); value != "" {
+			req.Cursor = &value
+		}
+		maxEntries := int64(1000)
+		if value := query.Get("max_entries"); value != "" {
+			parsed, parseErr := strconv.ParseInt(value, 10, 64)
+			if parseErr != nil || parsed < 1 || parsed > 5000 {
+				http.Error(w, "invalid max_entries", http.StatusBadRequest)
+				return
+			}
+			maxEntries = parsed
+		}
+		req.MaxEntries = &maxEntries
+		response, fetchErr := h.uiClients.Ui.GetJobLogs(h.authContext(r), req)
+		if fetchErr != nil {
+			status, detail, _ := serviceErrorDetail(fetchErr)
+			http.Error(w, detail, status)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(response)
+		return
 	}
 
 	logs, err := h.getJobLogs(r, jobID, stream)

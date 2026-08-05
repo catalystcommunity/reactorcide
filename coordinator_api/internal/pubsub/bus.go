@@ -1,14 +1,9 @@
 // Package pubsub provides in-memory fan-out of job-related events and a
-// Postgres LISTEN/NOTIFY bridge so events cross coordinator replicas.
+// PostgreSQL LISTEN/NOTIFY bridge so events cross coordinator replicas.
 //
-// Publishers emit Events via NOTIFY (see notify.go). A dedicated
-// NotifyListener goroutine on each replica LISTENs and forwards every
-// received event to the local Bus. WebSocket handlers subscribe to the
-// local Bus with a filter; Bus fans out to all matching subscribers.
-//
-// This split means a single-replica deployment has one listener and one
-// bus; multi-replica deployments have N listeners each feeding its own
-// bus, and every replica sees every event uniformly.
+// Each replica listens to the global status channel. It listens to a job
+// telemetry channel only while a local WebSocket watches that job. The local
+// Bus then sends each received event to matching subscribers.
 package pubsub
 
 import (
@@ -52,6 +47,12 @@ type Event struct {
 type Subscription struct {
 	Ch     chan Event
 	filter func(Event) bool
+	jobID  string
+}
+
+type JobTopicController interface {
+	AddJobTopic(jobID string)
+	RemoveJobTopic(jobID string)
 }
 
 // Bus is the in-process fan-out. Safe for concurrent use.
@@ -61,6 +62,15 @@ type Bus struct {
 	closed  bool
 	logger  *logrus.Logger
 	bufSize int
+	topics  JobTopicController
+}
+
+// SetJobTopicController connects local subscriptions to cross-replica topic
+// subscriptions. Set it before WebSocket handlers accept connections.
+func (b *Bus) SetJobTopicController(controller JobTopicController) {
+	b.mu.Lock()
+	b.topics = controller
+	b.mu.Unlock()
 }
 
 // NewBus constructs a bus with the given per-subscriber buffer size.
@@ -98,15 +108,35 @@ func (b *Bus) Subscribe(filter func(Event) bool) *Subscription {
 	return sub
 }
 
+// SubscribeJob subscribes to one job and activates its cross-replica topic
+// while at least one local subscriber needs it.
+func (b *Bus) SubscribeJob(jobID string) *Subscription {
+	sub := b.Subscribe(FilterByJobID(jobID))
+	b.mu.Lock()
+	sub.jobID = jobID
+	controller := b.topics
+	closed := b.closed
+	b.mu.Unlock()
+	if controller != nil && !closed {
+		controller.AddJobTopic(jobID)
+	}
+	return sub
+}
+
 // Unsubscribe removes sub from the bus and closes its channel. Idempotent.
 func (b *Bus) Unsubscribe(sub *Subscription) {
 	b.mu.Lock()
-	defer b.mu.Unlock()
 	if _, ok := b.subs[sub]; !ok {
+		b.mu.Unlock()
 		return
 	}
 	delete(b.subs, sub)
 	close(sub.Ch)
+	controller, jobID := b.topics, sub.jobID
+	b.mu.Unlock()
+	if controller != nil && jobID != "" {
+		controller.RemoveJobTopic(jobID)
+	}
 }
 
 // Publish sends evt to every matching subscriber non-blockingly. Drops

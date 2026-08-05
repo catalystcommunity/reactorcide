@@ -988,6 +988,7 @@ type GetJobMetricsRequest struct {
 	JobId     string   `json:"job_id" yaml:"job_id"`
 	FromTime  *string  `json:"from_time,omitempty" yaml:"from_time,omitempty"`
 	ToTime    *string  `json:"to_time,omitempty" yaml:"to_time,omitempty"`
+	Cursor    *string  `json:"cursor,omitempty" yaml:"cursor,omitempty"`
 	Metrics   []string `json:"metrics" yaml:"metrics"`
 	MaxPoints int64    `json:"max_points" yaml:"max_points"`
 }
@@ -1025,12 +1026,15 @@ type GetJobMetricsResponse struct {
 	Series      []JobMetricSeries      `json:"series" yaml:"series"`
 	Unavailable []JobMetricUnavailable `json:"unavailable" yaml:"unavailable"`
 	Complete    bool                   `json:"complete" yaml:"complete"`
+	NextCursor  *string                `json:"next_cursor,omitempty" yaml:"next_cursor,omitempty"`
 }
 
 // GetJobLogsRequest represents a structured data type
 type GetJobLogsRequest struct {
-	JobId  string `json:"job_id" yaml:"job_id"`
-	Stream string `json:"stream" yaml:"stream"`
+	JobId      string  `json:"job_id" yaml:"job_id"`
+	Stream     string  `json:"stream" yaml:"stream"`
+	Cursor     *string `json:"cursor,omitempty" yaml:"cursor,omitempty"`
+	MaxEntries *int64  `json:"max_entries,omitempty" yaml:"max_entries,omitempty"`
 }
 
 // JobLogEntry represents a structured data type
@@ -1043,5 +1047,8 @@ type JobLogEntry struct {
 
 // GetJobLogsResponse represents a structured data type
 type GetJobLogsResponse struct {
-	Entries []JobLogEntry `json:"entries" yaml:"entries"`
+	Entries    []JobLogEntry `json:"entries" yaml:"entries"`
+	NextCursor *string       `json:"next_cursor,omitempty" yaml:"next_cursor,omitempty"`
+	HasMore    *bool         `json:"has_more,omitempty" yaml:"has_more,omitempty"`
+	Complete   *bool         `json:"complete,omitempty" yaml:"complete,omitempty"`
 }

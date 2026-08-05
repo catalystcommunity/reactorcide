@@ -850,6 +850,7 @@ GetJobMetricsRequest = {
     job_id: text,
     ? from_time: text,
     ? to_time: text,
+    ? cursor: text,
     metrics: [* text],
     max_points: int
 }
@@ -881,12 +882,15 @@ JobMetricSeries = {
 GetJobMetricsResponse = {
     series: [* JobMetricSeries],
     unavailable: [* JobMetricUnavailable],
-    complete: bool
+    complete: bool,
+    ? next_cursor: text
 }
 
 GetJobLogsRequest = {
     job_id: text,
-    stream: text
+    stream: text,
+    ? cursor: text,
+    ? max_entries: int
 }
 JobLogEntry = {
     timestamp: text,
@@ -895,7 +899,10 @@ JobLogEntry = {
     message: text
 }
 GetJobLogsResponse = {
-    entries: [* JobLogEntry]
+    entries: [* JobLogEntry],
+    ? next_cursor: text,
+    ? has_more: bool,
+    ? complete: bool
 }
 
 service ReactorcideUi {

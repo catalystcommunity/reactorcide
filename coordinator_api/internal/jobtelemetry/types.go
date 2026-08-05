@@ -91,10 +91,24 @@ type Query struct {
 	To        *time.Time
 	Metrics   []string
 	MaxPoints int
+	Cursor    string
 }
 
 type QueryResponse struct {
 	Series      []Series      `json:"series"`
 	Unavailable []Unavailable `json:"unavailable,omitempty"`
 	Complete    bool          `json:"complete"`
+	NextCursor  string        `json:"next_cursor"`
+}
+
+type LogResultEntry struct {
+	LogEntry
+	Stream string
+}
+
+type LogPage struct {
+	Entries    []LogResultEntry
+	NextCursor string
+	HasMore    bool
+	Complete   bool
 }

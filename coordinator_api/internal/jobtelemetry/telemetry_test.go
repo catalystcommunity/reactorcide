@@ -127,3 +127,72 @@ func TestValidateMetricBatchRejectsUnknownLabelsAndFutureSamples(t *testing.T) {
 		t.Fatal("expected a future sample to be rejected")
 	}
 }
+
+func TestLogCursorReturnsOnlyNewEntriesAndRecoversLateBatch(t *testing.T) {
+	ctx := context.Background()
+	store := objects.NewMemoryObjectStore()
+	now := time.Now().UTC()
+	for _, batch := range []LogBatch{
+		{LeaseID: "lease", Stream: "stdout", Sequence: 0, Entries: []LogEntry{{ObservedAt: now, Message: "zero-a"}, {ObservedAt: now, Message: "zero-b"}}},
+		{LeaseID: "lease", Stream: "stdout", Sequence: 2, Entries: []LogEntry{{ObservedAt: now.Add(2 * time.Second), Message: "two"}}},
+	} {
+		if err := PutLogBatch(ctx, store, "job-cursor", batch); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	first, err := QueryLogs(ctx, store, "job-cursor", "combined", "", 2)
+	if err != nil || len(first.Entries) != 2 || !first.HasMore {
+		t.Fatalf("first page = %+v, err = %v", first, err)
+	}
+	second, err := QueryLogs(ctx, store, "job-cursor", "combined", first.NextCursor, 10)
+	if err != nil || len(second.Entries) != 1 || second.Entries[0].Message != "two" || second.HasMore {
+		t.Fatalf("second page = %+v, err = %v", second, err)
+	}
+	if err := CompactJob(ctx, store, "job-cursor", true); err != nil {
+		t.Fatal(err)
+	}
+
+	late := LogBatch{LeaseID: "lease", Stream: "stdout", Sequence: 1, Entries: []LogEntry{{ObservedAt: now.Add(time.Second), Message: "late-one"}}}
+	if err := PutLogBatch(ctx, store, "job-cursor", late); err != nil {
+		t.Fatal(err)
+	}
+	third, err := QueryLogs(ctx, store, "job-cursor", "combined", second.NextCursor, 10)
+	if err != nil || len(third.Entries) != 1 || third.Entries[0].Message != "late-one" {
+		t.Fatalf("late page = %+v, err = %v", third, err)
+	}
+	if _, err := QueryLogs(ctx, store, "different-job", "combined", third.NextCursor, 10); err == nil {
+		t.Fatal("a cursor for another job must be rejected")
+	}
+}
+
+func TestMetricCursorReturnsDeltaWithCounterContext(t *testing.T) {
+	ctx := context.Background()
+	store := objects.NewMemoryObjectStore()
+	now := time.Now().UTC()
+	definition := SeriesDefinition{SeriesID: 1, Name: "cpu.usage", Unit: "nanoseconds", Kind: "counter", Labels: []Label{{Key: "cpu", Value: "total"}}}
+	if err := PutMetricBatch(ctx, store, "job-metric-cursor", MetricBatch{
+		LeaseID: "lease", Sequence: 0, Series: []SeriesDefinition{definition},
+		Samples: []Sample{{ObservedAt: now, Values: []Value{{SeriesID: 1, Value: 1_000_000_000}}}, {ObservedAt: now.Add(time.Second), Values: []Value{{SeriesID: 1, Value: 1_500_000_000}}}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	first, err := QueryMetrics(ctx, store, Query{JobID: "job-metric-cursor", MaxPoints: 10})
+	if err != nil || len(first.Series) != 1 || len(first.Series[0].Points) != 1 {
+		t.Fatalf("initial metrics = %+v, err = %v", first, err)
+	}
+	if err := PutMetricBatch(ctx, store, "job-metric-cursor", MetricBatch{
+		LeaseID: "lease", Sequence: 1, Series: []SeriesDefinition{definition},
+		Samples: []Sample{{ObservedAt: now.Add(2 * time.Second), Values: []Value{{SeriesID: 1, Value: 2_000_000_000}}}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	delta, err := QueryMetrics(ctx, store, Query{JobID: "job-metric-cursor", MaxPoints: 10, Cursor: first.NextCursor})
+	if err != nil || len(delta.Series) != 1 || len(delta.Series[0].Points) != 1 || delta.Series[0].Points[0].Value != 500 {
+		t.Fatalf("metric delta = %+v, err = %v", delta, err)
+	}
+	empty, err := QueryMetrics(ctx, store, Query{JobID: "job-metric-cursor", MaxPoints: 10, Cursor: delta.NextCursor})
+	if err != nil || len(empty.Series) != 0 {
+		t.Fatalf("repeated metric delta = %+v, err = %v", empty, err)
+	}
+}
