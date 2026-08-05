@@ -283,6 +283,9 @@ func (a *vmRunnerAdapter) SampleResources(ctx context.Context, jobID string) (Re
 	}
 	jobLabels := []jobtelemetry.Label{{Key: "scope", Value: "job"}}
 	add("cpu.utilization", "millicores", "gauge", int64(sample.CPUPercent*10), jobLabels...)
+	if sample.CPUCount > 0 {
+		add("cpu.capacity", "millicores", "gauge", int64(sample.CPUCount)*1000, jobLabels...)
+	}
 	add("memory.usage", "bytes", "gauge", int64(sample.MemoryUsedBytes), jobLabels...)
 	add("memory.limit", "bytes", "gauge", int64(sample.MemoryTotalBytes), jobLabels...)
 	if sample.MemoryCommittedBytes > 0 {

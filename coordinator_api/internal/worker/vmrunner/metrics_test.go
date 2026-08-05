@@ -27,11 +27,20 @@ func TestParseResourceSampleRejectsInvalidInput(t *testing.T) {
 }
 
 func TestParseResourceSampleWithWindowsCommitAndSwap(t *testing.T) {
-	sample, err := parseResourceSample("50\t0\t100\t200\t300\t400\t150\t50", "job-windows", time.Now())
+	sample, err := parseResourceSample("50\t0\t100\t200\t300\t400\t150\t50\t4", "job-windows", time.Now())
 	if err != nil {
 		t.Fatal(err)
 	}
 	if sample.MemoryCommittedBytes != 150 || sample.SwapUsedBytes != 50 {
 		t.Fatalf("unexpected Windows memory values: %+v", sample)
 	}
+	if sample.CPUCount != 4 {
+		t.Fatalf("CPUCount = %d, want 4", sample.CPUCount)
+	}
+}
+
+func TestParseResourceSampleWithCPUCount(t *testing.T) {
+	sample, err := parseResourceSample("50\t0\t100\t200\t300\t400\t6", "job-macos", time.Now())
+	require.NoError(t, err)
+	require.Equal(t, uint64(6), sample.CPUCount)
 }

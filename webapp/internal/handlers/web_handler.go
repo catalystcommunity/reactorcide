@@ -43,6 +43,18 @@ type workflowGroup struct {
 	Depth    int
 }
 
+func (h *WebHandler) workflowEntryJobs(workflow *WorkflowSummary, jobs []JobResponse) ([]JobResponse, error) {
+	if workflow.ParentWorkflowID != nil || workflow.ParentJobID == nil || *workflow.ParentJobID == "" {
+		return jobs, nil
+	}
+	entry, err := h.client.GetJob(*workflow.ParentJobID)
+	if err != nil {
+		return nil, err
+	}
+	entry.WorkflowNodeName = "evaluation (spawns workflow)"
+	return append([]JobResponse{*entry}, jobs...), nil
+}
+
 func NewWebHandler(client *APIClient, uiClients *uiclient.Clients) *WebHandler {
 	funcMap := template.FuncMap{
 		"statusClass": statusClass,
@@ -208,7 +220,13 @@ func (h *WebHandler) WorkflowDetail(w http.ResponseWriter, r *http.Request) {
 		h.renderError(w, r, http.StatusBadGateway, "Failed to fetch workflow jobs", err)
 		return
 	}
-	groups := []workflowGroup{{Workflow: *workflow, Jobs: jobs.Jobs}}
+	rootJobs, err := h.workflowEntryJobs(workflow, jobs.Jobs)
+	if err != nil {
+		logrus.WithError(err).Error("Failed to fetch workflow entry job")
+		h.renderError(w, r, http.StatusBadGateway, "Failed to fetch workflow entry job", err)
+		return
+	}
+	groups := []workflowGroup{{Workflow: *workflow, Jobs: rootJobs}}
 	depths := map[string]int{workflow.WorkflowID: 0}
 	for _, child := range workflow.Children {
 		childJobs, childErr := h.client.ListJobsForWorkflow(child.WorkflowID, 200, 0)
