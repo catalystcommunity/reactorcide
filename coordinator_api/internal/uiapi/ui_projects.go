@@ -16,10 +16,7 @@ import (
 const listAllLimit = 10000
 
 func projectToSummary(p *models.Project) csilapi.ProjectSummary {
-	orgID := ""
-	if p.UserID != nil {
-		orgID = *p.UserID
-	}
+	orgID := p.OwnershipOrgID()
 	return csilapi.ProjectSummary{
 		ProjectId:   p.ProjectID,
 		OrgId:       orgID,
@@ -34,10 +31,7 @@ func projectToSummary(p *models.Project) csilapi.ProjectSummary {
 }
 
 func projectToDetail(p *models.Project) csilapi.ProjectDetail {
-	orgID := ""
-	if p.UserID != nil {
-		orgID = *p.UserID
-	}
+	orgID := p.OwnershipOrgID()
 	return csilapi.ProjectDetail{
 		ProjectId:             p.ProjectID,
 		OrgId:                 orgID,
@@ -55,22 +49,49 @@ func projectToDetail(p *models.Project) csilapi.ProjectDetail {
 		DefaultJobCommand:     p.DefaultJobCommand,
 		DefaultTimeoutSeconds: int64(p.DefaultTimeoutSeconds),
 		DefaultQueueName:      p.DefaultQueueName,
+		CheckoutMode:          p.CheckoutMode,
 		CreatedAt:             formatTime(p.CreatedAt),
 		UpdatedAt:             formatTime(p.UpdatedAt),
 	}
 }
 
-// ListOrgs lists every org (user acting as an org) the caller may see: the
-// distinct owning orgs of every visibility-filtered project, plus every org
-// the caller directly belongs to (their own org, and any org they hold a
-// direct role_assignments row in). This is a deliberately simple
-// approximation — there is no first-class orgs table this schema version, so
-// "every org" has no authoritative source short of "every users row", which
-// would leak unrelated users' existence. Group-derived org membership is not
-// included (only direct user role_assignments) to keep this to one query
-// beyond the project scan.
+// ListOrgs lists first-class organizations visible to the caller. The legacy
+// project-owner fallback remains only for narrow test stores that do not yet
+// implement ListOrganizations.
 func (s *UiService) ListOrgs(ctx context.Context, req csilapi.ListOrgsRequest) (csilapi.ListOrgsResponse, error) {
 	id, user := s.deps.resolveIdentity(ctx)
+	if lister, ok := s.deps.Store.(interface {
+		ListOrganizations(context.Context, int, int) ([]models.Organization, error)
+	}); ok {
+		all, err := lister.ListOrganizations(ctx, listAllLimit, 0)
+		if err != nil {
+			return csilapi.ListOrgsResponse{}, NewServiceError("internal", "an internal error occurred")
+		}
+		global, _ := s.deps.Resolver.IsGlobalAdmin(ctx, id)
+		var defaultOrg *models.Organization
+		if defaultGetter, ok := s.deps.Store.(interface {
+			GetDefaultOrganization(context.Context) (*models.Organization, error)
+		}); ok {
+			defaultOrg, _ = defaultGetter.GetDefaultOrganization(ctx)
+		}
+		allowed := map[string]bool{}
+		if user != nil && !global {
+			assignments, _ := s.deps.Store.ListRoleAssignmentsForPrincipal(ctx, user.UserID, nil)
+			for _, assignment := range assignments {
+				if assignment.ScopeType == models.ScopeTypeOrg && assignment.ScopeID != nil {
+					allowed[*assignment.ScopeID] = true
+				}
+			}
+		}
+		orgs := make([]csilapi.OrgSummary, 0, len(all))
+		for _, org := range all {
+			if global || allowed[org.OrgID] {
+				orgs = append(orgs, csilapi.OrgSummary{OrgId: org.OrgID, Name: org.Name, DisplayName: org.DisplayName,
+					Status: org.Status, IsDefault: defaultOrg != nil && defaultOrg.OrgID == org.OrgID, IsPrivate: org.IsPrivate})
+			}
+		}
+		return csilapi.ListOrgsResponse{Orgs: orgs}, nil
+	}
 
 	projects, err := s.deps.Store.ListProjects(ctx, listAllLimit, 0)
 	if err != nil {
@@ -171,7 +192,7 @@ func (s *UiService) GetProject(ctx context.Context, req csilapi.GetProjectReques
 // request omits is_private, the global new_projects_private setting decides
 // the default (see authz.NewProjectIsPrivate).
 func (s *UiService) CreateProject(ctx context.Context, req csilapi.CreateProjectRequest) (csilapi.CreateProjectResponse, error) {
-	id, _, authErr := s.deps.requireUser(ctx)
+	id, user, authErr := s.deps.requireUser(ctx)
 	if authErr != nil {
 		return csilapi.CreateProjectResponse{}, authErr
 	}
@@ -195,8 +216,10 @@ func (s *UiService) CreateProject(ctx context.Context, req csilapi.CreateProject
 	}
 
 	orgID := req.OrgId
+	creatorID := user.UserID
 	project := &models.Project{
-		UserID:      &orgID,
+		UserID:      &creatorID,
+		OrgID:       orgID,
 		Name:        req.Name,
 		Description: derefOr(req.Description, ""),
 		RepoURL:     req.RepoUrl,
@@ -208,6 +231,12 @@ func (s *UiService) CreateProject(ctx context.Context, req csilapi.CreateProject
 	}
 	if req.AllowedEventTypes != nil {
 		project.AllowedEventTypes = req.AllowedEventTypes
+	}
+	if req.CheckoutMode != nil {
+		if !models.IsValidCheckoutMode(*req.CheckoutMode, true) {
+			return csilapi.CreateProjectResponse{}, NewServiceError("invalid_argument", "checkout_mode must be isolated or shared")
+		}
+		project.CheckoutMode = *req.CheckoutMode
 	}
 
 	if err := s.deps.Store.CreateProject(ctx, project); err != nil {
@@ -270,6 +299,12 @@ func (s *UiService) UpdateProject(ctx context.Context, req csilapi.UpdateProject
 	}
 	if req.DefaultQueueName != nil {
 		project.DefaultQueueName = *req.DefaultQueueName
+	}
+	if req.CheckoutMode != nil {
+		if !models.IsValidCheckoutMode(*req.CheckoutMode, true) {
+			return csilapi.UpdateProjectResponse{}, NewServiceError("invalid_argument", "checkout_mode must be isolated or shared")
+		}
+		project.CheckoutMode = *req.CheckoutMode
 	}
 
 	if err := s.deps.Store.UpdateProject(ctx, project); err != nil {

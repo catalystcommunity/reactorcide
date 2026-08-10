@@ -8,9 +8,11 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/audit"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/checkauth"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store/models"
+	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/tokencaps"
 )
 
 // ProjectHandler handles project CRUD operations
@@ -34,9 +36,10 @@ func NewProjectHandler(store store.Store) *ProjectHandler {
 
 // CreateProjectRequest represents the request body for creating a project
 type CreateProjectRequest struct {
-	Name        string `json:"name"`
-	Description string `json:"description,omitempty"`
-	RepoURL     string `json:"repo_url"`
+	Name         string `json:"name"`
+	Description  string `json:"description,omitempty"`
+	RepoURL      string `json:"repo_url"`
+	Organization string `json:"org,omitempty"`
 
 	Enabled           *bool    `json:"enabled,omitempty"`
 	TargetBranches    []string `json:"target_branches,omitempty"`
@@ -50,6 +53,7 @@ type CreateProjectRequest struct {
 	DefaultJobCommand     string `json:"default_job_command,omitempty"`
 	DefaultTimeoutSeconds *int   `json:"default_timeout_seconds,omitempty"`
 	DefaultQueueName      string `json:"default_queue_name,omitempty"`
+	CheckoutMode          string `json:"checkout_mode,omitempty"`
 
 	VCSTokenSecret       string            `json:"vcs_token_secret,omitempty"`
 	VCSCredentialSecrets map[string]string `json:"vcs_token_secrets,omitempty"`
@@ -75,6 +79,7 @@ type UpdateProjectRequest struct {
 	DefaultJobCommand     *string `json:"default_job_command,omitempty"`
 	DefaultTimeoutSeconds *int    `json:"default_timeout_seconds,omitempty"`
 	DefaultQueueName      *string `json:"default_queue_name,omitempty"`
+	CheckoutMode          *string `json:"checkout_mode,omitempty"`
 
 	VCSTokenSecret       *string           `json:"vcs_token_secret,omitempty"`
 	VCSCredentialSecrets map[string]string `json:"vcs_token_secrets,omitempty"`
@@ -84,13 +89,14 @@ type UpdateProjectRequest struct {
 
 // ProjectResponse represents the response body for a project
 type ProjectResponse struct {
-	ProjectID   string    `json:"project_id"`
-	CreatedAt   time.Time `json:"created_at"`
-	UpdatedAt   time.Time `json:"updated_at"`
-	UserID      *string   `json:"user_id,omitempty"`
-	Name        string    `json:"name"`
-	Description string    `json:"description"`
-	RepoURL     string    `json:"repo_url"`
+	ProjectID    string    `json:"project_id"`
+	CreatedAt    time.Time `json:"created_at"`
+	UpdatedAt    time.Time `json:"updated_at"`
+	UserID       *string   `json:"user_id,omitempty"`
+	Organization string    `json:"org"`
+	Name         string    `json:"name"`
+	Description  string    `json:"description"`
+	RepoURL      string    `json:"repo_url"`
 
 	Enabled           bool     `json:"enabled"`
 	TargetBranches    []string `json:"target_branches"`
@@ -104,6 +110,7 @@ type ProjectResponse struct {
 	DefaultJobCommand     string `json:"default_job_command,omitempty"`
 	DefaultTimeoutSeconds int    `json:"default_timeout_seconds"`
 	DefaultQueueName      string `json:"default_queue_name"`
+	CheckoutMode          string `json:"checkout_mode,omitempty"`
 
 	VCSTokenSecret       string            `json:"vcs_token_secret,omitempty"`
 	VCSCredentialSecrets map[string]string `json:"vcs_token_secrets,omitempty"`
@@ -171,6 +178,7 @@ func projectToResponse(p *models.Project) ProjectResponse {
 		DefaultJobCommand:     p.DefaultJobCommand,
 		DefaultTimeoutSeconds: p.DefaultTimeoutSeconds,
 		DefaultQueueName:      p.DefaultQueueName,
+		CheckoutMode:          p.CheckoutMode,
 		VCSTokenSecret:        p.VCSTokenSecret,
 		VCSCredentialSecrets:  jsonbStringMap(p.VCSCredentialSecrets),
 		WebhookSecret:         p.WebhookSecret,
@@ -181,7 +189,8 @@ func projectToResponse(p *models.Project) ProjectResponse {
 // CreateProject handles POST /api/v1/projects
 func (h *ProjectHandler) CreateProject(w http.ResponseWriter, r *http.Request) {
 	user := checkauth.GetUserFromContext(r.Context())
-	if user == nil {
+	principal := checkauth.GetPrincipalFromContext(r.Context())
+	if user == nil && principal == nil {
 		h.respondWithError(w, http.StatusUnauthorized, store.ErrUnauthorized)
 		return
 	}
@@ -201,7 +210,33 @@ func (h *ProjectHandler) CreateProject(w http.ResponseWriter, r *http.Request) {
 		Name:        req.Name,
 		Description: req.Description,
 		RepoURL:     req.RepoURL,
-		UserID:      &user.UserID,
+	}
+	if user != nil {
+		project.UserID = &user.UserID
+	}
+	if organizationStore, ok := h.store.(jobOrganizationStore); ok {
+		var organization *models.Organization
+		var err error
+		if req.Organization == "" {
+			organization, err = organizationStore.GetDefaultOrganization(r.Context())
+		} else {
+			organization, err = organizationStore.GetOrganizationByName(r.Context(), req.Organization)
+		}
+		if err != nil {
+			h.respondWithError(w, http.StatusBadRequest, err)
+			return
+		}
+		if organization.Status != models.OrganizationStatusActive {
+			h.respondWithError(w, http.StatusForbidden, store.ErrForbidden)
+			return
+		}
+		if principal != nil && (!principal.HasOrganization(organization.OrgID) || !principal.HasCapability(tokencaps.ProjectsCreate)) {
+			h.respondWithError(w, http.StatusForbidden, store.ErrForbidden)
+			return
+		}
+		project.OrgID = organization.OrgID
+	} else if user != nil {
+		project.OrgID = user.UserID
 	}
 
 	if req.Enabled != nil {
@@ -234,6 +269,11 @@ func (h *ProjectHandler) CreateProject(w http.ResponseWriter, r *http.Request) {
 	if req.DefaultQueueName != "" {
 		project.DefaultQueueName = req.DefaultQueueName
 	}
+	if !models.IsValidCheckoutMode(req.CheckoutMode, true) {
+		h.respondWithError(w, http.StatusBadRequest, store.ErrInvalidInput)
+		return
+	}
+	project.CheckoutMode = req.CheckoutMode
 	if req.VCSTokenSecret != "" {
 		project.VCSTokenSecret = req.VCSTokenSecret
 	}
@@ -251,6 +291,7 @@ func (h *ProjectHandler) CreateProject(w http.ResponseWriter, r *http.Request) {
 		h.respondWithError(w, http.StatusInternalServerError, err)
 		return
 	}
+	audit.Record(r.Context(), h.store, project.OrgID, "project.create", "project", project.ProjectID, models.JSONB{"name": project.Name})
 
 	h.respondWithJSON(w, http.StatusCreated, projectToResponse(project))
 }
@@ -258,7 +299,8 @@ func (h *ProjectHandler) CreateProject(w http.ResponseWriter, r *http.Request) {
 // GetProject handles GET /api/v1/projects/{project_id}
 func (h *ProjectHandler) GetProject(w http.ResponseWriter, r *http.Request) {
 	user := checkauth.GetUserFromContext(r.Context())
-	if user == nil {
+	principal := checkauth.GetPrincipalFromContext(r.Context())
+	if user == nil && principal == nil {
 		h.respondWithError(w, http.StatusUnauthorized, store.ErrUnauthorized)
 		return
 	}
@@ -274,6 +316,10 @@ func (h *ProjectHandler) GetProject(w http.ResponseWriter, r *http.Request) {
 		h.respondWithError(w, http.StatusNotFound, err)
 		return
 	}
+	if principal != nil && (!principal.HasCapability(tokencaps.ProjectsRead) || !principal.HasOrganization(project.OrgID)) {
+		h.respondWithError(w, 403, store.ErrForbidden)
+		return
+	}
 
 	h.respondWithJSON(w, http.StatusOK, projectToResponse(project))
 }
@@ -281,8 +327,13 @@ func (h *ProjectHandler) GetProject(w http.ResponseWriter, r *http.Request) {
 // ListProjects handles GET /api/v1/projects
 func (h *ProjectHandler) ListProjects(w http.ResponseWriter, r *http.Request) {
 	user := checkauth.GetUserFromContext(r.Context())
-	if user == nil {
+	principal := checkauth.GetPrincipalFromContext(r.Context())
+	if user == nil && principal == nil {
 		h.respondWithError(w, http.StatusUnauthorized, store.ErrUnauthorized)
+		return
+	}
+	if principal != nil && !principal.HasCapability(tokencaps.ProjectsRead) {
+		h.respondWithError(w, 403, store.ErrForbidden)
 		return
 	}
 
@@ -296,15 +347,29 @@ func (h *ProjectHandler) ListProjects(w http.ResponseWriter, r *http.Request) {
 		offset = o
 	}
 
-	projects, err := h.store.ListProjects(r.Context(), limit, offset)
+	var projects []models.Project
+	var err error
+	if principal != nil && !principal.AllOrganizations && len(principal.OrganizationIDs) == 1 {
+		if scoped, ok := h.store.(interface {
+			ListProjectsByOrg(context.Context, string, int, int) ([]models.Project, error)
+		}); ok {
+			projects, err = scoped.ListProjectsByOrg(r.Context(), principal.OrganizationIDs[0], limit, offset)
+		} else {
+			projects, err = h.store.ListProjects(r.Context(), limit, offset)
+		}
+	} else {
+		projects, err = h.store.ListProjects(r.Context(), limit, offset)
+	}
 	if err != nil {
 		h.respondWithError(w, http.StatusInternalServerError, err)
 		return
 	}
 
-	responses := make([]ProjectResponse, len(projects))
+	responses := make([]ProjectResponse, 0, len(projects))
 	for i := range projects {
-		responses[i] = projectToResponse(&projects[i])
+		if principal == nil || (principal.HasCapability(tokencaps.ProjectsRead) && principal.HasOrganization(projects[i].OrgID)) {
+			responses = append(responses, projectToResponse(&projects[i]))
+		}
 	}
 
 	h.respondWithJSON(w, http.StatusOK, ListProjectsResponse{
@@ -318,7 +383,8 @@ func (h *ProjectHandler) ListProjects(w http.ResponseWriter, r *http.Request) {
 // UpdateProject handles PUT /api/v1/projects/{project_id}
 func (h *ProjectHandler) UpdateProject(w http.ResponseWriter, r *http.Request) {
 	user := checkauth.GetUserFromContext(r.Context())
-	if user == nil {
+	principal := checkauth.GetPrincipalFromContext(r.Context())
+	if user == nil && principal == nil {
 		h.respondWithError(w, http.StatusUnauthorized, store.ErrUnauthorized)
 		return
 	}
@@ -332,6 +398,10 @@ func (h *ProjectHandler) UpdateProject(w http.ResponseWriter, r *http.Request) {
 	project, err := h.store.GetProjectByID(r.Context(), projectID)
 	if err != nil {
 		h.respondWithError(w, http.StatusNotFound, err)
+		return
+	}
+	if principal != nil && (!principal.HasCapability(tokencaps.ProjectsManage) || !principal.HasOrganization(project.OrgID)) {
+		h.respondWithError(w, 403, store.ErrForbidden)
 		return
 	}
 
@@ -379,6 +449,13 @@ func (h *ProjectHandler) UpdateProject(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.DefaultQueueName != nil {
 		project.DefaultQueueName = *req.DefaultQueueName
+	}
+	if req.CheckoutMode != nil {
+		if !models.IsValidCheckoutMode(*req.CheckoutMode, true) {
+			h.respondWithError(w, http.StatusBadRequest, store.ErrInvalidInput)
+			return
+		}
+		project.CheckoutMode = *req.CheckoutMode
 	}
 	if req.VCSTokenSecret != nil {
 		project.VCSTokenSecret = *req.VCSTokenSecret
@@ -428,7 +505,8 @@ func jsonbStringMap(values models.JSONB) map[string]string {
 // DeleteProject handles DELETE /api/v1/projects/{project_id}
 func (h *ProjectHandler) DeleteProject(w http.ResponseWriter, r *http.Request) {
 	user := checkauth.GetUserFromContext(r.Context())
-	if user == nil {
+	principal := checkauth.GetPrincipalFromContext(r.Context())
+	if user == nil && principal == nil {
 		h.respondWithError(w, http.StatusUnauthorized, store.ErrUnauthorized)
 		return
 	}
@@ -437,6 +515,17 @@ func (h *ProjectHandler) DeleteProject(w http.ResponseWriter, r *http.Request) {
 	if projectID == "" {
 		h.respondWithError(w, http.StatusBadRequest, store.ErrInvalidInput)
 		return
+	}
+	if principal != nil {
+		project, err := h.store.GetProjectByID(r.Context(), projectID)
+		if err != nil {
+			h.respondWithError(w, 404, err)
+			return
+		}
+		if !principal.HasCapability(tokencaps.ProjectsManage) || !principal.HasOrganization(project.OrgID) {
+			h.respondWithError(w, 403, store.ErrForbidden)
+			return
+		}
 	}
 
 	if err := h.store.DeleteProject(r.Context(), projectID); err != nil {

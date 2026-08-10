@@ -24,10 +24,10 @@ func (ps PostgresDbStore) CreateWorkflowInstanceForTrigger(ctx context.Context, 
 		Columns: []clause.Column{
 			{Name: "parent_job_id"},
 			{Name: "trigger_operation_id"},
-			{Name: "name"},
+			{Name: "workflow_security_id"},
 		},
 		TargetWhere: clause.Where{Exprs: []clause.Expression{
-			clause.Expr{SQL: "trigger_operation_id IS NOT NULL"},
+			clause.Expr{SQL: "trigger_operation_id IS NOT NULL AND trigger_operation_id <> ''"},
 		}},
 		DoNothing: true,
 	}).Create(wf)
@@ -37,7 +37,7 @@ func (ps PostgresDbStore) CreateWorkflowInstanceForTrigger(ctx context.Context, 
 	if result.RowsAffected > 0 {
 		return nil
 	}
-	existing, err := ps.GetWorkflowInstanceByTriggerOperation(ctx, derefWorkflowString(wf.ParentJobID), wf.TriggerOperationID, wf.Name)
+	existing, err := ps.GetWorkflowInstanceByTriggerOperation(ctx, derefWorkflowString(wf.ParentJobID), wf.TriggerOperationID, wf.WorkflowSecurityID)
 	if err != nil {
 		return err
 	}
@@ -84,12 +84,12 @@ func (ps PostgresDbStore) GetWorkflowInstanceByParentJobAndName(ctx context.Cont
 	return &wf, nil
 }
 
-func (ps PostgresDbStore) GetWorkflowInstanceByTriggerOperation(ctx context.Context, parentJobID, operationID, name string) (*models.WorkflowInstance, error) {
+func (ps PostgresDbStore) GetWorkflowInstanceByTriggerOperation(ctx context.Context, parentJobID, operationID, securityID string) (*models.WorkflowInstance, error) {
 	if !isValidUUID(parentJobID) || strings.TrimSpace(operationID) == "" {
 		return nil, store.ErrNotFound
 	}
 	var wf models.WorkflowInstance
-	if err := ps.getDB(ctx).Where("parent_job_id = ? AND trigger_operation_id = ? AND name = ?", parentJobID, operationID, name).First(&wf).Error; err != nil {
+	if err := ps.getDB(ctx).Where("parent_job_id = ? AND trigger_operation_id = ? AND workflow_security_id = ?", parentJobID, operationID, securityID).First(&wf).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
 			return nil, store.ErrNotFound
 		}
@@ -291,6 +291,15 @@ func (ps PostgresDbStore) ListWorkflowSummaries(ctx context.Context, filters map
 		whereLoose = append(whereLoose, "j.user_id = ?")
 		workflowArgs = append(workflowArgs, userID)
 		looseArgs = append(looseArgs, userID)
+	}
+	if orgIDs, ok := filters["org_ids"].([]string); ok && len(orgIDs) > 0 {
+		placeholders := strings.TrimSuffix(strings.Repeat("?,", len(orgIDs)), ",")
+		whereWorkflow = append(whereWorkflow, "wi.org_id IN ("+placeholders+")")
+		whereLoose = append(whereLoose, "j.org_id IN ("+placeholders+")")
+		for _, orgID := range orgIDs {
+			workflowArgs = append(workflowArgs, orgID)
+			looseArgs = append(looseArgs, orgID)
+		}
 	}
 	if projectID, ok := filters["project_id"]; ok {
 		whereWorkflow = append(whereWorkflow, "wi.project_id = ?")

@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -20,6 +21,7 @@ import (
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/objects"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store/models"
+	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/tokencaps"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -1530,6 +1532,33 @@ func TestJobHandler_SubmitTriggers(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestJobTokenCanSubmitTriggersOnlyForItsBoundParent(t *testing.T) {
+	const (
+		parentJobID = "parent-job"
+		otherJobID  = "other-job"
+		orgID       = "organization"
+	)
+	capabilities, err := tokencaps.New(tokencaps.JobsSubmit)
+	require.NoError(t, err)
+	handler := NewJobHandler(&MockStore{GetJobByIDFunc: func(ctx context.Context, jobID string) (*models.Job, error) {
+		return &models.Job{JobID: jobID, OrgID: orgID}, nil
+	}}, nil)
+
+	request := func(jobID string) int {
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/jobs/"+jobID+"/triggers", strings.NewReader(`{"type":"trigger_job","jobs":[]}`))
+		principal := &checkauth.Principal{CredentialType: "job_token", BoundJobID: parentJobID,
+			OrganizationIDs: []string{orgID}, Capabilities: capabilities}
+		ctx := checkauth.SetPrincipalContext(req.Context(), principal)
+		ctx = context.WithValue(ctx, GetContextKey("job_id"), jobID)
+		recorder := httptest.NewRecorder()
+		handler.SubmitTriggers(recorder, req.WithContext(ctx))
+		return recorder.Code
+	}
+
+	assert.Equal(t, http.StatusCreated, request(parentJobID))
+	assert.Equal(t, http.StatusForbidden, request(otherJobID))
 }
 
 // TestGetJobLogsObjectStoreNotConfigured tests behavior when object store is nil

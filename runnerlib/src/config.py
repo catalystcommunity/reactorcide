@@ -27,6 +27,10 @@ class RunnerConfig:
     ci_source_url: Optional[str] = None  # URL or path to CI code
     ci_source_ref: Optional[str] = None  # Branch, tag, commit, or version ref
 
+    # Checkout layout. "isolated" keeps independent source and CI clones.
+    # "shared" uses one filtered object store for pull-request evaluation.
+    checkout_mode: str = "isolated"
+
 
 class ConfigManager:
     """Manages configuration with hierarchy: defaults < env vars < CLI args."""
@@ -34,7 +38,8 @@ class ConfigManager:
     # Default values
     DEFAULTS = {
         'code_dir': '/job/src',
-        'runner_image': 'quay.io/catalystcommunity/reactorcide_runner'
+        'runner_image': 'quay.io/catalystcommunity/reactorcide_runner',
+        'checkout_mode': 'isolated',
     }
     
     # Environment variable mappings
@@ -52,7 +57,8 @@ class ConfigManager:
         'source_ref': 'REACTORCIDE_SOURCE_REF',
         'ci_source_type': 'REACTORCIDE_CI_SOURCE_TYPE',
         'ci_source_url': 'REACTORCIDE_CI_SOURCE_URL',
-        'ci_source_ref': 'REACTORCIDE_CI_SOURCE_REF'
+        'ci_source_ref': 'REACTORCIDE_CI_SOURCE_REF',
+        'checkout_mode': 'REACTORCIDE_CHECKOUT_MODE',
     }
     
     def __init__(self):
@@ -111,7 +117,8 @@ class ConfigManager:
             source_ref=config.get('source_ref'),
             ci_source_type=config.get('ci_source_type'),
             ci_source_url=config.get('ci_source_url'),
-            ci_source_ref=config.get('ci_source_ref')
+            ci_source_ref=config.get('ci_source_ref'),
+            checkout_mode=config.get('checkout_mode', 'isolated'),
         )
     
     def _validate_job_env_path(self, path: str) -> None:

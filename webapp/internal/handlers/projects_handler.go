@@ -99,6 +99,9 @@ func (h *WebHandler) ProjectCreate(w http.ResponseWriter, r *http.Request) {
 		TargetBranches:    formStringList(r, "target_branches"),
 		AllowedEventTypes: formStringList(r, "allowed_event_types"),
 	}
+	if checkoutMode := formTrim(r, "checkout_mode"); checkoutMode != "" {
+		req.CheckoutMode = &checkoutMode
+	}
 	if formCheckbox(r, "is_private") {
 		v := true
 		req.IsPrivate = &v
@@ -183,6 +186,7 @@ func (h *WebHandler) ProjectSettingsUpdate(w http.ResponseWriter, r *http.Reques
 	runnerImage := formOptionalPtr(r, "default_runner_image")
 	jobCommand := formOptionalPtr(r, "default_job_command")
 	queueName := formOptionalPtr(r, "default_queue_name")
+	checkoutMode := formTrim(r, "checkout_mode")
 	isPrivate := formCheckbox(r, "is_private")
 	enabled := formCheckbox(r, "enabled")
 
@@ -197,6 +201,7 @@ func (h *WebHandler) ProjectSettingsUpdate(w http.ResponseWriter, r *http.Reques
 		DefaultRunnerImage: runnerImage,
 		DefaultJobCommand:  jobCommand,
 		DefaultQueueName:   queueName,
+		CheckoutMode:       &checkoutMode,
 	}
 	if v := formTrim(r, "default_timeout_seconds"); v != "" {
 		if n, err := strconv.ParseInt(v, 10, 64); err == nil {

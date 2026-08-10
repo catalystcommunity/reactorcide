@@ -20,6 +20,7 @@ package test
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"sync"
@@ -125,6 +126,26 @@ func newIntegrationCorndogsClient() *corndogs.MockClient {
 	return mc
 }
 
+func grantDefaultOrgPool(t *testing.T, ctx context.Context, poolID string) {
+	t.Helper()
+	organization, err := postgres_store.PostgresStore.GetDefaultOrganization(ctx)
+	require.NoError(t, err)
+	class, err := postgres_store.PostgresStore.GetWorkerClass(ctx, organization.OrgID, "default")
+	require.NoError(t, err)
+	require.NoError(t, postgres_store.PostgresStore.GrantWorkerClassPool(ctx, class.ClassID, poolID))
+}
+
+func ensureTestOrgKey(t *testing.T, keyMgr *secrets.MasterKeyManager, orgID string) []byte {
+	t.Helper()
+	orgKey, err := keyMgr.GetOrgEncryptionKey(testDB, orgID)
+	if errors.Is(err, secrets.ErrNotInitialized) {
+		require.NoError(t, keyMgr.InitializeOrgSecrets(testDB, orgID))
+		orgKey, err = keyMgr.GetOrgEncryptionKey(testDB, orgID)
+	}
+	require.NoError(t, err)
+	return orgKey
+}
+
 func TestWorkerProtocolIntegration(t *testing.T) {
 	ctx := context.Background()
 
@@ -162,6 +183,7 @@ func TestWorkerProtocolIntegration(t *testing.T) {
 
 	wpool := &models.WorkerPool{Name: uniqueName("worker-pool")}
 	require.NoError(t, postgres_store.PostgresStore.CreateWorkerPool(ctx, wpool))
+	grantDefaultOrgPool(t, ctx, wpool.PoolID)
 	rawToken, tokenHash, err := workerauth.GenerateEnrollmentToken()
 	require.NoError(t, err)
 	_, err = postgres_store.PostgresStore.CreatePoolEnrollmentToken(ctx, wpool.PoolID, "primary", tokenHash)
@@ -183,6 +205,8 @@ func TestWorkerProtocolIntegration(t *testing.T) {
 		"Name":       "worker-protocol-job",
 		"JobCommand": "true",
 		"Status":     "submitted",
+		"OrgID":      queue.OrgID,
+		"QueueName":  queue.QueueUUID,
 		"JobEnvVars": models.JSONB{
 			"API_KEY": "${secret:integration/creds:api_key}",
 			"PLAIN":   "not-a-secret",
@@ -191,16 +215,14 @@ func TestWorkerProtocolIntegration(t *testing.T) {
 	require.NoError(t, err)
 
 	require.NoError(t, testDB.Create(&models.SecretGrant{
-		UserID:            job.UserID,
+		UserID:            job.OrgID,
 		Name:              "integration-grant",
 		SecretPathMatch:   models.SecretGrantMatchPrefix,
 		SecretPathPattern: "integration/creds",
 		JobNameMatch:      models.SecretGrantMatchAny,
 	}).Error)
-	require.NoError(t, keyMgr.InitializeOrgSecrets(testDB, job.UserID))
-	orgKey, err := keyMgr.GetOrgEncryptionKey(testDB, job.UserID)
-	require.NoError(t, err)
-	provider, err := secrets.NewDatabaseProvider(testDB, job.UserID, orgKey)
+	orgKey := ensureTestOrgKey(t, keyMgr, job.OrgID)
+	provider, err := secrets.NewDatabaseProvider(testDB, job.OrgID, orgKey)
 	require.NoError(t, err)
 	require.NoError(t, provider.Set(ctx, "integration/creds", "api_key", "sooper-seekrit-value"))
 
@@ -349,6 +371,7 @@ func TestWorkerProtocolIntegration_VCSAuth(t *testing.T) {
 
 	wpool := &models.WorkerPool{Name: uniqueName("worker-pool-vcs")}
 	require.NoError(t, postgres_store.PostgresStore.CreateWorkerPool(ctx, wpool))
+	grantDefaultOrgPool(t, ctx, wpool.PoolID)
 	rawToken, tokenHash, err := workerauth.GenerateEnrollmentToken()
 	require.NoError(t, err)
 	_, err = postgres_store.PostgresStore.CreatePoolEnrollmentToken(ctx, wpool.PoolID, "primary", tokenHash)
@@ -366,19 +389,20 @@ func TestWorkerProtocolIntegration_VCSAuth(t *testing.T) {
 		"JobCommand": "true",
 		"Status":     "submitted",
 		"SourceURL":  "https://github.com/example/private-repo.git",
+		"OrgID":      queue.OrgID,
+		"QueueName":  queue.QueueUUID,
 	})
 	require.NoError(t, err)
 
-	require.NoError(t, keyMgr.InitializeOrgSecrets(testDB, job.UserID))
-	orgKey, err := keyMgr.GetOrgEncryptionKey(testDB, job.UserID)
-	require.NoError(t, err)
-	secretsProvider, err := secrets.NewDatabaseProvider(testDB, job.UserID, orgKey)
+	orgKey := ensureTestOrgKey(t, keyMgr, job.OrgID)
+	secretsProvider, err := secrets.NewDatabaseProvider(testDB, job.OrgID, orgKey)
 	require.NoError(t, err)
 	const vcsToken = "sooper-seekrit-vcs-integration-token"
 	require.NoError(t, secretsProvider.Set(ctx, "vcs/integration-repo", "token", vcsToken))
 
 	project := &models.Project{
 		UserID:         &job.UserID,
+		OrgID:          job.OrgID,
 		Name:           uniqueName("project-vcs"),
 		RepoURL:        uniqueName("github.com/example/private-repo"),
 		VCSTokenSecret: "vcs/integration-repo:token",

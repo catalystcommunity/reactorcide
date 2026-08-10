@@ -132,9 +132,10 @@ var ProjectsCommand = &cli.Command{
 // projectSpec mirrors handlers.CreateProjectRequest. Pointer and slice fields
 // stay nil when unset so an update leaves those columns alone.
 type projectSpec struct {
-	Name        string `json:"name,omitempty" yaml:"name,omitempty"`
-	Description string `json:"description,omitempty" yaml:"description,omitempty"`
-	RepoURL     string `json:"repo_url,omitempty" yaml:"repo_url,omitempty"`
+	Name         string `json:"name,omitempty" yaml:"name,omitempty"`
+	Description  string `json:"description,omitempty" yaml:"description,omitempty"`
+	RepoURL      string `json:"repo_url,omitempty" yaml:"repo_url,omitempty"`
+	Organization string `json:"org,omitempty" yaml:"org,omitempty"`
 
 	Enabled           *bool    `json:"enabled,omitempty" yaml:"enabled,omitempty"`
 	TargetBranches    []string `json:"target_branches,omitempty" yaml:"target_branches,omitempty"`
@@ -144,10 +145,11 @@ type projectSpec struct {
 	DefaultCISourceURL  string `json:"default_ci_source_url,omitempty" yaml:"default_ci_source_url,omitempty"`
 	DefaultCISourceRef  string `json:"default_ci_source_ref,omitempty" yaml:"default_ci_source_ref,omitempty"`
 
-	DefaultRunnerImage    string `json:"default_runner_image,omitempty" yaml:"default_runner_image,omitempty"`
-	DefaultJobCommand     string `json:"default_job_command,omitempty" yaml:"default_job_command,omitempty"`
-	DefaultTimeoutSeconds *int   `json:"default_timeout_seconds,omitempty" yaml:"default_timeout_seconds,omitempty"`
-	DefaultQueueName      string `json:"default_queue_name,omitempty" yaml:"default_queue_name,omitempty"`
+	DefaultRunnerImage    string  `json:"default_runner_image,omitempty" yaml:"default_runner_image,omitempty"`
+	DefaultJobCommand     string  `json:"default_job_command,omitempty" yaml:"default_job_command,omitempty"`
+	DefaultTimeoutSeconds *int    `json:"default_timeout_seconds,omitempty" yaml:"default_timeout_seconds,omitempty"`
+	DefaultQueueName      string  `json:"default_queue_name,omitempty" yaml:"default_queue_name,omitempty"`
+	CheckoutMode          *string `json:"checkout_mode,omitempty" yaml:"checkout_mode,omitempty"`
 
 	// Secret-bearing fields hold references (path:key), never values.
 	VCSTokenSecret       string            `json:"vcs_token_secret,omitempty" yaml:"vcs_token_secret,omitempty"`
@@ -183,6 +185,7 @@ func projectSpecFlags() []cli.Flag {
 		&cli.StringFlag{Name: "name", Usage: "Project name"},
 		&cli.StringFlag{Name: "description", Usage: "Project description"},
 		&cli.StringFlag{Name: "repo-url", Usage: "Repository clone URL"},
+		&cli.StringFlag{Name: "org", Usage: "Organization name"},
 		&cli.BoolFlag{Name: "enabled", Usage: "Enable webhook-triggered jobs for this project"},
 		&cli.StringSliceFlag{Name: "target-branch", Usage: "Branch that may trigger jobs (repeatable)"},
 		&cli.StringSliceFlag{Name: "allowed-event-type", Usage: "VCS event type that may trigger jobs (repeatable)"},
@@ -193,6 +196,7 @@ func projectSpecFlags() []cli.Flag {
 		&cli.StringFlag{Name: "job-command", Usage: "Default job command"},
 		&cli.IntFlag{Name: "timeout-seconds", Usage: "Default job timeout in seconds"},
 		&cli.StringFlag{Name: "queue-name", Usage: "Default queue name"},
+		&cli.StringFlag{Name: "checkout-mode", Usage: "Runnerlib checkout mode: isolated, shared, or empty to use the coordinator default"},
 		&cli.StringFlag{Name: "vcs-token-secret", Usage: "Secret reference (path:key) for the VCS token"},
 		&cli.StringFlag{Name: "webhook-secret", Usage: "Secret reference (path:key) for the webhook secret"},
 	}
@@ -215,12 +219,17 @@ func loadProjectSpec(ctx *cli.Context) (*projectSpec, error) {
 	setString(ctx, "name", &spec.Name)
 	setString(ctx, "description", &spec.Description)
 	setString(ctx, "repo-url", &spec.RepoURL)
+	setString(ctx, "org", &spec.Organization)
 	setString(ctx, "ci-source-type", &spec.DefaultCISourceType)
 	setString(ctx, "ci-source-url", &spec.DefaultCISourceURL)
 	setString(ctx, "ci-source-ref", &spec.DefaultCISourceRef)
 	setString(ctx, "runner-image", &spec.DefaultRunnerImage)
 	setString(ctx, "job-command", &spec.DefaultJobCommand)
 	setString(ctx, "queue-name", &spec.DefaultQueueName)
+	if ctx.IsSet("checkout-mode") {
+		mode := ctx.String("checkout-mode")
+		spec.CheckoutMode = &mode
+	}
 	setString(ctx, "vcs-token-secret", &spec.VCSTokenSecret)
 	setString(ctx, "webhook-secret", &spec.WebhookSecret)
 

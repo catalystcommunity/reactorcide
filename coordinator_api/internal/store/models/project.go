@@ -4,6 +4,7 @@ import (
 	"time"
 
 	"github.com/lib/pq"
+	"gorm.io/gorm"
 )
 
 // SourceType represents the type of source code preparation
@@ -15,12 +16,22 @@ const (
 	SourceTypeNone SourceType = "none"
 )
 
+const (
+	CheckoutModeIsolated = "isolated"
+	CheckoutModeShared   = "shared"
+)
+
+func IsValidCheckoutMode(value string, allowEmpty bool) bool {
+	return allowEmpty && value == "" || value == CheckoutModeIsolated || value == CheckoutModeShared
+}
+
 // Project represents a repository configuration for CI/CD
 type Project struct {
 	ProjectID string    `gorm:"primaryKey;type:uuid;default:generate_ulid()" json:"project_id"`
 	CreatedAt time.Time `gorm:"autoCreateTime:false;default:timezone('utc', now())" json:"created_at"`
 	UpdatedAt time.Time `gorm:"autoUpdateTime:false;default:timezone('utc', now())" json:"updated_at"`
 	UserID    *string   `gorm:"type:uuid" json:"user_id,omitempty"`
+	OrgID     string    `gorm:"column:org_id;type:uuid;not null" json:"-"`
 
 	// Project identification
 	Name        string `gorm:"type:text;not null" json:"name"`
@@ -55,6 +66,9 @@ type Project struct {
 	DefaultJobCommand     string `gorm:"type:text" json:"default_job_command"`
 	DefaultTimeoutSeconds int    `gorm:"default:3600" json:"default_timeout_seconds"`
 	DefaultQueueName      string `gorm:"type:text;default:'reactorcide-jobs'" json:"default_queue_name"`
+	// CheckoutMode selects how runnerlib prepares the source views for CI
+	// evaluation. An empty value inherits the coordinator default.
+	CheckoutMode string `gorm:"type:text" json:"checkout_mode,omitempty"`
 
 	// IsPrivate marks the project as private. Effective visibility is
 	// IsPrivate OR the owning org's (user's) IsPrivate.
@@ -64,6 +78,31 @@ type Project struct {
 // TableName specifies the table name for the model
 func (Project) TableName() string {
 	return "projects"
+}
+
+// BeforeCreate maps the former ownership field to the first-class
+// organization field for compatibility with callers that construct a Project
+// directly. New callers must set OrgID.
+func (p *Project) BeforeCreate(_ *gorm.DB) error {
+	if p.OrgID == "" && p.UserID != nil {
+		p.OrgID = *p.UserID
+	}
+	return nil
+}
+
+// OwnershipOrgID returns the first-class organization ID. The UserID
+// fallback keeps old in-memory callers and pre-migration data readable.
+func (p *Project) OwnershipOrgID() string {
+	if p == nil {
+		return ""
+	}
+	if p.OrgID != "" {
+		return p.OrgID
+	}
+	if p.UserID != nil {
+		return *p.UserID
+	}
+	return ""
 }
 
 const (
@@ -76,17 +115,19 @@ const (
 
 // SecretGrant allows an API/worker job to resolve secrets under a configured path pattern.
 type SecretGrant struct {
-	GrantID           string    `gorm:"primaryKey;type:uuid;default:generate_ulid()" json:"grant_id"`
-	CreatedAt         time.Time `gorm:"autoCreateTime:false;default:timezone('utc', now())" json:"created_at"`
-	UpdatedAt         time.Time `gorm:"autoUpdateTime:false;default:timezone('utc', now())" json:"updated_at"`
-	Name              string    `gorm:"type:text;not null" json:"name"`
-	UserID            string    `gorm:"type:uuid;not null" json:"user_id"`
-	ProjectID         *string   `gorm:"type:uuid" json:"project_id,omitempty"`
-	SecretPathMatch   string    `gorm:"type:text;not null;default:'prefix'" json:"secret_path_match"`
-	SecretPathPattern string    `gorm:"type:text;not null" json:"secret_path_pattern"`
-	JobNameMatch      string    `gorm:"type:text;not null;default:'any'" json:"job_name_match"`
-	JobNamePattern    string    `gorm:"type:text;not null;default:''" json:"job_name_pattern,omitempty"`
-	Description       string    `gorm:"type:text" json:"description,omitempty"`
+	GrantID           string         `gorm:"primaryKey;type:uuid;default:generate_ulid()" json:"grant_id"`
+	CreatedAt         time.Time      `gorm:"autoCreateTime:false;default:timezone('utc', now())" json:"created_at"`
+	UpdatedAt         time.Time      `gorm:"autoUpdateTime:false;default:timezone('utc', now())" json:"updated_at"`
+	Name              string         `gorm:"type:text;not null" json:"name"`
+	UserID            string         `gorm:"column:org_id;type:uuid;not null" json:"org_id"`
+	ProjectID         *string        `gorm:"type:uuid" json:"project_id,omitempty"`
+	SecretPathMatch   string         `gorm:"type:text;not null;default:'prefix'" json:"secret_path_match"`
+	SecretPathPattern string         `gorm:"type:text;not null" json:"secret_path_pattern"`
+	JobNameMatch      string         `gorm:"type:text;not null;default:'any'" json:"job_name_match"`
+	JobNamePattern    string         `gorm:"type:text;not null;default:''" json:"job_name_pattern,omitempty"`
+	Description       string         `gorm:"type:text" json:"description,omitempty"`
+	ExecutionProfiles pq.StringArray `gorm:"type:text[]" json:"execution_profiles,omitempty"`
+	CIOrigins         pq.StringArray `gorm:"type:text[]" json:"ci_origins,omitempty"`
 
 	User    User     `gorm:"foreignKey:UserID" json:"user,omitempty"`
 	Project *Project `gorm:"foreignKey:ProjectID" json:"project,omitempty"`

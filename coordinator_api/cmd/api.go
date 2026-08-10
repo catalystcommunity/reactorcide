@@ -97,11 +97,12 @@ func initStores() []func() {
 		}
 		logging.Log.Info("app store initialized")
 
-		// Ensure default user exists if configured
-		if err := store.AppStore.EnsureDefaultUser(); err != nil {
-			logging.Log.WithError(err).Error("Failed to ensure default user")
-		} else {
-			logging.Log.Info("Default user check completed")
+		if bootstrapper, ok := store.AppStore.(interface{ EnsureDefaultOrganization(context.Context) error }); ok {
+			if err := bootstrapper.EnsureDefaultOrganization(context.Background()); err != nil {
+				logging.Log.WithError(err).Error("Failed to ensure default organization")
+			} else {
+				logging.Log.Info("Default organization check completed")
+			}
 		}
 
 		// Ensure the default {"os":"linux"} queue exists -- untagged/os-less

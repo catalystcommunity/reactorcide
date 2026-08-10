@@ -12,7 +12,11 @@
 // this package's tests.
 package authz
 
-import "github.com/catalystcommunity/reactorcide/coordinator_api/internal/store/models"
+import (
+	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/checkauth"
+	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store/models"
+	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/tokencaps"
+)
 
 // Identity is the caller identity every authz decision is made against.
 // Anonymous identities carry no UserID; the zero value is anonymous (safe
@@ -26,6 +30,47 @@ type Identity struct {
 	// UserID is the resolved user's primary key. Only meaningful when
 	// Anonymous is false.
 	UserID string
+	// Token is non-nil for a classified API-token subject. It is set for
+	// user-delegated tokens too, so live RBAC can be intersected with token
+	// scope on each request.
+	Token *checkauth.Principal
+}
+
+func IdentityFromPrincipal(principal *checkauth.Principal, user *models.User) Identity {
+	if principal == nil {
+		return IdentityFromUser(user)
+	}
+	if principal.CredentialType == "user_token" {
+		if user == nil || !user.IsActive() || user.UserID == "" || user.UserID != principal.UserID {
+			return AnonymousIdentity()
+		}
+		return Identity{UserID: user.UserID, Token: principal}
+	}
+	if principal.CredentialType == "instance_token" || principal.CredentialType == "service_token" || principal.CredentialType == "job_token" {
+		return Identity{Token: principal}
+	}
+	return AnonymousIdentity()
+}
+
+func (id Identity) isToken() bool { return id.Token != nil }
+
+func (id Identity) tokenAllows(orgID, capability string) bool {
+	return id.Token != nil && id.Token.HasOrganization(orgID) && id.Token.HasCapability(capability)
+}
+
+func (id Identity) tokenAllowsGlobal(capability string) bool {
+	return id.Token != nil && id.Token.AllOrganizations && id.Token.HasCapability(capability)
+}
+
+func tokenCapabilities(id Identity) tokencaps.Set {
+	if id.Token == nil {
+		return nil
+	}
+	if id.Token.AllCapabilities {
+		result, _ := tokencaps.New(tokencaps.Values()...)
+		return result
+	}
+	return id.Token.Capabilities
 }
 
 // AnonymousIdentity returns the identity for a caller with no resolved

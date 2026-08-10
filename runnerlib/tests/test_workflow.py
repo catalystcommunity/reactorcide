@@ -111,6 +111,30 @@ class TestWorkflowContext:
         assert ctx.triggers_file == Path("/tmp/test-triggers.json")
         assert ctx.triggers == []
 
+    def test_eval_trigger_matches_go_cross_language_fixture(self, tmp_path):
+        triggers_file = tmp_path / "triggers.json"
+        ctx = WorkflowContext(triggers_file=str(triggers_file))
+        ctx._trigger_operation_id = "cross-language-fixture"
+        ctx.flush_workflow_batches(
+            [{
+                "id": "backend-tests", "name": "Backend Tests",
+                "source_file": ".reactorcide/workflows/backend.yaml",
+                "ci_origin": "head", "ci_repository": "https://example.invalid/fork/repo.git",
+                "ci_sha": "head-sha", "execution_profile": "pr-untrusted",
+                "worker_class": "default", "policy_revision": "policy-revision",
+                "policy_rule_id": "backend-team", "approval_id": None,
+                "jobs": [JobTrigger(job_name="test", job_command="true")],
+            }],
+            policy_violations=[{
+                "path": ".reactorcide/jobs/unrelated.yaml", "workflow_id": "unrelated",
+                "actor": "alice", "rule": "", "base_sha": "base-sha", "head_sha": "head-sha",
+            }],
+            changed_ci_paths=[".reactorcide/workflows/backend.yaml", ".reactorcide/jobs/unrelated.yaml"],
+            actor_subjects=["repository_write"],
+        )
+        expected = Path(__file__).parents[2] / "testdata" / "runnerlib_eval_trigger.json"
+        assert json.loads(triggers_file.read_text()) == json.loads(expected.read_text())
+
     def test_environment_properties(self):
         """Test accessing environment properties."""
         with patch.dict(os.environ, {

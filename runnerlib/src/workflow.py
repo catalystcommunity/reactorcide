@@ -71,6 +71,7 @@ class JobTrigger:
     run_as_user: Optional[str] = None
     for_each: Optional[List[Any]] = None
     item_var: Optional[str] = None
+    worker_class: Optional[str] = None
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary, excluding None values."""
@@ -268,7 +269,13 @@ class WorkflowContext:
             except OSError:
                 pass
 
-    def flush_workflow_batches(self, batches: List[Dict[str, Any]]) -> None:
+    def flush_workflow_batches(
+        self,
+        batches: List[Dict[str, Any]],
+        policy_violations: Optional[List[Dict[str, Any]]] = None,
+        changed_ci_paths: Optional[List[str]] = None,
+        actor_subjects: Optional[List[str]] = None,
+    ) -> None:
         """Write and submit triggers grouped into named workflows.
 
         Each batch is ``{"name": str, "jobs": List[JobTrigger]}``. One event
@@ -281,24 +288,42 @@ class WorkflowContext:
         API when credentials are available; on success the file is removed so
         the worker does not also create jobs from it.
         """
-        if not batches:
+        policy_violations = policy_violations or []
+        if not batches and not policy_violations:
             return
 
         self.triggers_file.parent.mkdir(parents=True, exist_ok=True)
 
-        workflows_payload = [
-            {
+        workflows_payload = []
+        for batch in batches:
+            item = {
+                "id": batch.get("id", ""),
                 "name": batch["name"],
+                "source_file": batch.get("source_file", ""),
+                "ci_origin": batch.get("ci_origin", "base"),
+                "ci_repository": batch.get("ci_repository", ""),
+                "ci_sha": batch.get("ci_sha", ""),
+                "execution_profile": batch.get("execution_profile", "standard"),
+                "worker_class": batch.get("worker_class", "default"),
+                "policy_revision": batch.get("policy_revision", ""),
+                "policy_rule_id": batch.get("policy_rule_id", ""),
+                "approval_id": batch.get("approval_id"),
                 "jobs": [t.to_dict() for t in batch["jobs"]],
             }
-            for batch in batches
-        ]
+            workflows_payload.append(item)
 
         trigger_data = {
             "type": "trigger_job",
             "operation_id": self._trigger_operation_id,
             "trigger_type": "runnerlib_eval",
             "workflows": workflows_payload,
+            "policy_violations": policy_violations + [
+                violation
+                for batch in batches
+                for violation in batch.get("policy_violations", [])
+            ],
+            "changed_ci_paths": changed_ci_paths or [],
+            "actor_subjects": actor_subjects or [],
         }
 
         with open(self.triggers_file, 'w') as f:

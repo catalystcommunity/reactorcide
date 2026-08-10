@@ -114,6 +114,30 @@ func TestRequestJob_NoMatchingQueue(t *testing.T) {
 	}
 }
 
+func TestRequestJob_CharacteristicsCannotCrossOrganizationBoundary(t *testing.T) {
+	h := newTestHarness()
+	ctx := context.Background()
+	queueUUID := "33333333-3333-3333-3333-333333333334"
+	h.store.seedQueue(models.Queue{QueueUUID: queueUUID, OrgID: "org-a", WorkerClass: "default",
+		Characteristics: mustCharacteristics(t, map[string]any{"os": "linux"})})
+	job := &models.Job{OrgID: "org-b", WorkerClass: "default", QueueName: queueUUID,
+		Name: "cross-org", JobCommand: "true", Status: "submitted"}
+	h.store.seedJob(job)
+	if _, err := h.corndogs.SubmitTaskToQueue(ctx, queueUUID, &corndogs.TaskPayload{JobID: job.JobID}, 0); err != nil {
+		t.Fatal(err)
+	}
+	token, _ := h.registerWorker(t, "worker-cross-org", "linux", "amd64", nil)
+	response, err := h.service.RequestJob(ctxWithAuth(token), csilapi.RequestJobRequest{
+		WorkerCharacteristics: csilapi.WorkerCharacteristics{Os: "linux", Arch: "amd64"},
+	})
+	if err != nil {
+		t.Fatalf("RequestJob failed: %v", err)
+	}
+	if response.HasLease {
+		t.Fatal("matching characteristics crossed the queue organization boundary")
+	}
+}
+
 func TestRequestJob_UnauthorizedWithoutSession(t *testing.T) {
 	h := newTestHarness()
 	_, err := h.service.RequestJob(context.Background(), csilapi.RequestJobRequest{

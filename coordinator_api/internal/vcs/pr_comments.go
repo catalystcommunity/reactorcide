@@ -58,6 +58,22 @@ func (u *JobStatusUpdater) updatePRCommentForJob(ctx context.Context, client Cli
 		u.logger.Debug("No store configured on JobStatusUpdater; skipping PR comment")
 		return
 	}
+	if reports, ok := u.store.(workflowReportStore); ok {
+		target := &models.VCSReportTarget{OrgID: job.OrgID, ProjectID: job.ProjectID,
+			Provider: metadata.VCSProvider, Repository: metadata.Repo, TargetType: "pull_request",
+			ExternalTargetID: fmt.Sprintf("%d", metadata.PRNumber), RootMarker: "<!-- reactorcide:report:v1 -->", CurrentGeneration: 1}
+		if err := reports.UpsertVCSReportTarget(ctx, target); err == nil {
+			key := "job-" + jobCommentKey(job)
+			state := models.JSONB{"title": job.Name, "body": u.renderPerJobCommentBody(job, "")}
+			entry := &models.VCSReportEntry{ReportTargetID: target.ReportTargetID, EntryKey: key,
+				Generation: target.CurrentGeneration, Status: job.Status, StructuredState: state}
+			if err := reports.UpsertVCSReportEntry(ctx, entry); err == nil {
+				return
+			}
+		}
+		u.logger.WithFields(map[string]interface{}{"job_id": job.JobID, "repo": metadata.Repo}).Warn("Failed to queue shared PR report entry")
+		return
+	}
 
 	merged, err := u.store.IsPRMerged(ctx, metadata.Repo, metadata.PRNumber)
 	if err != nil {

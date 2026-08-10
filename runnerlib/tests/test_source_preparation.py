@@ -98,6 +98,29 @@ class TestSourcePreparation:
         result = prepare_source(config)
         assert result is None
 
+    def test_isolated_pr_eval_places_trusted_ci_in_base_view(self, monkeypatch):
+        remote_path = Path(self.temp_dir) / "ci-remote"
+        remote_path.mkdir()
+        repo = _init_repo_with_main(remote_path)
+        ci_file = remote_path / ".reactorcide" / "jobs" / "test.yaml"
+        ci_file.parent.mkdir(parents=True)
+        ci_file.write_text("name: test\n")
+        repo.index.add([str(ci_file.relative_to(remote_path))])
+        revision = repo.index.commit("base").hexsha
+        monkeypatch.setenv("REACTORCIDE_JOB_KIND", "eval")
+        monkeypatch.setenv("REACTORCIDE_PR_NUMBER", "12")
+        config = get_config(
+            job_command="runnerlib eval",
+            ci_source_type="git",
+            ci_source_url=str(remote_path),
+            ci_source_ref=revision,
+        )
+
+        prepared = prepare_ci_source(config)
+
+        assert prepared == Path(self.temp_dir) / "job" / "ci" / "base"
+        assert (prepared / ".reactorcide" / "jobs" / "test.yaml").is_file()
+
     def test_cleanup_vcs_auth_removes_runtime_auth_dir(self, monkeypatch):
         """Test transient checkout auth cleanup removes the configured auth directory."""
         auth_dir = Path(self.temp_dir) / "vcs-auth"

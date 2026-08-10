@@ -103,8 +103,38 @@ func (du *DataUtils) CreateUser(setup DataSetup) (*models.User, error) {
 	}
 
 	// Save the user to the database
-	err := du.db.Create(user).Error
-	return user, err
+	if err := du.db.Create(user).Error; err != nil {
+		return user, err
+	}
+	orgName, err := models.NormalizeOrganizationName(user.Username)
+	if err != nil {
+		return user, err
+	}
+	organization := &models.Organization{OrgID: user.UserID, Name: orgName, DisplayName: user.Username, IsPrivate: user.IsPrivate, Status: models.OrganizationStatusActive}
+	if err := du.db.Create(organization).Error; err != nil {
+		return user, err
+	}
+	workerClass := &models.WorkerClass{OrgID: user.UserID, Name: "default"}
+	if err := du.db.Create(workerClass).Error; err != nil {
+		return user, err
+	}
+	profiles := []*models.ExecutionProfile{
+		{OrgID: user.UserID, Name: "standard", SecretPathAllowlist: pq.StringArray{}, RuntimeCapabilities: pq.StringArray{}, AllowedWorkerClasses: pq.StringArray{}, ResourceCeilings: models.JSONB{}, MayRunAsRoot: true, TrustedCacheWrites: true},
+		{OrgID: user.UserID, Name: "pr-untrusted", SecretPathAllowlist: pq.StringArray{}, RuntimeCapabilities: pq.StringArray{"gpu"}, AllowedWorkerClasses: pq.StringArray{}, ResourceCeilings: models.JSONB{}, DenySecrets: true},
+	}
+	if err := du.db.Create(&profiles).Error; err != nil {
+		return user, err
+	}
+	var globalPools []models.WorkerPool
+	if err := du.db.Where("org_id IS NULL").Find(&globalPools).Error; err != nil {
+		return user, err
+	}
+	for i := range globalPools {
+		if err := du.db.Create(&models.WorkerClassPool{ClassID: workerClass.ClassID, PoolID: globalPools[i].PoolID}).Error; err != nil {
+			return user, err
+		}
+	}
+	return user, nil
 }
 
 // CreateJob creates a new job with data from DataSetup and random values for missing fields
@@ -123,6 +153,9 @@ func (du *DataUtils) CreateJob(setup DataSetup) (*models.Job, error) {
 
 		// Use the new user's ID for the job
 		setup["UserID"] = user.UserID
+	}
+	if _, ok := setup["OrgID"]; !ok {
+		setup["OrgID"] = setup["UserID"]
 	}
 
 	// Get the type and value of the job struct
@@ -280,6 +313,15 @@ func (du *DataUtils) CreateJob(setup DataSetup) (*models.Job, error) {
 // If UserID is not provided in setup, it will create a new user
 func (du *DataUtils) CreateAPIToken(setup DataSetup) (*models.APIToken, error) {
 	token := &models.APIToken{}
+	if _, ok := setup["SubjectType"]; !ok {
+		setup["SubjectType"] = "user_token"
+	}
+	if _, ok := setup["AllOrganizations"]; !ok {
+		setup["AllOrganizations"] = true
+	}
+	if _, ok := setup["AllCapabilities"]; !ok {
+		setup["AllCapabilities"] = true
+	}
 
 	// Check if UserID is provided in setup
 	userID, hasUserID := setup["UserID"]

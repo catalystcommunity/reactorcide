@@ -184,7 +184,7 @@ func TestDatabaseProviderGetSet(t *testing.T) {
 
 			// Verify only one record exists
 			var count int64
-			tx.Model(&models.Secret{}).Where("user_id = ?", user.UserID).Count(&count)
+			tx.Model(&models.Secret{}).Where("org_id = ?", user.UserID).Count(&count)
 			assert.Equal(t, int64(1), count)
 		})
 	})

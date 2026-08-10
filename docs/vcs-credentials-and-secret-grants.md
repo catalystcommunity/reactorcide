@@ -205,3 +205,18 @@ in the normal `runnerlib run` and `runnerlib checkout` paths. Pre-checkout
 hooks or explicit checkout commands can intentionally use
 `REACTORCIDE_VCS_AUTH_DIR`; later job steps should not rely on the files being
 present unless a future job option explicitly persists checkout credentials.
+
+## Organization and Provenance Checks
+
+A VCS credential belongs to a project or organization. The coordinator selects
+an active credential at use time, so credential rotation applies to status and
+report updates.
+
+A secret grant always checks the job organization. A project grant also checks
+the project. The optional `execution_profiles` and `ci_origins` selectors can
+limit a grant to approved profiles and to base or head CI. A job name alone
+cannot grant a head-CI job access to a trusted secret.
+
+See [Organizations and Trusted CI Policy](./organizations-and-ci-policy.md)
+for profile definitions, CI-origin selection, approvals, and VCS policy
+reports.

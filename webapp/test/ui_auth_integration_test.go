@@ -97,7 +97,7 @@ func TestUIAuthBootstrapLoginCreateProject(t *testing.T) {
 
 	const projectName = "ui-auth-bootstrap-project"
 	createForm := url.Values{
-		"org_id":   {bootstrapUserID},
+		"org_id":   {testOrgID},
 		"name":     {projectName},
 		"repo_url": {"https://github.com/uiauth-test/bootstrap-project.git"},
 	}

@@ -67,7 +67,7 @@ spec:
             - name: REACTORCIDE_API_TOKEN
               valueFrom:
                 secretKeyRef:
-                  name: {{ ((.Values.web).apiTokenSecret).name | default "base-reactorcide-user" }}
+                  name: {{ ((.Values.web).apiTokenSecret).name | default "base-reactorcide-api-token" }}
                   key: {{ ((.Values.web).apiTokenSecret).key | default "token" }}
             - name: PORT
               value: {{ .Values.web.service.port | quote }}

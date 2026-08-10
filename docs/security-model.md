@@ -84,6 +84,8 @@ Log masking reduces accidental disclosure. It is not an access control. A
 process that receives a secret can use or disclose it.
 
 See [VCS Credentials and Secret Grants](./vcs-credentials-and-secret-grants.md).
+See [Organizations and Trusted CI Policy](./organizations-and-ci-policy.md)
+for organization scope, execution profiles, policy rules, and approvals.
 
 ## VCS Credentials
 
@@ -154,3 +156,30 @@ For production:
 - Review every `root`, `docker`, and `builder` job.
 - Keep coordinator and worker images current.
 - Monitor failed webhook validation and denied secret access.
+
+## Organization and CI Admission Boundaries
+
+Every remote job belongs to one organization. A child job inherits the
+organization of its parent. A trigger payload cannot select an organization.
+A worker receives work only through a pool mapping for the job organization
+and worker class. Worker characteristics do not grant access to another pool.
+
+Pull-request CI policy comes only from the exact base SHA. Head files are data
+until one complete base-policy rule permits a workflow security ID and all of
+its executable CI paths. A violation does not stop safe base workflows.
+
+An execution profile limits secrets, runtime capabilities, root use, worker
+classes, time, resources, caches, and artifacts. Child work must use the same
+or a weaker profile. Secret grants can restrict the project, profile, and CI
+origin. An approval binds to the project, pull request, head repository, head
+SHA, base SHA, policy revision, workflow, and profile. A new head SHA makes the
+approval invalid.
+
+A GitHub approval comment names the workflow, profile, and base-policy
+revision. The coordinator gets the pull request SHAs from GitHub. It records
+only provider-verified or identity-linked approver subjects. The admission
+check requires an exact match before it uses the approval.
+
+Audit records contain identifiers and authorization facts. They do not
+contain raw tokens, secret values, or provider credentials. Use
+`REACTORCIDE_AUDIT_RETENTION_DAYS` to set the retention age.

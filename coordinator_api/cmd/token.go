@@ -15,6 +15,7 @@ import (
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store/models"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store/postgres_store"
+	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/tokencaps"
 	"github.com/urfave/cli/v2"
 )
 
@@ -35,11 +36,11 @@ var TokenCommand = &cli.Command{
 					Required: true,
 				},
 				&cli.StringFlag{
-					Name:    "user-id",
-					Aliases: []string{"u"},
-					Usage:   "User ID to associate with the token (defaults to REACTORCIDE_DEFAULT_USER_ID)",
-					EnvVars: []string{"REACTORCIDE_DEFAULT_USER_ID"},
+					Name:  "as-user",
+					Usage: "Delegate the token to this username",
 				},
+				&cli.StringSliceFlag{Name: "org", Usage: "Limit the token to this organization; repeat for more organizations"},
+				&cli.StringSliceFlag{Name: "capability", Usage: "Limit the token to this capability; repeat for more capabilities"},
 				&cli.StringFlag{
 					Name:        "db-uri",
 					Aliases:     []string{"db"},
@@ -54,15 +55,46 @@ var TokenCommand = &cli.Command{
 					return fmt.Errorf("failed to initialize database: %w", err)
 				}
 
-				if err := store.AppStore.EnsureDefaultUser(); err != nil {
-					return fmt.Errorf("failed to ensure default user: %w", err)
+				adminStore, ok := store.AppStore.(interface {
+					EnsureDefaultOrganization(context.Context) error
+					GetOrganizationByName(context.Context, string) (*models.Organization, error)
+					GetUserByUsername(context.Context, string) (*models.User, error)
+				})
+				if !ok {
+					return fmt.Errorf("configured store does not support organization token bootstrap")
+				}
+				if err := adminStore.EnsureDefaultOrganization(context.Background()); err != nil {
+					return fmt.Errorf("failed to ensure default organization: %w", err)
 				}
 
 				tokenName := ctx.String("name")
-				userID := ctx.String("user-id")
-
-				if userID == "" {
-					return fmt.Errorf("user-id is required (set REACTORCIDE_DEFAULT_USER_ID or use --user-id)")
+				orgNames := ctx.StringSlice("org")
+				capabilityNames := ctx.StringSlice("capability")
+				capabilitySet, err := tokencaps.New(capabilityNames...)
+				if err != nil {
+					return err
+				}
+				orgIDs := make([]string, 0, len(orgNames))
+				for _, name := range orgNames {
+					org, err := adminStore.GetOrganizationByName(context.Background(), name)
+					if err != nil {
+						return fmt.Errorf("organization %q: %w", name, err)
+					}
+					orgIDs = append(orgIDs, org.OrgID)
+				}
+				subjectType := "instance_token"
+				var ownerOrgID *string
+				var userID string
+				if username := ctx.String("as-user"); username != "" {
+					user, err := adminStore.GetUserByUsername(context.Background(), username)
+					if err != nil {
+						return fmt.Errorf("user %q: %w", username, err)
+					}
+					userID = user.UserID
+					subjectType = "user_token"
+				} else if len(orgIDs) > 0 {
+					subjectType = "service_token"
+					ownerOrgID = &orgIDs[0]
 				}
 
 				tokenBytes := make([]byte, 32)
@@ -74,10 +106,10 @@ var TokenCommand = &cli.Command{
 				tokenHash := checkauth.HashAPIToken(tokenString)
 
 				apiToken := &models.APIToken{
-					UserID:    userID,
-					TokenHash: tokenHash,
-					Name:      tokenName,
-					IsActive:  true,
+					UserID: userID, TokenHash: tokenHash, Name: tokenName, IsActive: true,
+					SubjectType: subjectType, OwnerOrgID: ownerOrgID,
+					AllOrganizations: len(orgIDs) == 0, OrganizationIDs: orgIDs,
+					AllCapabilities: len(capabilityNames) == 0, Capabilities: capabilitySet.Slice(),
 				}
 
 				if err := store.AppStore.CreateAPIToken(context.Background(), apiToken); err != nil {
@@ -146,10 +178,14 @@ type listTokensResponse struct {
 }
 
 type tokenSummary struct {
-	TokenID    string     `json:"token_id" yaml:"token_id"`
-	Name       string     `json:"name" yaml:"name"`
-	IsActive   bool       `json:"is_active" yaml:"is_active"`
-	CreatedAt  time.Time  `json:"created_at" yaml:"created_at"`
-	ExpiresAt  *time.Time `json:"expires_at,omitempty" yaml:"expires_at,omitempty"`
-	LastUsedAt *time.Time `json:"last_used_at,omitempty" yaml:"last_used_at,omitempty"`
+	TokenID       string     `json:"token_id" yaml:"token_id"`
+	Name          string     `json:"name" yaml:"name"`
+	IsActive      bool       `json:"is_active" yaml:"is_active"`
+	CreatedAt     time.Time  `json:"created_at" yaml:"created_at"`
+	ExpiresAt     *time.Time `json:"expires_at,omitempty" yaml:"expires_at,omitempty"`
+	LastUsedAt    *time.Time `json:"last_used_at,omitempty" yaml:"last_used_at,omitempty"`
+	SubjectType   string     `json:"subject_type" yaml:"subject_type"`
+	Owner         string     `json:"owner,omitempty" yaml:"owner,omitempty"`
+	Organizations []string   `json:"organizations" yaml:"organizations"`
+	Capabilities  []string   `json:"capabilities" yaml:"capabilities"`
 }

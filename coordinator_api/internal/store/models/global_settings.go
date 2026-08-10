@@ -10,6 +10,7 @@ import (
 // Well-known global_settings keys.
 const (
 	GlobalSettingNewProjectsPrivate = "new_projects_private"
+	GlobalSettingDefaultOrgID       = "default_org_id"
 )
 
 // JSONValue is a raw JSON value stored in a jsonb column. Unlike JSONB (which

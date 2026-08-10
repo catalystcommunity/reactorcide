@@ -91,6 +91,7 @@ type CreateJobRequest struct {
 	// top-level `characteristics`/`resources` blocks; the coordinator
 	// validates and applies them (queue routing, resource defaults).
 	Characteristics map[string]interface{} `json:"characteristics,omitempty"`
+	WorkerClass     string                 `json:"worker_class,omitempty"`
 	Resources       map[string]interface{} `json:"resources,omitempty"`
 }
 
@@ -233,14 +234,22 @@ func submitAction(ctx *cli.Context) error {
 
 // specToCreateJobRequest converts a JobSpec to a CreateJobRequest
 func specToCreateJobRequest(spec *worker.JobSpec) *CreateJobRequest {
+	environment := make(map[string]string, len(spec.Environment)+1)
+	for key, value := range spec.Environment {
+		environment[key] = value
+	}
+	if spec.Checkout != nil && spec.Checkout.Mode != "" {
+		environment["REACTORCIDE_CHECKOUT_MODE"] = spec.Checkout.Mode
+	}
 	req := &CreateJobRequest{
 		Name:            spec.Name,
 		JobCommand:      spec.Command,
 		RunnerImage:     spec.Image,
-		JobEnvVars:      spec.Environment,
+		JobEnvVars:      environment,
 		CodeDir:         worker.DefaultJobCodeDir(spec.CodeDir),
 		JobDir:          worker.DefaultJobDir(spec.CodeDir, spec.JobDir),
 		Characteristics: spec.Characteristics,
+		WorkerClass:     spec.WorkerClass,
 		Resources:       spec.Resources,
 	}
 	if spec.RunAs != nil {

@@ -7,6 +7,7 @@ import (
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/auth"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store/models"
+	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/tokencaps"
 )
 
 // Scope narrows a Capabilities computation to an org and/or a project. Leave
@@ -88,11 +89,27 @@ func orgAdminCaps() Caps {
 // gets an all-false Caps (view-public is implicit and unconditional, and is
 // not represented in Caps).
 func (r *Resolver) Capabilities(ctx context.Context, id Identity, scope Scope) (Caps, error) {
-	if id.Anonymous || id.UserID == "" {
+	if id.Anonymous {
 		if auth.CurrentMode() == auth.ModeNone {
 			return Caps{Cancel: true, Retry: true}, nil
 		}
 		return Caps{}, nil
+	}
+
+	var orgID *string = scope.OrgID
+	if orgID == nil && scope.ProjectID != nil {
+		project, err := r.store.GetProjectByID(ctx, *scope.ProjectID)
+		if err != nil && !errors.Is(err, store.ErrNotFound) {
+			return Caps{}, err
+		}
+		if project != nil {
+			resolvedOrgID := project.OwnershipOrgID()
+			orgID = &resolvedOrgID
+		}
+	}
+
+	if id.UserID == "" {
+		return capsFromToken(id, orgID), nil
 	}
 
 	p, err := r.loadPrincipal(ctx, id.UserID)
@@ -103,28 +120,73 @@ func (r *Resolver) Capabilities(ctx context.Context, id Identity, scope Scope) (
 	if p.hasGlobalAdmin() {
 		caps := orgAdminCaps()
 		caps.GlobalAdmin = true
+		if id.isToken() {
+			caps = intersectCapsWithToken(caps, id)
+		}
 		return caps, nil
 	}
 
-	orgID := scope.OrgID
-	if orgID == nil && scope.ProjectID != nil {
-		project, err := r.store.GetProjectByID(ctx, *scope.ProjectID)
-		if err != nil && !errors.Is(err, store.ErrNotFound) {
-			return Caps{}, err
-		}
-		if project != nil {
-			orgID = project.UserID
-		}
-	}
-
 	if orgID != nil && (*orgID == id.UserID || p.hasOrgRole(*orgID, models.RoleAdmin)) {
-		return orgAdminCaps(), nil
+		caps := orgAdminCaps()
+		if id.isToken() {
+			caps = intersectCapsWithToken(caps, id)
+		}
+		return caps, nil
 	}
 
 	if scope.ProjectID != nil && p.hasProjectRole(*scope.ProjectID, models.RoleOwner) {
-		return Caps{ViewPrivate: true, Cancel: true, Retry: true, ProjectSettings: true}, nil
+		caps := Caps{ViewPrivate: true, Cancel: true, Retry: true, ProjectSettings: true}
+		if id.isToken() {
+			caps = intersectCapsWithToken(caps, id)
+		}
+		return caps, nil
 	}
 
 	viewPrivate := scope.ProjectID != nil && p.hasAnyProjectRole(*scope.ProjectID)
-	return Caps{ViewPrivate: viewPrivate}, nil
+	caps := Caps{ViewPrivate: viewPrivate}
+	if id.isToken() {
+		caps = intersectCapsWithToken(caps, id)
+	}
+	return caps, nil
+}
+
+func capsFromToken(id Identity, orgID *string) Caps {
+	if id.Token == nil || (orgID != nil && !id.Token.HasOrganization(*orgID)) {
+		return Caps{}
+	}
+	if orgID == nil && !id.Token.AllOrganizations {
+		return Caps{}
+	}
+	return capsForCapabilitySet(tokenCapabilities(id))
+}
+
+func intersectCapsWithToken(caps Caps, id Identity) Caps {
+	tokenCaps := capsForCapabilitySet(tokenCapabilities(id))
+	return Caps{
+		ViewPrivate: caps.ViewPrivate && tokenCaps.ViewPrivate,
+		Cancel:      caps.Cancel && tokenCaps.Cancel, Kill: caps.Kill && tokenCaps.Kill,
+		Retry:                caps.Retry && tokenCaps.Retry,
+		CreateProject:        caps.CreateProject && tokenCaps.CreateProject,
+		DeleteProject:        caps.DeleteProject && tokenCaps.DeleteProject,
+		ManageWebhookSecrets: caps.ManageWebhookSecrets && tokenCaps.ManageWebhookSecrets,
+		ManageVCSCredentials: caps.ManageVCSCredentials && tokenCaps.ManageVCSCredentials,
+		ManageSecrets:        caps.ManageSecrets && tokenCaps.ManageSecrets,
+		ManageGroupsRoles:    caps.ManageGroupsRoles && tokenCaps.ManageGroupsRoles,
+		ManageWorkers:        caps.ManageWorkers && tokenCaps.ManageWorkers,
+		ProjectSettings:      caps.ProjectSettings && tokenCaps.ProjectSettings,
+		GlobalAdmin:          caps.GlobalAdmin && tokenCaps.GlobalAdmin,
+	}
+}
+
+func capsForCapabilitySet(set tokencaps.Set) Caps {
+	return Caps{
+		ViewPrivate: set.Has(tokencaps.OrganizationsRead) || set.Has(tokencaps.ProjectsRead) || set.Has(tokencaps.JobsRead) || set.Has(tokencaps.WorkflowsRead) || set.Has(tokencaps.LogsRead),
+		Cancel:      set.Has(tokencaps.JobsCancel) || set.Has(tokencaps.WorkflowsControl),
+		Kill:        set.Has(tokencaps.JobsCancel), Retry: set.Has(tokencaps.JobsRetry) || set.Has(tokencaps.WorkflowsControl),
+		CreateProject: set.Has(tokencaps.ProjectsCreate), DeleteProject: set.Has(tokencaps.ProjectsManage),
+		ManageWebhookSecrets: set.Has(tokencaps.SecretsManage), ManageVCSCredentials: set.Has(tokencaps.SecretsManage),
+		ManageSecrets: set.Has(tokencaps.SecretsManage), ManageGroupsRoles: set.Has(tokencaps.OrganizationsManage),
+		ManageWorkers: set.Has(tokencaps.WorkersManage), ProjectSettings: set.Has(tokencaps.ProjectsManage),
+		GlobalAdmin: set.Has(tokencaps.OrganizationsManage),
+	}
 }

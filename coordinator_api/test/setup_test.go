@@ -10,6 +10,7 @@ import (
 
 	"github.com/catalystcommunity/reactorcide/coordinator_api/cmd"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/config"
+	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store"
 	"github.com/testcontainers/testcontainers-go"
 	"github.com/testcontainers/testcontainers-go/modules/postgres"
 	"github.com/testcontainers/testcontainers-go/wait"
@@ -88,7 +89,15 @@ func TestMain(m *testing.M) {
 		terminateContainer(ctx)
 		os.Exit(1)
 	}
-
+	if organizations, ok := store.AppStore.(interface {
+		EnsureDefaultOrganization(context.Context) error
+	}); ok {
+		if err := organizations.EnsureDefaultOrganization(context.Background()); err != nil {
+			fmt.Printf("Failed to create default test organization: %v\n", err)
+			terminateContainer(ctx)
+			os.Exit(1)
+		}
+	}
 	// Run the tests
 	code := m.Run()
 

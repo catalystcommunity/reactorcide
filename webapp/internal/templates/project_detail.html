@@ -55,6 +55,14 @@
             <label for="default_queue_name">Default queue name</label>
             <input type="text" id="default_queue_name" name="default_queue_name" value="{{.Project.DefaultQueueName}}">
         </div>
+        <div class="field-row">
+            <label for="checkout_mode">Pull-request checkout mode</label>
+            <select id="checkout_mode" name="checkout_mode">
+                <option value="" {{if eq .Project.CheckoutMode ""}}selected{{end}}>Use coordinator default</option>
+                <option value="isolated" {{if eq .Project.CheckoutMode "isolated"}}selected{{end}}>Isolated clones</option>
+                <option value="shared" {{if eq .Project.CheckoutMode "shared"}}selected{{end}}>Shared object store</option>
+            </select>
+        </div>
         <div class="checkbox-row">
             <input type="checkbox" id="is_private" name="is_private" {{if .Project.IsPrivate}}checked{{end}}>
             <label for="is_private" style="margin: 0;">Private</label>

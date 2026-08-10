@@ -33,3 +33,4 @@ uv run runnerlib eval --help
 - [Plugin Development](./docs/plugin_development.md)
 - [Job Definition Reference](../docs/job-definitions.md)
 - [Writing Pipelines](../docs/writing-pipelines.md)
+- [Organizations and Trusted CI Policy](../docs/organizations-and-ci-policy.md)

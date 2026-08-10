@@ -12,7 +12,7 @@ The chart can install:
 - Optional PostgreSQL StatefulSet
 - Optional Corndogs subchart
 - Worker service account and namespace Role
-- Generated default-user and worker-enrollment Secrets
+- Bootstrap API-token and worker-enrollment Secrets
 - Optional Gateway API HTTPRoutes
 
 The worker uses the Kubernetes backend and creates a Kubernetes Job for each
@@ -42,6 +42,8 @@ form a complete production installation:
 - The web application is disabled.
 - VCS integration is disabled.
 - Worker enrollment is automatic.
+- Pull-request evaluation uses the `isolated` checkout mode.
+- Audit events have an age limit of 365 days.
 
 Select each required dependency before installation.
 
@@ -122,7 +124,7 @@ curl --fail http://127.0.0.1:6080/api/v1/health
 
 ## Create the First API Token
 
-The chart creates `base-reactorcide-user` with a generated user ID. It does not
+The chart creates the empty `base-reactorcide-api-token` Secret. It does not
 create an API token during a direct Helm installation.
 
 Create a protected local token file:
@@ -131,16 +133,9 @@ Create a protected local token file:
 mkdir -p ~/.config/reactorcide
 chmod 700 ~/.config/reactorcide
 
-REACTORCIDE_USER_ID="$(
-  kubectl get secret base-reactorcide-user \
-    -n reactorcide \
-    -o jsonpath='{.data.user-id}' | base64 -d
-)"
-
 kubectl exec -n reactorcide deployment/reactorcideapp -- \
   /reactorcide token create \
   --name cluster-bootstrap \
-  --user-id "${REACTORCIDE_USER_ID}" \
   | sed -n 's/^Token: //p' \
   > ~/.config/reactorcide/api-token
 
@@ -402,6 +397,8 @@ Your production values must set:
 - TLS route
 - VCS base URL when VCS is enabled
 - UI authentication when the web application is enabled
+- Checkout mode for pull-request evaluation
+- Audit-event retention age
 
 Use more than one coordinator replica only after you verify that all selected
 dependencies and session behavior support it.
@@ -463,6 +460,11 @@ Confirm:
 - The worker is online.
 - Job characteristics match the worker.
 - `defaults.runnerImage` or the job image is set.
+- `defaults.checkoutMode` is `isolated` or `shared`.
+- `isolated` is the compatibility default. `shared` uses one non-shallow,
+  blob-filtered object store for pull-request evaluation.
+- A project setting overrides this chart value. An empty project setting
+  inherits it. There is no organization-level checkout default.
 - The worker uses `containerRuntime: kubernetes`.
 
 ### Eval runs but child jobs do not start
@@ -481,6 +483,6 @@ logs.
 helm uninstall reactorcide --namespace reactorcide
 ```
 
-Helm keeps the default-user and worker-enrollment Secrets by policy. Persistent
+Helm keeps the API-token and worker-enrollment Secrets by policy. Persistent
 volume claims can also remain. Inspect and remove retained resources only when
 you no longer need their data.

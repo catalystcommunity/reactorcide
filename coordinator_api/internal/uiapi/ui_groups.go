@@ -68,6 +68,7 @@ func (s *UiService) CreateGroup(ctx context.Context, req csilapi.CreateGroupRequ
 	if err := s.deps.Store.CreateGroup(ctx, group); err != nil {
 		return csilapi.CreateGroupResponse{}, NewServiceError("internal", "failed to create group")
 	}
+	s.recordAudit(ctx, group.OrgID, "group.create", "group", group.GroupID, models.JSONB{"name": group.Name})
 	return csilapi.CreateGroupResponse{Group: groupToSummary(group)}, nil
 }
 
@@ -101,6 +102,7 @@ func (s *UiService) UpdateGroup(ctx context.Context, req csilapi.UpdateGroupRequ
 	if err := s.deps.Store.UpdateGroup(ctx, group); err != nil {
 		return csilapi.UpdateGroupResponse{}, NewServiceError("internal", "failed to update group")
 	}
+	s.recordAudit(ctx, group.OrgID, "group.update", "group", group.GroupID, models.JSONB{"name": group.Name})
 	return csilapi.UpdateGroupResponse{Group: groupToSummary(group)}, nil
 }
 
@@ -125,6 +127,7 @@ func (s *UiService) DeleteGroup(ctx context.Context, req csilapi.DeleteGroupRequ
 	if err := s.deps.Store.DeleteGroup(ctx, req.GroupId); err != nil {
 		return csilapi.DeleteGroupResponse{}, mapStoreErr(err, "group not found")
 	}
+	s.recordAudit(ctx, group.OrgID, "group.delete", "group", group.GroupID, models.JSONB{"name": group.Name})
 	return csilapi.DeleteGroupResponse{Deleted: true}, nil
 }
 
@@ -155,6 +158,7 @@ func (s *UiService) AddGroupMember(ctx context.Context, req csilapi.AddGroupMemb
 	if err := s.deps.Store.AddGroupMember(ctx, req.GroupId, req.UserId); err != nil {
 		return csilapi.AddGroupMemberResponse{}, NewServiceError("internal", "failed to add group member")
 	}
+	s.recordAudit(ctx, group.OrgID, "group.member_add", "group", group.GroupID, models.JSONB{"user_id": req.UserId})
 	return csilapi.AddGroupMemberResponse{Added: true}, nil
 }
 
@@ -182,6 +186,7 @@ func (s *UiService) RemoveGroupMember(ctx context.Context, req csilapi.RemoveGro
 	if err := s.deps.Store.RemoveGroupMember(ctx, req.GroupId, req.UserId); err != nil {
 		return csilapi.RemoveGroupMemberResponse{}, mapStoreErr(err, "group member not found")
 	}
+	s.recordAudit(ctx, group.OrgID, "group.member_remove", "group", group.GroupID, models.JSONB{"user_id": req.UserId})
 	return csilapi.RemoveGroupMemberResponse{Removed: true}, nil
 }
 

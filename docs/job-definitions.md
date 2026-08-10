@@ -35,6 +35,9 @@ One event can match more than one workflow. Each matched workflow runs as a sepa
 ### Workflow schema
 
 ```yaml
+# Required for policy-controlled head CI. It is the stable security identity.
+id: reactorcide-pr
+
 # Required: the workflow name. It shows as the check name.
 name: "Reactorcide PR"
 
@@ -237,6 +240,47 @@ run_local:
 
 `run_local` is ignored by deployed workers. It exists so local execution can bind-mount a working tree and still choose the uid that writes into that tree. `run-local` defaults to the host uid; use `run_as.user: root` or `--user root` when a local job must run as root.
 
+### Checkout Mode
+
+Runnerlib has two checkout modes for pull-request evaluation:
+
+- `isolated` uses separate source, base CI, and head CI clones.
+- `shared` uses one non-shallow, blob-filtered Git object store. It stages only the
+  `.reactorcide` directory for the base CI and head CI views.
+
+Use `shared` for a large Git repository. The evaluator does not create a full
+source working tree in this mode. A child job still gets the source revision
+and the approved CI revision that it needs.
+
+Set the mode in the evaluator job specification that you pass to `run-local`
+or submit directly:
+
+```yaml
+checkout:
+  mode: shared
+```
+
+You can also set this field in an overlay file:
+
+```bash
+reactorcide run-local -i large-repo.yaml ./jobs/evaluate.yaml
+```
+
+The overlay uses the normal precedence rules. A repository workflow or job
+definition cannot select the evaluator checkout mode. Evaluation has already
+started before runnerlib reads those repository files. The mode does not
+select a Git URL or a Git revision. The coordinator supplies the trusted base
+and head revisions.
+
+The current precedence is job or local overlay, project, then coordinator.
+Set the coordinator default with `REACTORCIDE_CHECKOUT_MODE`. An empty project
+setting inherits that default. Organization-level checkout defaults are not
+implemented.
+
+Shared mode applies only to pull-request evaluation. The evaluator has a Git
+object store, but it has no application source worktree. Use isolated mode for
+a custom evaluator that reads application files directly.
+
 ## Environment Variables
 
 The `environment` section defines additional environment variables injected into the triggered job. These are merged with the standard Reactorcide CI variables.
@@ -335,3 +379,20 @@ job:
   timeout: 300
   priority: 1
 ```
+
+## Policy-Controlled Execution
+
+Do not put an organization in job YAML. The coordinator assigns the
+organization from the project, request principal, or parent job.
+
+A pull-request admission rule selects the execution profile and worker class.
+Repository workflow and job YAML cannot replace the selected profile, worker
+class, CI origin, policy revision, rule, or approval. Child work cannot add a
+runtime capability or change its inherited worker class.
+
+A job specification that you submit directly to the coordinator can use the
+top-level `worker_class` field. This field is not part of the repository job
+schema on this page.
+
+See [Organizations and Trusted CI Policy](./organizations-and-ci-policy.md)
+for the policy schema, profile fields, approval rules, and GitHub reporting.

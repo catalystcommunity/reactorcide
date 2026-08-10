@@ -19,6 +19,10 @@ type SecretGrantStore interface {
 	ListSecretGrantsForJob(ctx context.Context, userID string, projectID *string, jobName string) ([]models.SecretGrant, error)
 }
 
+type secretProfileStore interface {
+	GetExecutionProfile(ctx context.Context, orgID, name string) (*models.ExecutionProfile, error)
+}
+
 // AuthorizeSecretAccess is the free-function core of secret-grant
 // authorization: a job-scoped secret path (isJobScopedSecret) is always
 // allowed; anything else requires a matching models.SecretGrant row (looked
@@ -40,7 +44,25 @@ func AuthorizeSecretAccess(ctx context.Context, grantStore SecretGrantStore, job
 	if grantStore == nil {
 		return fmt.Errorf("secret access denied for %s:%s: secret grants are not available", path, key)
 	}
-	grants, err := grantStore.ListSecretGrantsForJob(ctx, job.UserID, job.ProjectID, job.Name)
+	orgID := job.OrgID
+	if orgID == "" {
+		orgID = job.UserID
+	} // compatibility for pre-organization test stores
+	if job.ExecutionProfile != "" {
+		if profiles, ok := grantStore.(secretProfileStore); ok {
+			profile, err := profiles.GetExecutionProfile(ctx, orgID, job.ExecutionProfile)
+			if err != nil {
+				return fmt.Errorf("secret access denied: execution profile could not be verified")
+			}
+			if profile.DenySecrets {
+				return fmt.Errorf("secret access denied by execution profile %q", profile.Name)
+			}
+			if len(profile.SecretPathAllowlist) > 0 && !matchesAnySecretPath(profile.SecretPathAllowlist, path) {
+				return fmt.Errorf("secret access denied by execution profile %q path allowlist", profile.Name)
+			}
+		}
+	}
+	grants, err := grantStore.ListSecretGrantsForJob(ctx, orgID, job.ProjectID, job.Name)
 	if err != nil {
 		return err
 	}
@@ -72,6 +94,18 @@ func AuthorizeSecretAccess(ctx context.Context, grantStore SecretGrantStore, job
 	return fmt.Errorf("secret access denied for %s:%s", path, key)
 }
 
+func matchesAnySecretPath(patterns []string, value string) bool {
+	for _, pattern := range patterns {
+		if pattern == value || strings.HasSuffix(pattern, "/**") && (value == strings.TrimSuffix(pattern, "/**") || strings.HasPrefix(value, strings.TrimSuffix(pattern, "**"))) {
+			return true
+		}
+		if ok, err := pathmatch.Match(pattern, value); err == nil && ok {
+			return true
+		}
+	}
+	return false
+}
+
 func isJobScopedSecret(job *models.Job, path string) bool {
 	if job.JobID != "" && path == "jobs/"+job.JobID {
 		return true
@@ -83,10 +117,25 @@ func isJobScopedSecret(job *models.Job, path string) bool {
 }
 
 func grantMatchesSecret(grant models.SecretGrant, job *models.Job, path string) bool {
+	if len(grant.ExecutionProfiles) > 0 && !containsSecretScope(grant.ExecutionProfiles, job.ExecutionProfile) {
+		return false
+	}
+	if len(grant.CIOrigins) > 0 && !containsSecretScope(grant.CIOrigins, job.CIOrigin) {
+		return false
+	}
 	if !matchGrantPattern(grant.JobNameMatch, grant.JobNamePattern, job.Name, true) {
 		return false
 	}
 	return matchGrantPattern(grant.SecretPathMatch, grant.SecretPathPattern, path, false)
+}
+
+func containsSecretScope(values []string, want string) bool {
+	for _, value := range values {
+		if value == want {
+			return true
+		}
+	}
+	return false
 }
 
 func matchGrantPattern(matchType, pattern, value string, allowAny bool) bool {

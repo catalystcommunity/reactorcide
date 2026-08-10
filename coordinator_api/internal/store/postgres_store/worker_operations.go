@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/characteristics"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/checkauth"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/config"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store"
@@ -388,6 +389,20 @@ func (ps PostgresDbStore) UpdateWorkerStatus(ctx context.Context, workerID, stat
 	return nil
 }
 
+func (ps PostgresDbStore) UpdateWorkerCharacteristics(ctx context.Context, workerID, osName, arch string, chars characteristics.Characteristics) error {
+	result := ps.getDB(ctx).Model(&models.Worker{}).Where("worker_id = ?", workerID).Updates(map[string]any{
+		"os": osName, "arch": arch, "characteristics": chars,
+		"last_seen_at": gorm.Expr("timezone('utc', now())"),
+	})
+	if result.Error != nil {
+		return fmt.Errorf("failed to update worker characteristics: %w", result.Error)
+	}
+	if result.RowsAffected == 0 {
+		return store.ErrNotFound
+	}
+	return nil
+}
+
 // TouchWorkerLastSeen stamps last_seen_at=now() for a worker by ID.
 func (ps PostgresDbStore) TouchWorkerLastSeen(ctx context.Context, workerID string) error {
 	if !isValidUUID(workerID) {
@@ -676,15 +691,18 @@ func (ps PostgresDbStore) EnsureDefaultWorkerPool(ctx context.Context) error {
 		return fmt.Errorf("failed to check for existing default worker enrollment token: %w", err)
 	}
 	if existingCount > 0 {
-		// Already registered (by this process on a previous startup, or by
-		// another coordinator pod) -- nothing to do. Deliberately does not
-		// re-read or compare the raw value: the hash match alone is the
-		// idempotency key.
-		return nil
+		pool, err := ps.ensureDefaultWorkerPoolRow(ctx)
+		if err != nil {
+			return err
+		}
+		return ps.ensureDefaultPoolClassGrant(ctx, pool.PoolID)
 	}
 
 	pool, err := ps.ensureDefaultWorkerPoolRow(ctx)
 	if err != nil {
+		return err
+	}
+	if err := ps.ensureDefaultPoolClassGrant(ctx, pool.PoolID); err != nil {
 		return err
 	}
 
@@ -697,6 +715,24 @@ func (ps PostgresDbStore) EnsureDefaultWorkerPool(ctx context.Context) error {
 		return fmt.Errorf("failed to register default worker enrollment token: %w", err)
 	}
 	return nil
+}
+
+func (ps PostgresDbStore) ensureDefaultPoolClassGrant(ctx context.Context, poolID string) error {
+	organization, err := ps.GetDefaultOrganization(ctx)
+	if err != nil {
+		if err = ps.EnsureDefaultOrganization(ctx); err != nil {
+			return err
+		}
+		organization, err = ps.GetDefaultOrganization(ctx)
+		if err != nil {
+			return err
+		}
+	}
+	class, err := ps.GetWorkerClass(ctx, organization.OrgID, "default")
+	if err != nil {
+		return err
+	}
+	return ps.GrantWorkerClassPool(ctx, class.ClassID, poolID)
 }
 
 // ensureDefaultWorkerPoolRow finds or creates the global "default" worker

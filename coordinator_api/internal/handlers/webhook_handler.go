@@ -9,7 +9,10 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"time"
 
+	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/audit"
+	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/authz"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/config"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/corndogs"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/metrics"
@@ -127,6 +130,98 @@ func extractRepoCloneURL(body []byte, contentType string) (string, error) {
 type webhookSecretRotationStore interface {
 	ListActiveProjectWebhookSecrets(ctx context.Context, projectID, provider string) ([]models.ProjectWebhookSecret, error)
 	TouchProjectWebhookSecretLastUsed(ctx context.Context, id string) error
+}
+
+type ciEvaluationFactsStore interface {
+	ResolveVCSIdentityLink(ctx context.Context, provider, subject string) (*models.VCSIdentityLink, error)
+	ListGroupsForUser(ctx context.Context, userID string) ([]models.Group, error)
+	ListActiveCIApprovalsForTarget(ctx context.Context, projectID string, prNumber int, headSHA, baseSHA string, now time.Time) ([]models.CIApproval, error)
+	InvalidateCIApprovalsForNewHead(ctx context.Context, projectID string, prNumber int, headSHA string) (int64, error)
+	CreateCIApproval(context.Context, *models.CIApproval) error
+}
+
+type vcsReportGenerationStore interface {
+	StartVCSReportGeneration(context.Context, *models.VCSReportTarget, string) error
+}
+
+func (h *WebhookHandler) startVCSReportGeneration(ctx context.Context, job *models.Job, project *models.Project, event *vcs.WebhookEvent) error {
+	if event.PullRequest == nil {
+		return nil
+	}
+	reports, ok := h.store.(vcsReportGenerationStore)
+	if !ok {
+		return nil
+	}
+	target := &models.VCSReportTarget{OrgID: project.OwnershipOrgID(), ProjectID: &project.ProjectID,
+		Provider: string(event.Provider), Repository: event.Repository.FullName, TargetType: "pull_request",
+		ExternalTargetID: fmt.Sprintf("%d", event.PullRequest.Number), RootMarker: "<!-- reactorcide:report:v1 -->",
+		CurrentGeneration: 1}
+	if err := reports.StartVCSReportGeneration(ctx, target, event.PullRequest.HeadSHA); err != nil {
+		return err
+	}
+	job.JobEnvVars["REACTORCIDE_REPORT_TARGET_ID"] = target.ReportTargetID
+	job.JobEnvVars["REACTORCIDE_REPORT_GENERATION"] = target.CurrentGeneration
+	return nil
+}
+
+func (h *WebhookHandler) attachCIEvaluationFacts(ctx context.Context, job *models.Job, project *models.Project, event *vcs.WebhookEvent, client vcs.Client) {
+	if job.JobEnvVars == nil {
+		job.JobEnvVars = models.JSONB{}
+	}
+	subjects := []string{}
+	if resolver, ok := client.(vcs.ActorSubjectResolver); ok {
+		resolved, err := resolver.ResolveActorSubjects(ctx, event.Repository.FullName, event.SenderLogin)
+		if err != nil {
+			h.logger.WithError(err).Warn("Could not resolve VCS actor facts; head CI will fail closed")
+		} else {
+			subjects = append(subjects, resolved...)
+		}
+	}
+	factsStore, ok := h.store.(ciEvaluationFactsStore)
+	if ok {
+		link, err := factsStore.ResolveVCSIdentityLink(ctx, string(event.Provider), event.SenderLogin)
+		if err == nil && link != nil && link.VerifiedBy != "" {
+			groups, groupErr := factsStore.ListGroupsForUser(ctx, link.UserID)
+			if groupErr == nil {
+				for _, group := range groups {
+					if group.OrgID == project.OwnershipOrgID() {
+						subjects = append(subjects, "reactorcide_group:"+group.Name)
+					}
+				}
+			}
+		}
+		if event.PullRequest != nil {
+			pr := event.PullRequest
+			invalidated, err := factsStore.InvalidateCIApprovalsForNewHead(ctx, project.ProjectID, pr.Number, pr.HeadSHA)
+			if err != nil {
+				h.logger.WithError(err).Warn("Could not invalidate old CI approvals")
+			} else if invalidated > 0 {
+				audit.Record(ctx, h.store, project.OwnershipOrgID(), "ci_approval.invalidate", "project", project.ProjectID,
+					models.JSONB{"pr_number": pr.Number, "new_head_sha": pr.HeadSHA, "count": invalidated})
+			}
+			approvals, err := factsStore.ListActiveCIApprovalsForTarget(ctx, project.ProjectID, pr.Number, pr.HeadSHA, pr.BaseSHA, time.Now().UTC())
+			if err != nil {
+				h.logger.WithError(err).Warn("Could not load CI approvals; approval checks will fail closed")
+			} else if encoded, marshalErr := json.Marshal(approvals); marshalErr == nil {
+				job.JobEnvVars["REACTORCIDE_CI_APPROVALS"] = string(encoded)
+			}
+		}
+	}
+	if encoded, err := json.Marshal(uniqueStrings(subjects)); err == nil {
+		job.JobEnvVars["REACTORCIDE_ACTOR_SUBJECTS"] = string(encoded)
+	}
+}
+
+func uniqueStrings(values []string) []string {
+	seen := make(map[string]bool, len(values))
+	result := make([]string, 0, len(values))
+	for _, value := range values {
+		if value != "" && !seen[value] {
+			seen[value] = true
+			result = append(result, value)
+		}
+	}
+	return result
 }
 
 // webhookSecretCandidate is one secret value to try against an incoming
@@ -321,6 +416,16 @@ func (h *WebhookHandler) handleWebhook(w http.ResponseWriter, r *http.Request, p
 		"event_type": event.EventType,
 		"repository": event.Repository.FullName,
 	}).Info("Received webhook event")
+	if event.IssueComment != nil {
+		if err := h.processApprovalComment(r.Context(), event, client, project); err != nil {
+			h.logger.WithError(err).Warn("Could not process CI approval comment")
+			http.Error(w, "Could not process CI approval comment", http.StatusBadRequest)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+		_ = json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
+		return
+	}
 
 	// Skip events that don't map to a known generic event type
 	if event.GenericEvent == vcs.EventUnknown {
@@ -355,6 +460,104 @@ func (h *WebhookHandler) handleWebhook(w http.ResponseWriter, r *http.Request, p
 	// Send success response
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
+}
+
+type approvalCommentCommand struct {
+	Workflow, Profile, PolicyRevision string
+}
+
+func parseApprovalComment(body string) (approvalCommentCommand, bool) {
+	fields := strings.Fields(strings.TrimSpace(body))
+	if len(fields) != 5 || fields[0] != "/reactorcide" || fields[1] != "approve" {
+		return approvalCommentCommand{}, false
+	}
+	command := approvalCommentCommand{Workflow: fields[2], Profile: fields[3], PolicyRevision: fields[4]}
+	if command.Workflow == "" || command.Profile == "" || command.PolicyRevision == "" {
+		return approvalCommentCommand{}, false
+	}
+	return command, true
+}
+
+func (h *WebhookHandler) processApprovalComment(ctx context.Context, event *vcs.WebhookEvent, client vcs.Client, project *models.Project) error {
+	comment := event.IssueComment
+	if comment == nil || comment.Action != "created" || !comment.IsPullRequest {
+		return nil
+	}
+	command, ok := parseApprovalComment(comment.Body)
+	if !ok {
+		return nil
+	}
+	if project == nil {
+		return fmt.Errorf("project is not configured")
+	}
+	factsStore, ok := h.store.(ciEvaluationFactsStore)
+	if !ok {
+		return fmt.Errorf("CI approval store is unavailable")
+	}
+	statusClient := h.getStatusClient(ctx, project, event.Provider, client)
+	pr, err := statusClient.GetPRInfo(ctx, event.Repository.FullName, comment.IssueNumber)
+	if err != nil {
+		return fmt.Errorf("loading pull request: %w", err)
+	}
+	subjects := []string{}
+	if resolver, ok := statusClient.(vcs.ActorSubjectResolver); ok {
+		subjects, err = resolver.ResolveActorSubjects(ctx, event.Repository.FullName, event.SenderLogin)
+		if err != nil {
+			return fmt.Errorf("resolving approver facts: %w", err)
+		}
+	}
+	var approverUserID *string
+	if link, linkErr := factsStore.ResolveVCSIdentityLink(ctx, string(event.Provider), event.SenderLogin); linkErr == nil && link != nil && link.VerifiedBy != "" {
+		approverUserID = &link.UserID
+		groups, groupErr := factsStore.ListGroupsForUser(ctx, link.UserID)
+		if groupErr != nil {
+			return fmt.Errorf("resolving approver groups: %w", groupErr)
+		}
+		for _, group := range groups {
+			if group.OrgID == project.OwnershipOrgID() {
+				subjects = append(subjects, "reactorcide_group:"+group.Name)
+			}
+		}
+		if roleStore, ok := h.store.(authz.RoleStore); ok {
+			owner, ownerErr := authz.NewResolver(roleStore).IsProjectOwner(ctx, authz.UserIdentity(link.UserID), project.ProjectID)
+			if ownerErr != nil {
+				return fmt.Errorf("resolving project owner: %w", ownerErr)
+			}
+			if owner {
+				subjects = append(subjects, "project_owner")
+			}
+		}
+	}
+	subjects = uniqueStrings(subjects)
+	if len(subjects) == 0 {
+		return fmt.Errorf("comment author has no verified approval subject")
+	}
+	headRepository := event.Repository.FullName
+	if pr.HeadRepository != nil && pr.HeadRepository.FullName != "" {
+		headRepository = pr.HeadRepository.FullName
+	}
+	created := 0
+	for _, subject := range subjects {
+		approval := &models.CIApproval{OrgID: project.OwnershipOrgID(), ProjectID: project.ProjectID,
+			PRNumber: comment.IssueNumber, HeadRepository: headRepository, HeadSHA: pr.HeadSHA, BaseSHA: pr.BaseSHA,
+			PolicyRevision: command.PolicyRevision, WorkflowScope: command.Workflow, ExecutionProfile: command.Profile,
+			ApproverUserID: approverUserID, ApproverProvider: string(event.Provider), ApproverSubject: subject}
+		if createErr := factsStore.CreateCIApproval(ctx, approval); createErr != nil {
+			if createErr == store.ErrAlreadyExists {
+				continue
+			}
+			return fmt.Errorf("creating approval: %w", createErr)
+		}
+		created++
+		audit.Record(ctx, h.store, approval.OrgID, "ci_approval.create", "ci_approval", approval.ApprovalID,
+			models.JSONB{"project_id": approval.ProjectID, "pr_number": approval.PRNumber, "head_sha": approval.HeadSHA,
+				"base_sha": approval.BaseSHA, "policy_revision": approval.PolicyRevision, "workflow": approval.WorkflowScope,
+				"profile": approval.ExecutionProfile, "approver_subject": approval.ApproverSubject})
+	}
+	if created == 0 {
+		return nil
+	}
+	return nil
 }
 
 // processPullRequestEvent processes a pull request event.
@@ -398,6 +601,11 @@ func (h *WebhookHandler) processPullRequestEvent(event *vcs.WebhookEvent, client
 
 	// Build eval job using the shared builder
 	job := BuildEvalJob(project, event)
+	statusClient := h.getStatusClient(context.Background(), project, event.Provider, client)
+	h.attachCIEvaluationFacts(context.Background(), job, project, event, statusClient)
+	if err := h.startVCSReportGeneration(context.Background(), job, project, event); err != nil {
+		return fmt.Errorf("starting VCS report generation: %w", err)
+	}
 
 	// Store VCS metadata for status updates.
 	metadata := vcs.JobMetadata{
@@ -426,7 +634,6 @@ func (h *WebhookHandler) processPullRequestEvent(event *vcs.WebhookEvent, client
 
 	// Register the job as a pending check on the commit so branch protection
 	// sees it immediately — don't wait for the worker to pick it up.
-	statusClient := h.getStatusClient(context.Background(), project, event.Provider, client)
 	statusUpdate := vcs.StatusUpdate{
 		SHA:         pr.HeadSHA,
 		State:       vcs.StatusPending,
@@ -648,6 +855,9 @@ func (h *WebhookHandler) resolveSecretRef(ctx context.Context, secretRef, scope 
 		}).Warn("Secret reference configured but no token resolver is available")
 		return ""
 	}
+	if project != nil {
+		ctx = vcs.WithOrganization(ctx, project.OwnershipOrgID())
+	}
 	secret, err := h.tokenResolver(ctx, secretRef)
 	if err != nil {
 		fields := logrus.Fields{"provider": provider, "scope": scope}
@@ -671,6 +881,9 @@ func (h *WebhookHandler) clientForSecretRef(ctx context.Context, secretRef strin
 			"scope":    scope,
 		}).Warn("VCS token reference configured but token resolver or client factory is unavailable")
 		return nil
+	}
+	if project != nil {
+		ctx = vcs.WithOrganization(ctx, project.OwnershipOrgID())
 	}
 	token, err := h.tokenResolver(ctx, secretRef)
 	if err != nil {
@@ -705,9 +918,6 @@ func (h *WebhookHandler) projectOwner(ctx context.Context, project *models.Proje
 		ownerID = *project.UserID
 	}
 	if ownerID == "" {
-		ownerID = config.DefaultUserID
-	}
-	if ownerID == "" {
 		return nil
 	}
 	user, err := h.store.GetUserByID(ctx, ownerID)
@@ -738,6 +948,14 @@ func globalWebhookSecret(provider vcs.Provider) string {
 // set it) when the store doesn't implement queueResolvingStore, matching
 // job_handler.go's CreateJob so tests with a narrower store mock still work.
 func (h *WebhookHandler) resolveJobQueue(ctx context.Context, job *models.Job) error {
+	if qs, ok := h.store.(orgQueueResolvingStore); ok {
+		queue, err := qs.FindOrCreateQueueForOrg(ctx, job.OrgID, job.WorkerClass, job.Characteristics)
+		if err != nil {
+			return fmt.Errorf("resolving queue: %w", err)
+		}
+		job.QueueName = queue.QueueUUID
+		return nil
+	}
 	qs, ok := h.store.(queueResolvingStore)
 	if !ok {
 		return nil

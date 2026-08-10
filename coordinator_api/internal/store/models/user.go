@@ -25,6 +25,7 @@ type User struct {
 	Password             []byte         `gorm:"type:bytea;not null" json:"-"`
 	Salt                 []byte         `gorm:"type:bytea;not null" json:"-"`
 	Roles                pq.StringArray `gorm:"type:user_role[];default:ARRAY['user'::user_role];not null" json:"roles"`
+	Status               string         `gorm:"type:text;not null;default:'active'" json:"status"`
 	SecretsInitializedAt *time.Time     `json:"secrets_initialized_at,omitempty"`
 	VCSCredentialSecrets JSONB          `gorm:"column:vcs_token_secrets;type:jsonb;default:'{}'" json:"vcs_token_secrets,omitempty"`
 	WebhookSecrets       JSONB          `gorm:"type:jsonb;default:'{}'" json:"webhook_secrets,omitempty"`
@@ -32,6 +33,8 @@ type User struct {
 	// private. See Project.IsEffectivelyPrivate.
 	IsPrivate bool `gorm:"not null;default:false" json:"is_private"`
 }
+
+func (u *User) IsActive() bool { return u != nil && (u.Status == "" || u.Status == "active") }
 
 // TableName specifies the table name for the model
 func (User) TableName() string {

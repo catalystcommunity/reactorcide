@@ -34,10 +34,11 @@ type Queue struct {
 	// find-or-create queries key on; it is computed in Go
 	// (internal/characteristics.Hash), never in SQL, so there is exactly one
 	// implementation of "these characteristic sets are the same queue".
-	CharacteristicsHash string  `gorm:"column:characteristics_hash;type:text;not null" json:"characteristics_hash"`
-	DisplayName         string  `gorm:"column:display_name;type:text" json:"display_name,omitempty"`
-	IsDefault           bool    `gorm:"column:is_default;not null;default:false" json:"is_default"`
-	OrgID               *string `gorm:"column:org_id;type:uuid" json:"org_id,omitempty"`
+	CharacteristicsHash string `gorm:"column:characteristics_hash;type:text;not null" json:"characteristics_hash"`
+	DisplayName         string `gorm:"column:display_name;type:text" json:"display_name,omitempty"`
+	IsDefault           bool   `gorm:"column:is_default;not null;default:false" json:"is_default"`
+	OrgID               string `gorm:"column:org_id;type:uuid;not null" json:"org_id"`
+	WorkerClass         string `gorm:"column:worker_class;type:text;not null;default:'default'" json:"worker_class"`
 }
 
 // TableName specifies the table name for the model.

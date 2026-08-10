@@ -15,12 +15,16 @@ func TestProjects_HappyPath(t *testing.T) {
 	ui := NewUiService(deps)
 	ctx := mintSessionCtx(t, deps, admin.UserID)
 
+	shared := "shared"
 	created, err := ui.CreateProject(ctx, csilapi.CreateProjectRequest{
-		OrgId: "org-1", Name: "proj-a", RepoUrl: "github.com/org/repo",
+		OrgId: "org-1", Name: "proj-a", RepoUrl: "github.com/org/repo", CheckoutMode: &shared,
 	})
 	requireOK(t, err)
 	if created.Project.IsPrivate {
 		t.Fatalf("IsPrivate = true, want false (public-by-default when unspecified)")
+	}
+	if created.Project.CheckoutMode != "shared" {
+		t.Fatalf("CheckoutMode = %q, want shared", created.Project.CheckoutMode)
 	}
 
 	got, err := ui.GetProject(ctx, csilapi.GetProjectRequest{ProjectId: created.Project.ProjectId})
@@ -29,12 +33,16 @@ func TestProjects_HappyPath(t *testing.T) {
 		t.Fatalf("Name = %q, want proj-a", got.Project.Name)
 	}
 
+	isolated := "isolated"
 	updated, err := ui.UpdateProject(ctx, csilapi.UpdateProjectRequest{
-		ProjectId: created.Project.ProjectId, IsPrivate: boolPtr(true),
+		ProjectId: created.Project.ProjectId, IsPrivate: boolPtr(true), CheckoutMode: &isolated,
 	})
 	requireOK(t, err)
 	if !updated.Project.IsPrivate {
 		t.Fatalf("IsPrivate = false after update, want true")
+	}
+	if updated.Project.CheckoutMode != "isolated" {
+		t.Fatalf("CheckoutMode = %q, want isolated", updated.Project.CheckoutMode)
 	}
 
 	// A private project is invisible to an anonymous caller...

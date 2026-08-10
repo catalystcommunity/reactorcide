@@ -3,9 +3,16 @@ package uiapi
 import (
 	"context"
 
+	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/audit"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/authz"
+	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store/models"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/uiapi/csilapi"
 )
+
+func (s *UiService) recordAudit(ctx context.Context, orgID, action, subjectType, subjectID string, details models.JSONB) {
+	_, user := s.deps.resolveIdentity(ctx)
+	audit.RecordUser(ctx, s.deps.Store, user, orgID, action, subjectType, subjectID, details)
+}
 
 // UiService implements csilapi.ReactorcideUi. Methods are split across
 // ui_*.go files by resource family (projects, groups, roles, rotation,

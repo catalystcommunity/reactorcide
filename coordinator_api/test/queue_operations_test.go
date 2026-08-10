@@ -173,6 +173,50 @@ func TestEnsureDefaultQueue_Idempotent(t *testing.T) {
 	assert.Equal(t, queues[0].QueueUUID, resolved.QueueUUID)
 }
 
+func TestQueueIdentityAndPoolGrantEnforceTenantBoundary(t *testing.T) {
+	ctx := context.Background()
+	orgA := &models.Organization{Name: uniqueName("queue-org-a"), DisplayName: "Queue Org A", Status: models.OrganizationStatusActive}
+	orgB := &models.Organization{Name: uniqueName("queue-org-b"), DisplayName: "Queue Org B", Status: models.OrganizationStatusActive}
+	require.NoError(t, postgres_store.PostgresStore.CreateOrganization(ctx, orgA))
+	require.NoError(t, postgres_store.PostgresStore.CreateOrganization(ctx, orgB))
+	chars := uniqueTestCharacteristics(t, "linux")
+	queueA, err := postgres_store.PostgresStore.FindOrCreateQueueForOrg(ctx, orgA.OrgID, "default", chars)
+	require.NoError(t, err)
+	queueB, err := postgres_store.PostgresStore.FindOrCreateQueueForOrg(ctx, orgB.OrgID, "default", chars)
+	require.NoError(t, err)
+	assert.NotEqual(t, queueA.QueueUUID, queueB.QueueUUID, "identical characteristics must not merge organization queues")
+
+	poolOrgID := orgA.OrgID
+	orgPool := &models.WorkerPool{OrgID: &poolOrgID, Name: uniqueName("org-pool")}
+	require.NoError(t, postgres_store.PostgresStore.CreateWorkerPool(ctx, orgPool))
+	classA, err := postgres_store.PostgresStore.GetWorkerClass(ctx, orgA.OrgID, "default")
+	require.NoError(t, err)
+	classB, err := postgres_store.PostgresStore.GetWorkerClass(ctx, orgB.OrgID, "default")
+	require.NoError(t, err)
+	require.ErrorIs(t, postgres_store.PostgresStore.GrantWorkerClassPool(ctx, classB.ClassID, orgPool.PoolID), store.ErrForbidden)
+	require.NoError(t, postgres_store.PostgresStore.GrantWorkerClassPool(ctx, classA.ClassID, orgPool.PoolID))
+	queues, err := postgres_store.PostgresStore.ListQueuesForPool(ctx, orgPool.PoolID)
+	require.NoError(t, err)
+	foundA := false
+	for _, queue := range queues {
+		assert.Equal(t, orgA.OrgID, queue.OrgID)
+		foundA = foundA || queue.QueueUUID == queueA.QueueUUID
+	}
+	assert.True(t, foundA)
+
+	hostedPool := &models.WorkerPool{Name: uniqueName("hosted-pool")}
+	require.NoError(t, postgres_store.PostgresStore.CreateWorkerPool(ctx, hostedPool))
+	require.NoError(t, postgres_store.PostgresStore.GrantWorkerClassPool(ctx, classA.ClassID, hostedPool.PoolID))
+	queues, err = postgres_store.PostgresStore.ListQueuesForPool(ctx, hostedPool.PoolID)
+	require.NoError(t, err)
+	foundA = false
+	for _, queue := range queues {
+		assert.Equal(t, orgA.OrgID, queue.OrgID)
+		foundA = foundA || queue.QueueUUID == queueA.QueueUUID
+	}
+	assert.True(t, foundA)
+}
+
 // createTestJobHandler builds a JobHandler wired to the real Postgres store
 // (so its queueResolvingStore type assertion succeeds against the genuine
 // postgres_store/queue_operations.go implementation, not a test mock) and a

@@ -87,6 +87,72 @@ func TestProcessTriggers_WrongType(t *testing.T) {
 	}
 }
 
+func TestValidateWorkflowAuthorityPinsExactOrigin(t *testing.T) {
+	baseRepo, baseSHA := "https://example.test/upstream.git", "base-sha"
+	headRepo, headSHA := "https://example.test/fork.git", "head-sha"
+	parent := &models.Job{JobID: "eval", OrgID: "org", CIRepository: baseRepo, CISHA: baseSHA,
+		CISourceURL: &baseRepo, CISourceRef: &baseSHA, SourceURL: &headRepo, SourceRef: &headSHA,
+		ExecutionProfile: "standard"}
+	if err := (&vcs.JobMetadata{VCSProvider: "github", Repo: "org/repo", CommitSHA: headSHA, IsEval: true}).ApplyToJob(parent); err != nil {
+		t.Fatal(err)
+	}
+	tp := NewTriggerProcessor(&MockStore{}, nil)
+	base := &triggerWorkflowSpec{ID: "tests", TriggerType: "runnerlib_eval", CIOrigin: "base",
+		CIRepository: baseRepo, CISHA: baseSHA, ExecutionProfile: "standard", WorkerClass: "default"}
+	if err := tp.validateWorkflowAuthority(context.Background(), parent, base); err != nil {
+		t.Fatalf("base authority rejected: %v", err)
+	}
+	head := &triggerWorkflowSpec{ID: "tests", TriggerType: "runnerlib_eval", CIOrigin: "head",
+		CIRepository: headRepo, CISHA: headSHA, ExecutionProfile: "pr-untrusted", WorkerClass: "default",
+		PolicyRevision: "revision", PolicyRuleID: "backend"}
+	if err := tp.validateWorkflowAuthority(context.Background(), parent, head); err != nil {
+		t.Fatalf("head authority rejected: %v", err)
+	}
+	head.CISHA = "branch-name"
+	if err := tp.validateWorkflowAuthority(context.Background(), parent, head); err == nil {
+		t.Fatal("head workflow was not pinned to the exact event SHA")
+	}
+}
+
+func TestEvalResultViolationOnlyDoesNotRequireWorkflow(t *testing.T) {
+	parent := &models.Job{JobID: "eval", OrgID: "org"}
+	tp := NewTriggerProcessor(&MockStore{}, nil)
+	data := []byte(`{"type":"trigger_job","trigger_type":"runnerlib_eval","policy_violations":[{"path":".reactorcide/jobs/new.yaml"}]}`)
+	created, err := tp.ProcessTriggersFromData(context.Background(), data, "", parent)
+	if err != nil {
+		t.Fatalf("violation-only result failed: %v", err)
+	}
+	if len(created) != 0 {
+		t.Fatalf("expected no jobs, got %d", len(created))
+	}
+}
+
+func TestRunnerlibEvalCrossLanguageFixture(t *testing.T) {
+	data, err := os.ReadFile(filepath.Join("..", "..", "..", "testdata", "runnerlib_eval_trigger.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var envelope triggersFile
+	if err := json.Unmarshal(data, &envelope); err != nil {
+		t.Fatalf("Go could not parse the runnerlib protocol fixture: %v", err)
+	}
+	if envelope.TriggerType != "runnerlib_eval" || len(envelope.Workflows) != 1 || len(envelope.PolicyViolations) != 1 {
+		t.Fatalf("unexpected runnerlib evaluation fixture: %+v", envelope)
+	}
+	workflow := envelope.Workflows[0]
+	if workflow.ID != "backend-tests" || workflow.CIOrigin != "head" || workflow.CISHA != "head-sha" || len(workflow.Jobs) != 1 {
+		t.Fatalf("workflow provenance did not survive JSON parsing: %+v", workflow)
+	}
+}
+
+func TestTriggerPayloadRejectsVersionField(t *testing.T) {
+	tp := NewTriggerProcessor(&MockStore{}, nil)
+	data := []byte(`{"version":2,"type":"trigger_job","trigger_type":"runnerlib_eval"}`)
+	if _, err := tp.ProcessTriggersFromData(context.Background(), data, "", &models.Job{JobID: "eval", OrgID: "org"}); err == nil {
+		t.Fatal("versioned trigger payload was accepted")
+	}
+}
+
 func TestProcessTriggers_SingleJob(t *testing.T) {
 	tmpDir := t.TempDir()
 	priority := 10
@@ -252,6 +318,7 @@ func TestProcessTriggers_MultipleJobs(t *testing.T) {
 	parentJob := &models.Job{
 		JobID:          "parent-id",
 		UserID:         "user-123",
+		OrgID:          "org-123",
 		QueueName:      "reactorcide-jobs",
 		RunnerImage:    "default:image",
 		TimeoutSeconds: 3600,
@@ -743,6 +810,9 @@ func TestBuildJobFromTrigger_MinimalSpec(t *testing.T) {
 	}
 	if job.ParentJobID == nil || *job.ParentJobID != "parent-id" {
 		t.Error("expected parent job ID to be set")
+	}
+	if job.OrgID != parentJob.OrgID {
+		t.Fatalf("child organization = %q, want inherited %q", job.OrgID, parentJob.OrgID)
 	}
 }
 

@@ -109,6 +109,13 @@ The default paths are:
 /job/triggers.json
 ```
 
+Pull-request evaluation uses these CI views:
+
+```text
+/job/ci/base      trusted base CI
+/job/ci/head      candidate head CI
+```
+
 The worker sets:
 
 ```text
@@ -138,6 +145,25 @@ runnerlib eval \
 The coordinator supplies these values in a normal VCS eval job.
 
 See [Job Definition Reference](../../docs/job-definitions.md).
+
+### Pull-request checkout mode
+
+`REACTORCIDE_CHECKOUT_MODE` accepts `isolated` or `shared`.
+
+- `isolated` prepares separate source, base CI, and head CI clones.
+- `shared` prepares one non-shallow, blob-filtered Git object store and stages
+  only the base and head `.reactorcide` views.
+
+Shared mode has no application source worktree in the evaluator. Git commands
+that compare the exact base and head commits still work. Child jobs prepare the
+source and approved CI revision that they need.
+
+Shared mode applies only when runnerlib processes a pull-request evaluation.
+Other jobs use the normal source preparation path.
+
+See [Organizations and Trusted CI
+Policy](../../docs/organizations-and-ci-policy.md) for configuration precedence
+and CI admission behavior.
 
 ## Trigger Jobs
 

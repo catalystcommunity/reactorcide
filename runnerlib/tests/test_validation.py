@@ -112,6 +112,14 @@ class TestConfigValidator:
         assert errors[0].field == "job_command"
         assert "Job command is required" in errors[0].message
 
+    def test_validate_required_fields_rejects_checkout_mode(self):
+        self.valid_config.checkout_mode = "custom"
+
+        errors = self.validator._validate_required_fields(self.valid_config)
+
+        assert len(errors) == 1
+        assert errors[0].field == "checkout_mode"
+
     def test_validate_required_fields_missing_runner_image(self):
         """Test validation fails for missing runner_image."""
         config = RunnerConfig(

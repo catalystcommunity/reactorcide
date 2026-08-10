@@ -93,7 +93,8 @@ The status updater uses project credentials when available. It falls back to
 organization or deployment credentials.
 
 Workflow status uses the workflow name as the status context. Pull-request
-comments use a stable marker so Reactorcide can update one comment.
+workflow and policy entries use one shared report with the stable
+`<!-- reactorcide:report:v1 -->` marker.
 
 ## Add a Provider
 

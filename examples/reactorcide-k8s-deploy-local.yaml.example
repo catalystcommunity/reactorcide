@@ -55,7 +55,7 @@ environment:
   # REACTORCIDE_IMAGE_TAG: "v1.0.0"
 
   # Optional: Default user ID (auto-generated if not provided)
-  # REACTORCIDE_DEFAULT_USER_ID: "your-uuid-here"
+  REACTORCIDE_DEFAULT_ORG: "default"
 
   # Optional: Inline helm values for advanced configuration
   # These are written to a temp file and passed to helm -f

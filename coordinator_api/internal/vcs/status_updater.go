@@ -4,8 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 
-	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/config"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store/models"
 	"github.com/sirupsen/logrus"
@@ -14,6 +14,61 @@ import (
 // JobStatusUpdaterInterface allows the worker to call status updates with a mock in tests.
 type JobStatusUpdaterInterface interface {
 	UpdateJobStatus(ctx context.Context, job *models.Job) error
+}
+
+// UpdateCIPolicyStatus publishes the admission result independently from the
+// evaluator status. Policy failures do not suppress safe workflow triggers.
+func (u *JobStatusUpdater) UpdateCIPolicyStatus(ctx context.Context, job *models.Job, violations []CIPolicyViolation) error {
+	metadata, err := MetadataFromJob(job)
+	if err != nil || metadata == nil || metadata.CommitSHA == "" {
+		return err
+	}
+	client := u.getClientForJob(ctx, job, Provider(metadata.VCSProvider))
+	if client == nil {
+		return nil
+	}
+	state := StatusSuccess
+	description := "CI changes satisfy trusted base policy"
+	if len(violations) > 0 {
+		state = StatusFailure
+		description = fmt.Sprintf("Trusted base policy denied %d CI change(s)", len(violations))
+	}
+	if err := client.UpdateCommitStatus(ctx, metadata.Repo, StatusUpdate{SHA: metadata.CommitSHA, State: state,
+		TargetURL: u.getJobURL(job.JobID), Description: description, Context: "Reactorcide CI Policy"}); err != nil {
+		return err
+	}
+	if metadata.PRNumber <= 0 || u.store == nil {
+		return nil
+	}
+	reports, ok := u.store.(workflowReportStore)
+	if !ok {
+		return nil
+	}
+	target := &models.VCSReportTarget{OrgID: job.OrgID, ProjectID: job.ProjectID, Provider: metadata.VCSProvider,
+		Repository: metadata.Repo, TargetType: "pull_request", ExternalTargetID: fmt.Sprintf("%d", metadata.PRNumber),
+		RootMarker: "<!-- reactorcide:report:v1 -->", CurrentGeneration: 1}
+	if err := reports.UpsertVCSReportTarget(ctx, target); err != nil {
+		return err
+	}
+	var body strings.Builder
+	if len(violations) == 0 {
+		body.WriteString("Trusted base policy allowed all changed CI files.")
+	} else {
+		body.WriteString("The following CI files were not authorized. Safe base CI continues.\n")
+		for _, violation := range violations {
+			fmt.Fprintf(&body, "\n- `%s`", strings.ReplaceAll(violation.Path, "`", "\\`"))
+			if violation.WorkflowID != "" {
+				fmt.Fprintf(&body, " (workflow `%s`)", strings.ReplaceAll(violation.WorkflowID, "`", "\\`"))
+			}
+		}
+	}
+	status := "success"
+	if len(violations) > 0 {
+		status = "failed"
+	}
+	return reports.UpsertVCSReportEntry(ctx, &models.VCSReportEntry{ReportTargetID: target.ReportTargetID,
+		EntryKey: "ci-policy", Generation: target.CurrentGeneration, Status: status,
+		StructuredState: models.JSONB{"title": "CI Policy", "body": body.String()}})
 }
 
 // TokenResolverFunc resolves a "path:key" secret reference to a plaintext token.
@@ -38,6 +93,11 @@ type JobStatusUpdater struct {
 	baseURL       string            // base URL for job links in commit statuses
 	store         store.Store       // optional: used for rolling PR comment coordination
 	logger        *logrus.Logger
+}
+
+type statusCredentialRotationStore interface {
+	ListActiveProjectVCSCredentials(context.Context, string, string) ([]models.ProjectVCSCredential, error)
+	TouchProjectVCSCredentialLastUsed(context.Context, string) error
 }
 
 // SetStore wires the data store used to look up sibling jobs for a PR and
@@ -274,24 +334,8 @@ func (u *JobStatusUpdater) isJobComplete(status string) bool {
 // getClientForJob returns the best VCS client for the job, trying per-project
 // token first and falling back to the global client.
 func (u *JobStatusUpdater) getClientForJob(ctx context.Context, job *models.Job, provider Provider) Client {
-	if job.ProjectID != nil && u.projectLookup != nil {
-		project, err := u.projectLookup(ctx, *job.ProjectID)
-		if err == nil && project != nil {
-			if ref := ProjectVCSCredentialSecretRef(project, provider); ref != "" {
-				if client := u.clientForSecretRef(ctx, provider, ref, "project"); client != nil {
-					return client
-				}
-			}
-			if owner := u.projectOwner(ctx, project); owner != nil {
-				if ref := UserVCSCredentialSecretRef(owner, provider); ref != "" {
-					if client := u.clientForSecretRef(ctx, provider, ref, "org"); client != nil {
-						return client
-					}
-				}
-			}
-		} else if err != nil {
-			u.logger.WithError(err).WithField("project_id", *job.ProjectID).Debug("Failed to load project for VCS token lookup")
-		}
+	if client := u.getProjectClient(ctx, job.ProjectID, provider); client != nil {
+		return client
 	}
 
 	// Fall back to global client
@@ -311,6 +355,20 @@ func (u *JobStatusUpdater) getProjectClient(ctx context.Context, projectID *stri
 			u.logger.WithError(err).WithField("project_id", *projectID).Debug("Failed to load project for VCS token lookup")
 		}
 		return nil
+	}
+	ctx = WithOrganization(ctx, project.OwnershipOrgID())
+	if rotationStore, ok := u.store.(statusCredentialRotationStore); ok {
+		rows, listErr := rotationStore.ListActiveProjectVCSCredentials(ctx, project.ProjectID, string(provider))
+		if listErr == nil {
+			if row, found := HighestPrecedenceActiveVCSCredential(rows); found {
+				if client := u.clientForSecretRef(ctx, provider, row.SecretRef, "project-rotation"); client != nil {
+					_ = rotationStore.TouchProjectVCSCredentialLastUsed(ctx, row.ID)
+					return client
+				}
+			}
+		} else {
+			u.logger.WithError(listErr).WithField("project_id", project.ProjectID).Warn("Failed to list active VCS credentials")
+		}
 	}
 	if ref := ProjectVCSCredentialSecretRef(project, provider); ref != "" {
 		if client := u.clientForSecretRef(ctx, provider, ref, "project"); client != nil {
@@ -332,9 +390,6 @@ func (u *JobStatusUpdater) projectOwner(ctx context.Context, project *models.Pro
 	ownerID := ""
 	if project != nil && project.UserID != nil {
 		ownerID = *project.UserID
-	}
-	if ownerID == "" {
-		ownerID = config.DefaultUserID
 	}
 	if ownerID == "" {
 		return nil

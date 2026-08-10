@@ -46,9 +46,19 @@ func BuildEvalJob(project *models.Project, event *vcs.WebhookEvent) *models.Job 
 		"REACTORCIDE_CI":         "true",
 		"REACTORCIDE_PROVIDER":   string(event.Provider),
 		"REACTORCIDE_EVENT_TYPE": string(event.GenericEvent),
+		"REACTORCIDE_JOB_KIND":   "eval",
 		"REACTORCIDE_REPO":       event.Repository.FullName,
 		"REACTORCIDE_SOURCE_URL": sourceURL,
+		"REACTORCIDE_HEAD_ACTOR": event.SenderLogin,
 	}
+	checkoutMode := project.CheckoutMode
+	if checkoutMode == "" {
+		checkoutMode = config.CheckoutMode
+	}
+	if !models.IsValidCheckoutMode(checkoutMode, false) {
+		checkoutMode = models.CheckoutModeIsolated
+	}
+	envVars["REACTORCIDE_CHECKOUT_MODE"] = checkoutMode
 
 	if event.PullRequest != nil {
 		pr := event.PullRequest
@@ -142,22 +152,34 @@ func BuildEvalJob(project *models.Project, event *vcs.WebhookEvent) *models.Job 
 	chars, _ := characteristics.ParseJobCharacteristics(nil)
 
 	job := &models.Job{
-		UserID:          config.DefaultUserID,
-		ProjectID:       &project.ProjectID,
-		Name:            jobName,
-		Description:     fmt.Sprintf("Eval job for %s event on %s", event.GenericEvent, event.Repository.FullName),
-		SourceURL:       &sourceURL,
-		SourceRef:       &sourceRef,
-		SourceType:      &sourceType,
-		CISourceType:    ciSourceType,
-		CISourceURL:     ciSourceURL,
-		CISourceRef:     ciSourceRef,
-		JobCommand:      jobCommand,
-		RunnerImage:     project.DefaultRunnerImage,
-		JobEnvVars:      envVars,
-		Priority:        priority,
-		QueueName:       project.DefaultQueueName,
-		Characteristics: chars,
+		OrgID:            project.OwnershipOrgID(),
+		ProjectID:        &project.ProjectID,
+		Name:             jobName,
+		Description:      fmt.Sprintf("Eval job for %s event on %s", event.GenericEvent, event.Repository.FullName),
+		SourceURL:        &sourceURL,
+		SourceRef:        &sourceRef,
+		SourceType:       &sourceType,
+		CISourceType:     ciSourceType,
+		CISourceURL:      ciSourceURL,
+		CISourceRef:      ciSourceRef,
+		JobCommand:       jobCommand,
+		RunnerImage:      project.DefaultRunnerImage,
+		JobEnvVars:       envVars,
+		Priority:         priority,
+		QueueName:        project.DefaultQueueName,
+		WorkerClass:      "default",
+		ExecutionProfile: "standard",
+		CIOrigin:         "base",
+		Characteristics:  chars,
+	}
+	if ciSourceURL != nil {
+		job.CIRepository = *ciSourceURL
+	}
+	if ciSourceRef != nil {
+		job.CISHA = *ciSourceRef
+	}
+	if project.UserID != nil {
+		job.UserID = *project.UserID
 	}
 
 	if project.DefaultTimeoutSeconds > 0 {

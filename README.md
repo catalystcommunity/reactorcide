@@ -16,6 +16,8 @@ git is the current implemented VCS, others may follow if needed.
 - Connect GitHub: [VCS Setup](./docs/vcs-setup.md)
 - Write repository jobs: [Job Definition Reference](./docs/job-definitions.md)
 - Understand the security boundary: [Security Model](./docs/security-model.md)
+- Permit reviewed pull-request CI changes: [Organizations and Trusted CI
+  Policy](./docs/organizations-and-ci-policy.md)
 
 ## Build the CLI
 
@@ -86,6 +88,23 @@ coordinator. Workers can use Docker, containerd, Kubernetes Jobs, or supported
 VM backends.
 
 See [System Design](./DESIGN.md).
+
+## Fresh Installation Bootstrap
+
+Run the database migrations, then create the first token:
+
+```bash
+./coordinator_api/reactorcide token create --name admin
+```
+
+The coordinator creates the default organization from
+`REACTORCIDE_DEFAULT_ORG`. The first token is a global instance token. This
+bootstrap does not require a user row. Create narrower service or user tokens
+after you configure organizations and roles.
+
+Keep the first token in a secret store. Do not put it in a job definition.
+The coordinator gives remote jobs a short-lived job token. It does not give
+them the instance token.
 
 ## VCS Support
 

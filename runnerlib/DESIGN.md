@@ -78,6 +78,12 @@ Implemented source types are:
 Runnerlib can prepare application source and CI source separately. Use this
 for a trusted CI checkout and an untrusted pull-request checkout.
 
+Runnerlib supports `isolated` and `shared` checkout modes for pull-request
+evaluation. Isolated mode uses separate clones. Shared mode fetches the exact
+base and head revisions into one non-shallow, blob-filtered object store. It
+stages only `.reactorcide` files for the base and head CI views. Set the mode with
+`REACTORCIDE_CHECKOUT_MODE`. The default is `isolated`.
+
 For Git, runnerlib can configure these remotes from event variables:
 
 - `origin` from `REACTORCIDE_HEAD_*`

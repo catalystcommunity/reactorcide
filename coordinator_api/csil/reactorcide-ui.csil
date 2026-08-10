@@ -138,12 +138,84 @@ GetCapabilitiesResponse = {
 OrgSummary = {
     org_id: text,
     name: text,
+    display_name: text,
+    status: text,
+    is_default: bool,
     is_private: bool
 }
 ListOrgsRequest = {}
 ListOrgsResponse = {
     orgs: [* OrgSummary]
 }
+
+CreateOrgRequest = {
+    name: text,
+    ? display_name: text,
+    ? is_private: bool
+}
+CreateOrgResponse = {
+    org: OrgSummary
+}
+UpdateOrgRequest = {
+    name: text,
+    ? display_name: text,
+    ? is_private: bool,
+    ? status: text
+}
+UpdateOrgResponse = {
+    org: OrgSummary
+}
+SetDefaultOrgRequest = {
+    name: text
+}
+SetDefaultOrgResponse = {
+    org: OrgSummary
+}
+
+ExecutionProfileSummary = {
+    name: text,
+    deny_secrets: bool,
+    secret_path_allowlist: [* text],
+    runtime_capabilities: [* text],
+    may_run_as_root: bool,
+    allowed_worker_classes: [* text],
+    ? timeout_ceiling_seconds: int,
+    resource_ceilings: any,
+    ? cache_namespace: text,
+    ? artifact_namespace: text,
+    trusted_cache_writes: bool
+}
+ListExecutionProfilesRequest = { organization: text }
+ListExecutionProfilesResponse = { profiles: [* ExecutionProfileSummary] }
+PutExecutionProfileRequest = { organization: text, profile: ExecutionProfileSummary }
+PutExecutionProfileResponse = { profile: ExecutionProfileSummary }
+DeleteExecutionProfileRequest = { organization: text, name: text }
+DeleteExecutionProfileResponse = { deleted: bool }
+
+WorkerClassSummary = { name: text, protected: bool, pool_ids: [* text] }
+ListWorkerClassesRequest = { organization: text }
+ListWorkerClassesResponse = { worker_classes: [* WorkerClassSummary] }
+PutWorkerClassRequest = { organization: text, worker_class: WorkerClassSummary }
+PutWorkerClassResponse = { worker_class: WorkerClassSummary }
+DeleteWorkerClassRequest = { organization: text, name: text }
+DeleteWorkerClassResponse = { deleted: bool }
+SetWorkerClassPoolRequest = { organization: text, worker_class: text, pool_id: text, granted: bool }
+SetWorkerClassPoolResponse = { ok: bool }
+
+CreateCiApprovalRequest = {
+    organization: text,
+    project: text,
+    pr_number: int,
+    head_repository: text,
+    head_sha: text,
+    base_sha: text,
+    policy_revision: text,
+    workflow_scope: text,
+    execution_profile: text,
+    approver_subject: text,
+    ? expires_at: text
+}
+CreateCiApprovalResponse = { approval_id: text }
 
 ProjectSummary = {
     project_id: text,
@@ -180,6 +252,7 @@ ProjectDetail = {
     default_job_command: text,
     default_timeout_seconds: int,
     default_queue_name: text,
+    checkout_mode: text,
     created_at: text,
     updated_at: text
 }
@@ -197,7 +270,8 @@ CreateProjectRequest = {
     repo_url: text,
     ? is_private: bool,
     ? target_branches: [* text],
-    ? allowed_event_types: [* text]
+    ? allowed_event_types: [* text],
+    ? checkout_mode: text
 }
 CreateProjectResponse = {
     project: ProjectDetail
@@ -214,7 +288,8 @@ UpdateProjectRequest = {
     ? default_runner_image: text,
     ? default_job_command: text,
     ? default_timeout_seconds: int,
-    ? default_queue_name: text
+    ? default_queue_name: text,
+    ? checkout_mode: text
 }
 UpdateProjectResponse = {
     project: ProjectDetail
@@ -908,6 +983,17 @@ GetJobLogsResponse = {
 service ReactorcideUi {
     get-capabilities: GetCapabilitiesRequest -> GetCapabilitiesResponse / ServiceError,
     list-orgs: ListOrgsRequest -> ListOrgsResponse / ServiceError,
+    create-org: CreateOrgRequest -> CreateOrgResponse / ServiceError,
+    update-org: UpdateOrgRequest -> UpdateOrgResponse / ServiceError,
+    set-default-org: SetDefaultOrgRequest -> SetDefaultOrgResponse / ServiceError,
+    list-execution-profiles: ListExecutionProfilesRequest -> ListExecutionProfilesResponse / ServiceError,
+    put-execution-profile: PutExecutionProfileRequest -> PutExecutionProfileResponse / ServiceError,
+    delete-execution-profile: DeleteExecutionProfileRequest -> DeleteExecutionProfileResponse / ServiceError,
+    list-worker-classes: ListWorkerClassesRequest -> ListWorkerClassesResponse / ServiceError,
+    put-worker-class: PutWorkerClassRequest -> PutWorkerClassResponse / ServiceError,
+    delete-worker-class: DeleteWorkerClassRequest -> DeleteWorkerClassResponse / ServiceError,
+    set-worker-class-pool: SetWorkerClassPoolRequest -> SetWorkerClassPoolResponse / ServiceError,
+    create-ci-approval: CreateCiApprovalRequest -> CreateCiApprovalResponse / ServiceError,
     list-projects: ListProjectsRequest -> ListProjectsResponse / ServiceError,
     get-project: GetProjectRequest -> GetProjectResponse / ServiceError,
     create-project: CreateProjectRequest -> CreateProjectResponse / ServiceError,

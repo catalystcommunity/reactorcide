@@ -114,6 +114,33 @@ func TestWorkersPage_RendersForCapableSession(t *testing.T) {
 	}
 }
 
+func TestWorkerClassesPage_ShowsOrganizationAndPoolMappings(t *testing.T) {
+	fc := newFakeCoordinator()
+	withAuthMode(fc, "none", false, true)
+	withCapabilities(fc, csilapi.GetCapabilitiesResponse{ManageWorkers: true, IsGlobalAdmin: true})
+	fc.handle("ReactorcideUi", "list-orgs", func(_ []byte, _ string, _ bool) ([]byte, string, bool) {
+		return csilapi.EncodeListOrgsResponse(csilapi.ListOrgsResponse{Orgs: []csilapi.OrgSummary{{OrgId: "org-1", Name: "acme", IsDefault: true}}}), "ListOrgsResponse", false
+	})
+	fc.handle("ReactorcideUi", "list-worker-classes", func(_ []byte, _ string, _ bool) ([]byte, string, bool) {
+		return csilapi.EncodeListWorkerClassesResponse(csilapi.ListWorkerClassesResponse{WorkerClasses: []csilapi.WorkerClassSummary{{Name: "protected-ci", Protected: true, PoolIds: []string{"pool-1"}}}}), "ListWorkerClassesResponse", false
+	})
+	fc.handle("ReactorcideUi", "list-pools", func(_ []byte, _ string, _ bool) ([]byte, string, bool) {
+		return csilapi.EncodeListPoolsResponse(csilapi.ListPoolsResponse{Pools: []csilapi.WorkerPoolSummary{{PoolId: "pool-1", Name: "hosted-linux"}}}), "ListPoolsResponse", false
+	})
+	h := newTestWebHandler(t, fc)
+	req := httptest.NewRequest(http.MethodGet, "/app/workers/classes?organization=acme", nil)
+	rec := httptest.NewRecorder()
+	h.withSession(h.WorkerClassesPage)(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body=%s", rec.Code, rec.Body.String())
+	}
+	for _, expected := range []string{"acme", "protected-ci", "hosted-linux", "Revoke"} {
+		if !strings.Contains(rec.Body.String(), expected) {
+			t.Errorf("worker class page does not contain %q", expected)
+		}
+	}
+}
+
 // --- Pool CRUD ---
 
 func TestPoolCreate_HappyPathHitsFakeWithFields(t *testing.T) {
