@@ -100,9 +100,11 @@ actually returned, since those aren't guaranteed to match until the protocol say
 
 ## Roles and the permission matrix
 
-Reactorcide doesn't have a first-class "orgs" table yet — every `users` row doubles as its
-own org (`user_id` **is** the org id everywhere). Roles are assigned via
-`role_assignments(principal_type, principal_id, scope_type, scope_id, role)`, where:
+Reactorcide has first-class organizations. An organization owns its projects,
+jobs, workflows, secrets, worker classes, queues, and policy records. Users are
+principals. They are not organizations. Roles are assigned through
+`role_assignments(principal_type, principal_id, scope_type, scope_id, role)`,
+where:
 
 - `principal_type` is `user` or `group` (groups are `org_id`-scoped collections of users).
 - `scope_type` is `global`, `org`, or `project`.
@@ -148,10 +150,10 @@ A few notes that trip people up:
 
 ## Public/private visibility
 
-- `projects.is_private` and `users.is_private` (an org's own privacy flag) both default to
-  `false` — Reactorcide is public/open-source-friendly by default.
+- `projects.is_private` and `organizations.is_private` both default to
+  `false`. Reactorcide is public by default.
 - A project is *effectively* private if `project.is_private` **or** its owning org
-  (`users.is_private`) is private.
+  (`organizations.is_private`) is private.
 - Jobs and workflows that belong to a project inherit that project's visibility. Jobs and
   workflows with no project (raw API-submitted jobs) fall back to their owning org's
   visibility.
@@ -253,61 +255,40 @@ own button in the webapp:
 Retried jobs update their PR comment/commit-status row in place rather than posting a new
 one — see "Retry and PR comment updates" below.
 
-## Retry and PR comment updates
+## Retry and VCS report updates
 
-Reactorcide has two independent PR-comment mechanisms, and retries interact with them
-differently:
+The database stores one report target for a pull request. Workflow and policy
+updates write structured report entries. A reconciler merges those entries
+into one Reactorcide pull-request comment. The root marker is
+`<!-- reactorcide:report:v1 -->`.
 
-- **Workflow comment** (`internal/vcs/workflow_status.go`'s `UpdateWorkflowStatus`, marker
-  `<!-- reactorcide:workflows:<sha>:<event> -->`): one comment per workflow instance, a table
-  with one row per `WorkflowNode`. It's fully regenerated — from the workflow's *current*
-  `ListWorkflowNodes` result — every time `internal/worker/workflow_runtime.go`'s
-  `refreshWorkflowStatus` runs, which is on every node start (`ProcessWorkflowJobStarted`) and
-  completion (`ProcessWorkflowCompletion`/`evaluateWorkflow`). Because `jobcontrol.RetryJob`
-  rebinds the *same* `WorkflowNode` row to the new job (`rebindWorkflowNodeForRetry` sets
-  `node.JobID` to the retried job's id; the `NodeID` never changes), the next time either hook
-  fires for that node it naturally reflects the retried job's status — last run wins, and there
-  is no separate row for the old job, because the table is keyed by node, not by job id.
-- **Legacy per-job comment** (`internal/vcs/pr_comments.go`, used only for non-workflow "loose"
-  jobs after their PR has merged): originally keyed its marker on `job.JobID`, which would have
-  made a retry of a merged-PR job post a *second* comment instead of updating the first, since a
-  retry gets a brand-new `JobID`. Fixed by keying `prCommentMarkerPerJob` on
-  `(commit sha, jobCommentKey(job))` instead — `jobCommentKey` is the job's `Name` (falling back
-  to `JobID` for an unnamed job), which a retry clone carries forward unchanged from the
-  original job. The pre-merge rolling comment (`renderRollingCommentBody`/`dedupeJobsByName`)
-  already deduped by that same name-based key before this change (see its doc comment), so only
-  the post-merge per-job path needed fixing.
+A job retry creates a new job and rebinds the same workflow node to it. The
+report entry keeps the stable workflow ID and node identity. The next worker
+start or completion update replaces the displayed state. It does not add a
+second workflow section.
 
-**The submission-time gap.** A freshly trigger-created job gets an immediate "pending" VCS
-commit-status/comment push at creation time, before Corndogs submission
-(`trigger_processor.go`'s `createAndSubmitJob`, and — for workflow nodes —
-`evaluateWorkflow`'s trailing `refreshWorkflowStatus` call after a batch of ready nodes is
-submitted). `jobcontrol.RetryJob`/`RetryWorkflow`/`RetryUnsuccessfulJobs` do not reproduce this
-immediate push: `jobcontrol` intentionally holds no VCS/comment dependency at all (see
-`jobcontrol.go`'s package doc — the same is true of `CancelJob`/`CancelWorkflow`, which only
-ever flip status in the store and trust the worker to do the rest), and wiring one in would mean
-threading a `vcs.JobStatusUpdaterInterface` through every caller: REST's `JobHandler` already
-has one (via its `TriggerProcessor`), but `WorkflowHandler` and the CSIL `uiapi.Deps` used by
-the webapp currently have none at all. Rather than give three callers of three retry functions
-three different levels of freshness, retry relies entirely on the **worker's existing hooks**:
+A workflow retry creates a new workflow instance. The old instance remains for
+history. The new instance writes current state to the report for its target.
 
-- Workflow-bound retries: the rebound node's row is stale only until the retried job actually
-  starts running, at which point `ProcessWorkflowJobStarted` → `refreshWorkflowStatus` pushes an
-  update reflecting it (verified by
-  `internal/worker/workflow_runtime_test.go`'s
-  `TestProcessWorkflowJobStarted_ReflectsRetryRebindWithoutDuplicateRow`). In practice this is a
-  short window bounded by queue wait time, not by the job's full run.
-- Loose (non-workflow) retries: the coordinator-mediated worker pushes a
-  per-job VCS/comment update for a non-workflow job when the job completes.
-  This applies to direct jobs and their retries.
+There can be a short delay after a retry submission. The report changes when
+the worker starts or completes the retried work. The in-process reconciler
+checks dirty report targets every five seconds. It uses a database lock so two
+coordinators do not write the same comment at the same time.
 
-Net effect: a retried job's PR row always ends up correct once the retry actually runs (its
-completion, and for workflow nodes its start too, are both covered by hooks that already exist
-and are already wired with a working status updater in the worker process), but there is a
-window between "retry submitted" and "retry started/completed" during which the row still shows
-the pre-retry (failed/cancelled/timeout) state rather than "pending"/"submitted". This is judged
-an acceptable, explicitly-scoped tradeoff rather than plumbing a new cross-cutting dependency
-through REST and CSIL for a purely cosmetic gap.
+The `Reactorcide CI Policy` commit status is separate from the shared comment.
+It is successful when all changed CI files are authorized. It is failed when
+one or more CI files are not authorized. Safe trusted-base workflows continue
+after a policy failure.
+
+## API Credential Subjects
+
+An instance token can have global authority. A service token has an owner or an
+explicit organization set. A user token delegates to one active user. A job
+token has one parent job and the `jobs:submit` capability.
+
+The coordinator checks organization scope before it checks a project or job
+capability. For a user token, it intersects the token scope with current user
+roles on each request. A disabled user cannot use a delegated token.
 
 ## See also
 
@@ -315,5 +296,7 @@ through REST and CSIL for a purely cosmetic gap.
   authorizes which secrets a job can resolve at runtime (a different, job-execution-time
   concern from the management-UI secrets surface described above).
 - `docs/security-model.md` — the broader untrusted-code / secret-isolation security model.
+- `docs/organizations-and-ci-policy.md` — organization scope, token
+  capabilities, CI policy, approvals, and VCS reports.
 - `helm_chart/DEPLOYMENT.md` — how these env vars map to Helm values for a Kubernetes
   deployment.

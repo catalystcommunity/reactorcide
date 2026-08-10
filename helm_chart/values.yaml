@@ -22,7 +22,7 @@ app:
   # key -- the same token the web app uses). The reference is optional so the
   # coordinator starts even before the token has been created.
   apiTokenSecret:
-    name: ""  # default: defaults.userSecretName
+    name: ""  # default: defaults.apiTokenSecretName
     key: ""   # default: "token"
   # Gateway API HTTPRoute configuration (routes /api/* to coordinator)
   gateway:
@@ -69,7 +69,7 @@ web:
   apiUrl: "http://reactorcideapp:6080"
   # API token for authenticating with the coordinator API
   apiTokenSecret:
-    name: "base-reactorcide-user"
+    name: "base-reactorcide-api-token"
     key: "token"
   # Disables the Secure flag on the session cookie (see docs/ui-auth.md).
   # Only set this true if the web pod is reached over plain HTTP with no TLS
@@ -199,10 +199,10 @@ worker:
     successThreshold: 1
     failureThreshold: 3
   # API token for job containers to submit triggers via the coordinator API.
-  # The deploy script stores the API token in the userSecretName secret (default: base-reactorcide-user).
+  # The deploy script stores the API token in the apiTokenSecretName Secret.
   # Set to {} to disable API trigger submission (falls back to file-based triggers).
   apiTokenSecret:
-    name: "base-reactorcide-user"
+    name: "base-reactorcide-api-token"
     key: "token"
   resources:
     limits:
@@ -303,6 +303,11 @@ objectStore:
   gcs:
     serviceAccountJson: ""  # NOTE: gcs backend is not implemented yet; use s3
 
+audit:
+  # A positive value removes older audit events. Zero disables age-based
+  # deletion.
+  retentionDays: 365
+
 # Default configuration
 defaults:
   queueName: reactorcide-jobs
@@ -310,11 +315,11 @@ defaults:
   # Default runner image for jobs that don't specify one
   # Set this to your registry's runnerlib image (e.g., "registry.example.com/reactorcide/runner:latest")
   runnerImage: ""
-  userId: ""  # UUID for default user (optional - auto-generated if not set)
-  # Secret name for default user credentials (userId and API token)
-  # This secret is auto-created with a generated userId on first install
-  # The deploy script adds the API token after user creation
-  userSecretName: "base-reactorcide-user"
+  orgName: "default"
+  # Runnerlib PR evaluation layout: isolated or shared.
+  checkoutMode: "isolated"
+  # Secret name for the bootstrap API token.
+  apiTokenSecretName: "base-reactorcide-api-token"
 
 storage:
   type: postgres

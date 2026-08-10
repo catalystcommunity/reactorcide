@@ -140,6 +140,21 @@ job:
 	}
 }
 
+func TestMergeJobSpecs_CheckoutModeOverlay(t *testing.T) {
+	base := &JobSpec{Command: "runnerlib eval", Checkout: &CheckoutSpec{Mode: "isolated"}}
+	overlay := &JobSpec{Checkout: &CheckoutSpec{Mode: "shared"}}
+
+	merged, _ := MergeJobSpecs(base, []*JobSpec{overlay}, []string{"large-repo.yaml"})
+
+	if merged.Checkout == nil || merged.Checkout.Mode != "shared" {
+		t.Fatalf("checkout overlay was not applied: %#v", merged.Checkout)
+	}
+	config := merged.ToJobConfig("/tmp/work", "job", "queue")
+	if config.Env["REACTORCIDE_CHECKOUT_MODE"] != "shared" {
+		t.Fatalf("checkout mode was not passed to runnerlib")
+	}
+}
+
 // TestLoadJobSpec_EvalFormat tests loading eval-format job specs in detail
 func TestLoadJobSpec_EvalFormat(t *testing.T) {
 	tmpDir, err := os.MkdirTemp("", "eval-format-test-*")

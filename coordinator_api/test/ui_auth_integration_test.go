@@ -107,6 +107,7 @@ func createTestProject(t *testing.T, orgID string, repoURL string, isPrivate boo
 	t.Helper()
 	project := &models.Project{
 		UserID:            &orgID,
+		OrgID:             orgID,
 		Name:              uniqueName("project"),
 		RepoURL:           repoURL,
 		Enabled:           true,
@@ -197,7 +198,12 @@ func TestUIAuthMigrationRoundTrip(t *testing.T) {
 		`INSERT INTO users (username, email, password, salt) VALUES ('migtest', 'migtest@example.com', '\x00', '\x00') RETURNING user_id`,
 	).Scan(&userID))
 	_, err = scratchDB.Exec(
-		`INSERT INTO jobs (user_id, name, job_command, status) VALUES ($1, 'migtest-job', 'true', 'cancelling')`,
+		`INSERT INTO organizations (org_id, name, display_name) VALUES ($1, 'migtest', 'Migration Test')`,
+		userID,
+	)
+	require.NoError(t, err)
+	_, err = scratchDB.Exec(
+		`INSERT INTO jobs (user_id, org_id, name, job_command, status) VALUES ($1, $1, 'migtest-job', 'true', 'cancelling')`,
 		userID,
 	)
 	assert.NoError(t, err, "'cancelling' must be a valid jobs.status per the 000017 CHECK constraint")
@@ -374,7 +380,11 @@ func TestUIAuthBootstrapAndPermissionMatrix(t *testing.T) {
 	require.True(t, authResp.Authenticated)
 	require.NotNil(t, authResp.Identity)
 	require.True(t, authResp.Identity.IsGlobalAdmin, "bootstrap-admin session must resolve as global admin")
-	adminOrgID := authResp.Identity.UserId
+	defaultOrg, err := store.AppStore.(interface {
+		GetDefaultOrganization(context.Context) (*models.Organization, error)
+	}).GetDefaultOrganization(context.Background())
+	require.NoError(t, err)
+	adminOrgID := defaultOrg.OrgID
 
 	// 3. The bootstrap-admin session can create a project; global admin
 	// implies org admin of any org, and new_projects_private defaults false.
@@ -521,14 +531,11 @@ func TestUIAuthProjectVisibility(t *testing.T) {
 
 func TestUIAuthWebhookSecretRotation(t *testing.T) {
 	oldVCSEnabled := config.VCSEnabled
-	oldDefaultUserID := config.DefaultUserID
 	org := createTestUser(t)
 	config.VCSEnabled = true
-	config.DefaultUserID = org.UserID
 	handlers.ResetAppMux()
 	defer func() {
 		config.VCSEnabled = oldVCSEnabled
-		config.DefaultUserID = oldDefaultUserID
 		handlers.ResetAppMux()
 	}()
 	mux := handlers.GetAppMux()
@@ -547,7 +554,7 @@ func TestUIAuthWebhookSecretRotation(t *testing.T) {
 	repoURL := "github.com/test-org/" + repoName
 	project := createTestProject(t, org.UserID, repoURL, false)
 
-	orgToken := mintSessionForUser(t, org.UserID) // org.UserID == config.DefaultUserID: self-org admin capability
+	orgToken := mintSessionForUser(t, org.UserID)
 
 	const oldSecretValue = "old-webhook-secret-fake-value"
 	const newSecretValue = "new-webhook-secret-fake-value"

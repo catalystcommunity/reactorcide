@@ -418,6 +418,21 @@ func TestBuildEvalJob_CustomJobCommand(t *testing.T) {
 	assert.Equal(t, "make ci-eval", job.JobCommand)
 }
 
+func TestBuildEvalJob_UsesProjectCheckoutMode(t *testing.T) {
+	project := evalTestProject()
+	project.CheckoutMode = models.CheckoutModeShared
+	event := &vcs.WebhookEvent{
+		Provider: vcs.GitHub, GenericEvent: vcs.EventPullRequestUpdated,
+		Repository:  vcs.RepositoryInfo{FullName: "org/repo", CloneURL: "https://github.com/org/repo.git"},
+		PullRequest: &vcs.PullRequestInfo{Number: 9, HeadSHA: "head", BaseSHA: "base", BaseRef: "main"},
+	}
+
+	job := BuildEvalJob(project, event)
+
+	assert.Equal(t, "shared", job.JobEnvVars["REACTORCIDE_CHECKOUT_MODE"])
+	assert.Equal(t, "eval", job.JobEnvVars["REACTORCIDE_JOB_KIND"])
+}
+
 func TestBuildEvalJob_DefaultTimeout(t *testing.T) {
 	project := evalTestProject()
 	project.DefaultTimeoutSeconds = 0

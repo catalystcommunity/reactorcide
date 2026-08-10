@@ -53,10 +53,11 @@ func (s *UiService) authorizeRoleScope(ctx context.Context, id authz.Identity, s
 		if err != nil {
 			return mapStoreErr(err, "project not found")
 		}
-		if project.UserID == nil {
+		orgID := project.OwnershipOrgID()
+		if orgID == "" {
 			return mapPermissionErr(s.deps.Resolver.RequireGlobalAdmin(ctx, id))
 		}
-		return mapPermissionErr(s.deps.Resolver.RequireOrgAdmin(ctx, id, *project.UserID))
+		return mapPermissionErr(s.deps.Resolver.RequireOrgAdmin(ctx, id, orgID))
 	default:
 		return NewServiceError("invalid_argument", "scope_type must be one of global, org, project")
 	}
@@ -155,6 +156,8 @@ func (s *UiService) AssignRole(ctx context.Context, req csilapi.AssignRoleReques
 	if err := s.deps.Store.CreateRoleAssignment(ctx, assignment); err != nil {
 		return csilapi.AssignRoleResponse{}, NewServiceError("internal", "failed to create role assignment")
 	}
+	orgID := auditOrgForRole(ctx, s, assignment)
+	s.recordAudit(ctx, orgID, "role_assignment.create", "role_assignment", assignment.AssignmentID, models.JSONB{"principal_type": assignment.PrincipalType, "principal_id": assignment.PrincipalID, "scope_type": assignment.ScopeType, "scope_id": assignment.ScopeID, "role": assignment.Role})
 	return csilapi.AssignRoleResponse{Assignment: roleAssignmentToCsil(assignment)}, nil
 }
 
@@ -181,5 +184,21 @@ func (s *UiService) RevokeRole(ctx context.Context, req csilapi.RevokeRoleReques
 	if err := s.deps.Store.DeleteRoleAssignment(ctx, req.AssignmentId); err != nil {
 		return csilapi.RevokeRoleResponse{}, mapStoreErr(err, "role assignment not found")
 	}
+	s.recordAudit(ctx, auditOrgForRole(ctx, s, assignment), "role_assignment.delete", "role_assignment", assignment.AssignmentID, models.JSONB{"principal_type": assignment.PrincipalType, "principal_id": assignment.PrincipalID, "scope_type": assignment.ScopeType, "scope_id": assignment.ScopeID, "role": assignment.Role})
 	return csilapi.RevokeRoleResponse{Revoked: true}, nil
+}
+
+func auditOrgForRole(ctx context.Context, s *UiService, assignment *models.RoleAssignment) string {
+	if assignment.ScopeID == nil {
+		return ""
+	}
+	if assignment.ScopeType == models.ScopeTypeOrg {
+		return *assignment.ScopeID
+	}
+	if assignment.ScopeType == models.ScopeTypeProject {
+		if project, err := s.deps.Store.GetProjectByID(ctx, *assignment.ScopeID); err == nil {
+			return project.OwnershipOrgID()
+		}
+	}
+	return ""
 }

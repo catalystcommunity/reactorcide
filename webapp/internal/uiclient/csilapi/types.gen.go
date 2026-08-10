@@ -121,9 +121,12 @@ type GetCapabilitiesResponse struct {
 
 // OrgSummary represents a structured data type
 type OrgSummary struct {
-	OrgId     string `json:"org_id" yaml:"org_id"`
-	Name      string `json:"name" yaml:"name"`
-	IsPrivate bool   `json:"is_private" yaml:"is_private"`
+	OrgId       string `json:"org_id" yaml:"org_id"`
+	Name        string `json:"name" yaml:"name"`
+	DisplayName string `json:"display_name" yaml:"display_name"`
+	Status      string `json:"status" yaml:"status"`
+	IsDefault   bool   `json:"is_default" yaml:"is_default"`
+	IsPrivate   bool   `json:"is_private" yaml:"is_private"`
 }
 
 // ListOrgsRequest represents a structured data type
@@ -133,6 +136,160 @@ type ListOrgsRequest struct {
 // ListOrgsResponse represents a structured data type
 type ListOrgsResponse struct {
 	Orgs []OrgSummary `json:"orgs" yaml:"orgs"`
+}
+
+// CreateOrgRequest represents a structured data type
+type CreateOrgRequest struct {
+	Name        string  `json:"name" yaml:"name"`
+	DisplayName *string `json:"display_name,omitempty" yaml:"display_name,omitempty"`
+	IsPrivate   *bool   `json:"is_private,omitempty" yaml:"is_private,omitempty"`
+}
+
+// CreateOrgResponse represents a structured data type
+type CreateOrgResponse struct {
+	Org OrgSummary `json:"org" yaml:"org"`
+}
+
+// UpdateOrgRequest represents a structured data type
+type UpdateOrgRequest struct {
+	Name        string  `json:"name" yaml:"name"`
+	DisplayName *string `json:"display_name,omitempty" yaml:"display_name,omitempty"`
+	IsPrivate   *bool   `json:"is_private,omitempty" yaml:"is_private,omitempty"`
+	Status      *string `json:"status,omitempty" yaml:"status,omitempty"`
+}
+
+// UpdateOrgResponse represents a structured data type
+type UpdateOrgResponse struct {
+	Org OrgSummary `json:"org" yaml:"org"`
+}
+
+// SetDefaultOrgRequest represents a structured data type
+type SetDefaultOrgRequest struct {
+	Name string `json:"name" yaml:"name"`
+}
+
+// SetDefaultOrgResponse represents a structured data type
+type SetDefaultOrgResponse struct {
+	Org OrgSummary `json:"org" yaml:"org"`
+}
+
+// ExecutionProfileSummary represents a structured data type
+type ExecutionProfileSummary struct {
+	Name                  string   `json:"name" yaml:"name"`
+	DenySecrets           bool     `json:"deny_secrets" yaml:"deny_secrets"`
+	SecretPathAllowlist   []string `json:"secret_path_allowlist" yaml:"secret_path_allowlist"`
+	RuntimeCapabilities   []string `json:"runtime_capabilities" yaml:"runtime_capabilities"`
+	MayRunAsRoot          bool     `json:"may_run_as_root" yaml:"may_run_as_root"`
+	AllowedWorkerClasses  []string `json:"allowed_worker_classes" yaml:"allowed_worker_classes"`
+	TimeoutCeilingSeconds *int64   `json:"timeout_ceiling_seconds,omitempty" yaml:"timeout_ceiling_seconds,omitempty"`
+	ResourceCeilings      any      `json:"resource_ceilings" yaml:"resource_ceilings"`
+	CacheNamespace        *string  `json:"cache_namespace,omitempty" yaml:"cache_namespace,omitempty"`
+	ArtifactNamespace     *string  `json:"artifact_namespace,omitempty" yaml:"artifact_namespace,omitempty"`
+	TrustedCacheWrites    bool     `json:"trusted_cache_writes" yaml:"trusted_cache_writes"`
+}
+
+// ListExecutionProfilesRequest represents a structured data type
+type ListExecutionProfilesRequest struct {
+	Organization string `json:"organization" yaml:"organization"`
+}
+
+// ListExecutionProfilesResponse represents a structured data type
+type ListExecutionProfilesResponse struct {
+	Profiles []ExecutionProfileSummary `json:"profiles" yaml:"profiles"`
+}
+
+// PutExecutionProfileRequest represents a structured data type
+type PutExecutionProfileRequest struct {
+	Organization string                  `json:"organization" yaml:"organization"`
+	Profile      ExecutionProfileSummary `json:"profile" yaml:"profile"`
+}
+
+// PutExecutionProfileResponse represents a structured data type
+type PutExecutionProfileResponse struct {
+	Profile ExecutionProfileSummary `json:"profile" yaml:"profile"`
+}
+
+// DeleteExecutionProfileRequest represents a structured data type
+type DeleteExecutionProfileRequest struct {
+	Organization string `json:"organization" yaml:"organization"`
+	Name         string `json:"name" yaml:"name"`
+}
+
+// DeleteExecutionProfileResponse represents a structured data type
+type DeleteExecutionProfileResponse struct {
+	Deleted bool `json:"deleted" yaml:"deleted"`
+}
+
+// WorkerClassSummary represents a structured data type
+type WorkerClassSummary struct {
+	Name      string   `json:"name" yaml:"name"`
+	Protected bool     `json:"protected" yaml:"protected"`
+	PoolIds   []string `json:"pool_ids" yaml:"pool_ids"`
+}
+
+// ListWorkerClassesRequest represents a structured data type
+type ListWorkerClassesRequest struct {
+	Organization string `json:"organization" yaml:"organization"`
+}
+
+// ListWorkerClassesResponse represents a structured data type
+type ListWorkerClassesResponse struct {
+	WorkerClasses []WorkerClassSummary `json:"worker_classes" yaml:"worker_classes"`
+}
+
+// PutWorkerClassRequest represents a structured data type
+type PutWorkerClassRequest struct {
+	Organization string             `json:"organization" yaml:"organization"`
+	WorkerClass  WorkerClassSummary `json:"worker_class" yaml:"worker_class"`
+}
+
+// PutWorkerClassResponse represents a structured data type
+type PutWorkerClassResponse struct {
+	WorkerClass WorkerClassSummary `json:"worker_class" yaml:"worker_class"`
+}
+
+// DeleteWorkerClassRequest represents a structured data type
+type DeleteWorkerClassRequest struct {
+	Organization string `json:"organization" yaml:"organization"`
+	Name         string `json:"name" yaml:"name"`
+}
+
+// DeleteWorkerClassResponse represents a structured data type
+type DeleteWorkerClassResponse struct {
+	Deleted bool `json:"deleted" yaml:"deleted"`
+}
+
+// SetWorkerClassPoolRequest represents a structured data type
+type SetWorkerClassPoolRequest struct {
+	Organization string `json:"organization" yaml:"organization"`
+	WorkerClass  string `json:"worker_class" yaml:"worker_class"`
+	PoolId       string `json:"pool_id" yaml:"pool_id"`
+	Granted      bool   `json:"granted" yaml:"granted"`
+}
+
+// SetWorkerClassPoolResponse represents a structured data type
+type SetWorkerClassPoolResponse struct {
+	Ok bool `json:"ok" yaml:"ok"`
+}
+
+// CreateCiApprovalRequest represents a structured data type
+type CreateCiApprovalRequest struct {
+	Organization     string  `json:"organization" yaml:"organization"`
+	Project          string  `json:"project" yaml:"project"`
+	PrNumber         int64   `json:"pr_number" yaml:"pr_number"`
+	HeadRepository   string  `json:"head_repository" yaml:"head_repository"`
+	HeadSha          string  `json:"head_sha" yaml:"head_sha"`
+	BaseSha          string  `json:"base_sha" yaml:"base_sha"`
+	PolicyRevision   string  `json:"policy_revision" yaml:"policy_revision"`
+	WorkflowScope    string  `json:"workflow_scope" yaml:"workflow_scope"`
+	ExecutionProfile string  `json:"execution_profile" yaml:"execution_profile"`
+	ApproverSubject  string  `json:"approver_subject" yaml:"approver_subject"`
+	ExpiresAt        *string `json:"expires_at,omitempty" yaml:"expires_at,omitempty"`
+}
+
+// CreateCiApprovalResponse represents a structured data type
+type CreateCiApprovalResponse struct {
+	ApprovalId string `json:"approval_id" yaml:"approval_id"`
 }
 
 // ProjectSummary represents a structured data type
@@ -176,6 +333,7 @@ type ProjectDetail struct {
 	DefaultJobCommand     string   `json:"default_job_command" yaml:"default_job_command"`
 	DefaultTimeoutSeconds int64    `json:"default_timeout_seconds" yaml:"default_timeout_seconds"`
 	DefaultQueueName      string   `json:"default_queue_name" yaml:"default_queue_name"`
+	CheckoutMode          string   `json:"checkout_mode" yaml:"checkout_mode"`
 	CreatedAt             string   `json:"created_at" yaml:"created_at"`
 	UpdatedAt             string   `json:"updated_at" yaml:"updated_at"`
 }
@@ -199,6 +357,7 @@ type CreateProjectRequest struct {
 	IsPrivate         *bool    `json:"is_private,omitempty" yaml:"is_private,omitempty"`
 	TargetBranches    []string `json:"target_branches,omitempty" yaml:"target_branches,omitempty"`
 	AllowedEventTypes []string `json:"allowed_event_types,omitempty" yaml:"allowed_event_types,omitempty"`
+	CheckoutMode      *string  `json:"checkout_mode,omitempty" yaml:"checkout_mode,omitempty"`
 }
 
 // CreateProjectResponse represents a structured data type
@@ -219,6 +378,7 @@ type UpdateProjectRequest struct {
 	DefaultJobCommand     *string  `json:"default_job_command,omitempty" yaml:"default_job_command,omitempty"`
 	DefaultTimeoutSeconds *int64   `json:"default_timeout_seconds,omitempty" yaml:"default_timeout_seconds,omitempty"`
 	DefaultQueueName      *string  `json:"default_queue_name,omitempty" yaml:"default_queue_name,omitempty"`
+	CheckoutMode          *string  `json:"checkout_mode,omitempty" yaml:"checkout_mode,omitempty"`
 }
 
 // UpdateProjectResponse represents a structured data type

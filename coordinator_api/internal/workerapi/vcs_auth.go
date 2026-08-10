@@ -78,25 +78,24 @@ func (d *Deps) resolveVCSAuth(ctx context.Context, job *models.Job) (*csilapi.VC
 	}, nil
 }
 
-// checkoutProjectOwner mirrors the deleted JobProcessor's identically-named
-// helper: resolves the job's project (if any) and the user ID whose
-// secrets store scope should be used (the project's own UserID, falling
-// back to the job's UserID when the project has none or doesn't load).
+// checkoutProjectOwner resolves the job's project and the organization that
+// owns its secrets. UserID is creator attribution and must not select a
+// secrets namespace.
 func (d *Deps) checkoutProjectOwner(ctx context.Context, job *models.Job) (*models.Project, string) {
 	if job.ProjectID == nil || *job.ProjectID == "" {
-		return nil, job.UserID
+		return nil, job.OrgID
 	}
 	project, err := d.Store.GetProjectByID(ctx, *job.ProjectID)
 	if err != nil || project == nil {
 		if err != nil {
 			logging.Log.WithError(err).WithField("project_id", *job.ProjectID).Debug("Failed to load project for VCS checkout credential lookup")
 		}
-		return nil, job.UserID
+		return nil, job.OrgID
 	}
-	if project.UserID != nil && *project.UserID != "" {
-		return project, *project.UserID
+	if orgID := project.OwnershipOrgID(); orgID != "" {
+		return project, orgID
 	}
-	return project, job.UserID
+	return project, job.OrgID
 }
 
 // resolveVCSCheckoutToken mirrors the deleted
@@ -138,7 +137,7 @@ func (d *Deps) resolveVCSCheckoutToken(ctx context.Context, job *models.Job, pro
 
 	orgID := ownerID
 	if orgID == "" {
-		orgID = job.UserID
+		orgID = job.OrgID
 	}
 	if orgID != "" {
 		if user, uerr := d.Store.GetUserByID(ctx, orgID); uerr == nil && user != nil {

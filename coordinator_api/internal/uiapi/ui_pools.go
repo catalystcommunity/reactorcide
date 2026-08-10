@@ -85,6 +85,7 @@ func (s *UiService) CreatePool(ctx context.Context, req csilapi.CreatePoolReques
 	if err := s.deps.Store.CreateWorkerPool(ctx, pool); err != nil {
 		return csilapi.CreatePoolResponse{}, NewServiceError("internal", "failed to create worker pool")
 	}
+	s.recordAudit(ctx, derefOr(pool.OrgID, ""), "worker_pool.create", "worker_pool", pool.PoolID, models.JSONB{"name": pool.Name, "global": pool.OrgID == nil})
 	return csilapi.CreatePoolResponse{Pool: poolToSummary(pool)}, nil
 }
 
@@ -119,6 +120,7 @@ func (s *UiService) UpdatePool(ctx context.Context, req csilapi.UpdatePoolReques
 	if err := s.deps.Store.UpdateWorkerPool(ctx, pool.PoolID, pool.Name, pool.Description); err != nil {
 		return csilapi.UpdatePoolResponse{}, mapStoreErr(err, "pool not found")
 	}
+	s.recordAudit(ctx, derefOr(pool.OrgID, ""), "worker_pool.update", "worker_pool", pool.PoolID, models.JSONB{"name": pool.Name})
 	return csilapi.UpdatePoolResponse{Pool: poolToSummary(pool)}, nil
 }
 
@@ -146,6 +148,7 @@ func (s *UiService) DeletePool(ctx context.Context, req csilapi.DeletePoolReques
 	if err := s.deps.Store.DeleteWorkerPool(ctx, req.PoolId); err != nil {
 		return csilapi.DeletePoolResponse{}, mapStoreErr(err, "pool not found or still has workers")
 	}
+	s.recordAudit(ctx, derefOr(pool.OrgID, ""), "worker_pool.delete", "worker_pool", pool.PoolID, models.JSONB{"name": pool.Name})
 	return csilapi.DeletePoolResponse{Deleted: true}, nil
 }
 
@@ -180,6 +183,7 @@ func (s *UiService) CreateEnrollmentToken(ctx context.Context, req csilapi.Creat
 	if err != nil {
 		return csilapi.CreateEnrollmentTokenResponse{}, NewServiceError("internal", "failed to create enrollment token")
 	}
+	s.recordAudit(ctx, derefOr(pool.OrgID, ""), "worker_enrollment_token.create", "pool_enrollment_token", token.TokenID, models.JSONB{"pool_id": pool.PoolID, "name": token.Name})
 	return csilapi.CreateEnrollmentTokenResponse{
 		Token:   raw,
 		Summary: enrollmentTokenToSummary(token),
@@ -244,6 +248,7 @@ func (s *UiService) DeactivateEnrollmentToken(ctx context.Context, req csilapi.D
 	if err := s.deps.Store.DeactivatePoolEnrollmentToken(ctx, req.TokenId); err != nil {
 		return csilapi.DeactivateEnrollmentTokenResponse{}, mapStoreErr(err, "enrollment token not found")
 	}
+	s.recordAudit(ctx, derefOr(pool.OrgID, ""), "worker_enrollment_token.deactivate", "pool_enrollment_token", token.TokenID, models.JSONB{"pool_id": pool.PoolID})
 	token.IsActive = false
 	return csilapi.DeactivateEnrollmentTokenResponse{Summary: enrollmentTokenToSummary(token)}, nil
 }

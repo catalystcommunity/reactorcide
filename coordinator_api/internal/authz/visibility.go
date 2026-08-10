@@ -7,6 +7,7 @@ import (
 
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store/models"
+	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/tokencaps"
 )
 
 // visibilityBatch amortizes role-assignment and owning-user lookups across
@@ -87,8 +88,13 @@ func (vb *visibilityBatch) getProject(ctx context.Context, projectID string) (*m
 // admins of the owning org, and global admins can all see private resources;
 // everyone else (including any anonymous caller) cannot.
 func (vb *visibilityBatch) canViewPrivate(ctx context.Context, ownerUserID string, projectID *string) (bool, error) {
-	if vb.id.Anonymous || vb.id.UserID == "" {
+	if vb.id.Anonymous {
 		return false, nil
+	}
+	if vb.id.UserID == "" {
+		return vb.id.tokenAllows(ownerUserID, tokencaps.ProjectsRead) ||
+			vb.id.tokenAllows(ownerUserID, tokencaps.JobsRead) ||
+			vb.id.tokenAllows(ownerUserID, tokencaps.WorkflowsRead), nil
 	}
 	if ownerUserID != "" && ownerUserID == vb.id.UserID {
 		return true, nil

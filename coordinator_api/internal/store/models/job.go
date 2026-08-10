@@ -8,6 +8,7 @@ import (
 
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/characteristics"
 	"github.com/lib/pq"
+	"gorm.io/gorm"
 )
 
 // JSONB represents a JSON field that can be stored in PostgreSQL JSONB column
@@ -46,7 +47,8 @@ type Job struct {
 	JobID     string    `gorm:"primaryKey;type:uuid;default:generate_ulid()" json:"job_id"`
 	CreatedAt time.Time `gorm:"autoCreateTime:false;default:timezone('utc', now())" json:"created_at"`
 	UpdatedAt time.Time `gorm:"autoUpdateTime:false;default:timezone('utc', now())" json:"updated_at"`
-	UserID    string    `gorm:"type:uuid;not null" json:"user_id"`
+	UserID    string    `gorm:"type:uuid;default:null" json:"user_id,omitempty"`
+	OrgID     string    `gorm:"column:org_id;type:uuid;not null" json:"-"`
 	ProjectID *string   `gorm:"type:uuid" json:"project_id"`
 
 	// Job metadata
@@ -92,6 +94,7 @@ type Job struct {
 	// the "reactorcide-jobs" default here is a pre-queue-routing legacy
 	// value that submit paths always overwrite.
 	QueueName       string `gorm:"type:text;not null;default:'reactorcide-jobs'" json:"queue_name"`
+	WorkerClass     string `gorm:"type:text;not null;default:'default'" json:"worker_class"`
 	AutoTargetState string `gorm:"type:text;default:'running'" json:"auto_target_state"`
 
 	// Characteristics is this job's characteristic set, used to
@@ -157,6 +160,14 @@ type Job struct {
 	PRNumber  *int    `gorm:"type:integer" json:"pr_number,omitempty"`
 	CommitSHA *string `gorm:"type:text" json:"commit_sha,omitempty"`
 
+	CIOrigin         string  `gorm:"type:text;default:null" json:"ci_origin,omitempty"`
+	CIRepository     string  `gorm:"type:text;default:null" json:"ci_repository,omitempty"`
+	CISHA            string  `gorm:"column:ci_sha;type:text;default:null" json:"ci_sha,omitempty"`
+	ExecutionProfile string  `gorm:"type:text;default:null" json:"execution_profile,omitempty"`
+	PolicyRevision   string  `gorm:"type:text;default:null" json:"policy_revision,omitempty"`
+	PolicyRuleID     string  `gorm:"type:text;default:null" json:"policy_rule_id,omitempty"`
+	ApprovalID       *string `gorm:"type:uuid" json:"approval_id,omitempty"`
+
 	// Relationships
 	User      User     `gorm:"foreignKey:UserID" json:"user,omitempty"`
 	Project   *Project `gorm:"foreignKey:ProjectID" json:"project,omitempty"`
@@ -178,6 +189,25 @@ type Job struct {
 // TableName specifies the table name for the model
 func (Job) TableName() string {
 	return "jobs"
+}
+
+// BeforeCreate maps legacy creator attribution to organization ownership.
+// New job creation paths must set OrgID explicitly.
+func (j *Job) BeforeCreate(_ *gorm.DB) error {
+	if j.OrgID == "" {
+		j.OrgID = j.UserID
+	}
+	return nil
+}
+
+func (j *Job) OwnershipOrgID() string {
+	if j == nil {
+		return ""
+	}
+	if j.OrgID != "" {
+		return j.OrgID
+	}
+	return j.UserID
 }
 
 // IsRunning returns true if the job is in a running state

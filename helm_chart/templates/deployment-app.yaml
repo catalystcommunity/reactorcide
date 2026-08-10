@@ -98,7 +98,7 @@ spec:
             - name: REACTORCIDE_API_TOKEN
               valueFrom:
                 secretKeyRef:
-                  name: {{ ((.Values.app).apiTokenSecret).name | default .Values.defaults.userSecretName }}
+                  name: {{ ((.Values.app).apiTokenSecret).name | default .Values.defaults.apiTokenSecretName }}
                   key: {{ ((.Values.app).apiTokenSecret).key | default "token" }}
                   optional: true
             {{- if and .Values.corndogs.enabled .Values.corndogs.apiKey }}
@@ -146,12 +146,6 @@ spec:
             - name: REACTORCIDE_VCS_BASE_URL
               value: {{ .Values.vcs.baseURL | quote }}
             {{- end }}
-            # Default user ID from generated secret
-            - name: REACTORCIDE_DEFAULT_USER_ID
-              valueFrom:
-                secretKeyRef:
-                  name: {{ .Values.defaults.userSecretName }}
-                  key: user-id
             {{- /* Zero-touch worker enrollment: seed the
             default worker pool from the SAME enrollment token the worker
             enrolls with. Sourced from the chart-managed auto-generated Secret

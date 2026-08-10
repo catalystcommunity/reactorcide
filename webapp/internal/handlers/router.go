@@ -82,6 +82,10 @@ func NewRouter() http.Handler {
 	// a pool id of "worker" or a worker id of "pools") when neither is
 	// strictly more specific than the other.
 	mux.HandleFunc("GET /app/workers", webHandler.withSession(webHandler.WorkersPage))
+	mux.HandleFunc("GET /app/workers/classes", webHandler.withSession(webHandler.WorkerClassesPage))
+	mux.HandleFunc("POST /app/workers/classes", webHandler.withSession(webHandler.WorkerClassPut))
+	mux.HandleFunc("POST /app/workers/classes/{name}/delete", webHandler.withSession(webHandler.WorkerClassDelete))
+	mux.HandleFunc("POST /app/workers/classes/{name}/pools", webHandler.withSession(webHandler.WorkerClassPoolSet))
 	mux.HandleFunc("POST /app/workers/pools", webHandler.withSession(webHandler.PoolCreate))
 	mux.HandleFunc("POST /app/workers/pools/{id}", webHandler.withSession(webHandler.PoolUpdate))
 	mux.HandleFunc("POST /app/workers/pools/{id}/delete", webHandler.withSession(webHandler.PoolDelete))

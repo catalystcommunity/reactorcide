@@ -120,8 +120,12 @@ func (tp *TriggerProcessor) ensureWorkflow(ctx context.Context, parentJob *model
 	// Reprocessing the same operation reuses its workflow. An eval job that is
 	// not in a workflow creates a root. A workflow job creates a child.
 	if spec != nil && spec.OperationID != "" {
+		securityID := strings.TrimSpace(spec.ID)
+		if securityID == "" {
+			securityID = name
+		}
 		if ts, ok := tp.store.(workflowTriggerStore); ok {
-			if existing, err := ts.GetWorkflowInstanceByTriggerOperation(ctx, parentJob.JobID, spec.OperationID, name); err == nil && existing != nil {
+			if existing, err := ts.GetWorkflowInstanceByTriggerOperation(ctx, parentJob.JobID, spec.OperationID, securityID); err == nil && existing != nil {
 				return existing, nil
 			} else if err != nil && !errors.Is(err, store.ErrNotFound) {
 				return nil, err
@@ -135,16 +139,44 @@ func (tp *TriggerProcessor) ensureWorkflow(ctx context.Context, parentJob *model
 
 	parentJobID := parentJob.JobID
 	wf := &models.WorkflowInstance{
-		UserID:        parentJob.UserID,
-		ProjectID:     parentJob.ProjectID,
-		ParentJobID:   &parentJobID,
-		Name:          name,
-		Status:        "evaluating",
-		QueueName:     parentJob.QueueName,
-		StatusContext: name,
-		TriggerType:   "runnerlib",
+		UserID:             parentJob.UserID,
+		OrgID:              parentJob.OrgID,
+		ProjectID:          parentJob.ProjectID,
+		ParentJobID:        &parentJobID,
+		Name:               name,
+		WorkflowSecurityID: name,
+		Status:             "evaluating",
+		QueueName:          parentJob.QueueName,
+		StatusContext:      name,
+		TriggerType:        "runnerlib",
+		WorkerClass:        parentJob.WorkerClass,
+		ExecutionProfile:   parentJob.ExecutionProfile,
+		CIOrigin:           parentJob.CIOrigin, CIRepository: parentJob.CIRepository, CISHA: parentJob.CISHA,
+		PolicyRevision: parentJob.PolicyRevision, PolicyRuleID: parentJob.PolicyRuleID, ApprovalID: parentJob.ApprovalID,
 	}
 	if spec != nil {
+		if strings.TrimSpace(spec.ID) != "" {
+			wf.WorkflowSecurityID = strings.TrimSpace(spec.ID)
+		}
+		wf.SourceFile = strings.TrimSpace(spec.SourceFile)
+		if spec.CIOrigin == "base" || spec.CIOrigin == "head" {
+			wf.CIOrigin = spec.CIOrigin
+		}
+		if spec.CIRepository != "" {
+			wf.CIRepository = spec.CIRepository
+		}
+		if spec.CISHA != "" {
+			wf.CISHA = spec.CISHA
+		}
+		if spec.ExecutionProfile != "" {
+			wf.ExecutionProfile = spec.ExecutionProfile
+		}
+		if spec.WorkerClass != "" {
+			wf.WorkerClass = spec.WorkerClass
+		}
+		wf.PolicyRevision = spec.PolicyRevision
+		wf.PolicyRuleID = spec.PolicyRuleID
+		wf.ApprovalID = spec.ApprovalID
 		wf.TriggerOperationID = spec.OperationID
 		if spec.TriggerType != "" {
 			wf.TriggerType = spec.TriggerType
@@ -456,9 +488,43 @@ func (tp *TriggerProcessor) submitWorkflowNode(ctx context.Context, wf *models.W
 	if err != nil {
 		return "", err
 	}
-	job, err := tp.buildJobFromTrigger(spec, parentJob)
+	authorityParent := *parentJob
+	authorityParent.WorkerClass = wf.WorkerClass
+	authorityParent.ExecutionProfile = wf.ExecutionProfile
+	authorityParent.CIOrigin = wf.CIOrigin
+	authorityParent.CIRepository = wf.CIRepository
+	authorityParent.CISHA = wf.CISHA
+	authorityParent.PolicyRevision = wf.PolicyRevision
+	authorityParent.PolicyRuleID = wf.PolicyRuleID
+	authorityParent.ApprovalID = wf.ApprovalID
+	var executionProfile *models.ExecutionProfile
+	if ps, ok := tp.store.(triggerProfileStore); ok && wf.ExecutionProfile != "" {
+		executionProfile, err = ps.GetExecutionProfile(ctx, wf.OrgID, wf.ExecutionProfile)
+		if err != nil {
+			return "", fmt.Errorf("load workflow execution profile: %w", err)
+		}
+		authorityParent.Capabilities = append(pq.StringArray(nil), executionProfile.RuntimeCapabilities...)
+	}
+	if wf.CIRepository != "" {
+		authorityParent.CISourceURL = &wf.CIRepository
+	}
+	if wf.CISHA != "" {
+		authorityParent.CISourceRef = &wf.CISHA
+	}
+	job, err := tp.buildJobFromTrigger(spec, &authorityParent)
 	if err != nil {
 		return "", err
+	}
+	if executionProfile != nil {
+		if !executionProfile.MayRunAsRoot && (job.RunAsUser == "root" || job.RunAsUser == "0" || strings.HasPrefix(job.RunAsUser, "0:")) {
+			return "", fmt.Errorf("execution profile %q denies root", executionProfile.Name)
+		}
+		if executionProfile.TimeoutCeilingSeconds != nil && job.TimeoutSeconds > *executionProfile.TimeoutCeilingSeconds {
+			return "", fmt.Errorf("job timeout exceeds execution profile %q ceiling", executionProfile.Name)
+		}
+		if err := enforceResourceCeilings(job, executionProfile.ResourceCeilings); err != nil {
+			return "", fmt.Errorf("execution profile %q: %w", executionProfile.Name, err)
+		}
 	}
 	job.WorkflowID = &wf.WorkflowID
 	job.WorkflowNodeID = &node.NodeID

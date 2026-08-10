@@ -42,7 +42,7 @@ func (p *DatabaseProvider) Get(ctx context.Context, path, key string) (string, e
 
 	var secret models.Secret
 	err := p.db.WithContext(ctx).
-		Where("user_id = ? AND path = ? AND key = ?", p.orgID, path, key).
+		Where("org_id = ? AND path = ? AND key = ?", p.orgID, path, key).
 		First(&secret).Error
 
 	if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -81,7 +81,7 @@ func (p *DatabaseProvider) Set(ctx context.Context, path, key, value string) err
 	// Try to find existing secret
 	var existing models.Secret
 	err = p.db.WithContext(ctx).
-		Where("user_id = ? AND path = ? AND key = ?", p.orgID, path, key).
+		Where("org_id = ? AND path = ? AND key = ?", p.orgID, path, key).
 		First(&existing).Error
 
 	if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -125,7 +125,7 @@ func (p *DatabaseProvider) Delete(ctx context.Context, path, key string) (bool, 
 	}
 
 	result := p.db.WithContext(ctx).
-		Where("user_id = ? AND path = ? AND key = ?", p.orgID, path, key).
+		Where("org_id = ? AND path = ? AND key = ?", p.orgID, path, key).
 		Delete(&models.Secret{})
 
 	if result.Error != nil {
@@ -144,7 +144,7 @@ func (p *DatabaseProvider) ListKeys(ctx context.Context, path string) ([]string,
 	var keys []string
 	err := p.db.WithContext(ctx).
 		Model(&models.Secret{}).
-		Where("user_id = ? AND path = ?", p.orgID, path).
+		Where("org_id = ? AND path = ?", p.orgID, path).
 		Pluck("key", &keys).Error
 
 	if err != nil {
@@ -159,7 +159,7 @@ func (p *DatabaseProvider) ListPaths(ctx context.Context) ([]string, error) {
 	var paths []string
 	err := p.db.WithContext(ctx).
 		Model(&models.Secret{}).
-		Where("user_id = ?", p.orgID).
+		Where("org_id = ?", p.orgID).
 		Distinct("path").
 		Pluck("path", &paths).Error
 
@@ -189,7 +189,7 @@ func (p *DatabaseProvider) GetMulti(ctx context.Context, refs []SecretRef) (map[
 
 	// Build query for all secrets at once
 	var secrets []models.Secret
-	tx := p.db.WithContext(ctx).Where("user_id = ?", p.orgID)
+	tx := p.db.WithContext(ctx).Where("org_id = ?", p.orgID)
 
 	// Build OR conditions for each ref
 	conditions := make([]interface{}, 0, len(refs)*2)

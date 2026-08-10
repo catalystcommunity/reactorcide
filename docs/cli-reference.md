@@ -108,12 +108,20 @@ Use `--file` for the secret reference maps `vcs_token_secrets` and
 ```bash
 reactorcide projects create --file example-repo.yaml
 reactorcide projects update <project-id> --enabled --target-branch main
+reactorcide projects update <project-id> --checkout-mode shared
 ```
+
+`--checkout-mode` accepts `isolated` or `shared`. The shared mode uses one
+non-shallow, blob-filtered Git object store during pull-request evaluation. It
+stages small base and head CI views from that store. Set an empty value on an
+update to remove the project override. If a project does not set this field,
+the coordinator uses `REACTORCIDE_CHECKOUT_MODE`. The default is `isolated`.
 
 See [Connect a VCS Repository](./vcs-setup.md) for a full example.
 
-`update` changes only the fields you give. It cannot set a text field back to
-empty.
+`update` changes only the fields you give. Most text fields cannot be set back
+to empty with a flag. `--checkout-mode ""` is an explicit exception. It removes
+the project checkout override.
 
 ## Token Commands
 
@@ -125,7 +133,13 @@ empty.
 
 `token create` needs database access, not an API token, so you can use it to
 make the first token. Give it `--db-uri` or set `REACTORCIDE_DB_URI`. The
-token value prints one time.
+token value prints one time. This is an instance-operator command. It does not
+apply caller-token authority checks because it writes directly to PostgreSQL.
+
+Use repeated `--org` and `--capability` flags to create a limited service
+token. Use `--as-user USERNAME` to create a delegated user token. An omitted
+organization list means all organizations. An omitted capability list means
+all capabilities.
 
 ## Secret Commands
 
@@ -170,3 +184,47 @@ See [VCS Credentials and Secret Grants](./vcs-credentials-and-secret-grants.md).
 | `vm-image registry logout` | Remove registry credentials. |
 
 See [VM Image Operations](./vm-images.md).
+
+## Organization and Policy Commands
+
+Use `reactorcide orgs create`, `list`, `get`, `update`, and `set-default` to
+manage organizations. Use `reactorcide projects create --org NAME` to select an
+organization. If you omit `--org`, the coordinator uses the default
+organization.
+
+Use repeated `reactorcide token create --org NAME` and `--capability VALUE`
+flags to limit a token. Use `--as-user USERNAME` for a delegated user token.
+The CLI shows the raw token only when it creates the token.
+
+Use `reactorcide profiles list --org NAME` to list execution profiles. Use
+`profiles get`, `apply`, and `delete` to manage them. The `apply` command reads
+a YAML profile file. The token needs `policies:manage` for the organization.
+
+Use `reactorcide policy validate --path REPOSITORY` to validate the trusted
+policy files. Use `reactorcide policy explain --workflow ID` with the event,
+path, actor, and approval flags to inspect a decision without starting a job.
+
+The policy commands read the repository at `--path`. The `--project` and
+`--pr` values label the output. They do not fetch pull request data. Add one
+`--changed-path` option for each changed CI file. Add verified actor and
+approval subjects when you reproduce a coordinator decision.
+
+Use `reactorcide approvals create` to create a SHA-bound approval through the
+API. A GitHub user can also add this exact command to a pull request:
+
+```text
+/reactorcide approve WORKFLOW PROFILE POLICY-REVISION
+```
+
+The coordinator gets the current head and base SHA from GitHub. It creates an
+approval only for subjects that GitHub or a verified identity link confirms.
+The trusted base policy must still allow the subject, workflow, profile, and
+revision.
+
+Use `GET /api/v1/audit?org=NAME` to export organization audit events. The
+token needs `audit:read` for that organization. Set
+`REACTORCIDE_AUDIT_RETENTION_DAYS` to control age-based audit retention.
+
+See [Organizations and Trusted CI Policy](./organizations-and-ci-policy.md)
+for complete examples, the policy schema, worker classes, execution profiles,
+checkout precedence, GitHub status reporting, and upgrade checks.

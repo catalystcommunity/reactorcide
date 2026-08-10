@@ -81,6 +81,10 @@ type queueResolvingStore interface {
 	FindOrCreateQueueByCharacteristics(ctx context.Context, chars characteristics.Characteristics) (*models.Queue, error)
 }
 
+type orgQueueResolvingStore interface {
+	FindOrCreateQueueForOrg(ctx context.Context, orgID, workerClass string, chars characteristics.Characteristics) (*models.Queue, error)
+}
+
 // RetryJob retries a single job in place: validates job.IsRetryable()
 // (failed, cancelled, or timeout), clones its full spec into a brand-new job row
 // (fresh JobID, status "submitted", every execution field zeroed —
@@ -113,7 +117,13 @@ func RetryJob(ctx context.Context, st store.Store, corndogsClient corndogs.Clien
 	// case (the original job's characteristics already resolved to a live
 	// queue row) but stays correct if that queue row was ever deleted and
 	// needs re-creating.
-	if qs, ok := st.(queueResolvingStore); ok {
+	if qs, ok := st.(orgQueueResolvingStore); ok {
+		queue, err := qs.FindOrCreateQueueForOrg(ctx, newJob.OrgID, newJob.WorkerClass, newJob.Characteristics)
+		if err != nil {
+			return nil, fmt.Errorf("failed to resolve queue for retried job: %w", err)
+		}
+		newJob.QueueName = queue.QueueUUID
+	} else if qs, ok := st.(queueResolvingStore); ok {
 		queue, err := qs.FindOrCreateQueueByCharacteristics(ctx, newJob.Characteristics)
 		if err != nil {
 			return nil, fmt.Errorf("failed to resolve queue for retried job: %w", err)
@@ -148,6 +158,7 @@ func RetryJob(ctx context.Context, st store.Store, corndogsClient corndogs.Clien
 			return newJob, fmt.Errorf("job retried but failed to rebind workflow node: %w", err)
 		}
 	}
+	bumpJobReportRevision(ctx, st, newJob)
 
 	return newJob, nil
 }
@@ -192,18 +203,24 @@ func RetryWorkflow(ctx context.Context, st store.Store, corndogsClient corndogs.
 	}
 
 	newWf := &models.WorkflowInstance{
-		UserID:        old.UserID,
-		ProjectID:     old.ProjectID,
-		ParentJobID:   old.ParentJobID,
-		Name:          old.Name,
-		Status:        "evaluating",
-		QueueName:     old.QueueName,
-		VCSProvider:   old.VCSProvider,
-		VCSRepo:       old.VCSRepo,
-		PRNumber:      cloneIntPtr(old.PRNumber),
-		CommitSHA:     old.CommitSHA,
-		StatusContext: old.StatusContext,
-		CommentMarker: old.CommentMarker,
+		UserID:             old.UserID,
+		OrgID:              old.OrgID,
+		ProjectID:          old.ProjectID,
+		ParentJobID:        old.ParentJobID,
+		Name:               old.Name,
+		WorkflowSecurityID: old.WorkflowSecurityID,
+		SourceFile:         old.SourceFile,
+		Status:             "evaluating",
+		QueueName:          old.QueueName,
+		VCSProvider:        old.VCSProvider,
+		VCSRepo:            old.VCSRepo,
+		PRNumber:           cloneIntPtr(old.PRNumber),
+		CommitSHA:          old.CommitSHA,
+		StatusContext:      old.StatusContext,
+		CommentMarker:      old.CommentMarker,
+		CIOrigin:           old.CIOrigin, CIRepository: old.CIRepository, CISHA: old.CISHA,
+		ExecutionProfile: old.ExecutionProfile, WorkerClass: old.WorkerClass,
+		PolicyRevision: old.PolicyRevision, PolicyRuleID: old.PolicyRuleID, ApprovalID: cloneStringPtr(old.ApprovalID),
 	}
 	if err := ws.CreateWorkflowInstance(ctx, newWf); err != nil {
 		return nil, fmt.Errorf("failed to create retried workflow instance: %w", err)
@@ -236,6 +253,7 @@ func RetryWorkflow(ctx context.Context, st store.Store, corndogsClient corndogs.
 	if reloaded, err := ws.GetWorkflowInstance(ctx, newWf.WorkflowID); err == nil {
 		return reloaded, nil
 	}
+	bumpWorkflowReportRevision(ctx, st, newWf)
 	return newWf, nil
 }
 
@@ -377,6 +395,7 @@ func cloneJobForRetry(original *models.Job) *models.Job {
 		CreatedAt: now,
 		UpdatedAt: now,
 		UserID:    original.UserID,
+		OrgID:     original.OrgID,
 		ProjectID: original.ProjectID,
 
 		Name:        original.Name,
@@ -408,6 +427,7 @@ func cloneJobForRetry(original *models.Job) *models.Job {
 		RunAsUser:      original.RunAsUser,
 
 		QueueName:       original.QueueName,
+		WorkerClass:     original.WorkerClass,
 		AutoTargetState: original.AutoTargetState,
 		Characteristics: cloneCharacteristics(original.Characteristics),
 
@@ -428,6 +448,9 @@ func cloneJobForRetry(original *models.Job) *models.Job {
 		VCSRepo:   cloneStringPtr(original.VCSRepo),
 		PRNumber:  cloneIntPtr(original.PRNumber),
 		CommitSHA: cloneStringPtr(original.CommitSHA),
+		CIOrigin:  original.CIOrigin, CIRepository: original.CIRepository, CISHA: original.CISHA,
+		ExecutionProfile: original.ExecutionProfile, PolicyRevision: original.PolicyRevision,
+		PolicyRuleID: original.PolicyRuleID, ApprovalID: cloneStringPtr(original.ApprovalID),
 	}
 
 	if original.WorkflowNodeID != nil && *original.WorkflowNodeID != "" {

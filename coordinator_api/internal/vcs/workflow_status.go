@@ -9,6 +9,11 @@ import (
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store/models"
 )
 
+type workflowReportStore interface {
+	UpsertVCSReportTarget(context.Context, *models.VCSReportTarget) error
+	UpsertVCSReportEntry(context.Context, *models.VCSReportEntry) error
+}
+
 // UpdateWorkflowStatus publishes the single aggregate workflow check and
 // rolling PR comment used for dynamic workflow jobs.
 func (u *JobStatusUpdater) UpdateWorkflowStatus(ctx context.Context, wf *models.WorkflowInstance, nodes []models.WorkflowNode) error {
@@ -36,6 +41,28 @@ func (u *JobStatusUpdater) UpdateWorkflowStatus(ctx context.Context, wf *models.
 		return fmt.Errorf("updating workflow commit status: %w", err)
 	}
 	if wf.PRNumber != nil && *wf.PRNumber > 0 {
+		if reports, ok := u.store.(workflowReportStore); ok {
+			target := &models.VCSReportTarget{
+				OrgID: wf.OrgID, ProjectID: wf.ProjectID, Provider: wf.VCSProvider,
+				Repository: wf.VCSRepo, TargetType: "pull_request",
+				ExternalTargetID: fmt.Sprintf("%d", *wf.PRNumber),
+				RootMarker:       "<!-- reactorcide:report:v1 -->", CurrentGeneration: 1,
+			}
+			if err := reports.UpsertVCSReportTarget(ctx, target); err != nil {
+				return fmt.Errorf("creating workflow report target: %w", err)
+			}
+			key := wf.WorkflowSecurityID
+			if key == "" {
+				key = wf.WorkflowID
+			}
+			state := models.JSONB{"title": wf.Name, "body": u.renderWorkflowCommentBody(wf, nodes, "")}
+			entry := &models.VCSReportEntry{ReportTargetID: target.ReportTargetID, EntryKey: key,
+				WorkflowID: &wf.WorkflowID, Generation: target.CurrentGeneration, Status: wf.Status, StructuredState: state}
+			if err := reports.UpsertVCSReportEntry(ctx, entry); err != nil {
+				return fmt.Errorf("queueing workflow report: %w", err)
+			}
+			return nil
+		}
 		marker := wf.CommentMarker
 		if marker == "" {
 			marker = fmt.Sprintf("<!-- reactorcide:workflows:%s -->", wf.CommitSHA)

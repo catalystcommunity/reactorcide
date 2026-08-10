@@ -86,6 +86,14 @@ class ConfigValidator:
     def _validate_required_fields(self, config: RunnerConfig) -> List[ValidationError]:
         """Validate required configuration fields."""
         errors = []
+
+        # Keep checkout configuration intentionally small. The shared mode
+        # applies only when runnerlib has the Git source facts that it needs.
+        if config.checkout_mode not in ("isolated", "shared"):
+            errors.append(ValidationError(
+                "checkout_mode",
+                "must be 'isolated' or 'shared'",
+            ))
         
         if not config.job_command:
             errors.append(ValidationError(

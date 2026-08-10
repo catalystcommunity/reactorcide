@@ -28,7 +28,7 @@ func (MasterKey) TableName() string {
 type OrgEncryptionKey struct {
 	ID           string    `gorm:"primaryKey;type:uuid;default:generate_ulid()" json:"id"`
 	CreatedAt    time.Time `gorm:"autoCreateTime:false;default:timezone('utc', now())" json:"created_at"`
-	UserID       string    `gorm:"type:uuid;not null" json:"user_id"` // Will become org_id when orgs are added
+	UserID       string    `gorm:"column:org_id;type:uuid;not null" json:"org_id"`
 	MasterKeyID  string    `gorm:"type:uuid;not null" json:"master_key_id"`
 	EncryptedKey []byte    `gorm:"type:bytea;not null" json:"-"`
 	Salt         []byte    `gorm:"type:bytea;not null" json:"-"`
@@ -48,7 +48,7 @@ type Secret struct {
 	SecretID       string    `gorm:"primaryKey;type:uuid;default:generate_ulid()" json:"secret_id"`
 	CreatedAt      time.Time `gorm:"autoCreateTime:false;default:timezone('utc', now())" json:"created_at"`
 	UpdatedAt      time.Time `gorm:"autoUpdateTime:false;default:timezone('utc', now())" json:"updated_at"`
-	UserID         string    `gorm:"type:uuid;not null" json:"user_id"` // Ownership
+	UserID         string    `gorm:"column:org_id;type:uuid;not null" json:"org_id"`
 	Namespace      string    `gorm:"type:text;not null" json:"namespace"`
 	Path           string    `gorm:"type:text;not null" json:"path"`
 	Key            string    `gorm:"type:text;not null" json:"key"`

@@ -7,14 +7,47 @@ import (
 	"encoding/hex"
 
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store/models"
+	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/tokencaps"
 )
 
 type contextKey string
 
 const (
-	UserContextKey     contextKey = "user"
-	VerifiedContextKey contextKey = "verified"
+	UserContextKey      contextKey = "user"
+	VerifiedContextKey  contextKey = "verified"
+	PrincipalContextKey contextKey = "principal"
 )
+
+type Principal struct {
+	CredentialID     string
+	CredentialType   string
+	UserID           string
+	OwnerOrgID       string
+	AllOrganizations bool
+	OrganizationIDs  []string
+	AllCapabilities  bool
+	Capabilities     tokencaps.Set
+	BoundJobID       string
+}
+
+func (p *Principal) HasOrganization(orgID string) bool {
+	if p == nil || orgID == "" {
+		return false
+	}
+	if p.AllOrganizations {
+		return true
+	}
+	for _, candidate := range p.OrganizationIDs {
+		if candidate == orgID {
+			return true
+		}
+	}
+	return p.OwnerOrgID == orgID
+}
+
+func (p *Principal) HasCapability(capability string) bool {
+	return p != nil && (p.AllCapabilities || p.Capabilities.Has(capability))
+}
 
 // GetUserFromContext retrieves the authenticated user from the request context
 func GetUserFromContext(ctx context.Context) *models.User {
@@ -40,6 +73,15 @@ func SetUserContext(ctx context.Context, user *models.User) context.Context {
 // SetVerifiedContext sets the verification status in the request context
 func SetVerifiedContext(ctx context.Context, verified bool) context.Context {
 	return context.WithValue(ctx, VerifiedContextKey, verified)
+}
+
+func GetPrincipalFromContext(ctx context.Context) *Principal {
+	principal, _ := ctx.Value(PrincipalContextKey).(*Principal)
+	return principal
+}
+
+func SetPrincipalContext(ctx context.Context, principal *Principal) context.Context {
+	return context.WithValue(ctx, PrincipalContextKey, principal)
 }
 
 // ValidateAPIToken validates an API token against its stored hash

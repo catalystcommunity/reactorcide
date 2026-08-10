@@ -10,8 +10,10 @@ import (
 	"time"
 
 	"github.com/catalystcommunity/app-utils-go/logging"
+	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/audit"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/characteristics"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/corndogs"
+	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/profiles"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/resources"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store/models"
@@ -54,18 +56,76 @@ type triggersFile struct {
 	Workflows []triggerWorkflowSpec `json:"workflows,omitempty"`
 	// Workflow + Jobs are the legacy single-workflow form (bare .reactorcide/
 	// jobs), still accepted: they collapse to exactly one workflow.
-	Workflow *triggerWorkflowSpec `json:"workflow,omitempty"`
-	Jobs     []triggerJobSpec     `json:"jobs"`
+	Workflow         *triggerWorkflowSpec `json:"workflow,omitempty"`
+	Jobs             []triggerJobSpec     `json:"jobs"`
+	PolicyViolations []policyViolation    `json:"policy_violations,omitempty"`
+	ChangedCIPaths   []string             `json:"changed_ci_paths,omitempty"`
+	ActorSubjects    []string             `json:"actor_subjects,omitempty"`
+}
+
+type policyViolation struct {
+	Path       string `json:"path"`
+	WorkflowID string `json:"workflow_id,omitempty"`
+	Actor      string `json:"actor,omitempty"`
+	Rule       string `json:"rule,omitempty"`
+	BaseSHA    string `json:"base_sha,omitempty"`
+	HeadSHA    string `json:"head_sha,omitempty"`
 }
 
 type triggerWorkflowSpec struct {
-	Name        string                 `json:"name"`
-	Vars        map[string]interface{} `json:"vars"`
-	OperationID string                 `json:"-"`
-	TriggerType string                 `json:"-"`
+	ID               string                 `json:"id,omitempty"`
+	Name             string                 `json:"name"`
+	SourceFile       string                 `json:"source_file,omitempty"`
+	CIOrigin         string                 `json:"ci_origin,omitempty"`
+	CIRepository     string                 `json:"ci_repository,omitempty"`
+	CISHA            string                 `json:"ci_sha,omitempty"`
+	ExecutionProfile string                 `json:"execution_profile,omitempty"`
+	WorkerClass      string                 `json:"worker_class,omitempty"`
+	PolicyRevision   string                 `json:"policy_revision,omitempty"`
+	PolicyRuleID     string                 `json:"policy_rule_id,omitempty"`
+	ApprovalID       *string                `json:"approval_id,omitempty"`
+	Vars             map[string]interface{} `json:"vars"`
+	OperationID      string                 `json:"-"`
+	TriggerType      string                 `json:"-"`
 	// Jobs are this workflow's nodes (multi-workflow form). Empty in the legacy
 	// single-workflow form, where jobs live in triggersFile.Jobs instead.
 	Jobs []triggerJobSpec `json:"jobs,omitempty"`
+}
+
+type triggerProfileStore interface {
+	GetExecutionProfile(ctx context.Context, orgID, name string) (*models.ExecutionProfile, error)
+}
+
+type triggerApprovalStore interface {
+	GetCIApprovalByID(ctx context.Context, approvalID string) (*models.CIApproval, error)
+}
+
+type triggerReportGenerationStore interface {
+	CompleteVCSReportGeneration(ctx context.Context, targetID string, generation int64) error
+}
+
+func (tp *TriggerProcessor) completeReportGeneration(ctx context.Context, parentJob *models.Job) error {
+	reports, ok := tp.store.(triggerReportGenerationStore)
+	if !ok || parentJob == nil {
+		return nil
+	}
+	targetID, _ := parentJob.JobEnvVars["REACTORCIDE_REPORT_TARGET_ID"].(string)
+	if targetID == "" {
+		return nil
+	}
+	var generation int64
+	switch value := parentJob.JobEnvVars["REACTORCIDE_REPORT_GENERATION"].(type) {
+	case int64:
+		generation = value
+	case int:
+		generation = int64(value)
+	case float64:
+		generation = int64(value)
+	}
+	if generation <= 0 {
+		return fmt.Errorf("invalid VCS report generation")
+	}
+	return reports.CompleteVCSReportGeneration(ctx, targetID, generation)
 }
 
 // triggerJobSpec represents a single triggered job from triggers.json.
@@ -92,6 +152,7 @@ type triggerJobSpec struct {
 	Capabilities   []string          `json:"capabilities"`
 	ForEach        []interface{}     `json:"for_each"`
 	ItemVar        string            `json:"item_var"`
+	WorkerClass    string            `json:"worker_class"`
 
 	// Characteristics/Resources, when set, override the parent (eval) job's
 	// characteristics/resources for this triggered job. See
@@ -120,6 +181,7 @@ type jobDefinitionJobConfig struct {
 	Priority     *int       `yaml:"priority"`
 	RawCommand   bool       `yaml:"raw_command"`
 	Capabilities []string   `yaml:"capabilities"`
+	WorkerClass  string     `yaml:"worker_class"`
 	// Characteristics/Resources -- see triggerJobSpec's doc comment.
 	Characteristics map[string]interface{} `yaml:"characteristics"`
 	Resources       map[string]interface{} `yaml:"resources"`
@@ -155,20 +217,49 @@ func (tp *TriggerProcessor) ProcessTriggers(ctx context.Context, workspaceDir st
 // in the database, submits them to Corndogs, and returns the created job IDs.
 // workspaceDir is the host workspace directory used to resolve job_file references.
 func (tp *TriggerProcessor) ProcessTriggersFromData(ctx context.Context, data []byte, workspaceDir string, parentJob *models.Job) ([]string, error) {
+	var topLevel map[string]json.RawMessage
+	if err := json.Unmarshal(data, &topLevel); err != nil {
+		return nil, fmt.Errorf("failed to parse triggers data: %w", err)
+	}
+	if _, versioned := topLevel["version"]; versioned {
+		return nil, fmt.Errorf("trigger payload must not include a version field")
+	}
 	var tf triggersFile
 	if err := json.Unmarshal(data, &tf); err != nil {
 		return nil, fmt.Errorf("failed to parse triggers data: %w", err)
+	}
+	isEvalResult := strings.TrimSpace(tf.TriggerType) == "runnerlib_eval"
+	for _, violation := range tf.PolicyViolations {
+		if strings.TrimSpace(violation.Path) == "" {
+			return nil, fmt.Errorf("policy violation path is required")
+		}
+		logging.Log.WithFields(map[string]interface{}{
+			"parent_job_id": parentJob.JobID, "path": violation.Path,
+			"workflow_security_id": violation.WorkflowID, "rule": violation.Rule,
+			"base_sha": violation.BaseSHA, "head_sha": violation.HeadSHA,
+		}).Warn("CI policy violation reported by evaluator; safe workflow triggers will continue")
+		audit.Record(ctx, tp.store, parentJob.OrgID, "ci_policy.violation", "job", parentJob.JobID, models.JSONB{
+			"path": violation.Path, "workflow_id": violation.WorkflowID, "actor": violation.Actor,
+			"rule": violation.Rule, "base_sha": violation.BaseSHA, "head_sha": violation.HeadSHA,
+		})
 	}
 
 	if tf.Type != "trigger_job" {
 		return nil, fmt.Errorf("unexpected trigger type: %q", tf.Type)
 	}
-
+	if isEvalResult {
+		audit.Record(ctx, tp.store, parentJob.OrgID, "ci_policy.input", "job", parentJob.JobID, models.JSONB{
+			"project_id": parentJob.ProjectID, "policy_repository": parentJob.CIRepository,
+			"policy_path": ".reactorcide/policy.yaml", "base_sha": parentJob.CISHA,
+			"head_sha": stringValue(parentJob.SourceRef), "changed_ci_paths": tf.ChangedCIPaths,
+			"actor": parentJob.JobEnvVars["REACTORCIDE_HEAD_ACTOR"], "actor_subjects": tf.ActorSubjects,
+		})
+	}
 	// Normalize to a list of workflow batches. The multi-workflow form
 	// (tf.Workflows) wins; otherwise the legacy single-workflow form
 	// (tf.Workflow + tf.Jobs) collapses to exactly one batch.
 	batches := tf.Workflows
-	if len(batches) == 0 {
+	if len(batches) == 0 && (tf.Workflow != nil || len(tf.Jobs) > 0) {
 		batch := triggerWorkflowSpec{Jobs: tf.Jobs}
 		if tf.Workflow != nil {
 			batch.Name = tf.Workflow.Name
@@ -181,6 +272,32 @@ func (tp *TriggerProcessor) ProcessTriggersFromData(ctx context.Context, data []
 		batches[i].TriggerType = strings.TrimSpace(tf.TriggerType)
 		if batches[i].TriggerType == "" {
 			batches[i].TriggerType = "runnerlib"
+		}
+		if isEvalResult {
+			if err := tp.validateWorkflowAuthority(ctx, parentJob, &batches[i]); err != nil {
+				return nil, err
+			}
+			audit.Record(ctx, tp.store, parentJob.OrgID, "ci_policy.decision", "workflow", batches[i].ID, models.JSONB{
+				"project_id": parentJob.ProjectID, "ci_origin": batches[i].CIOrigin,
+				"base_sha": parentJob.CISHA, "head_sha": stringValue(parentJob.SourceRef),
+				"rule": batches[i].PolicyRuleID, "profile": batches[i].ExecutionProfile,
+				"worker_class": batches[i].WorkerClass, "policy_revision": batches[i].PolicyRevision,
+				"approval_id": batches[i].ApprovalID, "decision": "allowed",
+			})
+		}
+	}
+	if isEvalResult {
+		if updater, ok := tp.statusUpdater.(interface {
+			UpdateCIPolicyStatus(context.Context, *models.Job, []vcs.CIPolicyViolation) error
+		}); ok {
+			violations := make([]vcs.CIPolicyViolation, len(tf.PolicyViolations))
+			for i, item := range tf.PolicyViolations {
+				violations[i] = vcs.CIPolicyViolation{Path: item.Path, WorkflowID: item.WorkflowID, Actor: item.Actor,
+					Rule: item.Rule, BaseSHA: item.BaseSHA, HeadSHA: item.HeadSHA}
+			}
+			if err := updater.UpdateCIPolicyStatus(ctx, parentJob, violations); err != nil {
+				logging.Log.WithError(err).Warn("Could not publish CI policy status")
+			}
 		}
 	}
 
@@ -205,6 +322,11 @@ func (tp *TriggerProcessor) ProcessTriggersFromData(ctx context.Context, data []
 				createdJobIDs = append(createdJobIDs, jobID)
 			}
 		}
+		if isEvalResult {
+			if err := tp.completeReportGeneration(ctx, parentJob); err != nil {
+				return createdJobIDs, err
+			}
+		}
 		return createdJobIDs, nil
 	}
 
@@ -216,7 +338,114 @@ func (tp *TriggerProcessor) ProcessTriggersFromData(ctx context.Context, data []
 		}
 		createdJobIDs = append(createdJobIDs, ids...)
 	}
+	if isEvalResult {
+		if err := tp.completeReportGeneration(ctx, parentJob); err != nil {
+			return createdJobIDs, err
+		}
+	}
 	return createdJobIDs, nil
+}
+
+func (tp *TriggerProcessor) validateWorkflowAuthority(ctx context.Context, parentJob *models.Job, spec *triggerWorkflowSpec) error {
+	metadata, err := vcs.MetadataFromJob(parentJob)
+	if err != nil || metadata == nil || !metadata.IsEval || spec.TriggerType != "runnerlib_eval" {
+		return fmt.Errorf("runnerlib evaluation workflow authority requires an evaluation job")
+	}
+	if spec.CIOrigin != "base" && spec.CIOrigin != "head" {
+		return fmt.Errorf("workflow %q has invalid CI origin", spec.ID)
+	}
+	expectedRepository, expectedSHA := parentJob.CIRepository, parentJob.CISHA
+	if spec.CIOrigin == "head" {
+		expectedRepository, expectedSHA = stringValue(parentJob.SourceURL), stringValue(parentJob.SourceRef)
+		if spec.PolicyRevision == "" || spec.PolicyRuleID == "" {
+			return fmt.Errorf("head workflow %q lacks a policy decision", spec.ID)
+		}
+	}
+	if spec.CIRepository != expectedRepository || spec.CISHA != expectedSHA || expectedRepository == "" || expectedSHA == "" {
+		return fmt.Errorf("workflow %q CI repository or SHA does not match the event authority", spec.ID)
+	}
+	if spec.ExecutionProfile == "" || spec.WorkerClass == "" {
+		return fmt.Errorf("workflow %q must select an execution profile and worker class", spec.ID)
+	}
+	if ps, ok := tp.store.(triggerProfileStore); ok {
+		parentName := parentJob.ExecutionProfile
+		if parentName == "" {
+			parentName = "standard"
+		}
+		parentProfile, parentErr := ps.GetExecutionProfile(ctx, parentJob.OrgID, parentName)
+		childProfile, childErr := ps.GetExecutionProfile(ctx, parentJob.OrgID, spec.ExecutionProfile)
+		if parentErr != nil || childErr != nil {
+			return fmt.Errorf("workflow %q selects an unknown execution profile", spec.ID)
+		}
+		if err := profiles.WeakerOrEqual(childProfile, parentProfile); err != nil {
+			return fmt.Errorf("workflow %q raises profile authority: %w", spec.ID, err)
+		}
+		if len(childProfile.AllowedWorkerClasses) > 0 && !containsString(childProfile.AllowedWorkerClasses, spec.WorkerClass) {
+			return fmt.Errorf("workflow %q selects a worker class denied by profile %q", spec.ID, spec.ExecutionProfile)
+		}
+	}
+	if spec.ApprovalID != nil {
+		approvals, ok := tp.store.(triggerApprovalStore)
+		if !ok {
+			return fmt.Errorf("workflow %q approval cannot be verified", spec.ID)
+		}
+		approval, err := approvals.GetCIApprovalByID(ctx, *spec.ApprovalID)
+		if err != nil || approval.OrgID != parentJob.OrgID || parentJob.ProjectID == nil || approval.ProjectID != *parentJob.ProjectID ||
+			approval.HeadSHA != stringValue(parentJob.SourceRef) || approval.BaseSHA != parentJob.CISHA || approval.PolicyRevision != spec.PolicyRevision ||
+			(approval.WorkflowScope != spec.ID && approval.WorkflowScope != "*") || approval.ExecutionProfile != spec.ExecutionProfile ||
+			!approval.IsValid(time.Now().UTC(), stringValue(parentJob.SourceRef), spec.PolicyRevision) {
+			return fmt.Errorf("workflow %q approval is not valid for this decision", spec.ID)
+		}
+	}
+	return nil
+}
+
+func stringValue(value *string) string {
+	if value == nil {
+		return ""
+	}
+	return *value
+}
+
+func containsString(values []string, target string) bool {
+	for _, value := range values {
+		if value == target {
+			return true
+		}
+	}
+	return false
+}
+
+func enforceResourceCeilings(job *models.Job, ceilings models.JSONB) error {
+	if len(ceilings) == 0 {
+		return nil
+	}
+	checks := []struct {
+		key, value string
+		parse      func(string) (int64, error)
+	}{
+		{"cpu_request", job.ResourceCPURequest, resources.ParseCPU},
+		{"cpu_limit", job.ResourceCPULimit, resources.ParseCPU},
+		{"memory_limit", job.ResourceMemoryLimit, resources.ParseMemory},
+	}
+	for _, check := range checks {
+		raw, ok := ceilings[check.key]
+		if !ok || check.value == "" {
+			continue
+		}
+		limit, err := check.parse(fmt.Sprint(raw))
+		if err != nil {
+			return fmt.Errorf("invalid %s ceiling", check.key)
+		}
+		requested, err := check.parse(check.value)
+		if err != nil {
+			return err
+		}
+		if requested > limit {
+			return fmt.Errorf("%s exceeds ceiling", check.key)
+		}
+	}
+	return nil
 }
 
 // resolveJobSpecs loads any job_file references (a workflow node can reference a
@@ -251,13 +480,22 @@ func (tp *TriggerProcessor) processWorkflowBatch(ctx context.Context, parentJob 
 	if len(spec.Jobs) == 0 {
 		return nil, nil
 	}
-	specs, err := tp.resolveJobSpecs(spec.Jobs, workspaceDir)
-	if err != nil {
-		return nil, err
+	specs := spec.Jobs
+	if spec.TriggerType != "runnerlib_eval" {
+		var err error
+		specs, err = tp.resolveJobSpecs(spec.Jobs, workspaceDir)
+		if err != nil {
+			return nil, err
+		}
 	}
 	wf, err := tp.ensureWorkflow(ctx, parentJob, spec)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create workflow: %w", err)
+	}
+	for i := range specs {
+		specs[i].WorkerClass = wf.WorkerClass
+		specs[i].CISourceURL = wf.CIRepository
+		specs[i].CISourceRef = wf.CISHA
 	}
 	if len(spec.Vars) > 0 {
 		if err := tp.addWorkflowVars(ctx, wf, spec.Vars, nil, &parentJob.JobID); err != nil {
@@ -309,6 +547,7 @@ func (tp *TriggerProcessor) loadJobFile(workspaceDir, jobFile string) (triggerJo
 		Timeout:         def.Job.Timeout,
 		Priority:        def.Job.Priority,
 		Capabilities:    def.Job.Capabilities,
+		WorkerClass:     def.Job.WorkerClass,
 		Env:             def.Environment,
 		Characteristics: def.Job.Characteristics,
 		Resources:       def.Job.Resources,
@@ -327,6 +566,9 @@ func (tp *TriggerProcessor) overlaySpec(base, overlay triggerJobSpec) triggerJob
 	}
 	if overlay.JobFile != "" {
 		result.JobFile = overlay.JobFile
+	}
+	if overlay.WorkerClass != "" {
+		result.WorkerClass = overlay.WorkerClass
 	}
 	if overlay.ContainerImage != "" {
 		result.ContainerImage = overlay.ContainerImage
@@ -420,11 +662,23 @@ type queueResolvingStore interface {
 	FindOrCreateQueueByCharacteristics(ctx context.Context, chars characteristics.Characteristics) (*models.Queue, error)
 }
 
+type orgQueueResolvingStore interface {
+	FindOrCreateQueueForOrg(ctx context.Context, orgID, workerClass string, chars characteristics.Characteristics) (*models.Queue, error)
+}
+
 // resolveJobQueue resolves job.Characteristics to a queue (find-or-create)
 // and sets job.QueueName to the resolved Queue.QueueUUID. A no-op (QueueName
 // left as buildJobFromTrigger set it -- the parent's or an override's) when
 // the store doesn't implement queueResolvingStore.
 func (tp *TriggerProcessor) resolveJobQueue(ctx context.Context, job *models.Job) error {
+	if qs, ok := tp.store.(orgQueueResolvingStore); ok {
+		queue, err := qs.FindOrCreateQueueForOrg(ctx, job.OrgID, job.WorkerClass, job.Characteristics)
+		if err != nil {
+			return fmt.Errorf("resolving queue: %w", err)
+		}
+		job.QueueName = queue.QueueUUID
+		return nil
+	}
 	qs, ok := tp.store.(queueResolvingStore)
 	if !ok {
 		return nil
@@ -514,19 +768,27 @@ func (tp *TriggerProcessor) buildJobFromTrigger(spec triggerJobSpec, parentJob *
 	}
 
 	job := &models.Job{
-		CreatedAt:   now,
-		UpdatedAt:   now,
-		UserID:      parentJob.UserID,
-		ProjectID:   parentJob.ProjectID,
-		ParentJobID: &parentJobID,
-		Name:        spec.JobName,
-		JobFile:     spec.JobFile,
-		Description: fmt.Sprintf("Triggered by eval job %s", parentJob.JobID),
-		Status:      "submitted",
-		QueueName:   parentJob.QueueName,
-		JobEnvVars:  envVars,
-		CodeDir:     DefaultJobCodeDir(parentJob.CodeDir),
-		JobDir:      DefaultJobDir(parentJob.CodeDir, parentJob.JobDir),
+		CreatedAt:        now,
+		UpdatedAt:        now,
+		UserID:           parentJob.UserID,
+		OrgID:            parentJob.OrgID,
+		ProjectID:        parentJob.ProjectID,
+		ParentJobID:      &parentJobID,
+		Name:             spec.JobName,
+		JobFile:          spec.JobFile,
+		Description:      fmt.Sprintf("Triggered by eval job %s", parentJob.JobID),
+		Status:           "submitted",
+		QueueName:        parentJob.QueueName,
+		JobEnvVars:       envVars,
+		CodeDir:          DefaultJobCodeDir(parentJob.CodeDir),
+		JobDir:           DefaultJobDir(parentJob.CodeDir, parentJob.JobDir),
+		WorkerClass:      parentJob.WorkerClass,
+		ExecutionProfile: parentJob.ExecutionProfile,
+		CIOrigin:         parentJob.CIOrigin, CIRepository: parentJob.CIRepository, CISHA: parentJob.CISHA,
+		PolicyRevision: parentJob.PolicyRevision, PolicyRuleID: parentJob.PolicyRuleID, ApprovalID: parentJob.ApprovalID,
+	}
+	if spec.WorkerClass != "" && spec.WorkerClass != parentJob.WorkerClass {
+		return nil, fmt.Errorf("triggered job %q cannot raise or change inherited worker class", spec.JobName)
 	}
 
 	// Characteristics: the child spec overrides the parent's when it declares
@@ -617,6 +879,15 @@ func (tp *TriggerProcessor) buildJobFromTrigger(spec triggerJobSpec, parentJob *
 		job.Priority = *spec.Priority
 	}
 	if len(spec.Capabilities) > 0 {
+		allowed := make(map[string]bool, len(parentJob.Capabilities))
+		for _, capability := range parentJob.Capabilities {
+			allowed[capability] = true
+		}
+		for _, capability := range spec.Capabilities {
+			if !allowed[capability] {
+				return nil, fmt.Errorf("triggered job %q cannot add runtime capability %q", spec.JobName, capability)
+			}
+		}
 		job.Capabilities = spec.Capabilities
 	}
 

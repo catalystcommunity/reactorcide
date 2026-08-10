@@ -31,7 +31,8 @@ data:
   {{- if .Values.defaults.runnerImage }}
   REACTORCIDE_DEFAULT_RUNNER_IMAGE: {{ .Values.defaults.runnerImage | quote }}
   {{- end }}
-  # REACTORCIDE_DEFAULT_USER_ID is read from {{ .Values.defaults.userSecretName }} secret
+  REACTORCIDE_DEFAULT_ORG: {{ .Values.defaults.orgName | quote }}
+  REACTORCIDE_CHECKOUT_MODE: {{ .Values.defaults.checkoutMode | quote }}
 
   # Job containers submit child jobs / new workflows back to the coordinator API
   # (internal/worker.BuildJobEnv injects this as REACTORCIDE_COORDINATOR_URL into
@@ -48,6 +49,7 @@ data:
   REACTORCIDE_OBJECT_STORE_BASE_PATH: {{ .Values.objectStore.basePath | quote }}
   REACTORCIDE_OBJECT_STORE_PREFIX: {{ .Values.objectStore.prefix | quote }}
   REACTORCIDE_TELEMETRY_RETENTION_DAYS: {{ .Values.objectStore.telemetryRetentionDays | quote }}
+  REACTORCIDE_AUDIT_RETENTION_DAYS: {{ .Values.audit.retentionDays | quote }}
   {{- if eq .Values.objectStore.type "s3" }}
   AWS_REGION: {{ .Values.objectStore.s3.region | quote }}
   REACTORCIDE_S3_ENDPOINT: {{ .Values.objectStore.s3.endpoint | quote }}

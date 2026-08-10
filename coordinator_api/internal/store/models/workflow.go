@@ -4,13 +4,15 @@ import (
 	"time"
 
 	"github.com/lib/pq"
+	"gorm.io/gorm"
 )
 
 type WorkflowInstance struct {
 	WorkflowID         string     `gorm:"primaryKey;type:uuid;default:generate_ulid()" json:"workflow_id"`
 	CreatedAt          time.Time  `gorm:"autoCreateTime:false;default:timezone('utc', now())" json:"created_at"`
 	UpdatedAt          time.Time  `gorm:"autoUpdateTime:false;default:timezone('utc', now())" json:"updated_at"`
-	UserID             string     `gorm:"type:uuid;not null" json:"user_id"`
+	UserID             string     `gorm:"type:uuid;default:null" json:"user_id,omitempty"`
+	OrgID              string     `gorm:"column:org_id;type:uuid;not null" json:"-"`
 	ProjectID          *string    `gorm:"type:uuid" json:"project_id"`
 	ParentJobID        *string    `gorm:"type:uuid" json:"parent_job_id"`
 	RootWorkflowID     *string    `gorm:"type:uuid" json:"root_workflow_id,omitempty"`
@@ -20,6 +22,8 @@ type WorkflowInstance struct {
 	TriggerOperationID string     `gorm:"type:text" json:"trigger_operation_id,omitempty"`
 	TriggerType        string     `gorm:"type:text;not null;default:'runnerlib'" json:"trigger_type,omitempty"`
 	Name               string     `gorm:"type:text;not null" json:"name"`
+	WorkflowSecurityID string     `gorm:"type:text;not null" json:"workflow_security_id"`
+	SourceFile         string     `gorm:"type:text" json:"source_file,omitempty"`
 	Status             string     `gorm:"type:text;not null;default:'evaluating'" json:"status"`
 	QueueName          string     `gorm:"type:text;not null;default:'reactorcide-jobs'" json:"queue_name"`
 	VCSProvider        string     `gorm:"type:text" json:"vcs_provider"`
@@ -30,10 +34,27 @@ type WorkflowInstance struct {
 	CommentMarker      string     `gorm:"type:text" json:"comment_marker"`
 	CompletedAt        *time.Time `json:"completed_at"`
 	LastError          string     `gorm:"type:text" json:"last_error"`
+	CIOrigin           string     `gorm:"type:text;default:null" json:"ci_origin,omitempty"`
+	CIRepository       string     `gorm:"type:text;default:null" json:"ci_repository,omitempty"`
+	CISHA              string     `gorm:"column:ci_sha;type:text;default:null" json:"ci_sha,omitempty"`
+	ExecutionProfile   string     `gorm:"type:text;default:null" json:"execution_profile,omitempty"`
+	WorkerClass        string     `gorm:"type:text" json:"worker_class,omitempty"`
+	PolicyRevision     string     `gorm:"type:text;default:null" json:"policy_revision,omitempty"`
+	PolicyRuleID       string     `gorm:"type:text;default:null" json:"policy_rule_id,omitempty"`
+	ApprovalID         *string    `gorm:"type:uuid" json:"approval_id,omitempty"`
 }
 
 func (WorkflowInstance) TableName() string {
 	return "workflow_instances"
+}
+
+// BeforeCreate maps legacy creator attribution to organization ownership.
+// New workflow creation paths must set OrgID from the parent.
+func (w *WorkflowInstance) BeforeCreate(_ *gorm.DB) error {
+	if w.OrgID == "" {
+		w.OrgID = w.UserID
+	}
+	return nil
 }
 
 // IsRetryable returns true if the workflow instance may be retried into a

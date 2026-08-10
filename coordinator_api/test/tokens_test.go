@@ -5,11 +5,19 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 
+	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/checkauth"
+	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/handlers"
+	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store"
+	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store/models"
+	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store/postgres_store"
+	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/tokencaps"
+	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
@@ -88,7 +96,6 @@ func TestTokensAPI(t *testing.T) {
 			err = json.Unmarshal(rr.Body.Bytes(), &response)
 			require.NoError(t, err)
 
-			t.Logf("Response: %+v", response)
 			assert.Equal(t, "Test API Token", response.Name)
 			assert.NotEmpty(t, response.TokenID)
 			assert.NotEmpty(t, response.Token)
@@ -265,11 +272,64 @@ func TestTokensAPI(t *testing.T) {
 			err = json.Unmarshal(listRR.Body.Bytes(), &listResponse)
 			require.NoError(t, err)
 
-			// The deleted token should not be in the list
+			// Revocation keeps the audit record and marks the token inactive.
+			foundRevoked := false
 			for _, respToken := range listResponse.Tokens {
-				assert.NotEqual(t, token.TokenID, respToken.TokenID)
+				if respToken.TokenID == token.TokenID {
+					foundRevoked = true
+					assert.False(t, respToken.IsActive)
+				}
 			}
+			assert.True(t, foundRevoked)
 		})
+	})
+}
+
+func TestTokenCreationCannotAmplifyAuthority(t *testing.T) {
+	RunTransactionalTest(t, func(ctx context.Context, tx *gorm.DB) {
+		defaultOrg, err := postgres_store.PostgresStore.GetDefaultOrganization(ctx)
+		require.NoError(t, err)
+		otherOrg := &models.Organization{Name: uniqueName("token-other-org"), DisplayName: "Other", Status: models.OrganizationStatusActive}
+		require.NoError(t, postgres_store.PostgresStore.CreateOrganization(ctx, otherOrg))
+		owner := defaultOrg.OrgID
+		capabilities, err := tokencaps.New(tokencaps.TokensManage)
+		require.NoError(t, err)
+		principal := &checkauth.Principal{CredentialID: uuid.NewString(), CredentialType: "service_token",
+			OwnerOrgID: owner, OrganizationIDs: []string{owner}, Capabilities: capabilities}
+		handler := handlers.NewTokenHandler(postgres_store.PostgresStore)
+
+		request := func(body map[string]any) int {
+			encoded, err := json.Marshal(body)
+			require.NoError(t, err)
+			requestContext := checkauth.SetPrincipalContext(ctx, principal)
+			req := httptest.NewRequest(http.MethodPost, "/api/v1/tokens", bytes.NewReader(encoded)).WithContext(requestContext)
+			req.Header.Set("Content-Type", "application/json")
+			recorder := httptest.NewRecorder()
+			handler.CreateToken(recorder, req)
+			return recorder.Code
+		}
+		assert.Equal(t, http.StatusForbidden, request(map[string]any{"name": "global"}))
+		assert.Equal(t, http.StatusForbidden, request(map[string]any{"name": "other", "organizations": []string{otherOrg.Name}, "capabilities": []string{tokencaps.TokensManage}}))
+		assert.Equal(t, http.StatusForbidden, request(map[string]any{"name": "wider", "organizations": []string{defaultOrg.Name}, "capabilities": []string{tokencaps.TokensManage, tokencaps.JobsRead}}))
+		assert.Equal(t, http.StatusCreated, request(map[string]any{"name": "subset", "organizations": []string{defaultOrg.Name}, "capabilities": []string{tokencaps.TokensManage}}))
+	})
+}
+
+func TestDelegatedTokenUsesLiveUserStatus(t *testing.T) {
+	RunTransactionalTest(t, func(ctx context.Context, tx *gorm.DB) {
+		data := &DataUtils{db: tx}
+		user, err := data.CreateUser(DataSetup{"Status": "active"})
+		require.NoError(t, err)
+		raw := "delegated-token-" + uniqueName("live-user")
+		token := &models.APIToken{UserID: user.UserID, TokenHash: checkauth.HashAPIToken(raw), Name: "delegated",
+			IsActive: true, SubjectType: "user_token", AllOrganizations: true, AllCapabilities: true}
+		require.NoError(t, postgres_store.PostgresStore.CreateAPIToken(ctx, token))
+		_, resolved, err := postgres_store.PostgresStore.ValidateAPIToken(ctx, raw)
+		require.NoError(t, err)
+		require.Equal(t, user.UserID, resolved.UserID)
+		require.NoError(t, tx.Model(&models.User{}).Where("user_id = ?", user.UserID).Update("status", "disabled").Error)
+		_, _, err = postgres_store.PostgresStore.ValidateAPIToken(ctx, raw)
+		assert.True(t, errors.Is(err, store.ErrNotFound), "disabled user must invalidate delegated token")
 	})
 }
 
@@ -377,10 +437,13 @@ func createTokenAuthHeader(ctx context.Context, tx *gorm.DB, userID string) (str
 	// Create the token in the database
 	dataUtils := &DataUtils{db: tx}
 	_, err := dataUtils.CreateAPIToken(DataSetup{
-		"UserID":    userID,
-		"Name":      "Auth Token",
-		"TokenHash": tokenHash[:], // Convert [32]byte to []byte
-		"IsActive":  true,
+		"UserID":           userID,
+		"Name":             "Auth Token",
+		"TokenHash":        tokenHash[:], // Convert [32]byte to []byte
+		"IsActive":         true,
+		"SubjectType":      "instance_token",
+		"AllOrganizations": true,
+		"AllCapabilities":  true,
 	})
 	if err != nil {
 		return "", err

@@ -100,13 +100,19 @@ func (ps PostgresDbStore) ListJobs(ctx context.Context, filters map[string]inter
 			query = query.Where("project_id = ?", value)
 		case "workflow_id":
 			query = query.Where("workflow_id = ?", value)
+		case "org_id":
+			query = query.Where("org_id = ?", value)
 		}
 	}
 
 	// Apply pagination and ordering
-	query = query.Order("created_at DESC").
-		Limit(limit).
-		Offset(offset)
+	query = query.Order("created_at DESC")
+	if limit > 0 {
+		query = query.Limit(limit)
+	}
+	if offset > 0 {
+		query = query.Offset(offset)
+	}
 
 	if err := query.Find(&jobs).Error; err != nil {
 		return nil, fmt.Errorf("failed to list jobs: %w", err)

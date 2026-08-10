@@ -35,6 +35,14 @@
             <label for="allowed_event_types">Allowed event types (comma-separated, optional)</label>
             <input type="text" id="allowed_event_types" name="allowed_event_types" placeholder="push, pull_request">
         </div>
+        <div class="field-row">
+            <label for="checkout_mode">Pull-request checkout mode</label>
+            <select id="checkout_mode" name="checkout_mode">
+                <option value="">Use coordinator default</option>
+                <option value="isolated">Isolated clones</option>
+                <option value="shared">Shared object store</option>
+            </select>
+        </div>
         <div class="checkbox-row">
             <input type="checkbox" id="is_private" name="is_private">
             <label for="is_private" style="margin: 0;">Make this project private (leave unchecked to use the org default)</label>

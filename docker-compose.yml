@@ -53,7 +53,9 @@ services:
             REACTORCIDE_OBJECT_STORE_TYPE: filesystem
             REACTORCIDE_OBJECT_STORE_BASE_PATH: /var/lib/reactorcide
             REACTORCIDE_LOG_LEVEL: debug
-            REACTORCIDE_DEFAULT_USER_ID: "550e8400-e29b-41d4-a716-446655440000"
+            REACTORCIDE_DEFAULT_ORG: "default"
+            REACTORCIDE_CHECKOUT_MODE: "isolated"
+            REACTORCIDE_AUDIT_RETENTION_DAYS: "365"
             # Management UI auth (see docs/ui-auth.md). "none" (the default,
             # set explicitly here for clarity) means no login: anyone
             # reaching the web UI can view public projects/jobs and

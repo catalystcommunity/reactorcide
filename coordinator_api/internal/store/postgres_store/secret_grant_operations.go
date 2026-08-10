@@ -18,7 +18,7 @@ func (ps PostgresDbStore) CreateSecretGrant(ctx context.Context, grant *models.S
 }
 
 func (ps PostgresDbStore) ListSecretGrants(ctx context.Context, userID string, projectID *string) ([]models.SecretGrant, error) {
-	query := ps.getDB(ctx).Where("user_id = ?", userID)
+	query := ps.getDB(ctx).Where("org_id = ?", userID)
 	if projectID == nil || *projectID == "" {
 		query = query.Where("project_id IS NULL")
 	} else {
@@ -58,7 +58,7 @@ func (ps PostgresDbStore) GetSecretGrantByID(ctx context.Context, grantID string
 // list-secret-grants CSIL op, whose request carries only an org_id.
 func (ps PostgresDbStore) ListSecretGrantsByOrg(ctx context.Context, orgID string) ([]models.SecretGrant, error) {
 	var grants []models.SecretGrant
-	if err := ps.getDB(ctx).Where("user_id = ?", orgID).Order("created_at ASC").Find(&grants).Error; err != nil {
+	if err := ps.getDB(ctx).Where("org_id = ?", orgID).Order("created_at ASC").Find(&grants).Error; err != nil {
 		return nil, fmt.Errorf("failed to list secret grants for org: %w", err)
 	}
 	return grants, nil
@@ -96,7 +96,7 @@ func (ps PostgresDbStore) DeleteSecretGrant(ctx context.Context, userID string, 
 }
 
 func (ps PostgresDbStore) scopedSecretGrantQuery(ctx context.Context, userID string, projectID *string) *gorm.DB {
-	query := ps.getDB(ctx).Where("user_id = ?", userID)
+	query := ps.getDB(ctx).Where("org_id = ?", userID)
 	if projectID == nil || *projectID == "" {
 		query = query.Where("project_id IS NULL")
 	} else {
@@ -108,7 +108,7 @@ func (ps PostgresDbStore) scopedSecretGrantQuery(ctx context.Context, userID str
 // ListSecretGrantsForJob returns grants that may apply to a job.
 func (ps PostgresDbStore) ListSecretGrantsForJob(ctx context.Context, userID string, projectID *string, jobName string) ([]models.SecretGrant, error) {
 	db := ps.getDB(ctx)
-	query := db.Where("user_id = ?", userID)
+	query := db.Where("org_id = ?", userID)
 	if projectID == nil || *projectID == "" {
 		query = query.Where("project_id IS NULL")
 	} else {

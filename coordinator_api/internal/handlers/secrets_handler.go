@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -10,6 +11,7 @@ import (
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/secrets"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store/models"
+	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/tokencaps"
 )
 
 // SecretsHandler handles secrets API endpoints
@@ -75,17 +77,25 @@ type InitResponse struct {
 // getProvider creates a provider for the current user
 func (h *SecretsHandler) getProvider(r *http.Request) (secrets.Provider, error) {
 	user := checkauth.GetUserFromContext(r.Context())
-	if user == nil {
+	principal := checkauth.GetPrincipalFromContext(r.Context())
+	if user == nil && principal == nil {
 		return nil, errors.New("user not authenticated")
 	}
-
-	orgID := user.UserID
+	orgID, err := h.resolveSecretsOrg(r)
+	if err != nil {
+		return nil, err
+	}
 	db := store.GetDBFromContext(r.Context())
 
-	// Authorization check
-	authorizer := secrets.NewOrgAuthorizer(db)
-	if err := authorizer.CanAccessOrg(r.Context(), user.UserID, orgID); err != nil {
-		return nil, err
+	if principal != nil {
+		if !principal.HasCapability(tokencaps.SecretsManage) || !principal.HasOrganization(orgID) {
+			return nil, store.ErrForbidden
+		}
+	} else {
+		authorizer := secrets.NewOrgAuthorizer(db)
+		if err := authorizer.CanAccessOrg(r.Context(), user.UserID, orgID); err != nil {
+			return nil, err
+		}
 	}
 
 	// Get org encryption key
@@ -95,6 +105,32 @@ func (h *SecretsHandler) getProvider(r *http.Request) (secrets.Provider, error) 
 	}
 
 	return secrets.NewDatabaseProvider(db, orgID, orgKey)
+}
+
+func (h *SecretsHandler) resolveSecretsOrg(r *http.Request) (string, error) {
+	if name := r.URL.Query().Get("org"); name != "" {
+		if finder, ok := h.store.(interface {
+			GetOrganizationByName(context.Context, string) (*models.Organization, error)
+		}); ok {
+			org, err := finder.GetOrganizationByName(r.Context(), name)
+			if err != nil {
+				return "", err
+			}
+			return org.OrgID, nil
+		}
+	}
+	if p := checkauth.GetPrincipalFromContext(r.Context()); p != nil {
+		if p.OwnerOrgID != "" {
+			return p.OwnerOrgID, nil
+		}
+		if !p.AllOrganizations && len(p.OrganizationIDs) == 1 {
+			return p.OrganizationIDs[0], nil
+		}
+	}
+	if user := checkauth.GetUserFromContext(r.Context()); user != nil {
+		return user.UserID, nil
+	}
+	return "", errors.New("an organization is required")
 }
 
 // GetSecret handles GET /api/v1/secrets/value?path=...&key=...
@@ -480,7 +516,7 @@ func (h *SecretsHandler) BatchSet(w http.ResponseWriter, r *http.Request) {
 // InitSecrets handles POST /api/v1/secrets/init
 func (h *SecretsHandler) InitSecrets(w http.ResponseWriter, r *http.Request) {
 	user := checkauth.GetUserFromContext(r.Context())
-	if user == nil {
+	if user == nil && checkauth.GetPrincipalFromContext(r.Context()) == nil {
 		h.respondWithJSON(w, http.StatusUnauthorized, ErrorResponse{
 			Error:   "unauthorized",
 			Message: "user not authenticated",
@@ -488,15 +524,23 @@ func (h *SecretsHandler) InitSecrets(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	orgID := user.UserID
+	orgID, err := h.resolveSecretsOrg(r)
+	if err != nil {
+		h.respondWithError(w, http.StatusBadRequest, err)
+		return
+	}
+	if principal := checkauth.GetPrincipalFromContext(r.Context()); principal != nil && (!principal.HasCapability(tokencaps.SecretsManage) || !principal.HasOrganization(orgID)) {
+		h.respondWithError(w, http.StatusForbidden, store.ErrForbidden)
+		return
+	}
 
 	db := store.GetDBFromContext(r.Context())
 
 	// Check if already initialized
-	var existingUser models.User
+	var organization models.Organization
 	if err := db.Select("secrets_initialized_at").
-		Where("user_id = ?", orgID).
-		First(&existingUser).Error; err != nil {
+		Where("org_id = ?", orgID).
+		First(&organization).Error; err != nil {
 		h.respondWithJSON(w, http.StatusNotFound, ErrorResponse{
 			Error:   "not_found",
 			Message: "user not found",
@@ -504,7 +548,7 @@ func (h *SecretsHandler) InitSecrets(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if existingUser.SecretsInitializedAt != nil {
+	if organization.SecretsInitializedAt != nil {
 		h.respondWithJSON(w, http.StatusConflict, ErrorResponse{
 			Error:   "already_exists",
 			Message: "secrets already initialized",
@@ -521,10 +565,10 @@ func (h *SecretsHandler) InitSecrets(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Mark user as initialized
+	// Mark the organization as initialized.
 	now := nowUTC()
-	if err := db.Model(&models.User{}).
-		Where("user_id = ?", orgID).
+	if err := db.Model(&models.Organization{}).
+		Where("org_id = ?", orgID).
 		Update("secrets_initialized_at", now).Error; err != nil {
 		h.respondWithJSON(w, http.StatusInternalServerError, ErrorResponse{
 			Error:   "internal_error",

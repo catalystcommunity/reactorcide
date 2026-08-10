@@ -232,13 +232,14 @@ Status mapping:
 
 If a workflow evaluates and does not need to run, it should become `skipped` with a success status and an event log explaining why.
 
-## PR Comment
+## Shared Pull-Request Report
 
-The workflow status updater writes one rolling PR comment per commit:
+Workflow and policy updates write structured entries to the database. The VCS
+report reconciler merges all current entries into one pull-request comment:
 
 ```text
-<!-- reactorcide:workflows:<commit-sha> -->
-## Reactorcide Jobs for commit abc1234
+<!-- reactorcide:report:v1 -->
+## Reactorcide Report
 
 | Job | Status | Duration | Reason |
 |-----|--------|----------|--------|
@@ -247,7 +248,13 @@ The workflow status updater writes one rolling PR comment per commit:
 | report-failure | ⏭️ skipped | - | condition any_failed(needs) is false |
 ```
 
-Estimated time comes from the most recent successful matching workflow node for the same workflow name, node name, and project/repo context. When no previous duration exists, the comment shows `-`.
+Each workflow uses its stable workflow ID as the report section key. The policy
+decision has its own section. The reconciler uses a database lock, revision
+counters, and retries. A VCS write failure does not change the workflow result.
+
+Estimated time comes from the most recent successful matching workflow node
+for the same workflow name, node name, and project or repository context. When
+no previous duration exists, the comment shows `-`.
 
 ## UI Implications
 
@@ -274,3 +281,18 @@ Existing job pages remain useful, but workflow-triggered jobs should clearly sho
 - Expression-based `for_each`.
 - Named condition predicates such as `success("node")`.
 - Item-aware historical duration lookup for expanded `for_each` nodes.
+
+## Stable Workflow Identity and CI Origin
+
+A workflow can have an `id` field. Use a lowercase name with digits and single
+hyphens. The `name` field remains a display label. If `id` is absent, runnerlib
+derives a compatibility ID from the trusted workflow file path. A policy rule
+that permits head CI must use an explicit stable ID.
+
+One workflow uses one CI origin. Its jobs cannot mix base and head definitions.
+The runnerlib evaluation result carries the workflow ID, source file, CI
+origin, safe workflow triggers, and policy violations. A policy violation does
+not remove safe workflow triggers. The payload has no protocol version field.
+
+All workflows for one pull request write structured entries to one shared VCS
+report. The workflow ID is the report section key.

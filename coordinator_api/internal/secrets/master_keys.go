@@ -110,7 +110,7 @@ func (m *MasterKeyManager) GetOrgEncryptionKey(db *gorm.DB, orgID string) ([]byt
 	if err := db.Table("org_encryption_keys").
 		Select("org_encryption_keys.*, master_keys.name as master_key_name").
 		Joins("JOIN master_keys ON master_keys.key_id = org_encryption_keys.master_key_id").
-		Where("org_encryption_keys.user_id = ?", orgID).
+		Where("org_encryption_keys.org_id = ?", orgID).
 		Find(&orgKeys).Error; err != nil {
 		return nil, err
 	}
@@ -187,8 +187,8 @@ func (m *MasterKeyManager) RotateToKey(db *gorm.DB, keyName string) error {
 	// Get all unique org IDs
 	var orgIDs []string
 	if err := db.Model(&models.OrgEncryptionKey{}).
-		Distinct("user_id").
-		Pluck("user_id", &orgIDs).Error; err != nil {
+		Distinct("org_id").
+		Pluck("org_id", &orgIDs).Error; err != nil {
 		return err
 	}
 
@@ -201,14 +201,14 @@ func (m *MasterKeyManager) RotateToKey(db *gorm.DB, keyName string) error {
 
 		// Get the salt from existing entry
 		var existing models.OrgEncryptionKey
-		if err := db.Where("user_id = ?", orgID).First(&existing).Error; err != nil {
+		if err := db.Where("org_id = ?", orgID).First(&existing).Error; err != nil {
 			return err
 		}
 
 		// Check if already encrypted with this key
 		var count int64
 		db.Model(&models.OrgEncryptionKey{}).
-			Where("user_id = ? AND master_key_id = ?", orgID, mk.KeyID).
+			Where("org_id = ? AND master_key_id = ?", orgID, mk.KeyID).
 			Count(&count)
 		if count > 0 {
 			continue // Already done
@@ -282,10 +282,10 @@ func (m *MasterKeyManager) DecommissionKey(db *gorm.DB, keyName string) error {
 		Update("is_active", false).Error
 }
 
-// MarkSecretsInitialized marks a user's secrets as initialized.
+// MarkSecretsInitialized marks an organization's secrets as initialized.
 func MarkSecretsInitialized(db *gorm.DB, orgID string) error {
-	return db.Model(&models.User{}).
-		Where("user_id = ?", orgID).
+	return db.Model(&models.Organization{}).
+		Where("org_id = ?", orgID).
 		Update("secrets_initialized_at", db.NowFunc()).Error
 }
 

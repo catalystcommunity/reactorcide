@@ -11,16 +11,27 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/sirupsen/logrus"
 )
 
 // GitHubClient implements VCS client for GitHub
 type GitHubClient struct {
-	config Config
-	client *http.Client
-	logger *logrus.Logger
+	config     Config
+	client     *http.Client
+	logger     *logrus.Logger
+	actorMu    sync.Mutex
+	actorCache map[string]actorSubjectCacheEntry
 }
+
+type actorSubjectCacheEntry struct {
+	subjects  []string
+	expiresAt time.Time
+}
+
+const actorSubjectCacheTTL = 2 * time.Minute
 
 // NewGitHubClient creates a new GitHub VCS client
 func NewGitHubClient(config Config) (*GitHubClient, error) {
@@ -32,15 +43,104 @@ func NewGitHubClient(config Config) (*GitHubClient, error) {
 	logger.SetFormatter(&logrus.JSONFormatter{})
 
 	return &GitHubClient{
-		config: config,
-		client: &http.Client{},
-		logger: logger,
+		config:     config,
+		client:     &http.Client{},
+		logger:     logger,
+		actorCache: make(map[string]actorSubjectCacheEntry),
 	}, nil
 }
 
 // GetProvider returns the provider type
 func (c *GitHubClient) GetProvider() Provider {
 	return GitHub
+}
+
+// ResolveActorSubjects resolves repository write permission and GitHub team
+// memberships. GitHub remains the authority for both facts.
+func (c *GitHubClient) ResolveActorSubjects(ctx context.Context, repo, username string) ([]string, error) {
+	repo = strings.TrimSpace(repo)
+	username = strings.TrimSpace(username)
+	if repo == "" || username == "" {
+		return nil, nil
+	}
+	cacheKey := strings.ToLower(repo + "\x00" + username)
+	c.actorMu.Lock()
+	if cached, found := c.actorCache[cacheKey]; found && time.Now().Before(cached.expiresAt) {
+		subjects := append([]string(nil), cached.subjects...)
+		c.actorMu.Unlock()
+		return subjects, nil
+	}
+	c.actorMu.Unlock()
+	subjects := []string{}
+	permissionURL := fmt.Sprintf("%s/repos/%s/collaborators/%s/permission", c.config.BaseURL, repo, url.PathEscape(username))
+	var permission struct {
+		Permission string `json:"permission"`
+	}
+	status, err := c.getJSON(ctx, permissionURL, &permission)
+	if err != nil {
+		return nil, err
+	}
+	if status == http.StatusOK && (permission.Permission == "admin" || permission.Permission == "maintain" || permission.Permission == "write") {
+		subjects = append(subjects, "repository_write")
+	}
+
+	owner := strings.SplitN(repo, "/", 2)[0]
+	for page := 1; ; page++ {
+		var teams []struct {
+			Slug string `json:"slug"`
+		}
+		status, err = c.getJSON(ctx, fmt.Sprintf("%s/orgs/%s/teams?per_page=100&page=%d", c.config.BaseURL, url.PathEscape(owner), page), &teams)
+		if err != nil {
+			return nil, err
+		}
+		if status != http.StatusOK {
+			return subjects, nil
+		}
+		for _, team := range teams {
+			var membership struct {
+				State string `json:"state"`
+			}
+			membershipURL := fmt.Sprintf("%s/orgs/%s/teams/%s/memberships/%s", c.config.BaseURL, url.PathEscape(owner), url.PathEscape(team.Slug), url.PathEscape(username))
+			membershipStatus, membershipErr := c.getJSON(ctx, membershipURL, &membership)
+			if membershipErr != nil {
+				return nil, membershipErr
+			}
+			if membershipStatus == http.StatusOK && membership.State == "active" {
+				subjects = append(subjects, "vcs_team:"+owner+"/"+team.Slug)
+			}
+		}
+		if len(teams) < 100 {
+			break
+		}
+	}
+	c.actorMu.Lock()
+	c.actorCache[cacheKey] = actorSubjectCacheEntry{subjects: append([]string(nil), subjects...), expiresAt: time.Now().Add(actorSubjectCacheTTL)}
+	c.actorMu.Unlock()
+	return subjects, nil
+}
+
+func (c *GitHubClient) getJSON(ctx context.Context, endpoint string, dst interface{}) (int, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+	if err != nil {
+		return 0, fmt.Errorf("creating request: %w", err)
+	}
+	req.Header.Set("Authorization", "token "+c.config.Token)
+	req.Header.Set("Accept", "application/vnd.github.v3+json")
+	resp, err := c.client.Do(req)
+	if err != nil {
+		return 0, fmt.Errorf("sending request: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode == http.StatusNotFound || resp.StatusCode == http.StatusForbidden {
+		return resp.StatusCode, nil
+	}
+	if resp.StatusCode != http.StatusOK {
+		return resp.StatusCode, fmt.Errorf("GitHub returned status %d", resp.StatusCode)
+	}
+	if err := json.NewDecoder(resp.Body).Decode(dst); err != nil {
+		return resp.StatusCode, fmt.Errorf("decoding response: %w", err)
+	}
+	return resp.StatusCode, nil
 }
 
 // ParseWebhook parses a GitHub webhook event
@@ -84,6 +184,10 @@ func (c *GitHubClient) ParseWebhook(r *http.Request) (*WebhookEvent, error) {
 	case "push":
 		if err := c.parsePushEvent(body, event); err != nil {
 			return nil, fmt.Errorf("parsing push event: %w", err)
+		}
+	case "issue_comment":
+		if err := c.parseIssueCommentEvent(body, event); err != nil {
+			return nil, fmt.Errorf("parsing issue comment event: %w", err)
 		}
 	case "ping":
 		// Ping event for webhook setup verification
@@ -239,18 +343,23 @@ func (c *GitHubClient) UpsertPRCommentByMarker(ctx context.Context, repo string,
 // findCommentIDByMarker walks paginated issue-comment results and returns
 // the ID of the first comment whose body contains marker, or 0 if none found.
 func (c *GitHubClient) findCommentIDByMarker(ctx context.Context, startURL, marker string) (int64, error) {
+	id, _, err := c.findCommentByMarker(ctx, startURL, marker)
+	return id, err
+}
+
+func (c *GitHubClient) findCommentByMarker(ctx context.Context, startURL, marker string) (int64, string, error) {
 	next := startURL
 	for next != "" {
 		req, err := http.NewRequestWithContext(ctx, "GET", next, nil)
 		if err != nil {
-			return 0, fmt.Errorf("creating request: %w", err)
+			return 0, "", fmt.Errorf("creating request: %w", err)
 		}
 		req.Header.Set("Authorization", "token "+c.config.Token)
 		req.Header.Set("Accept", "application/vnd.github.v3+json")
 
 		resp, err := c.client.Do(req)
 		if err != nil {
-			return 0, fmt.Errorf("sending request: %w", err)
+			return 0, "", fmt.Errorf("sending request: %w", err)
 		}
 
 		var comments []struct {
@@ -259,18 +368,80 @@ func (c *GitHubClient) findCommentIDByMarker(ctx context.Context, startURL, mark
 		}
 		if err := json.NewDecoder(resp.Body).Decode(&comments); err != nil {
 			resp.Body.Close()
-			return 0, fmt.Errorf("decoding comments: %w", err)
+			return 0, "", fmt.Errorf("decoding comments: %w", err)
 		}
 		next = parseGitHubNextLink(resp.Header.Get("Link"))
 		resp.Body.Close()
 
 		for _, cm := range comments {
 			if strings.Contains(cm.Body, marker) {
-				return cm.ID, nil
+				return cm.ID, cm.Body, nil
 			}
 		}
 	}
-	return 0, nil
+	return 0, "", nil
+}
+
+// ReadPRReportComment reads a shared report by provider ID first and root
+// marker second. The returned body lets the renderer preserve owner text.
+func (c *GitHubClient) ReadPRReportComment(ctx context.Context, repo string, prNumber int, commentID, marker string) (string, string, error) {
+	if commentID != "" && commentID != marker {
+		var comment struct {
+			ID   int64  `json:"id"`
+			Body string `json:"body"`
+		}
+		status, err := c.getJSON(ctx, fmt.Sprintf("%s/repos/%s/issues/comments/%s", c.config.BaseURL, repo, url.PathEscape(commentID)), &comment)
+		if err != nil {
+			return "", "", err
+		}
+		if status == http.StatusOK {
+			return fmt.Sprintf("%d", comment.ID), comment.Body, nil
+		}
+	}
+	id, body, err := c.findCommentByMarker(ctx, fmt.Sprintf("%s/repos/%s/issues/%d/comments?per_page=100", c.config.BaseURL, repo, prNumber), marker)
+	if err != nil || id == 0 {
+		return "", body, err
+	}
+	return fmt.Sprintf("%d", id), body, nil
+}
+
+// WritePRReportComment writes one shared report and returns GitHub's stable
+// comment ID.
+func (c *GitHubClient) WritePRReportComment(ctx context.Context, repo string, prNumber int, commentID, body string) (string, error) {
+	payload, err := json.Marshal(map[string]string{"body": body})
+	if err != nil {
+		return "", err
+	}
+	method := http.MethodPost
+	endpoint := fmt.Sprintf("%s/repos/%s/issues/%d/comments", c.config.BaseURL, repo, prNumber)
+	expected := http.StatusCreated
+	if commentID != "" {
+		method = http.MethodPatch
+		endpoint = fmt.Sprintf("%s/repos/%s/issues/comments/%s", c.config.BaseURL, repo, url.PathEscape(commentID))
+		expected = http.StatusOK
+	}
+	req, err := http.NewRequestWithContext(ctx, method, endpoint, strings.NewReader(string(payload)))
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set("Authorization", "token "+c.config.Token)
+	req.Header.Set("Accept", "application/vnd.github.v3+json")
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := c.client.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != expected {
+		return "", fmt.Errorf("GitHub returned status %d", resp.StatusCode)
+	}
+	var result struct {
+		ID int64 `json:"id"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("%d", result.ID), nil
 }
 
 // patchIssueComment replaces the body of an existing issue comment.
@@ -367,6 +538,7 @@ func (c *GitHubClient) parsePullRequestEvent(body []byte, event *WebhookEvent) e
 		HTMLURL:       payload.Repository.HTMLURL,
 		DefaultBranch: payload.Repository.DefaultBranch,
 	}
+	event.SenderLogin = payload.Sender.Login
 
 	event.PullRequest = &PullRequestInfo{
 		Number:      payload.Number,
@@ -400,6 +572,19 @@ func (c *GitHubClient) parsePullRequestEvent(body []byte, event *WebhookEvent) e
 		}
 	}
 
+	return nil
+}
+
+func (c *GitHubClient) parseIssueCommentEvent(body []byte, event *WebhookEvent) error {
+	var payload githubIssueCommentEvent
+	if err := json.Unmarshal(body, &payload); err != nil {
+		return err
+	}
+	event.Repository = RepositoryInfo{FullName: payload.Repository.FullName, CloneURL: payload.Repository.CloneURL,
+		SSHURL: payload.Repository.SSHURL, HTMLURL: payload.Repository.HTMLURL, DefaultBranch: payload.Repository.DefaultBranch}
+	event.SenderLogin = payload.Sender.Login
+	event.IssueComment = &IssueCommentInfo{Action: payload.Action, IssueNumber: payload.Issue.Number,
+		Body: payload.Comment.Body, IsPullRequest: payload.Issue.PullRequest.URL != ""}
 	return nil
 }
 
@@ -467,7 +652,7 @@ func (c *GitHubClient) mapStatusState(state StatusState) string {
 
 // convertPRInfo converts GitHub PR to our format
 func (c *GitHubClient) convertPRInfo(pr githubPullRequest) *PullRequestInfo {
-	return &PullRequestInfo{
+	result := &PullRequestInfo{
 		Number:      pr.Number,
 		Title:       pr.Title,
 		Description: pr.Body,
@@ -481,6 +666,11 @@ func (c *GitHubClient) convertPRInfo(pr githubPullRequest) *PullRequestInfo {
 		HTMLURL:     pr.HTMLURL,
 		AuthorLogin: pr.User.Login,
 	}
+	if pr.Head.Repo.FullName != "" && pr.Head.Repo.FullName != pr.Base.Repo.FullName {
+		result.HeadRepository = &RepositoryInfo{FullName: pr.Head.Repo.FullName, CloneURL: pr.Head.Repo.CloneURL,
+			SSHURL: pr.Head.Repo.SSHURL, HTMLURL: pr.Head.Repo.HTMLURL, DefaultBranch: pr.Head.Repo.DefaultBranch}
+	}
+	return result
 }
 
 // GitHub API structures
@@ -489,6 +679,22 @@ type githubPullRequestEvent struct {
 	Number      int               `json:"number"`
 	PullRequest githubPullRequest `json:"pull_request"`
 	Repository  githubRepository  `json:"repository"`
+	Sender      githubUser        `json:"sender"`
+}
+
+type githubIssueCommentEvent struct {
+	Action string `json:"action"`
+	Issue  struct {
+		Number      int `json:"number"`
+		PullRequest struct {
+			URL string `json:"url"`
+		} `json:"pull_request"`
+	} `json:"issue"`
+	Comment struct {
+		Body string `json:"body"`
+	} `json:"comment"`
+	Repository githubRepository `json:"repository"`
+	Sender     githubUser       `json:"sender"`
 }
 
 type githubPullRequest struct {

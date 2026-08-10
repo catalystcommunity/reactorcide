@@ -42,6 +42,11 @@ type JobSpec struct {
 	// Source defines how to prepare the source code
 	Source *SourceSpec `json:"source" yaml:"source"`
 
+	// Checkout selects the runnerlib checkout layout. It is also supported by
+	// overlay files. Isolated keeps separate clones. Shared uses one filtered
+	// object store for pull-request evaluation.
+	Checkout *CheckoutSpec `json:"checkout" yaml:"checkout"`
+
 	// WorkingDir is the working directory inside the container (default: /job)
 	WorkingDir string `json:"working_dir" yaml:"working_dir"`
 
@@ -94,6 +99,8 @@ type JobSpec struct {
 	// cmd/submit.go).
 	Characteristics map[string]interface{} `json:"characteristics" yaml:"characteristics"`
 
+	WorkerClass string `json:"worker_class" yaml:"worker_class"`
+
 	// Resources declares per-job compute resource cpu.request/cpu.limit/
 	// memory.limit; raw map, validated by internal/resources.ParseResources
 	// at submit time. Not consumed by run-local/ToJobConfig -- see the flat
@@ -128,6 +135,20 @@ type SourceSpec struct {
 	URL  string `json:"url" yaml:"url"`
 	Ref  string `json:"ref" yaml:"ref"`
 	Path string `json:"path" yaml:"path"` // for copy type
+}
+
+type CheckoutSpec struct {
+	Mode string `json:"mode" yaml:"mode"`
+}
+
+func validateCheckoutSpec(checkout *CheckoutSpec) error {
+	if checkout == nil || checkout.Mode == "" {
+		return nil
+	}
+	if checkout.Mode != "isolated" && checkout.Mode != "shared" {
+		return fmt.Errorf("checkout.mode must be isolated or shared")
+	}
+	return nil
 }
 
 // normalizeEvalFormat checks if data uses the eval format (nested "job" block
@@ -224,6 +245,9 @@ func LoadJobSpec(path string) (*JobSpec, error) {
 	if spec.Command == "" {
 		return nil, fmt.Errorf("job file must specify a command")
 	}
+	if err := validateCheckoutSpec(spec.Checkout); err != nil {
+		return nil, err
+	}
 
 	return &spec, nil
 }
@@ -278,6 +302,9 @@ func (s *JobSpec) ToJobConfig(workspaceDir, jobID, queueName string) *JobConfig 
 	env := make(map[string]string)
 	for k, v := range s.Environment {
 		env[k] = v
+	}
+	if s.Checkout != nil && s.Checkout.Mode != "" {
+		env["REACTORCIDE_CHECKOUT_MODE"] = s.Checkout.Mode
 	}
 
 	// Add job metadata to environment
@@ -686,6 +713,9 @@ func MergeJobSpecs(base *JobSpec, overlays []*JobSpec, overlayFiles []string) (*
 			Path: base.Source.Path,
 		}
 	}
+	if base.Checkout != nil {
+		result.Checkout = &CheckoutSpec{Mode: base.Checkout.Mode}
+	}
 
 	// Deep copy run-local block
 	if base.RunLocal != nil {
@@ -792,6 +822,9 @@ func MergeJobSpecs(base *JobSpec, overlays []*JobSpec, overlayFiles []string) (*
 				Path: overlay.Source.Path,
 			}
 		}
+		if overlay.Checkout != nil {
+			result.Checkout = &CheckoutSpec{Mode: overlay.Checkout.Mode}
+		}
 
 		// Override run-local block if set in overlay
 		if overlay.RunLocal != nil {
@@ -834,6 +867,9 @@ func LoadJobSpecWithOverlays(jobPath string, overlayPaths []string) (*JobSpec, [
 
 	// Merge overlays onto base
 	merged, secretOverrides := MergeJobSpecs(base, overlays, overlayFiles)
+	if err := validateCheckoutSpec(merged.Checkout); err != nil {
+		return nil, nil, err
+	}
 
 	// Apply defaults if not set after merge
 	if merged.Image == "" {

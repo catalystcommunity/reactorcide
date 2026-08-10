@@ -7,6 +7,7 @@ import (
 
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store/models"
+	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/tokencaps"
 )
 
 // RoleStore is the narrow store surface Resolver consumes: group membership +
@@ -112,8 +113,11 @@ func (p *principal) hasAnyProjectRole(projectID string) bool {
 // IsGlobalAdmin reports whether id holds the global/admin role, directly or
 // via a group. Anonymous identities are never global admins.
 func (r *Resolver) IsGlobalAdmin(ctx context.Context, id Identity) (bool, error) {
-	if id.Anonymous || id.UserID == "" {
+	if id.Anonymous {
 		return false, nil
+	}
+	if id.UserID == "" {
+		return id.tokenAllowsGlobal(tokencaps.OrganizationsManage), nil
 	}
 	p, err := r.loadPrincipal(ctx, id.UserID)
 	if err != nil {
@@ -129,8 +133,11 @@ func (r *Resolver) IsGlobalAdmin(ctx context.Context, id Identity) (bool, error)
 // authenticated user freely manages resources they created under their own
 // user_id.
 func (r *Resolver) IsOrgAdmin(ctx context.Context, id Identity, orgID string) (bool, error) {
-	if id.Anonymous || id.UserID == "" || orgID == "" {
+	if id.Anonymous || orgID == "" {
 		return false, nil
+	}
+	if id.UserID == "" {
+		return id.tokenAllows(orgID, tokencaps.OrganizationsManage), nil
 	}
 	if orgID == id.UserID {
 		return true, nil
@@ -149,8 +156,15 @@ func (r *Resolver) IsOrgAdmin(ctx context.Context, id Identity, orgID string) (b
 // project/owner role assignment (direct or via group), the admin of the
 // project's owning org, or a global admin.
 func (r *Resolver) IsProjectOwner(ctx context.Context, id Identity, projectID string) (bool, error) {
-	if id.Anonymous || id.UserID == "" || projectID == "" {
+	if id.Anonymous || projectID == "" {
 		return false, nil
+	}
+	if id.UserID == "" {
+		project, err := r.store.GetProjectByID(ctx, projectID)
+		if err != nil {
+			return false, err
+		}
+		return id.tokenAllows(project.OwnershipOrgID(), tokencaps.ProjectsManage), nil
 	}
 	p, err := r.loadPrincipal(ctx, id.UserID)
 	if err != nil {
@@ -169,13 +183,11 @@ func (r *Resolver) IsProjectOwner(ctx context.Context, id Identity, projectID st
 		}
 		return false, err
 	}
-	if project.UserID == nil {
-		return false, nil
-	}
-	if *project.UserID == id.UserID {
+	orgID := project.OwnershipOrgID()
+	if orgID == id.UserID {
 		return true, nil
 	}
-	return p.hasOrgRole(*project.UserID, models.RoleAdmin), nil
+	return p.hasOrgRole(orgID, models.RoleAdmin), nil
 }
 
 // EffectiveRoleForProject returns the highest role id holds at projectID:
@@ -183,7 +195,7 @@ func (r *Resolver) IsProjectOwner(ctx context.Context, id Identity, projectID st
 // (project owner), models.RoleMember (any role assignment scoped directly to
 // the project), or "" (none).
 func (r *Resolver) EffectiveRoleForProject(ctx context.Context, id Identity, projectID string) (string, error) {
-	if id.Anonymous || id.UserID == "" || projectID == "" {
+	if id.Anonymous || projectID == "" {
 		return "", nil
 	}
 	owner, err := r.IsProjectOwner(ctx, id, projectID)
@@ -222,7 +234,7 @@ func (r *Resolver) EffectiveRoleForProject(ctx context.Context, id Identity, pro
 // models.RoleAdmin, models.RoleMember (any role assignment scoped directly to
 // the org), or "" (none).
 func (r *Resolver) EffectiveRoleForOrg(ctx context.Context, id Identity, orgID string) (string, error) {
-	if id.Anonymous || id.UserID == "" || orgID == "" {
+	if id.Anonymous || orgID == "" {
 		return "", nil
 	}
 	if admin, err := r.IsOrgAdmin(ctx, id, orgID); err != nil {

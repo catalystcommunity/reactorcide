@@ -1,0 +1,46 @@
+{
+  "type": "trigger_job",
+  "operation_id": "cross-language-fixture",
+  "trigger_type": "runnerlib_eval",
+  "workflows": [
+    {
+      "id": "backend-tests",
+      "name": "Backend Tests",
+      "source_file": ".reactorcide/workflows/backend.yaml",
+      "ci_origin": "head",
+      "ci_repository": "https://example.invalid/fork/repo.git",
+      "ci_sha": "head-sha",
+      "execution_profile": "pr-untrusted",
+      "worker_class": "default",
+      "policy_revision": "policy-revision",
+      "policy_rule_id": "backend-team",
+      "approval_id": null,
+      "jobs": [
+        {
+          "job_name": "test",
+          "depends_on": [],
+          "condition": "all_success",
+          "env": {},
+          "job_command": "true"
+        }
+      ]
+    }
+  ],
+  "policy_violations": [
+    {
+      "path": ".reactorcide/jobs/unrelated.yaml",
+      "workflow_id": "unrelated",
+      "actor": "alice",
+      "rule": "",
+      "base_sha": "base-sha",
+      "head_sha": "head-sha"
+    }
+  ],
+  "changed_ci_paths": [
+    ".reactorcide/workflows/backend.yaml",
+    ".reactorcide/jobs/unrelated.yaml"
+  ],
+  "actor_subjects": [
+    "repository_write"
+  ]
+}

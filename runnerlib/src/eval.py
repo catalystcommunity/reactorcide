@@ -14,6 +14,7 @@ outputs a triggers.json file that the worker picks up to create child jobs.
 """
 
 import fnmatch
+import re
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -143,11 +144,34 @@ class WorkflowDefinition:
         source_file: Path to the workflow YAML this was loaded from.
     """
     name: str
+    workflow_id: str = ""
+    explicit_id: bool = False
     description: str = ""
     triggers: TriggersConfig = field(default_factory=TriggersConfig)
     paths: PathsConfig = field(default_factory=PathsConfig)
     jobs: List[JobDefinition] = field(default_factory=list)
     source_file: Optional[str] = None
+
+
+_SECURITY_ID_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,62}$")
+
+
+def compatibility_workflow_id(source_file: Optional[str]) -> str:
+    """Create a stable legacy ID from the workflow source path."""
+    if not source_file:
+        # Direct parser callers do not have a repository path. Real workflow
+        # loading always supplies source_file, so this test/library fallback is
+        # stable and does not depend on the display name.
+        return "legacy-workflow"
+    normalized = source_file.replace("\\", "/")
+    marker = "/.reactorcide/workflows/"
+    if marker in normalized:
+        normalized = normalized.split(marker, 1)[1]
+    normalized = re.sub(r"\.ya?ml$", "", normalized, flags=re.IGNORECASE)
+    value = re.sub(r"[^a-z0-9]+", "-", normalized.lower()).strip("-")
+    if not value:
+        raise ValueError(f"Cannot derive a workflow id from {source_file!r}")
+    return value
 
 
 @dataclass
@@ -575,17 +599,23 @@ def _load_job_file_raw(ci_source_path: Path, job_file: str) -> tuple:
         FileNotFoundError: If the file cannot be found.
         ValueError: If the file is not a YAML mapping.
     """
-    candidates = [
-        ci_source_path / job_file,
-        ci_source_path / ".reactorcide" / "jobs" / job_file,
-    ]
+    raw_path = Path(job_file)
+    if raw_path.is_absolute() or ".." in raw_path.parts:
+        raise ValueError(f"job_file {job_file!r} must stay inside the CI checkout")
+    root = ci_source_path.resolve()
+    candidates = [ci_source_path / raw_path, ci_source_path / ".reactorcide" / "jobs" / raw_path]
     for candidate in candidates:
-        if candidate.is_file():
-            with open(candidate, "r") as f:
+        resolved = candidate.resolve()
+        try:
+            resolved.relative_to(root)
+        except ValueError as exc:
+            raise ValueError(f"job_file {job_file!r} escapes the CI checkout") from exc
+        if resolved.is_file():
+            with open(resolved, "r") as f:
                 data = yaml.safe_load(f)
             if not isinstance(data, dict):
-                raise ValueError(f"job_file {candidate} is not a valid YAML mapping")
-            return data, str(candidate)
+                raise ValueError(f"job_file {resolved} is not a valid YAML mapping")
+            return data, str(resolved)
     looked = ", ".join(str(c) for c in candidates)
     raise FileNotFoundError(f"job_file '{job_file}' not found (looked in: {looked})")
 
@@ -683,6 +713,13 @@ def parse_workflow_definition(
     if not name:
         raise ValueError(f"Workflow definition missing required 'name' field{where}")
 
+    workflow_id = str(data.get("id") or compatibility_workflow_id(source_file))
+    if not _SECURITY_ID_RE.fullmatch(workflow_id):
+        raise ValueError(
+            f"Workflow id {workflow_id!r}{where} must contain 1 to 63 lowercase "
+            "letters, digits, or hyphens, and must start with a letter or digit"
+        )
+
     # `on:` is the workflow trigger block; accept `triggers:` as an alias.
     # NOTE: YAML 1.1 (PyYAML) parses the bare key `on` as the boolean True
     # (the same "Norway problem" GitHub Actions hits), so check True too.
@@ -711,6 +748,8 @@ def parse_workflow_definition(
 
     return WorkflowDefinition(
         name=str(name),
+        workflow_id=workflow_id,
+        explicit_id=bool(data.get("id")),
         description=str(data.get("description", "") or ""),
         triggers=triggers,
         paths=paths,

@@ -100,7 +100,7 @@ func TestProjectCreate_HappyPathHitsFakeWithFields(t *testing.T) {
 	})
 	h := newTestWebHandler(t, fc)
 
-	form := strings.NewReader("org_id=org-1&name=widgets&repo_url=https%3A%2F%2Fexample.com%2Fw.git&is_private=on")
+	form := strings.NewReader("org_id=org-1&name=widgets&repo_url=https%3A%2F%2Fexample.com%2Fw.git&is_private=on&checkout_mode=shared")
 	req := httptest.NewRequest(http.MethodPost, "/app/projects", form)
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	req.AddCookie(&http.Cookie{Name: sessionCookieName, Value: "admin-token"})
@@ -118,6 +118,9 @@ func TestProjectCreate_HappyPathHitsFakeWithFields(t *testing.T) {
 	}
 	if seen.IsPrivate == nil || !*seen.IsPrivate {
 		t.Errorf("expected is_private=true to be sent explicitly when the checkbox is checked, got %+v", seen.IsPrivate)
+	}
+	if seen.CheckoutMode == nil || *seen.CheckoutMode != "shared" {
+		t.Errorf("expected checkout_mode=shared, got %+v", seen.CheckoutMode)
 	}
 }
 
@@ -239,6 +242,37 @@ func TestProjectDetail_SecurityFormsGatedByCapability(t *testing.T) {
 			t.Errorf("expected an empty (unfilled) password field for the secret value, got: %s", body)
 		}
 	})
+}
+
+func TestProjectSettingsUpdate_SendsCheckoutMode(t *testing.T) {
+	fc := newFakeCoordinator()
+	withAuthMode(fc, "none", false, true)
+	var seen csilapi.UpdateProjectRequest
+	fc.handle("ReactorcideUi", "update-project", func(payload []byte, _ string, _ bool) ([]byte, string, bool) {
+		req, err := csilapi.DecodeUpdateProjectRequest(payload)
+		if err != nil {
+			return fakeServiceErrorPayload("bad_request", err.Error()), "ServiceError", true
+		}
+		seen = req
+		return csilapi.EncodeUpdateProjectResponse(csilapi.UpdateProjectResponse{
+			Project: csilapi.ProjectDetail{ProjectId: req.ProjectId, CheckoutMode: "shared"},
+		}), "UpdateProjectResponse", false
+	})
+	h := newTestWebHandler(t, fc)
+
+	form := strings.NewReader("name=widgets&enabled=on&checkout_mode=shared")
+	req := httptest.NewRequest(http.MethodPost, "/app/projects/p1/settings", form)
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.SetPathValue("id", "p1")
+	rec := httptest.NewRecorder()
+	h.withSession(h.ProjectSettingsUpdate)(rec, req)
+
+	if rec.Code != http.StatusFound {
+		t.Fatalf("status = %d, want 302; body=%s", rec.Code, rec.Body.String())
+	}
+	if seen.CheckoutMode == nil || *seen.CheckoutMode != "shared" {
+		t.Errorf("expected checkout_mode=shared, got %+v", seen.CheckoutMode)
+	}
 }
 
 func TestWebhookSecretAdd_HappyPathValueNeverEchoed(t *testing.T) {

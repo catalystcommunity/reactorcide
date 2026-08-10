@@ -235,6 +235,11 @@ REACTORCIDE_API_TOKEN="$(cat ~/.config/reactorcide/api-token)" \
 Use [Connect a VCS Repository](./vcs-setup.md) after the API and TLS endpoint
 are ready.
 
+For a shared coordinator, configure organizations, limited tokens, worker
+classes, and trusted CI policy after installation. See [Organizations and
+Trusted CI Policy](./organizations-and-ci-policy.md). Review its upgrade checks
+before you apply migrations 000025 through 000033 to an existing database.
+
 ## Install on Kubernetes
 
 Use the [Kubernetes Deployment Guide](../helm_chart/DEPLOYMENT.md). The chart

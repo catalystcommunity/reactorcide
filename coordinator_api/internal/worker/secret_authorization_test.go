@@ -10,10 +10,18 @@ import (
 
 type secretGrantMockStore struct {
 	MockStore
-	grants []models.SecretGrant
+	grants          []models.SecretGrant
+	expectedOrgID   string
+	expectedProject string
 }
 
 func (s *secretGrantMockStore) ListSecretGrantsForJob(ctx context.Context, userID string, projectID *string, jobName string) ([]models.SecretGrant, error) {
+	if s.expectedOrgID != "" && userID != s.expectedOrgID {
+		return nil, nil
+	}
+	if s.expectedProject != "" && (projectID == nil || *projectID != s.expectedProject) {
+		return nil, nil
+	}
 	return s.grants, nil
 }
 
@@ -81,4 +89,29 @@ func TestAuthorizeSecretAccess_SupportsGrantPatterns(t *testing.T) {
 
 	job.Name = "test-linux-amd64"
 	require.Error(t, AuthorizeSecretAccess(context.Background(), grantStore, job, "catalystcommunity/registry", "password"))
+}
+
+func TestAuthorizeSecretAccess_RequiresOrganizationProjectProfileAndProvenance(t *testing.T) {
+	projectID := "project-1"
+	job := &models.Job{JobID: "job-1", OrgID: "org-1", ProjectID: &projectID, Name: "deploy",
+		ExecutionProfile: "standard", CIOrigin: "base"}
+	grantStore := &secretGrantMockStore{expectedOrgID: "org-1", expectedProject: projectID,
+		grants: []models.SecretGrant{{GrantID: "grant-1", Name: "deploy", SecretPathMatch: models.SecretGrantMatchPrefix,
+			SecretPathPattern: "deploy/production", JobNameMatch: models.SecretGrantMatchExact, JobNamePattern: "deploy",
+			ExecutionProfiles: []string{"standard"}, CIOrigins: []string{"base"}}}}
+
+	require.NoError(t, AuthorizeSecretAccess(context.Background(), grantStore, job, "deploy/production/db", "password"))
+
+	job.OrgID = "org-2"
+	require.Error(t, AuthorizeSecretAccess(context.Background(), grantStore, job, "deploy/production/db", "password"))
+	job.OrgID = "org-1"
+	otherProject := "project-2"
+	job.ProjectID = &otherProject
+	require.Error(t, AuthorizeSecretAccess(context.Background(), grantStore, job, "deploy/production/db", "password"))
+	job.ProjectID = &projectID
+	job.ExecutionProfile = "pr-untrusted"
+	require.Error(t, AuthorizeSecretAccess(context.Background(), grantStore, job, "deploy/production/db", "password"))
+	job.ExecutionProfile = "standard"
+	job.CIOrigin = "head"
+	require.Error(t, AuthorizeSecretAccess(context.Background(), grantStore, job, "deploy/production/db", "password"))
 }

@@ -2,6 +2,9 @@
 
 import os
 import shutil
+import subprocess
+import tarfile
+import tempfile
 from pathlib import Path
 from typing import Optional
 from git import Repo, GitCommandError
@@ -487,6 +490,134 @@ def _prepare_git_source(source_url: str, source_ref: Optional[str], target_path:
                 pass  # original cwd may no longer exist
 
 
+def _fetch_shared_revision(
+    repo: Repo,
+    remote_name: str,
+    remote_url: str,
+    revision: str,
+    fallback_ref: Optional[str] = None,
+) -> None:
+    """Fetch one revision into a shared, filtered Git object store."""
+    remote_names = {remote.name for remote in repo.remotes}
+    if remote_name not in remote_names:
+        repo.create_remote(remote_name, remote_url)
+    repo.git.config(f"remote.{remote_name}.promisor", "true")
+    repo.git.config(f"remote.{remote_name}.partialclonefilter", "blob:none")
+    if remote_name == "origin":
+        repo.git.config("extensions.partialClone", "origin")
+
+    try:
+        repo.git.fetch("--filter=blob:none", remote_name, revision)
+    except GitCommandError:
+        try:
+            repo.git.fetch(remote_name, revision)
+        except GitCommandError:
+            repo.git.fetch(remote_name, fallback_ref or revision)
+
+    try:
+        repo.commit(revision)
+    except Exception as exc:
+        raise GitCommandError(
+            f"git fetch {remote_name} {revision}",
+            128,
+            stderr=f"Fetched data does not contain required revision {revision}",
+        ) from exc
+
+
+def _stage_ci_tree(repo: Repo, revision: str, target_path: Path) -> Path:
+    """Stage only .reactorcide files from one revision."""
+    if target_path.exists():
+        shutil.rmtree(target_path)
+    target_path.mkdir(parents=True, exist_ok=True)
+
+    try:
+        repo.git.cat_file("-e", f"{revision}:.reactorcide")
+    except GitCommandError:
+        (target_path / ".reactorcide").mkdir()
+        return target_path
+
+    archive_file = tempfile.NamedTemporaryFile(prefix="reactorcide-ci-", suffix=".tar", delete=False)
+    archive_path = Path(archive_file.name)
+    archive_file.close()
+    try:
+        with archive_path.open("wb") as output:
+            subprocess.run(
+                ["git", "archive", "--format=tar", revision, ".reactorcide"],
+                cwd=repo.working_tree_dir,
+                stdout=output,
+                stderr=subprocess.PIPE,
+                check=True,
+            )
+        with tarfile.open(archive_path, "r") as archive:
+            for member in archive.getmembers():
+                member_path = Path(member.name)
+                if member_path.is_absolute() or ".." in member_path.parts:
+                    raise ValueError("CI archive contains an unsafe path")
+                if not member_path.parts or member_path.parts[0] != ".reactorcide":
+                    raise ValueError("CI archive contains a path outside .reactorcide")
+                if member.issym() or member.islnk() or member.isdev():
+                    raise ValueError("CI archive contains an unsupported link or device")
+                destination = target_path / member_path
+                if member.isdir():
+                    destination.mkdir(parents=True, exist_ok=True)
+                    continue
+                source = archive.extractfile(member)
+                if source is None:
+                    continue
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                with destination.open("wb") as staged:
+                    shutil.copyfileobj(source, staged)
+                destination.chmod(member.mode & 0o777)
+    finally:
+        archive_path.unlink(missing_ok=True)
+    return target_path
+
+
+def prepare_shared_eval_sources(config: RunnerConfig) -> Optional[tuple[Path, Path]]:
+    """Prepare PR evaluation from one filtered Git object store.
+
+    The source directory contains the Git object store and no working-tree
+    checkout. The base and head CI views contain only .reactorcide files.
+    """
+    is_eval_job = os.getenv("REACTORCIDE_JOB_KIND") == "eval" or "runnerlib eval" in config.job_command
+    if config.checkout_mode != "shared" or not is_eval_job or not os.getenv("REACTORCIDE_PR_NUMBER"):
+        return None
+    if config.source_type != "git" or config.ci_source_type != "git":
+        return None
+    if not config.source_url or not config.source_ref or not config.ci_source_url or not config.ci_source_ref:
+        return None
+
+    prepare_job_directory(config)
+    source_path = get_code_directory_path(config)
+    if source_path.exists():
+        shutil.rmtree(source_path)
+    source_path.mkdir(parents=True, exist_ok=True)
+    repo = Repo.init(source_path)
+
+    _fetch_shared_revision(
+        repo,
+        "origin",
+        config.source_url,
+        config.source_ref,
+        os.getenv("REACTORCIDE_HEAD_REF") or None,
+    )
+    base_remote = "origin" if config.ci_source_url == config.source_url else "upstream"
+    _fetch_shared_revision(
+        repo,
+        base_remote,
+        config.ci_source_url,
+        config.ci_source_ref,
+        os.getenv("REACTORCIDE_BASE_REF") or None,
+    )
+    repo.git.update_ref("HEAD", config.source_ref)
+
+    ci_root = get_job_base_path() / "ci"
+    base_path = _stage_ci_tree(repo, config.ci_source_ref, ci_root / "base")
+    _stage_ci_tree(repo, config.source_ref, ci_root / "head")
+    log_stdout("Prepared base and head CI views from one filtered Git object store")
+    return source_path, base_path
+
+
 def _prepare_copy_source(source_url: str, target_path: Path) -> Path:
     """Prepare source code by copying from a local directory.
 
@@ -705,8 +836,12 @@ def prepare_ci_source(config: RunnerConfig) -> Optional[Path]:
     job_path = prepare_job_directory(config)
 
     # Determine target path for CI source code
-    # CI source code goes in /job/ci/ (separate from regular source)
+    # CI source code goes in /job/ci/ (separate from regular source). A PR
+    # evaluator keeps the trusted base in /job/ci/base so /job/ci/head can
+    # hold candidate head definitions without replacing the trusted view.
     target_path = job_path / "ci"
+    if os.getenv("REACTORCIDE_JOB_KIND") == "eval" and os.getenv("REACTORCIDE_PR_NUMBER"):
+        target_path = target_path / "base"
 
     logger.info("Preparing CI source", fields={
         "type": config.ci_source_type,

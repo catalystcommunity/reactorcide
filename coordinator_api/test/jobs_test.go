@@ -5,11 +5,13 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 
+	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store/models"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
@@ -65,6 +67,13 @@ type ListJobsResponse struct {
 
 // createAuthTokenHeader creates an Authorization header with a real API token
 func createAuthTokenHeader(ctx context.Context, tx *gorm.DB, userID string) (string, error) {
+	// These legacy REST tests submit without an organization name. Make the
+	// fixture user's organization the authoritative default for the request.
+	if err := tx.Model(&models.GlobalSetting{}).
+		Where("key = ?", models.GlobalSettingDefaultOrgID).
+		Update("value", models.JSONValue([]byte(fmt.Sprintf("%q", userID)))).Error; err != nil {
+		return "", err
+	}
 	// Create a real token value
 	tokenValue := "test-api-token-" + userID
 

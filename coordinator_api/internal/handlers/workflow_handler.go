@@ -12,6 +12,7 @@ import (
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/jobcontrol"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store/models"
+	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/tokencaps"
 )
 
 // workflowInstanceGetter is the narrow store capability CancelWorkflow needs
@@ -71,12 +72,49 @@ func NewWorkflowHandlerWithCorndogs(store store.Store, corndogsClient corndogs.C
 
 func (h *WorkflowHandler) ListWorkflows(w http.ResponseWriter, r *http.Request) {
 	user := checkauth.GetUserFromContext(r.Context())
-	if user == nil {
+	principal := checkauth.GetPrincipalFromContext(r.Context())
+	if user == nil && principal == nil {
 		h.respondWithError(w, http.StatusUnauthorized, store.ErrUnauthorized)
 		return
 	}
 
 	limit, offset := h.parsePagination(r)
+	if user == nil {
+		if !principal.HasCapability(tokencaps.WorkflowsRead) {
+			h.respondWithError(w, http.StatusForbidden, store.ErrForbidden)
+			return
+		}
+		filters := h.commonWorkflowQueryFilters(r)
+		if !principal.AllOrganizations {
+			orgIDs := append([]string(nil), principal.OrganizationIDs...)
+			if principal.OwnerOrgID != "" {
+				found := false
+				for _, orgID := range orgIDs {
+					found = found || orgID == principal.OwnerOrgID
+				}
+				if !found {
+					orgIDs = append(orgIDs, principal.OwnerOrgID)
+				}
+			}
+			if len(orgIDs) == 0 {
+				h.respondWithJSON(w, http.StatusOK, ListWorkflowsResponse{Workflows: []models.WorkflowSummary{}, Limit: limit, Offset: offset})
+				return
+			}
+			filters["org_ids"] = orgIDs
+		}
+		ws, ok := h.store.(workflowSummaryStore)
+		if !ok {
+			h.respondWithError(w, http.StatusNotImplemented, store.ErrNotFound)
+			return
+		}
+		summaries, err := ws.ListWorkflowSummaries(r.Context(), filters, limit, offset)
+		if err != nil {
+			h.respondWithError(w, http.StatusInternalServerError, err)
+			return
+		}
+		h.respondWithJSON(w, http.StatusOK, ListWorkflowsResponse{Workflows: summaries, Total: len(summaries), Limit: limit, Offset: offset})
+		return
+	}
 
 	// Primary path: SQL-side visibility filtering with exact pagination and
 	// Total — see workflowSummaryVisibleToStore and JobHandler.ListJobs'

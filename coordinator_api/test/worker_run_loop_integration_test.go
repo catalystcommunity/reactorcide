@@ -73,6 +73,7 @@ func TestWorkerRunLoopDockerIntegration(t *testing.T) {
 
 	wpool := &models.WorkerPool{Name: uniqueName("worker-run-loop-pool")}
 	require.NoError(t, postgres_store.PostgresStore.CreateWorkerPool(ctx, wpool))
+	grantDefaultOrgPool(t, ctx, wpool.PoolID)
 	rawToken, tokenHash, err := workerauth.GenerateEnrollmentToken()
 	require.NoError(t, err)
 	_, err = postgres_store.PostgresStore.CreatePoolEnrollmentToken(ctx, wpool.PoolID, "primary", tokenHash)
@@ -86,6 +87,8 @@ func TestWorkerRunLoopDockerIntegration(t *testing.T) {
 		"JobCommand":     "sh -c 'echo hello; echo done'",
 		"Status":         "submitted",
 		"ContainerImage": "alpine:latest",
+		"OrgID":          defaultQueue.OrgID,
+		"QueueName":      defaultQueue.QueueUUID,
 	})
 	require.NoError(t, err)
 

@@ -110,6 +110,7 @@ func TestWorkerGoldenPathE2E(t *testing.T) {
 		csilapi.CreatePoolRequest{Name: uniqueName("golden-path-pool")}, adminToken)
 	require.Nil(t, svcErr)
 	poolID := poolResp.Pool.PoolId
+	grantDefaultOrgPool(t, ctx, poolID)
 
 	tokenResp, svcErr := csilCall(t, mux, "ReactorcideUi", "create-enrollment-token",
 		csilapi.EncodeCreateEnrollmentTokenRequest, csilapi.DecodeCreateEnrollmentTokenResponse,

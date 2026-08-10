@@ -258,6 +258,7 @@ func TestProjectHandler_CreateProject(t *testing.T) {
 				DefaultJobCommand:     "make test",
 				DefaultTimeoutSeconds: intPtr(1800),
 				DefaultQueueName:      "custom-queue",
+				CheckoutMode:          "shared",
 			},
 			withAuth:       true,
 			expectedStatus: http.StatusCreated,
@@ -269,7 +270,15 @@ func TestProjectHandler_CreateProject(t *testing.T) {
 				assert.Equal(t, []string{"main", "develop"}, resp.TargetBranches)
 				assert.Equal(t, "custom:latest", resp.DefaultRunnerImage)
 				assert.Equal(t, 1800, resp.DefaultTimeoutSeconds)
+				assert.Equal(t, "shared", resp.CheckoutMode)
 			},
+		},
+		{
+			name: "invalid checkout mode",
+			request: CreateProjectRequest{
+				Name: "invalid-checkout", RepoURL: "github.com/org/invalid-checkout", CheckoutMode: "custom",
+			},
+			withAuth: true, expectedStatus: http.StatusBadRequest,
 		},
 		{
 			name: "missing name",

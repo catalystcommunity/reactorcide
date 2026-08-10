@@ -468,7 +468,7 @@ polls corndogs or touches Postgres/object storage directly):
 `REACTORCIDE_WORKER_DRY_RUN`, `REACTORCIDE_WORKER_SHUTDOWN_TIMEOUT`,
 `REACTORCIDE_DB_URI`, `REACTORCIDE_CORNDOGS_BASE_URL`, `CORNDOGS_API_KEY`,
 `REACTORCIDE_OBJECT_STORE_*`, `REACTORCIDE_MASTER_KEYS`,
-`REACTORCIDE_SECRETS_STORAGE_TYPE`, `REACTORCIDE_DEFAULT_USER_ID`.
+`REACTORCIDE_SECRETS_STORAGE_TYPE`.
 
 ## Note for personal/local redeploy scripts
 
@@ -490,6 +490,27 @@ with:
 - **Drop:** `REACTORCIDE_WORKER_QUEUE`, `REACTORCIDE_WORKER_POLL_INTERVAL`,
   `REACTORCIDE_WORKER_DRY_RUN`, `REACTORCIDE_WORKER_SHUTDOWN_TIMEOUT` if the
   script sets any of them — all stale.
+
+## Organization Pools and Worker Classes
+
+A queue identity contains the organization, worker class, and canonical worker
+characteristics. An organization pool can run only work for its organization.
+A hosted pool has no organization owner. It can run only classes that an
+administrator grants to it.
+
+The coordinator checks the pool-to-class mapping when a worker claims a job.
+The worker report can update recorded characteristics, but it cannot change
+the pool boundary. A remote lease contains a short-lived job token. It does not
+contain the coordinator instance token.
+
+Manage worker classes and pool grants on `/app/workers/classes`. Every
+organization starts with the `default` class. Mark a class as protected when
+an untrusted execution profile must not select it. The token needs
+`workers:manage`.
+
+See [Organizations and Trusted CI Policy](./organizations-and-ci-policy.md)
+for the REST paths and the relationship between policy, profiles, classes, and
+pools.
 
 ## See also
 

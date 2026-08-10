@@ -1,6 +1,7 @@
 """CLI interface for runnerlib."""
 
 import os
+import json
 import signal
 import subprocess
 import shlex
@@ -394,16 +395,24 @@ def run(
         # NOTE: We don't execute PRE_SOURCE_PREP plugins yet because plugins haven't been loaded.
         # Plugins are loaded from the source after checkout.
 
-        from src.source_prep import prepare_source, prepare_ci_source, cleanup_vcs_auth
+        from src.source_prep import (
+            cleanup_vcs_auth,
+            prepare_ci_source,
+            prepare_shared_eval_sources,
+            prepare_source,
+        )
 
         try:
-            # Prepare CI source first (trusted code)
-            ci_source_path = prepare_ci_source(config)
+            shared_sources = prepare_shared_eval_sources(config)
+            if shared_sources:
+                source_path, ci_source_path = shared_sources
+            else:
+                # Prepare CI source first so plugins never load from an
+                # untrusted application checkout.
+                ci_source_path = prepare_ci_source(config)
+                source_path = prepare_source(config)
             if ci_source_path:
                 plugin_context.metadata['ci_source_path'] = str(ci_source_path)
-
-            # Prepare regular source (potentially untrusted)
-            source_path = prepare_source(config)
             if source_path:
                 plugin_context.metadata['source_path'] = str(source_path)
         finally:
@@ -916,8 +925,16 @@ def eval_cmd(
         log_stderr(f"Valid types: {', '.join(sorted(VALID_EVENT_TYPES))}")
         raise typer.Exit(1)
 
-    ci_source_path = Path(ci_source_dir)
+    ci_root_path = Path(ci_source_dir)
+    ci_source_path = ci_root_path
     source_path = Path(source_dir)
+
+    # A pull request always evaluates trusted definitions from the exact base
+    # checkout. The head checkout is separate and remains candidate data until
+    # the base policy permits a workflow to use it.
+    dual_checkout = bool(pr_number and not (ci_root_path / ".reactorcide").is_dir())
+    if dual_checkout:
+        ci_source_path = ci_root_path / "base"
 
     # Prepare CI source if not already present.
     # When running as an eval job, the coordinator passes CI source info via env vars
@@ -926,6 +943,13 @@ def eval_cmd(
         log_stdout(f"CI source not found at {ci_source_path}, cloning from {ci_source_url}")
         from src.source_prep import _prepare_git_source
         _prepare_git_source(ci_source_url, ci_source_ref or None, ci_source_path)
+
+    if dual_checkout and head_url and source_ref:
+        head_ci_path = ci_root_path / "head"
+        if not (head_ci_path / ".reactorcide").is_dir():
+            log_stdout(f"Preparing PR head candidate data at {head_ci_path}")
+            from src.source_prep import _prepare_git_source
+            _prepare_git_source(head_url, source_ref, head_ci_path)
 
     # Prepare regular source if not already present.
     # Needed for git diff to detect changed files for path-based triggers.
@@ -986,21 +1010,160 @@ def eval_cmd(
                    + (f", branch '{branch}'" if branch else "")
                    + (f", {len(changed)} changed file(s)" if changed else ""))
 
+        from src.ci_policy import ci_paths, decide_workflow, load_trusted_policy
+
+        trusted_policy = load_trusted_policy(ci_source_path)
+        changed_ci = ci_paths(changed)
+        head_workflows = {}
+        if dual_checkout and (ci_root_path / "head").is_dir():
+            loaded_head_workflows = load_workflow_definitions(ci_root_path / "head")
+            head_id_counts = {}
+            for workflow in loaded_head_workflows:
+                head_id_counts[workflow.workflow_id] = head_id_counts.get(workflow.workflow_id, 0) + 1
+            head_workflows = {
+                workflow.workflow_id: workflow
+                for workflow in loaded_head_workflows
+                if head_id_counts[workflow.workflow_id] == 1
+            }
+        base_ids = [workflow.workflow_id for workflow in workflow_defs]
+        if len(base_ids) != len(set(base_ids)):
+            raise ValueError("trusted base has duplicate workflow security ids")
+        try:
+            actor_subjects = set(json.loads(os.getenv("REACTORCIDE_ACTOR_SUBJECTS", "[]")))
+        except (TypeError, ValueError, json.JSONDecodeError):
+            actor_subjects = set()
+        try:
+            approvals = json.loads(os.getenv("REACTORCIDE_CI_APPROVALS", "[]"))
+            if not isinstance(approvals, list):
+                approvals = []
+        except (TypeError, ValueError, json.JSONDecodeError):
+            approvals = []
+
+        def repo_relative(path_value):
+            if not path_value:
+                return ""
+            resolved = Path(path_value).resolve()
+            for checkout in (ci_source_path, ci_root_path / "head"):
+                try:
+                    return str(resolved.relative_to(checkout.resolve())).replace("\\", "/")
+                except ValueError:
+                    continue
+            raise ValueError(f"CI path escapes prepared checkouts: {path_value}")
+
         batches = []
-        for wf in workflow_defs:
+        authorized_paths = set()
+        violations = []
+        base_workflow_ids = {workflow.workflow_id for workflow in workflow_defs}
+        candidate_workflows = list(workflow_defs)
+        if trusted_policy:
+            permitted_new_ids = {
+                str(workflow_id)
+                for rule in trusted_policy.rules
+                for workflow_id in rule.get("workflows") or []
+            }
+            candidate_workflows.extend(
+                workflow
+                for workflow_id, workflow in head_workflows.items()
+                if workflow_id not in base_workflow_ids
+                and workflow_id in permitted_new_ids
+                and workflow.explicit_id
+            )
+
+        for wf in candidate_workflows:
+            is_new_workflow = wf.workflow_id not in base_workflow_ids
             matched_wf, reason = workflow_match_reason(wf, event_type, branch, changed)
             if not matched_wf:
                 log_stdout(f"  – skipped workflow '{wf.name}': {reason}")
                 continue
-            job_triggers = generate_triggers(wf.jobs, ctx)
-            batches.append({"name": wf.name, "jobs": job_triggers})
+            selected_wf = wf
+            decision = None
+            dependency_paths = {repo_relative(wf.source_file)}
+            dependency_paths.update(repo_relative(job.source_file) for job in wf.jobs if job.source_file)
+            dependency_paths.discard("")
+            candidate = head_workflows.get(wf.workflow_id)
+            policy_dependency_paths = set(dependency_paths)
+            if candidate is not None:
+                policy_dependency_paths = {repo_relative(candidate.source_file)}
+                policy_dependency_paths.update(repo_relative(job.source_file) for job in candidate.jobs if job.source_file)
+                policy_dependency_paths.discard("")
+            affected_paths = sorted(set(changed_ci).intersection(policy_dependency_paths))
+            if dual_checkout and changed_ci and trusted_policy and affected_paths:
+                decision = decide_workflow(
+                    trusted_policy,
+                    wf.workflow_id,
+                    sorted(policy_dependency_paths),
+                    changed_ci,
+                    event_type,
+                    base_ref or pr_base_ref or branch,
+                    "fork" if is_fork_pr == "true" else "same",
+                    actor_subjects,
+                    approvals,
+                    diff_base,
+                    source_ref,
+                )
+                if decision.allowed:
+                    if candidate is None or not candidate.explicit_id:
+                        decision.allowed = False
+                        decision.ci_origin = "base"
+                        decision.reasons = ["head workflow is missing an explicit trusted policy id"]
+                    else:
+                        selected_wf = candidate
+                        authorized_paths.update(affected_paths)
+                if not decision.allowed:
+                    for path_value in affected_paths:
+                        violations.append({
+                            "path": path_value,
+                            "workflow_id": wf.workflow_id,
+                            "actor": os.getenv("REACTORCIDE_HEAD_ACTOR", ""),
+                            "rule": decision.rule_id,
+                            "base_sha": diff_base,
+                            "head_sha": source_ref,
+                        })
+
+            if is_new_workflow and (decision is None or not decision.allowed):
+                continue
+
+            job_triggers = generate_triggers(selected_wf.jobs, ctx)
+            if decision and decision.allowed:
+                for trigger in job_triggers:
+                    trigger.ci_source_url = head_url or source_url
+                    trigger.ci_source_ref = source_ref
+                    trigger.worker_class = decision.worker_class
+            batches.append({
+                "id": wf.workflow_id,
+                "name": wf.name,
+                "source_file": repo_relative(selected_wf.source_file),
+                "ci_origin": decision.ci_origin if decision else "base",
+                "ci_repository": (head_url or source_url) if decision and decision.allowed else ci_source_url,
+                "ci_sha": source_ref if decision and decision.allowed else ci_source_ref,
+                "execution_profile": decision.profile if decision else "standard",
+                "worker_class": decision.worker_class if decision else "default",
+                "policy_revision": trusted_policy.revision if trusted_policy else "",
+                "policy_rule_id": decision.rule_id if decision else "",
+                "approval_id": decision.approval_id if decision and decision.approval_id else None,
+                "jobs": job_triggers,
+            })
             job_names = ", ".join(t.job_name for t in job_triggers) or "(no jobs)"
             log_stdout(f"  ✓ matched workflow '{wf.name}' ({reason}): {len(job_triggers)} job(s): {job_names}")
 
+        if dual_checkout and changed_ci:
+            maintainer_allowed = bool(trusted_policy and set(trusted_policy.maintainers).intersection(actor_subjects))
+            for path_value in changed_ci:
+                is_policy_path = path_value == ".reactorcide/policy.yaml" or path_value.startswith(".reactorcide/policies/")
+                if is_policy_path and maintainer_allowed:
+                    authorized_paths.add(path_value)
+                    log_stdout("This policy change does not apply to the current pull request. The trusted base policy remains active.")
+                if path_value not in authorized_paths and not any(item["path"] == path_value for item in violations):
+                    violations.append({
+                        "path": path_value,
+                        "actor": os.getenv("REACTORCIDE_HEAD_ACTOR", ""),
+                        "base_sha": diff_base,
+                        "head_sha": source_ref,
+                    })
         # Drop workflows that matched but resolved to zero jobs — nothing to run.
         batches = [b for b in batches if b["jobs"]]
 
-        if not batches:
+        if not batches and not violations:
             log_stdout(
                 f"No workflows produced jobs for event '{event_type}'. "
                 f"Evaluated {len(workflow_defs)} workflow(s); nothing to run. "
@@ -1008,7 +1171,7 @@ def eval_cmd(
             )
             raise typer.Exit(0)
 
-        workflow_ctx.flush_workflow_batches(batches)
+        workflow_ctx.flush_workflow_batches(batches, violations, changed_ci, sorted(actor_subjects))
         total = sum(len(b["jobs"]) for b in batches)
         log_stdout(f"Wrote {len(batches)} workflow(s) / {total} trigger(s) to {triggers_file}")
         raise typer.Exit(0)

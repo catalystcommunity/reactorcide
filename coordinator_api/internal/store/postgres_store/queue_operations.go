@@ -65,15 +65,23 @@ func (ps PostgresDbStore) GetQueueByUUID(ctx context.Context, queueUUID string) 
 // getQueueByHash retrieves a queue by its characteristics_hash. Unexported:
 // callers outside this file only ever want find-or-create-by-characteristics
 // (FindOrCreateQueueByCharacteristics) rather than an already-computed hash.
-func (ps PostgresDbStore) getQueueByHash(ctx context.Context, hash string) (*models.Queue, error) {
+func (ps PostgresDbStore) getQueueForOrgByHash(ctx context.Context, orgID, workerClass, hash string) (*models.Queue, error) {
 	var q models.Queue
-	if err := ps.getDB(ctx).Where("characteristics_hash = ?", hash).First(&q).Error; err != nil {
+	if err := ps.getDB(ctx).Where("org_id = ? AND worker_class = ? AND characteristics_hash = ?", orgID, workerClass, hash).First(&q).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, store.ErrNotFound
 		}
 		return nil, fmt.Errorf("failed to get queue by hash: %w", err)
 	}
 	return &q, nil
+}
+
+func (ps PostgresDbStore) defaultOrgID(ctx context.Context) (string, error) {
+	organization, err := ps.GetDefaultOrganization(ctx)
+	if err != nil {
+		return "", err
+	}
+	return organization.OrgID, nil
 }
 
 // ListQueues retrieves queues with pagination, newest first. The queue table
@@ -93,6 +101,24 @@ func (ps PostgresDbStore) ListQueues(ctx context.Context, limit, offset int) ([]
 	return queues, nil
 }
 
+func (ps PostgresDbStore) ListQueuesForPool(ctx context.Context, poolID string) ([]models.Queue, error) {
+	pool, err := ps.GetWorkerPoolByID(ctx, poolID)
+	if err != nil {
+		return nil, err
+	}
+	var queues []models.Queue
+	query := ps.getDB(ctx).Table("queues q").
+		Joins("JOIN worker_classes wc ON wc.org_id = q.org_id AND wc.name = q.worker_class").
+		Joins("JOIN worker_class_pools wcp ON wcp.class_id = wc.class_id AND wcp.pool_id = ?", poolID)
+	if pool.OrgID != nil {
+		query = query.Where("q.org_id = ?", *pool.OrgID)
+	}
+	if err := query.Select("q.*").Order("q.created_at").Find(&queues).Error; err != nil {
+		return nil, fmt.Errorf("failed to list queues for pool: %w", err)
+	}
+	return queues, nil
+}
+
 // FindOrCreateQueueByCharacteristics resolves the queue for a job's
 // (already-defaulted) characteristics: canonicalize -> hash -> look up by
 // hash; on a miss, create a new queue row with a fresh QueueUUID. This is the
@@ -106,9 +132,27 @@ func (ps PostgresDbStore) ListQueues(ctx context.Context, limit, offset int) ([]
 // the winner), so the loser simply returns it, exactly as if its own SELECT
 // had found it first.
 func (ps PostgresDbStore) FindOrCreateQueueByCharacteristics(ctx context.Context, chars characteristics.Characteristics) (*models.Queue, error) {
+	orgID, err := ps.defaultOrgID(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to resolve default organization: %w", err)
+	}
+	return ps.FindOrCreateQueueForOrg(ctx, orgID, "default", chars)
+}
+
+func (ps PostgresDbStore) FindOrCreateQueueForOrg(ctx context.Context, orgID, workerClass string, chars characteristics.Characteristics) (*models.Queue, error) {
+	if workerClass == "" {
+		workerClass = "default"
+	}
+	var class models.WorkerClass
+	if err := ps.getDB(ctx).Where("org_id = ? AND name = ?", orgID, workerClass).First(&class).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, fmt.Errorf("worker class %q does not exist in the organization: %w", workerClass, store.ErrInvalidInput)
+		}
+		return nil, fmt.Errorf("failed to validate worker class: %w", err)
+	}
 	hash := characteristics.Hash(chars)
 
-	existing, err := ps.getQueueByHash(ctx, hash)
+	existing, err := ps.getQueueForOrgByHash(ctx, orgID, workerClass, hash)
 	if err == nil {
 		return existing, nil
 	}
@@ -120,6 +164,8 @@ func (ps PostgresDbStore) FindOrCreateQueueByCharacteristics(ctx context.Context
 		QueueUUID:           uuid.NewString(),
 		Characteristics:     chars,
 		CharacteristicsHash: hash,
+		OrgID:               orgID,
+		WorkerClass:         workerClass,
 	}
 	if err := ps.getDB(ctx).Create(q).Error; err != nil {
 		if isUniqueViolation(err) {
@@ -127,7 +173,7 @@ func (ps PostgresDbStore) FindOrCreateQueueByCharacteristics(ctx context.Context
 			// queue between our SELECT and our INSERT. Re-select rather than
 			// surfacing a spurious error -- the desired end state (exactly
 			// one queue row for these characteristics) holds either way.
-			winner, selErr := ps.getQueueByHash(ctx, hash)
+			winner, selErr := ps.getQueueForOrgByHash(ctx, orgID, workerClass, hash)
 			if selErr != nil {
 				return nil, fmt.Errorf("queue create lost race but re-select by hash failed: %w", selErr)
 			}
@@ -144,6 +190,14 @@ func (ps PostgresDbStore) FindOrCreateQueueByCharacteristics(ctx context.Context
 // (characteristics are immutable and a queue for this exact set already
 // exists), not silently resolved to the existing row.
 func (ps PostgresDbStore) CreateQueue(ctx context.Context, chars characteristics.Characteristics, displayName string) (*models.Queue, error) {
+	orgID, err := ps.defaultOrgID(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return ps.CreateQueueForOrg(ctx, orgID, "default", chars, displayName)
+}
+
+func (ps PostgresDbStore) CreateQueueForOrg(ctx context.Context, orgID, workerClass string, chars characteristics.Characteristics, displayName string) (*models.Queue, error) {
 	hash := characteristics.Hash(chars)
 
 	q := &models.Queue{
@@ -151,6 +205,8 @@ func (ps PostgresDbStore) CreateQueue(ctx context.Context, chars characteristics
 		Characteristics:     chars,
 		CharacteristicsHash: hash,
 		DisplayName:         displayName,
+		OrgID:               orgID,
+		WorkerClass:         workerClass,
 	}
 	if err := ps.getDB(ctx).Create(q).Error; err != nil {
 		if isUniqueViolation(err) {
@@ -199,13 +255,17 @@ const DefaultQueueDisplayName = "Default (linux)"
 // starting simultaneously (unique characteristics_hash resolves the race the
 // same way FindOrCreateQueueByCharacteristics does).
 func (ps PostgresDbStore) EnsureDefaultQueue(ctx context.Context) error {
+	orgID, err := ps.defaultOrgID(ctx)
+	if err != nil {
+		return err
+	}
 	chars, err := characteristics.ParseJobCharacteristics(map[string]any{})
 	if err != nil {
 		return fmt.Errorf("failed to build default queue characteristics: %w", err)
 	}
 	hash := characteristics.Hash(chars)
 
-	if _, err := ps.getQueueByHash(ctx, hash); err == nil {
+	if _, err := ps.getQueueForOrgByHash(ctx, orgID, "default", hash); err == nil {
 		// Already seeded (by this process on a previous startup, or by
 		// another coordinator pod) -- nothing to do.
 		return nil
@@ -219,6 +279,8 @@ func (ps PostgresDbStore) EnsureDefaultQueue(ctx context.Context) error {
 		CharacteristicsHash: hash,
 		DisplayName:         DefaultQueueDisplayName,
 		IsDefault:           true,
+		OrgID:               orgID,
+		WorkerClass:         "default",
 	}
 	if err := ps.getDB(ctx).Create(q).Error; err != nil {
 		if isUniqueViolation(err) {

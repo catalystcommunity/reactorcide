@@ -57,8 +57,7 @@ environment:
     REACTORCIDE_GATEWAY_NAMESPACE: "${env:REACTORCIDE_GATEWAY_NAMESPACE}"
     REACTORCIDE_GATEWAY_SECTION: "${env:REACTORCIDE_GATEWAY_SECTION}"
 
-    # Default user ID
-    REACTORCIDE_DEFAULT_USER_ID: "${env:REACTORCIDE_DEFAULT_USER_ID}"
+    REACTORCIDE_DEFAULT_ORG: "${env:REACTORCIDE_DEFAULT_ORG}"
 
     # Worker: coordinator-mediated. Create a worker pool +
     # enrollment token via the coordinator admin UI/CLI first (see

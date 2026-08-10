@@ -125,6 +125,105 @@ func (c *ReactorcideUiClient) ListOrgs(ctx context.Context, req ListOrgsRequest)
 	return DecodeListOrgsResponse(csilResp)
 }
 
+func (c *ReactorcideUiClient) CreateOrg(ctx context.Context, req CreateOrgRequest) (CreateOrgResponse, error) {
+	var csilZero CreateOrgResponse
+	csilResp, csilErr := c.transport.Call(ctx, "ReactorcideUi", "create-org", EncodeCreateOrgRequest(req))
+	if csilErr != nil {
+		return csilZero, csilErr
+	}
+	return DecodeCreateOrgResponse(csilResp)
+}
+
+func (c *ReactorcideUiClient) UpdateOrg(ctx context.Context, req UpdateOrgRequest) (UpdateOrgResponse, error) {
+	var csilZero UpdateOrgResponse
+	csilResp, csilErr := c.transport.Call(ctx, "ReactorcideUi", "update-org", EncodeUpdateOrgRequest(req))
+	if csilErr != nil {
+		return csilZero, csilErr
+	}
+	return DecodeUpdateOrgResponse(csilResp)
+}
+
+func (c *ReactorcideUiClient) SetDefaultOrg(ctx context.Context, req SetDefaultOrgRequest) (SetDefaultOrgResponse, error) {
+	var csilZero SetDefaultOrgResponse
+	csilResp, csilErr := c.transport.Call(ctx, "ReactorcideUi", "set-default-org", EncodeSetDefaultOrgRequest(req))
+	if csilErr != nil {
+		return csilZero, csilErr
+	}
+	return DecodeSetDefaultOrgResponse(csilResp)
+}
+
+func (c *ReactorcideUiClient) ListExecutionProfiles(ctx context.Context, req ListExecutionProfilesRequest) (ListExecutionProfilesResponse, error) {
+	var csilZero ListExecutionProfilesResponse
+	csilResp, csilErr := c.transport.Call(ctx, "ReactorcideUi", "list-execution-profiles", EncodeListExecutionProfilesRequest(req))
+	if csilErr != nil {
+		return csilZero, csilErr
+	}
+	return DecodeListExecutionProfilesResponse(csilResp)
+}
+
+func (c *ReactorcideUiClient) PutExecutionProfile(ctx context.Context, req PutExecutionProfileRequest) (PutExecutionProfileResponse, error) {
+	var csilZero PutExecutionProfileResponse
+	csilResp, csilErr := c.transport.Call(ctx, "ReactorcideUi", "put-execution-profile", EncodePutExecutionProfileRequest(req))
+	if csilErr != nil {
+		return csilZero, csilErr
+	}
+	return DecodePutExecutionProfileResponse(csilResp)
+}
+
+func (c *ReactorcideUiClient) DeleteExecutionProfile(ctx context.Context, req DeleteExecutionProfileRequest) (DeleteExecutionProfileResponse, error) {
+	var csilZero DeleteExecutionProfileResponse
+	csilResp, csilErr := c.transport.Call(ctx, "ReactorcideUi", "delete-execution-profile", EncodeDeleteExecutionProfileRequest(req))
+	if csilErr != nil {
+		return csilZero, csilErr
+	}
+	return DecodeDeleteExecutionProfileResponse(csilResp)
+}
+
+func (c *ReactorcideUiClient) ListWorkerClasses(ctx context.Context, req ListWorkerClassesRequest) (ListWorkerClassesResponse, error) {
+	var csilZero ListWorkerClassesResponse
+	csilResp, csilErr := c.transport.Call(ctx, "ReactorcideUi", "list-worker-classes", EncodeListWorkerClassesRequest(req))
+	if csilErr != nil {
+		return csilZero, csilErr
+	}
+	return DecodeListWorkerClassesResponse(csilResp)
+}
+
+func (c *ReactorcideUiClient) PutWorkerClass(ctx context.Context, req PutWorkerClassRequest) (PutWorkerClassResponse, error) {
+	var csilZero PutWorkerClassResponse
+	csilResp, csilErr := c.transport.Call(ctx, "ReactorcideUi", "put-worker-class", EncodePutWorkerClassRequest(req))
+	if csilErr != nil {
+		return csilZero, csilErr
+	}
+	return DecodePutWorkerClassResponse(csilResp)
+}
+
+func (c *ReactorcideUiClient) DeleteWorkerClass(ctx context.Context, req DeleteWorkerClassRequest) (DeleteWorkerClassResponse, error) {
+	var csilZero DeleteWorkerClassResponse
+	csilResp, csilErr := c.transport.Call(ctx, "ReactorcideUi", "delete-worker-class", EncodeDeleteWorkerClassRequest(req))
+	if csilErr != nil {
+		return csilZero, csilErr
+	}
+	return DecodeDeleteWorkerClassResponse(csilResp)
+}
+
+func (c *ReactorcideUiClient) SetWorkerClassPool(ctx context.Context, req SetWorkerClassPoolRequest) (SetWorkerClassPoolResponse, error) {
+	var csilZero SetWorkerClassPoolResponse
+	csilResp, csilErr := c.transport.Call(ctx, "ReactorcideUi", "set-worker-class-pool", EncodeSetWorkerClassPoolRequest(req))
+	if csilErr != nil {
+		return csilZero, csilErr
+	}
+	return DecodeSetWorkerClassPoolResponse(csilResp)
+}
+
+func (c *ReactorcideUiClient) CreateCiApproval(ctx context.Context, req CreateCiApprovalRequest) (CreateCiApprovalResponse, error) {
+	var csilZero CreateCiApprovalResponse
+	csilResp, csilErr := c.transport.Call(ctx, "ReactorcideUi", "create-ci-approval", EncodeCreateCiApprovalRequest(req))
+	if csilErr != nil {
+		return csilZero, csilErr
+	}
+	return DecodeCreateCiApprovalResponse(csilResp)
+}
+
 func (c *ReactorcideUiClient) ListProjects(ctx context.Context, req ListProjectsRequest) (ListProjectsResponse, error) {
 	var csilZero ListProjectsResponse
 	csilResp, csilErr := c.transport.Call(ctx, "ReactorcideUi", "list-projects", EncodeListProjectsRequest(req))

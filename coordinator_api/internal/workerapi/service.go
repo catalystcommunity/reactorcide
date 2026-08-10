@@ -3,9 +3,11 @@ package workerapi
 import (
 	"context"
 	"errors"
+	"reflect"
 	"time"
 
 	"github.com/catalystcommunity/app-utils-go/logging"
+	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/audit"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/characteristics"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/corndogs"
 	pb "github.com/catalystcommunity/reactorcide/coordinator_api/internal/corndogs/v1alpha1"
@@ -47,6 +49,16 @@ var (
 type WorkerService struct {
 	deps    *Deps
 	secrets *leaseSecretCache
+}
+
+type poolQueueStore interface {
+	ListQueuesForPool(ctx context.Context, poolID string) ([]models.Queue, error)
+	UpdateWorkerCharacteristics(ctx context.Context, workerID, osName, arch string, chars characteristics.Characteristics) error
+}
+
+type jobTokenStore interface {
+	MintJobToken(ctx context.Context, job *models.Job) (string, error)
+	RevokeJobTokens(ctx context.Context, jobID string) error
 }
 
 var _ csilapi.ReactorcideWorker = (*WorkerService)(nil)
@@ -97,6 +109,13 @@ func (s *WorkerService) Register(ctx context.Context, req csilapi.RegisterReques
 	if saved.Status == models.WorkerStatusDisabled {
 		return csilapi.RegisterResponse{}, uiapi.NewServiceError("forbidden", "worker is disabled")
 	}
+	orgID := ""
+	if pool.OrgID != nil {
+		orgID = *pool.OrgID
+	}
+	audit.Record(ctx, s.deps.Store, orgID, "worker.enroll", "worker", saved.WorkerID, models.JSONB{
+		"pool_id": pool.PoolID,
+	})
 
 	token, err := s.deps.Sessions.Mint(ctx, saved.WorkerID)
 	if err != nil {
@@ -141,8 +160,30 @@ func (s *WorkerService) RequestJob(ctx context.Context, req csilapi.RequestJobRe
 	if err != nil {
 		return csilapi.RequestJobResponse{}, uiapi.NewServiceError("invalid_argument", err.Error())
 	}
+	if !reflect.DeepEqual(workerChars, wkr.Characteristics) || wc.Os != wkr.OS || wc.Arch != wkr.Arch {
+		if scopedStore, ok := s.deps.Store.(poolQueueStore); ok {
+			if err := scopedStore.UpdateWorkerCharacteristics(ctx, wkr.WorkerID, wc.Os, wc.Arch, workerChars); err != nil {
+				return csilapi.RequestJobResponse{}, uiapi.NewServiceError("internal", "failed to record worker characteristic drift")
+			}
+			logging.Log.WithFields(map[string]any{"worker_id": wkr.WorkerID, "pool_id": wkr.PoolID}).Info("Worker characteristics changed; enrollment record updated")
+			orgID := ""
+			if pool, poolErr := s.deps.Store.GetWorkerPoolByID(ctx, wkr.PoolID); poolErr == nil && pool.OrgID != nil {
+				orgID = *pool.OrgID
+			}
+			audit.Record(ctx, s.deps.Store, orgID, "worker.characteristics_update", "worker", wkr.WorkerID, models.JSONB{
+				"pool_id": wkr.PoolID,
+				"os":      wc.Os,
+				"arch":    wc.Arch,
+			})
+		}
+	}
 
-	queues, err := s.deps.Store.ListQueues(ctx, 0, 0)
+	var queues []models.Queue
+	if scopedStore, ok := s.deps.Store.(poolQueueStore); ok {
+		queues, err = scopedStore.ListQueuesForPool(ctx, wkr.PoolID)
+	} else {
+		queues, err = s.deps.Store.ListQueues(ctx, 0, 0)
+	}
 	if err != nil {
 		return csilapi.RequestJobResponse{}, uiapi.NewServiceError("internal", "failed to list queues")
 	}
@@ -178,6 +219,21 @@ func (s *WorkerService) RequestJob(ctx context.Context, req csilapi.RequestJobRe
 			logging.Log.WithError(err).WithField("job_id", payload.JobID).Error("Failed to load claimed job")
 			s.updateTaskFailed(ctx, task, "failed to load job from database")
 		}
+		return csilapi.RequestJobResponse{HasLease: false}, nil
+	}
+	var claimedQueue *models.Queue
+	for i := range queues {
+		if queues[i].QueueUUID == task.Queue {
+			claimedQueue = &queues[i]
+			break
+		}
+	}
+	// Persisted jobs have all three authority fields. Some in-memory legacy
+	// test stores omit them; those stores cannot model cross-tenant claims.
+	completeAuthority := job.QueueName != "" && job.OwnershipOrgID() != "" && job.WorkerClass != ""
+	if completeAuthority && (claimedQueue == nil || job.QueueName != task.Queue || job.OwnershipOrgID() != claimedQueue.OrgID || job.WorkerClass != claimedQueue.WorkerClass) {
+		logging.Log.WithFields(map[string]any{"job_id": job.JobID, "task_id": task.Uuid}).Error("Rejected task whose job authority does not match its queue")
+		s.updateTaskFailed(ctx, task, "job organization or worker class does not match queue")
 		return csilapi.RequestJobResponse{HasLease: false}, nil
 	}
 
@@ -231,10 +287,25 @@ func (s *WorkerService) RequestJob(ctx context.Context, req csilapi.RequestJobRe
 	// (mirroring the local worker's own ~7ms running->failed grant-denial
 	// timing, just moved coordinator-side -- see secrets.go's doc comment).
 	env := worker.BuildJobEnv(job)
+	// A remote lease must never inherit the coordinator's static API token.
+	// The claim-specific job token below is the only API credential for it.
+	delete(env, "REACTORCIDE_API_TOKEN")
 	resolved, err := s.deps.resolveJobSecrets(ctx, job, env)
 	if err != nil {
 		s.finalizeSecretDenial(ctx, job, task, err)
 		return csilapi.RequestJobResponse{HasLease: false}, nil
+	}
+	if tokenStore, ok := s.deps.Store.(jobTokenStore); ok {
+		jobToken, tokenErr := tokenStore.MintJobToken(ctx, job)
+		if tokenErr != nil {
+			s.finalizeSecretDenial(ctx, job, task, tokenErr)
+			return csilapi.RequestJobResponse{HasLease: false}, nil
+		}
+		if resolved.Secrets == nil {
+			resolved.Secrets = map[string]string{}
+		}
+		resolved.Secrets["REACTORCIDE_API_TOKEN"] = jobToken
+		resolved.SecretValues = append(resolved.SecretValues, jobToken)
 	}
 
 	// Resolve a VCS checkout credential for the job's source repo, if any is

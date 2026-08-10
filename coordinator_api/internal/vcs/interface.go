@@ -5,6 +5,19 @@ import (
 	"net/http"
 )
 
+type organizationContextKey struct{}
+
+// WithOrganization binds secret resolution to one organization.
+func WithOrganization(ctx context.Context, orgID string) context.Context {
+	return context.WithValue(ctx, organizationContextKey{}, orgID)
+}
+
+// OrganizationFromContext returns the organization for a scoped VCS secret.
+func OrganizationFromContext(ctx context.Context) (string, bool) {
+	orgID, ok := ctx.Value(organizationContextKey{}).(string)
+	return orgID, ok && orgID != ""
+}
+
 // Provider represents a VCS provider type
 type Provider string
 
@@ -21,7 +34,49 @@ type WebhookEvent struct {
 	Repository   RepositoryInfo
 	PullRequest  *PullRequestInfo
 	Push         *PushInfo
+	IssueComment *IssueCommentInfo
 	RawPayload   []byte
+	SenderLogin  string // actor that delivered the current head update
+}
+
+// IssueCommentInfo contains a comment that can carry a CI approval command.
+type IssueCommentInfo struct {
+	Action        string
+	IssueNumber   int
+	Body          string
+	IsPullRequest bool
+}
+
+// ActorFacts keeps the PR author, head-update actor, and repository relation
+// separate. Admission policy uses HeadUpdateActor for actor matching.
+type ActorFacts struct {
+	PRAuthor        string
+	HeadUpdateActor string
+	HeadRepository  string
+	HeadRelation    string // same or fork
+}
+
+// ActorSubjectResolver resolves provider-verified policy subjects for one
+// repository actor. Implementations must fail closed when a fact cannot be
+// verified.
+type ActorSubjectResolver interface {
+	ResolveActorSubjects(ctx context.Context, repo, username string) ([]string, error)
+}
+
+type CIPolicyViolation struct {
+	Path, WorkflowID, Actor, Rule, BaseSHA, HeadSHA string
+}
+
+func (e WebhookEvent) ActorFacts() ActorFacts {
+	facts := ActorFacts{HeadUpdateActor: e.SenderLogin, HeadRepository: e.Repository.FullName, HeadRelation: "same"}
+	if e.PullRequest != nil {
+		facts.PRAuthor = e.PullRequest.AuthorLogin
+		if e.PullRequest.HeadRepository != nil {
+			facts.HeadRepository = e.PullRequest.HeadRepository.FullName
+			facts.HeadRelation = "fork"
+		}
+	}
+	return facts
 }
 
 // RepositoryInfo contains repository information

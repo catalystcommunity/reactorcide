@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"maps"
 	"net/http"
 	"sort"
 	"strconv"
@@ -25,6 +26,7 @@ import (
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/resources"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store/models"
+	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/tokencaps"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/vcs"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/worker"
 )
@@ -94,9 +96,11 @@ func (h *JobHandler) SetStatusUpdater(u vcs.JobStatusUpdaterInterface) {
 
 // CreateJobRequest represents the request payload for creating a job
 type CreateJobRequest struct {
-	Name        string `json:"name" validate:"required,max=255"`
-	Description string `json:"description,omitempty"`
-	JobFile     string `json:"job_file,omitempty"`
+	Name         string `json:"name" validate:"required,max=255"`
+	Description  string `json:"description,omitempty"`
+	Organization string `json:"org,omitempty"`
+	WorkerClass  string `json:"worker_class,omitempty"`
+	JobFile      string `json:"job_file,omitempty"`
 
 	// Source configuration (VCS-agnostic: works with git, mercurial, svn,
 	// etc.) This is the untrusted source code being tested (e.g., PR code)
@@ -213,6 +217,15 @@ type queueResolvingStore interface {
 	FindOrCreateQueueByCharacteristics(ctx context.Context, chars characteristics.Characteristics) (*models.Queue, error)
 }
 
+type orgQueueResolvingStore interface {
+	FindOrCreateQueueForOrg(ctx context.Context, orgID, workerClass string, chars characteristics.Characteristics) (*models.Queue, error)
+}
+
+type jobOrganizationStore interface {
+	GetOrganizationByName(ctx context.Context, name string) (*models.Organization, error)
+	GetDefaultOrganization(ctx context.Context) (*models.Organization, error)
+}
+
 // CreateJob handles POST /api/v1/jobs
 func (h *JobHandler) CreateJob(w http.ResponseWriter, r *http.Request) {
 	var req CreateJobRequest
@@ -223,7 +236,8 @@ func (h *JobHandler) CreateJob(w http.ResponseWriter, r *http.Request) {
 
 	// Get user from context
 	user := checkauth.GetUserFromContext(r.Context())
-	if user == nil {
+	principal := checkauth.GetPrincipalFromContext(r.Context())
+	if user == nil && principal == nil {
 		h.respondWithError(w, http.StatusUnauthorized, store.ErrUnauthorized)
 		return
 	}
@@ -241,7 +255,11 @@ func (h *JobHandler) CreateJob(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Convert request to job model
-	job, err := h.createJobFromRequest(&req, user.UserID)
+	creatorID := ""
+	if user != nil {
+		creatorID = user.UserID
+	}
+	job, err := h.createJobFromRequest(&req, creatorID)
 	if err != nil {
 		h.respondWithError(w, http.StatusBadRequest, err)
 		return
@@ -252,10 +270,43 @@ func (h *JobHandler) CreateJob(w http.ResponseWriter, r *http.Request) {
 	// is a narrow interface (defined below) so tests that supply a plain
 	// store.Store mock still compile; production always satisfies it via
 	// postgres_store.PostgresDbStore.
-	if qs, ok := h.store.(queueResolvingStore); ok {
-		queue, err := qs.FindOrCreateQueueByCharacteristics(r.Context(), job.Characteristics)
+	organizationStore, ok := h.store.(jobOrganizationStore)
+	var organization *models.Organization
+	if !ok {
+		organization = &models.Organization{OrgID: creatorID, Status: models.OrganizationStatusActive}
+	} else if req.Organization == "" {
+		organization, err = organizationStore.GetDefaultOrganization(r.Context())
+	} else {
+		organization, err = organizationStore.GetOrganizationByName(r.Context(), req.Organization)
+	}
+	if err != nil {
+		h.respondWithError(w, http.StatusBadRequest, err)
+		return
+	}
+	if organization.Status != models.OrganizationStatusActive {
+		h.respondWithError(w, http.StatusForbidden, errors.New("organization does not accept new submissions"))
+		return
+	}
+	if principal != nil && (!principal.HasOrganization(organization.OrgID) || !principal.HasCapability(tokencaps.JobsSubmit)) {
+		h.respondWithError(w, http.StatusForbidden, store.ErrForbidden)
+		return
+	}
+	job.OrgID = organization.OrgID
+	job.WorkerClass = req.WorkerClass
+	if job.WorkerClass == "" {
+		job.WorkerClass = "default"
+	}
+	if qs, ok := h.store.(orgQueueResolvingStore); ok {
+		queue, err := qs.FindOrCreateQueueForOrg(r.Context(), job.OrgID, job.WorkerClass, job.Characteristics)
 		if err != nil {
 			h.respondWithError(w, http.StatusInternalServerError, fmt.Errorf("failed to resolve queue: %w", err))
+			return
+		}
+		job.QueueName = queue.QueueUUID
+	} else if qs, ok := h.store.(queueResolvingStore); ok {
+		queue, queueErr := qs.FindOrCreateQueueByCharacteristics(r.Context(), job.Characteristics)
+		if queueErr != nil {
+			h.respondWithError(w, http.StatusInternalServerError, queueErr)
 			return
 		}
 		job.QueueName = queue.QueueUUID
@@ -374,12 +425,12 @@ func (h *JobHandler) GetJob(w http.ResponseWriter, r *http.Request) {
 	// canUserViewJob) — unlike the mutation endpoints below, which keep the
 	// original owner-or-admin-only canUserAccessJob.
 	user := checkauth.GetUserFromContext(r.Context())
-	if user == nil {
+	if user == nil && checkauth.GetPrincipalFromContext(r.Context()) == nil {
 		h.respondWithError(w, http.StatusUnauthorized, store.ErrUnauthorized)
 		return
 	}
 
-	if !h.canUserViewJob(r.Context(), user, job) {
+	if !h.canSubjectAccessJob(r.Context(), user, job, tokencaps.JobsRead) {
 		h.respondWithError(w, http.StatusForbidden, store.ErrForbidden)
 		return
 	}
@@ -415,12 +466,54 @@ type jobsVisibleToStore interface {
 // ListJobs handles GET /api/v1/jobs
 func (h *JobHandler) ListJobs(w http.ResponseWriter, r *http.Request) {
 	user := checkauth.GetUserFromContext(r.Context())
-	if user == nil {
+	principal := checkauth.GetPrincipalFromContext(r.Context())
+	if user == nil && principal == nil {
 		h.respondWithError(w, http.StatusUnauthorized, store.ErrUnauthorized)
 		return
 	}
 
 	limit, offset := h.parsePagination(r)
+	if user == nil {
+		if !principal.HasCapability(tokencaps.JobsRead) {
+			h.respondWithError(w, http.StatusForbidden, store.ErrForbidden)
+			return
+		}
+		filters := h.commonJobQueryFilters(r)
+		jobs := make([]models.Job, 0)
+		if principal.AllOrganizations {
+			var err error
+			jobs, err = h.store.ListJobs(r.Context(), filters, limit, offset)
+			if err != nil {
+				h.respondWithError(w, http.StatusInternalServerError, err)
+				return
+			}
+		} else {
+			for _, orgID := range principal.OrganizationIDs {
+				scoped := maps.Clone(filters)
+				scoped["org_id"] = orgID
+				rows, err := h.store.ListJobs(r.Context(), scoped, 0, 0)
+				if err != nil {
+					h.respondWithError(w, http.StatusInternalServerError, err)
+					return
+				}
+				jobs = append(jobs, rows...)
+			}
+			if offset < len(jobs) {
+				jobs = jobs[offset:]
+			} else {
+				jobs = nil
+			}
+			if len(jobs) > limit {
+				jobs = jobs[:limit]
+			}
+		}
+		responses := make([]JobResponse, len(jobs))
+		for i := range jobs {
+			responses[i] = h.jobToResponse(&jobs[i])
+		}
+		h.respondWithJSON(w, http.StatusOK, ListJobsResponse{Jobs: responses, Total: len(responses), Limit: limit, Offset: offset})
+		return
+	}
 
 	// Primary path: SQL-side visibility filtering with exact pagination and
 	// Total (see jobsVisibleToStore's doc comment).
@@ -523,17 +616,23 @@ func (h *JobHandler) cancelOrKillJob(w http.ResponseWriter, r *http.Request, kil
 
 	// Check if user can access this job
 	user := checkauth.GetUserFromContext(r.Context())
-	if user == nil {
+	if user == nil && checkauth.GetPrincipalFromContext(r.Context()) == nil {
 		h.respondWithError(w, http.StatusUnauthorized, store.ErrUnauthorized)
 		return
 	}
 
 	if kill {
-		if !h.canUserKillJob(r.Context(), user, job) {
+		killAllowed := false
+		if checkauth.GetPrincipalFromContext(r.Context()) != nil {
+			killAllowed = h.canSubjectAccessJob(r.Context(), user, job, tokencaps.JobsCancel)
+		} else {
+			killAllowed = h.canUserKillJob(r.Context(), user, job)
+		}
+		if !killAllowed {
 			h.respondWithError(w, http.StatusForbidden, store.ErrForbidden)
 			return
 		}
-	} else if !h.canUserAccessJob(user, job) {
+	} else if !h.canSubjectAccessJob(r.Context(), user, job, tokencaps.JobsCancel) {
 		h.respondWithError(w, http.StatusForbidden, store.ErrForbidden)
 		return
 	}
@@ -596,11 +695,11 @@ func (h *JobHandler) RetryJob(w http.ResponseWriter, r *http.Request) {
 	}
 
 	user := checkauth.GetUserFromContext(r.Context())
-	if user == nil {
+	if user == nil && checkauth.GetPrincipalFromContext(r.Context()) == nil {
 		h.respondWithError(w, http.StatusUnauthorized, store.ErrUnauthorized)
 		return
 	}
-	if !h.canUserAccessJob(user, job) {
+	if !h.canSubjectAccessJob(r.Context(), user, job, tokencaps.JobsRetry) {
 		h.respondWithError(w, http.StatusForbidden, store.ErrForbidden)
 		return
 	}
@@ -643,13 +742,13 @@ func (h *JobHandler) DeleteJob(w http.ResponseWriter, r *http.Request) {
 
 	// Check if user can access this job
 	user := checkauth.GetUserFromContext(r.Context())
-	if user == nil {
+	if user == nil && checkauth.GetPrincipalFromContext(r.Context()) == nil {
 		h.respondWithError(w, http.StatusUnauthorized, store.ErrUnauthorized)
 		return
 	}
 
 	// Only admins or job owners can delete jobs
-	if !h.isAdmin(user) && job.UserID != user.UserID {
+	if !h.canSubjectAccessJob(r.Context(), user, job, tokencaps.JobsCancel) {
 		h.respondWithError(w, http.StatusForbidden, store.ErrForbidden)
 		return
 	}
@@ -682,11 +781,11 @@ func (h *JobHandler) GetJobMetrics(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	user := checkauth.GetUserFromContext(r.Context())
-	if user == nil {
+	if user == nil && checkauth.GetPrincipalFromContext(r.Context()) == nil {
 		h.respondWithError(w, http.StatusUnauthorized, store.ErrUnauthorized)
 		return
 	}
-	if !h.canUserViewJob(r.Context(), user, job) {
+	if !h.canSubjectAccessJob(r.Context(), user, job, tokencaps.LogsRead) {
 		h.respondWithError(w, http.StatusForbidden, store.ErrForbidden)
 		return
 	}
@@ -744,12 +843,12 @@ func (h *JobHandler) GetJobLogs(w http.ResponseWriter, r *http.Request) {
 	// Check if user can access this job. Read endpoint: also allow public
 	// visibility, same as GetJob.
 	user := checkauth.GetUserFromContext(r.Context())
-	if user == nil {
+	if user == nil && checkauth.GetPrincipalFromContext(r.Context()) == nil {
 		h.respondWithError(w, http.StatusUnauthorized, store.ErrUnauthorized)
 		return
 	}
 
-	if !h.canUserViewJob(r.Context(), user, job) {
+	if !h.canSubjectAccessJob(r.Context(), user, job, tokencaps.LogsRead) {
 		h.respondWithError(w, http.StatusForbidden, store.ErrForbidden)
 		return
 	}
@@ -904,14 +1003,20 @@ func (h *JobHandler) SubmitTriggers(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Check if user can access this job
+	// Authorize the classified token subject in the parent job organization.
 	user := checkauth.GetUserFromContext(r.Context())
-	if user == nil {
+	principal := checkauth.GetPrincipalFromContext(r.Context())
+	if user == nil && principal == nil {
 		h.respondWithError(w, http.StatusUnauthorized, store.ErrUnauthorized)
 		return
 	}
-
-	if !h.canUserAccessJob(user, parentJob) {
+	allowed := false
+	if principal != nil && principal.HasCapability(tokencaps.JobsSubmit) && principal.HasOrganization(parentJob.OrgID) {
+		allowed = principal.CredentialType != "job_token" || principal.BoundJobID == parentJob.JobID
+	} else if principal == nil && user != nil {
+		allowed = h.canUserAccessJob(user, parentJob)
+	}
+	if !allowed {
 		h.respondWithError(w, http.StatusForbidden, store.ErrForbidden)
 		return
 	}
@@ -920,6 +1025,10 @@ func (h *JobHandler) SubmitTriggers(w http.ResponseWriter, r *http.Request) {
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
 		h.respondWithError(w, http.StatusBadRequest, store.ErrInvalidInput)
+		return
+	}
+	if err := h.validateTriggerAuthorityFields(body); err != nil {
+		h.respondWithError(w, http.StatusForbidden, err)
 		return
 	}
 
@@ -938,6 +1047,42 @@ func (h *JobHandler) SubmitTriggers(w http.ResponseWriter, r *http.Request) {
 		CreatedJobIDs: createdJobIDs,
 		Count:         len(createdJobIDs),
 	})
+}
+
+func (h *JobHandler) validateTriggerAuthorityFields(body []byte) error {
+	var value any
+	if err := json.Unmarshal(body, &value); err != nil {
+		return store.ErrInvalidInput
+	}
+	var walk func(any) error
+	walk = func(current any) error {
+		switch typed := current.(type) {
+		case map[string]any:
+			for key, child := range typed {
+				if key == "org" || key == "org_id" || key == "organization" {
+					return errors.New("trigger payload cannot select an organization")
+				}
+				if (key == "source_url" || key == "ci_source_url") && child != nil {
+					if text, ok := child.(string); ok && text != "" {
+						if err := h.validateCiCodeURL(text); err != nil {
+							return err
+						}
+					}
+				}
+				if err := walk(child); err != nil {
+					return err
+				}
+			}
+		case []any:
+			for _, child := range typed {
+				if err := walk(child); err != nil {
+					return err
+				}
+			}
+		}
+		return nil
+	}
+	return walk(value)
 }
 
 // fetchLogContent retrieves log content from object storage
@@ -1293,6 +1438,9 @@ func (h *JobHandler) jobToResponse(job *models.Job) JobResponse {
 }
 
 func (h *JobHandler) canUserAccessJob(user *models.User, job *models.Job) bool {
+	if user == nil {
+		return false
+	}
 	// Admins can access all jobs
 	if h.isAdmin(user) {
 		return true
@@ -1300,6 +1448,30 @@ func (h *JobHandler) canUserAccessJob(user *models.User, job *models.Job) bool {
 
 	// Users can access their own jobs
 	return job.UserID == user.UserID
+}
+
+func (h *JobHandler) canSubjectAccessJob(ctx context.Context, user *models.User, job *models.Job, capability string) bool {
+	if principal := checkauth.GetPrincipalFromContext(ctx); principal != nil {
+		if principal.CredentialType == "job_token" {
+			return false
+		}
+		if !principal.HasOrganization(job.OwnershipOrgID()) || !principal.HasCapability(capability) {
+			return false
+		}
+		// A delegated user token cannot bypass the user's current roles. The
+		// token scope narrows the live user decision; it never replaces it.
+		if principal.CredentialType == "user_token" {
+			if capability == tokencaps.JobsRead || capability == tokencaps.LogsRead {
+				return h.canUserViewJob(ctx, user, job)
+			}
+			return h.canUserAccessJob(user, job)
+		}
+		return true
+	}
+	if capability == tokencaps.JobsRead {
+		return h.canUserViewJob(ctx, user, job)
+	}
+	return h.canUserAccessJob(user, job)
 }
 
 // canUserViewJob is canUserAccessJob plus public visibility (additive, read
@@ -1337,7 +1509,7 @@ func (h *JobHandler) canUserKillJob(ctx context.Context, user *models.User, job 
 	if h.visibility == nil {
 		return h.isAdmin(user)
 	}
-	err := h.visibility.RequireOrgAdmin(ctx, authz.IdentityFromUser(user), job.UserID)
+	err := h.visibility.RequireOrgAdmin(ctx, authz.IdentityFromUser(user), job.OwnershipOrgID())
 	return err == nil
 }
 

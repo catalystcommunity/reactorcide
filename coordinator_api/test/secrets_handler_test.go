@@ -723,8 +723,8 @@ func TestSecretsHandler_InitSecrets(t *testing.T) {
 			// Create user that's already initialized
 			user := setupSecretsTestUser(t, tx, keyManager)
 			// Mark as initialized
-			err := tx.Model(&models.User{}).
-				Where("user_id = ?", user.UserID).
+			err := tx.Model(&models.Organization{}).
+				Where("org_id = ?", user.UserID).
 				Update("secrets_initialized_at", tx.NowFunc()).Error
 			require.NoError(t, err)
 

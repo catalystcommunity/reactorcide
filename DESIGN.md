@@ -345,6 +345,36 @@ Operators must preserve these boundaries:
 - A job with a host runtime socket has strong control of that runtime.
 - A `root` job has more risk than a non-root job.
 
+## Organizations and Authentication
+
+An organization owns each project, workflow, job, secret, worker class, and
+queue. The database uses an organization UUID. The API and CLI use the stable
+organization name. A suspended organization cannot submit new work. A disabled
+organization also cannot submit new work. Other operations use token
+capabilities and roles.
+
+API credentials have one subject type: instance, service, user, or job. A
+credential has an organization selector and a control-plane capability set.
+A user credential also uses the current user roles. Its effective authority is
+the intersection of its token limits and its current roles. A job credential
+can submit triggers only for its parent job.
+
+## CI Admission and Reports
+
+For a pull request, the evaluator prepares exact base and head views. It loads
+policy only from the base view. The `isolated` checkout mode uses separate Git
+clones. The `shared` mode uses one non-shallow, blob-filtered Git object store
+and stages only `.reactorcide` files for the two CI views. Both modes keep the
+trust boundary.
+
+Each workflow has a stable security ID. The admission decision records the CI
+origin, exact SHA, profile, worker class, policy revision, rule, and approval.
+
+The coordinator stores VCS report entries as structured database records. One
+reconciler owns the shared pull-request comment. It uses a database advisory
+lock and revision counters. A VCS comment error does not change a workflow
+result.
+
 ## Source of Truth
 
 Use these documents with this design:
@@ -354,4 +384,5 @@ Use these documents with this design:
 - [Worker Operation](./docs/workers.md)
 - [Workflow Design](./docs/workflow-design.md)
 - [Job Definition Reference](./docs/job-definitions.md)
+- [Organizations and Trusted CI Policy](./docs/organizations-and-ci-policy.md)
 - [VCS Credentials and Secret Grants](./docs/vcs-credentials-and-secret-grants.md)

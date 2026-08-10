@@ -64,6 +64,43 @@ func (StubUi) ListOrgs(ctx context.Context, req csilapi.ListOrgsRequest) (csilap
 	return csilapi.ListOrgsResponse{}, ErrUnimplemented("ReactorcideUi/list-orgs")
 }
 
+func (StubUi) CreateOrg(ctx context.Context, req csilapi.CreateOrgRequest) (csilapi.CreateOrgResponse, error) {
+	return csilapi.CreateOrgResponse{}, ErrUnimplemented("ReactorcideUi/create-org")
+}
+
+func (StubUi) UpdateOrg(ctx context.Context, req csilapi.UpdateOrgRequest) (csilapi.UpdateOrgResponse, error) {
+	return csilapi.UpdateOrgResponse{}, ErrUnimplemented("ReactorcideUi/update-org")
+}
+
+func (StubUi) SetDefaultOrg(ctx context.Context, req csilapi.SetDefaultOrgRequest) (csilapi.SetDefaultOrgResponse, error) {
+	return csilapi.SetDefaultOrgResponse{}, ErrUnimplemented("ReactorcideUi/set-default-org")
+}
+
+func (StubUi) ListExecutionProfiles(ctx context.Context, req csilapi.ListExecutionProfilesRequest) (csilapi.ListExecutionProfilesResponse, error) {
+	return csilapi.ListExecutionProfilesResponse{}, ErrUnimplemented("ReactorcideUi/list-execution-profiles")
+}
+func (StubUi) PutExecutionProfile(ctx context.Context, req csilapi.PutExecutionProfileRequest) (csilapi.PutExecutionProfileResponse, error) {
+	return csilapi.PutExecutionProfileResponse{}, ErrUnimplemented("ReactorcideUi/put-execution-profile")
+}
+func (StubUi) DeleteExecutionProfile(ctx context.Context, req csilapi.DeleteExecutionProfileRequest) (csilapi.DeleteExecutionProfileResponse, error) {
+	return csilapi.DeleteExecutionProfileResponse{}, ErrUnimplemented("ReactorcideUi/delete-execution-profile")
+}
+func (StubUi) ListWorkerClasses(ctx context.Context, req csilapi.ListWorkerClassesRequest) (csilapi.ListWorkerClassesResponse, error) {
+	return csilapi.ListWorkerClassesResponse{}, ErrUnimplemented("ReactorcideUi/list-worker-classes")
+}
+func (StubUi) PutWorkerClass(ctx context.Context, req csilapi.PutWorkerClassRequest) (csilapi.PutWorkerClassResponse, error) {
+	return csilapi.PutWorkerClassResponse{}, ErrUnimplemented("ReactorcideUi/put-worker-class")
+}
+func (StubUi) DeleteWorkerClass(ctx context.Context, req csilapi.DeleteWorkerClassRequest) (csilapi.DeleteWorkerClassResponse, error) {
+	return csilapi.DeleteWorkerClassResponse{}, ErrUnimplemented("ReactorcideUi/delete-worker-class")
+}
+func (StubUi) SetWorkerClassPool(ctx context.Context, req csilapi.SetWorkerClassPoolRequest) (csilapi.SetWorkerClassPoolResponse, error) {
+	return csilapi.SetWorkerClassPoolResponse{}, ErrUnimplemented("ReactorcideUi/set-worker-class-pool")
+}
+func (StubUi) CreateCiApproval(ctx context.Context, req csilapi.CreateCiApprovalRequest) (csilapi.CreateCiApprovalResponse, error) {
+	return csilapi.CreateCiApprovalResponse{}, ErrUnimplemented("ReactorcideUi/create-ci-approval")
+}
+
 func (StubUi) ListProjects(ctx context.Context, req csilapi.ListProjectsRequest) (csilapi.ListProjectsResponse, error) {
 	return csilapi.ListProjectsResponse{}, ErrUnimplemented("ReactorcideUi/list-projects")
 }

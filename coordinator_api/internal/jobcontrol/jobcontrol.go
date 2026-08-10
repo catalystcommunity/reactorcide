@@ -76,6 +76,32 @@ type guardedJobStore interface {
 	UpdateJobStatusGuarded(ctx context.Context, jobID string, fromStatuses []string, apply func(*models.Job)) (*models.Job, bool, error)
 }
 
+type reportRevisionStore interface {
+	BumpVCSReportRevisionForPR(ctx context.Context, orgID string, projectID *string, repository string, prNumber int) error
+}
+
+func bumpJobReportRevision(ctx context.Context, st store.Store, job *models.Job) {
+	if job == nil || job.PRNumber == nil || *job.PRNumber <= 0 {
+		return
+	}
+	repository := ""
+	if job.VCSRepo != nil {
+		repository = *job.VCSRepo
+	}
+	if reports, ok := st.(reportRevisionStore); ok {
+		_ = reports.BumpVCSReportRevisionForPR(ctx, job.OrgID, job.ProjectID, repository, *job.PRNumber)
+	}
+}
+
+func bumpWorkflowReportRevision(ctx context.Context, st store.Store, workflow *models.WorkflowInstance) {
+	if workflow == nil || workflow.PRNumber == nil || *workflow.PRNumber <= 0 {
+		return
+	}
+	if reports, ok := st.(reportRevisionStore); ok {
+		_ = reports.BumpVCSReportRevisionForPR(ctx, workflow.OrgID, workflow.ProjectID, workflow.VCSRepo, *workflow.PRNumber)
+	}
+}
+
 // CancelJob transitions job into the graceful-cancel flow and persists the
 // change. Submitted/queued jobs (no container exists yet) race the worker to
 // dequeue the Corndogs task before it's claimed; if that race is won the job
@@ -87,7 +113,11 @@ type guardedJobStore interface {
 // second graceful cancel has nothing new to do — see KillJob, which can
 // escalate a stuck "cancelling" job).
 func CancelJob(ctx context.Context, st store.Store, corndogsClient corndogs.ClientInterface, job *models.Job) (*models.Job, error) {
-	return transitionJob(ctx, st, corndogsClient, job, false)
+	updated, err := transitionJob(ctx, st, corndogsClient, job, false)
+	if err == nil {
+		bumpJobReportRevision(ctx, st, updated)
+	}
+	return updated, err
 }
 
 // KillJob is CancelJob's immediate-force sibling: submitted/queued jobs are
@@ -100,7 +130,11 @@ func CancelJob(ctx context.Context, st store.Store, corndogsClient corndogs.Clie
 // it escalates a stuck graceful cancel to an immediate kill rather than being
 // refused.
 func KillJob(ctx context.Context, st store.Store, corndogsClient corndogs.ClientInterface, job *models.Job) (*models.Job, error) {
-	return transitionJob(ctx, st, corndogsClient, job, true)
+	updated, err := transitionJob(ctx, st, corndogsClient, job, true)
+	if err == nil {
+		bumpJobReportRevision(ctx, st, updated)
+	}
+	return updated, err
 }
 
 // cancellableFromStatuses returns the set of job statuses the guarded
@@ -339,6 +373,7 @@ func CancelWorkflow(ctx context.Context, st store.Store, corndogsClient corndogs
 	if err := ws.UpdateWorkflowInstance(ctx, wf); err != nil {
 		return wf, fmt.Errorf("failed to update workflow instance status: %w", err)
 	}
+	bumpWorkflowReportRevision(ctx, st, wf)
 	return wf, nil
 }
 

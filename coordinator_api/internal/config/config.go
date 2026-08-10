@@ -34,8 +34,9 @@ var (
 	// "registry.example.com/reactorcide/runner:latest")
 	DefaultRunnerImage = env.GetEnvOrDefault("REACTORCIDE_DEFAULT_RUNNER_IMAGE", "")
 
-	// Default user for API token auth
-	DefaultUserID = env.GetEnvOrDefault("REACTORCIDE_DEFAULT_USER_ID", "")
+	// DefaultOrgName seeds the first organization. The database setting is
+	// authoritative after bootstrap.
+	DefaultOrgName = env.GetEnvOrDefault("REACTORCIDE_DEFAULT_ORG", "default")
 
 	// Object store configuration
 	ObjectStoreType     = env.GetEnvOrDefault("REACTORCIDE_OBJECT_STORE_TYPE", "filesystem") // s3, gcs, filesystem, memory
@@ -45,6 +46,7 @@ var (
 	// TelemetryRetentionDays is zero by default. In that mode, telemetry has
 	// the same lifetime as its job and job deletion removes it.
 	TelemetryRetentionDays = env.GetEnvAsIntOrDefault("REACTORCIDE_TELEMETRY_RETENTION_DAYS", "0")
+	AuditRetentionDays     = env.GetEnvAsIntOrDefault("REACTORCIDE_AUDIT_RETENTION_DAYS", "365")
 
 	// VCS Integration configuration
 	VCSGitHubToken   = env.GetEnvOrDefault("REACTORCIDE_VCS_GITHUB_TOKEN", "")
@@ -61,6 +63,9 @@ var (
 	// Default CI code repository for jobs that don't specify one
 	DefaultCiSourceURL = env.GetEnvOrDefault("REACTORCIDE_DEFAULT_CI_SOURCE_URL", "")
 	DefaultCiSourceRef = env.GetEnvOrDefault("REACTORCIDE_DEFAULT_CI_SOURCE_REF", "main")
+	// CheckoutMode is the runnerlib checkout default for generated evaluation
+	// jobs. Projects can select a different mode.
+	CheckoutMode = env.GetEnvOrDefault("REACTORCIDE_CHECKOUT_MODE", "isolated")
 
 	// Secrets configuration SecretsStorageType determines where secrets are
 	// stored: "database" (default), "local", or external providers (future)

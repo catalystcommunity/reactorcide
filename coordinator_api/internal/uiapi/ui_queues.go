@@ -86,6 +86,7 @@ func (s *UiService) CreateQueue(ctx context.Context, req csilapi.CreateQueueRequ
 		}
 		return csilapi.CreateQueueResponse{}, NewServiceError("internal", "failed to create queue")
 	}
+	s.recordAudit(ctx, queue.OrgID, "queue.create", "queue", queue.QueueID, models.JSONB{"worker_class": queue.WorkerClass, "queue_uuid": queue.QueueUUID})
 	return csilapi.CreateQueueResponse{Queue: queueToSummary(queue, s.queueBacklogCounts(ctx))}, nil
 }
 
@@ -111,6 +112,7 @@ func (s *UiService) RenameQueue(ctx context.Context, req csilapi.RenameQueueRequ
 		return csilapi.RenameQueueResponse{}, mapStoreErr(err, "queue not found")
 	}
 	queue.DisplayName = req.DisplayName
+	s.recordAudit(ctx, queue.OrgID, "queue.update", "queue", queue.QueueID, models.JSONB{"display_name": queue.DisplayName})
 	return csilapi.RenameQueueResponse{Queue: queueToSummary(queue, s.queueBacklogCounts(ctx))}, nil
 }
 
@@ -163,5 +165,6 @@ func (s *UiService) DeleteQueue(ctx context.Context, req csilapi.DeleteQueueRequ
 	if err := s.deps.Store.DeleteQueue(ctx, req.QueueId); err != nil {
 		return csilapi.DeleteQueueResponse{}, mapStoreErr(err, "queue not found")
 	}
+	s.recordAudit(ctx, queue.OrgID, "queue.delete", "queue", queue.QueueID, models.JSONB{"queue_uuid": queue.QueueUUID, "cancelled_jobs": len(cancelledIDs)})
 	return csilapi.DeleteQueueResponse{Deleted: true, CancelledJobIds: cancelledIDs}, nil
 }

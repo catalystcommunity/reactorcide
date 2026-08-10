@@ -21,10 +21,12 @@ import (
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/pubsub"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/secrets"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store"
+	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store/models"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store/postgres_store"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/uiapi"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/uiapi/csilapi"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/vcs"
+	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/vcsreport"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/worker"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/workerapi"
 	workercsilapi "github.com/catalystcommunity/reactorcide/coordinator_api/internal/workerapi/csilapi"
@@ -105,12 +107,18 @@ func createAppMux() *http.ServeMux {
 		}
 	}
 	startTelemetryRetentionOnce(singletonObjectStore, store.AppStore)
+	startAuditRetentionOnce(store.AppStore)
 
 	// Create handlers
 	jobHandler := NewJobHandlerWithObjectStore(store.AppStore, singletoncorndogsClient, singletonObjectStore)
 	tokenHandler := NewTokenHandler(store.AppStore)
 	webhookHandler := NewWebhookHandler(store.AppStore, singletoncorndogsClient)
 	projectHandler := NewProjectHandler(store.AppStore)
+	organizationHandler := NewOrganizationHandler(store.AppStore)
+	profileHandler := NewProfileHandler(store.AppStore)
+	auditHandler := NewAuditHandler(store.AppStore)
+	ciSecurityHandler := NewCISecurityHandler(store.AppStore)
+	workerClassHandler := NewWorkerClassHandler(store.AppStore)
 	workflowHandler := NewWorkflowHandlerWithCorndogs(store.AppStore, singletoncorndogsClient)
 
 	// Wire VCS clients into the webhook handler and the job handler's trigger
@@ -122,11 +130,15 @@ func createAppMux() *http.ServeMux {
 	}
 	jobHandler.SetStatusUpdater(vcsManager.GetStatusUpdater())
 	webhookHandler.SetStatusUpdater(vcsManager.GetStatusUpdater())
+	if reportStore, ok := store.AppStore.(vcsreport.Store); ok {
+		reconciler := &vcsreport.Reconciler{Store: reportStore, Clients: vcs.NewReportClientResolver(vcsManager.GetStatusUpdater())}
+		startVCSReportReconcilerOnce(reconciler)
+	}
 
 	// Wire per-project VCS token resolution into webhook handler. Deferred
 	// until after the key manager is initialized below.
 	wireWebhookTokenResolver := func(keyMgr *secrets.MasterKeyManager) {
-		if keyMgr == nil || config.DefaultUserID == "" {
+		if keyMgr == nil {
 			return
 		}
 		tokenResolver := makeTokenResolver(keyMgr)
@@ -174,6 +186,106 @@ func createAppMux() *http.ServeMux {
 	})
 
 	// API v1 routes with API token authentication
+	mux.HandleFunc("/api/v1/organizations", func(w http.ResponseWriter, r *http.Request) {
+		handler := transactionMiddleware(authMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			switch r.Method {
+			case http.MethodGet:
+				organizationHandler.List(w, r)
+			case http.MethodPost:
+				organizationHandler.Create(w, r)
+			default:
+				http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+			}
+		})))
+		handler.ServeHTTP(w, r)
+	})
+	mux.HandleFunc("/api/v1/audit", func(w http.ResponseWriter, r *http.Request) {
+		handler := transactionMiddleware(authMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.Method != http.MethodGet {
+				http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+				return
+			}
+			auditHandler.List(w, r)
+		})))
+		handler.ServeHTTP(w, r)
+	})
+	mux.HandleFunc("/api/v1/vcs-identities", func(w http.ResponseWriter, r *http.Request) {
+		handler := transactionMiddleware(authMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { ciSecurityHandler.Identities(w, r, "") })))
+		handler.ServeHTTP(w, r)
+	})
+	mux.HandleFunc("/api/v1/vcs-identities/", func(w http.ResponseWriter, r *http.Request) {
+		id := strings.TrimPrefix(r.URL.Path, "/api/v1/vcs-identities/")
+		handler := transactionMiddleware(authMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { ciSecurityHandler.Identities(w, r, id) })))
+		handler.ServeHTTP(w, r)
+	})
+	mux.HandleFunc("/api/v1/approvals", func(w http.ResponseWriter, r *http.Request) {
+		handler := transactionMiddleware(authMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.Method != http.MethodPost {
+				http.Error(w, "Method not allowed", 405)
+				return
+			}
+			ciSecurityHandler.Approve(w, r)
+		})))
+		handler.ServeHTTP(w, r)
+	})
+	mux.HandleFunc("/api/v1/organizations/", func(w http.ResponseWriter, r *http.Request) {
+		path := strings.TrimPrefix(r.URL.Path, "/api/v1/organizations/")
+		if parts := strings.Split(path, "/"); len(parts) >= 2 && parts[1] == "profiles" {
+			profileName := ""
+			if len(parts) == 3 {
+				profileName = parts[2]
+			} else if len(parts) != 2 {
+				http.Error(w, "Invalid path", http.StatusBadRequest)
+				return
+			}
+			handler := transactionMiddleware(authMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				profileHandler.ServeHTTP(w, r, parts[0], profileName)
+			})))
+			handler.ServeHTTP(w, r)
+			return
+		}
+		if parts := strings.Split(path, "/"); len(parts) >= 2 && parts[1] == "worker-classes" {
+			className, poolID := "", ""
+			if len(parts) >= 3 {
+				className = parts[2]
+			}
+			if len(parts) == 5 && parts[3] == "pools" {
+				poolID = parts[4]
+			} else if len(parts) > 3 {
+				http.Error(w, "Invalid path", 400)
+				return
+			}
+			handler := transactionMiddleware(authMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				workerClassHandler.ServeHTTP(w, r, parts[0], className, poolID)
+			})))
+			handler.ServeHTTP(w, r)
+			return
+		}
+		setDefault := strings.HasSuffix(path, "/default")
+		if setDefault {
+			path = strings.TrimSuffix(path, "/default")
+		}
+		if path == "" {
+			http.Error(w, "Invalid path", http.StatusBadRequest)
+			return
+		}
+		r = r.WithContext(setIDContext(r.Context(), "organization_name", path))
+		handler := transactionMiddleware(authMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if setDefault && r.Method == http.MethodPut {
+				organizationHandler.SetDefault(w, r)
+				return
+			}
+			switch r.Method {
+			case http.MethodGet:
+				organizationHandler.Get(w, r)
+			case http.MethodPut, http.MethodPatch:
+				organizationHandler.Update(w, r)
+			default:
+				http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+			}
+		})))
+		handler.ServeHTTP(w, r)
+	})
 
 	// Workflow routes (require auth)
 	mux.HandleFunc("/api/v1/workflows", func(w http.ResponseWriter, r *http.Request) {
@@ -772,6 +884,34 @@ func createAppMux() *http.ServeMux {
 // once in tests via ResetAppMux/ GetAppMuxWithClient.
 var workerLeaseReaperOnce sync.Once
 var telemetryRetentionOnce sync.Once
+var auditRetentionOnce sync.Once
+var vcsReportReconcilerOnce sync.Once
+
+func startVCSReportReconcilerOnce(reconciler *vcsreport.Reconciler) {
+	vcsReportReconcilerOnce.Do(func() { go reconciler.Run(context.Background(), 5*time.Second) })
+}
+
+type auditPruner interface {
+	PruneAuditEvents(context.Context, time.Time) (int64, error)
+}
+
+func startAuditRetentionOnce(appStore store.Store) {
+	pruner, ok := appStore.(auditPruner)
+	if !ok || config.AuditRetentionDays <= 0 {
+		return
+	}
+	auditRetentionOnce.Do(func() {
+		go func() {
+			for {
+				cutoff := time.Now().UTC().Add(-time.Duration(config.AuditRetentionDays) * 24 * time.Hour)
+				if _, err := pruner.PruneAuditEvents(context.Background(), cutoff); err != nil {
+					log.Printf("WARNING: audit retention failed: %v", err)
+				}
+				time.Sleep(24 * time.Hour)
+			}
+		}()
+	})
+}
 
 func startTelemetryRetentionOnce(objectStore objects.ObjectStore, appStore store.Store) {
 	if objectStore == nil || appStore == nil || config.TelemetryRetentionDays <= 0 {
@@ -929,7 +1069,7 @@ func healthHandler(w http.ResponseWriter, r *http.Request) {
 
 // makeTokenResolver creates a TokenResolverFunc that resolves "path:key"
 // secret references using the database secrets provider under the default
-// user org.
+// organization. Project-specific paths replace this with an org resolver.
 func makeTokenResolver(keyManager *secrets.MasterKeyManager) vcs.TokenResolverFunc {
 	return func(ctx context.Context, secretRef string) (string, error) {
 		parts := strings.SplitN(secretRef, ":", 2)
@@ -943,12 +1083,36 @@ func makeTokenResolver(keyManager *secrets.MasterKeyManager) vcs.TokenResolverFu
 			return "", fmt.Errorf("database not available for secret resolution")
 		}
 
-		orgKey, err := keyManager.GetOrgEncryptionKey(db, config.DefaultUserID)
+		organizationStore, ok := store.AppStore.(interface {
+			GetDefaultOrganization(context.Context) (*models.Organization, error)
+		})
+		if !ok {
+			return "", fmt.Errorf("organization store is unavailable")
+		}
+		var (
+			organization *models.Organization
+			err          error
+		)
+		if orgID, scoped := vcs.OrganizationFromContext(ctx); scoped {
+			byID, ok := store.AppStore.(interface {
+				GetOrganizationByID(context.Context, string) (*models.Organization, error)
+			})
+			if !ok {
+				return "", fmt.Errorf("organization store cannot resolve an organization ID")
+			}
+			organization, err = byID.GetOrganizationByID(ctx, orgID)
+		} else {
+			organization, err = organizationStore.GetDefaultOrganization(ctx)
+		}
+		if err != nil {
+			return "", fmt.Errorf("resolving organization: %w", err)
+		}
+		orgKey, err := keyManager.GetOrgEncryptionKey(db, organization.OrgID)
 		if err != nil {
 			return "", fmt.Errorf("resolving org encryption key: %w", err)
 		}
 
-		provider, err := secrets.NewDatabaseProvider(db, config.DefaultUserID, orgKey)
+		provider, err := secrets.NewDatabaseProvider(db, organization.OrgID, orgKey)
 		if err != nil {
 			return "", fmt.Errorf("creating secrets provider: %w", err)
 		}

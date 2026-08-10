@@ -130,13 +130,22 @@ The command uses the API because `REACTORCIDE_API_URL` and
 
 Use the canonical repository URL. It has no scheme and no `.git` suffix.
 
+Create the organization first if it does not exist:
+
+```bash
+./coordinator_api/reactorcide orgs create example \
+  --display-name "Example"
+```
+
 Write the project definition to a file. GitHub example:
 
 ```yaml
 # example-repo.yaml
 name: example-repo
+org: example
 repo_url: github.com/example/repo
 enabled: true
+checkout_mode: shared
 target_branches:
   - main
 allowed_event_types:
@@ -192,6 +201,7 @@ Add workflow files to `.reactorcide/workflows/`. Add reusable jobs to
 Example `.reactorcide/workflows/pr.yaml`:
 
 ```yaml
+id: pull-request-checks
 name: "Pull request checks"
 on:
   events:
@@ -206,6 +216,10 @@ jobs:
 ```
 
 See [Job Definition Reference](./job-definitions.md).
+
+Trusted-base workflows do not need a policy file. Add a policy only when a
+pull request must run changed workflow or job definitions. See [Organizations
+and Trusted CI Policy](./organizations-and-ci-policy.md).
 
 ## Configure a GitHub Webhook
 

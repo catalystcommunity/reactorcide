@@ -30,6 +30,7 @@ class TestConfigManager:
         """Test that default values are properly set."""
         assert self.config_manager.DEFAULTS['code_dir'] == '/job/src'
         assert self.config_manager.DEFAULTS['runner_image'] == 'quay.io/catalystcommunity/reactorcide_runner'
+        assert self.config_manager.DEFAULTS['checkout_mode'] == 'isolated'
 
     def test_env_var_mappings(self):
         """Test that environment variable mappings are correct."""
@@ -47,7 +48,8 @@ class TestConfigManager:
             'source_ref': 'REACTORCIDE_SOURCE_REF',
             'ci_source_type': 'REACTORCIDE_CI_SOURCE_TYPE',
             'ci_source_url': 'REACTORCIDE_CI_SOURCE_URL',
-            'ci_source_ref': 'REACTORCIDE_CI_SOURCE_REF'
+            'ci_source_ref': 'REACTORCIDE_CI_SOURCE_REF',
+            'checkout_mode': 'REACTORCIDE_CHECKOUT_MODE'
         }
         assert self.config_manager.ENV_VARS == expected_mappings
 
@@ -69,7 +71,8 @@ class TestConfigManager:
             'REACTORCIDE_JOB_DIR': '/job/custom-job',
             'REACTORCIDE_JOB_COMMAND': 'env-command',
             'REACTORCIDE_RUNNER_IMAGE': 'custom:image',
-            'REACTORCIDE_JOB_ENV': 'ENV_VAR=value'
+            'REACTORCIDE_JOB_ENV': 'ENV_VAR=value',
+            'REACTORCIDE_CHECKOUT_MODE': 'shared'
         }
         
         with patch.dict(os.environ, env_vars, clear=True):
@@ -80,6 +83,7 @@ class TestConfigManager:
             assert config.job_command == "env-command"
             assert config.runner_image == "custom:image"
             assert config.job_env == "ENV_VAR=value"
+            assert config.checkout_mode == "shared"
 
     def test_get_config_with_cli_overrides(self):
         """Test configuration hierarchy with CLI overrides."""

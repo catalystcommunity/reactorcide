@@ -6,6 +6,7 @@ import (
 
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store/models"
+	"gorm.io/gorm"
 )
 
 // CreateProject creates a new project in the database
@@ -29,6 +30,17 @@ func (ps PostgresDbStore) GetProjectByID(ctx context.Context, projectID string) 
 	result := db.Where("project_id = ?", projectID).First(&project)
 	if result.Error != nil {
 		return nil, fmt.Errorf("failed to get project: %w", result.Error)
+	}
+	return &project, nil
+}
+
+func (ps PostgresDbStore) GetProjectByOrgAndName(ctx context.Context, orgID, name string) (*models.Project, error) {
+	var project models.Project
+	if err := ps.getDB(ctx).Where("org_id = ? AND name = ?", orgID, name).First(&project).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return nil, store.ErrNotFound
+		}
+		return nil, err
 	}
 	return &project, nil
 }
@@ -84,12 +96,12 @@ func (ps PostgresDbStore) ListProjects(ctx context.Context, limit, offset int) (
 }
 
 // ListProjectsByOrg retrieves a list of projects owned by a single org
-// (user_id), with pagination. Added for Task G's list-projects CSIL op,
+// (org_id), with pagination. Added for Task G's list-projects CSIL op,
 // whose request can filter to a single org_id.
 func (ps PostgresDbStore) ListProjectsByOrg(ctx context.Context, orgID string, limit, offset int) ([]models.Project, error) {
 	db := ps.getDB(ctx)
 	var projects []models.Project
-	result := db.Where("user_id = ?", orgID).Limit(limit).Offset(offset).Order("created_at DESC").Find(&projects)
+	result := db.Where("org_id = ?", orgID).Limit(limit).Offset(offset).Order("created_at DESC").Find(&projects)
 	if result.Error != nil {
 		return nil, fmt.Errorf("failed to list projects by org: %w", result.Error)
 	}

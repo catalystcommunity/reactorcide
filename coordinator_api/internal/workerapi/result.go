@@ -78,6 +78,11 @@ func (s *WorkerService) ReportResult(ctx context.Context, req csilapi.ReportResu
 	}
 
 	s.finalizeCorndogsTask(ctx, job, finalStatus)
+	if tokenStore, ok := s.deps.Store.(jobTokenStore); ok {
+		if err := tokenStore.RevokeJobTokens(ctx, job.JobID); err != nil {
+			logging.Log.WithError(err).WithField("job_id", job.JobID).Warn("Failed to revoke job trigger token")
+		}
+	}
 
 	// Advance the job's workflow (best-effort): mark this node terminal and
 	// re-evaluate the workflow so ready downstream nodes get submitted, the

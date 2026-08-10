@@ -77,7 +77,7 @@ func (d *Deps) resolveJobSecrets(ctx context.Context, job *models.Job, env map[s
 	if d.SecretsProvider == nil {
 		return nil, fmt.Errorf("job contains secret references but secrets are not configured")
 	}
-	provider, err := d.SecretsProvider(ctx, job.UserID)
+	provider, err := d.SecretsProvider(ctx, job.OrgID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get secrets provider: %w", err)
 	}

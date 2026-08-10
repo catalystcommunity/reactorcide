@@ -144,7 +144,7 @@ type Deps struct {
 	JobStatusReporter JobStatusReporter
 
 	// SecretsProvider resolves a secrets.Provider scoped to a job's owning
-	// user (job.UserID -- orgs are users-as-orgs today, matching
+	// organization (job.OrgID, with job.UserID as legacy attribution), matching
 	// internal/worker's own getSecretsProvider/GetOrgEncryptionKey(...,
 	// job.UserID) call). NewDeps wires this to the real DB-backed default
 	// (defaultSecretsProviderForOrg, identical in shape to

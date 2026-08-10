@@ -39,6 +39,7 @@ var (
 	apiCmd            *exec.Cmd
 	testDB            *sql.DB
 	connStr           string
+	testOrgID         string
 )
 
 func TestMain(m *testing.M) {
@@ -112,6 +113,13 @@ func TestMain(m *testing.M) {
 		cleanup(ctx)
 		os.Exit(1)
 	}
+	if _, err := testDB.Exec(`INSERT INTO users (user_id, username, email, roles)
+		VALUES ($1, 'webapp-test-user', 'webapp-test@example.invalid', ARRAY['user'::user_role])
+		ON CONFLICT (user_id) DO NOTHING`, testUserID); err != nil {
+		fmt.Printf("Failed to create test user: %v\n", err)
+		cleanup(ctx)
+		os.Exit(1)
+	}
 
 	// Create a test token
 	fmt.Println("Creating test token...")
@@ -119,22 +127,27 @@ func TestMain(m *testing.M) {
 	tokenCmd.Env = append(os.Environ(),
 		"REACTORCIDE_DB_URI="+connStr,
 		"DB_URI="+connStr,
-		"REACTORCIDE_DEFAULT_USER_ID="+testUserID,
+		"REACTORCIDE_DEFAULT_ORG=default",
 		"REACTORCIDE_COMMIT_ON_SUCCESS=true",
 	)
 	tokenOutput, err := tokenCmd.CombinedOutput()
 	if err != nil {
-		fmt.Printf("Failed to create token: %v\nOutput: %s\n", err, string(tokenOutput))
+		fmt.Printf("Failed to create test token: %v\n", err)
 		cleanup(ctx)
 		os.Exit(1)
 	}
 	testToken = extractToken(string(tokenOutput))
 	if testToken == "" {
-		fmt.Printf("Failed to extract token from output: %s\n", string(tokenOutput))
+		fmt.Println("Failed to extract the test token from command output")
 		cleanup(ctx)
 		os.Exit(1)
 	}
-	fmt.Printf("Test token: %s...\n", testToken[:min(16, len(testToken))])
+	fmt.Println("Test token created")
+	if err := testDB.QueryRow(`SELECT trim(both '"' from value::text) FROM global_settings WHERE key = 'default_org_id'`).Scan(&testOrgID); err != nil {
+		fmt.Printf("Failed to load default organization: %v\n", err)
+		cleanup(ctx)
+		os.Exit(1)
+	}
 
 	// Start coordinator API server
 	apiPort := getFreePort()
@@ -143,7 +156,7 @@ func TestMain(m *testing.M) {
 	apiCmd.Env = append(os.Environ(),
 		"REACTORCIDE_DB_URI="+connStr,
 		"DB_URI="+connStr,
-		"REACTORCIDE_DEFAULT_USER_ID="+testUserID,
+		"REACTORCIDE_DEFAULT_ORG=default",
 		"REACTORCIDE_COMMIT_ON_SUCCESS=true",
 		"REACTORCIDE_OBJECT_STORE_TYPE=memory",
 		// REACTORCIDE_UI_AUTH_MODE is left unset (defaults "none") — the
@@ -281,11 +294,11 @@ func insertTestJob(t *testing.T, name string) string {
 	}
 
 	_, err = testDB.Exec(`INSERT INTO jobs (
-		job_id, user_id, name, description, status, source_type, source_url, source_ref,
+		job_id, user_id, org_id, name, description, status, source_type, source_url, source_ref,
 		job_command, runner_image, queue_name, priority, timeout_seconds,
 		code_dir, job_dir, created_at, updated_at
-	) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, NOW(), NOW())`,
-		jobID, testUserID, name, "Integration test job", "submitted",
+	) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, NOW(), NOW())`,
+		jobID, testUserID, testOrgID, name, "Integration test job", "submitted",
 		"git", "https://github.com/test/repo.git", "main",
 		"echo hello", "alpine:latest", "reactorcide-jobs", 10, 3600,
 		"/job/src", "/job/src",
