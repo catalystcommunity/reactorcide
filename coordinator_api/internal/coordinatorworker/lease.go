@@ -325,14 +325,14 @@ func runLease(c client, runner worker.JobRunner, lease csilapi.Lease, tracker *l
 		pumpWg.Add(1)
 		go func() {
 			defer pumpWg.Done()
-			pumpLogs(c, lease.LeaseId, "stdout", stdout, masker, cfg.DataDir)
+			pumpLogs(c, lease.LeaseId, "stdout", stdout, masker, cfg.DataDir, cfg.TelemetryBufferBatches)
 		}()
 	}
 	if stderr != nil {
 		pumpWg.Add(1)
 		go func() {
 			defer pumpWg.Done()
-			pumpLogs(c, lease.LeaseId, "stderr", stderr, masker, cfg.DataDir)
+			pumpLogs(c, lease.LeaseId, "stderr", stderr, masker, cfg.DataDir, cfg.TelemetryBufferBatches)
 		}()
 	}
 
@@ -388,7 +388,7 @@ func reportResult(c client, leaseID string, exitCode int, status, errMsg string)
 // happens before a line is ever buffered, so a secret value never reaches the
 // coordinator in a log chunk regardless of how batching splits lines across
 // calls.
-func pumpLogs(c client, leaseID, stream string, r io.ReadCloser, masker *secrets.Masker, dataDir string) {
+func pumpLogs(c client, leaseID, stream string, r io.ReadCloser, masker *secrets.Masker, dataDir string, bufferBatches int) {
 	defer r.Close()
 
 	lines := make(chan string, 64)
@@ -421,7 +421,7 @@ func pumpLogs(c client, leaseID, stream string, r io.ReadCloser, masker *secrets
 		buf = buf[:0]
 		req := csilapi.AppendLogBatchRequest{LeaseId: leaseID, Stream: stream, Sequence: sequence, Entries: entries}
 		sequence++
-		if err := persistAndSendLog(c, dataDir, req); err != nil {
+		if _, err := persistAndSendLog(c, dataDir, bufferBatches, req); err != nil {
 			logging.Log.WithError(err).WithFields(map[string]interface{}{"lease_id": leaseID, "stream": stream}).Warn("failed to append logs to coordinator")
 		}
 	}

@@ -117,7 +117,7 @@ bundle as the read-only base for every job.
      `vz.NewMacAuxiliaryStorage(path, vz.WithCreatingMacAuxiliaryStorage(hwModel))`,
    - runs `vz.NewMacOSInstaller(vm, ipswPath)` and waits for it to finish.
 
-   Reactorcide does **not** ship its own installer for VM-3; reuse that example
+   Reactorcide does not ship a separate macOS installer. Reuse that example
    to create the bundle. Save the serialized hardware model and machine
    identifier bytes to `hardwaremodel.bin` and `machineidentifier.bin`
    respectively (both types expose `DataRepresentation()`), and place the
@@ -199,9 +199,10 @@ the image and a private key on the worker host:
   | `REACTORCIDE_VM_SCRATCH_DIR`         | directory for ephemeral per-job VM clones      | OS temporary directory |
   | `REACTORCIDE_VM_SSH_USER`            | guest account the worker logs in as            | `reactorcide`|
   | `REACTORCIDE_VM_SSH_PRIVATE_KEY_FILE`| path to the worker's SSH private key (PEM)      | —       |
+  | `REACTORCIDE_VM_SSH_HOST_KEY_FILE`   | path to the guest SSH host public key           | —       |
   | `REACTORCIDE_VM_SSH_PASSWORD`        | password auth (discouraged; key preferred)     | —       |
-  | `REACTORCIDE_VM_METRICS_DIR`         | local JSON Lines metrics directory              | `~/.local/state/reactorcide/vm-metrics` |
-  | `REACTORCIDE_VM_METRICS_INTERVAL`    | guest metrics sample interval                   | `5s`    |
+  | `REACTORCIDE_VM_METRICS_DIR`         | optional local JSON Lines debug output          | disabled |
+  | `REACTORCIDE_VM_METRICS_INTERVAL`    | optional JSON Lines debug sample interval       | `5s`    |
 
   These are read by `worker.LoadVMConfig` and wired into the `GuestCreds` the
   VMRunner passes to the SSH transport. They apply to both the coordinator-
@@ -213,17 +214,18 @@ Example:
 export REACTORCIDE_VM_IMAGE_DIR=/opt/reactorcide/vm-images
 export REACTORCIDE_VM_SSH_USER=reactorcide
 export REACTORCIDE_VM_SSH_PRIVATE_KEY_FILE="$HOME/.ssh/reactorcide_vm"
+export REACTORCIDE_VM_SSH_HOST_KEY_FILE=/opt/reactorcide/guest-ssh-host.pub
 ```
 
 > **Never** log or print the private key or any guest credential. The worker
 > reads the key from a file precisely so its contents stay out of the
 > environment and out of logs.
 
-### Security notes / future hardening
+### Security notes
 
-- The SSH transport does **not** verify the guest host key: guests are cloned
-  fresh per job and have no stable identity to pin, and the host↔guest link
-  runs over the VM's private NAT network the lifecycle controls end to end.
+- Set `REACTORCIDE_VM_SSH_HOST_KEY_FILE` to verify a stable SSH host key from
+  the base image. If you do not set it, the transport accepts the key from the
+  private guest network.
 - The private SSH key stays on the worker host. The image builder does not
   copy it into the image.
 - The public key stays in the guest's `authorized_keys` file. The guest
@@ -241,6 +243,13 @@ export REACTORCIDE_VM_SSH_PRIVATE_KEY_FILE="$HOME/.ssh/reactorcide_vm"
   trust domain.
 - See [VM Image Operations](./vm-images.md#bootstrap-credential-state) for the
   complete image-handoff checklist.
+
+### Job input transfer
+
+The worker sends the command, environment, working directory, and short-lived
+VCS credential files through SSH. It does not put secret values on the SSH
+command line. For `run-local`, it streams the local source tree as a tar archive
+and extracts it at the configured code directory in the guest.
 
 ## Smoke test (validate vz + networking + SSH)
 

@@ -716,8 +716,8 @@ RemoveTrustedDomainPatternResponse = {
 }
 
 ;; ---------------------------------------------------------------------------
-;; Worker/queue/pool admin ( Wave-4 P4: admin CSIL ops for
-;; managing pools, workers, and queues). Gated by authz.Caps.ManageWorkers
+;; Worker, queue, and pool administration. These operations are gated by
+;; authz.Caps.ManageWorkers.
 ;; (org-admin/global-admin tier) -- see get-capabilities' manage_workers
 ;; field above. Queues have no creation path that sets an owning org today,
 ;; so queue ops require global admin; pools/workers/enrollment tokens may be

@@ -5,6 +5,8 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+
+	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/worker/vmrunner"
 )
 
 func TestGetSupportedBackends_IncludesVM(t *testing.T) {
@@ -36,10 +38,8 @@ func TestIsBackendSupported_VM(t *testing.T) {
 	}
 }
 
-// TestIsBackendImplemented_VM_MatchesOS documents the honest split this
-// task calls for: "vm" is a supported backend name everywhere, but only
-// actually implemented (a real VMLifecycle) on darwin/windows once
-// VM-3/VM-4 land -- see vmrunner.newVMLifecycle.
+// TestIsBackendImplemented_VM_MatchesOS verifies that the VM backend is
+// available only on hosts that provide a VM lifecycle.
 func TestIsBackendImplemented_VM_MatchesOS(t *testing.T) {
 	want := runtime.GOOS == "darwin" || runtime.GOOS == "windows"
 	if got := IsBackendImplemented("vm"); got != want {
@@ -47,13 +47,11 @@ func TestIsBackendImplemented_VM_MatchesOS(t *testing.T) {
 	}
 }
 
-// TestNewJobRunner_VM_OnUnsupportedOS covers this task's Linux-testable
-// requirement: NewJobRunner("vm") on an OS with no VMLifecycle must return
-// a clear, actionable error rather than a generic failure or a nil
-// runner/nil error pair.
+// TestNewJobRunner_VM_OnUnsupportedOS verifies the error on an unsupported
+// host operating system.
 func TestNewJobRunner_VM_OnUnsupportedOS(t *testing.T) {
 	if runtime.GOOS == "darwin" || runtime.GOOS == "windows" {
-		t.Skip("darwin/windows have a stub VMLifecycle that succeeds at construction (VM-3/VM-4 not landed yet) -- this test only covers the 'no lifecycle at all' OS path")
+		t.Skip("this test covers only host operating systems without a VM lifecycle")
 	}
 
 	runner, err := NewJobRunner("vm")
@@ -70,19 +68,17 @@ func TestNewJobRunner_VM_OnUnsupportedOS(t *testing.T) {
 
 func TestToVMJobConfig_MapsRelevantFields(t *testing.T) {
 	config := &JobConfig{
-		Image:       "test.img",
-		Command:     []string{"sh", "-c", "true"},
-		Env:         map[string]string{"K": "V"},
-		CPURequest:  "500m",
-		CPULimit:    "1",
-		MemoryLimit: "1Gi",
-		JobID:       "job-x",
-		// Fields with no VM-guest equivalent yet -- must NOT cause a panic
-		// or be silently expected to do anything.
+		Image:        "test.img",
+		Command:      []string{"sh", "-c", "true"},
+		Env:          map[string]string{"K": "V"},
+		CPURequest:   "500m",
+		CPULimit:     "1",
+		MemoryLimit:  "1Gi",
+		JobID:        "job-x",
 		WorkspaceDir: "/some/workspace",
 	}
 
-	vc := toVMJobConfig(config, "runner")
+	vc := toVMJobConfig(config, "runner", "darwin")
 
 	if vc.Image != config.Image {
 		t.Errorf("Image = %q, want %q", vc.Image, config.Image)
@@ -103,6 +99,56 @@ func TestToVMJobConfig_MapsRelevantFields(t *testing.T) {
 	}
 	if vc.JobID != config.JobID {
 		t.Errorf("JobID = %q, want %q", vc.JobID, config.JobID)
+	}
+}
+
+func TestToVMJobConfig_StagesVCSAuthForWindowsGuest(t *testing.T) {
+	config := &JobConfig{
+		Image:      "windows.img",
+		Command:    []string{"runnerlib", "run"},
+		WorkingDir: "/job",
+		Env: map[string]string{
+			"REACTORCIDE_VCS_AUTH_DIR":  "/job/.reactorcide/vcs-auth",
+			"GIT_CONFIG_GLOBAL":         "/job/.reactorcide/vcs-auth/gitconfig",
+			"REACTORCIDE_CODE_DIR":      "/job/src",
+			"REACTORCIDE_TRIGGERS_FILE": "/job/triggers.json",
+		},
+		SourceDir:       `C:\host\source`,
+		SourceMountPath: "/job/src",
+		VCSAuth: &VCSAuthConfig{
+			ContainerDir: "/job/.reactorcide/vcs-auth",
+			GitConfig:    "git-config-data",
+			Credentials:  "credential-data",
+		},
+		JobID: "job-windows",
+	}
+
+	vmConfig := toVMJobConfig(config, "runner", "windows")
+	if vmConfig.Platform != vmrunner.GuestPlatformWindows {
+		t.Fatalf("Platform = %q", vmConfig.Platform)
+	}
+	if vmConfig.WorkingDir != `C:/reactorcide/job` {
+		t.Fatalf("WorkingDir = %q", vmConfig.WorkingDir)
+	}
+	if vmConfig.Env["REACTORCIDE_VCS_AUTH_DIR"] != `C:/reactorcide/job/.reactorcide/vcs-auth` {
+		t.Fatalf("VCS auth dir = %q", vmConfig.Env["REACTORCIDE_VCS_AUTH_DIR"])
+	}
+	if vmConfig.Env["REACTORCIDE_CODE_DIR"] != `C:/reactorcide/job/src` {
+		t.Fatalf("code dir = %q", vmConfig.Env["REACTORCIDE_CODE_DIR"])
+	}
+	if vmConfig.Env["REACTORCIDE_TRIGGERS_FILE"] != `C:/reactorcide/job/triggers.json` {
+		t.Fatalf("triggers file = %q", vmConfig.Env["REACTORCIDE_TRIGGERS_FILE"])
+	}
+	if len(vmConfig.Trees) != 1 || vmConfig.Trees[0].SourcePath != `C:\host\source` || vmConfig.Trees[0].Destination != `C:/reactorcide/job/src` {
+		t.Fatalf("Trees = %+v", vmConfig.Trees)
+	}
+	if len(vmConfig.Files) != 2 || string(vmConfig.Files[0].Data) != "git-config-data" || string(vmConfig.Files[1].Data) != "credential-data" {
+		t.Fatalf("Files = %+v", vmConfig.Files)
+	}
+	for _, file := range vmConfig.Files {
+		if file.Mode != 0o600 {
+			t.Fatalf("file mode = %o", file.Mode)
+		}
 	}
 }
 

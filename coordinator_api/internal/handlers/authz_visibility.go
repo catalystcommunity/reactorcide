@@ -9,9 +9,9 @@ import (
 
 // roleStoreResolver type-asserts s onto authz.RoleStore and, if it
 // qualifies, returns a ready-to-use *authz.Resolver; otherwise nil. This is
-// the repo's consumer-defined-narrow-interface convention (see
-// project_handler.go's projectSecretGrantStore) applied to Task D's authz
-// package: *postgres_store.PostgresDbStore satisfies authz.RoleStore in
+// the repository's consumer-defined narrow-interface convention (see
+// project_handler.go's projectSecretGrantStore). The Postgres store satisfies
+// authz.RoleStore in
 // production, while the hand-rolled store.Store mocks used by this
 // package's existing tests don't implement the extra
 // ListGroupsForUser/ListRoleAssignmentsForPrincipal methods, so they get a

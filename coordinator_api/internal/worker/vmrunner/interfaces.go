@@ -6,9 +6,8 @@
 // behind build tags while everything else -- orchestration, the SSH guest
 // channel, and image resolution -- is cross-platform and testable on Linux:
 //
-//   - ImageSource resolves an image reference to a local base image file
-//     (image_local.go ships a pre-placed-file implementation; VM-2 adds an
-//     OCI-backed one with the same interface).
+//   - ImageSource resolves an image reference to a local base image file.
+//     The package provides local and OCI-backed implementations.
 //   - VMLifecycle clones the base image and boots/destroys the guest. It is
 //     build-tag selected via newVMLifecycle() (lifecycle_other.go /
 //     lifecycle_darwin.go / lifecycle_windows.go) and is the only piece of
@@ -32,6 +31,7 @@ package vmrunner
 import (
 	"context"
 	"io"
+	"io/fs"
 )
 
 // ImageSource resolves an image reference to a local, read-only base image
@@ -42,7 +42,7 @@ type ImageSource interface {
 	// Resolve pulls/caches the base image referenced by imageRef and returns
 	// its local path. imageRef is whatever JobConfig.Image the job specifies
 	// -- for LocalImageSource that's a file path (absolute, or relative to a
-	// configured base dir); VM-2's OCI ImageSource will treat it as an OCI
+	// configured base dir); OCIImageSource treats it as an OCI
 	// artifact ref.
 	Resolve(ctx context.Context, imageRef string) (baseImagePath string, err error)
 }
@@ -113,17 +113,54 @@ type GuestCreds struct {
 	// encoded, unencrypted). Takes precedence over Password when both are
 	// set.
 	PrivateKeyPEM []byte
+
+	// HostPublicKey is an authorized_keys-format public key for the guest SSH
+	// server. When it is empty, the transport accepts the key from the private
+	// host-to-guest network.
+	HostPublicKey []byte
+}
+
+// GuestPlatform selects the command bootstrap syntax used inside a guest.
+type GuestPlatform string
+
+const (
+	GuestPlatformPOSIX   GuestPlatform = "posix"
+	GuestPlatformWindows GuestPlatform = "windows"
+)
+
+// GuestFile is a file that the transport creates before it starts the job.
+// Data can contain credentials and must never be logged.
+type GuestFile struct {
+	Path string
+	Data []byte
+	Mode fs.FileMode
+}
+
+// GuestTree is a host directory that the transport copies into the guest.
+// The transport must stream the directory and must not load the full tree into
+// memory. SourcePath can contain credentials and must never be logged.
+type GuestTree struct {
+	SourcePath  string
+	Destination string
+}
+
+// GuestCommand contains all process inputs that must cross the guest
+// isolation boundary.
+type GuestCommand struct {
+	Platform   GuestPlatform
+	Args       []string
+	Env        map[string]string
+	WorkingDir string
+	Files      []GuestFile
+	Trees      []GuestTree
 }
 
 // GuestTransport starts a command inside an already-booted guest and streams
-// its output back. SSH (guest_ssh.go) is the VM-1 prototype implementation;.
+// its output back.
 type GuestTransport interface {
-	// Start runs cmd inside the guest at addr, authenticating with creds,
-	// with env injected into the guest process (secrets/VCS-auth included --
-	// see JobConfig.Env; implementations must never log env values). Start
-	// itself should return promptly once the command has begun running in the
-	// guest; callers use the returned GuestSession to wait for completion.
-	Start(ctx context.Context, addr GuestAddr, creds GuestCreds, cmd []string, env map[string]string) (GuestSession, error)
+	// Start creates command files and starts the process. Environment values
+	// and file data can contain secrets. Implementations must not log them.
+	Start(ctx context.Context, addr GuestAddr, creds GuestCreds, command GuestCommand) (GuestSession, error)
 }
 
 // GuestSession represents one running guest command. Wait, Stdout, and Stderr

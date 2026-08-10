@@ -262,6 +262,7 @@ func TestOCIImageSource_ResolveViaLocalRegistry(t *testing.T) {
 		t.Skip("skipping OCI registry integration test in -short mode")
 	}
 	skipIfNoDocker(t)
+	testcontainers.SkipIfProviderIsNotHealthy(t)
 
 	ctx := context.Background()
 

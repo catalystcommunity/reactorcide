@@ -6,7 +6,7 @@
 // tokens.
 //
 // This package deliberately knows nothing about HTTP, CSIL-RPC, or the
-// coordinator's REST handlers — those are Wave 3 (Task G)'s job, wiring this
+// coordinator's REST handlers. Those handlers wire this
 // package's LoginService/Sessions/Admission against the ReactorcideAuth CSIL
 // service. Every store dependency here is a narrow, consumer-defined
 // interface (this repo's convention — see handlers/project_handler.go,
@@ -116,7 +116,7 @@ type noneBackend struct{}
 
 // NewNoneBackend returns the sentinel LoginBackend for
 // REACTORCIDE_UI_AUTH_MODE=none: every method returns ErrLoginDisabled, so
-// callers (e.g. LoginService, or a CSIL op implementation in Wave 3) can
+// callers, such as LoginService or a CSIL operation implementation, can
 // treat "no backend configured" uniformly instead of nil-checking.
 func NewNoneBackend() LoginBackend { return noneBackend{} }
 

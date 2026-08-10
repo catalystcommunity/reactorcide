@@ -92,8 +92,8 @@ func (ps PostgresDbStore) GetAuthIdentityBySubject(ctx context.Context, subject 
 }
 
 // GetAuthIdentityByUserID retrieves the auth identity linked to a user.
-// Added for Task G (the CSIL UI service's Authenticate/CompleteLogin ops,
-// which need to render subject/handle/domain for the already-resolved user
+// Authenticate and CompleteLogin use it to render the subject, handle, and
+// domain for the resolved user
 // their session belongs to; auth_identities.user_id is unique, per the
 // migration 000017 schema).
 func (ps PostgresDbStore) GetAuthIdentityByUserID(ctx context.Context, userID string) (*models.AuthIdentity, error) {

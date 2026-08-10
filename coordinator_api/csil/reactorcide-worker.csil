@@ -116,8 +116,7 @@ Resources = {
 }
 
 ;;; VCSAuth is a resolved git-checkout credential for a leased job's source
-;;; repo ( Wave 3 P3c "VCS checkout credentials through the
-;;; worker lease"), delivered ONLY on this authenticated Lease response --
+;;; repo. It is delivered ONLY on this authenticated Lease response --
 ;;; never in the corndogs task payload, never logged. token is the resolved
 ;;; secret value; the coordinator resolves it (project rotation credential ->
 ;;; project ref -> owning user/org ref -> global deployment config, mirroring
@@ -185,7 +184,7 @@ Directive = {
 }
 
 ;;; draining is true when the coordinator has quarantined/disabled this
-;;; worker ( Wave-4 P4's drain-worker admin op models drain as
+;;; worker. The drain-worker admin operation models drain as
 ;;; the existing "quarantined" status: RequestJob already refuses further
 ;;; job offers to a non-active worker, and this heartbeat-carried flag is the
 ;;; signal a worker uses to finish its currently-running leases and then shut

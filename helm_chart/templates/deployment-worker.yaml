@@ -92,6 +92,14 @@ spec:
               value: {{ .Values.worker.containerRuntime | quote }}
             - name: REACTORCIDE_WORKER_CONCURRENCY
               value: {{ .Values.worker.concurrency | quote }}
+            - name: REACTORCIDE_WORKER_METRICS_INTERVAL
+              value: {{ .Values.worker.metricsInterval | quote }}
+            - name: REACTORCIDE_WORKER_STORAGE_METRICS_INTERVAL
+              value: {{ .Values.worker.storageMetricsInterval | quote }}
+            - name: REACTORCIDE_WORKER_TELEMETRY_SEND_INTERVAL
+              value: {{ .Values.worker.telemetrySendInterval | quote }}
+            - name: REACTORCIDE_WORKER_TELEMETRY_BUFFER_BATCHES
+              value: {{ .Values.worker.telemetryBufferBatches | quote }}
             {{- /* Enrollment token (secret): required to Register with the
             coordinator. Sourced from the enrollment Secret -- either the
             operator override (worker.enrollmentTokenSecret.name) or the

@@ -2,8 +2,8 @@ package handlers
 
 import "testing"
 
-// TestNewRouter_RegistersWithoutPanicking is a smoke test for Task I's route
-// additions: net/http's ServeMux panics at registration time if two
+// TestNewRouter_RegistersWithoutPanicking is a smoke test for route
+// registration. net/http's ServeMux panics at registration time if two
 // patterns are ambiguous for the same request (e.g. a wildcard segment
 // registered alongside a literal one it can't unambiguously resolve
 // against). Building the full router here catches that even though every

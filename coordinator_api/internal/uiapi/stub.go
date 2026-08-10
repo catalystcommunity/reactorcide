@@ -4,8 +4,8 @@
 // StubAuth and StubUi are placeholder implementations of the generated
 // csilapi.ReactorcideAuth / csilapi.ReactorcideUi interfaces: every op
 // returns ServiceError{code:"unimplemented"}. They let the coordinator mount
-// POST /csil/v1/rpc and build/serve before Task G lands the real
-// implementations against auth/authz/store/rotation/cancel primitives.
+// POST /csil/v1/rpc and build or serve before the real implementations are
+// available.
 package uiapi
 
 import (

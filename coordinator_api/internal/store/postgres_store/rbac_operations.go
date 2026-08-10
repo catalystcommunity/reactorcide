@@ -130,9 +130,9 @@ func (ps PostgresDbStore) CreateRoleAssignment(ctx context.Context, assignment *
 	return nil
 }
 
-// GetRoleAssignmentByID retrieves a role assignment by its ID. Added for
-// Task G (the CSIL UI service's RevokeRole op, which identifies its target
-// by assignment ID alone): callers must load the row first to discover its
+// GetRoleAssignmentByID retrieves a role assignment by its ID. RevokeRole
+// identifies its target by assignment ID alone. Callers must load the row
+// first to discover its
 // scope before they can authorize the request.
 func (ps PostgresDbStore) GetRoleAssignmentByID(ctx context.Context, assignmentID string) (*models.RoleAssignment, error) {
 	if !isValidUUID(assignmentID) {

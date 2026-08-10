@@ -1,6 +1,6 @@
 package test
 
-// Postgres-backed integration coverage for the Wave-2 worker foundation:
+// Postgres-backed integration coverage for the worker foundation:
 // postgres_store/worker_operations.go and internal/workerauth against a real
 // database, covering the full chain pool create -> enrollment token
 // create+validate-by-hash -> worker upsert (insert then update the same
@@ -29,8 +29,8 @@ import (
 )
 
 // TestWorkerFoundation_FullChain exercises the end-to-end store-op chain a
-// real Register/RequestJob/Heartbeat/ReportResult protocol implementation
-// (P2-A2) will drive: pool -> enrollment token -> worker upsert -> worker
+// real Register, RequestJob, Heartbeat, and ReportResult protocol implementation
+// drives: pool -> enrollment token -> worker upsert -> worker
 // session -> worker lease.
 func TestWorkerFoundation_FullChain(t *testing.T) {
 	RunTransactionalTest(t, func(ctx context.Context, tx *gorm.DB) {

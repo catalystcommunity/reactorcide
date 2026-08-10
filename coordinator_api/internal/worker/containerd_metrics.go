@@ -20,7 +20,7 @@ type nerdctlStatsRow struct {
 	MemoryUsageAlt   string `json:"MemoryUsage"`
 }
 
-func (cr *ContainerdRunner) SampleResources(ctx context.Context, jobID string) (ResourceSnapshot, error) {
+func (cr *ContainerdRunner) SampleResources(ctx context.Context, jobID string, options ResourceSampleOptions) (ResourceSnapshot, error) {
 	output, err := exec.CommandContext(ctx, nerdctlBinary,
 		"--namespace", containerdNamespace,
 		"stats", "--no-stream", "--format", "{{json .}}", jobID,
@@ -63,20 +63,22 @@ func (cr *ContainerdRunner) SampleResources(ctx context.Context, jobID string) (
 			add("memory.limit", "bytes", "gauge", limit, base...)
 		}
 	}
-	var inspectRows []struct {
-		SizeRw *int64 `json:"SizeRw"`
-	}
-	inspectOutput, inspectErr := exec.CommandContext(ctx, nerdctlBinary,
-		"--namespace", containerdNamespace, "inspect", "--size", jobID,
-	).Output()
-	if inspectErr == nil && json.Unmarshal(inspectOutput, &inspectRows) == nil && len(inspectRows) > 0 && inspectRows[0].SizeRw != nil {
-		add("storage.used", "bytes", "gauge", *inspectRows[0].SizeRw,
-			jobtelemetry.Label{Key: "scope", Value: "job"},
-			jobtelemetry.Label{Key: "volume", Value: "rootfs"},
-			jobtelemetry.Label{Key: "kind", Value: "rootfs"},
-		)
-	} else {
-		snapshot.Unavailable = append(snapshot.Unavailable, jobtelemetry.Unavailable{MetricPrefix: "storage.used", Reason: "runtime_not_supported"})
+	if options.IncludeStorage {
+		var inspectRows []struct {
+			SizeRw *int64 `json:"SizeRw"`
+		}
+		inspectOutput, inspectErr := exec.CommandContext(ctx, nerdctlBinary,
+			"--namespace", containerdNamespace, "inspect", "--size", jobID,
+		).Output()
+		if inspectErr == nil && json.Unmarshal(inspectOutput, &inspectRows) == nil && len(inspectRows) > 0 && inspectRows[0].SizeRw != nil {
+			add("storage.used", "bytes", "gauge", *inspectRows[0].SizeRw,
+				jobtelemetry.Label{Key: "scope", Value: "job"},
+				jobtelemetry.Label{Key: "volume", Value: "rootfs"},
+				jobtelemetry.Label{Key: "kind", Value: "rootfs"},
+			)
+		} else {
+			snapshot.Unavailable = append(snapshot.Unavailable, jobtelemetry.Unavailable{MetricPrefix: "storage.used", Reason: "runtime_not_supported"})
+		}
 	}
 	return snapshot, nil
 }

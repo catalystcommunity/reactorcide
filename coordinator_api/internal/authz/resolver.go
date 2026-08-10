@@ -11,7 +11,7 @@ import (
 )
 
 // RoleStore is the narrow store surface Resolver consumes: group membership +
-// role-assignment lookups (Task A's postgres_store/rbac_operations.go), plus
+// role-assignment lookups from postgres_store/rbac_operations.go, plus
 // the user/project lookups visibility and org-membership checks need.
 // Satisfied by *postgres_store.PostgresDbStore in production; consumers (REST
 // handlers) type-assert their store.Store onto this interface (this repo's

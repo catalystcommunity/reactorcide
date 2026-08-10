@@ -15,7 +15,7 @@ it:
 
 ```
 worker ──CSIL-RPC(worker session)──▶ coordinator ──▶ Corndogs (UUID queues), Postgres, object store
-worker runs + monitors job execution (Docker/containerd/Kubernetes), streams logs back via the coordinator
+worker runs and monitors job execution, then sends logs to the coordinator
 ```
 
 This lets the coordinator authenticate every worker, keeps Corndogs off worker-reachable
@@ -24,8 +24,8 @@ shared DB state, so a dead coordinator pod just means the worker reconnects and 
 nothing (every piece of state — leases, sessions, job status — lives in Postgres). A worker
 is a small binary (`reactorcide worker`) that loops: `Register` → `RequestJob` → run the job
 → `AppendLogs` → `ReportResult` → `Heartbeat`, sourcing all of its work from the coordinator
-instead of polling a queue directly. The same protocol serves in-cluster Linux workers today
-and (future) VM-style workers on any OS — the execution detail is invisible to the protocol.
+instead of polling a queue directly. The same protocol supports container and
+native VM backends. The protocol does not depend on the execution backend.
 
 ## Characteristics and matching
 
@@ -354,8 +354,22 @@ The chart has three worker data directory modes. The default `emptyDir` and
 the generic ephemeral PVC mode survive a container restart in the same Pod.
 They do not survive Pod deletion. The generic ephemeral PVC mode can use a
 cloud network storage class. The retained PVC mode can survive Pod deletion,
-but it is only safe for one worker replica. See `TELEMETRY_DESIGN.md` for the
-telemetry spool and recovery boundary.
+but it is only safe for one worker replica.
+
+The worker writes unsent log and metric batches under its data directory. It
+keeps 12 batches for each lease by default. Set
+`REACTORCIDE_WORKER_TELEMETRY_BUFFER_BATCHES` to change this limit. When the
+buffer is full, the worker removes the oldest batch and reports a telemetry
+gap. A restarted worker sends retained batches again. The coordinator accepts
+them only while the lease is active.
+
+The worker samples CPU and memory every two seconds. It samples storage every
+10 seconds because storage collection can require an extra runtime request.
+Use `REACTORCIDE_WORKER_METRICS_INTERVAL` and
+`REACTORCIDE_WORKER_STORAGE_METRICS_INTERVAL` to change these intervals. Each
+value must be from one second through one minute. The worker sends a batch at
+least every 10 seconds. Use `REACTORCIDE_WORKER_TELEMETRY_SEND_INTERVAL` to
+change the send interval.
 
 ### Docker Compose (dev bootstrap)
 
@@ -454,6 +468,10 @@ worker (`coordinator_api/cmd/worker.go`):
 | `--worker-version` | `REACTORCIDE_WORKER_VERSION` | optional build/version string |
 | `--container-runtime` / `-r` | `REACTORCIDE_CONTAINER_RUNTIME` | `docker`, `containerd`, `kubernetes`, or `auto` |
 | `--concurrency` / `-c` | `REACTORCIDE_WORKER_CONCURRENCY` | concurrent leases per worker process |
+| `--metrics-interval` | `REACTORCIDE_WORKER_METRICS_INTERVAL` | CPU and memory sample interval from `1s` through `1m` |
+| `--storage-metrics-interval` | `REACTORCIDE_WORKER_STORAGE_METRICS_INTERVAL` | storage sample interval from `1s` through `1m` |
+| `--telemetry-send-interval` | `REACTORCIDE_WORKER_TELEMETRY_SEND_INTERVAL` | maximum interval between telemetry batches |
+| `--telemetry-buffer-batches` | `REACTORCIDE_WORKER_TELEMETRY_BUFFER_BATCHES` | retained unsent batches for each lease |
 
 The worker process also still reads a few runner/job-execution env vars that
 are unrelated to the coordinator protocol:

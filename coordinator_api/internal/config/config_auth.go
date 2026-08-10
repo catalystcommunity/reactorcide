@@ -65,8 +65,8 @@ var (
 	// webapp's callback route) passed to LoginBackend.BeginLogin. The CSIL
 	// BeginLogin op has no callback-url field of its own (the callback route
 	// is fixed coordinator-side config, not a per-request value, so an
-	// attacker cannot redirect the encrypted token elsewhere) — see Task G's
-	// implementation notes in. Required for begin-login to succeed in
+	// attacker cannot redirect the encrypted token elsewhere). This value is
+	// required for begin-login to succeed in
 	// local-rp/rp mode; unused in mode none.
 	UICallbackURL = env.GetEnvOrDefault("REACTORCIDE_UI_CALLBACK_URL", "")
 

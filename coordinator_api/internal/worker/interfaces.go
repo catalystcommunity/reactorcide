@@ -52,7 +52,12 @@ type JobRunner interface {
 
 	// SampleResources returns one resource snapshot for a running job. A
 	// backend omits unavailable values and returns safe availability reasons.
-	SampleResources(ctx context.Context, jobID string) (ResourceSnapshot, error)
+	SampleResources(ctx context.Context, jobID string, options ResourceSampleOptions) (ResourceSnapshot, error)
+}
+
+// ResourceSampleOptions selects the resource groups for one snapshot.
+type ResourceSampleOptions struct {
+	IncludeStorage bool
 }
 
 // ResourceSnapshot is one backend-neutral set of metrics at ObservedAt.

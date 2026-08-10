@@ -245,7 +245,7 @@ func (h *WebHandler) WorkflowDetail(w http.ResponseWriter, r *http.Request) {
 		groups = append(groups, workflowGroup{Workflow: child, Jobs: childJobs.Jobs, Depth: depth})
 	}
 
-	// Capability hints for Task I's cancel/kill/retry buttons: scoped to this
+	// Capability hints for the cancel, kill, and retry buttons. They are scoped to this
 	// workflow's project when known, since cancel/kill/retry authorization is
 	// project/org-scoped. Display only — the coordinator re-authorizes the
 	// actual cancel-workflow/ retry-workflow/retry-unsuccessful-jobs call.
@@ -300,7 +300,7 @@ func (h *WebHandler) JobDetail(w http.ResponseWriter, r *http.Request) {
 		// Don't fail the whole page, just show no logs
 	}
 
-	// Capability hints for Task I's cancel/kill/retry buttons; see the
+	// Capability hints for the cancel, kill, and retry buttons. See the
 	// identical comment in WorkflowDetail.
 	caps := h.capabilitiesForProject(r, job.ProjectID)
 	msg, errMsg := flashFromQuery(r)

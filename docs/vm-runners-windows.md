@@ -58,9 +58,15 @@ by the Hyper-V lifecycle at construction (they need no per-job plumbing):
 | Env var                              | Meaning                                                        | Default          |
 | ------------------------------------ | ------------------------------------------------------------- | ---------------- |
 | `REACTORCIDE_VM_IMAGE_DIR`           | directory relative image refs resolve under                   | `.`              |
-| `REACTORCIDE_VM_SSH_USER`            | guest account the worker logs in as                           | `runner`         |
+| `REACTORCIDE_VM_IMAGE_SOURCE`        | `local` or `oci` image source                                 | `local`          |
+| `REACTORCIDE_VM_IMAGE_CACHE_DIR`     | OCI image cache directory                                     | user cache directory |
+| `REACTORCIDE_VM_REGISTRY_AUTH_FILE`  | Docker-compatible registry credential file                    | user config directory |
+| `REACTORCIDE_VM_SSH_USER`            | guest account the worker logs in as                           | `reactorcide`    |
 | `REACTORCIDE_VM_SSH_PRIVATE_KEY_FILE`| path to the worker's SSH private key (PEM)                     | —                |
+| `REACTORCIDE_VM_SSH_HOST_KEY_FILE`   | path to the guest SSH host public key                          | —                |
 | `REACTORCIDE_VM_SSH_PASSWORD`        | password auth (discouraged; key preferred)                    | —                |
+| `REACTORCIDE_VM_METRICS_DIR`         | optional local JSON Lines debug output                         | disabled         |
+| `REACTORCIDE_VM_METRICS_INTERVAL`    | optional JSON Lines debug sample interval                      | `5s`             |
 | `REACTORCIDE_VM_HYPERV_SWITCH`       | Hyper-V virtual switch new guests attach to                   | `Default Switch` |
 | `REACTORCIDE_VM_HYPERV_SECURE_BOOT`  | `off`/`false`/`0`/`no` disables Gen-2 Secure Boot; else on    | on               |
 
@@ -207,8 +213,7 @@ its **`hyperv-iso` builder**: it installs Windows from an ISO unattended
 (`Autounattend.xml`), provisions the guest (enable OpenSSH Server, bake the
 toolchain + the worker's `authorized_keys`), optionally syspreps, and produces
 the VHDX. This parallels the macOS backend's Packer + Tart note. Packaging that
-VHDX as an OCI artifact for the OCI `ImageSource` (VM-2) is **VM-5 (image build +
-packaging)**.
+VHDX as an OCI artifact for the OCI image source.
 
 ## Guest credentials (prototype)
 
@@ -237,20 +242,29 @@ key pair** (same model as the macOS backend):
 $env:REACTORCIDE_VM_IMAGE_DIR = 'C:\reactorcide\vm-images'
 $env:REACTORCIDE_VM_SSH_USER = 'runner'
 $env:REACTORCIDE_VM_SSH_PRIVATE_KEY_FILE = 'C:\Users\me\.ssh\reactorcide_vm'
+$env:REACTORCIDE_VM_SSH_HOST_KEY_FILE = 'C:\reactorcide\guest-ssh-host.pub'
 ```
 
-### Security notes / future hardening
+### Security notes
 
-- The SSH transport does **not** verify the guest host key: guests are cloned
-  fresh per job and have no stable identity to pin, and the host↔guest link runs
-  over the switch's private network the lifecycle controls.
+- Set `REACTORCIDE_VM_SSH_HOST_KEY_FILE` to verify a stable SSH host key from
+  the base image. If you do not set it, the transport accepts the key from the
+  private virtual switch.
 - Baking a **shared** worker key into the golden image is a prototype
   simplification: every job clone trusts the same key. **Per-job injected keys**
   (a unique pair minted per boot, delivered over a first-boot channel so no
   long-lived secret lives in the image) are the intended hardening and are out of
-  scope for VM-4 — they need a first-boot delivery mechanism (an unattend/answer
+  scope for the current implementation. They need a first-boot delivery mechanism (an unattend/answer
   file, a mounted seed volume, or a vsock/KVP channel) that does not yet exist
   here.
+
+### Job input transfer
+
+The worker sends the command, environment, working directory, and short-lived
+VCS credential files through SSH. It converts the standard `/job` paths to
+`C:\reactorcide\job` paths. It does not put secret values on the SSH command
+line. For `run-local`, it streams the local source tree as a tar archive and
+extracts it at the configured code directory in the guest.
 
 ## Smoke test (validate Hyper-V + networking + SSH)
 

@@ -7,9 +7,8 @@ package test
 // Postgres (this package's shared testcontainers instance) and the REAL
 // Docker JobRunner backend -- Register -> RequestJob -> spawn a real "alpine"
 // container -> stream its real stdout back via AppendLogs -> ReportResult ->
-// job row completed with its logs in object storage. This is the P2-B "run
-// the claimed spec via the real Docker runner" proof folded into P3a.go),
-// which already covers the CSIL-RPC protocol itself with a fake Client.
+// job row completed with its logs in object storage. The CSIL-RPC protocol
+// has separate coverage with a fake Client.
 //
 // Skips (not fails) if Docker is unavailable in the environment running the
 // test, mirroring internal/worker/docker_runner_integration_test.go's own

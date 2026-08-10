@@ -1,11 +1,15 @@
 package vmrunner
 
 import (
+	"archive/tar"
 	"context"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"io"
 	"net"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
@@ -47,27 +51,14 @@ func lookupSignal(sig string) (ssh.Signal, error) {
 	return s, nil
 }
 
-// SSHTransport implements GuestTransport over SSH (golang.org/x/crypto/ssh)
-// -- the VM-1 prototype guest channel.
+// SSHTransport implements GuestTransport over SSH.
 //
-// Host key verification: guests are freshly copy-on-write cloned per job
-// from a known base image and have no persistent identity to pin against
-// (each boot is, by design, a brand new host key unless the base image
-// bakes in a fixed one), so SSHTransport intentionally does not verify the
-// guest's host key. This is judged acceptable because the channel is a
-// direct host<->guest link over a virtual/loopback network the VM
-// lifecycle controls end to end, not a channel exposed to anything else.
-// A future VMLifecycle that bakes a fixed host key into the golden image
-// could tighten this with a pinned callback.
+// The transport verifies the guest host key when GuestCreds contains a pinned
+// public key. Without a pinned key, it accepts the key from the private guest
+// network. Operators should pin a stable key that is part of the base image.
 //
-// Env delivery: SSHTransport tries the wire-level SSH "env" request
-// (Session.Setenv) for each variable, but most sshd configurations reject
-// it outright unless every name is explicitly AcceptEnv-listed, so it also
-// *always* prefixes the remote command with shell-quoted `export`
-// statements as the mechanism jobs can actually depend on. Env values
-// (which may carry secrets/VCS-auth material) are therefore only ever
-// embedded in the command text sent over the already-authenticated SSH
-// channel -- never written to a log by this file.
+// The transport sends a bootstrap script through SSH standard input. The SSH
+// command line contains no environment values or file data.
 type SSHTransport struct {
 	// DialTimeout bounds the SSH handshake (TCP connect + auth) for a
 	// single Start call. Guest reachability polling happens in
@@ -92,9 +83,15 @@ func (t *SSHTransport) dialTimeout() time.Duration {
 // (with env exported into its shell environment) as a background remote
 // process. It returns as soon as the remote command has started -- it does
 // not wait for completion.
-func (t *SSHTransport) Start(ctx context.Context, addr GuestAddr, creds GuestCreds, cmd []string, env map[string]string) (GuestSession, error) {
-	if len(cmd) == 0 {
+func (t *SSHTransport) Start(ctx context.Context, addr GuestAddr, creds GuestCreds, command GuestCommand) (GuestSession, error) {
+	if len(command.Args) == 0 {
 		return nil, errors.New("vmrunner/ssh: command must not be empty")
+	}
+	if command.Platform == "" {
+		command.Platform = GuestPlatformPOSIX
+	}
+	if command.Platform != GuestPlatformPOSIX && command.Platform != GuestPlatformWindows {
+		return nil, fmt.Errorf("vmrunner/ssh: unsupported guest platform %q", command.Platform)
 	}
 
 	clientConfig, err := sshClientConfig(creds, t.dialTimeout())
@@ -114,10 +111,22 @@ func (t *SSHTransport) Start(ctx context.Context, addr GuestAddr, creds GuestCre
 		return nil, fmt.Errorf("vmrunner/ssh: new session: %w", err)
 	}
 
-	// Best-effort wire-level env; see the type doc for why the shell
-	// `export` prefix below is the mechanism that actually matters.
-	for k, v := range env {
+	// This is a compatibility aid for guests that accept SSH environment
+	// requests. The bootstrap script remains the reliable delivery path.
+	for k, v := range command.Env {
 		_ = sess.Setenv(k, v)
+	}
+	if err := uploadGuestTrees(client, command.Platform, command.Trees); err != nil {
+		_ = sess.Close()
+		_ = client.Close()
+		return nil, err
+	}
+
+	stdin, err := sess.StdinPipe()
+	if err != nil {
+		_ = sess.Close()
+		_ = client.Close()
+		return nil, fmt.Errorf("vmrunner/ssh: stdin pipe: %w", err)
 	}
 
 	stdoutPipe, err := sess.StdoutPipe()
@@ -133,27 +142,147 @@ func (t *SSHTransport) Start(ctx context.Context, addr GuestAddr, creds GuestCre
 		return nil, fmt.Errorf("vmrunner/ssh: stderr pipe: %w", err)
 	}
 
-	// Capture the remote shell's PID (before it execs into the job command,
-	// which replaces the process image but keeps the PID) into a per-job
-	// scratch file, so Signal's kill-fallback can target the right process
-	// without relying on pattern matching over `ps`.
 	pidFile := fmt.Sprintf("/tmp/.reactorcide-vm-%s.pid", uuid.New().String())
-	remoteCmd := fmt.Sprintf("echo $$>%s 2>/dev/null; %sexec %s", pidFile, shellExports(env), shellJoin(cmd))
+	remoteCmd := "/bin/sh -s"
+	script, err := posixBootstrap(command, pidFile)
+	if command.Platform == GuestPlatformWindows {
+		pidFile = fmt.Sprintf(`$env:TEMP/.reactorcide-vm-%s.pid`, uuid.New().String())
+		remoteCmd = "powershell.exe -NoProfile -NonInteractive -Command -"
+		script, err = windowsBootstrap(command, pidFile)
+	}
+	if err != nil {
+		_ = sess.Close()
+		_ = client.Close()
+		return nil, err
+	}
 
 	if err := sess.Start(remoteCmd); err != nil {
 		_ = sess.Close()
 		_ = client.Close()
 		return nil, fmt.Errorf("vmrunner/ssh: start command: %w", err)
 	}
+	if _, err := io.WriteString(stdin, script); err != nil {
+		_ = stdin.Close()
+		_ = sess.Close()
+		_ = client.Close()
+		return nil, fmt.Errorf("vmrunner/ssh: send bootstrap: %w", err)
+	}
+	if err := stdin.Close(); err != nil {
+		_ = sess.Close()
+		_ = client.Close()
+		return nil, fmt.Errorf("vmrunner/ssh: close bootstrap input: %w", err)
+	}
 
 	return &sshSession{
-		client:  client,
-		sess:    sess,
-		stdout:  stdoutPipe,
-		stderr:  stderrPipe,
-		pidFile: pidFile,
-		doneCh:  make(chan struct{}),
+		client:   client,
+		sess:     sess,
+		stdout:   stdoutPipe,
+		stderr:   stderrPipe,
+		pidFile:  pidFile,
+		platform: command.Platform,
+		doneCh:   make(chan struct{}),
 	}, nil
+}
+
+func uploadGuestTrees(client *ssh.Client, platform GuestPlatform, trees []GuestTree) error {
+	for _, tree := range trees {
+		info, err := os.Stat(tree.SourcePath)
+		if err != nil {
+			return fmt.Errorf("vmrunner/ssh: inspect guest tree source: %w", err)
+		}
+		if !info.IsDir() {
+			return errors.New("vmrunner/ssh: guest tree source must be a directory")
+		}
+		if strings.TrimSpace(tree.Destination) == "" {
+			return errors.New("vmrunner/ssh: guest tree destination must not be empty")
+		}
+
+		sess, err := client.NewSession()
+		if err != nil {
+			return fmt.Errorf("vmrunner/ssh: create upload session: %w", err)
+		}
+		stdin, err := sess.StdinPipe()
+		if err != nil {
+			_ = sess.Close()
+			return fmt.Errorf("vmrunner/ssh: open upload input: %w", err)
+		}
+		remoteCmd := "mkdir -p -- " + shellQuote(tree.Destination) + " && tar -xf - -C " + shellQuote(tree.Destination)
+		if platform == GuestPlatformWindows {
+			destination := powerShellQuote(tree.Destination)
+			remoteCmd = "powershell.exe -NoProfile -NonInteractive -Command \"$d=" + destination + "; New-Item -ItemType Directory -Force -Path $d | Out-Null; tar.exe -xf - -C $d\""
+		}
+		if err := sess.Start(remoteCmd); err != nil {
+			_ = stdin.Close()
+			_ = sess.Close()
+			return fmt.Errorf("vmrunner/ssh: start tree upload: %w", err)
+		}
+		writeErr := writeTarTree(stdin, tree.SourcePath)
+		closeErr := stdin.Close()
+		waitErr := sess.Wait()
+		_ = sess.Close()
+		if writeErr != nil {
+			return writeErr
+		}
+		if closeErr != nil {
+			return fmt.Errorf("vmrunner/ssh: close tree upload: %w", closeErr)
+		}
+		if waitErr != nil {
+			return fmt.Errorf("vmrunner/ssh: extract guest tree: %w", waitErr)
+		}
+	}
+	return nil
+}
+
+func writeTarTree(dst io.Writer, root string) error {
+	tw := tar.NewWriter(dst)
+	walkErr := filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		if path == root {
+			return nil
+		}
+		rel, err := filepath.Rel(root, path)
+		if err != nil {
+			return err
+		}
+		link := ""
+		if info.Mode()&os.ModeSymlink != 0 {
+			link, err = os.Readlink(path)
+			if err != nil {
+				return err
+			}
+		}
+		header, err := tar.FileInfoHeader(info, link)
+		if err != nil {
+			return err
+		}
+		header.Name = filepath.ToSlash(rel)
+		if err := tw.WriteHeader(header); err != nil {
+			return err
+		}
+		if !info.Mode().IsRegular() {
+			return nil
+		}
+		file, err := os.Open(path)
+		if err != nil {
+			return err
+		}
+		_, copyErr := io.Copy(tw, file)
+		closeErr := file.Close()
+		if copyErr != nil {
+			return copyErr
+		}
+		return closeErr
+	})
+	if walkErr != nil {
+		_ = tw.Close()
+		return fmt.Errorf("vmrunner/ssh: archive guest tree: %w", walkErr)
+	}
+	if err := tw.Close(); err != nil {
+		return fmt.Errorf("vmrunner/ssh: finish guest tree archive: %w", err)
+	}
+	return nil
 }
 
 var _ GuestTransport = (*SSHTransport)(nil)
@@ -168,7 +297,8 @@ type sshSession struct {
 
 	// pidFile is where the remote shell wrote its PID before exec'ing into
 	// the job command; Signal's kill-fallback reads it back.
-	pidFile string
+	pidFile  string
+	platform GuestPlatform
 
 	waitOnce sync.Once
 	waitCode int
@@ -226,6 +356,10 @@ func (s *sshSession) killFallback(sig string) error {
 	}
 	defer killSess.Close()
 
+	if s.platform == GuestPlatformWindows {
+		return s.killFallbackWindows(killSess, sig)
+	}
+
 	// Start returns when the guest accepts the exec request. The remote shell
 	// can still be starting, so wait briefly for it to write the PID file.
 	// sshSig and pidFile are internally generated values, not job input.
@@ -236,6 +370,18 @@ func (s *sshSession) killFallback(sig string) error {
 		s.pidFile, s.pidFile, s.pidFile, string(sshSig),
 	)
 	return killSess.Run(killCmd)
+}
+
+func (s *sshSession) killFallbackWindows(killSess *ssh.Session, sig string) error {
+	force := ""
+	if strings.EqualFold(sig, "KILL") {
+		force = " -Force"
+	}
+	cmd := fmt.Sprintf(
+		`powershell.exe -NoProfile -NonInteractive -Command "$p=%s; if (Test-Path $p) { $id=[int](Get-Content $p); Stop-Process -Id $id%s -ErrorAction SilentlyContinue }"`,
+		s.pidFile, force,
+	)
+	return killSess.Run(cmd)
 }
 
 // Close releases the SSH session and its underlying client connection. It
@@ -273,14 +419,20 @@ func sshClientConfig(creds GuestCreds, timeout time.Duration) (*ssh.ClientConfig
 		return nil, errors.New("vmrunner/ssh: no auth method configured (need PrivateKeyPEM or Password)")
 	}
 
-	return &ssh.ClientConfig{
-		User: creds.User,
-		Auth: auths,
-		// See SSHTransport's doc comment for why host key verification is
-		// intentionally skipped for this prototype transport.
+	config := &ssh.ClientConfig{
+		User:            creds.User,
+		Auth:            auths,
 		HostKeyCallback: ssh.InsecureIgnoreHostKey(), //nolint:gosec
 		Timeout:         timeout,
-	}, nil
+	}
+	if len(creds.HostPublicKey) > 0 {
+		hostKey, _, _, _, err := ssh.ParseAuthorizedKey(creds.HostPublicKey)
+		if err != nil {
+			return nil, fmt.Errorf("vmrunner/ssh: parse guest host public key: %w", err)
+		}
+		config.HostKeyCallback = ssh.FixedHostKey(hostKey)
+	}
+	return config, nil
 }
 
 func sshDial(ctx context.Context, addr string, config *ssh.ClientConfig) (*ssh.Client, error) {
@@ -327,6 +479,85 @@ func shellJoin(args []string) string {
 		quoted[i] = shellQuote(a)
 	}
 	return strings.Join(quoted, " ")
+}
+
+func posixBootstrap(command GuestCommand, pidFile string) (string, error) {
+	var b strings.Builder
+	b.WriteString("set -eu\numask 077\n")
+	for _, file := range command.Files {
+		if err := validateGuestFile(file); err != nil {
+			return "", err
+		}
+		dir := guestParent(file.Path)
+		fmt.Fprintf(&b, "mkdir -p %s\n", shellQuote(dir))
+		encoded := base64.StdEncoding.EncodeToString(file.Data)
+		fmt.Fprintf(&b, "(printf '%%s' %s | base64 --decode 2>/dev/null || printf '%%s' %s | base64 -D) > %s\n",
+			shellQuote(encoded), shellQuote(encoded), shellQuote(file.Path))
+		mode := file.Mode.Perm()
+		if mode == 0 {
+			mode = 0o600
+		}
+		fmt.Fprintf(&b, "chmod %04o %s\n", mode, shellQuote(file.Path))
+	}
+	for key, value := range command.Env {
+		if isValidEnvName(key) {
+			fmt.Fprintf(&b, "export %s=%s\n", key, shellQuote(value))
+		}
+	}
+	if command.WorkingDir != "" {
+		fmt.Fprintf(&b, "cd %s\n", shellQuote(command.WorkingDir))
+	}
+	fmt.Fprintf(&b, "echo $$ > %s\nexec %s\n", shellQuote(pidFile), shellJoin(command.Args))
+	return b.String(), nil
+}
+
+func windowsBootstrap(command GuestCommand, pidFile string) (string, error) {
+	var b strings.Builder
+	b.WriteString("$ErrorActionPreference = 'Stop'\n")
+	for _, file := range command.Files {
+		if err := validateGuestFile(file); err != nil {
+			return "", err
+		}
+		fmt.Fprintf(&b, "$p=%s; New-Item -ItemType Directory -Force -Path (Split-Path -Parent $p) | Out-Null; [IO.File]::WriteAllBytes($p,[Convert]::FromBase64String(%s))\n",
+			powerShellQuote(file.Path), powerShellQuote(base64.StdEncoding.EncodeToString(file.Data)))
+	}
+	for key, value := range command.Env {
+		if isValidEnvName(key) {
+			fmt.Fprintf(&b, "$env:%s=%s\n", key, powerShellQuote(value))
+		}
+	}
+	if command.WorkingDir != "" {
+		fmt.Fprintf(&b, "Set-Location -LiteralPath %s\n", powerShellQuote(command.WorkingDir))
+	}
+	fmt.Fprintf(&b, "$PID | Set-Content -NoNewline -LiteralPath %s\n", pidFile)
+	b.WriteString("& ")
+	for i, arg := range command.Args {
+		if i > 0 {
+			b.WriteByte(' ')
+		}
+		b.WriteString(powerShellQuote(arg))
+	}
+	b.WriteString("\nexit $LASTEXITCODE\n")
+	return b.String(), nil
+}
+
+func validateGuestFile(file GuestFile) error {
+	if strings.TrimSpace(file.Path) == "" || strings.ContainsAny(file.Path, "\x00\r\n") {
+		return errors.New("vmrunner/ssh: guest file has an invalid path")
+	}
+	return nil
+}
+
+func guestParent(filePath string) string {
+	normalized := strings.ReplaceAll(filePath, `\`, "/")
+	if index := strings.LastIndex(normalized, "/"); index > 0 {
+		return normalized[:index]
+	}
+	return "."
+}
+
+func powerShellQuote(value string) string {
+	return "'" + strings.ReplaceAll(value, "'", "''") + "'"
 }
 
 // shellExports renders env as `export NAME='value'; ` statements, skipping

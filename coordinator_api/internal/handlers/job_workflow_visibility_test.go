@@ -18,8 +18,8 @@ import (
 // (GetUserByID, GetProjectByID, ListGroupsForUser,
 // ListRoleAssignmentsForPrincipal) so JobHandler/WorkflowHandler
 // constructors wire up a non-nil visibility resolver (see
-// handlers/authz_visibility.go's roleStoreResolver), letting these tests
-// exercise Task D's additive public-visibility path end to end through the
+// handlers/authz_visibility.go's roleStoreResolver). These tests exercise the
+// additive public-visibility path end to end through the
 // real HTTP handlers rather than just the authz package in isolation.
 //
 // It also implements jobsVisibleToStore/workflowSummaryVisibleToStore

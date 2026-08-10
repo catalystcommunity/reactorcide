@@ -13,9 +13,9 @@ import (
 
 // --- project_webhook_secrets -------------------------------------------------
 
-// GetProjectWebhookSecretByID retrieves a single rotatable webhook secret row
-// by its ID, with no project/org scoping. Added for Task G (the CSIL UI
-// service's DeactivateWebhookSecret/DeleteWebhookSecret ops, which identify
+// GetProjectWebhookSecretByID retrieves a rotatable webhook secret row by its
+// ID, with no project or organization scoping. DeactivateWebhookSecret and
+// DeleteWebhookSecret identify
 // their target by ID alone): callers must load the row first to discover its
 // ProjectID before they can authorize the request against that project's
 // owning org.
@@ -144,8 +144,8 @@ func (ps PostgresDbStore) TouchProjectWebhookSecretLastUsed(ctx context.Context,
 // --- project_vcs_credentials -------------------------------------------------
 
 // GetProjectVCSCredentialByID retrieves a single rotatable VCS credential row
-// by its ID, with no project/org scoping. See GetProjectWebhookSecretByID for
-// the rationale (Task G).
+// by its ID, with no project or organization scoping. See
+// GetProjectWebhookSecretByID for the rationale.
 func (ps PostgresDbStore) GetProjectVCSCredentialByID(ctx context.Context, id string) (*models.ProjectVCSCredential, error) {
 	if !isValidUUID(id) {
 		return nil, store.ErrNotFound

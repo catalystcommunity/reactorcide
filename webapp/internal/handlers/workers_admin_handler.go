@@ -36,7 +36,7 @@ type poolView struct {
 // WorkersPage renders GET /app/workers: pools, each with its workers and
 // enrollment tokens, plus (for global admins) a link to the Queues tab.
 // Gated on ManageWorkers — there is no separate "view" tier, same as every
-// other Task I management page.
+// other management page.
 func (h *WebHandler) WorkersPage(w http.ResponseWriter, r *http.Request) {
 	si := h.sessionInfo(r)
 	if !si.Caps.ManageWorkers {

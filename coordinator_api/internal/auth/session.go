@@ -27,7 +27,7 @@ const (
 )
 
 // SessionStore is the narrow store surface Sessions consumes, satisfied by
-// Task A's postgres_store/auth_operations.go (ui_sessions) plus the existing
+// postgres_store/auth_operations.go (ui_sessions) plus the existing
 // user lookup.
 type SessionStore interface {
 	CreateUISession(ctx context.Context, session *models.UISession) error

@@ -16,12 +16,18 @@ func pumpMetrics(ctx context.Context, c client, runner worker.JobRunner, leaseID
 	if interval <= 0 {
 		interval = 2 * time.Second
 	}
+	storageInterval := cfg.StorageMetricsInterval
+	if storageInterval <= 0 {
+		storageInterval = 10 * time.Second
+	}
 	sendInterval := cfg.TelemetrySendInterval
 	if sendInterval <= 0 {
 		sendInterval = 10 * time.Second
 	}
 	sampleTicker := time.NewTicker(interval)
 	defer sampleTicker.Stop()
+	storageTicker := time.NewTicker(storageInterval)
+	defer storageTicker.Stop()
 	sendTicker := time.NewTicker(sendInterval)
 	defer sendTicker.Stop()
 
@@ -29,11 +35,16 @@ func pumpMetrics(ctx context.Context, c client, runner worker.JobRunner, leaseID
 	var definitions []csilapi.MetricSeriesDefinition
 	var samples []csilapi.MetricSample
 	unavailable := map[string]csilapi.MetricUnavailable{}
+	bufferGap := false
 	flush := func() {
 		if len(samples) == 0 && len(unavailable) == 0 {
 			return
 		}
 		unavailableItems := make([]csilapi.MetricUnavailable, 0, len(unavailable))
+		if bufferGap {
+			unavailable["telemetry.buffer\x00buffer_gap"] = csilapi.MetricUnavailable{MetricPrefix: "telemetry.buffer", Reason: "buffer_gap"}
+			bufferGap = false
+		}
 		for _, item := range unavailable {
 			unavailableItems = append(unavailableItems, item)
 		}
@@ -42,17 +53,26 @@ func pumpMetrics(ctx context.Context, c client, runner worker.JobRunner, leaseID
 			Samples: samples, Unavailable: unavailableItems,
 		}
 		sequence++
-		if err := persistAndSendMetrics(c, cfg.DataDir, req); err != nil {
+		dropped, err := persistAndSendMetrics(c, cfg.DataDir, cfg.TelemetryBufferBatches, req)
+		if dropped {
+			bufferGap = true
+			logging.Log.WithField("lease_id", leaseID).Warn("dropped the oldest unsent telemetry batch because the buffer is full")
+		}
+		if err != nil {
 			logging.Log.WithError(err).WithField("lease_id", leaseID).Warn("failed to append metrics to coordinator")
 		}
 		definitions = nil
 		samples = nil
 		unavailable = map[string]csilapi.MetricUnavailable{}
 	}
-	collect := func(sampleCtx context.Context) {
-		snapshot, err := runner.SampleResources(sampleCtx, runnerID)
+	collect := func(sampleCtx context.Context, includeStorage bool) {
+		snapshot, err := runner.SampleResources(sampleCtx, runnerID, worker.ResourceSampleOptions{IncludeStorage: includeStorage})
 		if err != nil {
-			for _, prefix := range []string{"cpu.usage", "memory.usage", "storage.used"} {
+			prefixes := []string{"cpu.usage", "memory.usage"}
+			if includeStorage {
+				prefixes = append(prefixes, "storage.used")
+			}
+			for _, prefix := range prefixes {
 				unavailable[prefix+"\x00runtime_not_supported"] = csilapi.MetricUnavailable{MetricPrefix: prefix, Reason: "runtime_not_supported"}
 			}
 			return
@@ -78,17 +98,22 @@ func pumpMetrics(ctx context.Context, c client, runner worker.JobRunner, leaseID
 		}
 	}
 
-	collect(ctx)
+	collect(ctx, true)
 	for {
 		select {
 		case <-ctx.Done():
 			finalCtx, cancel := context.WithTimeout(context.Background(), interval)
-			collect(finalCtx)
+			collect(finalCtx, true)
 			cancel()
 			flush()
 			return
 		case <-sampleTicker.C:
-			collect(ctx)
+			collect(ctx, false)
+			if len(samples) >= jobtelemetry.MaxSamplesPerBatch {
+				flush()
+			}
+		case <-storageTicker.C:
+			collect(ctx, true)
 			if len(samples) >= jobtelemetry.MaxSamplesPerBatch {
 				flush()
 			}

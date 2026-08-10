@@ -71,6 +71,9 @@ func (s *WorkerService) AppendLogBatch(ctx context.Context, req csilapi.AppendLo
 }
 
 func (s *WorkerService) AppendMetricBatch(ctx context.Context, req csilapi.AppendMetricBatchRequest) (csilapi.AppendMetricBatchResponse, error) {
+	if len(csilapi.EncodeAppendMetricBatchRequest(req)) > jobtelemetry.MaxEncodedBatchBytes {
+		return csilapi.AppendMetricBatchResponse{}, uiapi.NewServiceError("invalid_argument", "metric batch exceeds the encoded size limit")
+	}
 	worker, _, err := s.resolveSession(ctx)
 	if err != nil {
 		return csilapi.AppendMetricBatchResponse{}, err

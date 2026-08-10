@@ -1,6 +1,6 @@
 package handlers
 
-// Shared helpers for Task I's management UI handlers (projects, groups,
+// Shared helpers for the management UI handlers (projects, groups,
 // roles, secrets, admin, job/workflow actions). Kept in one file since every
 // management page follows the same shape: gate on a capability, call a
 // uiClients.Ui/Auth op with h.authContext(r), then either redirect on

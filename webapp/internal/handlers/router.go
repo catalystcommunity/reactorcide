@@ -38,7 +38,7 @@ func NewRouter() http.Handler {
 	mux.HandleFunc("POST /app/jobs/{id}/kill", webHandler.withSession(webHandler.JobKill))
 	mux.HandleFunc("POST /app/jobs/{id}/retry", webHandler.withSession(webHandler.JobRetry))
 
-	// Projects (Task I: management UI). GET /app/projects/new must be
+	// Project management. GET /app/projects/new must be
 	// registered alongside GET /app/projects/{id} — Go 1.22's ServeMux
 	// prefers the more specific literal segment ("new") over the wildcard
 	// ("{id}") for the same path shape, so this is unambiguous.

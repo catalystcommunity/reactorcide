@@ -25,8 +25,7 @@ const (
 
 	// BackendVM uses ephemeral guest VMs to run native macOS/Windows jobs. It
 	// is a recognized backend name on every OS, but only actually implemented
-	// on darwin/windows once VM-3/VM-4 land -- see IsBackendImplemented and
-	// vmrunner.newVMLifecycle.
+	// on darwin and windows.
 	BackendVM RunnerBackend = "vm"
 )
 
@@ -114,8 +113,7 @@ func IsBackendImplemented(backend string) bool {
 		return true
 	}
 	// "vm" is a recognized backend name everywhere (GetSupportedBackends
-	// lists it), but its VMLifecycle is only real on darwin/windows once
-	// VM-3/VM-4 land (see vmrunner.newVMLifecycle) -- report that honestly
+	// lists it), but its VMLifecycle is only real on darwin and windows. Report that honestly
 	// rather than claiming it's usable on Linux today.
 	if backend == string(BackendVM) {
 		return isVMBackendImplemented()

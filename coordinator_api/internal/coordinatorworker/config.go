@@ -1,11 +1,8 @@
 // Package coordinatorworker is the coordinator-mediated worker run loop:
 // Register -> RequestJob -> run via the existing internal/worker.JobRunner ->
-// stream logs to the coordinator via AppendLogs -> ReportResult, with a
+// stream logs to the coordinator via AppendLogBatch -> ReportResult, with a
 // concurrent Heartbeat that renews the worker session and applies cancel/kill
-// directives. It is deliberately additive: cmd/worker.go and
-// internal/worker/corndogs_worker.go (the legacy direct-corndogs path) are
-// untouched here -- wiring this package into the worker binary and removing
-// the legacy path is P3b.
+// directives.
 //
 // VCS checkout credentials: when a lease carries a coordinator-resolved
 // vcs_auth (see internal/workerapi/vcs_auth.go for how the coordinator
@@ -33,8 +30,8 @@ type Config struct {
 	CoordinatorURL string
 
 	// EnrollmentToken is the durable, per-pool credential presented to
-	// Register. It is never logged and never persisted by this package -- the
-	// caller (P3b's cmd/worker.go) owns how it is sourced/stored.
+	// Register. It is never logged and never persisted by this package. The
+	// caller owns how it is sourced and stored.
 	EnrollmentToken string
 
 	// WorkerKey is a stable, worker-provided identifier (generated and
@@ -82,10 +79,14 @@ type Config struct {
 	// DataDir holds the worker identity and its same-instance telemetry spool.
 	DataDir string
 
-	// MetricsInterval controls CPU and memory sampling. TelemetrySendInterval
-	// controls batch flushes. Non-positive values use safe defaults.
-	MetricsInterval       time.Duration
-	TelemetrySendInterval time.Duration
+	// MetricsInterval controls CPU and memory sampling. StorageMetricsInterval
+	// controls storage sampling. TelemetrySendInterval controls batch flushes.
+	// TelemetryBufferBatches limits durable unsent batches for each lease.
+	// Non-positive values use safe defaults.
+	MetricsInterval        time.Duration
+	StorageMetricsInterval time.Duration
+	TelemetrySendInterval  time.Duration
+	TelemetryBufferBatches int
 
 	// VMImagePrefetch lists OCI VM image references to pull before this
 	// worker registers with the coordinator.

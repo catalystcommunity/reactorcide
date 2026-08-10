@@ -10,7 +10,7 @@ import (
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store/models"
 )
 
-// DataStore is everything the CSIL UI service implementations (Task G) need
+// DataStore is everything the CSIL UI service implementations need
 // from the store: the base store.Store surface, authz's role resolution
 // surface, auth's login/session/admission/credential surfaces, and the
 // group/role/rotation/settings/trusted-identity/secret-grant operations Task

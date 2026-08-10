@@ -75,7 +75,7 @@ func run(bundle string, creds vmrunner.GuestCreds, timeout time.Duration) error 
 	// NewDefault selects the real darwin VMLifecycle (this is a `-tags vz`
 	// build), the SSH GuestTransport, and a LocalImageSource. Passing "" as the
 	// base dir means the bundle path below is used as an absolute image ref.
-	runner, err := vmrunner.NewDefault("", creds)
+	runner, err := vmrunner.NewDefaultWithImages(vmrunner.NewLocalImageSource(""), creds)
 	if err != nil {
 		return fmt.Errorf("build vm runner: %w", err)
 	}
