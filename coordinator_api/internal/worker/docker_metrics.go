@@ -10,7 +10,7 @@ import (
 	"github.com/docker/docker/api/types/container"
 )
 
-func (dr *DockerRunner) SampleResources(ctx context.Context, jobID string) (ResourceSnapshot, error) {
+func (dr *DockerRunner) SampleResources(ctx context.Context, jobID string, options ResourceSampleOptions) (ResourceSnapshot, error) {
 	response, err := dr.client.ContainerStatsOneShot(ctx, jobID)
 	if err != nil {
 		return ResourceSnapshot{}, fmt.Errorf("docker stats: %w", err)
@@ -60,15 +60,17 @@ func (dr *DockerRunner) SampleResources(ctx context.Context, jobID string) (Reso
 	if stats.MemoryStats.Commit > 0 {
 		add("memory.committed", "bytes", "gauge", int64(stats.MemoryStats.Commit), base...)
 	}
-	inspect, _, inspectErr := dr.client.ContainerInspectWithRaw(ctx, jobID, true)
-	if inspectErr == nil && inspect.SizeRw != nil && *inspect.SizeRw >= 0 {
-		add("storage.used", "bytes", "gauge", *inspect.SizeRw,
-			jobtelemetry.Label{Key: "scope", Value: "job"},
-			jobtelemetry.Label{Key: "volume", Value: "rootfs"},
-			jobtelemetry.Label{Key: "kind", Value: "rootfs"},
-		)
-	} else {
-		snapshot.Unavailable = append(snapshot.Unavailable, jobtelemetry.Unavailable{MetricPrefix: "storage.used", Reason: "runtime_not_supported"})
+	if options.IncludeStorage {
+		inspect, _, inspectErr := dr.client.ContainerInspectWithRaw(ctx, jobID, true)
+		if inspectErr == nil && inspect.SizeRw != nil && *inspect.SizeRw >= 0 {
+			add("storage.used", "bytes", "gauge", *inspect.SizeRw,
+				jobtelemetry.Label{Key: "scope", Value: "job"},
+				jobtelemetry.Label{Key: "volume", Value: "rootfs"},
+				jobtelemetry.Label{Key: "kind", Value: "rootfs"},
+			)
+		} else {
+			snapshot.Unavailable = append(snapshot.Unavailable, jobtelemetry.Unavailable{MetricPrefix: "storage.used", Reason: "runtime_not_supported"})
+		}
 	}
 	return snapshot, nil
 }

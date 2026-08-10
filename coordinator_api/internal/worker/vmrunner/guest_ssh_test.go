@@ -9,7 +9,9 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"syscall"
 	"testing"
@@ -145,6 +147,7 @@ func runExecOverChannel(ch ssh.Channel, command string) {
 	defer ch.Close()
 
 	cmd := exec.Command("sh", "-c", command)
+	cmd.Stdin = ch
 	cmd.Stdout = ch
 	cmd.Stderr = ch.Stderr()
 
@@ -221,8 +224,10 @@ func TestSSHTransport_RunsCommandAndReportsExitCode(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	session, err := transport.Start(ctx, server.addr, testCreds(),
-		[]string{"sh", "-c", "echo out-line; echo err-line >&2; exit 7"}, nil)
+	session, err := transport.Start(ctx, server.addr, testCreds(), GuestCommand{
+		Platform: GuestPlatformPOSIX,
+		Args:     []string{"sh", "-c", "echo out-line; echo err-line >&2; exit 7"},
+	})
 	if err != nil {
 		t.Fatalf("Start: %v", err)
 	}
@@ -254,8 +259,11 @@ func TestSSHTransport_InjectsEnv(t *testing.T) {
 	defer cancel()
 
 	env := map[string]string{"REACTORCIDE_TEST_VAR": "test-value-not-a-secret"}
-	session, err := transport.Start(ctx, server.addr, testCreds(),
-		[]string{"sh", "-c", "echo $REACTORCIDE_TEST_VAR"}, env)
+	session, err := transport.Start(ctx, server.addr, testCreds(), GuestCommand{
+		Platform: GuestPlatformPOSIX,
+		Args:     []string{"sh", "-c", "echo $REACTORCIDE_TEST_VAR"},
+		Env:      env,
+	})
 	if err != nil {
 		t.Fatalf("Start: %v", err)
 	}
@@ -274,6 +282,110 @@ func TestSSHTransport_InjectsEnv(t *testing.T) {
 	}
 }
 
+func TestSSHTransport_CreatesSensitiveFilesAndUsesWorkingDirectory(t *testing.T) {
+	server := startTestSSHServer(t)
+	transport := NewSSHTransport()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	workDir := t.TempDir()
+	credentialPath := filepath.Join(workDir, "auth", "credentials")
+	session, err := transport.Start(ctx, server.addr, testCreds(), GuestCommand{
+		Platform:   GuestPlatformPOSIX,
+		Args:       []string{"sh", "-c", "pwd; cat auth/credentials; stat -c %a auth/credentials"},
+		WorkingDir: workDir,
+		Files: []GuestFile{{
+			Path: credentialPath,
+			Data: []byte("test-credential-data"),
+			Mode: 0o600,
+		}},
+	})
+	if err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	defer session.Close()
+
+	stdout := readAll(t, session.Stdout())
+	if code, err := session.Wait(); err != nil || code != 0 {
+		t.Fatalf("Wait: code=%d err=%v stderr=%s", code, err, readAll(t, session.Stderr()))
+	}
+	if !strings.Contains(stdout, workDir) || !strings.Contains(stdout, "test-credential-data") || !strings.Contains(stdout, "600") {
+		t.Fatalf("stdout = %q, want working directory, file data, and mode", stdout)
+	}
+}
+
+func TestSSHTransport_StreamsSourceTree(t *testing.T) {
+	server := startTestSSHServer(t)
+	transport := NewSSHTransport()
+
+	sourceDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(sourceDir, "source.txt"), []byte("source-tree-data"), 0o640); err != nil {
+		t.Fatal(err)
+	}
+	destination := filepath.Join(t.TempDir(), "job", "src")
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	session, err := transport.Start(ctx, server.addr, testCreds(), GuestCommand{
+		Platform: GuestPlatformPOSIX,
+		Args:     []string{"cat", filepath.Join(destination, "source.txt")},
+		Trees: []GuestTree{{
+			SourcePath:  sourceDir,
+			Destination: destination,
+		}},
+	})
+	if err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	defer session.Close()
+
+	stdout := readAll(t, session.Stdout())
+	if code, err := session.Wait(); err != nil || code != 0 {
+		t.Fatalf("Wait: code=%d err=%v stderr=%s", code, err, readAll(t, session.Stderr()))
+	}
+	if strings.TrimSpace(stdout) != "source-tree-data" {
+		t.Fatalf("stdout = %q", stdout)
+	}
+}
+
+func TestSSHClientConfigRejectsInvalidHostKey(t *testing.T) {
+	_, err := sshClientConfig(GuestCreds{
+		User:          testSSHUser,
+		Password:      testSSHPassword,
+		HostPublicKey: []byte("not-a-public-key"),
+	}, time.Second)
+	if err == nil || !strings.Contains(err.Error(), "parse guest host public key") {
+		t.Fatalf("error = %v", err)
+	}
+}
+
+func TestWindowsBootstrap_QuotesInputsAndCreatesFiles(t *testing.T) {
+	script, err := windowsBootstrap(GuestCommand{
+		Platform:   GuestPlatformWindows,
+		Args:       []string{"cmd", "/c", "echo it's ready"},
+		Env:        map[string]string{"TOKEN": "value'with-quote"},
+		WorkingDir: `C:/reactorcide/job`,
+		Files: []GuestFile{{
+			Path: `C:/reactorcide/job/.reactorcide/vcs-auth/credentials`,
+			Data: []byte("credential-data"),
+		}},
+	}, `$env:TEMP/.reactorcide-test.pid`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, marker := range []string{
+		"[IO.File]::WriteAllBytes",
+		"$env:TOKEN='value''with-quote'",
+		"Set-Location -LiteralPath 'C:/reactorcide/job'",
+		"& 'cmd' '/c' 'echo it''s ready'",
+	} {
+		if !strings.Contains(script, marker) {
+			t.Fatalf("bootstrap is missing %q:\n%s", marker, script)
+		}
+	}
+}
+
 func TestSSHTransport_SignalTerminatesLongRunningCommand(t *testing.T) {
 	server := startTestSSHServer(t)
 	transport := NewSSHTransport()
@@ -281,8 +393,10 @@ func TestSSHTransport_SignalTerminatesLongRunningCommand(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	session, err := transport.Start(ctx, server.addr, testCreds(),
-		[]string{"sleep", "100"}, nil)
+	session, err := transport.Start(ctx, server.addr, testCreds(), GuestCommand{
+		Platform: GuestPlatformPOSIX,
+		Args:     []string{"sleep", "100"},
+	})
 	if err != nil {
 		t.Fatalf("Start: %v", err)
 	}
@@ -331,7 +445,7 @@ func TestSSHTransport_WaitIsSafeToCallMultipleTimes(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	session, err := transport.Start(ctx, server.addr, testCreds(), []string{"true"}, nil)
+	session, err := transport.Start(ctx, server.addr, testCreds(), GuestCommand{Platform: GuestPlatformPOSIX, Args: []string{"true"}})
 	if err != nil {
 		t.Fatalf("Start: %v", err)
 	}

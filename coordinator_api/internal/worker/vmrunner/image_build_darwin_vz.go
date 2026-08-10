@@ -96,7 +96,11 @@ func buildMacImage(ctx context.Context, opts MacImageBuildOptions) error {
 		if _, err := fmt.Fprintf(opts.LogWriter, "[provision %d/%d] starting\n", i+1, len(opts.Scripts)); err != nil {
 			return err
 		}
-		session, err := transport.Start(ctx, addr, opts.Creds, []string{"/bin/zsh", "-c", script}, map[string]string{"HOME": "/Users/" + opts.Creds.User})
+		session, err := transport.Start(ctx, addr, opts.Creds, GuestCommand{
+			Platform: GuestPlatformPOSIX,
+			Args:     []string{"/bin/zsh", "-c", script},
+			Env:      map[string]string{"HOME": "/Users/" + opts.Creds.User},
+		})
 		if err != nil {
 			return fmt.Errorf("vmrunner: start provision script %d: %w", i+1, err)
 		}
@@ -120,8 +124,11 @@ func buildMacImage(ctx context.Context, opts MacImageBuildOptions) error {
 		shutdownEnv["REACTORCIDE_SHUTDOWN_PASSWORD"] = opts.Creds.Password
 	}
 	shutdownScript := `sync; if sudo -n /sbin/shutdown -h now >/dev/null 2>&1; then exit 0; fi; if [ -n "${REACTORCIDE_SHUTDOWN_PASSWORD:-}" ]; then printf '%s\n' "$REACTORCIDE_SHUTDOWN_PASSWORD" | sudo -S -p '' /sbin/shutdown -h now; else exit 1; fi`
-	shutdown, err := transport.Start(ctx, addr, opts.Creds,
-		[]string{"/bin/zsh", "-c", shutdownScript}, shutdownEnv)
+	shutdown, err := transport.Start(ctx, addr, opts.Creds, GuestCommand{
+		Platform: GuestPlatformPOSIX,
+		Args:     []string{"/bin/zsh", "-c", shutdownScript},
+		Env:      shutdownEnv,
+	})
 	if err == nil {
 		go func() { _, _ = io.Copy(io.Discard, shutdown.Stdout()) }()
 		go func() { _, _ = io.Copy(io.Discard, shutdown.Stderr()) }()

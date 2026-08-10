@@ -32,7 +32,11 @@ type ResourceSample struct {
 
 const macOSMetricsCommand = `cpu=$(ps -A -o %cpu= | awk '{s+=$1} END {printf "%.2f", s+0}'); load=$(sysctl -n vm.loadavg | awk '{print $2}'); mt=$(sysctl -n hw.memsize); ncpu=$(sysctl -n hw.ncpu); fp=$(memory_pressure -Q | awk -F': ' '/free percentage/ {gsub(/%/, "", $2); print $2}'); mu=$(awk -v t="$mt" -v f="$fp" 'BEGIN {printf "%.0f", t*(100-f)/100}'); disk=$(df -k / | awk 'NR==2 {printf "%.0f %.0f", $2*1024, $3*1024}'); set -- $disk; printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$cpu" "$load" "$mu" "$mt" "$2" "$1" "$ncpu"`
 
+const macOSMetricsCommandWithoutStorage = `cpu=$(ps -A -o %cpu= | awk '{s+=$1} END {printf "%.2f", s+0}'); load=$(sysctl -n vm.loadavg | awk '{print $2}'); mt=$(sysctl -n hw.memsize); ncpu=$(sysctl -n hw.ncpu); fp=$(memory_pressure -Q | awk -F': ' '/free percentage/ {gsub(/%/, "", $2); print $2}'); mu=$(awk -v t="$mt" -v f="$fp" 'BEGIN {printf "%.0f", t*(100-f)/100}'); printf '%s\t%s\t%s\t%s\t0\t0\t%s\n' "$cpu" "$load" "$mu" "$mt" "$ncpu"`
+
 const windowsMetricsCommand = `$cpu=(Get-Counter '\Processor(_Total)\% Processor Time').CounterSamples.CookedValue; $os=Get-CimInstance Win32_OperatingSystem; $disk=Get-CimInstance Win32_LogicalDisk -Filter "DeviceID='C:'"; $mt=[uint64]$os.TotalVisibleMemorySize*1024; $mu=$mt-([uint64]$os.FreePhysicalMemory*1024); $committed=([uint64]$os.TotalVirtualMemorySize-[uint64]$os.FreeVirtualMemory)*1024; $swap=[Math]::Max(0,$committed-$mu); $du=[uint64]$disk.Size-[uint64]$disk.FreeSpace; Write-Output ([string]::Join([char]9,@(("{0:F2}" -f $cpu),0,$mu,$mt,$du,[uint64]$disk.Size,$committed,$swap,[uint64]$env:NUMBER_OF_PROCESSORS)))`
+
+const windowsMetricsCommandWithoutStorage = `$cpu=(Get-Counter '\Processor(_Total)\% Processor Time').CounterSamples.CookedValue; $os=Get-CimInstance Win32_OperatingSystem; $mt=[uint64]$os.TotalVisibleMemorySize*1024; $mu=$mt-([uint64]$os.FreePhysicalMemory*1024); $committed=([uint64]$os.TotalVirtualMemorySize-[uint64]$os.FreeVirtualMemory)*1024; $swap=[Math]::Max(0,$committed-$mu); Write-Output ([string]::Join([char]9,@(("{0:F2}" -f $cpu),0,$mu,$mt,0,0,$committed,$swap,[uint64]$env:NUMBER_OF_PROCESSORS)))`
 
 func (r *VMRunner) startMetrics(jobID string, job *vmJob) {
 	if err := os.MkdirAll(r.metricsDir, 0o700); err != nil {
@@ -86,26 +90,9 @@ func (r *VMRunner) stopMetrics(job *vmJob) {
 }
 
 func (r *VMRunner) sampleMetrics(ctx context.Context, jobID string, job *vmJob, dst io.Writer) {
-	sampleCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
-	defer cancel()
-	command := []string{"/bin/sh", "-c", macOSMetricsCommand}
-	if runtime.GOOS == "windows" {
-		command = []string{"powershell.exe", "-NoProfile", "-NonInteractive", "-Command", windowsMetricsCommand}
-	}
-	session, err := r.transport.Start(sampleCtx, job.addr, r.creds, command, nil)
+	sample, err := r.collectResourceSample(ctx, jobID, job, true)
 	if err != nil {
-		logging.Log.WithError(err).WithField("job_id", jobID).Debug("failed to start VM metrics sample")
-		return
-	}
-	stdout, readErr := io.ReadAll(io.LimitReader(session.Stdout(), 16*1024))
-	_, _ = io.Copy(io.Discard, io.LimitReader(session.Stderr(), 16*1024))
-	_, waitErr := session.Wait()
-	_ = session.Close()
-	if readErr != nil || waitErr != nil {
-		return
-	}
-	sample, err := parseResourceSample(strings.TrimSpace(string(stdout)), jobID, time.Now().UTC())
-	if err != nil {
+		logging.Log.WithError(err).WithField("job_id", jobID).Debug("failed to collect VM metrics sample")
 		return
 	}
 	encoded, err := json.Marshal(sample)
@@ -113,6 +100,50 @@ func (r *VMRunner) sampleMetrics(ctx context.Context, jobID string, job *vmJob, 
 		return
 	}
 	_, _ = fmt.Fprintf(dst, "%s\n", encoded)
+}
+
+func (r *VMRunner) collectResourceSample(ctx context.Context, jobID string, job *vmJob, includeStorage bool) (ResourceSample, error) {
+	sampleCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	platform := job.platform
+	if platform == "" {
+		if runtime.GOOS == "windows" {
+			platform = GuestPlatformWindows
+		} else {
+			platform = GuestPlatformPOSIX
+		}
+	}
+	metricsCommand := macOSMetricsCommandWithoutStorage
+	if includeStorage {
+		metricsCommand = macOSMetricsCommand
+	}
+	command := []string{"/bin/sh", "-c", metricsCommand}
+	if platform == GuestPlatformWindows {
+		metricsCommand = windowsMetricsCommandWithoutStorage
+		if includeStorage {
+			metricsCommand = windowsMetricsCommand
+		}
+		command = []string{"powershell.exe", "-NoProfile", "-NonInteractive", "-Command", metricsCommand}
+	}
+	session, err := r.transport.Start(sampleCtx, job.addr, r.creds, GuestCommand{Platform: platform, Args: command})
+	if err != nil {
+		return ResourceSample{}, fmt.Errorf("start guest metrics sample: %w", err)
+	}
+	stdout, readErr := io.ReadAll(io.LimitReader(session.Stdout(), 16*1024))
+	_, _ = io.Copy(io.Discard, io.LimitReader(session.Stderr(), 16*1024))
+	_, waitErr := session.Wait()
+	_ = session.Close()
+	if readErr != nil {
+		return ResourceSample{}, fmt.Errorf("read guest metrics sample: %w", readErr)
+	}
+	if waitErr != nil {
+		return ResourceSample{}, fmt.Errorf("wait for guest metrics sample: %w", waitErr)
+	}
+	sample, err := parseResourceSample(strings.TrimSpace(string(stdout)), jobID, time.Now().UTC())
+	if err != nil {
+		return ResourceSample{}, fmt.Errorf("parse guest metrics sample: %w", err)
+	}
+	return sample, nil
 }
 
 func parseResourceSample(line, jobID string, timestamp time.Time) (ResourceSample, error) {
@@ -162,24 +193,11 @@ func errorsJoin(errs ...error) error {
 	return nil
 }
 
-// LatestResourceSample reads the most recent complete local JSONL sample.
-// The adapter uses this during the transition to coordinator telemetry.
-func (r *VMRunner) LatestResourceSample(jobID string) (ResourceSample, bool, error) {
-	path, ok := r.MetricsPath(jobID)
+// SampleResource collects one resource sample directly from a running guest.
+func (r *VMRunner) SampleResource(ctx context.Context, jobID string, includeStorage bool) (ResourceSample, error) {
+	job, ok := r.getJob(jobID)
 	if !ok {
-		return ResourceSample{}, false, nil
+		return ResourceSample{}, fmt.Errorf("vmrunner: unknown job %q", jobID)
 	}
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return ResourceSample{}, false, err
-	}
-	lines := strings.Split(strings.TrimSpace(string(data)), "\n")
-	if len(lines) == 0 || lines[len(lines)-1] == "" {
-		return ResourceSample{}, false, nil
-	}
-	var sample ResourceSample
-	if err := json.Unmarshal([]byte(lines[len(lines)-1]), &sample); err != nil {
-		return ResourceSample{}, false, err
-	}
-	return sample, true, nil
+	return r.collectResourceSample(ctx, jobID, job, includeStorage)
 }

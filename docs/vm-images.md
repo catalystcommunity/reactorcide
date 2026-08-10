@@ -358,7 +358,8 @@ The VM runner writes one JSON object per line to:
 ```
 
 Set `REACTORCIDE_VM_METRICS_DIR` to change the directory. Set
-`REACTORCIDE_VM_METRICS_INTERVAL` to change the five-second sample interval.
+Set `REACTORCIDE_VM_METRICS_INTERVAL` to change the five-second interval for
+the optional local JSON Lines debug output.
 Each sample contains:
 
 - UTC timestamp

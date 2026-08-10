@@ -56,7 +56,7 @@ type WorkflowFinalizer interface {
 // DataStore is everything the ReactorcideWorker service implementations need
 // from the store: the enrollment/session primitives workerauth.Enrollment/
 // WorkerSessions consume, the worker/lease operations
-// postgres_store/worker_operations.go added (P2-A1), queue listing (for
+// from postgres_store/worker_operations.go, queue listing (for
 // characteristic matching), job read/guarded-transition, and secret-grant
 // lookup (reused, unchanged, from internal/worker's own authorization path).
 // This repo's consumer-defined-narrow-interface convention (see

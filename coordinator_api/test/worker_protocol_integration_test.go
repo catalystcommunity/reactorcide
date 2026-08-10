@@ -343,9 +343,8 @@ func TestWorkerProtocolIntegration(t *testing.T) {
 	require.False(t, lease.IsActive())
 }
 
-// TestWorkerProtocolIntegration_VCSAuth is the end-to-end touch for WORKERS_
-// PLAN.md Wave 3 P3c ("VCS checkout credentials through the worker lease"): a
-// job whose project has a configured GitHub VCS credential gets that
+// TestWorkerProtocolIntegration_VCSAuth verifies that a job whose project has
+// a configured GitHub VCS credential gets that
 // credential resolved into RequestJobResponse's Lease.vcs_auth over the REAL,
 // router-mounted CSIL-RPC dispatcher against real Postgres -- no actual git
 // clone needed, this only asserts the lease field is populated correctly and

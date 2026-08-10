@@ -11,7 +11,7 @@ import (
 )
 
 // AdmissionStore is the narrow store surface Admission and
-// SeedTrustedIdentitiesFromConfig consume, satisfied by Task A's
+// SeedTrustedIdentitiesFromConfig consume. It is satisfied by
 // postgres_store/auth_operations.go.
 type AdmissionStore interface {
 	// TrustedIdentityExists reports whether an exact auth_trusted_identities
@@ -113,8 +113,8 @@ func (a *Admission) compiledPatterns(ctx context.Context) ([]*regexp.Regexp, err
 
 // ValidateDomainPattern compiles pattern as an RE2 (Go regexp) pattern,
 // returning an error if it doesn't compile. Callers that write
-// auth_trusted_domain_patterns rows (the add-trusted-domain-pattern CSIL op,
-// Wave 3) must call this before persisting a pattern.
+// auth_trusted_domain_patterns rows must call this before they persist a
+// pattern.
 //
 // Validation compiles the pattern wrapped exactly the way compiledPatterns
 // wraps it for matching (full-string anchored — see

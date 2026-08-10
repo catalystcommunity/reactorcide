@@ -20,8 +20,8 @@ import (
 // precedence order the deleted internal/worker/vcs_checkout_auth.go's
 // (*JobProcessor).resolveVCSCheckoutToken used: highest-precedence active
 // project_vcs_credentials rotation row -> project's static ref -> owning
-// user/org's ref -> global deployment config. Only the JobProcessor glue was
-// deleted (P3b removed the direct-corndogs worker); the resolution logic
+// user/org's ref -> global deployment config. The old JobProcessor glue was
+// deleted with the direct Corndogs worker. The resolution logic
 // itself lives on unchanged in internal/vcs and is reused here verbatim, just
 // moved coordinator-side and narrowed to the job's single primary checkout
 // URL (job.SourceURL, falling back to the denormalized job.VCSRepo) instead

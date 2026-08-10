@@ -83,7 +83,7 @@ func orgAdminCaps() Caps {
 }
 
 // Capabilities computes id's full Caps at scope. mode is read from
-// auth.CurrentMode (Task C) to apply the anonymous-caller rows: in ModeNone,
+// auth.CurrentMode to apply the anonymous-caller rows. In ModeNone,
 // every caller is anonymous and may Cancel and Retry (trusted-LAN posture)
 // but nothing else; in local-rp/rp mode, an anonymous (not-logged-in) caller
 // gets an all-false Caps (view-public is implicit and unconditional, and is

@@ -4,13 +4,15 @@ package jobtelemetry
 import "time"
 
 const (
-	ObjectPrefix       = "telemetry/v1/jobs"
-	MaxSeriesPerBatch  = 256
-	MaxSamplesPerBatch = 120
-	MaxValuesPerSample = 512
-	MaxLabelsPerSeries = 8
-	DefaultMaxPoints   = 600
-	MaxPointsPerSeries = 2000
+	ObjectPrefix         = "telemetry/v1/jobs"
+	MaxSeriesPerBatch    = 256
+	MaxSamplesPerBatch   = 120
+	MaxValuesPerSample   = 512
+	MaxLabelsPerSeries   = 8
+	MaxEncodedBatchBytes = 1 << 20
+	DefaultMaxPoints     = 600
+	MaxPointsPerSeries   = 2000
+	MaxTotalPoints       = 20000
 )
 
 type Label struct {

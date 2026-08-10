@@ -1,7 +1,7 @@
 -- +goose Up
 -- Workers: registration, auth, protocol ( "Workers --
--- registration, auth, protocol", "Schema"). Five tables land together here
--- (Wave-2 P2-A): worker_pools (admin grouping only -- pools do NOT
+-- registration, auth, protocol", "Schema"). Five tables land together here:
+-- worker_pools (admin grouping only -- pools do NOT
 -- participate in characteristic matching), pool_enrollment_tokens (the only
 -- human-handled worker credential, hash-only per checkauth.HashAPIToken),
 -- workers (one row per enrolled worker process, upserted by worker_key),
@@ -11,7 +11,7 @@
 -- column).
 --
 -- Numbered 000022: 000020 (queues) and 000021 (job resources) already exist
--- from Wave 1; goose.WithAllowMissing() (see cmd/migrate.go) tolerates this
+-- already exist; goose.WithAllowMissing() (see cmd/migrate.go) tolerates this
 -- landing after other in-flight branches, so the number only needs to be
 -- unique and greater than what's already applied.
 

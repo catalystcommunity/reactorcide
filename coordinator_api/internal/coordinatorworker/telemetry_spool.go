@@ -27,73 +27,118 @@ func telemetrySpoolRoot(dataDir string) string {
 	return filepath.Join(dataDir, "telemetry")
 }
 
-func persistAndSendLog(c client, dataDir string, req csilapi.AppendLogBatchRequest) error {
+func persistAndSendLog(c client, dataDir string, maxRecords int, req csilapi.AppendLogBatchRequest) (bool, error) {
 	record := spoolRecord{Kind: "log", Log: &req}
-	path, err := writeSpoolRecord(dataDir, req.LeaseId, "log-"+req.Stream, req.Sequence, record)
+	path, dropped, err := writeSpoolRecord(dataDir, req.LeaseId, "log-"+req.Stream, req.Sequence, maxRecords, record)
 	if err != nil {
-		return err
+		return dropped, err
 	}
 	if _, err := c.AppendLogBatch(context.Background(), req); err != nil {
-		return err
+		return dropped, err
 	}
-	return removeSpoolRecord(path)
+	return dropped, removeSpoolRecord(path)
 }
 
-func persistAndSendMetrics(c client, dataDir string, req csilapi.AppendMetricBatchRequest) error {
+func persistAndSendMetrics(c client, dataDir string, maxRecords int, req csilapi.AppendMetricBatchRequest) (bool, error) {
 	record := spoolRecord{Kind: "metrics", Metrics: &req}
-	path, err := writeSpoolRecord(dataDir, req.LeaseId, "metrics", req.Sequence, record)
+	path, dropped, err := writeSpoolRecord(dataDir, req.LeaseId, "metrics", req.Sequence, maxRecords, record)
 	if err != nil {
-		return err
+		return dropped, err
 	}
 	if _, err := c.AppendMetricBatch(context.Background(), req); err != nil {
-		return err
+		return dropped, err
 	}
-	return removeSpoolRecord(path)
+	return dropped, removeSpoolRecord(path)
 }
 
-func writeSpoolRecord(dataDir, leaseID, kind string, sequence int64, record spoolRecord) (string, error) {
+func writeSpoolRecord(dataDir, leaseID, kind string, sequence int64, maxRecords int, record spoolRecord) (string, bool, error) {
 	root := telemetrySpoolRoot(dataDir)
 	if root == "" {
-		return "", nil
+		return "", false, nil
 	}
 	dir := filepath.Join(root, safeSpoolName(leaseID))
 	if err := os.MkdirAll(dir, 0o700); err != nil {
-		return "", fmt.Errorf("create telemetry spool: %w", err)
+		return "", false, fmt.Errorf("create telemetry spool: %w", err)
 	}
 	data, err := json.Marshal(record)
 	if err != nil {
-		return "", fmt.Errorf("encode telemetry spool: %w", err)
+		return "", false, fmt.Errorf("encode telemetry spool: %w", err)
 	}
 	path := filepath.Join(dir, fmt.Sprintf("%s-%020d.json", safeSpoolName(kind), sequence))
 	tmp, err := os.CreateTemp(dir, ".telemetry-*")
 	if err != nil {
-		return "", fmt.Errorf("create telemetry spool record: %w", err)
+		return "", false, fmt.Errorf("create telemetry spool record: %w", err)
 	}
 	tmpPath := tmp.Name()
 	defer os.Remove(tmpPath)
 	if err := tmp.Chmod(0o600); err != nil {
 		tmp.Close()
-		return "", err
+		return "", false, err
 	}
 	if _, err := tmp.Write(data); err != nil {
 		tmp.Close()
-		return "", fmt.Errorf("write telemetry spool record: %w", err)
+		return "", false, fmt.Errorf("write telemetry spool record: %w", err)
 	}
 	if err := tmp.Sync(); err != nil {
 		tmp.Close()
-		return "", fmt.Errorf("sync telemetry spool record: %w", err)
+		return "", false, fmt.Errorf("sync telemetry spool record: %w", err)
 	}
 	if err := tmp.Close(); err != nil {
-		return "", err
+		return "", false, err
 	}
 	if err := os.Rename(tmpPath, path); err != nil {
-		return "", fmt.Errorf("publish telemetry spool record: %w", err)
+		return "", false, fmt.Errorf("publish telemetry spool record: %w", err)
 	}
 	if directory, openErr := os.Open(dir); openErr == nil {
 		_ = directory.Sync()
 		_ = directory.Close()
 	}
-	return path, nil
+	dropped, err := enforceSpoolLimit(dir, maxRecords, path)
+	return path, dropped, err
+}
+
+func enforceSpoolLimit(dir string, maxRecords int, keepPath string) (bool, error) {
+	if maxRecords <= 0 {
+		maxRecords = 12
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return false, err
+	}
+	type candidate struct {
+		path string
+		mod  time.Time
+	}
+	files := make([]candidate, 0, len(entries))
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".json") {
+			continue
+		}
+		info, infoErr := entry.Info()
+		if infoErr != nil {
+			return false, infoErr
+		}
+		files = append(files, candidate{path: filepath.Join(dir, entry.Name()), mod: info.ModTime()})
+	}
+	sort.Slice(files, func(i, j int) bool {
+		if files[i].mod.Equal(files[j].mod) {
+			return files[i].path < files[j].path
+		}
+		return files[i].mod.Before(files[j].mod)
+	})
+	dropped := false
+	for len(files) > maxRecords {
+		index := 0
+		if files[index].path == keepPath && len(files) > 1 {
+			index = 1
+		}
+		if err := os.Remove(files[index].path); err != nil && !os.IsNotExist(err) {
+			return dropped, err
+		}
+		files = append(files[:index], files[index+1:]...)
+		dropped = true
+	}
+	return dropped, nil
 }
 
 func removeSpoolRecord(path string) error {

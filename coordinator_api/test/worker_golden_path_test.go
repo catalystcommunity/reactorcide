@@ -1,6 +1,6 @@
 package test
 
-// TestWorkerGoldenPathE2E is the Wave-5 P5 closeout test
+// TestWorkerGoldenPathE2E is the worker golden-path test
 // for.GetAppMuxWithClient -> uiapi.NewHandlerWithWorker) against real
 // Postgres (this package's shared testcontainers instance) and a shared
 // in-memory Corndogs backend (see newIntegrationCorndogsClient in

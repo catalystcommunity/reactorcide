@@ -308,8 +308,7 @@ func TestIsBackendImplemented(t *testing.T) {
 		{"DOCKER", true},     // case insensitive
 		{"KUBERNETES", true}, // case insensitive
 		{"CONTAINERD", true}, // case insensitive
-		// "vm" is OS-dependent (real only on darwin/windows once VM-3/VM-4
-		// land) -- see TestIsBackendImplemented_VM_MatchesOS in
+		// "vm" is OS-dependent. See TestIsBackendImplemented_VM_MatchesOS in
 		// vm_adapter_test.go for the GOOS-aware assertion; this table only
 		// asserts it's a recognized name, not a fixed true/false.
 	}

@@ -50,13 +50,13 @@ Corndogs, and the object store.
 
 ### Worker
 
-A worker is an execution agent. It:
+A worker runs and monitors job execution. It:
 
 - Enrolls with a coordinator.
 - Advertises its operating system, architecture, and custom
   characteristics.
 - Requests work from the coordinator.
-- Starts and stops job containers.
+- Starts and stops job containers or guest VMs.
 - Sends logs, status, and results to the coordinator.
 
 A worker does not connect directly to PostgreSQL, Corndogs, or the object

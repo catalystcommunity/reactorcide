@@ -44,7 +44,7 @@ type summaryFS struct {
 	UsedBytes      *uint64 `json:"usedBytes"`
 }
 
-func (kr *KubernetesRunner) SampleResources(ctx context.Context, jobName string) (ResourceSnapshot, error) {
+func (kr *KubernetesRunner) SampleResources(ctx context.Context, jobName string, options ResourceSampleOptions) (ResourceSnapshot, error) {
 	pods, err := kr.clientset.CoreV1().Pods(kr.namespace).List(ctx, metav1.ListOptions{
 		LabelSelector: fmt.Sprintf("reactorcide.io/job-name=%s", jobName),
 	})
@@ -67,8 +67,10 @@ func (kr *KubernetesRunner) SampleResources(ctx context.Context, jobName string)
 		snapshot.Unavailable = append(snapshot.Unavailable,
 			jobtelemetry.Unavailable{MetricPrefix: "cpu.usage", Reason: "metric_api_not_installed"},
 			jobtelemetry.Unavailable{MetricPrefix: "memory.usage", Reason: "metric_api_not_installed"},
-			jobtelemetry.Unavailable{MetricPrefix: "storage.used", Reason: "permission_denied"},
 		)
+		if options.IncludeStorage {
+			snapshot.Unavailable = append(snapshot.Unavailable, jobtelemetry.Unavailable{MetricPrefix: "storage.used", Reason: "permission_denied"})
+		}
 		return snapshot, nil
 	}
 	metricData, metricErr := restClient.Get().AbsPath(
@@ -110,6 +112,9 @@ func (kr *KubernetesRunner) SampleResources(ctx context.Context, jobName string)
 			jobtelemetry.Unavailable{MetricPrefix: "cpu.usage", Reason: "metric_api_not_installed"},
 			jobtelemetry.Unavailable{MetricPrefix: "memory.usage", Reason: "metric_api_not_installed"},
 		)
+	}
+	if !options.IncludeStorage {
+		return snapshot, nil
 	}
 	if pod.Spec.NodeName == "" {
 		snapshot.Unavailable = append(snapshot.Unavailable, jobtelemetry.Unavailable{MetricPrefix: "storage.used", Reason: "not_applicable"})

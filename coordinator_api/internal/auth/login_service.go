@@ -33,7 +33,7 @@ const (
 
 // UserProvisionStore is the narrow store surface LoginService's
 // identity->user provisioning and first-admin/bootstrap-admin grants
-// consume, satisfied by Task A's postgres_store/auth_operations.go and
+// consume, satisfied by postgres_store/auth_operations.go and
 // rbac_operations.go plus the existing user CRUD.
 type UserProvisionStore interface {
 	GetAuthIdentityBySubject(ctx context.Context, subject string) (*models.AuthIdentity, error)

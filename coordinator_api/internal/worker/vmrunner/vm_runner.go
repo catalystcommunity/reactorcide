@@ -7,7 +7,6 @@ import (
 	"io"
 	"net"
 	"os"
-	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
@@ -43,6 +42,13 @@ type JobConfig struct {
 	// JobConfig.Env) -- implementations must never log these values.
 	Env map[string]string
 
+	// Platform selects the guest command bootstrap. WorkingDir and Files are
+	// created or applied inside the guest before Command starts.
+	Platform   GuestPlatform
+	WorkingDir string
+	Files      []GuestFile
+	Trees      []GuestTree
+
 	// CPURequest/CPULimit/MemoryLimit are Kubernetes-style quantity
 	// strings, same grammar as worker.JobConfig (see internal/resources).
 	// CPULimit wins over CPURequest when mapping to BootSpec.CPUs.
@@ -60,6 +66,7 @@ type vmJob struct {
 	handle        string
 	addr          GuestAddr
 	session       GuestSession
+	platform      GuestPlatform
 	metricsMu     sync.Mutex
 	metricsCancel context.CancelFunc
 	metricsDone   chan struct{}
@@ -113,9 +120,8 @@ func WithMetrics(dir string, interval time.Duration) Option {
 	}
 }
 
-// New builds a VMRunner from explicit collaborators. Tests use this
-// directly with fakes/loopback doubles; NewDefault is the production
-// convenience constructor.
+// New builds a VMRunner from explicit collaborators. Tests use this directly
+// with fakes and loopback doubles.
 func New(images ImageSource, lifecycle VMLifecycle, transport GuestTransport, creds GuestCreds, opts ...Option) *VMRunner {
 	r := &VMRunner{
 		images:               images,
@@ -182,7 +188,14 @@ func (r *VMRunner) SpawnJob(ctx context.Context, config *JobConfig) (string, err
 		return "", fmt.Errorf("guest transport unreachable: %w", err)
 	}
 
-	session, err := r.transport.Start(ctx, addr, r.creds, config.Command, config.Env)
+	session, err := r.transport.Start(ctx, addr, r.creds, GuestCommand{
+		Platform:   config.Platform,
+		Args:       config.Command,
+		Env:        config.Env,
+		WorkingDir: config.WorkingDir,
+		Files:      config.Files,
+		Trees:      config.Trees,
+	})
 	if err != nil {
 		r.destroyBestEffort(handle)
 		return "", fmt.Errorf("start guest session: %w", err)
@@ -190,7 +203,7 @@ func (r *VMRunner) SpawnJob(ctx context.Context, config *JobConfig) (string, err
 
 	id := uuid.New().String()
 	r.mu.Lock()
-	job := &vmJob{handle: handle, addr: addr, session: session}
+	job := &vmJob{handle: handle, addr: addr, session: session, platform: config.Platform}
 	r.jobs[id] = job
 	r.mu.Unlock()
 	if r.metricsDir != "" && r.metricsInterval > 0 {
@@ -317,14 +330,6 @@ func (r *VMRunner) MetricsPath(jobID string) (string, bool) {
 	return job.metricsPath, true
 }
 
-// DefaultMetricsDir returns the durable local directory for VM job samples.
-func DefaultMetricsDir() string {
-	if home, err := os.UserHomeDir(); err == nil && home != "" {
-		return filepath.Join(home, ".local", "state", "reactorcide", "vm-metrics")
-	}
-	return filepath.Join(".reactorcide", "vm-metrics")
-}
-
 func safeMetricName(jobID string) string {
 	jobID = strings.TrimSpace(jobID)
 	if jobID == "" {
@@ -365,10 +370,47 @@ func validateJobConfig(config *JobConfig) error {
 	if len(config.Command) == 0 {
 		return errors.New("command is required")
 	}
+	if config.Platform != "" && config.Platform != GuestPlatformPOSIX && config.Platform != GuestPlatformWindows {
+		return fmt.Errorf("unsupported guest platform %q", config.Platform)
+	}
 	if config.JobID == "" {
 		return errors.New("job ID is required")
 	}
+	platform := config.Platform
+	if platform == "" {
+		platform = GuestPlatformPOSIX
+	}
+	for _, file := range config.Files {
+		if err := validateGuestFile(file); err != nil {
+			return err
+		}
+		if !isAbsoluteGuestPath(platform, file.Path) {
+			return fmt.Errorf("guest file path must be absolute: %q", file.Path)
+		}
+	}
+	for _, tree := range config.Trees {
+		info, err := os.Stat(tree.SourcePath)
+		if err != nil {
+			return fmt.Errorf("inspect guest tree source: %w", err)
+		}
+		if !info.IsDir() {
+			return errors.New("guest tree source must be a directory")
+		}
+		if !isAbsoluteGuestPath(platform, tree.Destination) {
+			return fmt.Errorf("guest tree destination must be absolute: %q", tree.Destination)
+		}
+		if strings.ContainsAny(tree.Destination, "\x00\r\n") || (platform == GuestPlatformWindows && strings.Contains(tree.Destination, `"`)) {
+			return errors.New("guest tree destination contains unsupported characters")
+		}
+	}
 	return nil
+}
+
+func isAbsoluteGuestPath(platform GuestPlatform, path string) bool {
+	if platform == GuestPlatformWindows {
+		return len(path) >= 3 && ((path[0] >= 'A' && path[0] <= 'Z') || (path[0] >= 'a' && path[0] <= 'z')) && path[1] == ':' && (path[2] == '/' || path[2] == '\\')
+	}
+	return strings.HasPrefix(path, "/")
 }
 
 // cpuCount maps JobConfig's Kubernetes-style CPU quantity strings to a

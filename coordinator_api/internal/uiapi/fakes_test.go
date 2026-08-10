@@ -16,7 +16,7 @@ import (
 // fakeStore is an in-memory implementation of uiapi.DataStore, following
 // this repo's convention of consumer-defined narrow interfaces backed by
 // hand-rolled fakes in tests (see internal/auth/fakes_test.go, which this
-// mirrors and extends to the much larger surface Task G's DataStore needs:
+// mirrors and extends to the larger surface that DataStore needs:
 // projects, jobs, workflows, groups, role assignments, sessions, login
 // attempts, auth identities, trusted identities/domain patterns, global
 // settings, webhook-secret/vcs-credential rotation, and secret grants). No

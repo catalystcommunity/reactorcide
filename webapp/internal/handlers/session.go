@@ -26,7 +26,7 @@ const authConfigTTL = 5 * time.Second
 // threaded into every page's template data as .Session and available to
 // handlers via (*WebHandler).sessionInfo. It is never authoritative — the
 // coordinator is the sole authorizer of every mutating action; SessionInfo
-// only drives what the webapp renders (nav bar, and — for Task I — which
+// only drives what the webapp renders (the nav bar and which
 // management buttons/forms to show at all). It deliberately does not carry
 // the raw session token; handlers needing to make an authenticated CSIL call
 // on behalf of the browser should use (*WebHandler).authContext instead.
@@ -268,7 +268,7 @@ func (h *WebHandler) clearSessionCookie(w http.ResponseWriter) {
 // nil/empty), for pages — job/workflow detail — that need capability bits
 // specific to that project's owner/org rather than the request-wide
 // SessionInfo.Caps. Used today only to compute CanCancel/CanKill for
-// job/workflow detail template data; Task I's project pages can reuse it the
+// job and workflow detail template data. Project pages can reuse it the
 // same way. Errors are logged and treated as "no capabilities" (safe
 // default: nothing renders as allowed).
 func (h *WebHandler) capabilitiesForProject(r *http.Request, projectID *string) csilapi.GetCapabilitiesResponse {

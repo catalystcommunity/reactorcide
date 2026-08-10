@@ -38,7 +38,7 @@ const (
 	// internal/auth's sessionTouchThrottle so routine heartbeat/RequestJob
 	// polling doesn't hammer worker_sessions on every call. This throttles
 	// the *last_seen_at bookkeeping write*, not session expiry -- expiry
-	// extension happens explicitly in Heartbeat's caller (P2-A2), not here.
+	// extension happens explicitly in Heartbeat's caller, not here.
 	sessionTouchThrottle = 5 * time.Minute
 )
 

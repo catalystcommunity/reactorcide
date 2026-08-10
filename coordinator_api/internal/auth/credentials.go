@@ -10,8 +10,8 @@ import (
 )
 
 // CredentialStore is the narrow store surface StoreCredential/LoadCredential
-// consume: the ctx-scoped auth_credentials CRUD from Task A
-// (postgres_store/auth_operations.go), plus direct *gorm.DB access to
+// consume: the context-scoped auth_credentials CRUD from
+// postgres_store/auth_operations.go, plus direct *gorm.DB access to
 // resolve master_keys rows by name/id. The direct-DB half mirrors how
 // internal/secrets/master_keys.go itself already operates (e.g.
 // GetOrgEncryptionKey(db, orgID)) rather than going through the Store

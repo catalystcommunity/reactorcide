@@ -3,7 +3,7 @@
 // the identity/RBAC model, the permission matrix, and resource visibility.
 //
 // This package deliberately knows nothing about HTTP, CSIL-RPC, or session
-// tokens — callers (REST handlers today, the CSIL UI service in Wave 3) are
+// tokens. Callers, such as REST handlers and the CSIL UI service, are
 // responsible for resolving a caller down to an authz.Identity (see
 // IdentityFromUser) and passing it in on every call. Every store dependency
 // here is a narrow, consumer-defined interface (this repo's convention — see

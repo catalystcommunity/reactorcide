@@ -95,7 +95,7 @@ func testPostEnvelope(t *testing.T, srv *httptest.Server, body []byte) testRespo
 // -> HTTP POST -> Handler.ServeHTTP -> decode request -> route ->
 // StubAuth.GetAuthConfig -> ServiceErr -> encode "ServiceError" response ->
 // decode response) with the stub implementations mounted, exactly as they
-// are in the coordinator router before Task G lands.
+// are in the coordinator router.
 func TestDispatcher_StubReturnsUnimplemented(t *testing.T) {
 	h := NewHandler(NewStubAuth(), NewStubUi())
 	srv := httptest.NewServer(h)
@@ -231,8 +231,7 @@ func TestDispatcher_RealImplementationReturnsData(t *testing.T) {
 // TestDispatcher_AuthTokenPropagatesToContext proves the envelope "auth"
 // field reaches the implementation via AuthTokenFromContext, and that an
 // envelope with no "auth" field leaves the implementation unauthenticated —
-// the mechanism Task G's authorization checks and Task H's session
-// forwarding both depend on.
+// the mechanism that authorization checks and session forwarding use.
 func TestDispatcher_AuthTokenPropagatesToContext(t *testing.T) {
 	h := NewHandler(fakeAuth{}, NewStubUi())
 	srv := httptest.NewServer(h)

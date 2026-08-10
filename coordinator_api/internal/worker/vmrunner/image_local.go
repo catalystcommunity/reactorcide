@@ -9,10 +9,8 @@ import (
 )
 
 // LocalImageSource resolves an imageRef to a pre-placed base image file on
-// local disk. This bootstraps the "vm" backend (VM-1/VM-3) before the
-// OCI-backed ImageSource (VM-2, oras.land/oras-go/v2 pulling from an OCI
-// registry) lands with the same interface -- swapping one for the other
-// needs no VMRunner change, just a different ImageSource passed to New.
+// local disk. OCIImageSource implements the same interface. A caller can
+// select either source without a VMRunner change.
 type LocalImageSource struct {
 	// BaseDir is where a relative imageRef is resolved from, e.g.
 	// imageRef "macos-14-base.img" -> filepath.Join(BaseDir,

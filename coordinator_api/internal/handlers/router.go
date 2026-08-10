@@ -938,7 +938,7 @@ func startWorkerLeaseReaperOnce(svc *workerapi.WorkerService) {
 	})
 }
 
-// buildWorkerAPIDeps wires the CSIL Worker service's dependencies (P2-A2),
+// buildWorkerAPIDeps wires the CSIL Worker service's dependencies,
 // reusing the exact same store/corndogs/key-manager/object-store singletons
 // buildUIAPIDeps wires for the sibling ReactorcideAuth/ReactorcideUi service,
 // plus a dedicated pubsub.Publisher built the same way other coordinator-side
@@ -951,7 +951,7 @@ func buildWorkerAPIDeps(workerStore workerapi.DataStore, corndogsClient corndogs
 	return workerapi.NewDeps(workerStore, corndogsClient, enrollment, sessions, keyManager, objectStore, publisher)
 }
 
-// buildUIAPIDeps wires the CSIL UI service's dependencies (Task G): seeds the
+// buildUIAPIDeps wires the CSIL UI service's dependencies. It seeds the
 // trusted-identity admission list from config, selects a LoginBackend
 // matching auth.CurrentMode() (falling back to the none-mode sentinel backend
 // — login unavailable, but every other op still works — if the configured

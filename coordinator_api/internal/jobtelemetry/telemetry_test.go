@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"testing"
 	"time"
 
@@ -125,6 +126,42 @@ func TestValidateMetricBatchRejectsUnknownLabelsAndFutureSamples(t *testing.T) {
 	batch.Samples = []Sample{{ObservedAt: now.Add(6 * time.Minute), Values: []Value{{SeriesID: 1, Value: 1}}}}
 	if err := ValidateMetricBatch(&batch, now); err == nil {
 		t.Fatal("expected a future sample to be rejected")
+	}
+	batch.Samples[0].ObservedAt = now.Add(-25 * time.Hour)
+	if err := ValidateMetricBatch(&batch, now); err == nil {
+		t.Fatal("expected an old sample to be rejected")
+	}
+}
+
+func TestQueryMetricsCapsTotalPointsAcrossSeries(t *testing.T) {
+	ctx := context.Background()
+	store := objects.NewMemoryObjectStore()
+	now := time.Now().UTC().Add(-time.Hour)
+	definitions := make([]SeriesDefinition, 20)
+	for index := range definitions {
+		definitions[index] = SeriesDefinition{SeriesID: int64(index), Name: "memory.usage", Unit: "bytes", Kind: "gauge", Labels: []Label{{Key: "component", Value: fmt.Sprintf("component-%d", index)}}}
+	}
+	samples := make([]Sample, 1500)
+	for sampleIndex := range samples {
+		values := make([]Value, len(definitions))
+		for seriesIndex := range definitions {
+			values[seriesIndex] = Value{SeriesID: int64(seriesIndex), Value: int64(sampleIndex)}
+		}
+		samples[sampleIndex] = Sample{ObservedAt: now.Add(time.Duration(sampleIndex) * time.Second), Values: values}
+	}
+	if err := PutMetricBatch(ctx, store, "job-total-limit", MetricBatch{LeaseID: "lease", Series: definitions, Samples: samples}); err != nil {
+		t.Fatal(err)
+	}
+	response, err := QueryMetrics(ctx, store, Query{JobID: "job-total-limit", MaxPoints: MaxPointsPerSeries})
+	if err != nil {
+		t.Fatal(err)
+	}
+	total := 0
+	for _, series := range response.Series {
+		total += len(series.Points)
+	}
+	if total > MaxTotalPoints {
+		t.Fatalf("query returned %d points, limit is %d", total, MaxTotalPoints)
 	}
 }
 

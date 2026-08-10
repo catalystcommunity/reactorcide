@@ -93,6 +93,9 @@ func ValidateMetricBatch(batch *MetricBatch, now time.Time) error {
 		if sample.ObservedAt.After(now.Add(5 * time.Minute)) {
 			return errors.New("sample timestamp is too far in the future")
 		}
+		if sample.ObservedAt.Before(now.Add(-24 * time.Hour)) {
+			return errors.New("sample timestamp is too old")
+		}
 		if len(sample.Values) > MaxValuesPerSample {
 			return fmt.Errorf("sample values exceeds limit %d", MaxValuesPerSample)
 		}

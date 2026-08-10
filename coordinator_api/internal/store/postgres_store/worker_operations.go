@@ -510,8 +510,8 @@ func (ps PostgresDbStore) RevokeWorkerSession(ctx context.Context, sessionID str
 }
 
 // DeleteExpiredWorkerSessions deletes worker sessions whose expires_at has
-// passed, returning the number of rows removed. Housekeeping primitive for a
-// future scheduled reaper -- P2-A does not wire a caller for this yet.
+// passed, returning the number of rows removed. It is a housekeeping primitive
+// for a scheduled reaper.
 func (ps PostgresDbStore) DeleteExpiredWorkerSessions(ctx context.Context) (int64, error) {
 	result := ps.getDB(ctx).Where("expires_at < ?", time.Now().UTC()).Delete(&models.WorkerSession{})
 	if result.Error != nil {
@@ -537,8 +537,8 @@ func (ps PostgresDbStore) CreateWorkerLease(ctx context.Context, workerID, jobID
 	return lease, nil
 }
 
-// GetWorkerLeaseByID retrieves a worker lease by its primary key. Added
-// alongside internal/workerapi (P2-A2): AppendLogs/ReportResult need to
+// GetWorkerLeaseByID retrieves a worker lease by its primary key. AppendLogs
+// and ReportResult use it to
 // resolve a lease_id from the CSIL-RPC request into its owning worker/job
 // before acting on it, which none of the existing list-scoped lease queries
 // (ListActiveLeasesForWorker/ListStaleActiveLeases) provide.

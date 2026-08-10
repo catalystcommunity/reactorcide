@@ -169,9 +169,10 @@ type fakeRunner struct {
 	// Cleanup would.
 	CleanupFunc func(id string) error
 
-	SpawnCalls   []*worker.JobConfig
-	StopCalls    []fakeStopCall
-	CleanupCalls []string
+	SpawnCalls    []*worker.JobConfig
+	StopCalls     []fakeStopCall
+	CleanupCalls  []string
+	SampleOptions []worker.ResourceSampleOptions
 }
 
 type fakeStopCall struct {
@@ -233,7 +234,10 @@ func (f *fakeRunner) Cleanup(ctx context.Context, jobID string) error {
 	return nil
 }
 
-func (f *fakeRunner) SampleResources(ctx context.Context, jobID string) (worker.ResourceSnapshot, error) {
+func (f *fakeRunner) SampleResources(ctx context.Context, jobID string, options worker.ResourceSampleOptions) (worker.ResourceSnapshot, error) {
+	f.mu.Lock()
+	f.SampleOptions = append(f.SampleOptions, options)
+	f.mu.Unlock()
 	return worker.ResourceSnapshot{}, nil
 }
 

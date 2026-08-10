@@ -1,5 +1,3 @@
-//go:build darwin
-
 package vmrunner
 
 import (
@@ -17,9 +15,8 @@ const defaultDHCPLeasesPath = "/var/db/dhcpd_leases"
 
 // parseDHCPLeases scans a macOS dhcpd_leases file for the lease whose
 // hardware address matches mac and returns its ip_address. It lives in a
-// plain //go:build darwin file (no "vz" tag) on purpose so the parser -- the
-// one piece of the darwin lifecycle with fiddly text handling -- can be unit
-// tested on a Mac without needing the Cgo/vz toolchain or an actual VM.
+// platform-neutral file so tests can run without the Cgo/vz toolchain or an
+// actual VM.
 //
 // The file bootpd writes looks like:
 //

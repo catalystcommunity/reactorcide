@@ -1,8 +1,7 @@
 package workerapi
 
-// This file closes a genuine test-coverage gap found while writing.go's
-// RunLeaseReaper/ reapStaleLeases (owned by P2-A2, "lease reaper") had zero
-// test coverage anywhere in the repo, despite being wired into the
+// This file covers RunLeaseReaper and reapStaleLeases. These functions had no
+// test coverage, despite being wired into the
 // coordinator's startup path (handlers/router.go's
 // startWorkerLeaseReaperOnce) and despite P5's own scope explicitly calling
 // out "lease-expiry-requeue" as integration surface to cover. The reaper

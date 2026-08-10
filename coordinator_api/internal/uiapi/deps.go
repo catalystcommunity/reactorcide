@@ -13,7 +13,7 @@ import (
 )
 
 // Deps is the shared dependency bag every ReactorcideAuth/ReactorcideUi op
-// implementation (Task G) is built against: the store, the authz role
+// implementation uses: the store, the authz role
 // resolver, the auth session/login/admission machinery, the secrets master
 // key manager (for rotation/secret ops), and the corndogs client (for
 // cancel/kill). One Deps is constructed once at startup (see

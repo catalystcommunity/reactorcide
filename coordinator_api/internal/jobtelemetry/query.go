@@ -105,7 +105,18 @@ func QueryMetrics(ctx context.Context, store objects.ObjectStore, query Query) (
 		keys = append(keys, key)
 	}
 	sort.Strings(keys)
+	seriesPointLimit := maxPoints
+	if len(keys) > 0 && seriesPointLimit*len(keys) > MaxTotalPoints {
+		seriesPointLimit = MaxTotalPoints / len(keys)
+		if seriesPointLimit < 1 {
+			seriesPointLimit = 1
+		}
+	}
+	totalPoints := 0
 	for _, key := range keys {
+		if totalPoints >= MaxTotalPoints {
+			break
+		}
 		acc := accumulators[key]
 		sort.SliceStable(acc.points, func(i, j int) bool { return acc.points[i].ObservedAt.Before(acc.points[j].ObservedAt) })
 		points := deduplicatePoints(acc.points)
@@ -116,7 +127,12 @@ func QueryMetrics(ctx context.Context, store objects.ObjectStore, query Query) (
 			name = "cpu.utilization"
 			unit = "millicores"
 		}
-		points = downsample(points, maxPoints)
+		points = downsample(points, seriesPointLimit)
+		remaining := MaxTotalPoints - totalPoints
+		if len(points) > remaining {
+			points = downsample(points, remaining)
+		}
+		totalPoints += len(points)
 		labels := append([]Label{}, acc.definition.Labels...)
 		labels = append(labels, Label{Key: "attempt", Value: acc.leaseID})
 		sort.Slice(labels, func(i, j int) bool { return labels[i].Key < labels[j].Key })

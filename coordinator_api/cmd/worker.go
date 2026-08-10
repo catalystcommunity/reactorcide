@@ -122,10 +122,22 @@ var workerFlags = []cli.Flag{
 		EnvVars: []string{"REACTORCIDE_WORKER_METRICS_INTERVAL"},
 	},
 	&cli.DurationFlag{
+		Name:    "storage-metrics-interval",
+		Value:   10 * time.Second,
+		Usage:   "Interval between job storage samples",
+		EnvVars: []string{"REACTORCIDE_WORKER_STORAGE_METRICS_INTERVAL"},
+	},
+	&cli.DurationFlag{
 		Name:    "telemetry-send-interval",
 		Value:   10 * time.Second,
 		Usage:   "Maximum interval between telemetry batch uploads",
 		EnvVars: []string{"REACTORCIDE_WORKER_TELEMETRY_SEND_INTERVAL"},
+	},
+	&cli.IntFlag{
+		Name:    "telemetry-buffer-batches",
+		Value:   12,
+		Usage:   "Maximum durable unsent telemetry batches retained for each lease",
+		EnvVars: []string{"REACTORCIDE_WORKER_TELEMETRY_BUFFER_BATCHES"},
 	},
 	&cli.StringSliceFlag{
 		Name:    "vm-image-prefetch",
@@ -204,25 +216,37 @@ func RunWorker(ctx *cli.Context) error {
 
 	runCtx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
+	metricsInterval := ctx.Duration("metrics-interval")
+	storageMetricsInterval := ctx.Duration("storage-metrics-interval")
+	for name, interval := range map[string]time.Duration{
+		"metrics-interval":         metricsInterval,
+		"storage-metrics-interval": storageMetricsInterval,
+	} {
+		if interval < time.Second || interval > time.Minute {
+			return fmt.Errorf("--%s must be from 1s through 1m", name)
+		}
+	}
 
 	cfg := coordinatorworker.Config{
-		CoordinatorURL:        coordinatorURL,
-		EnrollmentToken:       enrollmentToken,
-		WorkerKey:             workerKey,
-		Hostname:              hostname,
-		OS:                    workerOS,
-		Arch:                  workerArch,
-		Custom:                custom,
-		WorkerVersion:         ctx.String("worker-version"),
-		ContainerRuntime:      containerRuntime,
-		Concurrency:           concurrency,
-		WorkspaceRoot:         strings.TrimSpace(ctx.String("workspace-dir")),
-		DataDir:               strings.TrimSpace(ctx.String("data-dir")),
-		MetricsInterval:       ctx.Duration("metrics-interval"),
-		TelemetrySendInterval: ctx.Duration("telemetry-send-interval"),
-		VMImagePrefetch:       ctx.StringSlice("vm-image-prefetch"),
-		VMImageMaxUnused:      ctx.Duration("vm-image-max-unused"),
-		VMImagePruneInterval:  ctx.Duration("vm-image-prune-interval"),
+		CoordinatorURL:         coordinatorURL,
+		EnrollmentToken:        enrollmentToken,
+		WorkerKey:              workerKey,
+		Hostname:               hostname,
+		OS:                     workerOS,
+		Arch:                   workerArch,
+		Custom:                 custom,
+		WorkerVersion:          ctx.String("worker-version"),
+		ContainerRuntime:       containerRuntime,
+		Concurrency:            concurrency,
+		WorkspaceRoot:          strings.TrimSpace(ctx.String("workspace-dir")),
+		DataDir:                strings.TrimSpace(ctx.String("data-dir")),
+		MetricsInterval:        metricsInterval,
+		StorageMetricsInterval: storageMetricsInterval,
+		TelemetrySendInterval:  ctx.Duration("telemetry-send-interval"),
+		TelemetryBufferBatches: ctx.Int("telemetry-buffer-batches"),
+		VMImagePrefetch:        ctx.StringSlice("vm-image-prefetch"),
+		VMImageMaxUnused:       ctx.Duration("vm-image-max-unused"),
+		VMImagePruneInterval:   ctx.Duration("vm-image-prune-interval"),
 	}
 
 	if err := coordinatorworker.Run(runCtx, cfg); err != nil && !errors.Is(err, context.Canceled) {

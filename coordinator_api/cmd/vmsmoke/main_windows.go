@@ -77,7 +77,7 @@ func run(bundle string, creds vmrunner.GuestCreds, timeout time.Duration) error 
 	// GuestTransport, and a LocalImageSource. Passing "" as the base dir means
 	// the bundle path below is used as an absolute image ref. The Hyper-V switch
 	// comes from REACTORCIDE_VM_HYPERV_SWITCH (default "Default Switch").
-	runner, err := vmrunner.NewDefault("", creds)
+	runner, err := vmrunner.NewDefaultWithImages(vmrunner.NewLocalImageSource(""), creds)
 	if err != nil {
 		return fmt.Errorf("build vm runner: %w", err)
 	}
@@ -85,9 +85,10 @@ func run(bundle string, creds vmrunner.GuestCreds, timeout time.Duration) error 
 	fmt.Printf("vmsmoke: booting guest from bundle %q (the guest IP is logged as guest_ip once DHCP assigns it)...\n", bundle)
 
 	job := &vmrunner.JobConfig{
-		Image:   bundle,
-		Command: []string{"cmd", "/c", "echo hello"},
-		JobID:   "vmsmoke",
+		Image:    bundle,
+		Command:  []string{"cmd", "/c", "echo hello"},
+		Platform: vmrunner.GuestPlatformWindows,
+		JobID:    "vmsmoke",
 	}
 
 	id, err := runner.SpawnJob(ctx, job)

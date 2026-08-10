@@ -65,8 +65,8 @@ type Handler struct {
 // ReactorcideUi implementations, with no ReactorcideWorker service mounted
 // (a request for service "ReactorcideWorker" resolves as an unknown route).
 // Pass NewStubAuth()/NewStubUi() to mount a handler whose every op returns
-// ServiceError{code:"unimplemented"} until the real implementations (Task G)
-// are wired in. Existing callers (router.go's non-worker paths, this
+// ServiceError{code:"unimplemented"} until the real implementations are
+// wired in. Existing callers (router.go's non-worker paths, this
 // package's own dispatcher tests) keep this two-argument shape; production
 // wiring that also mounts the worker protocol uses NewHandlerWithWorker.
 func NewHandler(auth csilapi.ReactorcideAuth, ui csilapi.ReactorcideUi) *Handler {

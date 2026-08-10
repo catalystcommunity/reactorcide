@@ -1,5 +1,3 @@
-//go:build windows
-
 package vmrunner
 
 import (
@@ -16,9 +14,7 @@ import (
 // requires the guest's Hyper-V integration / Data Exchange service to be
 // running so the host can see the guest-reported addresses).
 //
-// It lives in a plain //go:build windows file (no live-VM dependency) so this
-// parser -- the one piece of the windows lifecycle with fiddly text handling --
-// is unit testable without an actual Hyper-V host.
+// It has no live-VM dependency, so tests can run without a Hyper-V host.
 //
 // ConvertTo-Json renders the IPAddresses collection three different ways
 // depending on its length, and parseVMIPv4 tolerates all of them plus a raw

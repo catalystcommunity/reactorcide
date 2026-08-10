@@ -115,6 +115,10 @@ worker:
     tag: "dev"
   replicaCount: 1
   concurrency: 2    # concurrent leases (jobs) per worker pod
+  metricsInterval: 2s
+  storageMetricsInterval: 10s
+  telemetrySendInterval: 10s
+  telemetryBufferBatches: 12
   terminationGracePeriodSeconds: 3600
   containerRuntime: "auto"
 

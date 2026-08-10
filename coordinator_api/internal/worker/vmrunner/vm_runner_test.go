@@ -158,14 +158,13 @@ type fakeTransport struct {
 }
 
 type fakeStartCall struct {
-	addr GuestAddr
-	cmd  []string
-	env  map[string]string
+	addr    GuestAddr
+	command GuestCommand
 }
 
-func (f *fakeTransport) Start(ctx context.Context, addr GuestAddr, creds GuestCreds, cmd []string, env map[string]string) (GuestSession, error) {
+func (f *fakeTransport) Start(ctx context.Context, addr GuestAddr, creds GuestCreds, command GuestCommand) (GuestSession, error) {
 	f.mu.Lock()
-	f.starts = append(f.starts, fakeStartCall{addr: addr, cmd: cmd, env: env})
+	f.starts = append(f.starts, fakeStartCall{addr: addr, command: command})
 	f.mu.Unlock()
 	if f.err != nil {
 		return nil, f.err
@@ -183,10 +182,11 @@ var _ GuestTransport = (*fakeTransport)(nil)
 
 func baseTestConfig() *JobConfig {
 	return &JobConfig{
-		Image:   "test-base.img",
-		Command: []string{"sh", "-c", "echo hi"},
-		Env:     map[string]string{"FOO": "bar"},
-		JobID:   "job-1",
+		Image:    "test-base.img",
+		Command:  []string{"sh", "-c", "echo hi"},
+		Env:      map[string]string{"FOO": "bar"},
+		Platform: GuestPlatformPOSIX,
+		JobID:    "job-1",
 	}
 }
 
@@ -243,7 +243,7 @@ func TestVMRunner_SpawnJob_StreamLogs_WaitForCompletion(t *testing.T) {
 	if transport.startCount() != 1 {
 		t.Fatalf("transport.Start called %d times, want 1", transport.startCount())
 	}
-	if got := transport.starts[0].env["FOO"]; got != "bar" {
+	if got := transport.starts[0].command.Env["FOO"]; got != "bar" {
 		t.Fatalf("Start env FOO = %q, want %q", got, "bar")
 	}
 
@@ -490,6 +490,22 @@ func TestVMRunner_SpawnJob_InvalidConfig(t *testing.T) {
 				t.Fatal("expected validation error")
 			}
 		})
+	}
+}
+
+func TestValidateJobConfigRejectsUnsafeWindowsTreeDestination(t *testing.T) {
+	err := validateJobConfig(&JobConfig{
+		Image:    "image",
+		Command:  []string{"cmd.exe", "/c", "exit", "0"},
+		Platform: GuestPlatformWindows,
+		Trees: []GuestTree{{
+			SourcePath:  t.TempDir(),
+			Destination: `C:/reactorcide/job/"; Write-Output bad`,
+		}},
+		JobID: "job",
+	})
+	if err == nil {
+		t.Fatal("expected an unsafe destination error")
 	}
 }
 

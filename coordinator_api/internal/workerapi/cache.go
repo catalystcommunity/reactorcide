@@ -4,8 +4,7 @@ import "sync"
 
 // leaseSecretCache holds the resolved secret VALUES for a lease's lifetime,
 // in coordinator process memory only -- never persisted, never returned by
-// any op. It exists purely as a masking backstop for AppendLogs (WORKERS_
-// PLAN.md's "Mask secrets coordinator-side as a backstop"): the worker is
+// any op. It exists as a masking backstop for AppendLogs: the worker is
 // responsible for masking its own job output before shipping a log chunk
 // (the same way runnerlib masks locally today), but if a chunk still
 // contains a secret value verbatim, the coordinator can catch it here

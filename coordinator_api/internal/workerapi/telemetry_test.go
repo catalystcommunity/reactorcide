@@ -1,6 +1,7 @@
 package workerapi
 
 import (
+	"strings"
 	"testing"
 	"time"
 
@@ -27,6 +28,23 @@ func TestAppendMetricBatchStoresQueryableMetricsAndIsIdempotent(t *testing.T) {
 	if err != nil || len(query.Series) != 1 || query.Series[0].Points[0].Value != 4096 {
 		t.Fatalf("unexpected query: response=%+v err=%v", query, err)
 	}
+}
+
+func TestAppendMetricBatchRejectsOversizedEncodedRequest(t *testing.T) {
+	h := newTestHarness()
+	_, leaseID, token := claimOneJob(t, h)
+	unavailable := make([]csilapi.MetricUnavailable, 7000)
+	for index := range unavailable {
+		unavailable[index] = csilapi.MetricUnavailable{
+			MetricPrefix: "memory." + strings.Repeat("x", 180),
+			Reason:       "runtime_not_supported",
+		}
+	}
+	_, err := h.service.AppendMetricBatch(ctxWithAuth(token), csilapi.AppendMetricBatchRequest{
+		LeaseId:     leaseID,
+		Unavailable: unavailable,
+	})
+	assertServiceErrorCode(t, err, "invalid_argument")
 }
 
 func TestAppendMetricBatchRejectsConflictMalformedAndForeignLease(t *testing.T) {
