@@ -36,6 +36,10 @@ Use this page to select the correct guide.
   remove VM images.
 - [Windows VM Runner](./vm-runners-windows.md): Configure the Windows VM
   backend.
+- [Headless Windows Worker](./windows-headless-worker.md): Install and update a
+  Windows worker through SSH.
+- [Windows VM Image Build](./windows-vm-image-build.md): Build a Hyper-V guest
+  image without guest interaction.
 
 ## Job Author Guides
 

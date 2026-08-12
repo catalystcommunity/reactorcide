@@ -1,0 +1,25 @@
+{
+  "arguments": [
+    "worker",
+    "--coordinator-url",
+    "https://coordinator.example.com",
+    "--enrollment-token-file",
+    "C:\\ProgramData\\Reactorcide\\secrets\\enrollment-token",
+    "--data-dir",
+    "C:\\ProgramData\\Reactorcide\\data",
+    "--workspace-dir",
+    "C:\\ProgramData\\Reactorcide\\workspaces",
+    "--container-runtime",
+    "vm"
+  ],
+  "environment": {
+    "REACTORCIDE_VM_IMAGE_SOURCE": "local",
+    "REACTORCIDE_VM_IMAGE_DIR": "C:\\ProgramData\\Reactorcide\\vm-images",
+    "REACTORCIDE_VM_IMAGE_CACHE_DIR": "C:\\ProgramData\\Reactorcide\\vm-images\\oci-cache",
+    "REACTORCIDE_VM_SCRATCH_DIR": "C:\\ProgramData\\Reactorcide\\vm-scratch",
+    "REACTORCIDE_VM_SSH_USER": "reactorcide",
+    "REACTORCIDE_VM_SSH_PRIVATE_KEY_FILE": "C:\\ProgramData\\Reactorcide\\secrets\\guest-ssh-key",
+    "REACTORCIDE_VM_SSH_HOST_KEY_FILE": "C:\\ProgramData\\Reactorcide\\config\\guest-ssh-host.pub"
+  },
+  "log_file": "C:\\ProgramData\\Reactorcide\\logs\\worker.log"
+}

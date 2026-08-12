@@ -5,11 +5,40 @@ import (
 	"errors"
 	"io"
 	"net"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 )
+
+func TestCredentialsForImageUsesBundledWindowsHostKey(t *testing.T) {
+	bundle := t.TempDir()
+	hostKey := []byte("ssh-ed25519 bundled-key\n")
+	if err := os.WriteFile(filepath.Join(bundle, BundleWindowsHostKey), hostKey, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	runner := New(nil, nil, nil, GuestCreds{User: "reactorcide"})
+	creds, err := runner.credentialsForImage(bundle)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(creds.HostPublicKey) != string(hostKey) {
+		t.Fatalf("HostPublicKey = %q", creds.HostPublicKey)
+	}
+}
+
+func TestCredentialsForImageRejectsConfiguredHostKeyMismatch(t *testing.T) {
+	bundle := t.TempDir()
+	if err := os.WriteFile(filepath.Join(bundle, BundleWindowsHostKey), []byte("ssh-ed25519 bundled"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	runner := New(nil, nil, nil, GuestCreds{HostPublicKey: []byte("ssh-ed25519 configured")})
+	if _, err := runner.credentialsForImage(bundle); err == nil {
+		t.Fatal("expected host key mismatch")
+	}
+}
 
 // fakeImageSource records Resolve calls and returns a configured
 // path/error, standing in for a real ImageSource (local or, eventually,

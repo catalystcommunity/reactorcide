@@ -214,7 +214,7 @@ func RunWorker(ctx *cli.Context) error {
 		"worker_key_file":   workerKeyFile,
 	}).Info("Starting coordinator-mediated worker")
 
-	runCtx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	runCtx, stop := signal.NotifyContext(ctx.Context, syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 	metricsInterval := ctx.Duration("metrics-interval")
 	storageMetricsInterval := ctx.Duration("storage-metrics-interval")

@@ -55,6 +55,28 @@ func TestOCIImageSourceMaterializesMacBundleAndPrunesIt(t *testing.T) {
 	require.ErrorIs(t, err, os.ErrNotExist)
 }
 
+func TestOCIImageSourceMaterializesWindowsBundle(t *testing.T) {
+	ctx := context.Background()
+	bundle := writeTestWindowsBundle(t)
+	var archive bytes.Buffer
+	require.NoError(t, WriteWindowsBundleArchive(ctx, bundle, &archive))
+
+	store := memory.New()
+	layerDesc, err := oras.PushBytes(ctx, store, VMWindowsBundleLayerMediaType, archive.Bytes())
+	require.NoError(t, err)
+	manifestDesc, err := oras.PackManifest(ctx, store, oras.PackManifestVersion1_1, VMImageArtifactType, oras.PackManifestOptions{Layers: []ocispec.Descriptor{layerDesc}})
+	require.NoError(t, err)
+	require.NoError(t, store.Tag(ctx, manifestDesc, "latest"))
+
+	source, err := NewOCIImageSource(t.TempDir())
+	require.NoError(t, err)
+	source.sourceFactory = func(ref registry.Reference) (oras.ReadOnlyTarget, error) { return store, nil }
+	path, err := source.Resolve(ctx, "example.invalid/reactorcide/windows:latest")
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = os.Chmod(path, 0o700) })
+	require.NoError(t, ValidateWindowsBundle(path))
+}
+
 // pushFakeVMImageArtifact packs a single-layer VM image artifact (per
 // image_oci.go's assumed layout) containing blob into store under tag, and
 // returns the layer's descriptor.

@@ -88,6 +88,9 @@ type windowsVM struct {
 type windowsVMLifecycle struct {
 	mu  sync.Mutex
 	vms map[string]*windowsVM
+	// scratchRoot is the optional parent directory for per-job differencing
+	// disks. An empty value uses the system temporary directory.
+	scratchRoot string
 
 	// switchName is the Hyper-V virtual switch guests attach to
 	// (REACTORCIDE_VM_HYPERV_SWITCH, default "Default Switch").
@@ -120,9 +123,10 @@ func newVMLifecycle() (VMLifecycle, error) {
 	}
 
 	return &windowsVMLifecycle{
-		vms:        make(map[string]*windowsVM),
-		switchName: switchName,
-		secureBoot: secureBoot,
+		vms:         make(map[string]*windowsVM),
+		scratchRoot: strings.TrimSpace(os.Getenv("REACTORCIDE_VM_SCRATCH_DIR")),
+		switchName:  switchName,
+		secureBoot:  secureBoot,
 	}, nil
 }
 
@@ -142,7 +146,12 @@ func (w *windowsVMLifecycle) Boot(ctx context.Context, baseImagePath string, spe
 		return "", GuestAddr{}, err
 	}
 
-	scratchDir, err := os.MkdirTemp("", "reactorcide-vm-")
+	if w.scratchRoot != "" {
+		if err := os.MkdirAll(w.scratchRoot, 0750); err != nil {
+			return "", GuestAddr{}, fmt.Errorf("vmrunner/windows: create scratch root: %w", err)
+		}
+	}
+	scratchDir, err := os.MkdirTemp(w.scratchRoot, "reactorcide-vm-")
 	if err != nil {
 		return "", GuestAddr{}, fmt.Errorf("vmrunner/windows: create scratch dir: %w", err)
 	}

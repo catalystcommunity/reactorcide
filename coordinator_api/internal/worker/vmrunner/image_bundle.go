@@ -18,6 +18,8 @@ const (
 	BundleAuxImage          = "aux.img"
 	BundleHardwareModel     = "hardwaremodel.bin"
 	BundleMachineIdentifier = "machineidentifier.bin"
+	BundleWindowsDisk       = "disk.vhdx"
+	BundleWindowsHostKey    = "ssh_host_ed25519_key.pub"
 )
 
 var macBundleFiles = []string{
@@ -27,26 +29,41 @@ var macBundleFiles = []string{
 	BundleMachineIdentifier,
 }
 
-// ValidateMacBundle verifies the fixed bundle shape used by the macOS
-// lifecycle and OCI image artifacts.
-func ValidateMacBundle(bundleDir string) error {
+var windowsBundleFiles = []string{
+	BundleWindowsDisk,
+	BundleWindowsHostKey,
+}
+
+// ValidateWindowsBundle verifies the fixed bundle shape used by Hyper-V and
+// Windows OCI image artifacts.
+func ValidateWindowsBundle(bundleDir string) error {
+	return validateBundle(bundleDir, "Windows", windowsBundleFiles)
+}
+
+func validateBundle(bundleDir, platform string, files []string) error {
 	info, err := os.Stat(bundleDir)
 	if err != nil {
-		return fmt.Errorf("vmrunner: macOS image bundle %q: %w", bundleDir, err)
+		return fmt.Errorf("vmrunner: %s image bundle %q: %w", platform, bundleDir, err)
 	}
 	if !info.IsDir() {
-		return fmt.Errorf("vmrunner: macOS image %q is not a bundle directory", bundleDir)
+		return fmt.Errorf("vmrunner: %s image %q is not a bundle directory", platform, bundleDir)
 	}
-	for _, name := range macBundleFiles {
+	for _, name := range files {
 		info, err := os.Stat(filepath.Join(bundleDir, name))
 		if err != nil {
-			return fmt.Errorf("vmrunner: macOS image bundle %q is missing %s: %w", bundleDir, name, err)
+			return fmt.Errorf("vmrunner: %s image bundle %q is missing %s: %w", platform, bundleDir, name, err)
 		}
 		if !info.Mode().IsRegular() {
-			return fmt.Errorf("vmrunner: macOS image bundle %q contains non-regular %s", bundleDir, name)
+			return fmt.Errorf("vmrunner: %s image bundle %q contains non-regular %s", platform, bundleDir, name)
 		}
 	}
 	return nil
+}
+
+// ValidateMacBundle verifies the fixed bundle shape used by the macOS
+// lifecycle and OCI image artifacts.
+func ValidateMacBundle(bundleDir string) error {
+	return validateBundle(bundleDir, "macOS", macBundleFiles)
 }
 
 // WriteMacBundleArchive writes a deterministic tar+zstd stream. The archive
@@ -55,6 +72,19 @@ func WriteMacBundleArchive(ctx context.Context, bundleDir string, dst io.Writer)
 	if err := ValidateMacBundle(bundleDir); err != nil {
 		return err
 	}
+	return writeBundleArchive(ctx, bundleDir, dst, macBundleFiles, "macOS")
+}
+
+// WriteWindowsBundleArchive writes the VHDX and guest host public key as a
+// deterministic tar+zstd stream. It never includes private key material.
+func WriteWindowsBundleArchive(ctx context.Context, bundleDir string, dst io.Writer) error {
+	if err := ValidateWindowsBundle(bundleDir); err != nil {
+		return err
+	}
+	return writeBundleArchive(ctx, bundleDir, dst, windowsBundleFiles, "Windows")
+}
+
+func writeBundleArchive(ctx context.Context, bundleDir string, dst io.Writer, files []string, platform string) error {
 	zw, err := zstd.NewWriter(dst, zstd.WithEncoderLevel(zstd.SpeedFastest))
 	if err != nil {
 		return fmt.Errorf("vmrunner: create zstd encoder: %w", err)
@@ -64,7 +94,7 @@ func WriteMacBundleArchive(ctx context.Context, bundleDir string, dst io.Writer)
 		return errors.Join(tw.Close(), zw.Close())
 	}
 
-	for _, name := range macBundleFiles {
+	for _, name := range files {
 		if err := ctx.Err(); err != nil {
 			_ = closeWriters()
 			return err
@@ -101,7 +131,7 @@ func WriteMacBundleArchive(ctx context.Context, bundleDir string, dst io.Writer)
 		}
 	}
 	if err := closeWriters(); err != nil {
-		return fmt.Errorf("vmrunner: finish macOS image archive: %w", err)
+		return fmt.Errorf("vmrunner: finish %s image archive: %w", platform, err)
 	}
 	return nil
 }
@@ -109,6 +139,15 @@ func WriteMacBundleArchive(ctx context.Context, bundleDir string, dst io.Writer)
 // ExtractMacBundleArchive extracts a trusted-by-digest artifact into an empty
 // destination. It still rejects unexpected names and non-regular entries.
 func ExtractMacBundleArchive(ctx context.Context, src io.Reader, dstDir string) error {
+	return extractBundleArchive(ctx, src, dstDir, macBundleFiles, BundleDiskImage, "macOS", ValidateMacBundle)
+}
+
+// ExtractWindowsBundleArchive extracts a trusted-by-digest Windows bundle.
+func ExtractWindowsBundleArchive(ctx context.Context, src io.Reader, dstDir string) error {
+	return extractBundleArchive(ctx, src, dstDir, windowsBundleFiles, BundleWindowsDisk, "Windows", ValidateWindowsBundle)
+}
+
+func extractBundleArchive(ctx context.Context, src io.Reader, dstDir string, files []string, sparseFile, platform string, validate func(string) error) error {
 	if err := os.MkdirAll(dstDir, 0o700); err != nil {
 		return fmt.Errorf("vmrunner: create bundle directory: %w", err)
 	}
@@ -118,8 +157,8 @@ func ExtractMacBundleArchive(ctx context.Context, src io.Reader, dstDir string) 
 	}
 	defer zr.Close()
 
-	wanted := make(map[string]bool, len(macBundleFiles))
-	for _, name := range macBundleFiles {
+	wanted := make(map[string]bool, len(files))
+	for _, name := range files {
 		wanted[name] = false
 	}
 	tr := tar.NewReader(zr)
@@ -132,14 +171,14 @@ func ExtractMacBundleArchive(ctx context.Context, src io.Reader, dstDir string) 
 			break
 		}
 		if err != nil {
-			return fmt.Errorf("vmrunner: read macOS image archive: %w", err)
+			return fmt.Errorf("vmrunner: read %s image archive: %w", platform, err)
 		}
 		if header.Typeflag != tar.TypeReg && header.Typeflag != tar.TypeRegA {
-			return fmt.Errorf("vmrunner: macOS image archive entry %q is not a regular file", header.Name)
+			return fmt.Errorf("vmrunner: %s image archive entry %q is not a regular file", platform, header.Name)
 		}
 		seen, ok := wanted[header.Name]
 		if !ok || seen || filepath.Base(header.Name) != header.Name {
-			return fmt.Errorf("vmrunner: unexpected macOS image archive entry %q", header.Name)
+			return fmt.Errorf("vmrunner: unexpected %s image archive entry %q", platform, header.Name)
 		}
 		wanted[header.Name] = true
 		path := filepath.Join(dstDir, header.Name)
@@ -148,7 +187,7 @@ func ExtractMacBundleArchive(ctx context.Context, src io.Reader, dstDir string) 
 			return fmt.Errorf("vmrunner: create extracted bundle file %s: %w", header.Name, err)
 		}
 		var copyErr error
-		if header.Name == BundleDiskImage {
+		if header.Name == sparseFile {
 			copyErr = copySparseWithContext(ctx, file, tr, header.Size)
 		} else {
 			_, copyErr = copyWithContext(ctx, file, tr)
@@ -163,10 +202,10 @@ func ExtractMacBundleArchive(ctx context.Context, src io.Reader, dstDir string) 
 	}
 	for name, seen := range wanted {
 		if !seen {
-			return fmt.Errorf("vmrunner: macOS image archive is missing %s", name)
+			return fmt.Errorf("vmrunner: %s image archive is missing %s", platform, name)
 		}
 	}
-	return ValidateMacBundle(dstDir)
+	return validate(dstDir)
 }
 
 func copySparseWithContext(ctx context.Context, dst *os.File, src io.Reader, size int64) error {

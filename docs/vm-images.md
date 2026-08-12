@@ -1,8 +1,12 @@
 # VM Image Operations
 
 Reactorcide can build, publish, pull, cache, and remove VM images through the
-`reactorcide vm-image` command. The macOS worker uses the same pull and cache
-code when it starts a job.
+`reactorcide vm-image` command. macOS and Windows workers use the same pull and
+cache code when they start a job.
+
+Windows bundles contain `disk.vhdx` and `ssh_host_ed25519_key.pub`. See
+[Windows VM Image Build](./windows-vm-image-build.md) for unattended creation,
+publishing, and fleet cache configuration.
 
 ## Image creation workflow
 

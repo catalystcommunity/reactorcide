@@ -67,6 +67,7 @@ by the Hyper-V lifecycle at construction (they need no per-job plumbing):
 | `REACTORCIDE_VM_SSH_PASSWORD`        | password auth (discouraged; key preferred)                    | —                |
 | `REACTORCIDE_VM_METRICS_DIR`         | optional local JSON Lines debug output                         | disabled         |
 | `REACTORCIDE_VM_METRICS_INTERVAL`    | optional JSON Lines debug sample interval                      | `5s`             |
+| `REACTORCIDE_VM_SCRATCH_DIR`         | parent directory for per-job differencing disks                | system temporary directory |
 | `REACTORCIDE_VM_HYPERV_SWITCH`       | Hyper-V virtual switch new guests attach to                   | `Default Switch` |
 | `REACTORCIDE_VM_HYPERV_SECURE_BOOT`  | `off`/`false`/`0`/`no` disables Gen-2 Secure Boot; else on    | on               |
 
@@ -159,10 +160,24 @@ $env:REACTORCIDE_VM_IMAGE_DIR = 'C:\reactorcide\vm-images'
 An absolute image reference is used as-is (`REACTORCIDE_VM_IMAGE_DIR` is ignored
 for that job).
 
+For OCI images, use a local cache on each worker. Do not share one writable
+cache directory between workers. Publish one immutable bundle to the registry,
+use its digest in jobs, and let each worker cache it on its image disk. See
+[Build a Windows VM Image](./windows-vm-image-build.md#publish-and-share-the-image-through-oci).
+
+Keep `REACTORCIDE_VM_SCRATCH_DIR` on a disk that has enough IOPS and capacity
+for all concurrent differencing VHDX files. This directory is independent of
+the local image directory and OCI cache directory.
+
 ## Producing the base VHDX (golden image)
 
-You install Windows into a Gen-2 Hyper-V VM once, prepare it, then reuse its
-VHDX as the read-only base for every job.
+Use [Build a Windows VM Image](./windows-vm-image-build.md) for the supported
+unattended procedure. It uses the Windows components that are already on a
+Hyper-V host. It does not need Packer, RDP, VMConnect, WinRM, or the Windows
+ADK.
+
+The following procedure is a manual fallback. It is not necessary for the
+supported build path.
 
 1. **Create a Gen-2 VM and install Windows** from an ISO:
 
@@ -204,21 +219,17 @@ VHDX as the read-only base for every job.
    differencing disk. (You can delete the golden VM definition with
    `Remove-VM golden` — keep the VHDX file.)
 
-### Recommended tooling: Packer + the Hyper-V builder (instead of hand-rolling)
+### Other image builders
 
-Reactorcide ships **no** base-image build tooling — the `reactorcide` binary
-only *boots* an existing bundle (and `cmd/vmsmoke` is just a smoke test). The
-reproducible path is **[Packer](https://developer.hashicorp.com/packer)** with
-its **`hyperv-iso` builder**: it installs Windows from an ISO unattended
-(`Autounattend.xml`), provisions the guest (enable OpenSSH Server, bake the
-toolchain + the worker's `authorized_keys`), optionally syspreps, and produces
-the VHDX. This parallels the macOS backend's Packer + Tart note. Packaging that
-VHDX as an OCI artifact for the OCI image source.
+You can use another image builder when it produces a Generation 2 VHDX that
+meets the bundle and guest requirements. Packer is one option. It is not a
+Reactorcide runtime dependency.
 
 ## Guest credentials (prototype)
 
-For the prototype, the guest authenticates the worker with a **baked-in SSH
-key pair** (same model as the macOS backend):
+The unattended image builder generates the dedicated worker key pair. The
+guest authenticates the worker with the public key in the image. The private
+key stays on the worker host.
 
 - Generate a dedicated key pair for the worker (keep the private key on the host
   only):
@@ -266,6 +277,30 @@ VCS credential files through SSH. It converts the standard `/job` paths to
 line. For `run-local`, it streams the local source tree as a tar archive and
 extracts it at the configured code directory in the guest.
 
+## VM resource telemetry
+
+The worker samples each running Windows guest through its existing SSH
+connection. It sends these series through normal job telemetry:
+
+- CPU use and configured CPU capacity
+- Physical memory use and limit
+- Committed memory and swap use
+- Used and total capacity for the guest `C:` volume
+
+The worker uses `--metrics-interval` for CPU and memory. It uses
+`--storage-metrics-interval` for storage. The defaults are 2 seconds and 10
+seconds. Windows reports total processor percentage as a normalized value, so
+the worker multiplies it by the guest CPU count before it converts the result
+to millicores.
+
+The storage series describes logical use inside the guest. It does not describe
+the physical size of the differencing VHDX on the host. Monitor the host volume
+that contains `REACTORCIDE_VM_SCRATCH_DIR` to detect physical capacity and IOPS
+pressure.
+
+`REACTORCIDE_VM_METRICS_DIR` is optional debug output. Normal coordinator
+telemetry does not require it.
+
 ## Smoke test (validate Hyper-V + networking + SSH)
 
 Before wiring the full worker, validate the whole stack — boot, IP discovery,
@@ -300,11 +335,13 @@ reactorcide run-local --backend vm .\jobs\my-windows-job.yaml
 
 A `{os: windows}` job should only be scheduled onto a Windows worker.
 
-## What is not yet verified
+## Hardware validation status
 
-The Windows lifecycle **compiles** cleanly (`CGO_ENABLED=0 GOOS=windows
-GOARCH=amd64 go build ./...`) and its pure parsing helpers are unit-tested, but
-the actual `New-VM` / `Start-VM` / IP-discovery / `Remove-VM` flow has **not
-been run on hardware yet** — that requires a Windows 11 Pro box with Hyper-V.
-Guest IP discovery (Data Exchange + DHCP) is the expected first snag. Iterate on
-what the hardware run reports.
+The Windows lifecycle compiles with `CGO_ENABLED=0 GOOS=windows GOARCH=amd64
+go build ./...`. Unit tests cover its pure parsing helpers. The service install,
+start, and stop flow has run on a Windows 11 Pro Hyper-V host. The unattended
+image builder passes PowerShell and answer-file syntax checks on that host.
+
+The complete image build and the `New-VM`, IP discovery, SSH, and `Remove-VM`
+flow still need a hardware test with a Windows ISO. Run the documented smoke
+test before you let the worker accept jobs.
