@@ -34,9 +34,9 @@ const macOSMetricsCommand = `cpu=$(ps -A -o %cpu= | awk '{s+=$1} END {printf "%.
 
 const macOSMetricsCommandWithoutStorage = `cpu=$(ps -A -o %cpu= | awk '{s+=$1} END {printf "%.2f", s+0}'); load=$(sysctl -n vm.loadavg | awk '{print $2}'); mt=$(sysctl -n hw.memsize); ncpu=$(sysctl -n hw.ncpu); fp=$(memory_pressure -Q | awk -F': ' '/free percentage/ {gsub(/%/, "", $2); print $2}'); mu=$(awk -v t="$mt" -v f="$fp" 'BEGIN {printf "%.0f", t*(100-f)/100}'); printf '%s\t%s\t%s\t%s\t0\t0\t%s\n' "$cpu" "$load" "$mu" "$mt" "$ncpu"`
 
-const windowsMetricsCommand = `$cpu=(Get-Counter '\Processor(_Total)\% Processor Time').CounterSamples.CookedValue; $os=Get-CimInstance Win32_OperatingSystem; $disk=Get-CimInstance Win32_LogicalDisk -Filter "DeviceID='C:'"; $mt=[uint64]$os.TotalVisibleMemorySize*1024; $mu=$mt-([uint64]$os.FreePhysicalMemory*1024); $committed=([uint64]$os.TotalVirtualMemorySize-[uint64]$os.FreeVirtualMemory)*1024; $swap=[Math]::Max(0,$committed-$mu); $du=[uint64]$disk.Size-[uint64]$disk.FreeSpace; Write-Output ([string]::Join([char]9,@(("{0:F2}" -f $cpu),0,$mu,$mt,$du,[uint64]$disk.Size,$committed,$swap,[uint64]$env:NUMBER_OF_PROCESSORS)))`
+const windowsMetricsCommand = `$ncpu=[uint64]$env:NUMBER_OF_PROCESSORS; $cpu=(Get-Counter '\Processor(_Total)\% Processor Time').CounterSamples.CookedValue*$ncpu; $os=Get-CimInstance Win32_OperatingSystem; $disk=Get-CimInstance Win32_LogicalDisk -Filter "DeviceID='C:'"; $mt=[uint64]$os.TotalVisibleMemorySize*1024; $mu=$mt-([uint64]$os.FreePhysicalMemory*1024); $committed=([uint64]$os.TotalVirtualMemorySize-[uint64]$os.FreeVirtualMemory)*1024; $swap=[Math]::Max(0,$committed-$mu); $du=[uint64]$disk.Size-[uint64]$disk.FreeSpace; Write-Output ([string]::Join([char]9,@(("{0:F2}" -f $cpu),0,$mu,$mt,$du,[uint64]$disk.Size,$committed,$swap,$ncpu)))`
 
-const windowsMetricsCommandWithoutStorage = `$cpu=(Get-Counter '\Processor(_Total)\% Processor Time').CounterSamples.CookedValue; $os=Get-CimInstance Win32_OperatingSystem; $mt=[uint64]$os.TotalVisibleMemorySize*1024; $mu=$mt-([uint64]$os.FreePhysicalMemory*1024); $committed=([uint64]$os.TotalVirtualMemorySize-[uint64]$os.FreeVirtualMemory)*1024; $swap=[Math]::Max(0,$committed-$mu); Write-Output ([string]::Join([char]9,@(("{0:F2}" -f $cpu),0,$mu,$mt,0,0,$committed,$swap,[uint64]$env:NUMBER_OF_PROCESSORS)))`
+const windowsMetricsCommandWithoutStorage = `$ncpu=[uint64]$env:NUMBER_OF_PROCESSORS; $cpu=(Get-Counter '\Processor(_Total)\% Processor Time').CounterSamples.CookedValue*$ncpu; $os=Get-CimInstance Win32_OperatingSystem; $mt=[uint64]$os.TotalVisibleMemorySize*1024; $mu=$mt-([uint64]$os.FreePhysicalMemory*1024); $committed=([uint64]$os.TotalVirtualMemorySize-[uint64]$os.FreeVirtualMemory)*1024; $swap=[Math]::Max(0,$committed-$mu); Write-Output ([string]::Join([char]9,@(("{0:F2}" -f $cpu),0,$mu,$mt,0,0,$committed,$swap,$ncpu)))`
 
 func (r *VMRunner) startMetrics(jobID string, job *vmJob) {
 	if err := os.MkdirAll(r.metricsDir, 0o700); err != nil {
@@ -125,7 +125,7 @@ func (r *VMRunner) collectResourceSample(ctx context.Context, jobID string, job 
 		}
 		command = []string{"powershell.exe", "-NoProfile", "-NonInteractive", "-Command", metricsCommand}
 	}
-	session, err := r.transport.Start(sampleCtx, job.addr, r.creds, GuestCommand{Platform: platform, Args: command})
+	session, err := r.transport.Start(sampleCtx, job.addr, job.creds, GuestCommand{Platform: platform, Args: command})
 	if err != nil {
 		return ResourceSample{}, fmt.Errorf("start guest metrics sample: %w", err)
 	}

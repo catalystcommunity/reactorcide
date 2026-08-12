@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -31,8 +32,11 @@ import (
 //     convention (as produced by oras.PackManifest) are accepted.
 //   - The current macOS format has one VMMacBundleLayerMediaType layer. The
 //     layer is a tar+zstd archive that materializes as a four-file bundle.
+//   - The current Windows format has one VMWindowsBundleLayerMediaType layer.
+//     The layer is a tar+zstd archive that contains the VHDX and the guest SSH
+//     host public key.
 //   - VMImageLayerMediaType remains accepted for the prototype legacy
-//     single-disk format used by Windows and early tests.
+//     single-disk format used by early tests.
 //
 // Resolve returns a clear, actionable error rather than guessing if a
 // manifest has zero or more than one layer of that media type.
@@ -51,6 +55,10 @@ const (
 	// VMMacBundleLayerMediaType is the current macOS image layer format. It
 	// contains the complete four-file bundle as a tar+zstd stream.
 	VMMacBundleLayerMediaType = "application/vnd.reactorcide.vm-image.macos.bundle.v1.tar+zstd"
+
+	// VMWindowsBundleLayerMediaType contains disk.vhdx and the stable guest
+	// SSH host public key as a deterministic tar+zstd stream.
+	VMWindowsBundleLayerMediaType = "application/vnd.reactorcide.vm-image.windows.bundle.v1.tar+zstd"
 )
 
 const DefaultImageMaxUnused = 30 * 24 * time.Hour
@@ -282,7 +290,7 @@ func (s *OCIImageSource) layerPath(ctx context.Context, manifestDesc ocispec.Des
 
 	var layer *ocispec.Descriptor
 	for i := range manifest.Layers {
-		if manifest.Layers[i].MediaType != VMImageLayerMediaType && manifest.Layers[i].MediaType != VMMacBundleLayerMediaType {
+		if manifest.Layers[i].MediaType != VMImageLayerMediaType && manifest.Layers[i].MediaType != VMMacBundleLayerMediaType && manifest.Layers[i].MediaType != VMWindowsBundleLayerMediaType {
 			continue
 		}
 		if layer != nil {
@@ -310,6 +318,16 @@ func (s *OCIImageSource) layerPath(ctx context.Context, manifestDesc ocispec.Des
 		}
 		return path, nil
 	}
+	if layer.MediaType == VMWindowsBundleLayerMediaType {
+		path, err := s.materializeWindowsBundle(ctx, manifestDesc, *layer)
+		if err != nil {
+			return "", err
+		}
+		if err := s.touchAccess(manifestDesc); err != nil {
+			return "", err
+		}
+		return path, nil
+	}
 
 	path, err := s.blobPath(layer.Digest)
 	if err != nil {
@@ -329,9 +347,19 @@ func (s *OCIImageSource) layerPath(ctx context.Context, manifestDesc ocispec.Des
 }
 
 func (s *OCIImageSource) materializeMacBundle(ctx context.Context, manifestDesc, layer ocispec.Descriptor) (string, error) {
+	return s.materializeBundle(ctx, manifestDesc, layer, "macOS", ExtractMacBundleArchive, ValidateMacBundle)
+}
+
+func (s *OCIImageSource) materializeWindowsBundle(ctx context.Context, manifestDesc, layer ocispec.Descriptor) (string, error) {
+	return s.materializeBundle(ctx, manifestDesc, layer, "Windows", ExtractWindowsBundleArchive, ValidateWindowsBundle)
+}
+
+type bundleExtractor func(context.Context, io.Reader, string) error
+
+func (s *OCIImageSource) materializeBundle(ctx context.Context, manifestDesc, layer ocispec.Descriptor, platform string, extract bundleExtractor, validate func(string) error) (string, error) {
 	root := filepath.Join(s.cacheDir, "bundles", manifestDesc.Digest.Algorithm().String())
 	dst := filepath.Join(root, manifestDesc.Digest.Encoded())
-	if err := ValidateMacBundle(dst); err == nil {
+	if err := validate(dst); err == nil {
 		return dst, nil
 	}
 	if err := os.Chmod(dst, 0o700); err != nil && !os.IsNotExist(err) {
@@ -353,13 +381,13 @@ func (s *OCIImageSource) materializeMacBundle(ctx context.Context, manifestDesc,
 	if err != nil {
 		return "", fmt.Errorf("vmrunner: open cached macOS bundle layer: %w", err)
 	}
-	extractErr := ExtractMacBundleArchive(ctx, r, tmp)
+	extractErr := extract(ctx, r, tmp)
 	closeErr := r.Close()
 	if err := errors.Join(extractErr, closeErr); err != nil {
-		return "", fmt.Errorf("vmrunner: materialize macOS bundle: %w", err)
+		return "", fmt.Errorf("vmrunner: materialize %s bundle: %w", platform, err)
 	}
 	if err := os.Rename(tmp, dst); err != nil {
-		if validateErr := ValidateMacBundle(dst); validateErr == nil {
+		if validateErr := validate(dst); validateErr == nil {
 			return dst, nil
 		}
 		return "", fmt.Errorf("vmrunner: publish materialized macOS bundle: %w", err)

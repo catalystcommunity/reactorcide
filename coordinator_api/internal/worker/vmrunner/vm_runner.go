@@ -1,12 +1,14 @@
 package vmrunner
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
 	"io"
 	"net"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
@@ -67,6 +69,7 @@ type vmJob struct {
 	addr          GuestAddr
 	session       GuestSession
 	platform      GuestPlatform
+	creds         GuestCreds
 	metricsMu     sync.Mutex
 	metricsCancel context.CancelFunc
 	metricsDone   chan struct{}
@@ -170,6 +173,10 @@ func (r *VMRunner) SpawnJob(ctx context.Context, config *JobConfig) (string, err
 	if err != nil {
 		return "", fmt.Errorf("resolve image: %w", err)
 	}
+	creds, err := r.credentialsForImage(basePath)
+	if err != nil {
+		return "", fmt.Errorf("resolve image credentials: %w", err)
+	}
 
 	spec := BootSpec{
 		CPUs:        cpuCount(config),
@@ -188,7 +195,7 @@ func (r *VMRunner) SpawnJob(ctx context.Context, config *JobConfig) (string, err
 		return "", fmt.Errorf("guest transport unreachable: %w", err)
 	}
 
-	session, err := r.transport.Start(ctx, addr, r.creds, GuestCommand{
+	session, err := r.transport.Start(ctx, addr, creds, GuestCommand{
 		Platform:   config.Platform,
 		Args:       config.Command,
 		Env:        config.Env,
@@ -203,7 +210,7 @@ func (r *VMRunner) SpawnJob(ctx context.Context, config *JobConfig) (string, err
 
 	id := uuid.New().String()
 	r.mu.Lock()
-	job := &vmJob{handle: handle, addr: addr, session: session, platform: config.Platform}
+	job := &vmJob{handle: handle, addr: addr, session: session, platform: config.Platform, creds: creds}
 	r.jobs[id] = job
 	r.mu.Unlock()
 	if r.metricsDir != "" && r.metricsInterval > 0 {
@@ -211,6 +218,27 @@ func (r *VMRunner) SpawnJob(ctx context.Context, config *JobConfig) (string, err
 	}
 
 	return id, nil
+}
+
+func (r *VMRunner) credentialsForImage(basePath string) (GuestCreds, error) {
+	creds := r.creds
+	info, err := os.Stat(basePath)
+	if err != nil || !info.IsDir() {
+		return creds, nil
+	}
+	hostKeyPath := filepath.Join(basePath, BundleWindowsHostKey)
+	hostKey, err := os.ReadFile(hostKeyPath)
+	if os.IsNotExist(err) {
+		return creds, nil
+	}
+	if err != nil {
+		return GuestCreds{}, fmt.Errorf("read bundled guest host key: %w", err)
+	}
+	if len(creds.HostPublicKey) > 0 && !bytes.Equal(bytes.TrimSpace(creds.HostPublicKey), bytes.TrimSpace(hostKey)) {
+		return GuestCreds{}, errors.New("configured guest host key does not match the resolved Windows image bundle")
+	}
+	creds.HostPublicKey = hostKey
+	return creds, nil
 }
 
 // StreamLogs returns the guest session's stdout/stderr as ReadClosers. The

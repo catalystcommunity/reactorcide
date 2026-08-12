@@ -126,7 +126,7 @@ func runVMImageBuildMacOS(c *cli.Context) error {
 
 var vmImagePublishCommand = &cli.Command{
 	Name:      "publish",
-	Usage:     "Package a macOS VM bundle and publish it to an OCI registry",
+	Usage:     "Package a macOS or Windows VM bundle and publish it to an OCI registry",
 	ArgsUsage: "<bundle-directory> <registry/repository:tag>",
 	Flags:     vmImageRegistryFlags(),
 	Action: func(c *cli.Context) error {
@@ -137,7 +137,7 @@ var vmImagePublishCommand = &cli.Command{
 		if err != nil {
 			return err
 		}
-		pinned, err := vmrunner.PushMacBundle(c.Context, c.Args().Get(0), c.Args().Get(1), store, c.StringSlice("plain-http"))
+		pinned, err := vmrunner.PushVMBundle(c.Context, c.Args().Get(0), c.Args().Get(1), store, c.StringSlice("plain-http"))
 		if err != nil {
 			return err
 		}
@@ -174,7 +174,7 @@ var vmImagePullCommand = &cli.Command{
 			return err
 		}
 		if output := strings.TrimSpace(c.String("output")); output != "" {
-			if err := vmrunner.CopyMacBundle(c.Context, path, output); err != nil {
+			if err := vmrunner.CopyVMBundle(c.Context, path, output); err != nil {
 				return err
 			}
 			path = output

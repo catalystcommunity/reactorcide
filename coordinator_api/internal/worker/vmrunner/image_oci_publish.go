@@ -21,9 +21,37 @@ import (
 	"oras.land/oras-go/v2/registry/remote/credentials"
 )
 
-// PushMacBundle packages bundleDir and publishes it as a Reactorcide OCI
-// artifact. It returns a digest-pinned reference.
+type bundleArchiveWriter func(context.Context, string, io.Writer) error
+
+type countingWriter struct{ count int64 }
+
+func (w *countingWriter) Write(p []byte) (int, error) {
+	w.count += int64(len(p))
+	return len(p), nil
+}
+
+// PushMacBundle packages bundleDir and publishes it as a Reactorcide OCI artifact.
 func PushMacBundle(ctx context.Context, bundleDir, imageRef string, credentialStore credentials.Store, plainHTTPHosts []string) (string, error) {
+	return pushBundle(ctx, bundleDir, imageRef, credentialStore, plainHTTPHosts, VMMacBundleLayerMediaType, "macOS", "macos-vm-bundle.tar.zst", WriteMacBundleArchive)
+}
+
+// PushWindowsBundle packages a VHDX and its guest host public key as one OCI artifact.
+func PushWindowsBundle(ctx context.Context, bundleDir, imageRef string, credentialStore credentials.Store, plainHTTPHosts []string) (string, error) {
+	return pushBundle(ctx, bundleDir, imageRef, credentialStore, plainHTTPHosts, VMWindowsBundleLayerMediaType, "Windows", "windows-vm-bundle.tar.zst", WriteWindowsBundleArchive)
+}
+
+// PushVMBundle detects the supported local bundle shape and publishes it.
+func PushVMBundle(ctx context.Context, bundleDir, imageRef string, credentialStore credentials.Store, plainHTTPHosts []string) (string, error) {
+	if err := ValidateMacBundle(bundleDir); err == nil {
+		return PushMacBundle(ctx, bundleDir, imageRef, credentialStore, plainHTTPHosts)
+	}
+	if err := ValidateWindowsBundle(bundleDir); err == nil {
+		return PushWindowsBundle(ctx, bundleDir, imageRef, credentialStore, plainHTTPHosts)
+	}
+	return "", fmt.Errorf("vmrunner: %q is not a valid macOS or Windows VM bundle", bundleDir)
+}
+
+func pushBundle(ctx context.Context, bundleDir, imageRef string, credentialStore credentials.Store, plainHTTPHosts []string, mediaType, platform, archiveName string, writeArchive bundleArchiveWriter) (string, error) {
 	ref, err := parseOCIReference(imageRef)
 	if err != nil {
 		return "", err
@@ -33,38 +61,27 @@ func PushMacBundle(ctx context.Context, bundleDir, imageRef string, credentialSt
 		return "", err
 	}
 
-	tmp, err := os.CreateTemp("", "reactorcide-macos-image-*.tar.zst")
-	if err != nil {
-		return "", fmt.Errorf("vmrunner: create image archive: %w", err)
-	}
-	tmpPath := tmp.Name()
-	defer os.Remove(tmpPath)
 	h := sha256.New()
-	archiveErr := WriteMacBundleArchive(ctx, bundleDir, io.MultiWriter(tmp, h))
-	closeErr := tmp.Close()
-	if err := errors.Join(archiveErr, closeErr); err != nil {
+	size := &countingWriter{}
+	if err := writeArchive(ctx, bundleDir, io.MultiWriter(h, size)); err != nil {
 		return "", err
 	}
-	info, err := os.Stat(tmpPath)
-	if err != nil {
-		return "", fmt.Errorf("vmrunner: stat image archive: %w", err)
-	}
 	layer := ocispec.Descriptor{
-		MediaType: VMMacBundleLayerMediaType,
+		MediaType: mediaType,
 		Digest:    digest.NewDigest(digest.SHA256, h),
-		Size:      info.Size(),
+		Size:      size.count,
 		Annotations: map[string]string{
-			ocispec.AnnotationTitle: "macos-vm-bundle.tar.zst",
+			ocispec.AnnotationTitle: archiveName,
 		},
 	}
-	archive, err := os.Open(tmpPath)
-	if err != nil {
-		return "", fmt.Errorf("vmrunner: reopen image archive: %w", err)
-	}
+	archive, archiveWriter := io.Pipe()
+	go func() {
+		archiveWriter.CloseWithError(writeArchive(ctx, bundleDir, archiveWriter))
+	}()
 	pushErr := repo.Push(ctx, layer, archive)
-	closeErr = archive.Close()
+	closeErr := archive.Close()
 	if pushErr != nil && !errors.Is(pushErr, errdef.ErrAlreadyExists) {
-		return "", fmt.Errorf("vmrunner: push macOS image layer: %w", pushErr)
+		return "", fmt.Errorf("vmrunner: push %s image layer: %w", platform, pushErr)
 	}
 	if closeErr != nil && !errors.Is(closeErr, os.ErrClosed) {
 		return "", fmt.Errorf("vmrunner: close image archive: %w", closeErr)
@@ -74,14 +91,14 @@ func PushMacBundle(ctx context.Context, bundleDir, imageRef string, credentialSt
 		Layers: []ocispec.Descriptor{layer},
 		ManifestAnnotations: map[string]string{
 			ocispec.AnnotationCreated:        time.Now().UTC().Format(time.RFC3339),
-			"org.opencontainers.image.title": "Reactorcide macOS VM image",
+			"org.opencontainers.image.title": "Reactorcide " + platform + " VM image",
 		},
 	})
 	if err != nil {
-		return "", fmt.Errorf("vmrunner: create macOS image manifest: %w", err)
+		return "", fmt.Errorf("vmrunner: create %s image manifest: %w", platform, err)
 	}
 	if err := repo.Tag(ctx, manifest, ref.ReferenceOrDefault()); err != nil {
-		return "", fmt.Errorf("vmrunner: tag macOS image manifest: %w", err)
+		return "", fmt.Errorf("vmrunner: tag %s image manifest: %w", platform, err)
 	}
 	return ref.Registry + "/" + ref.Repository + "@" + manifest.Digest.String(), nil
 }
@@ -125,6 +142,10 @@ func CopyMacBundle(ctx context.Context, src, dst string) error {
 	if err := ValidateMacBundle(src); err != nil {
 		return err
 	}
+	return copyBundleFiles(ctx, src, dst, macBundleFiles)
+}
+
+func copyBundleFiles(ctx context.Context, src, dst string, files []string) error {
 	if _, err := os.Stat(dst); err == nil {
 		return fmt.Errorf("vmrunner: destination %q already exists", dst)
 	} else if !os.IsNotExist(err) {
@@ -139,7 +160,7 @@ func CopyMacBundle(ctx context.Context, src, dst string) error {
 			_ = os.RemoveAll(dst)
 		}
 	}()
-	for _, name := range macBundleFiles {
+	for _, name := range files {
 		in, err := os.Open(filepath.Join(src, name))
 		if err != nil {
 			return err
@@ -157,4 +178,23 @@ func CopyMacBundle(ctx context.Context, src, dst string) error {
 	}
 	ok = true
 	return nil
+}
+
+// CopyWindowsBundle copies a materialized Windows bundle without overwriting dst.
+func CopyWindowsBundle(ctx context.Context, src, dst string) error {
+	if err := ValidateWindowsBundle(src); err != nil {
+		return err
+	}
+	return copyBundleFiles(ctx, src, dst, windowsBundleFiles)
+}
+
+// CopyVMBundle detects and copies a supported materialized bundle.
+func CopyVMBundle(ctx context.Context, src, dst string) error {
+	if err := ValidateMacBundle(src); err == nil {
+		return CopyMacBundle(ctx, src, dst)
+	}
+	if err := ValidateWindowsBundle(src); err == nil {
+		return CopyWindowsBundle(ctx, src, dst)
+	}
+	return fmt.Errorf("vmrunner: %q is not a valid macOS or Windows VM bundle", src)
 }
