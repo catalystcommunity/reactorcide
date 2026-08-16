@@ -372,6 +372,27 @@ func (s *Storage) Get(path, key, password string) (string, error) {
 	return "", nil // Not found returns empty string
 }
 
+// Has reports whether a secret key exists. It distinguishes a stored empty
+// value from a missing key.
+func (s *Storage) Has(path, key, password string) (bool, error) {
+	if err := validatePath(path); err != nil {
+		return false, err
+	}
+	if err := validateKey(key); err != nil {
+		return false, err
+	}
+	data, err := s.loadAll(password)
+	if err != nil {
+		return false, err
+	}
+	pathData, ok := data[path]
+	if !ok {
+		return false, nil
+	}
+	_, ok = pathData[key]
+	return ok, nil
+}
+
 // Set stores a secret value.
 func (s *Storage) Set(path, key, value, password string) error {
 	if err := validatePath(path); err != nil {

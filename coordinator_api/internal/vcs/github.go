@@ -14,6 +14,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/transportsecurity"
 	"github.com/sirupsen/logrus"
 )
 
@@ -38,13 +39,18 @@ func NewGitHubClient(config Config) (*GitHubClient, error) {
 	if config.BaseURL == "" {
 		config.BaseURL = "https://api.github.com"
 	}
+	if err := transportsecurity.ValidateURL(config.BaseURL, config.AllowInsecureTransport, "GitHub API"); err != nil {
+		return nil, err
+	}
 
 	logger := logrus.New()
 	logger.SetFormatter(&logrus.JSONFormatter{})
 
 	return &GitHubClient{
-		config:     config,
-		client:     &http.Client{},
+		config: config,
+		client: transportsecurity.HTTPClient(
+			&http.Client{}, config.AllowInsecureTransport, "GitHub API",
+		),
 		logger:     logger,
 		actorCache: make(map[string]actorSubjectCacheEntry),
 	}, nil

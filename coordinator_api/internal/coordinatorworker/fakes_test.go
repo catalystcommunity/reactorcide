@@ -109,6 +109,10 @@ func (f *fakeClient) AppendMetricBatch(ctx context.Context, req csilapi.AppendMe
 }
 
 func (f *fakeClient) ReportResult(ctx context.Context, leaseID string, exitCode int, status string, errMsg string) (csilapi.ReportResultResponse, error) {
+	return f.ReportResultWithOutput(ctx, leaseID, exitCode, status, errMsg, "")
+}
+
+func (f *fakeClient) ReportResultWithOutput(ctx context.Context, leaseID string, exitCode int, status string, errMsg, workflowOutput string) (csilapi.ReportResultResponse, error) {
 	f.mu.Lock()
 	f.ReportResultCalls = append(f.ReportResultCalls, reportResultCall{LeaseID: leaseID, ExitCode: exitCode, Status: status, ErrMsg: errMsg})
 	f.mu.Unlock()

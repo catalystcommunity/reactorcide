@@ -23,6 +23,10 @@ When `--api-url` or `REACTORCIDE_API_URL` is set, the same subcommands operate
 through the Coordinator API instead. API mode requires a token from `--token`,
 `REACTORCIDE_API_TOKEN`, or the interactive token prompt.
 
+API mode requires HTTPS. For an isolated development network, add
+`--allow-insecure-transport` to the command. This option has no environment
+variable equivalent.
+
 Prefer loading tokens from files or secret managers with command substitution so
 values are not written into shell history:
 

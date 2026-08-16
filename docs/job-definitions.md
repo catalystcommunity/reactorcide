@@ -59,6 +59,10 @@ paths:
   include:
     - "coordinator_api/**"
 
+# Optional: values that are available to all workflow jobs.
+vars:
+  release_channel: stable
+
 # Required: the jobs in the workflow. The map key is the job name.
 jobs:
   # A job can reference a reusable job file and add the run order.
@@ -87,6 +91,8 @@ jobs:
 - `depends_on` sets the jobs that must finish first. `needs` is an alias for `depends_on`.
 - `condition` controls when the job runs. The values are `all_success` (default), `any_failed`, and `always`.
 - The `on:` and `paths:` of a referenced job file are ignored. The workflow controls when the jobs run.
+- The `vars` map sets the first workflow variables. A job reads the current
+  values from `RC_WF_VARS_FILE` or through runnerlib.
 
 runnerlib resolves each `job_file` reference before it sends the triggers. It reads the referenced file, applies the inline fields, and sends a complete job. The coordinator does not need the job files.
 

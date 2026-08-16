@@ -4,7 +4,8 @@ Reactorcide can build, publish, pull, cache, and remove VM images through the
 `reactorcide vm-image` command. macOS and Windows workers use the same pull and
 cache code when they start a job.
 
-Windows bundles contain `disk.vhdx` and `ssh_host_ed25519_key.pub`. See
+Windows bundles contain only `disk.vhdx`. The Hyper-V worker injects new SSH
+client and host keys into each writable clone before boot. See
 [Windows VM Image Build](./windows-vm-image-build.md) for unattended creation,
 publishing, and fleet cache configuration.
 
@@ -299,20 +300,29 @@ worker does not need this option. It boots the materialized cache bundle
 directly.
 
 Use `--plain-http REGISTRY_HOST` only for a development registry that does not
-use TLS. Do not use plain HTTP for registry credentials or production images.
+use TLS. Loopback registries also require this explicit option. The option has
+no environment variable equivalent. Do not use plain HTTP for registry
+credentials or production images.
 
 ## OCI artifact format
 
-A macOS image is an OCI 1.1 artifact with these media types:
+VM images are OCI 1.1 artifacts. They use this artifact media type:
 
 - Artifact: `application/vnd.reactorcide.vm-image.v1`
+
+A macOS image uses this layer media type:
+
 - Layer: `application/vnd.reactorcide.vm-image.macos.bundle.v1.tar+zstd`
 
-The layer is a tar archive with Zstandard compression. It contains only the
-four bundle files. The pull operation verifies the OCI digest before it
-extracts the layer. It rejects extra files, links, paths, and missing files.
-It extracts the disk as a sparse file and makes the completed bundle
-read-only.
+A Windows image uses this layer media type:
+
+- Layer: `application/vnd.reactorcide.vm-image.windows.bundle.v2.tar+zstd`
+
+Each layer is a tar archive with Zstandard compression. A macOS layer contains
+the four macOS bundle files. A Windows layer contains only `disk.vhdx`. The
+pull operation verifies the OCI digest before it extracts the layer. It rejects
+extra files, links, paths, and missing files. It extracts the disk as a sparse
+file and makes the completed bundle read-only.
 
 Use a digest reference in production job files. A digest makes the job image
 immutable. Use a tag to publish a version or to select a base during image

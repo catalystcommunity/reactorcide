@@ -35,6 +35,7 @@ type fakeStore struct {
 	projects         map[string]*models.Project
 	users            map[string]*models.User
 	vcsCredentials   []models.ProjectVCSCredential
+	workflowVars     map[string]map[string]models.JSONB
 }
 
 func newFakeStore() *fakeStore {
@@ -48,7 +49,18 @@ func newFakeStore() *fakeStore {
 		jobs:             map[string]*models.Job{},
 		projects:         map[string]*models.Project{},
 		users:            map[string]*models.User{},
+		workflowVars:     map[string]map[string]models.JSONB{},
 	}
+}
+
+func (f *fakeStore) GetWorkflowVars(_ context.Context, workflowID string) (map[string]models.JSONB, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	result := map[string]models.JSONB{}
+	for key, value := range f.workflowVars[workflowID] {
+		result[key] = value
+	}
+	return result, nil
 }
 
 func hashHex(b []byte) string {

@@ -1,11 +1,31 @@
 package vmrunner
 
 import (
+	"encoding/base64"
 	"testing"
 	"time"
+	"unicode/utf16"
 
 	"github.com/stretchr/testify/require"
 )
+
+func TestEncodePowerShellCommand(t *testing.T) {
+	want := `$value="quoted"; Write-Output $value`
+	raw, err := base64.StdEncoding.DecodeString(encodePowerShellCommand(want))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(raw)%2 != 0 {
+		t.Fatalf("encoded command has odd byte length %d", len(raw))
+	}
+	units := make([]uint16, len(raw)/2)
+	for i := range units {
+		units[i] = uint16(raw[i*2]) | uint16(raw[i*2+1])<<8
+	}
+	if got := string(utf16.Decode(units)); got != want {
+		t.Fatalf("decoded command = %q, want %q", got, want)
+	}
+}
 
 func TestParseResourceSample(t *testing.T) {
 	now := time.Date(2026, 8, 3, 12, 0, 0, 0, time.UTC)

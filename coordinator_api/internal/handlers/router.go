@@ -639,6 +639,18 @@ func createAppMux() *http.ServeMux {
 		}
 
 		parts := strings.Split(strings.Trim(path, "/"), "/")
+		if len(parts) == 2 && parts[1] == "local-context" {
+			r = r.WithContext(setIDContext(r.Context(), "project_id", parts[0]))
+			handler := transactionMiddleware(authMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.Method != http.MethodGet {
+					http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+					return
+				}
+				projectHandler.GetLocalContext(w, r)
+			})))
+			handler.ServeHTTP(w, r)
+			return
+		}
 		if len(parts) >= 2 && parts[1] == "secret-grants" {
 			r = r.WithContext(setIDContext(r.Context(), "project_id", parts[0]))
 			if len(parts) == 3 {

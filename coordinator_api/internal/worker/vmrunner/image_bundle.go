@@ -19,7 +19,6 @@ const (
 	BundleHardwareModel     = "hardwaremodel.bin"
 	BundleMachineIdentifier = "machineidentifier.bin"
 	BundleWindowsDisk       = "disk.vhdx"
-	BundleWindowsHostKey    = "ssh_host_ed25519_key.pub"
 )
 
 var macBundleFiles = []string{
@@ -31,7 +30,6 @@ var macBundleFiles = []string{
 
 var windowsBundleFiles = []string{
 	BundleWindowsDisk,
-	BundleWindowsHostKey,
 }
 
 // ValidateWindowsBundle verifies the fixed bundle shape used by Hyper-V and
@@ -75,8 +73,8 @@ func WriteMacBundleArchive(ctx context.Context, bundleDir string, dst io.Writer)
 	return writeBundleArchive(ctx, bundleDir, dst, macBundleFiles, "macOS")
 }
 
-// WriteWindowsBundleArchive writes the VHDX and guest host public key as a
-// deterministic tar+zstd stream. It never includes private key material.
+// WriteWindowsBundleArchive writes the VHDX as a deterministic tar+zstd
+// stream. SSH client and host keys are created for each writable VM clone.
 func WriteWindowsBundleArchive(ctx context.Context, bundleDir string, dst io.Writer) error {
 	if err := ValidateWindowsBundle(bundleDir); err != nil {
 		return err

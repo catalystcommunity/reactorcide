@@ -7,11 +7,14 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/audit"
+	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/authz"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/checkauth"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/secrets"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store/models"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/tokencaps"
+	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/worker"
 )
 
 // SecretsHandler handles secrets API endpoints
@@ -41,7 +44,17 @@ type SecretValueResponse struct {
 
 // BatchGetRequest represents a batch get request
 type BatchGetRequest struct {
-	Refs []secrets.SecretRef `json:"refs"`
+	Refs       []secrets.SecretRef           `json:"refs"`
+	ProjectID  string                        `json:"project_id,omitempty"`
+	Selections []LocalContextSecretSelection `json:"selections,omitempty"`
+}
+
+// LocalContextSecretSelection binds a selected reference to the workflow job
+// that will use it.
+type LocalContextSecretSelection struct {
+	Path    string `json:"path"`
+	Key     string `json:"key"`
+	JobName string `json:"job_name"`
 }
 
 // BatchGetResponse represents a batch get response
@@ -85,20 +98,23 @@ func (h *SecretsHandler) getProvider(r *http.Request) (secrets.Provider, error) 
 	if err != nil {
 		return nil, err
 	}
-	db := store.GetDBFromContext(r.Context())
-
 	if principal != nil {
 		if !principal.HasCapability(tokencaps.SecretsManage) || !principal.HasOrganization(orgID) {
 			return nil, store.ErrForbidden
 		}
 	} else {
+		db := store.GetDBFromContext(r.Context())
 		authorizer := secrets.NewOrgAuthorizer(db)
 		if err := authorizer.CanAccessOrg(r.Context(), user.UserID, orgID); err != nil {
 			return nil, err
 		}
 	}
 
-	// Get org encryption key
+	return h.getProviderForOrg(r, orgID)
+}
+
+func (h *SecretsHandler) getProviderForOrg(r *http.Request, orgID string) (secrets.Provider, error) {
+	db := store.GetDBFromContext(r.Context())
 	orgKey, err := h.keyManager.GetOrgEncryptionKey(db, orgID)
 	if err != nil {
 		return nil, err
@@ -155,7 +171,7 @@ func (h *SecretsHandler) GetSecret(w http.ResponseWriter, r *http.Request) {
 			})
 			return
 		}
-		if secrets.IsAuthorizationError(err) {
+		if secrets.IsAuthorizationError(err) || errors.Is(err, store.ErrForbidden) {
 			h.respondWithJSON(w, http.StatusForbidden, ErrorResponse{
 				Error:   "forbidden",
 				Message: err.Error(),
@@ -227,7 +243,7 @@ func (h *SecretsHandler) SetSecret(w http.ResponseWriter, r *http.Request) {
 			})
 			return
 		}
-		if secrets.IsAuthorizationError(err) {
+		if secrets.IsAuthorizationError(err) || errors.Is(err, store.ErrForbidden) {
 			h.respondWithJSON(w, http.StatusForbidden, ErrorResponse{
 				Error:   "forbidden",
 				Message: err.Error(),
@@ -424,7 +440,7 @@ func (h *SecretsHandler) BatchGet(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	provider, err := h.getProvider(r)
+	provider, project, err := h.batchGetProvider(r, &req)
 	if err != nil {
 		if errors.Is(err, secrets.ErrNotInitialized) {
 			h.respondWithJSON(w, http.StatusPreconditionFailed, ErrorResponse{
@@ -433,11 +449,15 @@ func (h *SecretsHandler) BatchGet(w http.ResponseWriter, r *http.Request) {
 			})
 			return
 		}
-		if secrets.IsAuthorizationError(err) {
+		if secrets.IsAuthorizationError(err) || errors.Is(err, store.ErrForbidden) {
 			h.respondWithJSON(w, http.StatusForbidden, ErrorResponse{
 				Error:   "forbidden",
 				Message: err.Error(),
 			})
+			return
+		}
+		if errors.Is(err, store.ErrInvalidInput) {
+			h.respondWithJSON(w, http.StatusBadRequest, ErrorResponse{Error: "invalid_input", Message: "invalid project-scoped secret selection"})
 			return
 		}
 		h.respondWithJSON(w, http.StatusInternalServerError, ErrorResponse{
@@ -456,7 +476,81 @@ func (h *SecretsHandler) BatchGet(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if project != nil {
+		recordLocalContextSecretBatchRead(r.Context(), h.store, project, req.Refs)
+	}
 	h.respondWithJSON(w, http.StatusOK, BatchGetResponse{Secrets: results})
+}
+
+func recordLocalContextSecretBatchRead(ctx context.Context, value any, project *models.Project, refs []secrets.SecretRef) {
+	references := make([]string, 0, len(refs))
+	for _, ref := range refs {
+		references = append(references, ref.Path+":"+ref.Key)
+	}
+	audit.Record(ctx, value, project.OrgID, "local_context.secret_batch_read", "project", project.ProjectID, models.JSONB{"references": references, "count": len(references)})
+}
+
+func (h *SecretsHandler) batchGetProvider(r *http.Request, req *BatchGetRequest) (secrets.Provider, *models.Project, error) {
+	if req.ProjectID == "" {
+		provider, err := h.getProvider(r)
+		return provider, nil, err
+	}
+	project, err := h.store.GetProjectByID(r.Context(), req.ProjectID)
+	if err != nil {
+		return nil, nil, err
+	}
+	roleStore, ok := h.store.(authz.RoleStore)
+	if !ok {
+		return nil, nil, store.ErrForbidden
+	}
+	allowed, err := canManageProjectSecrets(r.Context(), roleStore, project)
+	if err != nil || !allowed {
+		return nil, nil, store.ErrForbidden
+	}
+	if len(req.Selections) == 0 || len(req.Selections) != len(req.Refs) {
+		return nil, nil, store.ErrInvalidInput
+	}
+	grants, ok := h.store.(worker.SecretGrantStore)
+	if !ok {
+		return nil, nil, store.ErrForbidden
+	}
+	for i, selection := range req.Selections {
+		ref := req.Refs[i]
+		if selection.Path != ref.Path || selection.Key != ref.Key || strings.TrimSpace(selection.JobName) == "" {
+			return nil, nil, store.ErrInvalidInput
+		}
+		projectID := project.ProjectID
+		job := &models.Job{OrgID: project.OrgID, UserID: project.OrgID, ProjectID: &projectID, Name: selection.JobName, ExecutionProfile: "standard", CIOrigin: "base"}
+		if err := worker.AuthorizeSecretAccess(r.Context(), grants, job, ref.Path, ref.Key); err != nil {
+			return nil, nil, store.ErrForbidden
+		}
+	}
+	principal := checkauth.GetPrincipalFromContext(r.Context())
+	if principal != nil && (!principal.HasCapability(tokencaps.ProjectsRead) || !principal.HasCapability(tokencaps.SecretsManage) || !principal.HasOrganization(project.OrgID)) {
+		return nil, nil, store.ErrForbidden
+	}
+	provider, err := h.getProviderForOrg(r, project.OrgID)
+	return provider, project, err
+}
+
+// canManageProjectSecrets restricts project-scoped secret downloads to a
+// project owner, an administrator of the owning organization, or a scoped
+// non-user token with secret-management capability. Secret grants restrict
+// which selected values can be downloaded. They do not grant a project member
+// permission to download a secret.
+func canManageProjectSecrets(ctx context.Context, roleStore authz.RoleStore, project *models.Project) (bool, error) {
+	principal := checkauth.GetPrincipalFromContext(ctx)
+	user := checkauth.GetUserFromContext(ctx)
+	if principal != nil {
+		if !principal.HasCapability(tokencaps.ProjectsRead) || !principal.HasCapability(tokencaps.SecretsManage) || !principal.HasOrganization(project.OrgID) {
+			return false, nil
+		}
+		if principal.CredentialType != "user_token" {
+			return true, nil
+		}
+	}
+	identity := authz.IdentityFromPrincipal(principal, user)
+	return authz.NewResolver(roleStore).IsProjectOwner(ctx, identity, project.ProjectID)
 }
 
 // BatchSet handles POST /api/v1/secrets/batch/set

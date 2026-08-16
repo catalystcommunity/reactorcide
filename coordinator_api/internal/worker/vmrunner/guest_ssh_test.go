@@ -349,6 +349,39 @@ func TestSSHTransport_StreamsSourceTree(t *testing.T) {
 	}
 }
 
+func TestSSHTransportDownloadsGuestResultAfterCommand(t *testing.T) {
+	server := startTestSSHServer(t)
+	transport := NewSSHTransport()
+	remoteResult := filepath.Join(t.TempDir(), "workflow-output.json")
+	hostResult := filepath.Join(t.TempDir(), "workflow-output.json")
+
+	session, err := transport.Start(context.Background(), server.addr, testCreds(), GuestCommand{
+		Platform: GuestPlatformPOSIX,
+		Args:     []string{"sh", "-c", "printf '%s' '{\"vars\":{\"channel\":\"stable\"}}' > " + shellQuote(remoteResult)},
+		Results: []GuestResultFile{{
+			SourcePath:      remoteResult,
+			DestinationPath: hostResult,
+			MaxBytes:        1024,
+		}},
+	})
+	if err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	defer session.Close()
+	go io.Copy(io.Discard, session.Stdout())
+	go io.Copy(io.Discard, session.Stderr())
+	if code, err := session.Wait(); err != nil || code != 0 {
+		t.Fatalf("Wait: code=%d err=%v", code, err)
+	}
+	data, err := os.ReadFile(hostResult)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(data) != `{"vars":{"channel":"stable"}}` {
+		t.Fatalf("result = %q", data)
+	}
+}
+
 func TestSSHClientConfigRejectsInvalidHostKey(t *testing.T) {
 	_, err := sshClientConfig(GuestCreds{
 		User:          testSSHUser,

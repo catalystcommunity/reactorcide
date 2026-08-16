@@ -160,6 +160,13 @@ Do this in the running guest before capturing it as the golden bundle:
 2. **Create the worker's `reactorcide` login account** if it was not created
    during Setup Assistant. Make sure that it can run the job toolchains.
 
+   Create the standard job directory and give the account access:
+
+   ```sh
+   sudo mkdir -p /job
+   sudo chown reactorcide:staff /job
+   ```
+
 3. **Bake the toolchain** the jobs need (Xcode / command line tools, language
    runtimes, `runnerlib` prerequisites, etc.). Everything a job uses must be
    present in the guest — there is no nested container inside the guest.
@@ -246,10 +253,10 @@ export REACTORCIDE_VM_SSH_HOST_KEY_FILE=/opt/reactorcide/guest-ssh-host.pub
 
 ### Job input transfer
 
-The worker sends the command, environment, working directory, and short-lived
-VCS credential files through SSH. It does not put secret values on the SSH
-command line. For `run-local`, it streams the local source tree as a tar archive
-and extracts it at the configured code directory in the guest.
+The worker sends the command, environment, workspace, source tree, `/job`
+input mounts, and short-lived VCS credential files through SSH. It does not put
+secret values on the SSH command line. After the command stops, the worker
+copies workflow output and trigger control files back to the host workspace.
 
 ## Smoke test (validate vz + networking + SSH)
 

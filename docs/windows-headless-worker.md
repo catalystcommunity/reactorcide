@@ -16,7 +16,10 @@ The host must have these items:
 - A prepared Hyper-V guest image for VM jobs
 
 Use [Build a Windows VM Image](./windows-vm-image-build.md) to create the image
-and guest SSH credentials without RDP or VMConnect.
+without RDP or VMConnect.
+
+The repository also has `prepare-windows-host.ps1`. Use it on a new host to
+enable Hyper-V and OpenSSH. Restart the host if the script tells you to do so.
 
 Use an elevated SSH session. This command must return `True`:
 
@@ -49,14 +52,18 @@ scp reactorcide.exe vmsmoke.exe \
 ## Prepare the service configuration
 
 Rename `worker-service.example.json` to `worker-service.json`. Set the real
-coordinator URL. Set the guest user and the guest file paths for your image.
+coordinator URL and guest user.
 
-Do not put a token, a private key, or a password in the JSON file. Put each
-secret in a file. The example config refers to these files:
+The coordinator URL must use HTTPS. Reactorcide sends the enrollment token,
+session credentials, job secrets, and logs on this connection. For an isolated
+development network, you can add `--allow-insecure-transport` to the service
+arguments. This exception has no environment variable equivalent.
+
+Do not put the enrollment token in the JSON file. The example config refers to
+this file:
 
 ```text
 C:\ProgramData\Reactorcide\secrets\enrollment-token
-C:\ProgramData\Reactorcide\secrets\guest-ssh-key
 ```
 
 The service runs as `LocalSystem`. The install script gives access to
@@ -67,9 +74,8 @@ Create the enrollment-token file without terminal output. One safe method is
 to copy an existing protected file with `scp`. Do not use `Write-Output`,
 `Get-Content`, or a command-line argument for the token.
 
-The guest host-key file is not secret. It lets the worker verify the guest SSH
-server. See [Windows VM Runners](./vm-runners-windows.md#guest-credentials-prototype)
-for the guest key procedure.
+The worker creates and injects new guest SSH keys for each VM job. The service
+does not need a guest key file.
 
 ## Install and start the service
 
@@ -150,21 +156,20 @@ executable.
 ## Test Hyper-V before you accept jobs
 
 The VM smoke test needs a prepared bundle. The bundle must contain
-`disk.vhdx`. The guest must have OpenSSH Server, the guest public key, and the
-Hyper-V Data Exchange service.
+`disk.vhdx`. The guest must have OpenSSH Server and the Hyper-V Data Exchange
+service. The base image must not contain SSH keys.
 
 Run this command in the elevated SSH session:
 
 ```powershell
 .\vmsmoke.exe `
   -bundle 'C:\ProgramData\Reactorcide\vm-images\win11-base' `
-  -user reactorcide `
-  -key 'C:\ProgramData\Reactorcide\secrets\guest-ssh-key'
+  -user reactorcide
 ```
 
 The test creates an ephemeral differencing disk and VM. It waits for guest SSH,
-runs a command, and removes the VM. A successful test ends with
-`vmsmoke: OK`.
+runs a command, checks CPU, memory, and storage metrics, and removes the VM. A
+successful test ends with `vmsmoke: OK`.
 
 ## Remove the service
 

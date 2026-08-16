@@ -94,6 +94,44 @@ func TestRequestJob_MatchesSatisfyingQueueOnly(t *testing.T) {
 	}
 }
 
+func TestRequestJobWorkflowVarsPreserveJSONTypes(t *testing.T) {
+	h := newTestHarness()
+	ctx := context.Background()
+	queueUUID := "11111111-1111-1111-1111-111111111112"
+	h.store.seedQueue(models.Queue{QueueUUID: queueUUID, Characteristics: mustCharacteristics(t, map[string]any{"os": "linux"})})
+	workflowID := "workflow-1"
+	h.store.workflowVars[workflowID] = map[string]models.JSONB{
+		"channel": {"value": "stable"},
+		"targets": {"value": []interface{}{"linux", "windows"}},
+	}
+	job := &models.Job{UserID: "user-1", Name: "build", JobCommand: "echo hi", Status: "submitted", WorkflowID: &workflowID}
+	h.store.seedJob(job)
+	if _, err := h.corndogs.SubmitTaskToQueue(ctx, queueUUID, &corndogs.TaskPayload{JobID: job.JobID}, 0); err != nil {
+		t.Fatal(err)
+	}
+	token, _ := h.registerWorker(t, "workflow-vars-worker", "linux", "amd64", nil)
+	resp, err := h.service.RequestJob(ctxWithAuth(token), csilapi.RequestJobRequest{WorkerCharacteristics: csilapi.WorkerCharacteristics{Os: "linux", Arch: "amd64"}})
+	if err != nil || resp.Lease == nil {
+		t.Fatalf("RequestJob = %#v, %v", resp, err)
+	}
+	var raw string
+	for _, value := range resp.Lease.Env {
+		if value.Key == "RC_WF_VARS_JSON" {
+			raw = value.Value
+		}
+	}
+	var decoded map[string]interface{}
+	if err := json.Unmarshal([]byte(raw), &decoded); err != nil {
+		t.Fatalf("RC_WF_VARS_JSON = %q: %v", raw, err)
+	}
+	if decoded["channel"] != "stable" {
+		t.Fatalf("channel = %#v", decoded["channel"])
+	}
+	if targets, ok := decoded["targets"].([]interface{}); !ok || len(targets) != 2 || targets[1] != "windows" {
+		t.Fatalf("targets = %#v", decoded["targets"])
+	}
+}
+
 func TestRequestJob_NoMatchingQueue(t *testing.T) {
 	h := newTestHarness()
 

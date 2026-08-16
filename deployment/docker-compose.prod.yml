@@ -116,6 +116,8 @@ services:
     privileged: true
     image: ${REACTORCIDE_WORKER_IMAGE:-containers.catalystsquad.com/public/reactorcide/worker:dev}
     container_name: reactorcide-worker
+    command:
+      - --allow-insecure-transport
     security_opt:
       - apparmor=unconfined
     environment:

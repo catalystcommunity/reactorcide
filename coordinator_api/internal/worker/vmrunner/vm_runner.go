@@ -1,20 +1,22 @@
 package vmrunner
 
 import (
-	"bytes"
 	"context"
+	"crypto/ed25519"
+	"crypto/rand"
+	"encoding/pem"
 	"errors"
 	"fmt"
 	"io"
 	"net"
 	"os"
-	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/google/uuid"
+	"golang.org/x/crypto/ssh"
 
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/resources"
 )
@@ -50,6 +52,7 @@ type JobConfig struct {
 	WorkingDir string
 	Files      []GuestFile
 	Trees      []GuestTree
+	Results    []GuestResultFile
 
 	// CPURequest/CPULimit/MemoryLimit are Kubernetes-style quantity
 	// strings, same grammar as worker.JobConfig (see internal/resources).
@@ -173,21 +176,32 @@ func (r *VMRunner) SpawnJob(ctx context.Context, config *JobConfig) (string, err
 	if err != nil {
 		return "", fmt.Errorf("resolve image: %w", err)
 	}
-	creds, err := r.credentialsForImage(basePath)
-	if err != nil {
-		return "", fmt.Errorf("resolve image credentials: %w", err)
-	}
+	creds := r.creds
 
 	spec := BootSpec{
 		CPUs:        cpuCount(config),
 		MemoryBytes: memoryLimitBytes(config),
 		JobID:       config.JobID,
 		Label:       "reactorcide-job-" + config.JobID,
+		GuestUser:   creds.User,
+	}
+	if lifecycle, ok := r.lifecycle.(EphemeralSSHCredentialLifecycle); ok && lifecycle.UsesEphemeralSSHCredentials() {
+		privateKey, authorizedKey, err := generateEphemeralSSHCredential()
+		if err != nil {
+			return "", fmt.Errorf("generate per-VM SSH credential: %w", err)
+		}
+		creds.PrivateKeyPEM = privateKey
+		creds.Password = ""
+		creds.HostPublicKey = nil
+		spec.GuestAuthorizedKey = authorizedKey
 	}
 
 	handle, addr, err := r.lifecycle.Boot(ctx, basePath, spec)
 	if err != nil {
 		return "", fmt.Errorf("boot vm: %w", err)
+	}
+	if len(addr.HostPublicKey) > 0 {
+		creds.HostPublicKey = addr.HostPublicKey
 	}
 
 	if err := waitTCPReachable(ctx, addr, r.connectTimeout, r.connectRetryInterval); err != nil {
@@ -202,6 +216,7 @@ func (r *VMRunner) SpawnJob(ctx context.Context, config *JobConfig) (string, err
 		WorkingDir: config.WorkingDir,
 		Files:      config.Files,
 		Trees:      config.Trees,
+		Results:    config.Results,
 	})
 	if err != nil {
 		r.destroyBestEffort(handle)
@@ -220,25 +235,20 @@ func (r *VMRunner) SpawnJob(ctx context.Context, config *JobConfig) (string, err
 	return id, nil
 }
 
-func (r *VMRunner) credentialsForImage(basePath string) (GuestCreds, error) {
-	creds := r.creds
-	info, err := os.Stat(basePath)
-	if err != nil || !info.IsDir() {
-		return creds, nil
-	}
-	hostKeyPath := filepath.Join(basePath, BundleWindowsHostKey)
-	hostKey, err := os.ReadFile(hostKeyPath)
-	if os.IsNotExist(err) {
-		return creds, nil
-	}
+func generateEphemeralSSHCredential() (privateKeyPEM, authorizedKey []byte, err error) {
+	publicKey, privateKey, err := ed25519.GenerateKey(rand.Reader)
 	if err != nil {
-		return GuestCreds{}, fmt.Errorf("read bundled guest host key: %w", err)
+		return nil, nil, err
 	}
-	if len(creds.HostPublicKey) > 0 && !bytes.Equal(bytes.TrimSpace(creds.HostPublicKey), bytes.TrimSpace(hostKey)) {
-		return GuestCreds{}, errors.New("configured guest host key does not match the resolved Windows image bundle")
+	block, err := ssh.MarshalPrivateKey(privateKey, "reactorcide ephemeral VM job")
+	if err != nil {
+		return nil, nil, err
 	}
-	creds.HostPublicKey = hostKey
-	return creds, nil
+	signer, err := ssh.NewPublicKey(publicKey)
+	if err != nil {
+		return nil, nil, err
+	}
+	return pem.EncodeToMemory(block), ssh.MarshalAuthorizedKey(signer), nil
 }
 
 // StreamLogs returns the guest session's stdout/stderr as ReadClosers. The

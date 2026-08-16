@@ -104,6 +104,8 @@ services:
             dockerfile: Dockerfile.worker.dev
         image: reactorcide/worker:dev
         container_name: reactorcide-worker-dev
+        command:
+            - --allow-insecure-transport
         environment:
             REACTORCIDE_COORDINATOR_URL: http://coordinator-api:8080
             # Dev-only bootstrap token; must match coordinator-api's
@@ -137,6 +139,9 @@ services:
             dockerfile: Dockerfile.web.dev
         image: reactorcide/web:dev
         container_name: reactorcide-web-dev
+        command:
+            - serve
+            - --allow-insecure-transport
         environment:
             REACTORCIDE_API_URL: "http://coordinator-api:8080"
             REACTORCIDE_API_TOKEN: "" # Set after creating a token via: docker compose exec coordinator-api /reactorcide token create --name web-ui

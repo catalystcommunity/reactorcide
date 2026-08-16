@@ -639,6 +639,20 @@ func TestResolveRunAsUserFromArgs(t *testing.T) {
 	}
 }
 
+func TestApplyLocalJobResources(t *testing.T) {
+	spec := &worker.JobSpec{Resources: map[string]interface{}{
+		"cpu":    map[string]interface{}{"request": "500m", "limit": "2"},
+		"memory": map[string]interface{}{"limit": "4Gi"},
+	}}
+	cpuRequest, err := applyLocalJobResources(spec)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cpuRequest != "500m" || spec.CPULimit != "2" || spec.MemoryLimit != "4Gi" {
+		t.Fatalf("resources = request %q, limit %q, memory %q", cpuRequest, spec.CPULimit, spec.MemoryLimit)
+	}
+}
+
 func TestIsSensitiveKey(t *testing.T) {
 	tests := []struct {
 		key      string

@@ -15,6 +15,7 @@
       "policy_revision": "policy-revision",
       "policy_rule_id": "backend-team",
       "approval_id": null,
+      "vars": {},
       "jobs": [
         {
           "job_name": "test",

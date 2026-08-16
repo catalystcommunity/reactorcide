@@ -45,20 +45,7 @@ func getPasswordConfirm() (string, error) {
 var SecretsCommand = &cli.Command{
 	Name:  "secrets",
 	Usage: "Manage secrets locally or through a Reactorcide coordinator API",
-	Flags: []cli.Flag{
-		&cli.StringFlag{
-			Name:    "api-url",
-			Aliases: []string{"u"},
-			Usage:   "Coordinator API URL. When set, secrets commands use the API instead of local storage",
-			EnvVars: []string{"REACTORCIDE_API_URL"},
-		},
-		&cli.StringFlag{
-			Name:    "token",
-			Aliases: []string{"t"},
-			Usage:   "API token for authentication when using --api-url",
-			EnvVars: []string{"REACTORCIDE_API_TOKEN"},
-		},
-	},
+	Flags: apiFlags(),
 	Subcommands: []*cli.Command{
 		{
 			Name:  "init",

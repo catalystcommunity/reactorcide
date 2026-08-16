@@ -187,6 +187,45 @@ type workflowRuntimeStatusUpdater struct {
 	nodesCalls    [][]models.WorkflowNode
 }
 
+func TestEncodeWorkflowVarsPreservesJSONTypes(t *testing.T) {
+	values := map[string]models.JSONB{
+		"string": interfaceToJSONB("stable"),
+		"list":   interfaceToJSONB([]interface{}{"a", float64(2)}),
+		"object": interfaceToJSONB(map[string]interface{}{"value": "literal", "enabled": true}),
+	}
+	data, err := EncodeWorkflowVars(values)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var decoded map[string]interface{}
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		t.Fatal(err)
+	}
+	if decoded["string"] != "stable" {
+		t.Fatalf("string = %#v", decoded["string"])
+	}
+	list, ok := decoded["list"].([]interface{})
+	if !ok || len(list) != 2 || list[0] != "a" || list[1] != float64(2) {
+		t.Fatalf("list = %#v", decoded["list"])
+	}
+	object, ok := decoded["object"].(map[string]interface{})
+	if !ok || object["value"] != "literal" || object["enabled"] != true {
+		t.Fatalf("object = %#v", decoded["object"])
+	}
+}
+
+func TestMergeWorkflowVarAcceptsDuplicateStructuredValue(t *testing.T) {
+	store := newWorkflowRuntimeStore()
+	tp := NewTriggerProcessor(store, nil)
+	value := map[string]interface{}{"channel": "stable", "targets": []interface{}{"linux", "windows"}}
+	if err := tp.mergeWorkflowVar(context.Background(), "workflow-1", "config", value, nil, nil); err != nil {
+		t.Fatal(err)
+	}
+	if err := tp.mergeWorkflowVar(context.Background(), "workflow-1", "config", value, nil, nil); err != nil {
+		t.Fatalf("duplicate value was treated as a conflict: %v", err)
+	}
+}
+
 func TestChildWorkflowLinksToParentAndRoot(t *testing.T) {
 	st := newWorkflowRuntimeStore()
 	originJobID := "eval-job"

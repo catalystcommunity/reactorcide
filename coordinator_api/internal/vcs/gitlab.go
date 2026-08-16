@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/transportsecurity"
 	"github.com/sirupsen/logrus"
 )
 
@@ -24,13 +25,18 @@ func NewGitLabClient(config Config) (*GitLabClient, error) {
 	if config.BaseURL == "" {
 		config.BaseURL = "https://gitlab.com/api/v4"
 	}
+	if err := transportsecurity.ValidateURL(config.BaseURL, config.AllowInsecureTransport, "GitLab API"); err != nil {
+		return nil, err
+	}
 
 	logger := logrus.New()
 	logger.SetFormatter(&logrus.JSONFormatter{})
 
 	return &GitLabClient{
 		config: config,
-		client: &http.Client{},
+		client: transportsecurity.HTTPClient(
+			&http.Client{}, config.AllowInsecureTransport, "GitLab API",
+		),
 		logger: logger,
 	}, nil
 }

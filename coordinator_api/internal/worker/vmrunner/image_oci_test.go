@@ -246,8 +246,8 @@ func TestOCIImageSource_ArtifactShapeMismatch(t *testing.T) {
 // registry:2 container (matching this repo's testcontainers-based
 // integration test pattern -- see test/setup_test.go's postgres container),
 // a real push over HTTP via oras-go's remote.Repository, and Resolve
-// exercised completely unmodified (no injected fakes), including plain-HTTP
-// auto-detection for the loopback registry and ambient docker-config
+// exercised completely unmodified (no injected fakes), including the explicit
+// plain-HTTP option for the loopback registry and ambient docker-config
 // credential resolution (anonymous, since the test registry requires no
 // auth). Skips gracefully if a container runtime isn't available, and is
 // skipped in -short mode like other container-backed tests in this repo.
@@ -328,7 +328,7 @@ func TestOCIImageSource_ResolveViaLocalRegistry(t *testing.T) {
 	digestRef := fmt.Sprintf("%s/reactorcide/vm-test@%s", registryAddr, manifestDesc.Digest.String())
 
 	cacheDir := t.TempDir()
-	src, err := NewOCIImageSource(cacheDir)
+	src, err := NewOCIImageSource(cacheDir, WithPlainHTTPRegistries(registryAddr))
 	require.NoError(t, err)
 
 	imageRef := registryAddr + "/reactorcide/vm-test:" + tag

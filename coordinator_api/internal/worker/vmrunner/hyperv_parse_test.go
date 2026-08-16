@@ -50,3 +50,16 @@ func TestPSQuote(t *testing.T) {
 		}
 	}
 }
+
+func TestParseVMIPv4sPreservesCandidates(t *testing.T) {
+	got := parseVMIPv4s(`["172.31.81.139","fe80::1","172.31.83.26"]`)
+	want := []string{"172.31.81.139", "172.31.83.26"}
+	if len(got) != len(want) {
+		t.Fatalf("parseVMIPv4s() = %v, want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("parseVMIPv4s() = %v, want %v", got, want)
+		}
+	}
+}

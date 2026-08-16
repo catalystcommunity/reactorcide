@@ -85,6 +85,10 @@ class JobConfig:
         job_dir: Container path runnerlib treats as the job directory.
         working_dir: Raw process working directory.
         run_as_user: Container user for deployed workers.
+        worker_class: Worker policy class for the job.
+        characteristics: Worker routing characteristics for the job.
+        resources: CPU and memory requests and limits for the job.
+        run_local: Local-only execution settings.
     """
     image: str = ""
     command: str = ""
@@ -101,6 +105,10 @@ class JobConfig:
     job_dir: str = ""
     working_dir: str = ""
     run_as_user: str = ""
+    worker_class: str = ""
+    characteristics: Dict[str, Any] = field(default_factory=dict)
+    resources: Dict[str, Any] = field(default_factory=dict)
+    run_local: Dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
@@ -149,6 +157,7 @@ class WorkflowDefinition:
     description: str = ""
     triggers: TriggersConfig = field(default_factory=TriggersConfig)
     paths: PathsConfig = field(default_factory=PathsConfig)
+    vars: Dict[str, Any] = field(default_factory=dict)
     jobs: List[JobDefinition] = field(default_factory=list)
     source_file: Optional[str] = None
 
@@ -253,6 +262,10 @@ def _parse_job_config(data: Any) -> JobConfig:
         job_dir=data.get("job_dir", "") or "",
         working_dir=data.get("working_dir", "") or "",
         run_as_user=run_as_user,
+        worker_class=data.get("worker_class", "") or "",
+        characteristics=data.get("characteristics") or {},
+        resources=data.get("resources") or {},
+        run_local=data.get("run_local") or {},
     )
 
 
@@ -567,6 +580,11 @@ def generate_triggers(
             job_dir=defn.job.job_dir or None,
             working_dir=defn.job.working_dir or None,
             run_as_user=defn.job.run_as_user or None,
+            worker_class=defn.job.worker_class or None,
+            characteristics=defn.job.characteristics or None,
+            resources=defn.job.resources or None,
+            disable_run_local=True if defn.job.disable_run_local else None,
+            run_local=defn.job.run_local or None,
             for_each=defn.job.for_each or None,
             item_var=defn.job.item_var or None,
             source_type="git" if event_context.source_url else None,
@@ -730,6 +748,9 @@ def parse_workflow_definition(
         on = data.get("triggers")
     triggers = _parse_triggers_config(on)
     paths = _parse_paths_config(data.get("paths"))
+    workflow_vars = data.get("vars") or {}
+    if not isinstance(workflow_vars, dict):
+        raise ValueError(f"Workflow '{name}'{where} has a non-mapping 'vars' field")
 
     jobs_raw = data.get("jobs")
     job_defs: List[JobDefinition] = []
@@ -753,6 +774,7 @@ def parse_workflow_definition(
         description=str(data.get("description", "") or ""),
         triggers=triggers,
         paths=paths,
+        vars=workflow_vars,
         jobs=job_defs,
         source_file=source_file,
     )

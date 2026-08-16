@@ -2,6 +2,8 @@ package worker
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"testing"
@@ -75,10 +77,13 @@ func TestToVMJobConfig_MapsRelevantFields(t *testing.T) {
 		CPULimit:     "1",
 		MemoryLimit:  "1Gi",
 		JobID:        "job-x",
-		WorkspaceDir: "/some/workspace",
+		WorkspaceDir: t.TempDir(),
 	}
 
-	vc := toVMJobConfig(config, "runner", "darwin")
+	vc, err := toVMJobConfig(config, "runner", "darwin")
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	if vc.Image != config.Image {
 		t.Errorf("Image = %q, want %q", vc.Image, config.Image)
@@ -123,7 +128,19 @@ func TestToVMJobConfig_StagesVCSAuthForWindowsGuest(t *testing.T) {
 		JobID: "job-windows",
 	}
 
-	vmConfig := toVMJobConfig(config, "runner", "windows")
+	workspace := t.TempDir()
+	config.WorkspaceDir = workspace
+	varsFile := filepath.Join(t.TempDir(), "workflow-vars.json")
+	if err := os.WriteFile(varsFile, []byte(`{"channel":"stable"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	config.ExtraMounts = []string{varsFile + ":/job/workflow-vars.json:ro"}
+	config.Env["RC_WF_VARS_FILE"] = "/job/workflow-vars.json"
+	config.Env["RC_WF_OUTPUT_FILE"] = "/job/workflow-output.json"
+	vmConfig, err := toVMJobConfig(config, "runner", "windows")
+	if err != nil {
+		t.Fatal(err)
+	}
 	if vmConfig.Platform != vmrunner.GuestPlatformWindows {
 		t.Fatalf("Platform = %q", vmConfig.Platform)
 	}
@@ -139,10 +156,13 @@ func TestToVMJobConfig_StagesVCSAuthForWindowsGuest(t *testing.T) {
 	if vmConfig.Env["REACTORCIDE_TRIGGERS_FILE"] != `C:/reactorcide/job/triggers.json` {
 		t.Fatalf("triggers file = %q", vmConfig.Env["REACTORCIDE_TRIGGERS_FILE"])
 	}
-	if len(vmConfig.Trees) != 1 || vmConfig.Trees[0].SourcePath != `C:\host\source` || vmConfig.Trees[0].Destination != `C:/reactorcide/job/src` {
+	if vmConfig.Env["RC_WF_VARS_FILE"] != `C:/reactorcide/job/workflow-vars.json` || vmConfig.Env["RC_WF_OUTPUT_FILE"] != `C:/reactorcide/job/workflow-output.json` {
+		t.Fatalf("workflow paths = %q, %q", vmConfig.Env["RC_WF_VARS_FILE"], vmConfig.Env["RC_WF_OUTPUT_FILE"])
+	}
+	if len(vmConfig.Trees) != 2 || vmConfig.Trees[1].SourcePath != `C:\host\source` || vmConfig.Trees[1].Destination != `C:/reactorcide/job/src` {
 		t.Fatalf("Trees = %+v", vmConfig.Trees)
 	}
-	if len(vmConfig.Files) != 2 || string(vmConfig.Files[0].Data) != "git-config-data" || string(vmConfig.Files[1].Data) != "credential-data" {
+	if len(vmConfig.Files) != 3 || string(vmConfig.Files[0].Data) != "git-config-data" || string(vmConfig.Files[1].Data) != "credential-data" || string(vmConfig.Files[2].Data) != `{"channel":"stable"}` {
 		t.Fatalf("Files = %+v", vmConfig.Files)
 	}
 	for _, file := range vmConfig.Files {
@@ -150,9 +170,24 @@ func TestToVMJobConfig_StagesVCSAuthForWindowsGuest(t *testing.T) {
 			t.Fatalf("file mode = %o", file.Mode)
 		}
 	}
+	if len(vmConfig.Results) != 2 || vmConfig.Results[0].SourcePath != `C:/reactorcide/job/workflow-output.json` || vmConfig.Results[0].DestinationPath != filepath.Join(workspace, "workflow-output.json") {
+		t.Fatalf("Results = %+v", vmConfig.Results)
+	}
+}
+
+func TestVMJobInputMountSupportsWindowsHostPaths(t *testing.T) {
+	host, guest, ok := vmJobInputMount(`D:\reactorcide\ci:/job/ci:ro`)
+	if !ok || host != `D:\reactorcide\ci` || guest != "/job/ci" {
+		t.Fatalf("mount = %q, %q, %v", host, guest, ok)
+	}
+	if _, _, ok := vmJobInputMount(`/tmp/passwd:/etc/passwd:ro`); ok {
+		t.Fatal("accepted a mount outside /job")
+	}
 }
 
 func TestLoadVMConfig_Defaults(t *testing.T) {
+	ConfigureVMPlainHTTPRegistries(nil)
+	t.Cleanup(func() { ConfigureVMPlainHTTPRegistries(nil) })
 	t.Setenv("REACTORCIDE_VM_IMAGE_DIR", "")
 	t.Setenv("REACTORCIDE_VM_SSH_USER", "")
 	t.Setenv("REACTORCIDE_VM_SSH_PASSWORD", "")
@@ -167,5 +202,28 @@ func TestLoadVMConfig_Defaults(t *testing.T) {
 	}
 	if cfg.SSHUser == "" {
 		t.Error("expected a non-empty default SSHUser")
+	}
+}
+
+func TestLoadVMConfigPlainHTTPIsCLIOnly(t *testing.T) {
+	ConfigureVMPlainHTTPRegistries(nil)
+	t.Cleanup(func() { ConfigureVMPlainHTTPRegistries(nil) })
+	t.Setenv("REACTORCIDE_VM_IMAGE_REGISTRY_PLAIN_HTTP", "ignored.example:5000")
+
+	cfg, err := LoadVMConfig()
+	if err != nil {
+		t.Fatalf("LoadVMConfig: %v", err)
+	}
+	if len(cfg.OCIPlainHTTPRegistries) != 0 {
+		t.Fatalf("environment enabled plain HTTP: %v", cfg.OCIPlainHTTPRegistries)
+	}
+
+	ConfigureVMPlainHTTPRegistries([]string{"explicit.example:5000"})
+	cfg, err = LoadVMConfig()
+	if err != nil {
+		t.Fatalf("LoadVMConfig after explicit configuration: %v", err)
+	}
+	if len(cfg.OCIPlainHTTPRegistries) != 1 || cfg.OCIPlainHTTPRegistries[0] != "explicit.example:5000" {
+		t.Fatalf("explicit plain HTTP registries = %v", cfg.OCIPlainHTTPRegistries)
 	}
 }

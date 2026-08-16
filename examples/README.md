@@ -33,7 +33,7 @@ job submission, job polling, cancellation, and deletion.
 Set:
 
 ```bash
-export REACTORCIDE_API_URL="http://localhost:8080"
+export REACTORCIDE_API_URL="https://ci.example.com"
 export REACTORCIDE_API_TOKEN="$(cat ~/.config/reactorcide/api-token)"
 ```
 

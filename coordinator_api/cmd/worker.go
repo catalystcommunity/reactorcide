@@ -16,6 +16,8 @@ import (
 	"github.com/catalystcommunity/app-utils-go/logging"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/characteristics"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/coordinatorworker"
+	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/transportsecurity"
+	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/worker"
 	"github.com/google/uuid"
 	"github.com/urfave/cli/v2"
 )
@@ -48,6 +50,10 @@ var workerFlags = []cli.Flag{
 		Name:    "coordinator-url",
 		Usage:   "Base URL of the coordinator this worker registers with, e.g. https://coordinator.example.com (required)",
 		EnvVars: []string{"REACTORCIDE_COORDINATOR_URL"},
+	},
+	&cli.BoolFlag{
+		Name:  "allow-insecure-transport",
+		Usage: "Allow worker credentials and job secrets over a transport without TLS (development only)",
 	},
 	&cli.StringFlag{
 		Name: "enrollment-token-file",
@@ -144,6 +150,10 @@ var workerFlags = []cli.Flag{
 		Usage:   "OCI VM image reference to pull before worker registration (repeatable)",
 		EnvVars: []string{"REACTORCIDE_VM_IMAGE_PREFETCH"},
 	},
+	&cli.StringSliceFlag{
+		Name:  "vm-image-registry-plain-http",
+		Usage: "OCI registry host that uses plain HTTP (repeatable; development only)",
+	},
 	&cli.DurationFlag{
 		Name:    "vm-image-max-unused",
 		Value:   30 * 24 * time.Hour,
@@ -164,6 +174,10 @@ func RunWorker(ctx *cli.Context) error {
 	coordinatorURL := strings.TrimSpace(ctx.String("coordinator-url"))
 	if coordinatorURL == "" {
 		return errors.New("worker: --coordinator-url (or REACTORCIDE_COORDINATOR_URL) is required")
+	}
+	allowInsecure := ctx.Bool("allow-insecure-transport")
+	if err := transportsecurity.ValidateURL(coordinatorURL, allowInsecure, "worker CSIL-RPC connection"); err != nil {
+		return fmt.Errorf("worker: %w", err)
 	}
 
 	enrollmentToken, err := loadWorkerEnrollmentToken(ctx.String("enrollment-token-file"))
@@ -203,6 +217,7 @@ func RunWorker(ctx *cli.Context) error {
 
 	containerRuntime := ctx.String("container-runtime")
 	concurrency := ctx.Int("concurrency")
+	worker.ConfigureVMPlainHTTPRegistries(ctx.StringSlice("vm-image-registry-plain-http"))
 
 	logging.Log.WithFields(map[string]interface{}{
 		"coordinator_url":   coordinatorURL,
@@ -229,6 +244,7 @@ func RunWorker(ctx *cli.Context) error {
 
 	cfg := coordinatorworker.Config{
 		CoordinatorURL:         coordinatorURL,
+		AllowInsecureTransport: allowInsecure,
 		EnrollmentToken:        enrollmentToken,
 		WorkerKey:              workerKey,
 		Hostname:               hostname,

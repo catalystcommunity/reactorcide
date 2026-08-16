@@ -9,7 +9,9 @@ import (
 	"time"
 
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/audit"
+	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/authz"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/checkauth"
+	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/config"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store/models"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/tokencaps"
@@ -27,6 +29,42 @@ type projectSecretGrantStore interface {
 	GetSecretGrant(ctx context.Context, userID string, projectID *string, ref string) (*models.SecretGrant, error)
 	UpdateSecretGrant(ctx context.Context, grant *models.SecretGrant) error
 	DeleteSecretGrant(ctx context.Context, userID string, projectID *string, ref string) error
+}
+
+type localContextProjectStore interface {
+	authz.RoleStore
+	GetExecutionProfile(context.Context, string, string) (*models.ExecutionProfile, error)
+	GetWorkerClass(context.Context, string, string) (*models.WorkerClass, error)
+	ListPoolsForWorkerClass(context.Context, string) ([]models.WorkerPool, error)
+}
+
+// LocalContextResponse contains the effective non-secret settings needed for
+// local workflow evaluation.
+type LocalContextResponse struct {
+	ProjectID               string                 `json:"project_id"`
+	ProjectName             string                 `json:"project_name"`
+	Repository              string                 `json:"repository"`
+	DefaultRunnerImage      string                 `json:"default_runner_image"`
+	EvalImage               string                 `json:"eval_image"`
+	DefaultJobCommand       string                 `json:"default_job_command,omitempty"`
+	DefaultTimeoutSeconds   int                    `json:"default_timeout_seconds"`
+	CheckoutMode            string                 `json:"checkout_mode,omitempty"`
+	DefaultWorkerClass      string                 `json:"default_worker_class"`
+	DefaultExecutionProfile string                 `json:"default_execution_profile"`
+	RuntimeCapabilities     []string               `json:"runtime_capabilities,omitempty"`
+	DenySecrets             bool                   `json:"deny_secrets"`
+	SecretPathAllowlist     []string               `json:"secret_path_allowlist,omitempty"`
+	ResourceCeilings        map[string]interface{} `json:"resource_ceilings,omitempty"`
+	TimeoutCeilingSeconds   *int                   `json:"timeout_ceiling_seconds,omitempty"`
+	MayRunAsRoot            bool                   `json:"may_run_as_root"`
+	AllowedWorkerClasses    []string               `json:"allowed_worker_classes,omitempty"`
+	CacheNamespace          *string                `json:"cache_namespace,omitempty"`
+	ArtifactNamespace       *string                `json:"artifact_namespace,omitempty"`
+	WorkerPoolIDs           []string               `json:"worker_pool_ids,omitempty"`
+	CISourceURL             string                 `json:"ci_source_url,omitempty"`
+	CISourceRef             string                 `json:"ci_source_ref,omitempty"`
+	SecretReferences        map[string]string      `json:"secret_references,omitempty"`
+	SyncedAt                time.Time              `json:"synced_at"`
 }
 
 // NewProjectHandler creates a new ProjectHandler
@@ -322,6 +360,121 @@ func (h *ProjectHandler) GetProject(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.respondWithJSON(w, http.StatusOK, projectToResponse(project))
+}
+
+// GetLocalContext handles GET /api/v1/projects/{project_id}/local-context.
+func (h *ProjectHandler) GetLocalContext(w http.ResponseWriter, r *http.Request) {
+	projectID := h.getID(r, "project_id")
+	if projectID == "" {
+		h.respondWithError(w, http.StatusBadRequest, store.ErrInvalidInput)
+		return
+	}
+	project, err := h.store.GetProjectByID(r.Context(), projectID)
+	if err != nil {
+		h.respondWithError(w, http.StatusNotFound, err)
+		return
+	}
+	value, ok := h.store.(localContextProjectStore)
+	if !ok {
+		h.respondWithError(w, http.StatusInternalServerError, errors.New("local context is not supported"))
+		return
+	}
+	allowed, err := canAccessProjectLocalContext(r.Context(), value, project)
+	if err != nil {
+		h.respondWithError(w, http.StatusInternalServerError, err)
+		return
+	}
+	if !allowed {
+		h.respondWithError(w, http.StatusNotFound, store.ErrNotFound)
+		return
+	}
+	response := LocalContextResponse{
+		ProjectID: project.ProjectID, ProjectName: project.Name, Repository: project.RepoURL,
+		DefaultRunnerImage: project.DefaultRunnerImage, EvalImage: project.DefaultRunnerImage,
+		DefaultJobCommand: project.DefaultJobCommand, DefaultTimeoutSeconds: project.DefaultTimeoutSeconds,
+		CheckoutMode: project.CheckoutMode, DefaultWorkerClass: "default", DefaultExecutionProfile: "standard",
+		CISourceURL: project.DefaultCISourceURL, CISourceRef: project.DefaultCISourceRef,
+		SecretReferences: projectSecretReferences(project), SyncedAt: time.Now().UTC(),
+	}
+	if response.DefaultRunnerImage == "" {
+		response.DefaultRunnerImage = config.DefaultRunnerImage
+		response.EvalImage = response.DefaultRunnerImage
+	}
+	if response.DefaultTimeoutSeconds == 0 {
+		response.DefaultTimeoutSeconds = config.DefaultTimeout
+	}
+	if response.CheckoutMode == "" {
+		response.CheckoutMode = config.CheckoutMode
+	}
+	if response.CISourceURL == "" {
+		response.CISourceURL = config.DefaultCiSourceURL
+		response.CISourceRef = config.DefaultCiSourceRef
+	}
+	if profile, profileErr := value.GetExecutionProfile(r.Context(), project.OrgID, response.DefaultExecutionProfile); profileErr == nil {
+		response.RuntimeCapabilities = append([]string(nil), profile.RuntimeCapabilities...)
+		response.DenySecrets = profile.DenySecrets
+		response.SecretPathAllowlist = append([]string(nil), profile.SecretPathAllowlist...)
+		response.ResourceCeilings = map[string]interface{}(profile.ResourceCeilings)
+		response.TimeoutCeilingSeconds = profile.TimeoutCeilingSeconds
+		response.MayRunAsRoot = profile.MayRunAsRoot
+		response.AllowedWorkerClasses = append([]string(nil), profile.AllowedWorkerClasses...)
+		response.CacheNamespace = profile.CacheNamespace
+		response.ArtifactNamespace = profile.ArtifactNamespace
+	} else if !errors.Is(profileErr, store.ErrNotFound) {
+		h.respondWithError(w, http.StatusInternalServerError, profileErr)
+		return
+	}
+	if class, classErr := value.GetWorkerClass(r.Context(), project.OrgID, response.DefaultWorkerClass); classErr == nil {
+		pools, poolsErr := value.ListPoolsForWorkerClass(r.Context(), class.ClassID)
+		if poolsErr != nil {
+			h.respondWithError(w, http.StatusInternalServerError, poolsErr)
+			return
+		}
+		for _, pool := range pools {
+			response.WorkerPoolIDs = append(response.WorkerPoolIDs, pool.PoolID)
+		}
+	} else if !errors.Is(classErr, store.ErrNotFound) {
+		h.respondWithError(w, http.StatusInternalServerError, classErr)
+		return
+	}
+	h.respondWithJSON(w, http.StatusOK, response)
+}
+
+func canAccessProjectLocalContext(ctx context.Context, roleStore authz.RoleStore, project *models.Project) (bool, error) {
+	principal := checkauth.GetPrincipalFromContext(ctx)
+	user := checkauth.GetUserFromContext(ctx)
+	if principal != nil {
+		if !principal.HasCapability(tokencaps.ProjectsRead) || !principal.HasOrganization(project.OrgID) {
+			return false, nil
+		}
+		if principal.CredentialType != "user_token" {
+			return true, nil
+		}
+	}
+	id := authz.IdentityFromPrincipal(principal, user)
+	role, err := authz.NewResolver(roleStore).EffectiveRoleForProject(ctx, id, project.ProjectID)
+	return role != "", err
+}
+
+func projectSecretReferences(project *models.Project) map[string]string {
+	refs := map[string]string{}
+	if project.VCSTokenSecret != "" {
+		refs["vcs"] = project.VCSTokenSecret
+	}
+	if project.WebhookSecret != "" {
+		refs["webhook"] = project.WebhookSecret
+	}
+	for provider, ref := range jsonbStringMap(project.VCSCredentialSecrets) {
+		if ref != "" {
+			refs["vcs_"+provider] = ref
+		}
+	}
+	for provider, ref := range jsonbStringMap(project.WebhookSecrets) {
+		if ref != "" {
+			refs["webhook_"+provider] = ref
+		}
+	}
+	return refs
 }
 
 // ListProjects handles GET /api/v1/projects

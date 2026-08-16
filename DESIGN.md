@@ -135,6 +135,22 @@ GCS backend is not implemented.
 `--as-runner`, `--user`, `run_as`, or `run_local` when the job needs a
 different user.
 
+### Local workflow
+
+1. The user runs `reactorcide run-local WORKFLOW_FILE`.
+2. The CLI makes a temporary trusted CI tree for the selected workflow.
+3. Runnerlib resolves the workflow and its job files.
+4. The shared workflow engine expands nodes and selects ready nodes.
+5. The local executor runs ready nodes with the selected backend.
+6. Each node receives the current workflow variables in a protected file.
+7. The shared engine merges node outputs and rejects conflicting values.
+8. The CLI writes `reactorcide-workflow-summary.json` in the workspace.
+
+The engine uses a storage adapter and an execution adapter. The coordinator
+uses a database storage adapter. Local execution uses an in-memory storage
+adapter. Both modes use the same fan-out, dependency, condition, variable
+conflict, and final-status rules.
+
 ### Remote job
 
 1. A user, VCS event, or parent job creates a job in the coordinator.
@@ -294,6 +310,13 @@ The coordinator authorizes a remote job with:
 VCS credentials are system credentials. The coordinator and worker use them
 for webhook validation, checkout, status, and comments. They are not normal
 job environment variables.
+
+Coordinator API clients, workers, workflow trigger clients, the webapp, VCS API
+clients, and OCI VM image clients send credentials and secret values only on an
+encrypted, peer-authenticated transport. An operator can permit an insecure
+development connection with an explicit command-line option. No environment
+variable can enable this exception. This rule applies to HTTP and to other RPC
+carriers.
 
 See [Secrets](./docs/secrets.md) and [VCS Credentials and Secret
 Grants](./docs/vcs-credentials-and-secret-grants.md).

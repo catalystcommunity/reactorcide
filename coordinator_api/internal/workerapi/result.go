@@ -93,8 +93,20 @@ func (s *WorkerService) ReportResult(ctx context.Context, req csilapi.ReportResu
 	// workflow-output.json vars are not merged here -- status/DAG only. Does
 	// nothing for non-workflow jobs.
 	if s.deps.WorkflowFinalizer != nil && job.WorkflowID != nil && *job.WorkflowID != "" {
-		if err := s.deps.WorkflowFinalizer.ProcessWorkflowCompletion(ctx, "", job); err != nil {
-			logging.Log.WithError(err).WithFields(map[string]interface{}{
+		var completionErr error
+		if req.WorkflowOutput != nil {
+			if finalizer, ok := s.deps.WorkflowFinalizer.(interface {
+				ProcessWorkflowCompletionData(context.Context, []byte, *models.Job) error
+			}); ok {
+				completionErr = finalizer.ProcessWorkflowCompletionData(ctx, []byte(*req.WorkflowOutput), job)
+			} else {
+				completionErr = s.deps.WorkflowFinalizer.ProcessWorkflowCompletion(ctx, "", job)
+			}
+		} else {
+			completionErr = s.deps.WorkflowFinalizer.ProcessWorkflowCompletion(ctx, "", job)
+		}
+		if completionErr != nil {
+			logging.Log.WithError(completionErr).WithFields(map[string]interface{}{
 				"job_id":      job.JobID,
 				"workflow_id": *job.WorkflowID,
 			}).Warn("Failed to advance workflow after job completion")

@@ -285,6 +285,9 @@ func runLease(c client, runner worker.JobRunner, lease csilapi.Lease, tracker *l
 		MemoryLimit:    lease.Resources.MemoryLimit,
 		JobID:          lease.JobId,
 	}
+	if cfg.AllowInsecureTransport {
+		jobConfig.Command = withRunnerlibInsecureTransport(jobConfig.Command)
+	}
 
 	runCtx := context.Background()
 
@@ -347,7 +350,28 @@ func runLease(c client, runner worker.JobRunner, lease csilapi.Lease, tracker *l
 	if errMsg != "" {
 		errMsg = masker.MaskString(errMsg)
 	}
-	reportResult(c, lease.LeaseId, exitCode, status, errMsg)
+	workflowOutput := readWorkflowOutput(workspaceDir)
+	reportResultWithOutput(c, lease.LeaseId, exitCode, status, errMsg, workflowOutput)
+}
+
+func withRunnerlibInsecureTransport(command []string) []string {
+	if len(command) >= 2 && command[0] == "runnerlib" && (command[1] == "eval" || command[1] == "trigger") {
+		for _, arg := range command[2:] {
+			if arg == "--allow-insecure-transport" {
+				return command
+			}
+		}
+		return append(append([]string(nil), command...), "--allow-insecure-transport")
+	}
+	if len(command) == 3 && (command[1] == "-c" || command[1] == "/c") {
+		script := strings.TrimSpace(command[2])
+		if (strings.HasPrefix(script, "runnerlib eval ") || strings.HasPrefix(script, "runnerlib trigger ")) && !strings.Contains(script, "--allow-insecure-transport") {
+			result := append([]string(nil), command...)
+			result[2] = command[2] + " --allow-insecure-transport"
+			return result
+		}
+	}
+	return command
 }
 
 // finalizeStatus turns a lease's raw execution outcome into the status/error
@@ -380,6 +404,27 @@ func reportResult(c client, leaseID string, exitCode int, status, errMsg string)
 	if _, err := c.ReportResult(context.Background(), leaseID, exitCode, status, errMsg); err != nil {
 		logging.Log.WithError(err).WithField("lease_id", leaseID).Error("failed to report job result to coordinator")
 	}
+}
+
+func reportResultWithOutput(c client, leaseID string, exitCode int, status, errMsg, workflowOutput string) {
+	if _, err := c.ReportResultWithOutput(context.Background(), leaseID, exitCode, status, errMsg, workflowOutput); err != nil {
+		logging.Log.WithError(err).WithField("lease_id", leaseID).Error("failed to report job result to coordinator")
+	}
+}
+
+const maxWorkflowOutputBytes = 1 << 20
+
+func readWorkflowOutput(workspaceDir string) string {
+	file, err := os.Open(filepath.Join(workspaceDir, "workflow-output.json"))
+	if err != nil {
+		return ""
+	}
+	defer file.Close()
+	data, err := io.ReadAll(io.LimitReader(file, maxWorkflowOutputBytes+1))
+	if err != nil || len(data) > maxWorkflowOutputBytes {
+		return ""
+	}
+	return string(data)
 }
 
 // pumpLogs reads newline-delimited lines from r, masks each line, batches

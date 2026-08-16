@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/transportsecurity"
 	"github.com/opencontainers/go-digest"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 	"oras.land/oras-go/v2"
@@ -35,7 +36,7 @@ func PushMacBundle(ctx context.Context, bundleDir, imageRef string, credentialSt
 	return pushBundle(ctx, bundleDir, imageRef, credentialStore, plainHTTPHosts, VMMacBundleLayerMediaType, "macOS", "macos-vm-bundle.tar.zst", WriteMacBundleArchive)
 }
 
-// PushWindowsBundle packages a VHDX and its guest host public key as one OCI artifact.
+// PushWindowsBundle packages a key-free VHDX as one OCI artifact.
 func PushWindowsBundle(ctx context.Context, bundleDir, imageRef string, credentialStore credentials.Store, plainHTTPHosts []string) (string, error) {
 	return pushBundle(ctx, bundleDir, imageRef, credentialStore, plainHTTPHosts, VMWindowsBundleLayerMediaType, "Windows", "windows-vm-bundle.tar.zst", WriteWindowsBundleArchive)
 }
@@ -124,12 +125,14 @@ func newRemoteRepository(ref registry.Reference, credentialStore credentials.Sto
 		plain[host] = struct{}{}
 	}
 	_, explicitPlain := plain[ref.Host()]
-	repo.PlainHTTP = explicitPlain || isLoopbackRegistryHost(ref.Host())
+	repo.PlainHTTP = explicitPlain
 	if credentialStore == nil {
 		credentialStore = credentials.NewMemoryStore()
 	}
 	repo.Client = &auth.Client{
-		Client:     &http.Client{},
+		Client: transportsecurity.HTTPClient(
+			&http.Client{}, explicitPlain, "OCI VM image registry",
+		),
 		Cache:      auth.NewCache(),
 		Credential: credentials.Credential(credentialStore),
 	}

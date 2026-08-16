@@ -225,9 +225,9 @@ func checkoutURLForJob(job *models.Job) string {
 func providerForCheckoutURL(raw string) (vcs.Provider, bool) {
 	host := checkoutURLHost(raw)
 	switch {
-	case strings.Contains(host, "github.com"):
+	case host == "github.com":
 		return vcs.GitHub, true
-	case strings.Contains(host, "gitlab.com"):
+	case host == "gitlab.com":
 		return vcs.GitLab, true
 	default:
 		return "", false

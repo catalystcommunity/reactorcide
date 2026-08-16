@@ -287,6 +287,17 @@ func (s *WorkerService) RequestJob(ctx context.Context, req csilapi.RequestJobRe
 	// (mirroring the local worker's own ~7ms running->failed grant-denial
 	// timing, just moved coordinator-side -- see secrets.go's doc comment).
 	env := worker.BuildJobEnv(job)
+	if job.WorkflowID != nil && *job.WorkflowID != "" {
+		if workflowVars, ok := s.deps.Store.(interface {
+			GetWorkflowVars(context.Context, string) (map[string]models.JSONB, error)
+		}); ok {
+			if values, varsErr := workflowVars.GetWorkflowVars(ctx, *job.WorkflowID); varsErr == nil {
+				if encoded, marshalErr := worker.EncodeWorkflowVars(values); marshalErr == nil {
+					env["RC_WF_VARS_JSON"] = string(encoded)
+				}
+			}
+		}
+	}
 	// A remote lease must never inherit the coordinator's static API token.
 	// The claim-specific job token below is the only API credential for it.
 	delete(env, "REACTORCIDE_API_TOKEN")

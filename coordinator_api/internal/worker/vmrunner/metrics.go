@@ -2,6 +2,7 @@ package vmrunner
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -11,6 +12,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf16"
 
 	"github.com/catalystcommunity/app-utils-go/logging"
 )
@@ -34,9 +36,11 @@ const macOSMetricsCommand = `cpu=$(ps -A -o %cpu= | awk '{s+=$1} END {printf "%.
 
 const macOSMetricsCommandWithoutStorage = `cpu=$(ps -A -o %cpu= | awk '{s+=$1} END {printf "%.2f", s+0}'); load=$(sysctl -n vm.loadavg | awk '{print $2}'); mt=$(sysctl -n hw.memsize); ncpu=$(sysctl -n hw.ncpu); fp=$(memory_pressure -Q | awk -F': ' '/free percentage/ {gsub(/%/, "", $2); print $2}'); mu=$(awk -v t="$mt" -v f="$fp" 'BEGIN {printf "%.0f", t*(100-f)/100}'); printf '%s\t%s\t%s\t%s\t0\t0\t%s\n' "$cpu" "$load" "$mu" "$mt" "$ncpu"`
 
-const windowsMetricsCommand = `$ncpu=[uint64]$env:NUMBER_OF_PROCESSORS; $cpu=(Get-Counter '\Processor(_Total)\% Processor Time').CounterSamples.CookedValue*$ncpu; $os=Get-CimInstance Win32_OperatingSystem; $disk=Get-CimInstance Win32_LogicalDisk -Filter "DeviceID='C:'"; $mt=[uint64]$os.TotalVisibleMemorySize*1024; $mu=$mt-([uint64]$os.FreePhysicalMemory*1024); $committed=([uint64]$os.TotalVirtualMemorySize-[uint64]$os.FreeVirtualMemory)*1024; $swap=[Math]::Max(0,$committed-$mu); $du=[uint64]$disk.Size-[uint64]$disk.FreeSpace; Write-Output ([string]::Join([char]9,@(("{0:F2}" -f $cpu),0,$mu,$mt,$du,[uint64]$disk.Size,$committed,$swap,$ncpu)))`
+const windowsMetricsPreamble = `Add-Type -TypeDefinition 'using System;using System.Runtime.InteropServices;public static class RCPerf{[StructLayout(LayoutKind.Sequential)]public class M{public uint length=64;public uint load;public ulong total;public ulong avail;public ulong totalPage;public ulong availPage;public ulong totalVirt;public ulong availVirt;public ulong availExt;}[DllImport("kernel32.dll",SetLastError=true)]public static extern bool GlobalMemoryStatusEx([In,Out] M status);}'; $ncpu=[uint64]$env:NUMBER_OF_PROCESSORS; $cpu1=(Get-Process | Measure-Object CPU -Sum).Sum; Start-Sleep -Milliseconds 250; $cpu2=(Get-Process | Measure-Object CPU -Sum).Sum; $cpuText=[Math]::Round(($cpu2-$cpu1)*400,2).ToString([Globalization.CultureInfo]::InvariantCulture); $mem=New-Object RCPerf+M; if(-not [RCPerf]::GlobalMemoryStatusEx($mem)){throw 'GlobalMemoryStatusEx failed'}; $mt=[uint64]$mem.total; $mu=$mt-[uint64]$mem.avail; $committed=[uint64]$mem.totalPage-[uint64]$mem.availPage; $swap=[Math]::Max(0,$committed-$mu); `
 
-const windowsMetricsCommandWithoutStorage = `$ncpu=[uint64]$env:NUMBER_OF_PROCESSORS; $cpu=(Get-Counter '\Processor(_Total)\% Processor Time').CounterSamples.CookedValue*$ncpu; $os=Get-CimInstance Win32_OperatingSystem; $mt=[uint64]$os.TotalVisibleMemorySize*1024; $mu=$mt-([uint64]$os.FreePhysicalMemory*1024); $committed=([uint64]$os.TotalVirtualMemorySize-[uint64]$os.FreeVirtualMemory)*1024; $swap=[Math]::Max(0,$committed-$mu); Write-Output ([string]::Join([char]9,@(("{0:F2}" -f $cpu),0,$mu,$mt,0,0,$committed,$swap,$ncpu)))`
+const windowsMetricsCommand = windowsMetricsPreamble + `$disk=New-Object IO.DriveInfo 'C'; $dt=[uint64]$disk.TotalSize; $du=$dt-[uint64]$disk.AvailableFreeSpace; Write-Output ([string]::Join([char]9,@($cpuText,0,$mu,$mt,$du,$dt,$committed,$swap,$ncpu)))`
+
+const windowsMetricsCommandWithoutStorage = windowsMetricsPreamble + `Write-Output ([string]::Join([char]9,@($cpuText,0,$mu,$mt,0,0,$committed,$swap,$ncpu)))`
 
 func (r *VMRunner) startMetrics(jobID string, job *vmJob) {
 	if err := os.MkdirAll(r.metricsDir, 0o700); err != nil {
@@ -123,18 +127,21 @@ func (r *VMRunner) collectResourceSample(ctx context.Context, jobID string, job 
 		if includeStorage {
 			metricsCommand = windowsMetricsCommand
 		}
-		command = []string{"powershell.exe", "-NoProfile", "-NonInteractive", "-Command", metricsCommand}
+		command = []string{"powershell.exe", "-NoProfile", "-NonInteractive", "-EncodedCommand", encodePowerShellCommand(metricsCommand)}
 	}
 	session, err := r.transport.Start(sampleCtx, job.addr, job.creds, GuestCommand{Platform: platform, Args: command})
 	if err != nil {
 		return ResourceSample{}, fmt.Errorf("start guest metrics sample: %w", err)
 	}
 	stdout, readErr := io.ReadAll(io.LimitReader(session.Stdout(), 16*1024))
-	_, _ = io.Copy(io.Discard, io.LimitReader(session.Stderr(), 16*1024))
+	stderr, stderrReadErr := io.ReadAll(io.LimitReader(session.Stderr(), 16*1024))
 	_, waitErr := session.Wait()
 	_ = session.Close()
 	if readErr != nil {
 		return ResourceSample{}, fmt.Errorf("read guest metrics sample: %w", readErr)
+	}
+	if stderrReadErr != nil {
+		return ResourceSample{}, fmt.Errorf("read guest metrics error output: %w", stderrReadErr)
 	}
 	if waitErr != nil {
 		return ResourceSample{}, fmt.Errorf("wait for guest metrics sample: %w", waitErr)
@@ -143,7 +150,23 @@ func (r *VMRunner) collectResourceSample(ctx context.Context, jobID string, job 
 	if err != nil {
 		return ResourceSample{}, fmt.Errorf("parse guest metrics sample: %w", err)
 	}
+	if sample.MemoryTotalBytes == 0 {
+		return ResourceSample{}, fmt.Errorf("guest metrics reported zero total memory: %s", strings.TrimSpace(string(stderr)))
+	}
+	if includeStorage && sample.StorageTotalBytes == 0 {
+		return ResourceSample{}, fmt.Errorf("guest metrics reported zero total storage: %s", strings.TrimSpace(string(stderr)))
+	}
 	return sample, nil
+}
+
+func encodePowerShellCommand(command string) string {
+	units := utf16.Encode([]rune(command))
+	bytes := make([]byte, len(units)*2)
+	for i, unit := range units {
+		bytes[i*2] = byte(unit)
+		bytes[i*2+1] = byte(unit >> 8)
+	}
+	return base64.StdEncoding.EncodeToString(bytes)
 }
 
 func parseResourceSample(line, jobID string, timestamp time.Time) (ResourceSample, error) {

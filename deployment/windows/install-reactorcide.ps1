@@ -105,12 +105,8 @@ $serviceConfig.environment | Add-Member -NotePropertyName 'REACTORCIDE_VM_IMAGE_
 $serviceConfig.environment | Add-Member -NotePropertyName 'REACTORCIDE_VM_IMAGE_CACHE_DIR' -NotePropertyValue $imageCacheRoot -Force
 $serviceConfig.environment | Add-Member -NotePropertyName 'REACTORCIDE_VM_SCRATCH_DIR' -NotePropertyValue $vmScratchRoot -Force
 $serviceConfig.environment | Add-Member -NotePropertyName 'REACTORCIDE_VM_REGISTRY_AUTH_FILE' -NotePropertyValue (Join-Path $stateRoot 'config\oci-auth.json') -Force
-$serviceConfig.environment | Add-Member -NotePropertyName 'REACTORCIDE_VM_SSH_PRIVATE_KEY_FILE' -NotePropertyValue (Join-Path $stateRoot 'secrets\guest-ssh-key') -Force
-if ($ImageSource -eq 'oci') {
-    $serviceConfig.environment.PSObject.Properties.Remove('REACTORCIDE_VM_SSH_HOST_KEY_FILE')
-} else {
-    $serviceConfig.environment | Add-Member -NotePropertyName 'REACTORCIDE_VM_SSH_HOST_KEY_FILE' -NotePropertyValue (Join-Path $stateRoot 'config\guest-ssh-host.pub') -Force
-}
+$serviceConfig.environment.PSObject.Properties.Remove('REACTORCIDE_VM_SSH_PRIVATE_KEY_FILE')
+$serviceConfig.environment.PSObject.Properties.Remove('REACTORCIDE_VM_SSH_HOST_KEY_FILE')
 $serviceConfig.log_file = Join-Path $stateRoot 'logs\worker.log'
 $serviceConfig | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $installedConfig -Encoding utf8
 if ($sourceEnrollmentToken) {

@@ -99,9 +99,19 @@ func (c *Client) AppendMetricBatch(ctx context.Context, req csilapi.AppendMetric
 // errMsg is optional context (e.g. a runner-side error string) and may be
 // empty; it must never carry a secret value.
 func (c *Client) ReportResult(ctx context.Context, leaseID string, exitCode int, status string, errMsg string) (csilapi.ReportResultResponse, error) {
+	return c.ReportResultWithOutput(ctx, leaseID, exitCode, status, errMsg, "")
+}
+
+// ReportResultWithOutput also returns the job's workflow output document.
+// The output rides the authenticated TLS-protected worker connection and is
+// never logged by this client.
+func (c *Client) ReportResultWithOutput(ctx context.Context, leaseID string, exitCode int, status string, errMsg, workflowOutput string) (csilapi.ReportResultResponse, error) {
 	req := csilapi.ReportResultRequest{LeaseId: leaseID, ExitCode: int64(exitCode), Status: status}
 	if errMsg != "" {
 		req.Error = &errMsg
+	}
+	if workflowOutput != "" {
+		req.WorkflowOutput = &workflowOutput
 	}
 	return c.raw.ReportResult(ctx, req)
 }

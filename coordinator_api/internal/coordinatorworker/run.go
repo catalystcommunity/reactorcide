@@ -26,7 +26,10 @@ type runnerFactory func(backend string) (worker.JobRunner, error)
 // session that expired) does not return an error -- it backs off and
 // re-registers.
 func Run(ctx context.Context, cfg Config) error {
-	transport := &workerclient.CSILRPCTransport{BaseURL: cfg.CoordinatorURL}
+	transport := &workerclient.CSILRPCTransport{
+		BaseURL:                cfg.CoordinatorURL,
+		AllowInsecureTransport: cfg.AllowInsecureTransport,
+	}
 	c := workerclient.NewWithTransport(transport)
 	return runLoop(ctx, cfg, c, worker.NewJobRunner)
 }

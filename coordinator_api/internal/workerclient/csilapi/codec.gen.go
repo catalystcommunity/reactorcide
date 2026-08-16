@@ -2226,13 +2226,16 @@ func DecodeAppendMetricBatchResponse(csilData []byte) (AppendMetricBatchResponse
 
 // csilEncReportResultRequest builds the canonical CBOR value tree for a ReportResultRequest.
 func csilEncReportResultRequest(csilV ReportResultRequest) cborValue {
-	csilEntries := make(cborMap, 0, 4)
+	csilEntries := make(cborMap, 0, 5)
 	if csilV.Error != nil {
 		csilEntries = append(csilEntries, cborEntry{cborText("error"), cborText((*csilV.Error))})
 	}
 	csilEntries = append(csilEntries, cborEntry{cborText("status"), cborText(csilV.Status)})
 	csilEntries = append(csilEntries, cborEntry{cborText("lease_id"), cborText(csilV.LeaseId)})
 	csilEntries = append(csilEntries, cborEntry{cborText("exit_code"), cborInt(csilV.ExitCode)})
+	if csilV.WorkflowOutput != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("workflow_output"), cborText((*csilV.WorkflowOutput))})
+	}
 	return csilEntries
 }
 
@@ -2278,6 +2281,13 @@ func csilDecReportResultRequest(csilRoot cborValue) (ReportResultRequest, error)
 			return csilOut, csilErr
 		}
 		csilOut.Error = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "workflow_output"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.WorkflowOutput = &csilVal
 	}
 	return csilOut, nil
 }

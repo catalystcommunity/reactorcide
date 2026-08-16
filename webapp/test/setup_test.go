@@ -182,6 +182,7 @@ func TestMain(m *testing.M) {
 	// Start webapp server
 	webConfig.APIUrl = apiBaseURL
 	webConfig.APIToken = testToken
+	webConfig.AllowInsecureTransport = true
 	// This test suite runs the webapp over plain HTTP (no TLS terminator in
 	// front of it), so the session cookie must not carry the Secure flag or
 	// no HTTP client (including net/http's own cookie jar) will ever send it

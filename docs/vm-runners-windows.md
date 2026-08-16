@@ -45,15 +45,15 @@ It can only be **run** on a real Hyper-V host (see Requirements).
 - A working **virtual switch** that gives guests an IP via DHCP. Windows 10/11's
   built-in **"Default Switch"** provides NAT + DHCP and is the default (see the
   switch note below).
-- The guest image must run an **OpenSSH server** with the worker's SSH **public
-  key** baked in, and the **Hyper-V integration services / Data Exchange** so the
-  host can discover the guest's IP (see Guest IP discovery).
+- The guest image must contain an **OpenSSH server** and the **Hyper-V
+  integration services / Data Exchange**. The base image must not contain SSH
+  authorization keys or host keys. The worker adds new keys to each clone.
 
 ## Configuration (host env vars)
 
-The image directory and SSH credentials are shared with the macOS backend and
-read by `worker.LoadVMConfig`. Two Windows-specific host knobs are read directly
-by the Hyper-V lifecycle at construction (they need no per-job plumbing):
+The image directory configuration is shared with the macOS backend and read by
+`worker.LoadVMConfig`. The Hyper-V lifecycle reads the Windows-specific host
+settings when it starts:
 
 | Env var                              | Meaning                                                        | Default          |
 | ------------------------------------ | ------------------------------------------------------------- | ---------------- |
@@ -62,18 +62,14 @@ by the Hyper-V lifecycle at construction (they need no per-job plumbing):
 | `REACTORCIDE_VM_IMAGE_CACHE_DIR`     | OCI image cache directory                                     | user cache directory |
 | `REACTORCIDE_VM_REGISTRY_AUTH_FILE`  | Docker-compatible registry credential file                    | user config directory |
 | `REACTORCIDE_VM_SSH_USER`            | guest account the worker logs in as                           | `reactorcide`    |
-| `REACTORCIDE_VM_SSH_PRIVATE_KEY_FILE`| path to the worker's SSH private key (PEM)                     | —                |
-| `REACTORCIDE_VM_SSH_HOST_KEY_FILE`   | path to the guest SSH host public key                          | —                |
-| `REACTORCIDE_VM_SSH_PASSWORD`        | password auth (discouraged; key preferred)                    | —                |
 | `REACTORCIDE_VM_METRICS_DIR`         | optional local JSON Lines debug output                         | disabled         |
 | `REACTORCIDE_VM_METRICS_INTERVAL`    | optional JSON Lines debug sample interval                      | `5s`             |
 | `REACTORCIDE_VM_SCRATCH_DIR`         | parent directory for per-job differencing disks                | system temporary directory |
 | `REACTORCIDE_VM_HYPERV_SWITCH`       | Hyper-V virtual switch new guests attach to                   | `Default Switch` |
 | `REACTORCIDE_VM_HYPERV_SECURE_BOOT`  | `off`/`false`/`0`/`no` disables Gen-2 Secure Boot; else on    | on               |
 
-> **Never** log or print the private key or any guest credential. The worker
-> reads the key from a *file* precisely so its contents stay out of the
-> environment and out of logs.
+The Windows lifecycle does not use the shared SSH password or key settings.
+It creates new keys for each VM job.
 
 ### The Hyper-V switch note
 
@@ -96,6 +92,10 @@ not signed by the Microsoft UEFI CA will fail to boot with Secure Boot on; set
 `REACTORCIDE_VM_HYPERV_SECURE_BOOT=off` for those images (the lifecycle then
 runs `Set-VMFirmware -EnableSecureBoot Off`).
 
+The worker also gives each VM a local key protector and a virtual TPM. Windows
+11 needs the virtual TPM. The key protector belongs to the temporary VM. It is
+not part of the shared base image.
+
 ## The base image: a "bundle" directory (VHDX)
 
 Mirroring the macOS bundle convention, the base image is a **bundle directory**
@@ -117,15 +117,19 @@ On each `Boot`, the lifecycle:
 2. creates a **differencing VHDX** off the base for copy-on-write
    (`New-VHD -ParentPath <base> -Path <scratch>\job.vhdx -Differencing`) — no
    filesystem-clonefile concerns; Hyper-V's differencing disk *is* the CoW,
-3. creates a Generation-2 VM from it
+3. creates new SSH client and host keys for the job,
+4. mounts the differencing disk and puts the public client key and the new host
+   key pair in the clone,
+5. creates a Generation-2 VM from it
    (`New-VM -Generation 2 -MemoryStartupBytes <spec> -VHDPath <scratch>\job.vhdx -SwitchName <switch>`),
-   sizes the CPUs (`Set-VMProcessor -Count`), optionally disables Secure Boot,
-4. starts the VM (`Start-VM`),
-5. discovers the guest's IP by polling
+   sizes the CPUs (`Set-VMProcessor -Count`), enables a virtual TPM, disables
+   automatic checkpoints, and optionally disables Secure Boot,
+6. starts the VM (`Start-VM`),
+7. discovers the guest's IP by polling
    `Get-VMNetworkAdapter -VMName <name> | Select-Object -ExpandProperty IPAddresses`
-   until the first non-APIPA IPv4 appears (see below),
-6. returns once the guest reports an IP; the worker then waits for guest SSH
-   (`:22`) to accept connections before running the job command.
+   until a non-APIPA IPv4 accepts an SSH connection (see below),
+8. returns once the guest reports a reachable IP. The worker pins the new host public
+   key and uses the in-memory client private key for SSH.
 
 `Destroy` force-stops the VM (`Stop-VM -Force -TurnOff`, tolerating an
 already-stopped guest), removes it (`Remove-VM -Force`), and deletes the scratch
@@ -204,15 +208,18 @@ supported build path.
    `runnerlib` prerequisites, etc.). Everything a job uses must be present in the
    guest — there is no nested container inside the guest.
 
-5. **Install the worker's SSH public key** (see Guest credentials).
+5. Stop `sshd`. Remove all `authorized_keys` files and all
+   `C:\ProgramData\ssh\ssh_host_*` files before you seal the image. The worker
+   adds replacement keys to each clone.
 
 6. Ensure **Hyper-V integration services / Data Exchange** are enabled (they are
    by default on modern Windows guests) so the host can discover the IP.
 
-7. **(Optional) sysprep / generalize** the image
+7. **Run Sysprep to generalize the image**
    (`C:\Windows\System32\Sysprep\sysprep.exe /generalize /oobe /shutdown`) if you
-   want a clean, re-identity-able base. Otherwise just shut the guest down
-   cleanly.
+   use a different image builder. The Reactorcide builder does this step
+   automatically. The worker writes the unattended specialization data into
+   each clone before boot.
 
 8. **Export / keep the base VHDX.** The prepared `disk.vhdx` is now your golden
    base; keep the bundle directory read-only and let each job clone it via a
@@ -225,57 +232,34 @@ You can use another image builder when it produces a Generation 2 VHDX that
 meets the bundle and guest requirements. Packer is one option. It is not a
 Reactorcide runtime dependency.
 
-## Guest credentials (prototype)
+## Guest credentials
 
-The unattended image builder generates the dedicated worker key pair. The
-guest authenticates the worker with the public key in the image. The private
-key stays on the worker host.
+Do not configure a shared SSH key for Windows guests. The worker completes
+these operations for each job:
 
-- Generate a dedicated key pair for the worker (keep the private key on the host
-  only):
+1. It creates a new Ed25519 client key pair in memory.
+2. It creates a new Ed25519 host key pair in the job scratch directory.
+3. It mounts the writable differencing VHDX.
+4. It puts the client public key in the guest account's `authorized_keys`
+   file.
+5. It puts the host key pair in `C:\ProgramData\ssh`.
+6. It starts the VM and pins the new host public key for the SSH connection.
+7. It deletes the VM and the scratch key files during cleanup.
 
-  ```sh
-  ssh-keygen -t ed25519 -f ~/.ssh/reactorcide_vm -N '' -C 'reactorcide-vm-worker'
-  ```
+The base image and OCI artifact contain no SSH keys. Different hosts can use
+the same image digest. They do not share client keys or host keys.
 
-- **Bake the public key into the golden image.** For the guest account, add the
-  public key to `C:\Users\<user>\.ssh\authorized_keys`. Note the Windows OpenSSH
-  quirk: keys for **administrators** are read from
-  `C:\ProgramData\ssh\administrators_authorized_keys` instead, so use a
-  non-admin worker account or place the key there accordingly, and check the
-  file ACLs (`sshd` refuses over-permissive `authorized_keys`).
-
-- **Point the worker at the matching private key** via
-  `REACTORCIDE_VM_SSH_PRIVATE_KEY_FILE` (read from a file so the key material
-  never passes through an env var value or gets printed).
-
-```powershell
-$env:REACTORCIDE_VM_IMAGE_DIR = 'C:\reactorcide\vm-images'
-$env:REACTORCIDE_VM_SSH_USER = 'runner'
-$env:REACTORCIDE_VM_SSH_PRIVATE_KEY_FILE = 'C:\Users\me\.ssh\reactorcide_vm'
-$env:REACTORCIDE_VM_SSH_HOST_KEY_FILE = 'C:\reactorcide\guest-ssh-host.pub'
-```
-
-### Security notes
-
-- Set `REACTORCIDE_VM_SSH_HOST_KEY_FILE` to verify a stable SSH host key from
-  the base image. If you do not set it, the transport accepts the key from the
-  private virtual switch.
-- Baking a **shared** worker key into the golden image is a prototype
-  simplification: every job clone trusts the same key. **Per-job injected keys**
-  (a unique pair minted per boot, delivered over a first-boot channel so no
-  long-lived secret lives in the image) are the intended hardening and are out of
-  scope for the current implementation. They need a first-boot delivery mechanism (an unattend/answer
-  file, a mounted seed volume, or a vsock/KVP channel) that does not yet exist
-  here.
+Use a non-administrator guest account. Windows OpenSSH uses
+`C:\ProgramData\ssh\administrators_authorized_keys` for administrator
+accounts. The current injector writes the key to the selected user's profile.
 
 ### Job input transfer
 
-The worker sends the command, environment, working directory, and short-lived
-VCS credential files through SSH. It converts the standard `/job` paths to
-`C:\reactorcide\job` paths. It does not put secret values on the SSH command
-line. For `run-local`, it streams the local source tree as a tar archive and
-extracts it at the configured code directory in the guest.
+The worker sends the command, environment, workspace, source tree, `/job`
+input mounts, and short-lived VCS credential files through SSH. It converts
+the standard `/job` paths to `C:\reactorcide\job` paths. It does not put secret
+values on the SSH command line. After the command stops, the worker copies
+workflow output and trigger control files back to the host workspace.
 
 ## VM resource telemetry
 
@@ -313,18 +297,17 @@ go build -o vmsmoke.exe .\cmd\vmsmoke
 # Run elevated (or as a Hyper-V Administrators member):
 .\vmsmoke.exe `
   -bundle C:\reactorcide\vm-images\win11-base `
-  -user runner `
-  -key C:\Users\me\.ssh\reactorcide_vm
+  -user reactorcide
 ```
 
-It boots a guest from the bundle, logs the guest IP (as `guest_ip`) once DHCP
-assigns it, runs `cmd /c echo hello` in the guest over the SSH transport, prints
-the output, then destroys the guest. `vmsmoke: OK` means Hyper-V, the virtual
-switch, and guest SSH all work.
+It boots a guest from the bundle and logs the reachable guest IP as `guest_ip`.
+It runs a command through SSH and checks CPU, memory, and storage metrics. It
+then destroys the guest. `vmsmoke: OK` means Hyper-V, the virtual switch, guest
+SSH, and VM resource collection all work.
 
 ## Running jobs
 
-Once the bundle, key, and env are in place:
+Once the bundle and environment settings are in place:
 
 ```powershell
 # Local:
@@ -338,10 +321,12 @@ A `{os: windows}` job should only be scheduled onto a Windows worker.
 ## Hardware validation status
 
 The Windows lifecycle compiles with `CGO_ENABLED=0 GOOS=windows GOARCH=amd64
-go build ./...`. Unit tests cover its pure parsing helpers. The service install,
-start, and stop flow has run on a Windows 11 Pro Hyper-V host. The unattended
-image builder passes PowerShell and answer-file syntax checks on that host.
+go build ./...`. Unit tests cover its parsing and generated PowerShell logic.
+The service install and update flow has run on a Windows 11 Pro Hyper-V host.
+The unattended builder created a Windows 11 Enterprise Evaluation 25H2 image
+from the verified Microsoft ISO on that host.
 
-The complete image build and the `New-VM`, IP discovery, SSH, and `Remove-VM`
-flow still need a hardware test with a Windows ISO. Run the documented smoke
-test before you let the worker accept jobs.
+The hardware smoke test created a differencing VHDX and a Generation 2 VM with
+a virtual TPM. It selected a reachable DHCP address, verified the injected SSH
+host key, ran a command through SSH, and removed the VM. Run the smoke test on
+each new host before you let the worker accept jobs.

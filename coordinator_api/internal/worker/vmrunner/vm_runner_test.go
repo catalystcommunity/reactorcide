@@ -5,38 +5,29 @@ import (
 	"errors"
 	"io"
 	"net"
-	"os"
-	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
 	"time"
+
+	"golang.org/x/crypto/ssh"
 )
 
-func TestCredentialsForImageUsesBundledWindowsHostKey(t *testing.T) {
-	bundle := t.TempDir()
-	hostKey := []byte("ssh-ed25519 bundled-key\n")
-	if err := os.WriteFile(filepath.Join(bundle, BundleWindowsHostKey), hostKey, 0o600); err != nil {
-		t.Fatal(err)
-	}
-	runner := New(nil, nil, nil, GuestCreds{User: "reactorcide"})
-	creds, err := runner.credentialsForImage(bundle)
+func TestGenerateEphemeralSSHCredential(t *testing.T) {
+	privateKey, authorizedKey, err := generateEphemeralSSHCredential()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if string(creds.HostPublicKey) != string(hostKey) {
-		t.Fatalf("HostPublicKey = %q", creds.HostPublicKey)
-	}
-}
-
-func TestCredentialsForImageRejectsConfiguredHostKeyMismatch(t *testing.T) {
-	bundle := t.TempDir()
-	if err := os.WriteFile(filepath.Join(bundle, BundleWindowsHostKey), []byte("ssh-ed25519 bundled"), 0o600); err != nil {
+	signer, err := ssh.ParsePrivateKey(privateKey)
+	if err != nil {
 		t.Fatal(err)
 	}
-	runner := New(nil, nil, nil, GuestCreds{HostPublicKey: []byte("ssh-ed25519 configured")})
-	if _, err := runner.credentialsForImage(bundle); err == nil {
-		t.Fatal("expected host key mismatch")
+	publicKey, _, _, _, err := ssh.ParseAuthorizedKey(authorizedKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(signer.PublicKey().Marshal()) != string(publicKey.Marshal()) {
+		t.Fatal("generated private and public keys do not match")
 	}
 }
 
@@ -77,6 +68,10 @@ type fakeLifecycle struct {
 	destroyedHandles []string
 	destroyErr       error
 }
+
+type ephemeralFakeLifecycle struct{ *fakeLifecycle }
+
+func (*ephemeralFakeLifecycle) UsesEphemeralSSHCredentials() bool { return true }
 
 func (f *fakeLifecycle) Boot(ctx context.Context, baseImagePath string, spec BootSpec) (string, GuestAddr, error) {
 	f.mu.Lock()
@@ -188,12 +183,13 @@ type fakeTransport struct {
 
 type fakeStartCall struct {
 	addr    GuestAddr
+	creds   GuestCreds
 	command GuestCommand
 }
 
 func (f *fakeTransport) Start(ctx context.Context, addr GuestAddr, creds GuestCreds, command GuestCommand) (GuestSession, error) {
 	f.mu.Lock()
-	f.starts = append(f.starts, fakeStartCall{addr: addr, command: command})
+	f.starts = append(f.starts, fakeStartCall{addr: addr, creds: creds, command: command})
 	f.mu.Unlock()
 	if f.err != nil {
 		return nil, f.err
@@ -227,6 +223,57 @@ func newTestRunner(images ImageSource, lifecycle VMLifecycle, transport GuestTra
 	return New(images, lifecycle, transport, GuestCreds{User: "runner"},
 		WithConnectTimeout(2*time.Second),
 		WithConnectRetryInterval(20*time.Millisecond))
+}
+
+func TestVMRunnerUsesPerVMSSHCredentialsWhenLifecycleSupportsInjection(t *testing.T) {
+	guestAddr, cleanup := listenLoopback(t)
+	defer cleanup()
+	hostPrivate, hostPublic, err := generateEphemeralSSHCredential()
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = hostPrivate
+	guestAddr.HostPublicKey = hostPublic
+	baseLifecycle := &fakeLifecycle{bootHandle: "vm-1", bootAddr: guestAddr}
+	lifecycle := &ephemeralFakeLifecycle{fakeLifecycle: baseLifecycle}
+	transport := &fakeTransport{next: newFakeSession("", "", 0)}
+	runner := New(&fakeImageSource{path: "base"}, lifecycle, transport, GuestCreds{
+		User:          "reactorcide",
+		Password:      "shared-password",
+		PrivateKeyPEM: []byte("shared-private-key"),
+		HostPublicKey: []byte("shared-host-key"),
+	}, WithConnectTimeout(2*time.Second), WithConnectRetryInterval(20*time.Millisecond))
+
+	if _, err := runner.SpawnJob(context.Background(), baseTestConfig()); err != nil {
+		t.Fatal(err)
+	}
+	if len(baseLifecycle.bootSpecs) != 1 || len(baseLifecycle.bootSpecs[0].GuestAuthorizedKey) == 0 {
+		t.Fatal("Boot did not receive a per-VM authorized key")
+	}
+	if baseLifecycle.bootSpecs[0].GuestUser != "reactorcide" {
+		t.Fatalf("GuestUser = %q", baseLifecycle.bootSpecs[0].GuestUser)
+	}
+	if len(transport.starts) != 1 {
+		t.Fatalf("Start calls = %d", len(transport.starts))
+	}
+	call := transport.starts[0]
+	if call.creds.Password != "" || string(call.creds.PrivateKeyPEM) == "shared-private-key" {
+		t.Fatal("transport used a configured shared client credential")
+	}
+	if string(call.creds.HostPublicKey) != string(hostPublic) {
+		t.Fatal("transport did not pin the per-VM host key")
+	}
+	clientSigner, err := ssh.ParsePrivateKey(call.creds.PrivateKeyPEM)
+	if err != nil {
+		t.Fatal(err)
+	}
+	injectedKey, _, _, _, err := ssh.ParseAuthorizedKey(baseLifecycle.bootSpecs[0].GuestAuthorizedKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(clientSigner.PublicKey().Marshal()) != string(injectedKey.Marshal()) {
+		t.Fatal("transport private key does not match the injected public key")
+	}
 }
 
 // listenLoopback binds a real loopback TCP listener and returns the

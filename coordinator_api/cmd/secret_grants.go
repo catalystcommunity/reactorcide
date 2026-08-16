@@ -19,24 +19,12 @@ import (
 var SecretGrantsCommand = &cli.Command{
 	Name:  "secret-grants",
 	Usage: "Manage API secret grants",
-	Flags: []cli.Flag{
-		&cli.StringFlag{
-			Name:    "api-url",
-			Aliases: []string{"u"},
-			Usage:   "Coordinator API URL",
-			EnvVars: []string{"REACTORCIDE_API_URL"},
-		},
-		&cli.StringFlag{
-			Name:    "token",
-			Aliases: []string{"t"},
-			Usage:   "API token for authentication",
-			EnvVars: []string{"REACTORCIDE_API_TOKEN"},
-		},
+	Flags: append(apiFlags(),
 		&cli.StringFlag{
 			Name:  "project",
 			Usage: "Project scope by ID, name, or repo URL. Omit for org/global grants",
 		},
-	},
+	),
 	Subcommands: []*cli.Command{
 		{
 			Name:  "list",

@@ -23,7 +23,10 @@ package vmrunner
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
+	"errors"
 	"fmt"
+	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -47,6 +50,9 @@ const (
 
 	// jobVHDX is the per-job differencing child VHDX created in the scratch dir.
 	jobVHDX = "job.vhdx"
+
+	guestAuthorizedKeyFile = "guest_authorized_key.pub"
+	guestHostKeyFile       = "ssh_host_ed25519_key"
 )
 
 // defaultHyperVSwitch is the virtual switch new guests attach to when
@@ -131,6 +137,9 @@ func newVMLifecycle() (VMLifecycle, error) {
 }
 
 var _ VMLifecycle = (*windowsVMLifecycle)(nil)
+var _ EphemeralSSHCredentialLifecycle = (*windowsVMLifecycle)(nil)
+
+func (*windowsVMLifecycle) UsesEphemeralSSHCredentials() bool { return true }
 
 // Boot creates a per-job scratch dir, makes a differencing (copy-on-write)
 // child VHDX off the base VHDX, creates + configures + starts a Generation-2
@@ -160,12 +169,32 @@ func (w *windowsVMLifecycle) Boot(ctx context.Context, baseImagePath string, spe
 		_ = os.RemoveAll(scratchDir)
 		return "", GuestAddr{}, err
 	}
-
+	if len(spec.GuestAuthorizedKey) == 0 {
+		return fail(errors.New("vmrunner/windows: per-VM SSH public key is required"))
+	}
+	if strings.TrimSpace(spec.GuestUser) == "" {
+		return fail(errors.New("vmrunner/windows: guest SSH user is required"))
+	}
+	authorizedKeyPath := filepath.Join(scratchDir, guestAuthorizedKeyFile)
+	if err := os.WriteFile(authorizedKeyPath, spec.GuestAuthorizedKey, 0600); err != nil {
+		return fail(fmt.Errorf("vmrunner/windows: write per-VM SSH public key: %w", err))
+	}
+	hostPrivateKey, hostPublicKey, err := generateEphemeralSSHCredential()
+	if err != nil {
+		return fail(fmt.Errorf("vmrunner/windows: generate per-VM SSH host key: %w", err))
+	}
+	hostKeyPath := filepath.Join(scratchDir, guestHostKeyFile)
+	if err := os.WriteFile(hostKeyPath, hostPrivateKey, 0600); err != nil {
+		return fail(fmt.Errorf("vmrunner/windows: write per-VM SSH host private key: %w", err))
+	}
+	if err := os.WriteFile(hostKeyPath+".pub", hostPublicKey, 0600); err != nil {
+		return fail(fmt.Errorf("vmrunner/windows: write per-VM SSH host public key: %w", err))
+	}
 	id := uuid.New().String()
 	vmName := "reactorcide-vm-" + id
 	diffPath := filepath.Join(scratchDir, jobVHDX)
 
-	if _, err := runPowerShell(ctx, w.createScript(baseVHDX, diffPath, vmName, spec)); err != nil {
+	if _, err := runPowerShell(ctx, w.createScript(baseVHDX, diffPath, vmName, authorizedKeyPath, hostKeyPath, spec)); err != nil {
 		// The VM may have been partially created before the script failed; make
 		// a best-effort removal so a half-built VM is not left registered.
 		_ = w.forceRemoveVM(context.Background(), vmName)
@@ -187,7 +216,7 @@ func (w *windowsVMLifecycle) Boot(ctx context.Context, baseImagePath string, spe
 	// operational detail.
 	logger.WithField("job_id", spec.JobID).WithField("guest_ip", ip).Info("booted Windows Hyper-V guest VM")
 
-	return id, GuestAddr{Host: ip, Port: 22}, nil
+	return id, GuestAddr{Host: ip, Port: 22, HostPublicKey: hostPublicKey}, nil
 }
 
 // Destroy force-stops and removes the guest for handle and deletes its scratch
@@ -220,22 +249,92 @@ func (w *windowsVMLifecycle) Destroy(ctx context.Context, handle string) error {
 }
 
 // createScript builds the PowerShell that creates the differencing disk and the
-// Generation-2 VM, sizes it, optionally disables Secure Boot, and starts it.
+// Generation-2 VM, sizes it, enables a virtual TPM, optionally disables Secure
+// Boot, and starts it.
 // $ErrorActionPreference = 'Stop' makes any cmdlet failure abort the whole
 // script with a non-zero exit so runPowerShell surfaces it.
-func (w *windowsVMLifecycle) createScript(baseVHDX, diffPath, vmName string, spec BootSpec) string {
+func (w *windowsVMLifecycle) createScript(baseVHDX, diffPath, vmName, authorizedKeyPath, hostKeyPath string, spec BootSpec) string {
 	var b strings.Builder
 	b.WriteString("$ErrorActionPreference = 'Stop'\n")
 	fmt.Fprintf(&b, "New-VHD -ParentPath %s -Path %s -Differencing | Out-Null\n",
 		psQuote(baseVHDX), psQuote(diffPath))
+	b.WriteString("$mounted = $null\n")
+	b.WriteString("try {\n")
+	fmt.Fprintf(&b, "  $mounted = Mount-VHD -Path %s -PassThru\n", psQuote(diffPath))
+	b.WriteString("  $partition = $mounted | Get-Disk | Get-Partition | Where-Object { $_.Type -eq 'Basic' } | Sort-Object Size -Descending | Select-Object -First 1\n")
+	b.WriteString("  if (-not $partition) { throw 'The VM disk has no Windows data partition.' }\n")
+	b.WriteString("  if (-not $partition.DriveLetter) { $partition | Add-PartitionAccessPath -AssignDriveLetter; $partition = $mounted | Get-Disk | Get-Partition | Where-Object { $_.Type -eq 'Basic' } | Sort-Object Size -Descending | Select-Object -First 1 }\n")
+	b.WriteString("  $windowsRoot = $partition.DriveLetter + ':\\'\n")
+	b.WriteString("  $unattendDirectory = Join-Path $windowsRoot 'Windows\\Panther\\Unattend'\n")
+	b.WriteString("  New-Item -ItemType Directory -Path $unattendDirectory -Force | Out-Null\n")
+	unattend := windowsSpecializeUnattend(windowsComputerName(spec.JobID))
+	fmt.Fprintf(&b, "  $unattendBytes = [Convert]::FromBase64String(%s)\n", psQuote(base64.StdEncoding.EncodeToString([]byte(unattend))))
+	b.WriteString("  [IO.File]::WriteAllBytes((Join-Path $unattendDirectory 'Unattend.xml'), $unattendBytes)\n")
+	fmt.Fprintf(&b, "  $userSSH = Join-Path $windowsRoot %s\n", psQuote(filepath.Join("Users", spec.GuestUser, ".ssh")))
+	b.WriteString("  if (-not (Test-Path -LiteralPath $userSSH)) { throw 'The guest SSH account directory is not prepared.' }\n")
+	fmt.Fprintf(&b, "  Copy-Item -LiteralPath %s -Destination (Join-Path $userSSH 'authorized_keys') -Force\n", psQuote(authorizedKeyPath))
+	b.WriteString("  & icacls.exe (Join-Path $userSSH 'authorized_keys') /inheritance:e | Out-Null\n")
+	b.WriteString("  if ($LASTEXITCODE -ne 0) { throw 'The guest authorized-key access rules could not be inherited.' }\n")
+	b.WriteString("  $sshRoot = Join-Path $windowsRoot 'ProgramData\\ssh'\n")
+	b.WriteString("  Get-ChildItem -LiteralPath $sshRoot -Filter 'ssh_host_*' -File -ErrorAction SilentlyContinue | Remove-Item -Force\n")
+	fmt.Fprintf(&b, "  Copy-Item -LiteralPath %s -Destination (Join-Path $sshRoot 'ssh_host_ed25519_key') -Force\n", psQuote(hostKeyPath))
+	fmt.Fprintf(&b, "  Copy-Item -LiteralPath %s -Destination (Join-Path $sshRoot 'ssh_host_ed25519_key.pub') -Force\n", psQuote(hostKeyPath+".pub"))
+	b.WriteString("  & icacls.exe (Join-Path $sshRoot 'ssh_host_ed25519_key') /inheritance:r /grant:r '*S-1-5-18:F' '*S-1-5-32-544:F' | Out-Null\n")
+	b.WriteString("  if ($LASTEXITCODE -ne 0) { throw 'The guest host-key access rules could not be set.' }\n")
+	b.WriteString("} finally {\n")
+	fmt.Fprintf(&b, "  if ($null -ne $mounted) { Dismount-VHD -Path %s -ErrorAction SilentlyContinue }\n", psQuote(diffPath))
+	b.WriteString("}\n")
 	fmt.Fprintf(&b, "New-VM -Name %s -Generation 2 -MemoryStartupBytes %d -VHDPath %s -SwitchName %s | Out-Null\n",
 		psQuote(vmName), winMemoryBytes(spec), psQuote(diffPath), psQuote(w.switchName))
 	fmt.Fprintf(&b, "Set-VMProcessor -VMName %s -Count %d\n", psQuote(vmName), winCPUCount(spec))
+	fmt.Fprintf(&b, "Set-VMKeyProtector -VMName %s -NewLocalKeyProtector\n", psQuote(vmName))
+	fmt.Fprintf(&b, "Enable-VMTPM -VMName %s\n", psQuote(vmName))
+	fmt.Fprintf(&b, "Set-VM -VMName %s -AutomaticCheckpointsEnabled $false\n", psQuote(vmName))
 	if !w.secureBoot {
 		fmt.Fprintf(&b, "Set-VMFirmware -VMName %s -EnableSecureBoot Off\n", psQuote(vmName))
 	}
 	fmt.Fprintf(&b, "Start-VM -Name %s\n", psQuote(vmName))
 	return b.String()
+}
+
+func windowsComputerName(jobID string) string {
+	var suffix strings.Builder
+	for _, r := range strings.ToUpper(jobID) {
+		if r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' {
+			suffix.WriteRune(r)
+		}
+		if suffix.Len() >= 12 {
+			break
+		}
+	}
+	if suffix.Len() == 0 {
+		suffix.WriteString("JOB")
+	}
+	return "RC-" + suffix.String()
+}
+
+func windowsSpecializeUnattend(computerName string) string {
+	return `<?xml version="1.0" encoding="utf-8"?>
+<unattend xmlns="urn:schemas-microsoft-com:unattend">
+  <settings pass="specialize">
+    <component name="Microsoft-Windows-Shell-Setup" processorArchitecture="amd64" publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS" xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State">
+      <ComputerName>` + computerName + `</ComputerName>
+      <TimeZone>UTC</TimeZone>
+    </component>
+  </settings>
+  <settings pass="oobeSystem">
+    <component name="Microsoft-Windows-Shell-Setup" processorArchitecture="amd64" publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS" xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State">
+      <OOBE>
+        <HideEULAPage>true</HideEULAPage>
+        <HideLocalAccountScreen>true</HideLocalAccountScreen>
+        <HideOEMRegistrationScreen>true</HideOEMRegistrationScreen>
+        <HideOnlineAccountScreens>true</HideOnlineAccountScreens>
+        <HideWirelessSetupInOOBE>true</HideWirelessSetupInOOBE>
+        <ProtectYourPC>3</ProtectYourPC>
+      </OOBE>
+    </component>
+  </settings>
+</unattend>`
 }
 
 // forceRemoveVM turns off (does not gracefully shut down) and removes the named
@@ -254,10 +353,11 @@ func (w *windowsVMLifecycle) forceRemoveVM(ctx context.Context, vmName string) e
 	return nil
 }
 
-// resolveGuestIPv4 polls Get-VMNetworkAdapter until the guest reports a usable
-// IPv4 address, ctx is canceled, or timeout elapses. Transient PowerShell
-// errors (the adapter/integration service not yet ready) are treated as
-// "keep polling" until the deadline.
+// resolveGuestIPv4 polls Get-VMNetworkAdapter until the guest reports an IPv4
+// address whose SSH port is reachable, ctx is canceled, or timeout elapses.
+// A sealed Windows image can retain a stale Data Exchange address until its
+// clone publishes a new DHCP lease. Testing reachability prevents the stale
+// value from consuming VMRunner's entire connection timeout.
 func (w *windowsVMLifecycle) resolveGuestIPv4(ctx context.Context, vmName string, timeout, poll time.Duration) (string, error) {
 	script := "Get-VMNetworkAdapter -VMName " + psQuote(vmName) +
 		" | Select-Object -ExpandProperty IPAddresses | ConvertTo-Json -Compress"
@@ -268,8 +368,14 @@ func (w *windowsVMLifecycle) resolveGuestIPv4(ctx context.Context, vmName string
 		out, err := runPowerShell(ctx, script)
 		if err != nil {
 			lastErr = err
-		} else if ip, ok := parseVMIPv4(out); ok {
-			return ip, nil
+		} else {
+			for _, ip := range parseVMIPv4s(out) {
+				conn, dialErr := (&net.Dialer{Timeout: time.Second}).DialContext(ctx, "tcp", net.JoinHostPort(ip, "22"))
+				if dialErr == nil {
+					_ = conn.Close()
+					return ip, nil
+				}
+			}
 		}
 
 		if ctx.Err() != nil {
@@ -279,7 +385,7 @@ func (w *windowsVMLifecycle) resolveGuestIPv4(ctx context.Context, vmName string
 			if lastErr != nil {
 				return "", fmt.Errorf("guest reported no IPv4 within %s (last query error: %w)", timeout, lastErr)
 			}
-			return "", fmt.Errorf("guest reported no IPv4 within %s (is Hyper-V Data Exchange running in the guest?)", timeout)
+			return "", fmt.Errorf("guest reported no SSH-reachable IPv4 within %s (is Hyper-V Data Exchange and sshd running in the guest?)", timeout)
 		}
 		select {
 		case <-ctx.Done():

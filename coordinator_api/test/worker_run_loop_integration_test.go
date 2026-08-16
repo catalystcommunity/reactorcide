@@ -98,13 +98,14 @@ func TestWorkerRunLoopDockerIntegration(t *testing.T) {
 	// --- run ONE iteration of the real coordinator-mediated worker loop -----
 
 	cfg := coordinatorworker.Config{
-		CoordinatorURL:   server.URL,
-		EnrollmentToken:  rawToken,
-		WorkerKey:        uniqueName("worker-key"),
-		OS:               "linux",
-		Arch:             "amd64",
-		ContainerRuntime: "docker",
-		Concurrency:      1,
+		CoordinatorURL:         server.URL,
+		AllowInsecureTransport: true,
+		EnrollmentToken:        rawToken,
+		WorkerKey:              uniqueName("worker-key"),
+		OS:                     "linux",
+		Arch:                   "amd64",
+		ContainerRuntime:       "docker",
+		Concurrency:            1,
 	}
 
 	runCtx, cancel := context.WithTimeout(ctx, 90*time.Second)

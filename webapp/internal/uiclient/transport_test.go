@@ -126,7 +126,7 @@ func TestTransport_SuccessRoundTrip(t *testing.T) {
 	srv := newStubDispatcherServer(t)
 	defer srv.Close()
 
-	clients := New(srv.URL)
+	clients := NewWithTransport(&CSILRPCTransport{BaseURL: srv.URL, AllowInsecureTransport: true})
 	resp, err := clients.Auth.GetAuthConfig(context.Background(), csilapi.GetAuthConfigRequest{})
 	if err != nil {
 		t.Fatalf("GetAuthConfig: %v", err)
@@ -143,7 +143,7 @@ func TestTransport_ServiceErrorSurfacesAsServiceCallError(t *testing.T) {
 	srv := newStubDispatcherServer(t)
 	defer srv.Close()
 
-	clients := New(srv.URL)
+	clients := NewWithTransport(&CSILRPCTransport{BaseURL: srv.URL, AllowInsecureTransport: true})
 	_, err := clients.Auth.Logout(context.Background(), csilapi.LogoutRequest{})
 	if err == nil {
 		t.Fatalf("Logout: want an error (unimplemented op), got nil")
@@ -161,7 +161,7 @@ func TestTransport_AuthTokenPropagatesPerRequest(t *testing.T) {
 	srv := newStubDispatcherServer(t)
 	defer srv.Close()
 
-	clients := New(srv.URL)
+	clients := NewWithTransport(&CSILRPCTransport{BaseURL: srv.URL, AllowInsecureTransport: true})
 
 	t.Run("with token", func(t *testing.T) {
 		ctx := WithAuthToken(context.Background(), "sekrit-session-token")

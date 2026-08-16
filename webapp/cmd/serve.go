@@ -6,6 +6,7 @@ import (
 
 	"github.com/catalystcommunity/reactorcide/webapp/internal/config"
 	"github.com/catalystcommunity/reactorcide/webapp/internal/handlers"
+	"github.com/catalystcommunity/reactorcide/webapp/internal/transportsecurity"
 	"github.com/sirupsen/logrus"
 	"github.com/urfave/cli/v2"
 )
@@ -35,6 +36,11 @@ var flags = []cli.Flag{
 		EnvVars:     []string{"REACTORCIDE_API_URL"},
 		Destination: &config.APIUrl,
 	},
+	&cli.BoolFlag{
+		Name:        "allow-insecure-transport",
+		Usage:       "Allow credentials and user sessions on a coordinator connection without TLS (development only)",
+		Destination: &config.AllowInsecureTransport,
+	},
 	&cli.StringFlag{
 		Name:        "api-token",
 		Usage:       "Bearer token for coordinator API authentication",
@@ -50,6 +56,9 @@ var flags = []cli.Flag{
 }
 
 func Serve() error {
+	if err := transportsecurity.ValidateURL(config.APIUrl, config.AllowInsecureTransport, "web coordinator connection"); err != nil {
+		return err
+	}
 	if config.APIToken == "" {
 		logrus.Warn("No API token configured - API requests will fail. Set REACTORCIDE_API_TOKEN.")
 	}

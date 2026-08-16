@@ -68,14 +68,23 @@ type BootSpec struct {
 	// Label is a human-readable name for the clone/VM (e.g.
 	// "reactorcide-job-<id>"), mirroring DockerRunner's container name.
 	Label string
+
+	// GuestAuthorizedKey is the per-boot SSH client public key that a
+	// lifecycle can inject into a writable VM clone. The read-only base image
+	// must not contain this key.
+	GuestAuthorizedKey []byte
+
+	// GuestUser is the account that receives GuestAuthorizedKey.
+	GuestUser string
 }
 
 // GuestAddr is how the host reaches a booted guest's transport endpoint. Both
 // fields are required for any transport dialed over TCP (SSH today); a future
 // vsock-based transport could repurpose Host as a CID.
 type GuestAddr struct {
-	Host string
-	Port int
+	Host          string
+	Port          int
+	HostPublicKey []byte
 }
 
 // VMLifecycle clones a base image and boots/destroys the resulting guest VM.
@@ -97,6 +106,13 @@ type VMLifecycle interface {
 	// VMRunner may call it from more than one path (a failed boot's cleanup,
 	// Stop's grace timeout, and Cleanup can race in principle).
 	Destroy(ctx context.Context, handle string) error
+}
+
+// EphemeralSSHCredentialLifecycle marks a lifecycle that injects a new SSH
+// client public key into each VM clone. VMRunner generates the matching
+// private key for one job and does not read a shared private key from disk.
+type EphemeralSSHCredentialLifecycle interface {
+	UsesEphemeralSSHCredentials() bool
 }
 
 // GuestCreds carries whatever a GuestTransport needs to authenticate to the
@@ -144,6 +160,17 @@ type GuestTree struct {
 	Destination string
 }
 
+// GuestResultFile is a small control file copied from the guest to the host
+// after the command exits. DestinationPath is a host path. MaxBytes limits
+// memory and disk use during transfer. A missing optional file is not an
+// error.
+type GuestResultFile struct {
+	SourcePath      string
+	DestinationPath string
+	MaxBytes        int64
+	Optional        bool
+}
+
 // GuestCommand contains all process inputs that must cross the guest
 // isolation boundary.
 type GuestCommand struct {
@@ -153,6 +180,7 @@ type GuestCommand struct {
 	WorkingDir string
 	Files      []GuestFile
 	Trees      []GuestTree
+	Results    []GuestResultFile
 }
 
 // GuestTransport starts a command inside an already-booted guest and streams

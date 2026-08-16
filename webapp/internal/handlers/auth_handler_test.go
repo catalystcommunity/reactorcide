@@ -15,7 +15,9 @@ import (
 func newTestWebHandler(t *testing.T, fc *fakeCoordinator) *WebHandler {
 	t.Helper()
 	srv := newTestServer(t, fc)
-	return NewWebHandler(NewAPIClient(), uiclient.New(srv.URL))
+	return NewWebHandler(NewAPIClient(), uiclient.NewWithTransport(&uiclient.CSILRPCTransport{
+		BaseURL: srv.URL, AllowInsecureTransport: true,
+	}))
 }
 
 // withAuthMode registers a get-auth-config fakeOp returning the given mode.
