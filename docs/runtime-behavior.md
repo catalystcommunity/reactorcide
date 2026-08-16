@@ -6,7 +6,7 @@ Reactorcide treats local execution as a first-class path. The same job definitio
 
 | Mode | Runtime | Code preparation | Logs |
 |---|---|---|---|
-| `run-local` | Docker or containerd/nerdctl | Bind-mounts `--job-dir` by default, or clones `--code-url` / `--pr` into a temp checkout | Streams directly from the local container |
+| `run-local` | Docker or containerd/nerdctl | Mounts the current repository, separate local source and CI directories, or a `--code-url` checkout | Streams directly from the local container |
 | VM worker | Docker or containerd/nerdctl | Worker prepares a fresh workspace and source checkout | Streams from the runtime through the worker |
 | Kubernetes worker | Kubernetes Jobs | Job pod prepares a fresh workspace and source checkout | Worker streams pod logs through the Kubernetes API |
 
@@ -24,7 +24,12 @@ Jobs have three related paths:
 
 For most jobs, leave these unset and use `/job/src`. Set `code_dir` and `job_dir` only when a job image or script expects a different layout.
 
-`run-local` bind-mounts the local `--job-dir` directly at `code_dir`. This is intentional: local jobs should see the working tree exactly as the user has it. A job can also run without local code, or use `--code-url`, `--code-ref`, or `--pr` to clone a separate checkout.
+`run-local` finds the repository that contains the current directory and
+mounts it at `code_dir` by default. It also mounts that repository read-only
+at `/job/ci`. Use `--source-dir` and `--ci-dir` to select different local
+trees. This separation lets a job test
+one checkout while it runs trusted control code from another checkout. Use
+`--code-url` and `--code-ref` only when Reactorcide must clone another source.
 
 Runnerlib reads `REACTORCIDE_CODE_DIR` and `REACTORCIDE_JOB_DIR`, so jobs should prefer those variables over hard-coded paths when practical.
 

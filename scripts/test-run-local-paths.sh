@@ -28,9 +28,9 @@ run_job() {
 
   cd "$ROOT_DIR/coordinator_api"
   if [ "${REACTORCIDE_TEST_USE_BINARY:-}" = "1" ] && [ -x ./reactorcide ]; then
-    ./reactorcide run-local --backend "$BACKEND" --job-dir "$SRC_DIR" "$job_file"
+    ./reactorcide run-local --backend "$BACKEND" --source-dir "$SRC_DIR" --ci-dir "$ROOT_DIR" "$job_file"
   else
-    go run . run-local --backend "$BACKEND" --job-dir "$SRC_DIR" "$job_file"
+    go run . run-local --backend "$BACKEND" --source-dir "$SRC_DIR" --ci-dir "$ROOT_DIR" "$job_file"
   fi
 }
 
@@ -44,8 +44,10 @@ command: |-
   set -eu
   test "$REACTORCIDE_CODE_DIR" = "/job/custom-code"
   test "$REACTORCIDE_JOB_DIR" = "/job/custom-code/nested"
+  test "$REACTORCIDE_CI_SOURCE_DIR" = "/job/ci"
   test "$(pwd)" = "/job/custom-code/nested"
   test "$(cat marker.txt)" = "mounted source"
+  test -f /job/ci/DESIGN.md
   echo "custom path run-local ok"
 YAML
 

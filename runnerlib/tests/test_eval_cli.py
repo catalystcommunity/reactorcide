@@ -142,8 +142,8 @@ class TestEvalCommand:
         assert by_name["test-go"]["disable_run_local"] is True
         assert by_name["test-go"]["run_local"] == {"as_runner": True}
 
-    def test_explicit_workflow_ignores_event_filter(self, temp_dirs):
-        """An explicit workflow runs even when its event filter does not match."""
+    def test_explicit_workflow_uses_event_filter(self, temp_dirs):
+        """An explicit workflow still evaluates its selected event trigger."""
         ci_dir, src_dir, jobs_dir, triggers_file = temp_dirs
         wf_dir = ci_dir / ".reactorcide" / "workflows"
         wf_dir.mkdir(parents=True)
@@ -172,7 +172,23 @@ class TestEvalCommand:
         with open(triggers_file) as f:
             data = json.load(f)
         assert [workflow["name"] for workflow in data["workflows"]] == ["Release"]
+        assert data["workflows"][0]["jobs"] == []
+
+        triggers_file.unlink()
+        result = runner.invoke(app, [
+            "eval",
+            "--ci-source-dir", str(ci_dir),
+            "--source-dir", str(src_dir),
+            "--event-type", "pull_request_merged",
+            "--workflow-file", str(selected),
+            "--triggers-file", str(triggers_file),
+        ])
+
+        assert result.exit_code == 0, result.stdout
+        with open(triggers_file) as f:
+            data = json.load(f)
         assert data["workflows"][0]["vars"] == {"channel": "stable"}
+        assert [job["job_name"] for job in data["workflows"][0]["jobs"]] == ["release"]
 
     def test_changed_file_option_controls_workflow_paths(self, temp_dirs):
         """Explicit changed paths replace automatic Git change detection."""

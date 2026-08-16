@@ -24,7 +24,7 @@ Prefer inline environment assignment with command substitution for commands that
 
 ```bash
 REACTORCIDE_SECRETS_PASSWORD="$(cat ~/.reactorcide-pass)" \
-  ./coordinator_api/reactorcide run-local --job-dir ./ ./jobs/build-all.yaml
+  ./coordinator_api/reactorcide run-local ./jobs/build-all.yaml
 ```
 
 When a command needs an API token or another stored secret, pass it through the consuming command rather than storing or displaying it:
@@ -53,7 +53,7 @@ If a secret-bearing command fails, summarize the failure without including secre
 ## Architecture Notes Agents Must Preserve
 
 - Trusted CI definitions are separate from untrusted source code. For fork PRs, `SourceURL` can point at the fork, but `CISourceURL` must remain trusted upstream CI content.
-- `run-local` is the canonical local execution path. It either bind-mounts the working tree or clones requested code with `--code-url` / `--code-ref` / `--pr`.
+- `run-local` is the canonical local execution path. It mounts the current repository as source and trusted CI by default. Use `--source-dir` and `--ci-dir` for separate local trees, or clone requested code with `--code-url` and `--code-ref`.
 - Worker jobs run as the image runner uid `1001` by default, or as `run_as.user` when set. Capabilities such as `docker` and `builder` do not implicitly switch jobs to root.
 - `run-local` defaults to the host uid for direct bind mounts. Use `--as-runner`, `--user`, `run_as`, or job `run_local` settings when a job needs runner/root/explicit uid behavior.
 - `run_local` is local-only configuration. The worker ignores it; `run_as` is portable job identity configuration.
@@ -94,16 +94,17 @@ Run a local job with secrets supplied without disclosure:
 
 ```bash
 REACTORCIDE_SECRETS_PASSWORD="$(cat ~/.reactorcide-pass)" \
-  ./coordinator_api/reactorcide run-local --job-dir ./ ./jobs/build-all.yaml
+  ./coordinator_api/reactorcide run-local ./jobs/build-all.yaml
 ```
 
 Test fork PR behavior locally:
 
 ```bash
 ./coordinator_api/reactorcide run-local \
-  --code-url https://github.com/fork-owner/repo.git \
-  --code-ref branch-name \
-  .reactorcide/jobs/conventional-commits.yaml
+  --source-dir /path/to/tested-worktree \
+  --ci-dir ./ \
+  --event pull_request_updated \
+  .reactorcide/workflows/pr.yaml
 ```
 
 Use runner uid parity locally:

@@ -357,6 +357,7 @@ func toVMJobConfig(config *JobConfig, guestUser, hostOS string) (*vmrunner.JobCo
 		for _, key := range []string{
 			"HOME",
 			"REACTORCIDE_CODE_DIR",
+			"REACTORCIDE_CI_SOURCE_DIR",
 			"REACTORCIDE_JOB_DIR",
 			"REACTORCIDE_WORKING_DIR",
 			"REACTORCIDE_TRIGGERS_FILE",

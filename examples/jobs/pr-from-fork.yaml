@@ -1,13 +1,10 @@
 name: pr-from-fork-example
 description: |
-  Example raw-command job that handles both fork PRs and same-repo PRs
-  correctly. Clones from the head repo (the fork for cross-repo PRs) and
-  optionally adds the upstream as a second remote so diff-base operations
-  work even when the fork doesn't have the upstream's tip.
+  Example raw-command job that handles both fork PRs and same-repo PRs.
+  The worker or run-local command prepares the source checkout. The job adds
+  the upstream remote when it needs the base branch for a comparison.
 
-  Run locally against a fork PR:
-    reactorcide run-local --pr 60 examples/jobs/pr-from-fork.yaml
-  Or with explicit URL + ref:
+  Run locally with an explicit source URL and ref:
     reactorcide run-local \
       --code-url https://github.com/fork-owner/repo.git \
       --code-ref some-feature-branch \
@@ -18,17 +15,14 @@ job:
   raw_command: true
   command: |
     set -e
-    # HEAD_URL points at the fork for cross-repo PRs; falls back to
-    # SOURCE_URL for back-compat with older worker versions. Same for HEAD_REF
-    # vs PR_REF and BASE_URL/BASE_REF.
+    cd "${REACTORCIDE_CODE_DIR:-/job/src}"
+
     HEAD_URL="${REACTORCIDE_HEAD_URL:-$REACTORCIDE_SOURCE_URL}"
-    HEAD_REF="${REACTORCIDE_HEAD_REF:-$REACTORCIDE_PR_REF}"
+    HEAD_REF="${REACTORCIDE_HEAD_REF:-${REACTORCIDE_PR_REF:-$REACTORCIDE_SOURCE_REF}}"
     BASE_URL="${REACTORCIDE_BASE_URL}"
     BASE_REF="${REACTORCIDE_BASE_REF:-$REACTORCIDE_PR_BASE_REF}"
 
-    echo "Cloning code source: ${HEAD_URL} @ ${HEAD_REF}"
-    git clone --branch "${HEAD_REF}" "${HEAD_URL}" /job/src
-    cd /job/src
+    echo "Prepared source: ${HEAD_URL} @ ${HEAD_REF}"
 
     # Add upstream as a second remote for diff-base ops (only if it differs).
     if [ -n "${BASE_URL}" ] && [ "${BASE_URL}" != "${HEAD_URL}" ]; then

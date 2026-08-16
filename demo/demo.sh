@@ -332,12 +332,13 @@ do_hello_local() {
     info "Job file: demo/jobs/hello-demo.yaml"
     info "Backend:  $backend"
     [[ -n "$sudo_prefix" ]] && info "Using sudo -E (container socket requires elevated privileges)"
-    info "Command:  reactorcide run-local --backend $backend --job-dir ./ demo/jobs/hello-demo.yaml"
+    info "Command:  reactorcide run-local --backend $backend demo/jobs/hello-demo.yaml"
     echo ""
 
     $sudo_prefix "$CLI" run-local \
         --backend "$backend" \
-        --job-dir "$REPO_ROOT" \
+        --source-dir "$REPO_ROOT" \
+        --ci-dir "$REPO_ROOT" \
         "$SCRIPT_DIR/jobs/hello-demo.yaml"
 }
 
@@ -395,12 +396,13 @@ do_build_local() {
     info "Job file: demo/jobs/build-demo-site.yaml"
     info "Backend:  $backend"
     [[ -n "$sudo_prefix" ]] && info "Using sudo -E (container socket requires elevated privileges)"
-    info "Command:  reactorcide run-local --backend $backend --job-dir ./ demo/jobs/build-demo-site.yaml"
+    info "Command:  reactorcide run-local --backend $backend demo/jobs/build-demo-site.yaml"
     echo ""
 
     $sudo_prefix "$CLI" run-local \
         --backend "$backend" \
-        --job-dir "$REPO_ROOT" \
+        --source-dir "$REPO_ROOT" \
+        --ci-dir "$REPO_ROOT" \
         "$SCRIPT_DIR/jobs/build-demo-site.yaml"
 
     echo ""

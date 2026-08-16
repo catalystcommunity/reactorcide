@@ -74,11 +74,16 @@ reactorcide jobs cancel 019fc939-397e-7974-a099-6e8d29c760b8
 ```
 
 For a workflow file, use `--max-parallel` to set the local concurrency. Use
-`--event`, `--branch`, and `--changed-file` to supply event data. An explicit
-workflow file runs even when its `on` filter does not match the event.
+`--event` to select the workflow trigger. Use `--changed-file` to supply paths
+for path filters. A selected workflow is skipped when its `on` filter does not
+match the event.
 The command writes `reactorcide-workflow-summary.json` in the local workspace.
 This file contains the node states and the final workflow variable names. It
 does not contain variable values.
+
+The repository that contains the current directory is both the application
+source and the trusted CI tree by default. Use `--source-dir` and `--ci-dir`
+to select different local trees. Reactorcide mounts the CI tree read-only.
 
 Use `local-context sync` to copy non-secret project defaults from a
 coordinator. The context file does not contain the API token or secret values.
