@@ -28,3 +28,29 @@ func TestWorkflowInstance_IsRetryable(t *testing.T) {
 		})
 	}
 }
+
+func TestWorkflowOwnershipOrganization(t *testing.T) {
+	tests := []struct {
+		name   string
+		orgID  string
+		userID string
+		want   string
+	}{
+		{name: "organization", orgID: "org-1", userID: "user-1", want: "org-1"},
+		{name: "legacy user fallback", userID: "user-1", want: "user-1"},
+		{name: "empty"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			workflow := &WorkflowInstance{OrgID: tt.orgID, UserID: tt.userID}
+			if got := workflow.OwnershipOrgID(); got != tt.want {
+				t.Fatalf("WorkflowInstance.OwnershipOrgID() = %q, want %q", got, tt.want)
+			}
+			summary := &WorkflowSummary{OrgID: tt.orgID, UserID: tt.userID}
+			if got := summary.OwnershipOrgID(); got != tt.want {
+				t.Fatalf("WorkflowSummary.OwnershipOrgID() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}

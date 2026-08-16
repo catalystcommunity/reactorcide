@@ -44,6 +44,18 @@ type WorkflowInstance struct {
 	ApprovalID         *string    `gorm:"type:uuid" json:"approval_id,omitempty"`
 }
 
+// OwnershipOrgID returns the organization that owns the workflow. UserID is
+// a compatibility fallback for rows that predate first-class organizations.
+func (w *WorkflowInstance) OwnershipOrgID() string {
+	if w == nil {
+		return ""
+	}
+	if w.OrgID != "" {
+		return w.OrgID
+	}
+	return w.UserID
+}
+
 func (WorkflowInstance) TableName() string {
 	return "workflow_instances"
 }
@@ -131,6 +143,7 @@ type WorkflowSummary struct {
 	Name               string            `json:"name"`
 	Status             string            `json:"status"`
 	UserID             string            `json:"-"`
+	OrgID              string            `json:"-"`
 	ProjectID          *string           `json:"project_id,omitempty"`
 	CreatedAt          time.Time         `json:"created_at"`
 	UpdatedAt          time.Time         `json:"updated_at"`
@@ -155,4 +168,16 @@ type WorkflowSummary struct {
 	TriggerOperationID string            `json:"trigger_operation_id,omitempty"`
 	TriggerType        string            `json:"trigger_type,omitempty"`
 	Children           []WorkflowSummary `gorm:"-" json:"children,omitempty"`
+}
+
+// OwnershipOrgID returns the organization that owns the summary. UserID is
+// a compatibility fallback for rows that predate first-class organizations.
+func (w *WorkflowSummary) OwnershipOrgID() string {
+	if w == nil {
+		return ""
+	}
+	if w.OrgID != "" {
+		return w.OrgID
+	}
+	return w.UserID
 }

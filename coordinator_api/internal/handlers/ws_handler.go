@@ -10,6 +10,7 @@ import (
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/pubsub"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store"
 	storemodels "github.com/catalystcommunity/reactorcide/coordinator_api/internal/store/models"
+	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/tokencaps"
 	"github.com/gorilla/websocket"
 	"github.com/sirupsen/logrus"
 )
@@ -59,8 +60,13 @@ const (
 // the list via REST first and then uses this stream for updates.
 func (h *WSHandler) StreamAllJobs(w http.ResponseWriter, r *http.Request) {
 	user := checkauth.GetUserFromContext(r.Context())
-	if user == nil {
+	principal := checkauth.GetPrincipalFromContext(r.Context())
+	if user == nil && principal == nil {
 		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+	if principal != nil && (principal.CredentialType == "job_token" || !principal.HasCapability(tokencaps.JobsRead)) {
+		http.Error(w, "Forbidden", http.StatusForbidden)
 		return
 	}
 	ws, err := h.upgrader.Upgrade(w, r, nil)
@@ -76,7 +82,7 @@ func (h *WSHandler) StreamAllJobs(w http.ResponseWriter, r *http.Request) {
 			return false
 		}
 		job, err := h.store.GetJobByID(r.Context(), evt.JobID)
-		return err == nil && h.canViewJob(r.Context(), user, job)
+		return err == nil && h.canViewJob(r.Context(), job)
 	})
 	defer h.bus.Unsubscribe(sub)
 
@@ -92,13 +98,16 @@ func (h *WSHandler) StreamJob(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "missing job id", http.StatusBadRequest)
 		return
 	}
-	user := checkauth.GetUserFromContext(r.Context())
 	job, err := h.store.GetJobByID(r.Context(), jobID)
 	if err != nil {
 		http.Error(w, "Not found", http.StatusNotFound)
 		return
 	}
-	if user == nil || !h.canViewJob(r.Context(), user, job) {
+	if checkauth.GetUserFromContext(r.Context()) == nil && checkauth.GetPrincipalFromContext(r.Context()) == nil {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+	if !h.canViewJob(r.Context(), job) {
 		http.Error(w, "Forbidden", http.StatusForbidden)
 		return
 	}
@@ -131,8 +140,24 @@ func (h *WSHandler) StreamJob(w http.ResponseWriter, r *http.Request) {
 	h.runStream(r.Context(), ws, sub, jobID)
 }
 
-func (h *WSHandler) canViewJob(ctx context.Context, user *storemodels.User, job *storemodels.Job) bool {
-	if user == nil || job == nil {
+func (h *WSHandler) canViewJob(ctx context.Context, job *storemodels.Job) bool {
+	if job == nil {
+		return false
+	}
+	user := checkauth.GetUserFromContext(ctx)
+	principal := checkauth.GetPrincipalFromContext(ctx)
+	if principal != nil {
+		if principal.CredentialType == "job_token" || !principal.HasOrganization(job.OwnershipOrgID()) || !principal.HasCapability(tokencaps.JobsRead) {
+			return false
+		}
+		if principal.CredentialType == "service_token" || principal.CredentialType == "instance_token" {
+			return true
+		}
+		if principal.CredentialType != "user_token" {
+			return false
+		}
+	}
+	if user == nil {
 		return false
 	}
 	if user.UserID == job.UserID {
