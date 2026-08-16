@@ -70,6 +70,7 @@ func BuildJobEnv(job *models.Job) map[string]string {
 	// Add CI source configuration if present
 	if job.CISourceType != nil {
 		env["REACTORCIDE_CI_SOURCE_TYPE"] = string(*job.CISourceType)
+		env["REACTORCIDE_CI_SOURCE_DIR"] = "/job/ci"
 		if job.CISourceURL != nil {
 			env["REACTORCIDE_CI_SOURCE_URL"] = *job.CISourceURL
 		}

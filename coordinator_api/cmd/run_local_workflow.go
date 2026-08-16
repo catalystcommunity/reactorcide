@@ -361,6 +361,15 @@ func runLocalWorkflow(ctx *cli.Context, workflowFile string) error {
 	if err != nil {
 		return err
 	}
+	sourceRoot, err := resolveLocalDirectory(ctx.String("source-dir"))
+	if err != nil {
+		return fmt.Errorf("resolve source directory: %w", err)
+	}
+	if info, statErr := os.Stat(sourceRoot); statErr != nil {
+		return fmt.Errorf("source directory does not exist: %s", sourceRoot)
+	} else if !info.IsDir() {
+		return fmt.Errorf("source directory is not a directory: %s", sourceRoot)
+	}
 	var local localContext
 	if contextName := ctx.String("context"); contextName != "" {
 		local, err = loadLocalContext(contextName)
@@ -378,11 +387,7 @@ func runLocalWorkflow(ctx *cli.Context, workflowFile string) error {
 		}
 		fmt.Println(localContextStatusLine(contextName, local, time.Now()))
 	}
-	sourceRoot := ciRoot
-	codeSource, err := resolveCodeSource(ctx)
-	if err != nil {
-		return err
-	}
+	codeSource := resolveCodeSource(ctx)
 	if codeSource != nil {
 		uid, gid := hostRunAsUser()
 		var cleanup func()
@@ -399,7 +404,7 @@ func runLocalWorkflow(ctx *cli.Context, workflowFile string) error {
 	}
 	defer cleanupCI()
 	fmt.Printf("Workflow: %s\n", relativeWorkflow)
-	envelope, err := evaluateLocalWorkflow(ctx, selectedRoot, sourceRoot, selectedWorkflow)
+	envelope, err := evaluateLocalWorkflow(ctx, selectedRoot, sourceRoot, selectedWorkflow, codeSource)
 	if err != nil {
 		return err
 	}
@@ -412,7 +417,7 @@ func runLocalWorkflow(ctx *cli.Context, workflowFile string) error {
 		return fmt.Errorf("local evaluation produced %d workflows; expected one", len(envelope.Workflows))
 	}
 
-	executor := &subprocessWorkflowExecutor{ctx: ctx, sourceRoot: sourceRoot, localContext: local, hasLocalContext: ctx.String("context") != ""}
+	executor := &subprocessWorkflowExecutor{ctx: ctx, sourceRoot: sourceRoot, ciRoot: ciRoot, localContext: local, hasLocalContext: ctx.String("context") != ""}
 	summaryPath := filepath.Join(ciRoot, "reactorcide-workflow-summary.json")
 	return executeLocalWorkflowGraphWithSummary(ctx.Context, envelope.Workflows[0], ctx.Int("max-parallel"), executor, summaryPath)
 }
@@ -512,26 +517,23 @@ func localWorkflowRoot(ctx *cli.Context, workflowFile string) (string, string, e
 	if err != nil {
 		return "", "", err
 	}
-	root, err := filepath.Abs(ctx.String("job-dir"))
+	root, err := resolveLocalDirectory(ctx.String("ci-dir"))
 	if err != nil {
 		return "", "", err
 	}
-	if !ctx.IsSet("job-dir") {
-		for current := filepath.Dir(absWorkflow); current != filepath.Dir(current); current = filepath.Dir(current) {
-			if filepath.Base(current) == ".reactorcide" {
-				root = filepath.Dir(current)
-				break
-			}
-		}
+	if info, statErr := os.Stat(root); statErr != nil {
+		return "", "", fmt.Errorf("CI directory does not exist: %s", root)
+	} else if !info.IsDir() {
+		return "", "", fmt.Errorf("CI directory is not a directory: %s", root)
 	}
 	relative, err := filepath.Rel(root, absWorkflow)
 	if err != nil || relative == ".." || strings.HasPrefix(relative, ".."+string(filepath.Separator)) {
-		return "", "", fmt.Errorf("workflow file must be inside --job-dir")
+		return "", "", fmt.Errorf("workflow file must be inside --ci-dir")
 	}
 	return root, filepath.ToSlash(relative), nil
 }
 
-func evaluateLocalWorkflow(ctx *cli.Context, ciRoot, sourceRoot, workflowFile string) (localTriggerEnvelope, error) {
+func evaluateLocalWorkflow(ctx *cli.Context, ciRoot, sourceRoot, workflowFile string, codeSource *resolvedCodeSource) (localTriggerEnvelope, error) {
 	workspace, err := os.MkdirTemp("/tmp", "reactorcide-local-eval-")
 	if err != nil {
 		return localTriggerEnvelope{}, err
@@ -541,20 +543,7 @@ func evaluateLocalWorkflow(ctx *cli.Context, ciRoot, sourceRoot, workflowFile st
 	if err := makeWritableFor(workspace, uid, gid); err != nil {
 		return localTriggerEnvelope{}, err
 	}
-	args := []string{
-		"runnerlib", "eval",
-		"--ci-source-dir", "/job/ci",
-		"--source-dir", "/job/src",
-		"--event-type", ctx.String("event"),
-		"--workflow-file", filepath.ToSlash(filepath.Join("/job/ci", workflowFile)),
-		"--triggers-file", "/job/triggers.json",
-	}
-	if branch := ctx.String("branch"); branch != "" {
-		args = append(args, "--branch", branch)
-	}
-	for _, path := range ctx.StringSlice("changed-file") {
-		args = append(args, "--changed-file", path)
-	}
+	args := localWorkflowEvalArgs(ctx, workflowFile, codeSource)
 	quoted := make([]string, len(args))
 	for i, arg := range args {
 		quoted[i] = shellQuote(arg)
@@ -586,6 +575,27 @@ func evaluateLocalWorkflow(ctx *cli.Context, ciRoot, sourceRoot, workflowFile st
 		return localTriggerEnvelope{}, fmt.Errorf("parse workflow triggers: %w", err)
 	}
 	return envelope, nil
+}
+
+func localWorkflowEvalArgs(ctx *cli.Context, workflowFile string, codeSource *resolvedCodeSource) []string {
+	args := []string{
+		"runnerlib", "eval",
+		"--ci-source-dir", "/job/ci",
+		"--source-dir", "/job/src",
+		"--event-type", ctx.String("event"),
+		"--workflow-file", filepath.ToSlash(filepath.Join("/job/ci", workflowFile)),
+		"--triggers-file", "/job/triggers.json",
+	}
+	if codeSource != nil {
+		args = append(args, "--source-url", codeSource.URL)
+		if codeSource.Ref != "" {
+			args = append(args, "--source-ref", codeSource.Ref)
+		}
+	}
+	for _, path := range ctx.StringSlice("changed-file") {
+		args = append(args, "--changed-file", path)
+	}
+	return args
 }
 
 func executeLocalWorkflowGraph(ctx context.Context, workflow localWorkflowSpec, maxParallel int, executor localWorkflowExecutor) error {
@@ -679,6 +689,7 @@ func expandLocalWorkflowNodes(specs []localTriggerJob) []localWorkflowNode {
 type subprocessWorkflowExecutor struct {
 	ctx             *cli.Context
 	sourceRoot      string
+	ciRoot          string
 	localContext    localContext
 	hasLocalContext bool
 }
@@ -722,7 +733,7 @@ func (e *subprocessWorkflowExecutor) Execute(ctx context.Context, node *localWor
 		return localWorkflowOutput{}, err
 	}
 
-	args := localWorkflowSubprocessArgs(e.ctx, e.sourceRoot, varsFile, resultDir)
+	args := localWorkflowSubprocessArgs(e.ctx, e.sourceRoot, e.ciRoot, varsFile, resultDir)
 	if e.ctx.Bool("dry-run") {
 		args = append(args, "--dry-run")
 	}
@@ -756,8 +767,8 @@ func (e *subprocessWorkflowExecutor) Execute(ctx context.Context, node *localWor
 	return output, nil
 }
 
-func localWorkflowSubprocessArgs(ctx *cli.Context, sourceRoot, varsFile, resultDir string) []string {
-	return []string{"run-local", "--job-dir", sourceRoot, "--backend", ctx.String("backend"), "--workflow-vars-file", varsFile, "--result-dir", resultDir}
+func localWorkflowSubprocessArgs(ctx *cli.Context, sourceRoot, ciRoot, varsFile, resultDir string) []string {
+	return []string{"run-local", "--source-dir", sourceRoot, "--ci-dir", ciRoot, "--backend", ctx.String("backend"), "--workflow-vars-file", varsFile, "--result-dir", resultDir}
 }
 
 func localNodeJobSpec(node *localWorkflowNode, local localContext) worker.JobSpec {

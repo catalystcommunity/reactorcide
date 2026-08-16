@@ -37,7 +37,6 @@ Run an example:
 
 ```bash
 ./coordinator_api/reactorcide run-local \
-  --job-dir ./ \
   ./examples/jobs/hello-world.yaml
 ```
 
@@ -188,12 +187,10 @@ Run from the repository root:
 ```bash
 REACTORCIDE_SECRETS_PASSWORD="$(cat ~/.reactorcide-pass)" \
   ./coordinator_api/reactorcide run-local \
-  --job-dir ./ \
   ./jobs/deploy-to-vm.yaml
 ```
 
-Add `--backend containerd` before `--job-dir` when the local deployment
-machine uses nerdctl.
+Add `--backend containerd` when the local deployment machine uses nerdctl.
 
 The job keeps existing database, JWT, and worker enrollment values on later
 runs. It updates images and restarts the services.

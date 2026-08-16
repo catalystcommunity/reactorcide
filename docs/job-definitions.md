@@ -300,6 +300,7 @@ Standard variables available in every webhook-triggered job:
 | `REACTORCIDE_EVENT_TYPE` | Generic event type |
 | `REACTORCIDE_REPO` | Repository full name (`org/repo`) |
 | `REACTORCIDE_SOURCE_URL` | Source repository clone URL |
+| `REACTORCIDE_CI_SOURCE_DIR` | Trusted CI checkout directory (`/job/ci`) |
 | `REACTORCIDE_SHA` | Commit SHA |
 | `REACTORCIDE_BRANCH` | Branch name |
 | `REACTORCIDE_PR_NUMBER` | PR number (PR events only) |

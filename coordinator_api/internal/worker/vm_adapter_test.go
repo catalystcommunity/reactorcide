@@ -116,6 +116,7 @@ func TestToVMJobConfig_StagesVCSAuthForWindowsGuest(t *testing.T) {
 			"REACTORCIDE_VCS_AUTH_DIR":  "/job/.reactorcide/vcs-auth",
 			"GIT_CONFIG_GLOBAL":         "/job/.reactorcide/vcs-auth/gitconfig",
 			"REACTORCIDE_CODE_DIR":      "/job/src",
+			"REACTORCIDE_CI_SOURCE_DIR": "/job/ci",
 			"REACTORCIDE_TRIGGERS_FILE": "/job/triggers.json",
 		},
 		SourceDir:       `C:\host\source`,
@@ -152,6 +153,9 @@ func TestToVMJobConfig_StagesVCSAuthForWindowsGuest(t *testing.T) {
 	}
 	if vmConfig.Env["REACTORCIDE_CODE_DIR"] != `C:/reactorcide/job/src` {
 		t.Fatalf("code dir = %q", vmConfig.Env["REACTORCIDE_CODE_DIR"])
+	}
+	if vmConfig.Env["REACTORCIDE_CI_SOURCE_DIR"] != `C:/reactorcide/job/ci` {
+		t.Fatalf("CI source dir = %q", vmConfig.Env["REACTORCIDE_CI_SOURCE_DIR"])
 	}
 	if vmConfig.Env["REACTORCIDE_TRIGGERS_FILE"] != `C:/reactorcide/job/triggers.json` {
 		t.Fatalf("triggers file = %q", vmConfig.Env["REACTORCIDE_TRIGGERS_FILE"])

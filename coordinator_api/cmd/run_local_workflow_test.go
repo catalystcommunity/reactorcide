@@ -289,8 +289,44 @@ func TestWorkflowVariablesUseAFileInsteadOfProcessArguments(t *testing.T) {
 	set := flag.NewFlagSet("test", flag.ContinueOnError)
 	set.String("backend", "docker", "")
 	ctx := cli.NewContext(nil, set, nil)
-	args := localWorkflowSubprocessArgs(ctx, dir, varsFile, filepath.Join(dir, "result"))
+	args := localWorkflowSubprocessArgs(ctx, dir, dir, varsFile, filepath.Join(dir, "result"))
 	if strings.Contains(strings.Join(args, " "), secretValue) {
 		t.Fatalf("secret value is present in process arguments: %#v", args)
+	}
+	joined := strings.Join(args, " ")
+	if !strings.Contains(joined, "--source-dir "+dir) || !strings.Contains(joined, "--ci-dir "+dir) {
+		t.Fatalf("nested run-local arguments do not preserve source and CI roots: %#v", args)
+	}
+	for _, removed := range []string{"--pr", "--branch", "--job-dir"} {
+		if strings.Contains(joined, removed) {
+			t.Fatalf("nested run-local arguments contain removed flag %s: %#v", removed, args)
+		}
+	}
+}
+
+func TestLocalWorkflowEvalArgsUseEventAsTrigger(t *testing.T) {
+	set := flag.NewFlagSet("test", flag.ContinueOnError)
+	set.String("event", "push", "")
+	set.Var(cli.NewStringSlice(), "changed-file", "")
+	ctx := cli.NewContext(nil, set, nil)
+	if err := set.Set("event", "pull_request_merged"); err != nil {
+		t.Fatal(err)
+	}
+	if err := set.Set("changed-file", "docs/guide.md"); err != nil {
+		t.Fatal(err)
+	}
+
+	args := localWorkflowEvalArgs(ctx, ".reactorcide/workflows/release.yaml", nil)
+	joined := strings.Join(args, " ")
+	if !strings.Contains(joined, "--event-type pull_request_merged") {
+		t.Fatalf("workflow event was not forwarded as the evaluator trigger: %#v", args)
+	}
+	if !strings.Contains(joined, "--changed-file docs/guide.md") {
+		t.Fatalf("changed file was not forwarded: %#v", args)
+	}
+	for _, removed := range []string{"--event-ref", "--branch", "--pr"} {
+		if strings.Contains(joined, removed) {
+			t.Fatalf("workflow evaluator arguments contain removed flag %s: %#v", removed, args)
+		}
 	}
 }

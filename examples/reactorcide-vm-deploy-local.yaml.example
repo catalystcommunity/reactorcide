@@ -5,7 +5,6 @@
 #   REACTORCIDE_SECRETS_PASSWORD="$(cat ~/.reactorcide-pass)" \
 #     reactorcide run-local \
 #     -i ~/.config/reactorcide/reactorcide-vm-deploy-local.yaml \
-#     --job-dir ./ \
 #     ./jobs/deploy-to-vm.yaml
 #
 # Before first use, add your SSH key and secrets:

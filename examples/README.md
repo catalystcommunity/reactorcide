@@ -9,7 +9,8 @@ Run the hello-world job:
 
 ```bash
 ../coordinator_api/reactorcide run-local \
-  --job-dir ../ \
+  --source-dir ../ \
+  --ci-dir ../ \
   ./jobs/hello-world.yaml
 ```
 

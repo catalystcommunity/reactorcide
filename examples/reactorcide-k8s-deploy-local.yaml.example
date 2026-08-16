@@ -4,7 +4,6 @@
 # Usage:
 #   reactorcide run-local \
 #     -i ~/.config/reactorcide/k8s-deploy.yaml \
-#     --job-dir ./ \
 #     ./jobs/deploy-to-k8s.yaml
 #
 # Before first use, add your secrets:

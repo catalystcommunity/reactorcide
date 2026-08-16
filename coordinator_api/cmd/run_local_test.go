@@ -8,6 +8,7 @@ import (
 
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/secrets"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/worker"
+	"github.com/urfave/cli/v2"
 )
 
 func TestLoadJobSpec_YAML(t *testing.T) {
@@ -431,55 +432,35 @@ func TestMergeJobSpecs_RunLocalOverlay(t *testing.T) {
 
 func TestResolveCodeSourceFromArgs(t *testing.T) {
 	tests := []struct {
-		name        string
-		codeURL     string
-		codeRef     string
-		prNum       int
-		wantNil     bool
-		wantErr     bool
-		wantURL     string
-		wantRef     string
-		wantHeadRef string
+		name    string
+		codeURL string
+		codeRef string
+		wantNil bool
+		wantURL string
+		wantRef string
 	}{
 		{
 			name:    "no flags returns nil",
 			wantNil: true,
 		},
 		{
-			name:        "code-url alone resolves",
-			codeURL:     "https://github.com/fork-owner/repo.git",
-			codeRef:     "lilac/text-overflow",
-			wantURL:     "https://github.com/fork-owner/repo.git",
-			wantRef:     "lilac/text-overflow",
-			wantHeadRef: "lilac/text-overflow",
+			name:    "code-url alone resolves",
+			codeURL: "https://example.com/owner/repo.git",
+			codeRef: "feature/test",
+			wantURL: "https://example.com/owner/repo.git",
+			wantRef: "feature/test",
 		},
 		{
-			name:        "code-url without ref",
-			codeURL:     "https://github.com/owner/repo.git",
-			wantURL:     "https://github.com/owner/repo.git",
-			wantRef:     "",
-			wantHeadRef: "",
-		},
-		{
-			name:    "pr and code-url are mutually exclusive",
-			codeURL: "https://github.com/owner/repo.git",
-			prNum:   60,
-			wantErr: true,
+			name:    "code-url without ref",
+			codeURL: "https://example.com/owner/repo.git",
+			wantURL: "https://example.com/owner/repo.git",
+			wantRef: "",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := resolveCodeSourceFromArgs(tt.codeURL, tt.codeRef, tt.prNum)
-			if tt.wantErr {
-				if err == nil {
-					t.Fatal("expected error, got nil")
-				}
-				return
-			}
-			if err != nil {
-				t.Fatalf("unexpected error: %v", err)
-			}
+			got := resolveCodeSourceFromArgs(tt.codeURL, tt.codeRef)
 			if tt.wantNil {
 				if got != nil {
 					t.Fatalf("expected nil result, got %+v", got)
@@ -495,10 +476,51 @@ func TestResolveCodeSourceFromArgs(t *testing.T) {
 			if got.Ref != tt.wantRef {
 				t.Errorf("Ref = %q, want %q", got.Ref, tt.wantRef)
 			}
-			if got.HeadRef != tt.wantHeadRef {
-				t.Errorf("HeadRef = %q, want %q", got.HeadRef, tt.wantHeadRef)
-			}
 		})
+	}
+}
+
+func TestRunLocalUsesSeparateLocalSourceAndCIRoots(t *testing.T) {
+	flags := map[string]cli.Flag{}
+	for _, value := range RunLocalCommand.Flags {
+		for _, name := range value.Names() {
+			flags[name] = value
+		}
+	}
+	for _, name := range []string{"source-dir", "ci-dir", "event"} {
+		if flags[name] == nil {
+			t.Fatalf("run-local is missing --%s", name)
+		}
+	}
+	for _, name := range []string{"pr", "branch", "job-dir"} {
+		if flags[name] != nil {
+			t.Fatalf("run-local still exposes removed --%s", name)
+		}
+	}
+	for _, name := range []string{"source-dir", "ci-dir"} {
+		flag, ok := flags[name].(*cli.StringFlag)
+		if !ok || flag.Value != "" {
+			t.Fatalf("--%s default = %#v, want current repository discovery", name, flags[name])
+		}
+	}
+}
+
+func TestFindLocalRepositoryRoot(t *testing.T) {
+	root := t.TempDir()
+	if err := os.Mkdir(filepath.Join(root, ".git"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	nested := filepath.Join(root, "coordinator_api", "cmd")
+	if err := os.MkdirAll(nested, 0o700); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := findLocalRepositoryRoot(nested)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != root {
+		t.Fatalf("repository root = %q, want %q", got, root)
 	}
 }
 

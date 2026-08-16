@@ -987,6 +987,17 @@ func TestBuildJobEnv_NoAPICredentials(t *testing.T) {
 	}
 }
 
+func TestBuildJobEnv_ExposesTrustedCISourceDirectory(t *testing.T) {
+	ciType := models.SourceTypeGit
+	job := &models.Job{JobID: "test-job", QueueName: "reactorcide-jobs", CISourceType: &ciType}
+
+	env := BuildJobEnv(job)
+
+	if env["REACTORCIDE_CI_SOURCE_DIR"] != "/job/ci" {
+		t.Fatalf("REACTORCIDE_CI_SOURCE_DIR = %q, want /job/ci", env["REACTORCIDE_CI_SOURCE_DIR"])
+	}
+}
+
 func TestBuildJobFromTrigger_CopiesNotesFromParent(t *testing.T) {
 	mockStore := &MockStore{}
 	tp := NewTriggerProcessor(mockStore, nil)

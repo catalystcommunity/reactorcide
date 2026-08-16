@@ -36,24 +36,25 @@ Add `--backend containerd` when you use nerdctl.
 
 ```bash
 ./coordinator_api/reactorcide run-local \
-  --job-dir ./ \
   ./examples/jobs/hello-world.yaml
 ```
 
-`run-local` bind-mounts `--job-dir` and uses the host user by default. Use
-`--as-runner` to use the deployed runner user.
+`run-local` mounts the current repository at `/job/src` and `/job/ci`. The CI
+mount is read-only. Use `--source-dir` or `--ci-dir` when the tested source and
+trusted CI definitions are in different repositories. The command uses the
+host user by default. Use `--as-runner` to use the deployed runner user.
 
 You can also give `run-local` one workflow file. Reactorcide evaluates the
-selected workflow and runs its jobs. The event filter does not block an
-explicitly selected file. Reactorcide writes the final result to
+selected workflow for `--event` and runs its jobs when the event matches.
+Reactorcide writes the final result to
 `reactorcide-workflow-summary.json` in the local workspace.
 The summary contains variable names. It does not contain variable values.
 
 ```bash
 ./coordinator_api/reactorcide run-local \
-  --job-dir ./ \
+  --event pull_request_updated \
   --max-parallel 4 \
-  ./.reactorcide/workflows/test.yaml
+  ./.reactorcide/workflows/pr.yaml
 ```
 
 ## Operate a Coordinator

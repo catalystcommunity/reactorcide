@@ -900,7 +900,7 @@ def eval_cmd(
     base_ref: str = typer.Option("", envvar="REACTORCIDE_BASE_REF", help="PR base branch name"),
     is_fork_pr: str = typer.Option("", envvar="REACTORCIDE_IS_FORK_PR", help="Set to 'true' when PR is cross-repository"),
     triggers_file: str = typer.Option("/job/triggers.json", help="Path to write triggers output"),
-    workflow_file: str = typer.Option("", "--workflow-file", help="Evaluate only this workflow file and ignore its event filter"),
+    workflow_file: str = typer.Option("", "--workflow-file", help="Evaluate only this workflow file for the selected event"),
     changed_file: Optional[List[str]] = typer.Option(None, "--changed-file", help="Changed source path; repeat for each path"),
     allow_insecure_transport: bool = typer.Option(False, "--allow-insecure-transport", help="Allow API credentials without TLS on an isolated development network"),
 ):
@@ -1071,6 +1071,7 @@ def eval_cmd(
             raise ValueError(f"CI path escapes prepared checkouts: {path_value}")
 
         batches = []
+        selected_no_match = None
         authorized_paths = set()
         violations = []
         base_workflow_ids = {workflow.workflow_id for workflow in workflow_defs}
@@ -1091,12 +1092,11 @@ def eval_cmd(
 
         for wf in candidate_workflows:
             is_new_workflow = wf.workflow_id not in base_workflow_ids
-            if selected_workflow_path is not None:
-                matched_wf, reason = True, "selected explicitly"
-            else:
-                matched_wf, reason = workflow_match_reason(wf, event_type, branch, changed)
+            matched_wf, reason = workflow_match_reason(wf, event_type, branch, changed)
             if not matched_wf:
                 log_stdout(f"  – skipped workflow '{wf.name}': {reason}")
+                if selected_workflow_path is not None:
+                    selected_no_match = wf
                 continue
             selected_wf = wf
             decision = None
@@ -1186,6 +1186,27 @@ def eval_cmd(
                     })
         # Drop workflows that matched but resolved to zero jobs — nothing to run.
         batches = [b for b in batches if b["jobs"]]
+
+        # A local caller that selected one workflow still needs a result when
+        # the chosen event does not match. Emit an empty workflow so run-local
+        # reports a skipped workflow instead of treating a missing trigger
+        # file as an evaluation failure.
+        if selected_no_match is not None and not batches and not violations:
+            batches.append({
+                "id": selected_no_match.workflow_id,
+                "name": selected_no_match.name,
+                "source_file": repo_relative(selected_no_match.source_file),
+                "ci_origin": "base",
+                "ci_repository": ci_source_url,
+                "ci_sha": ci_source_ref,
+                "execution_profile": "standard",
+                "worker_class": "default",
+                "policy_revision": trusted_policy.revision if trusted_policy else "",
+                "policy_rule_id": "",
+                "approval_id": None,
+                "vars": selected_no_match.vars,
+                "jobs": [],
+            })
 
         if not batches and not violations:
             log_stdout(
