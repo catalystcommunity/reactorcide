@@ -137,7 +137,7 @@ ORDER BY wn.created_at ASC`, workflowID).
 }
 
 func (ps PostgresDbStore) UpdateWorkflowInstance(ctx context.Context, wf *models.WorkflowInstance) error {
-	result := ps.getDB(ctx).Save(wf)
+	result := saveWithOptionalUserID(ps.getDB(ctx), wf, wf.UserID)
 	if result.Error != nil {
 		return fmt.Errorf("failed to update workflow %s: %w", wf.WorkflowID, result.Error)
 	}

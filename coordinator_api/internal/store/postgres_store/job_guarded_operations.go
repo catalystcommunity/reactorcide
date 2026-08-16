@@ -56,7 +56,7 @@ func (ps PostgresDbStore) UpdateJobStatusGuarded(ctx context.Context, jobID stri
 
 		apply(&job)
 		job.UpdatedAt = time.Now()
-		if err := tx.Save(&job).Error; err != nil {
+		if err := saveWithOptionalUserID(tx, &job, job.UserID).Error; err != nil {
 			return fmt.Errorf("failed to save guarded job update %s: %w", jobID, err)
 		}
 		matched = true
