@@ -480,6 +480,20 @@ func (a *coordinatorWorkflowEngineAdapter) Start(ctx context.Context, decision w
 	}
 	jobID, err := a.tp.submitWorkflowNode(ctx, a.wf, node)
 	if err != nil {
+		now := time.Now().UTC()
+		node.Status = "failed"
+		node.CompletedAt = &now
+		node.DecisionReason = fmt.Sprintf("failed to submit workflow node: %v", err)
+		if updateErr := a.store.UpdateWorkflowNode(ctx, node); updateErr != nil {
+			return fmt.Errorf("%v; failed to record workflow node failure: %w", err, updateErr)
+		}
+		a.wf.LastError = node.DecisionReason
+		if updateErr := a.store.UpdateWorkflowInstance(ctx, a.wf); updateErr != nil {
+			return fmt.Errorf("%v; failed to record workflow failure: %w", err, updateErr)
+		}
+		a.tp.recordWorkflowEvent(ctx, a.wf.WorkflowID, &node.NodeID, node.JobID, "node_completed", node.DecisionReason, models.JSONB{
+			"status": "failed",
+		})
 		return err
 	}
 	a.created = append(a.created, jobID)
@@ -493,11 +507,16 @@ func (tp *TriggerProcessor) evaluateWorkflow(ctx context.Context, wf *models.Wor
 	}
 	adapter := &coordinatorWorkflowEngineAdapter{tp: tp, wf: wf, store: ws}
 	engine := workflowengine.Engine{Store: adapter, Executor: adapter}
-	if _, err := engine.Advance(ctx, -1); err != nil {
-		return adapter.created, err
+	_, advanceErr := engine.Advance(ctx, -1)
+	refreshErr := tp.refreshWorkflowStatus(ctx, wf)
+	if advanceErr != nil {
+		if refreshErr != nil {
+			return adapter.created, fmt.Errorf("advance workflow: %v; refresh workflow status: %w", advanceErr, refreshErr)
+		}
+		return adapter.created, advanceErr
 	}
-	if err := tp.refreshWorkflowStatus(ctx, wf); err != nil {
-		return adapter.created, err
+	if refreshErr != nil {
+		return adapter.created, refreshErr
 	}
 	return adapter.created, nil
 }
@@ -526,12 +545,14 @@ func (tp *TriggerProcessor) submitWorkflowNode(ctx context.Context, wf *models.W
 	authorityParent.PolicyRuleID = wf.PolicyRuleID
 	authorityParent.ApprovalID = wf.ApprovalID
 	var executionProfile *models.ExecutionProfile
+	limitCapabilities := true
 	if ps, ok := tp.store.(triggerProfileStore); ok && wf.ExecutionProfile != "" {
 		executionProfile, err = ps.GetExecutionProfile(ctx, wf.OrgID, wf.ExecutionProfile)
 		if err != nil {
 			return "", fmt.Errorf("load workflow execution profile: %w", err)
 		}
-		authorityParent.Capabilities = append(pq.StringArray(nil), executionProfile.RuntimeCapabilities...)
+		limitCapabilities = executionProfile.RuntimeCapabilities != nil
+		authorityParent.Capabilities = executionProfile.RuntimeCapabilities
 	}
 	if wf.CIRepository != "" {
 		authorityParent.CISourceURL = &wf.CIRepository
@@ -539,7 +560,7 @@ func (tp *TriggerProcessor) submitWorkflowNode(ctx context.Context, wf *models.W
 	if wf.CISHA != "" {
 		authorityParent.CISourceRef = &wf.CISHA
 	}
-	job, err := tp.buildJobFromTrigger(spec, &authorityParent)
+	job, err := tp.buildJobFromTriggerWithCapabilityLimit(spec, &authorityParent, limitCapabilities)
 	if err != nil {
 		return "", err
 	}

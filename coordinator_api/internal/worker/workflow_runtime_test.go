@@ -23,6 +23,19 @@ type workflowRuntimeStore struct {
 	historyDuration *int64
 }
 
+type workflowRuntimeProfileStore struct {
+	*workflowRuntimeStore
+	profile *models.ExecutionProfile
+}
+
+func (s *workflowRuntimeProfileStore) GetExecutionProfile(_ context.Context, orgID, name string) (*models.ExecutionProfile, error) {
+	if s.profile == nil || s.profile.OrgID != orgID || s.profile.Name != name {
+		return nil, store.ErrNotFound
+	}
+	copy := *s.profile
+	return &copy, nil
+}
+
 func newWorkflowRuntimeStore() *workflowRuntimeStore {
 	return &workflowRuntimeStore{
 		MockStore:   &MockStore{},
@@ -383,6 +396,105 @@ func TestProcessWorkflowCompletion_OutputConflictFailsNodeAndWorkflow(t *testing
 	}
 	if statusUpdater.workflowCalls[0].Status != "failed" {
 		t.Fatalf("expected failed workflow status update, got %q", statusUpdater.workflowCalls[0].Status)
+	}
+}
+
+func TestEvaluateWorkflow_ProfileCapabilityLimit(t *testing.T) {
+	tests := []struct {
+		name                string
+		runtimeCapabilities []string
+		wantError           bool
+		wantNodeStatus      string
+		wantWorkflowStatus  string
+	}{
+		{
+			name:               "null profile capabilities do not apply a limit",
+			wantNodeStatus:     "submitted",
+			wantWorkflowStatus: "running",
+		},
+		{
+			name:                "empty profile capabilities deny all capabilities",
+			runtimeCapabilities: []string{},
+			wantError:           true,
+			wantNodeStatus:      "failed",
+			wantWorkflowStatus:  "failed",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			baseStore := newWorkflowRuntimeStore()
+			baseStore.CreateJobFunc = func(_ context.Context, job *models.Job) error {
+				job.JobID = "job-1"
+				return nil
+			}
+			profileStore := &workflowRuntimeProfileStore{
+				workflowRuntimeStore: baseStore,
+				profile: &models.ExecutionProfile{
+					OrgID:               "org-1",
+					Name:                "standard",
+					RuntimeCapabilities: tc.runtimeCapabilities,
+				},
+			}
+
+			parentJobID := "eval-job"
+			baseStore.GetJobByIDFunc = func(_ context.Context, jobID string) (*models.Job, error) {
+				if jobID != parentJobID {
+					return nil, store.ErrNotFound
+				}
+				return &models.Job{JobID: parentJobID, OrgID: "org-1"}, nil
+			}
+			wf := &models.WorkflowInstance{
+				WorkflowID:       "wf-1",
+				OrgID:            "org-1",
+				Status:           "running",
+				ExecutionProfile: "standard",
+				ParentJobID:      &parentJobID,
+			}
+			baseStore.workflows[wf.WorkflowID] = wf
+
+			spec := triggerJobSpec{JobName: "build", Capabilities: []string{"builder"}}
+			specData, err := json.Marshal(spec)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var specJSON models.JSONB
+			if err := json.Unmarshal(specData, &specJSON); err != nil {
+				t.Fatal(err)
+			}
+			node := &models.WorkflowNode{
+				NodeID:      "node-1",
+				WorkflowID:  wf.WorkflowID,
+				Name:        "build",
+				DisplayName: "build",
+				Status:      "pending",
+				JobSpec:     specJSON,
+			}
+			baseStore.nodes[node.NodeID] = node
+
+			tp := NewTriggerProcessor(profileStore, nil)
+			_, err = tp.evaluateWorkflow(context.Background(), wf)
+			if tc.wantError && err == nil {
+				t.Fatal("expected workflow evaluation to fail")
+			}
+			if !tc.wantError && err != nil {
+				t.Fatalf("workflow evaluation failed: %v", err)
+			}
+			if got := baseStore.nodes[node.NodeID].Status; got != tc.wantNodeStatus {
+				t.Fatalf("node status = %q, want %q", got, tc.wantNodeStatus)
+			}
+			if got := baseStore.workflows[wf.WorkflowID].Status; got != tc.wantWorkflowStatus {
+				t.Fatalf("workflow status = %q, want %q", got, tc.wantWorkflowStatus)
+			}
+			if tc.wantError {
+				if baseStore.nodes[node.NodeID].CompletedAt == nil {
+					t.Fatal("failed node has no completion time")
+				}
+				if baseStore.workflows[wf.WorkflowID].LastError == "" {
+					t.Fatal("failed workflow has no error")
+				}
+			}
+		})
 	}
 }
 
