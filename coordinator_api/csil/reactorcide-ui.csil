@@ -134,7 +134,7 @@ GetCapabilitiesResponse = {
     is_project_owner: bool
 }
 
-;;; Orgs are users-as-orgs today (no first-class orgs table).
+;;; Organizations own all tenant-scoped Reactorcide resources.
 OrgSummary = {
     org_id: text,
     name: text,
@@ -170,6 +170,14 @@ SetDefaultOrgRequest = {
 }
 SetDefaultOrgResponse = {
     org: OrgSummary
+}
+DeleteOrgRequest = {
+    name: text,
+    replacement: text,
+    confirm: bool
+}
+DeleteOrgResponse = {
+    replacement: OrgSummary
 }
 
 ExecutionProfileSummary = {
@@ -986,6 +994,7 @@ service ReactorcideUi {
     create-org: CreateOrgRequest -> CreateOrgResponse / ServiceError,
     update-org: UpdateOrgRequest -> UpdateOrgResponse / ServiceError,
     set-default-org: SetDefaultOrgRequest -> SetDefaultOrgResponse / ServiceError,
+    delete-org: DeleteOrgRequest -> DeleteOrgResponse / ServiceError,
     list-execution-profiles: ListExecutionProfilesRequest -> ListExecutionProfilesResponse / ServiceError,
     put-execution-profile: PutExecutionProfileRequest -> PutExecutionProfileResponse / ServiceError,
     delete-execution-profile: DeleteExecutionProfileRequest -> DeleteExecutionProfileResponse / ServiceError,

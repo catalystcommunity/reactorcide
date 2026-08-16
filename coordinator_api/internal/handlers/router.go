@@ -280,6 +280,8 @@ func createAppMux() *http.ServeMux {
 				organizationHandler.Get(w, r)
 			case http.MethodPut, http.MethodPatch:
 				organizationHandler.Update(w, r)
+			case http.MethodDelete:
+				organizationHandler.Delete(w, r)
 			default:
 				http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 			}

@@ -49,6 +49,10 @@ func (h *BaseHandler) respondWithError(w http.ResponseWriter, code int, err erro
 		errType = "already_exists"
 		message = "Resource already exists"
 		code = http.StatusConflict
+	case errors.Is(err, store.ErrConflict):
+		errType = "conflict"
+		message = "Resource state conflicts with this operation"
+		code = http.StatusConflict
 	case errors.Is(err, store.ErrForbidden):
 		errType = "forbidden"
 		message = "Permission denied"

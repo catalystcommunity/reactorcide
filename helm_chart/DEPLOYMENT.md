@@ -127,6 +127,12 @@ curl --fail http://127.0.0.1:6080/api/v1/health
 The chart creates the empty `base-reactorcide-api-token` Secret. It does not
 create an API token during a direct Helm installation.
 
+The `jobs/deploy-to-k8s.yaml` job does this task automatically. If the Secret
+is empty, the job first deploys the coordinator and worker without the web
+application. It creates the API token, stores the token in the Secret, and then
+enables the web application. You do not have to do the steps in this section
+when you use that job.
+
 Create a protected local token file:
 
 ```bash

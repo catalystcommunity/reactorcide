@@ -16,15 +16,17 @@ CREATE TABLE organizations (
 ALTER TABLE users ADD COLUMN status text NOT NULL DEFAULT 'active'
     CHECK (status IN ('active', 'suspended', 'disabled'));
 
--- Insert one same-UUID organization for each user that owns an existing
--- resource. Include loose jobs and workflows because they can have no project.
+-- Insert one same-UUID organization for each existing user. This also gives
+-- legacy projects without an owner one unambiguous organization when the
+-- installation has only one user.
 -- +goose StatementBegin
 DO $$
 DECLARE
     bad_user uuid;
 BEGIN
     WITH roots AS (
-        SELECT user_id FROM projects WHERE user_id IS NOT NULL
+        SELECT user_id FROM users
+        UNION SELECT user_id FROM projects WHERE user_id IS NOT NULL
         UNION SELECT org_id FROM groups WHERE org_id IS NOT NULL
         UNION SELECT user_id FROM secrets WHERE user_id IS NOT NULL
         UNION SELECT user_id FROM org_encryption_keys WHERE user_id IS NOT NULL
@@ -51,7 +53,8 @@ DO $$
 DECLARE duplicate_name text;
 BEGIN
     WITH roots AS (
-        SELECT user_id FROM projects WHERE user_id IS NOT NULL
+        SELECT user_id FROM users
+        UNION SELECT user_id FROM projects WHERE user_id IS NOT NULL
         UNION SELECT org_id FROM groups WHERE org_id IS NOT NULL
         UNION SELECT user_id FROM secrets WHERE user_id IS NOT NULL
         UNION SELECT user_id FROM org_encryption_keys WHERE user_id IS NOT NULL
@@ -72,7 +75,8 @@ END $$;
 -- +goose StatementEnd
 
 WITH roots AS (
-    SELECT user_id FROM projects WHERE user_id IS NOT NULL
+    SELECT user_id FROM users
+    UNION SELECT user_id FROM projects WHERE user_id IS NOT NULL
     UNION SELECT org_id FROM groups WHERE org_id IS NOT NULL
     UNION SELECT user_id FROM secrets WHERE user_id IS NOT NULL
     UNION SELECT user_id FROM org_encryption_keys WHERE user_id IS NOT NULL
@@ -92,6 +96,14 @@ WITH roots AS (
 )
 INSERT INTO organizations (org_id, name, display_name, is_private, created_at, updated_at)
 SELECT org_id, name, display_name, is_private, created_at, updated_at FROM candidates;
+
+-- A token-only legacy installation can have projects but no users. Create its
+-- default organization here because projects must have an organization before
+-- the coordinator can start and run its normal bootstrap.
+INSERT INTO organizations (name, display_name)
+SELECT 'default', 'Default'
+ WHERE NOT EXISTS (SELECT 1 FROM organizations)
+   AND EXISTS (SELECT 1 FROM projects WHERE user_id IS NULL);
 
 -- +goose StatementBegin
 DO $$
@@ -129,7 +141,23 @@ ALTER INDEX secret_grants_user_id_idx RENAME TO secret_grants_org_id_idx;
 ALTER TABLE secret_grants ADD CONSTRAINT secret_grants_org_id_fkey FOREIGN KEY (org_id) REFERENCES organizations(org_id) ON DELETE CASCADE;
 
 ALTER TABLE projects ADD COLUMN org_id uuid REFERENCES organizations(org_id);
-UPDATE projects SET org_id = user_id;
+UPDATE projects SET org_id = user_id WHERE user_id IS NOT NULL;
+-- +goose StatementBegin
+DO $$
+DECLARE
+    fallback_org uuid;
+    organization_count bigint;
+BEGIN
+    IF EXISTS (SELECT 1 FROM projects WHERE org_id IS NULL) THEN
+        SELECT count(*) INTO organization_count FROM organizations;
+        IF organization_count <> 1 THEN
+            RAISE EXCEPTION 'cannot assign legacy projects without owners: expected one organization, found %', organization_count;
+        END IF;
+        SELECT org_id INTO fallback_org FROM organizations LIMIT 1;
+        UPDATE projects SET org_id = fallback_org WHERE org_id IS NULL;
+    END IF;
+END $$;
+-- +goose StatementEnd
 ALTER TABLE projects ALTER COLUMN org_id SET NOT NULL;
 CREATE INDEX projects_org_id_idx ON projects(org_id);
 

@@ -85,7 +85,7 @@ func (s *UiService) ListOrgs(ctx context.Context, req csilapi.ListOrgsRequest) (
 		}
 		orgs := make([]csilapi.OrgSummary, 0, len(all))
 		for _, org := range all {
-			if global || allowed[org.OrgID] {
+			if global || !org.IsPrivate || allowed[org.OrgID] {
 				orgs = append(orgs, csilapi.OrgSummary{OrgId: org.OrgID, Name: org.Name, DisplayName: org.DisplayName,
 					Status: org.Status, IsDefault: defaultOrg != nil && defaultOrg.OrgID == org.OrgID, IsPrivate: org.IsPrivate})
 			}

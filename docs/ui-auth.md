@@ -129,6 +129,7 @@ org implies project ownership of every project in that org.
 | retry job/workflow/unsuccessful jobs | **yes** | no | no | yes (proj) | yes (org) | yes |
 | create project | no | no | no | no | yes (in org) | yes (global) |
 | delete project | no | no | no | no | yes (org) | yes |
+| delete organization with an administered replacement | no | no | no | no | yes (both orgs) | yes |
 | webhook secret add/rotate/deactivate | no | no | no | no | yes (org) | yes |
 | vcs credential add/rotate | no | no | no | no | yes (org) | yes |
 | set secrets (write-only) + secret grants | no | no | no | no | yes (org) | yes |

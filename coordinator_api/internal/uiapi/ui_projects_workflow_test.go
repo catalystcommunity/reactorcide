@@ -1,6 +1,7 @@
 package uiapi
 
 import (
+	"context"
 	"testing"
 
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/config"
@@ -80,11 +81,12 @@ func TestListProjects_VisibilityFiltering(t *testing.T) {
 	}
 }
 
-func TestListOrgs_IncludesOwnOrgAndVisibleProjectOwners(t *testing.T) {
+func TestListOrgs_IncludesAdministeredAndPublicOrganizations(t *testing.T) {
 	deps, st := newTestDeps(t)
-	user := st.putUser(models.User{UserID: "org-1", Username: "org-one"})
-	st.putUser(models.User{UserID: "org-2", Username: "org-two"})
-	st.putProject(models.Project{UserID: strPtr("org-2"), Name: "public-proj", IsPrivate: false})
+	user := st.putUser(models.User{UserID: "user-1", Username: "user-one"})
+	requireOK(t, st.CreateOrganization(context.Background(), &models.Organization{OrgID: "org-1", Name: "org-one", IsPrivate: true}))
+	requireOK(t, st.CreateOrganization(context.Background(), &models.Organization{OrgID: "org-2", Name: "org-two"}))
+	seedOrgAdmin(st, user.UserID, "org-1")
 	ui := NewUiService(deps)
 	ctx := mintSessionCtx(t, deps, user.UserID)
 
@@ -95,10 +97,10 @@ func TestListOrgs_IncludesOwnOrgAndVisibleProjectOwners(t *testing.T) {
 		names[o.Name] = true
 	}
 	if !names["org-one"] {
-		t.Errorf("Orgs = %+v, want to include the caller's own org", listed.Orgs)
+		t.Errorf("Orgs = %+v, want to include an administered private organization", listed.Orgs)
 	}
 	if !names["org-two"] {
-		t.Errorf("Orgs = %+v, want to include the owner of a visible project", listed.Orgs)
+		t.Errorf("Orgs = %+v, want to include a public organization", listed.Orgs)
 	}
 }
 

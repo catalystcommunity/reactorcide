@@ -106,6 +106,7 @@ func NewHandlerWithWorker(auth csilapi.ReactorcideAuth, ui csilapi.ReactorcideUi
 		"create-org":                    wrapOp(csilapi.DecodeCreateOrgRequest, csilapi.EncodeCreateOrgResponse, "CreateOrgResponse", ui.CreateOrg),
 		"update-org":                    wrapOp(csilapi.DecodeUpdateOrgRequest, csilapi.EncodeUpdateOrgResponse, "UpdateOrgResponse", ui.UpdateOrg),
 		"set-default-org":               wrapOp(csilapi.DecodeSetDefaultOrgRequest, csilapi.EncodeSetDefaultOrgResponse, "SetDefaultOrgResponse", ui.SetDefaultOrg),
+		"delete-org":                    wrapOp(csilapi.DecodeDeleteOrgRequest, csilapi.EncodeDeleteOrgResponse, "DeleteOrgResponse", ui.DeleteOrg),
 		"list-execution-profiles":       wrapOp(csilapi.DecodeListExecutionProfilesRequest, csilapi.EncodeListExecutionProfilesResponse, "ListExecutionProfilesResponse", ui.ListExecutionProfiles),
 		"put-execution-profile":         wrapOp(csilapi.DecodePutExecutionProfileRequest, csilapi.EncodePutExecutionProfileResponse, "PutExecutionProfileResponse", ui.PutExecutionProfile),
 		"delete-execution-profile":      wrapOp(csilapi.DecodeDeleteExecutionProfileRequest, csilapi.EncodeDeleteExecutionProfileResponse, "DeleteExecutionProfileResponse", ui.DeleteExecutionProfile),

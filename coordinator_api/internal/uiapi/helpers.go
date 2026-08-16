@@ -28,6 +28,9 @@ func mapStoreErr(err error, notFoundMsg string) error {
 	if errors.Is(err, store.ErrNotFound) {
 		return NewServiceError("not_found", notFoundMsg)
 	}
+	if errors.Is(err, store.ErrConflict) {
+		return NewServiceError("conflict", "resource state conflicts with this operation")
+	}
 	return NewServiceError("internal", "an internal error occurred")
 }
 

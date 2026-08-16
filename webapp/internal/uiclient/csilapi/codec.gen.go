@@ -1994,6 +1994,108 @@ func DecodeSetDefaultOrgResponse(csilData []byte) (SetDefaultOrgResponse, error)
 	return csilDecSetDefaultOrgResponse(csilRoot)
 }
 
+// csilEncDeleteOrgRequest builds the canonical CBOR value tree for a DeleteOrgRequest.
+func csilEncDeleteOrgRequest(csilV DeleteOrgRequest) cborValue {
+	csilEntries := make(cborMap, 0, 3)
+	csilEntries = append(csilEntries, cborEntry{cborText("name"), cborText(csilV.Name)})
+	csilEntries = append(csilEntries, cborEntry{cborText("confirm"), cborBool(csilV.Confirm)})
+	csilEntries = append(csilEntries, cborEntry{cborText("replacement"), cborText(csilV.Replacement)})
+	return csilEntries
+}
+
+// csilDecDeleteOrgRequest reconstructs a DeleteOrgRequest from a decoded CBOR value tree.
+func csilDecDeleteOrgRequest(csilRoot cborValue) (DeleteOrgRequest, error) {
+	var csilOut DeleteOrgRequest
+	{
+		csilField, csilErr := cborRequire(csilRoot, "name")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Name = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "replacement")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Replacement = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "confirm")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsBool)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Confirm = csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeDeleteOrgRequest encodes a DeleteOrgRequest to canonical CSIL CBOR bytes.
+func EncodeDeleteOrgRequest(csilV DeleteOrgRequest) []byte {
+	return cborEncode(csilEncDeleteOrgRequest(csilV))
+}
+
+// DecodeDeleteOrgRequest decodes canonical CSIL CBOR bytes into a DeleteOrgRequest.
+func DecodeDeleteOrgRequest(csilData []byte) (DeleteOrgRequest, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero DeleteOrgRequest
+		return csilZero, csilErr
+	}
+	return csilDecDeleteOrgRequest(csilRoot)
+}
+
+// csilEncDeleteOrgResponse builds the canonical CBOR value tree for a DeleteOrgResponse.
+func csilEncDeleteOrgResponse(csilV DeleteOrgResponse) cborValue {
+	csilEntries := make(cborMap, 0, 1)
+	csilEntries = append(csilEntries, cborEntry{cborText("replacement"), csilEncOrgSummary(csilV.Replacement)})
+	return csilEntries
+}
+
+// csilDecDeleteOrgResponse reconstructs a DeleteOrgResponse from a decoded CBOR value tree.
+func csilDecDeleteOrgResponse(csilRoot cborValue) (DeleteOrgResponse, error) {
+	var csilOut DeleteOrgResponse
+	{
+		csilField, csilErr := cborRequire(csilRoot, "replacement")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (csilDecOrgSummary)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Replacement = csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeDeleteOrgResponse encodes a DeleteOrgResponse to canonical CSIL CBOR bytes.
+func EncodeDeleteOrgResponse(csilV DeleteOrgResponse) []byte {
+	return cborEncode(csilEncDeleteOrgResponse(csilV))
+}
+
+// DecodeDeleteOrgResponse decodes canonical CSIL CBOR bytes into a DeleteOrgResponse.
+func DecodeDeleteOrgResponse(csilData []byte) (DeleteOrgResponse, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero DeleteOrgResponse
+		return csilZero, csilErr
+	}
+	return csilDecDeleteOrgResponse(csilRoot)
+}
+
 // csilEncExecutionProfileSummary builds the canonical CBOR value tree for a ExecutionProfileSummary.
 func csilEncExecutionProfileSummary(csilV ExecutionProfileSummary) cborValue {
 	csilEntries := make(cborMap, 0, 11)

@@ -24,6 +24,7 @@ type ReactorcideUi interface {
 	CreateOrg(ctx context.Context, req CreateOrgRequest) (CreateOrgResponse, error)
 	UpdateOrg(ctx context.Context, req UpdateOrgRequest) (UpdateOrgResponse, error)
 	SetDefaultOrg(ctx context.Context, req SetDefaultOrgRequest) (SetDefaultOrgResponse, error)
+	DeleteOrg(ctx context.Context, req DeleteOrgRequest) (DeleteOrgResponse, error)
 	ListExecutionProfiles(ctx context.Context, req ListExecutionProfilesRequest) (ListExecutionProfilesResponse, error)
 	PutExecutionProfile(ctx context.Context, req PutExecutionProfileRequest) (PutExecutionProfileResponse, error)
 	DeleteExecutionProfile(ctx context.Context, req DeleteExecutionProfileRequest) (DeleteExecutionProfileResponse, error)

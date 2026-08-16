@@ -18,7 +18,7 @@ type organizationSummary struct {
 }
 
 var OrgsCommand = &cli.Command{
-	Name: "orgs", Usage: "Manage organizations",
+	Name: "orgs", Usage: "Manage organizations", Flags: apiFlags(),
 	Subcommands: []*cli.Command{
 		{
 			Name: "create", ArgsUsage: "<name>", Flags: append(apiFlags(),
@@ -113,6 +113,32 @@ var OrgsCommand = &cli.Command{
 					return err
 				}
 				fmt.Printf("Organization updated: %s\n", response.Name)
+				return nil
+			},
+		},
+		{
+			Name: "delete", ArgsUsage: "<name>", Flags: append(apiFlags(),
+				&cli.StringFlag{Name: "replacement", Required: true, Usage: "Organization that becomes the default"},
+				&cli.BoolFlag{Name: "yes", Usage: "Confirm deletion of the organization and all resources that it owns"}),
+			Action: func(ctx *cli.Context) error {
+				if ctx.NArg() != 1 {
+					return fmt.Errorf("usage: reactorcide orgs delete <name> --replacement <name> --yes")
+				}
+				if !ctx.Bool("yes") {
+					return fmt.Errorf("organization deletion requires --yes")
+				}
+				client, err := newAPIClient(ctx)
+				if err != nil {
+					return err
+				}
+				body := struct {
+					Replacement string `json:"replacement"`
+					Confirm     bool   `json:"confirm"`
+				}{Replacement: ctx.String("replacement"), Confirm: true}
+				if err := client.doJSON(http.MethodDelete, "/api/v1/organizations/"+url.PathEscape(ctx.Args().First()), body, http.StatusNoContent, nil); err != nil {
+					return err
+				}
+				fmt.Printf("Organization deleted: %s\n", ctx.Args().First())
 				return nil
 			},
 		},

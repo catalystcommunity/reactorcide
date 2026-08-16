@@ -76,6 +76,10 @@ func (StubUi) SetDefaultOrg(ctx context.Context, req csilapi.SetDefaultOrgReques
 	return csilapi.SetDefaultOrgResponse{}, ErrUnimplemented("ReactorcideUi/set-default-org")
 }
 
+func (StubUi) DeleteOrg(ctx context.Context, req csilapi.DeleteOrgRequest) (csilapi.DeleteOrgResponse, error) {
+	return csilapi.DeleteOrgResponse{}, ErrUnimplemented("ReactorcideUi/delete-org")
+}
+
 func (StubUi) ListExecutionProfiles(ctx context.Context, req csilapi.ListExecutionProfilesRequest) (csilapi.ListExecutionProfilesResponse, error) {
 	return csilapi.ListExecutionProfilesResponse{}, ErrUnimplemented("ReactorcideUi/list-execution-profiles")
 }
