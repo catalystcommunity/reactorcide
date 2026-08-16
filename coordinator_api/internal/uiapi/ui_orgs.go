@@ -15,6 +15,10 @@ type uiOrganizationStore interface {
 	GetDefaultOrganization(context.Context) (*models.Organization, error)
 }
 
+type uiOrganizationDeleteStore interface {
+	DeleteOrganization(context.Context, string, string) error
+}
+
 func (s *UiService) organizationStore() (uiOrganizationStore, error) {
 	value, ok := s.deps.Store.(uiOrganizationStore)
 	if !ok {
@@ -97,4 +101,42 @@ func (s *UiService) SetDefaultOrg(ctx context.Context, req csilapi.SetDefaultOrg
 	}
 	s.recordAudit(ctx, org.OrgID, "organization.set_default", "organization", org.Name, models.JSONB{})
 	return csilapi.SetDefaultOrgResponse{Org: orgSummary(org, org)}, nil
+}
+
+func (s *UiService) DeleteOrg(ctx context.Context, req csilapi.DeleteOrgRequest) (csilapi.DeleteOrgResponse, error) {
+	id, _, err := s.deps.requireUser(ctx)
+	if err != nil {
+		return csilapi.DeleteOrgResponse{}, err
+	}
+	if !req.Confirm {
+		return csilapi.DeleteOrgResponse{}, NewServiceError("invalid_argument", "confirm must be true")
+	}
+	value, err := s.organizationStore()
+	if err != nil {
+		return csilapi.DeleteOrgResponse{}, err
+	}
+	deleteStore, ok := s.deps.Store.(uiOrganizationDeleteStore)
+	if !ok {
+		return csilapi.DeleteOrgResponse{}, NewServiceError("internal", "organization deletion is not available")
+	}
+	organization, err := value.GetOrganizationByName(ctx, req.Name)
+	if err != nil {
+		return csilapi.DeleteOrgResponse{}, mapStoreErr(err, "organization not found")
+	}
+	replacement, err := value.GetOrganizationByName(ctx, req.Replacement)
+	if err != nil {
+		return csilapi.DeleteOrgResponse{}, mapStoreErr(err, "replacement organization not found")
+	}
+	if err := s.deps.Resolver.RequireOrgAdmin(ctx, id, organization.OrgID); err != nil {
+		return csilapi.DeleteOrgResponse{}, mapPermissionErr(err)
+	}
+	if err := s.deps.Resolver.RequireOrgAdmin(ctx, id, replacement.OrgID); err != nil {
+		return csilapi.DeleteOrgResponse{}, mapPermissionErr(err)
+	}
+	if err := deleteStore.DeleteOrganization(ctx, organization.OrgID, replacement.OrgID); err != nil {
+		return csilapi.DeleteOrgResponse{}, mapStoreErr(err, "organization not found")
+	}
+	s.recordAudit(ctx, replacement.OrgID, "organization.delete", "organization", organization.Name,
+		models.JSONB{"replacement": replacement.Name})
+	return csilapi.DeleteOrgResponse{Replacement: orgSummary(replacement, replacement)}, nil
 }

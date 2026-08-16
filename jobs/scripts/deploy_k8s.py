@@ -7,15 +7,17 @@ Tools (helm, kubectl) are installed by the plugin_k8s_tools.py lifecycle hook.
 Can be tested independently with required env vars:
     KUBECONFIG_CONTENT="..." REACTORCIDE_K8S_NAMESPACE=test python deploy_k8s.py --dry-run
 """
+import argparse
+import base64
+from datetime import datetime
 import json
 import os
 import socket
 import struct
 import subprocess
 import sys
-import argparse
+import tempfile
 import time
-import uuid
 from pathlib import Path
 from typing import Optional, Dict, Any
 
@@ -431,7 +433,12 @@ def deploy_helm(config: Dict[str, Any], helm_args: list, dry_run: bool = False) 
     run_cmd(cmd, dry_run=dry_run)
 
 
-def wait_for_rollout(config: Dict[str, Any], dry_run: bool = False) -> None:
+def wait_for_rollout(
+    config: Dict[str, Any],
+    *,
+    include_web: bool,
+    dry_run: bool = False,
+) -> None:
     """Wait for deployment rollout."""
     log("Waiting for rollout")
 
@@ -443,9 +450,12 @@ def wait_for_rollout(config: Dict[str, Any], dry_run: bool = False) -> None:
     # CrashLooping coordinator/worker reports a green deploy over broken pods.
     run_cmd(f"kubectl rollout status deployment/{release}app -n {namespace} --timeout=5m", dry_run=dry_run)
     run_cmd(f"kubectl rollout status deployment/{release}-worker -n {namespace} --timeout=5m", dry_run=dry_run)
-    # web is the optional UI; keep it non-fatal so a slow/absent web rollout
-    # does not fail an otherwise-healthy control-plane deploy.
-    run_cmd(f"kubectl rollout status deployment/{release}web -n {namespace} --timeout=5m || true", dry_run=dry_run)
+    if include_web:
+        run_cmd(
+            f"kubectl rollout status deployment/{release}web "
+            f"-n {namespace} --timeout=5m",
+            dry_run=dry_run,
+        )
 
 
 def run_migrations(config: Dict[str, Any], dry_run: bool = False) -> None:
@@ -463,7 +473,24 @@ def run_migrations(config: Dict[str, Any], dry_run: bool = False) -> None:
     run_cmd(f"kubectl exec -n {namespace} {coordinator_deployment} -- /reactorcide migrate")
 
 
-def create_api_token(config: Dict[str, Any], dry_run: bool = False) -> None:
+def api_token_exists(config: Dict[str, Any], dry_run: bool = False) -> bool:
+    """Return whether the deployment API-token Secret contains a token."""
+    if dry_run:
+        return False
+
+    namespace = config['namespace']
+    secret_name = config['api_token_secret_name']
+    try:
+        token_data = run_cmd_output(
+            f"kubectl get secret {secret_name} -n {namespace} "
+            f"-o jsonpath='{{.data.token}}' 2>/dev/null"
+        )
+    except subprocess.CalledProcessError:
+        return False
+    return bool(token_data)
+
+
+def create_api_token(config: Dict[str, Any], dry_run: bool = False) -> bool:
     """Create a global API token and store it in the token secret.
 
     The Helm chart creates the defaults.apiTokenSecretName Secret.
@@ -478,57 +505,68 @@ def create_api_token(config: Dict[str, Any], dry_run: bool = False) -> None:
 
     if dry_run:
         log("(would create API token)")
-        return
+        return True
 
-    # Check if token already exists in the user secret
-    try:
-        existing_token = run_cmd_output(
-            f"kubectl get secret {api_token_secret_name} -n {namespace} "
-            f"-o jsonpath='{{.data.token}}' 2>/dev/null"
-        )
-        if existing_token:
-            log(f"API token already exists in Secret {api_token_secret_name}. Skip token creation.")
-            return
-    except subprocess.CalledProcessError:
-        pass  # Secret doesn't exist or no token field - continue to create
+    if api_token_exists(config):
+        log(f"API token already exists in Secret {api_token_secret_name}. Skip token creation.")
+        return True
 
     coordinator_deployment = f"deployment/{release}app"
-    from datetime import datetime
     token_name = f"deploy-{datetime.now().strftime('%Y%m%d-%H%M%S')}"
 
+    token_output = run_cmd_output(
+        f"kubectl exec -n {namespace} {coordinator_deployment} -- "
+        f"/reactorcide token create --name {token_name}"
+    )
+
+    api_token = ""
+    token_id = ""
+    for line in token_output.split('\n'):
+        if line.startswith("Token: "):
+            api_token = line.split(" ", 1)[1]
+        elif line.startswith("Token ID: "):
+            token_id = line.split(" ", 2)[2] if len(line.split(" ")) > 2 else ""
+
+    if not api_token:
+        raise RuntimeError("The coordinator did not return a new API token")
+
+    register_secret(api_token)
+
+    # Use a protected patch file. Do not put the token or its encoded form in
+    # a command argument or a deployment log.
+    patch = {
+        "data": {
+            "token": base64.b64encode(api_token.encode()).decode(),
+            "token-id": base64.b64encode((token_id or 'unknown').encode()).decode(),
+        }
+    }
+    patch_path = None
     try:
-        token_output = run_cmd_output(
-            f"kubectl exec -n {namespace} {coordinator_deployment} -- "
-            f"/reactorcide token create --name {token_name}"
+        with tempfile.NamedTemporaryFile(
+            mode="w",
+            encoding="utf-8",
+            prefix="reactorcide-api-token-",
+            suffix=".json",
+            delete=False,
+        ) as patch_file:
+            patch_path = Path(patch_file.name)
+            json.dump(patch, patch_file)
+        log(f"Updating API token Secret: {api_token_secret_name}")
+        subprocess.run(
+            [
+                "kubectl", "patch", "secret", api_token_secret_name,
+                "-n", namespace, "--type=merge", "--patch-file", str(patch_path),
+            ],
+            check=True,
         )
+    finally:
+        if patch_path is not None:
+            patch_path.unlink(missing_ok=True)
 
-        # Parse token output
-        api_token = ""
-        token_id = ""
-        for line in token_output.split('\n'):
-            if line.startswith("Token: "):
-                api_token = line.split(" ", 1)[1]
-            elif line.startswith("Token ID: "):
-                token_id = line.split(" ", 2)[2] if len(line.split(" ")) > 2 else ""
-
-        if api_token:
-            register_secret(api_token)
-
-            # Update the user secret with the token using kubectl patch
-            import base64
-            token_b64 = base64.b64encode(api_token.encode()).decode()
-            token_id_b64 = base64.b64encode((token_id or 'unknown').encode()).decode()
-
-            run_cmd(
-                f"kubectl patch secret {api_token_secret_name} -n {namespace} "
-                f"--type=merge -p '{{\"data\":{{\"token\":\"{token_b64}\",\"token-id\":\"{token_id_b64}\"}}}}'"
-            )
-            log(f"API token stored in Secret: {api_token_secret_name}")
-        else:
-            log("WARNING: Failed to create API token")
-
-    except subprocess.CalledProcessError as e:
-        log(f"WARNING: Failed to create API token: {e}")
+    if not api_token_exists(config):
+        raise RuntimeError("The API token Secret does not contain the new token")
+    log(f"API token stored in Secret: {api_token_secret_name}")
+    return True
 
 
 def show_status(config: Dict[str, Any], dry_run: bool = False) -> None:
@@ -615,12 +653,17 @@ def deploy(config: Dict[str, Any], dry_run: bool = False) -> int:
     # Step 7: Deploy
     log("")
     log("Step 7: Deploying Reactorcide")
-    deploy_helm(config, helm_args, dry_run=dry_run)
+    token_ready = api_token_exists(config, dry_run=dry_run)
+    first_helm_args = helm_args
+    if not token_ready:
+        log("The API token is not ready. Deploying the control plane before the web application.")
+        first_helm_args = [*helm_args, "--set", "web.enabled=false"]
+    deploy_helm(config, first_helm_args, dry_run=dry_run)
 
     # Step 8: Wait for rollout
     log("")
     log("Step 8: Waiting for rollout")
-    wait_for_rollout(config, dry_run=dry_run)
+    wait_for_rollout(config, include_web=token_ready, dry_run=dry_run)
 
     # Step 9: Run migrations
     log("")
@@ -632,9 +675,15 @@ def deploy(config: Dict[str, Any], dry_run: bool = False) -> int:
     log("Step 10: Creating API token")
     create_api_token(config, dry_run=dry_run)
 
-    # Step 11: Show status
+    if not token_ready:
+        log("")
+        log("Step 11: Enabling the web application")
+        deploy_helm(config, helm_args, dry_run=dry_run)
+        wait_for_rollout(config, include_web=True, dry_run=dry_run)
+
+    # Step 12: Show status
     log("")
-    log("Step 11: Deployment status")
+    log("Step 12: Deployment status")
     show_status(config, dry_run=dry_run)
 
     log("")
@@ -642,10 +691,7 @@ def deploy(config: Dict[str, Any], dry_run: bool = False) -> int:
     log("Deployment complete!")
     log("=" * 50)
     log("")
-    api_token_secret = config['api_token_secret_name']
-    log("Retrieve API token:")
-    log(f"  kubectl get secret {api_token_secret} -n {namespace} -o jsonpath='{{.data.token}}' | base64 -d")
-    log("")
+    log(f"API token Secret: {config['api_token_secret_name']}")
     log("API endpoint (cluster-internal):")
     log(f"  http://{release}app.{namespace}.svc.cluster.local:6080")
     log("")

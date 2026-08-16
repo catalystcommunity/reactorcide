@@ -173,6 +173,18 @@ type SetDefaultOrgResponse struct {
 	Org OrgSummary `json:"org" yaml:"org"`
 }
 
+// DeleteOrgRequest represents a structured data type
+type DeleteOrgRequest struct {
+	Name        string `json:"name" yaml:"name"`
+	Replacement string `json:"replacement" yaml:"replacement"`
+	Confirm     bool   `json:"confirm" yaml:"confirm"`
+}
+
+// DeleteOrgResponse represents a structured data type
+type DeleteOrgResponse struct {
+	Replacement OrgSummary `json:"replacement" yaml:"replacement"`
+}
+
 // ExecutionProfileSummary represents a structured data type
 type ExecutionProfileSummary struct {
 	Name                  string   `json:"name" yaml:"name"`

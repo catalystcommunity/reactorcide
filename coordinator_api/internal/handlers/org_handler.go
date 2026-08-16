@@ -18,6 +18,7 @@ type organizationStore interface {
 	GetOrganizationByName(ctx context.Context, name string) (*models.Organization, error)
 	ListOrganizations(ctx context.Context, limit, offset int) ([]models.Organization, error)
 	UpdateOrganization(ctx context.Context, organization *models.Organization) error
+	DeleteOrganization(ctx context.Context, orgID, replacementOrgID string) error
 	SetDefaultOrganization(ctx context.Context, orgID string) error
 	GetDefaultOrganization(ctx context.Context) (*models.Organization, error)
 }
@@ -38,6 +39,11 @@ type organizationRequest struct {
 	DisplayName string `json:"display_name"`
 	IsPrivate   bool   `json:"is_private"`
 	Status      string `json:"status"`
+}
+
+type organizationDeleteRequest struct {
+	Replacement string `json:"replacement"`
+	Confirm     bool   `json:"confirm"`
 }
 
 type organizationResponse struct {
@@ -159,6 +165,37 @@ func (h *OrganizationHandler) SetDefault(w http.ResponseWriter, r *http.Request)
 	}
 	audit.Record(r.Context(), h.store, organization.OrgID, "organization.set_default", "organization", organization.Name, models.JSONB{})
 	h.respondWithJSON(w, http.StatusOK, h.response(r, organization))
+}
+
+func (h *OrganizationHandler) Delete(w http.ResponseWriter, r *http.Request) {
+	organization, err := h.store.GetOrganizationByName(r.Context(), h.getID(r, "organization_name"))
+	if err != nil {
+		h.respondWithError(w, http.StatusNotFound, err)
+		return
+	}
+
+	var req organizationDeleteRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Replacement == "" || !req.Confirm {
+		h.respondWithError(w, http.StatusBadRequest, store.ErrInvalidInput)
+		return
+	}
+	replacement, err := h.store.GetOrganizationByName(r.Context(), req.Replacement)
+	if err != nil {
+		h.respondWithError(w, http.StatusNotFound, err)
+		return
+	}
+	if !h.require(r, tokencaps.OrganizationsManage, organization.OrgID) ||
+		!h.require(r, tokencaps.OrganizationsManage, replacement.OrgID) {
+		h.respondWithError(w, http.StatusForbidden, store.ErrForbidden)
+		return
+	}
+	if err := h.store.DeleteOrganization(r.Context(), organization.OrgID, replacement.OrgID); err != nil {
+		h.respondWithError(w, http.StatusInternalServerError, err)
+		return
+	}
+	audit.Record(r.Context(), h.store, replacement.OrgID, "organization.delete", "organization", organization.Name,
+		models.JSONB{"replacement": replacement.Name})
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func (h *OrganizationHandler) response(r *http.Request, organization *models.Organization) organizationResponse {

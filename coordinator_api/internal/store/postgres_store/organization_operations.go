@@ -132,6 +132,77 @@ func (ps PostgresDbStore) UpdateOrganization(ctx context.Context, organization *
 	return nil
 }
 
+// DeleteOrganization deletes an organization and all resources that it owns.
+// The replacement becomes the default organization. The caller performs
+// authorization for both organizations.
+func (ps PostgresDbStore) DeleteOrganization(ctx context.Context, orgID, replacementOrgID string) error {
+	if orgID == "" || replacementOrgID == "" || orgID == replacementOrgID {
+		return fmt.Errorf("source and replacement organizations must be different: %w", store.ErrInvalidInput)
+	}
+
+	return ps.getDB(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Exec("SELECT pg_advisory_xact_lock(191924761, 2)").Error; err != nil {
+			return fmt.Errorf("failed to lock organization deletion: %w", err)
+		}
+
+		var organizations []models.Organization
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where("org_id IN ?", []string{orgID, replacementOrgID}).
+			Find(&organizations).Error; err != nil {
+			return fmt.Errorf("failed to verify organizations: %w", err)
+		}
+		if len(organizations) != 2 {
+			return store.ErrNotFound
+		}
+
+		var activeJobs int64
+		if err := tx.Model(&models.Job{}).
+			Where("org_id = ? AND status NOT IN ?", orgID, []string{"completed", "failed", "cancelled", "timeout"}).
+			Count(&activeJobs).Error; err != nil {
+			return fmt.Errorf("failed to check active jobs: %w", err)
+		}
+		if activeJobs != 0 {
+			return fmt.Errorf("organization has active jobs: %w", store.ErrConflict)
+		}
+
+		var activeWorkflows int64
+		if err := tx.Model(&models.WorkflowInstance{}).
+			Where("org_id = ? AND status NOT IN ?", orgID, []string{"success", "failed", "skipped", "cancelled"}).
+			Count(&activeWorkflows).Error; err != nil {
+			return fmt.Errorf("failed to check active workflows: %w", err)
+		}
+		if activeWorkflows != 0 {
+			return fmt.Errorf("organization has active workflows: %w", store.ErrConflict)
+		}
+
+		setting := &models.GlobalSetting{
+			Key:       models.GlobalSettingDefaultOrgID,
+			Value:     models.JSONValue([]byte(fmt.Sprintf("%q", replacementOrgID))),
+			UpdatedAt: time.Now().UTC(),
+		}
+		if err := tx.Clauses(clause.OnConflict{
+			Columns:   []clause.Column{{Name: "key"}},
+			DoUpdates: clause.AssignmentColumns([]string{"value", "updated_at"}),
+		}).Create(setting).Error; err != nil {
+			return fmt.Errorf("failed to replace the default organization: %w", err)
+		}
+
+		if err := tx.Where("scope_type = ? AND scope_id = ?", models.ScopeTypeOrg, orgID).
+			Delete(&models.RoleAssignment{}).Error; err != nil {
+			return fmt.Errorf("failed to delete organization role assignments: %w", err)
+		}
+
+		result := tx.Where("org_id = ?", orgID).Delete(&models.Organization{})
+		if result.Error != nil {
+			return fmt.Errorf("failed to delete organization: %w", result.Error)
+		}
+		if result.RowsAffected == 0 {
+			return store.ErrNotFound
+		}
+		return nil
+	})
+}
+
 func (ps PostgresDbStore) SetDefaultOrganization(ctx context.Context, orgID string) error {
 	if _, err := ps.GetOrganizationByID(ctx, orgID); err != nil {
 		return err

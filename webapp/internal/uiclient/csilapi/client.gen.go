@@ -152,6 +152,15 @@ func (c *ReactorcideUiClient) SetDefaultOrg(ctx context.Context, req SetDefaultO
 	return DecodeSetDefaultOrgResponse(csilResp)
 }
 
+func (c *ReactorcideUiClient) DeleteOrg(ctx context.Context, req DeleteOrgRequest) (DeleteOrgResponse, error) {
+	var csilZero DeleteOrgResponse
+	csilResp, csilErr := c.transport.Call(ctx, "ReactorcideUi", "delete-org", EncodeDeleteOrgRequest(req))
+	if csilErr != nil {
+		return csilZero, csilErr
+	}
+	return DecodeDeleteOrgResponse(csilResp)
+}
+
 func (c *ReactorcideUiClient) ListExecutionProfiles(ctx context.Context, req ListExecutionProfilesRequest) (ListExecutionProfilesResponse, error) {
 	var csilZero ListExecutionProfilesResponse
 	csilResp, csilErr := c.transport.Call(ctx, "ReactorcideUi", "list-execution-profiles", EncodeListExecutionProfilesRequest(req))

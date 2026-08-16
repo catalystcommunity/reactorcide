@@ -41,6 +41,24 @@ reactorcide orgs set-default example
 reactorcide orgs list
 ```
 
+Delete a bootstrap organization only after you create its replacement:
+
+```bash
+reactorcide orgs create example --display-name "Example"
+reactorcide orgs delete default --replacement example --yes
+```
+
+This command makes `example` the default organization. It then deletes the old
+organization and all resources and credentials that the old organization owns.
+The command refuses to run while the old organization has an active job or
+workflow. The caller must be an administrator of both organizations. An API
+token must have both organization scopes and the `organizations:manage`
+capability. A global instance token meets these requirements.
+
+The command does not delete user records. A token-only organization does not
+need a user record. When you add LinkKeys later, grant the new user the
+organization administrator role before you delete the bootstrap organization.
+
 The coordinator uses the default organization when a project or direct job
 request does not name an organization. `REACTORCIDE_DEFAULT_ORG` supplies the
 name only during initial bootstrap. The database setting is authoritative

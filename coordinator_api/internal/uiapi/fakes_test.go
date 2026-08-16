@@ -28,6 +28,7 @@ type fakeStore struct {
 	nextID int
 
 	users     map[string]models.User
+	orgs      map[string]models.Organization
 	projects  map[string]models.Project
 	jobs      map[string]models.Job
 	workflows map[string]models.WorkflowInstance
@@ -65,6 +66,7 @@ type fakeStore struct {
 func newFakeStore() *fakeStore {
 	return &fakeStore{
 		users:                   map[string]models.User{},
+		orgs:                    map[string]models.Organization{},
 		projects:                map[string]models.Project{},
 		jobs:                    map[string]models.Job{},
 		workflows:               map[string]models.WorkflowInstance{},
@@ -87,6 +89,106 @@ func newFakeStore() *fakeStore {
 		workers:                 map[string]models.Worker{},
 		leasesByWorker:          map[string][]models.WorkerLease{},
 	}
+}
+
+func (f *fakeStore) CreateOrganization(_ context.Context, organization *models.Organization) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if _, exists := f.orgs[organization.Name]; exists {
+		return store.ErrAlreadyExists
+	}
+	if organization.OrgID == "" {
+		organization.OrgID = f.genID("org")
+	}
+	f.orgs[organization.Name] = *organization
+	if _, exists := f.globalSettings[models.GlobalSettingDefaultOrgID]; !exists {
+		f.globalSettings[models.GlobalSettingDefaultOrgID] = models.GlobalSetting{
+			Key:   models.GlobalSettingDefaultOrgID,
+			Value: models.JSONValue([]byte(fmt.Sprintf("%q", organization.OrgID))),
+		}
+	}
+	return nil
+}
+
+func (f *fakeStore) GetOrganizationByName(_ context.Context, name string) (*models.Organization, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	organization, ok := f.orgs[name]
+	if !ok {
+		return nil, store.ErrNotFound
+	}
+	return &organization, nil
+}
+
+func (f *fakeStore) ListOrganizations(_ context.Context, limit, offset int) ([]models.Organization, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	organizations := make([]models.Organization, 0, len(f.orgs))
+	for _, organization := range f.orgs {
+		organizations = append(organizations, organization)
+	}
+	return organizations, nil
+}
+
+func (f *fakeStore) UpdateOrganization(_ context.Context, organization *models.Organization) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if _, ok := f.orgs[organization.Name]; !ok {
+		return store.ErrNotFound
+	}
+	f.orgs[organization.Name] = *organization
+	return nil
+}
+
+func (f *fakeStore) DeleteOrganization(_ context.Context, orgID, replacementOrgID string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	var sourceName string
+	replacementFound := false
+	for name, organization := range f.orgs {
+		if organization.OrgID == orgID {
+			sourceName = name
+		}
+		if organization.OrgID == replacementOrgID {
+			replacementFound = true
+		}
+	}
+	if sourceName == "" || !replacementFound {
+		return store.ErrNotFound
+	}
+	delete(f.orgs, sourceName)
+	f.globalSettings[models.GlobalSettingDefaultOrgID] = models.GlobalSetting{
+		Key:   models.GlobalSettingDefaultOrgID,
+		Value: models.JSONValue([]byte(fmt.Sprintf("%q", replacementOrgID))),
+	}
+	return nil
+}
+
+func (f *fakeStore) SetDefaultOrganization(_ context.Context, orgID string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.globalSettings[models.GlobalSettingDefaultOrgID] = models.GlobalSetting{
+		Key:   models.GlobalSettingDefaultOrgID,
+		Value: models.JSONValue([]byte(fmt.Sprintf("%q", orgID))),
+	}
+	return nil
+}
+
+func (f *fakeStore) GetDefaultOrganization(_ context.Context) (*models.Organization, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	setting, ok := f.globalSettings[models.GlobalSettingDefaultOrgID]
+	if !ok {
+		return nil, store.ErrNotFound
+	}
+	defaultID := string(setting.Value)
+	for _, organization := range f.orgs {
+		if fmt.Sprintf("%q", organization.OrgID) == defaultID {
+			copy := organization
+			return &copy, nil
+		}
+	}
+	return nil, store.ErrNotFound
 }
 
 func (f *fakeStore) genID(prefix string) string {

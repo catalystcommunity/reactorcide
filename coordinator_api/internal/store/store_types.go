@@ -10,6 +10,7 @@ var (
 	ErrNotFound           = errors.New("record not found")
 	ErrInvalidInput       = errors.New("invalid input")
 	ErrAlreadyExists      = errors.New("record already exists")
+	ErrConflict           = errors.New("conflict")
 	ErrInternal           = errors.New("internal error")
 	ErrUnauthorized       = errors.New("unauthorized")
 	ErrForbidden          = errors.New("forbidden")           // 403 Forbidden - for permission issues
