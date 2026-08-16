@@ -272,7 +272,10 @@ class TestWorkflowContext:
         with tempfile.TemporaryDirectory() as tmpdir:
             vars_file = Path(tmpdir) / "workflow-vars.json"
             vars_file.write_text(json.dumps({"targets": ["linux"], "flag": True}))
-            with patch.dict(os.environ, {"RC_WF_VARS_FILE": str(vars_file)}):
+            with patch.dict(os.environ, {
+                "RC_WF_VARS_FILE": str(vars_file),
+                "RC_WF_VARS_JSON": "",
+            }):
                 ctx = WorkflowContext()
 
                 assert ctx.workflow_vars() == {"targets": ["linux"], "flag": True}
@@ -395,11 +398,11 @@ class TestModuleLevelFunctions:
         with tempfile.TemporaryDirectory() as tmpdir:
             vars_file = Path(tmpdir) / "workflow-vars.json"
             vars_file.write_text(json.dumps({"foo": "bar"}))
-            os.environ["RC_WF_VARS_FILE"] = str(vars_file)
-
-            assert workflow_vars() == {"foo": "bar"}
-
-            del os.environ["RC_WF_VARS_FILE"]
+            with patch.dict(os.environ, {
+                "RC_WF_VARS_FILE": str(vars_file),
+                "RC_WF_VARS_JSON": "",
+            }):
+                assert workflow_vars() == {"foo": "bar"}
 
 
 class TestGitUtilities:
