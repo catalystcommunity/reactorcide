@@ -196,8 +196,11 @@ func TestProcessTriggers_SingleJob(t *testing.T) {
 		UserID:    "user-123",
 		QueueName: "reactorcide-jobs",
 		JobEnvVars: models.JSONB{
-			"REACTORCIDE_CI":       "true",
-			"REACTORCIDE_PROVIDER": "github",
+			"REACTORCIDE_CI":            "true",
+			"REACTORCIDE_PROVIDER":      "github",
+			"REACTORCIDE_JOB_KIND":      "eval",
+			"REACTORCIDE_CHECKOUT_MODE": "shared",
+			"REACTORCIDE_PR_NUMBER":     "107",
 		},
 	}
 
@@ -256,6 +259,15 @@ func TestProcessTriggers_SingleJob(t *testing.T) {
 	}
 	if job.JobEnvVars["REACTORCIDE_PROVIDER"] != "github" {
 		t.Error("expected parent env var 'REACTORCIDE_PROVIDER' to be inherited")
+	}
+	if _, ok := job.JobEnvVars["REACTORCIDE_JOB_KIND"]; ok {
+		t.Error("expected eval-only REACTORCIDE_JOB_KIND to be removed from child job")
+	}
+	if job.JobEnvVars["REACTORCIDE_CHECKOUT_MODE"] != "shared" {
+		t.Error("expected checkout mode to remain available to the child job")
+	}
+	if job.JobEnvVars["REACTORCIDE_PR_NUMBER"] != "107" {
+		t.Error("expected pull request context to remain available to the child job")
 	}
 	if job.JobEnvVars["REACTORCIDE_EVENT_TYPE"] != "push" {
 		t.Error("expected trigger env var 'REACTORCIDE_EVENT_TYPE' to be set")
