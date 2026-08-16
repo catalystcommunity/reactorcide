@@ -184,7 +184,7 @@ func (h *WorkflowHandler) ListWorkflows(w http.ResponseWriter, r *http.Request) 
 // (owner or admin) — real RBAC lands in a later wave.
 func (h *WorkflowHandler) CancelWorkflow(w http.ResponseWriter, r *http.Request) {
 	user := checkauth.GetUserFromContext(r.Context())
-	if user == nil {
+	if user == nil && checkauth.GetPrincipalFromContext(r.Context()) == nil {
 		h.respondWithError(w, http.StatusUnauthorized, store.ErrUnauthorized)
 		return
 	}
@@ -205,7 +205,7 @@ func (h *WorkflowHandler) CancelWorkflow(w http.ResponseWriter, r *http.Request)
 		h.respondWithError(w, http.StatusNotFound, err)
 		return
 	}
-	if !h.isAdmin(user) && existing.UserID != user.UserID {
+	if !h.canSubjectControlWorkflow(r.Context(), user, existing) {
 		h.respondWithError(w, http.StatusForbidden, store.ErrForbidden)
 		return
 	}
@@ -233,7 +233,7 @@ func (h *WorkflowHandler) CancelWorkflow(w http.ResponseWriter, r *http.Request)
 // Authz here matches CancelWorkflow's pre-existing owner-or-admin check.
 func (h *WorkflowHandler) RetryWorkflow(w http.ResponseWriter, r *http.Request) {
 	user := checkauth.GetUserFromContext(r.Context())
-	if user == nil {
+	if user == nil && checkauth.GetPrincipalFromContext(r.Context()) == nil {
 		h.respondWithError(w, http.StatusUnauthorized, store.ErrUnauthorized)
 		return
 	}
@@ -254,7 +254,7 @@ func (h *WorkflowHandler) RetryWorkflow(w http.ResponseWriter, r *http.Request) 
 		h.respondWithError(w, http.StatusNotFound, err)
 		return
 	}
-	if !h.isAdmin(user) && existing.UserID != user.UserID {
+	if !h.canSubjectControlWorkflow(r.Context(), user, existing) {
 		h.respondWithError(w, http.StatusForbidden, store.ErrForbidden)
 		return
 	}
@@ -305,7 +305,7 @@ type RetryUnsuccessfulResponse struct {
 // running/evaluating isn't a supported operation.
 func (h *WorkflowHandler) RetryUnsuccessfulJobs(w http.ResponseWriter, r *http.Request) {
 	user := checkauth.GetUserFromContext(r.Context())
-	if user == nil {
+	if user == nil && checkauth.GetPrincipalFromContext(r.Context()) == nil {
 		h.respondWithError(w, http.StatusUnauthorized, store.ErrUnauthorized)
 		return
 	}
@@ -326,7 +326,7 @@ func (h *WorkflowHandler) RetryUnsuccessfulJobs(w http.ResponseWriter, r *http.R
 		h.respondWithError(w, http.StatusNotFound, err)
 		return
 	}
-	if !h.isAdmin(user) && existing.UserID != user.UserID {
+	if !h.canSubjectControlWorkflow(r.Context(), user, existing) {
 		h.respondWithError(w, http.StatusForbidden, store.ErrForbidden)
 		return
 	}
@@ -359,7 +359,7 @@ func (h *WorkflowHandler) RetryUnsuccessfulJobs(w http.ResponseWriter, r *http.R
 
 func (h *WorkflowHandler) GetWorkflow(w http.ResponseWriter, r *http.Request) {
 	user := checkauth.GetUserFromContext(r.Context())
-	if user == nil {
+	if user == nil && checkauth.GetPrincipalFromContext(r.Context()) == nil {
 		h.respondWithError(w, http.StatusUnauthorized, store.ErrUnauthorized)
 		return
 	}
@@ -375,7 +375,7 @@ func (h *WorkflowHandler) GetWorkflow(w http.ResponseWriter, r *http.Request) {
 			h.respondWithError(w, http.StatusNotFound, err)
 			return
 		}
-		if !h.canUserViewWorkflow(r.Context(), user, summary) {
+		if !h.canSubjectViewWorkflow(r.Context(), user, summary) {
 			h.respondWithError(w, http.StatusForbidden, store.ErrForbidden)
 			return
 		}
@@ -388,7 +388,7 @@ func (h *WorkflowHandler) GetWorkflow(w http.ResponseWriter, r *http.Request) {
 		h.respondWithError(w, http.StatusNotFound, err)
 		return
 	}
-	if !h.canUserViewJob(r.Context(), user, job) {
+	if !h.canSubjectViewWorkflowJob(r.Context(), user, job) {
 		h.respondWithError(w, http.StatusForbidden, store.ErrForbidden)
 		return
 	}
@@ -484,6 +484,7 @@ func workflowSummaryFromLooseJob(job *models.Job) models.WorkflowSummary {
 		Name:            job.Name,
 		Status:          job.Status,
 		UserID:          job.UserID,
+		OrgID:           job.OwnershipOrgID(),
 		ProjectID:       job.ProjectID,
 		CreatedAt:       job.CreatedAt,
 		UpdatedAt:       job.UpdatedAt,
@@ -518,6 +519,48 @@ func (h *WorkflowHandler) canUserViewWorkflow(ctx context.Context, user *models.
 	}
 	visible, err := h.visibility.CanViewWorkflowSummary(ctx, authz.IdentityFromUser(user), summary)
 	return err == nil && visible
+}
+
+func (h *WorkflowHandler) canSubjectViewWorkflow(ctx context.Context, user *models.User, summary *models.WorkflowSummary) bool {
+	principal := checkauth.GetPrincipalFromContext(ctx)
+	if principal == nil {
+		return h.canUserViewWorkflow(ctx, user, summary)
+	}
+	if principal.CredentialType == "job_token" || !principal.HasOrganization(summary.OwnershipOrgID()) || !principal.HasCapability(tokencaps.WorkflowsRead) {
+		return false
+	}
+	if principal.CredentialType == "user_token" {
+		return user != nil && h.canUserViewWorkflow(ctx, user, summary)
+	}
+	return principal.CredentialType == "service_token" || principal.CredentialType == "instance_token"
+}
+
+func (h *WorkflowHandler) canSubjectViewWorkflowJob(ctx context.Context, user *models.User, job *models.Job) bool {
+	principal := checkauth.GetPrincipalFromContext(ctx)
+	if principal == nil {
+		return h.canUserViewJob(ctx, user, job)
+	}
+	if principal.CredentialType == "job_token" || !principal.HasOrganization(job.OwnershipOrgID()) || !principal.HasCapability(tokencaps.WorkflowsRead) {
+		return false
+	}
+	if principal.CredentialType == "user_token" {
+		return user != nil && h.canUserViewJob(ctx, user, job)
+	}
+	return principal.CredentialType == "service_token" || principal.CredentialType == "instance_token"
+}
+
+func (h *WorkflowHandler) canSubjectControlWorkflow(ctx context.Context, user *models.User, workflow *models.WorkflowInstance) bool {
+	principal := checkauth.GetPrincipalFromContext(ctx)
+	if principal == nil {
+		return user != nil && (h.isAdmin(user) || workflow.UserID == user.UserID)
+	}
+	if principal.CredentialType == "job_token" || !principal.HasOrganization(workflow.OwnershipOrgID()) || !principal.HasCapability(tokencaps.WorkflowsControl) {
+		return false
+	}
+	if principal.CredentialType == "user_token" {
+		return user != nil && (h.isAdmin(user) || workflow.UserID == user.UserID)
+	}
+	return principal.CredentialType == "service_token" || principal.CredentialType == "instance_token"
 }
 
 // canUserViewJob is canUserAccessJob plus public visibility — used by

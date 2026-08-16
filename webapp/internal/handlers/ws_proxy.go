@@ -69,13 +69,6 @@ func (p *WSProxy) proxy(w http.ResponseWriter, r *http.Request, upstream string,
 		http.Error(w, "coordinator transport is not secure", http.StatusBadGateway)
 		return
 	}
-	clientConn, err := p.upgrader.Upgrade(w, r, nil)
-	if err != nil {
-		p.logger.WithError(err).Warn("Browser WS upgrade failed")
-		return
-	}
-	defer clientConn.Close()
-
 	header := http.Header{}
 	if config.APIToken != "" {
 		header.Set("Authorization", "Bearer "+config.APIToken)
@@ -87,10 +80,20 @@ func (p *WSProxy) proxy(w http.ResponseWriter, r *http.Request, upstream string,
 		if resp != nil {
 			resp.Body.Close()
 		}
-		clientConn.WriteMessage(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseInternalServerErr, "upstream unavailable"))
+		http.Error(w, "upstream unavailable", http.StatusBadGateway)
 		return
 	}
 	defer upstreamConn.Close()
+
+	// Connect upstream before the browser upgrade. If the coordinator rejects
+	// the request, the browser receives an HTTP failure and keeps its retry
+	// backoff. It must not see a successful upgrade for a failed upstream.
+	clientConn, err := p.upgrader.Upgrade(w, r, nil)
+	if err != nil {
+		p.logger.WithError(err).Warn("Browser WS upgrade failed")
+		return
+	}
+	defer clientConn.Close()
 
 	ctx, cancel := context.WithCancel(r.Context())
 	defer cancel()
