@@ -1,6 +1,7 @@
 package main
 
 import (
+	"os"
 	"os/exec"
 	"strings"
 	"testing"
@@ -40,5 +41,42 @@ func TestHelmChartWiresJobAPICredentials(t *testing.T) {
 	appDeploy := helmTemplateFile(t, "templates/deployment-app.yaml")
 	if !strings.Contains(appDeploy, "REACTORCIDE_API_TOKEN") {
 		t.Error("coordinator deployment is missing REACTORCIDE_API_TOKEN — job containers can't authenticate to submit child jobs on k8s")
+	}
+}
+
+// TestHelmSecretLookupsAllowEmptyData guards upgrades from a bootstrap
+// Secret that exists before the deploy job adds its token. Kubernetes omits
+// the data map for that empty Secret. Helm must replace the nil map with an
+// empty dictionary before it indexes a key.
+func TestHelmSecretLookupsAllowEmptyData(t *testing.T) {
+	tests := []struct {
+		path          string
+		unsafeLookup  string
+		guardedLookup string
+	}{
+		{
+			path:          "../helm_chart/templates/secret-api-token.yaml",
+			unsafeLookup:  "index $existingSecret.data",
+			guardedLookup: "$existingSecret.data | default dict",
+		},
+		{
+			path:          "../helm_chart/templates/secret-worker-enrollment.yaml",
+			unsafeLookup:  "index $existing.data",
+			guardedLookup: "$existing.data | default dict",
+		},
+	}
+
+	for _, test := range tests {
+		content, err := os.ReadFile(test.path)
+		if err != nil {
+			t.Fatalf("read %s: %v", test.path, err)
+		}
+		template := string(content)
+		if strings.Contains(template, test.unsafeLookup) {
+			t.Errorf("%s indexes a Secret data map before it handles an empty map", test.path)
+		}
+		if !strings.Contains(template, test.guardedLookup) {
+			t.Errorf("%s does not replace an empty Secret data map before key lookup", test.path)
+		}
 	}
 }
