@@ -53,7 +53,7 @@ func (ps PostgresDbStore) CreateJob(ctx context.Context, job *models.Job) error 
 
 // UpdateJob updates an existing job
 func (ps PostgresDbStore) UpdateJob(ctx context.Context, job *models.Job) error {
-	result := ps.getDB(ctx).Save(job)
+	result := saveWithOptionalUserID(ps.getDB(ctx), job, job.UserID)
 	if result.Error != nil {
 		return fmt.Errorf("failed to update job %s: %w", job.JobID, result.Error)
 	}

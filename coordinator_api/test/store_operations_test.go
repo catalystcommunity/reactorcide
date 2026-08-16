@@ -57,6 +57,12 @@ func TestJobOperations(t *testing.T) {
 		})
 	})
 
+	t.Run("Update userless job", func(t *testing.T) {
+		RunTransactionalTest(t, func(ctx context.Context, tx *gorm.DB) {
+			testUpdateUserlessJob(t, ctx, tx)
+		})
+	})
+
 	t.Run("DeleteJob", func(t *testing.T) {
 		RunTransactionalTest(t, func(ctx context.Context, tx *gorm.DB) {
 			testDeleteJob(t, ctx, tx)
@@ -267,6 +273,38 @@ func testUpdateJob(t *testing.T, ctx context.Context, tx *gorm.DB) {
 	assert.Equal(t, "running", retrievedJob.Status)
 	assert.Equal(t, "Updated description", retrievedJob.Description)
 	assert.NotNil(t, retrievedJob.StartedAt)
+}
+
+func testUpdateUserlessJob(t *testing.T, ctx context.Context, tx *gorm.DB) {
+	dataUtils := &DataUtils{db: tx}
+	created, err := dataUtils.CreateJob(DataSetup{
+		"Name":   "Userless Job",
+		"Status": "submitted",
+	})
+	require.NoError(t, err)
+	require.NoError(t, tx.Model(&models.Job{}).Where("job_id = ?", created.JobID).Update("user_id", nil).Error)
+
+	job, err := store.AppStore.GetJobByID(ctx, created.JobID)
+	require.NoError(t, err)
+	require.Empty(t, job.UserID)
+
+	job.Status = "queued"
+	require.NoError(t, store.AppStore.UpdateJob(ctx, job))
+
+	guardedStore, ok := store.AppStore.(interface {
+		UpdateJobStatusGuarded(context.Context, string, []string, func(*models.Job)) (*models.Job, bool, error)
+	})
+	require.True(t, ok)
+	updated, matched, err := guardedStore.UpdateJobStatusGuarded(ctx, job.JobID, []string{"queued"}, func(current *models.Job) {
+		current.Status = "running"
+	})
+	require.NoError(t, err)
+	require.True(t, matched)
+	require.Equal(t, "running", updated.Status)
+
+	var nullUserID bool
+	require.NoError(t, tx.Raw("SELECT user_id IS NULL FROM jobs WHERE job_id = ?", job.JobID).Scan(&nullUserID).Error)
+	require.True(t, nullUserID)
 }
 
 func testDeleteJob(t *testing.T, ctx context.Context, tx *gorm.DB) {
