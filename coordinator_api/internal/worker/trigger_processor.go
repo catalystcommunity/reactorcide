@@ -756,10 +756,17 @@ func (tp *TriggerProcessor) buildJobFromTrigger(spec triggerJobSpec, parentJob *
 	now := time.Now().UTC()
 	parentJobID := parentJob.JobID
 
-	// Merge env vars: start with parent's env vars, overlay trigger's env vars
+	// Merge env vars: start with the parent's event context, then apply the
+	// trigger's environment. REACTORCIDE_JOB_KIND describes the parent eval
+	// process itself. If a child inherits "eval", runnerlib can select the eval
+	// checkout layout for a normal workflow job and place source under
+	// /job/src/head instead of the child's configured /job/src directory.
 	envVars := models.JSONB{}
 	if parentJob.JobEnvVars != nil {
 		for k, v := range parentJob.JobEnvVars {
+			if k == "REACTORCIDE_JOB_KIND" {
+				continue
+			}
 			envVars[k] = v
 		}
 	}
