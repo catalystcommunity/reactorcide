@@ -29,17 +29,11 @@ try {
     $userSSHDirectory = Join-Path $userProfile '.ssh'
     $authorizedKeys = Join-Path $userSSHDirectory 'authorized_keys'
     New-Item -ItemType Directory -Path $userSSHDirectory -Force | Out-Null
-    Copy-Item -LiteralPath (Join-Path $setupDirectory 'worker-key.pub') -Destination $authorizedKeys -Force
 
     & icacls.exe $userSSHDirectory /inheritance:r /grant:r "${GuestUser}:(OI)(CI)F" '*S-1-5-18:(OI)(CI)F' '*S-1-5-32-544:(OI)(CI)F' | Out-Null
     if ($LASTEXITCODE -ne 0) {
         throw 'The guest SSH directory access rules could not be set.'
     }
-    & icacls.exe $authorizedKeys /inheritance:r /grant:r "${GuestUser}:F" '*S-1-5-18:F' '*S-1-5-32-544:F' | Out-Null
-    if ($LASTEXITCODE -ne 0) {
-        throw 'The authorized_keys access rules could not be set.'
-    }
-
     $sshdConfigPath = Join-Path $sshDirectory 'sshd_config'
     if (-not (Test-Path -LiteralPath $sshdConfigPath)) {
         Copy-Item -LiteralPath (Join-Path $env:SystemRoot 'System32\OpenSSH\sshd_config_default') -Destination $sshdConfigPath
@@ -68,6 +62,7 @@ try {
             $sshdConfig = Add-GlobalSSHDDirective -Config $sshdConfig -Line $line
         }
     }
+    $sshdConfig = Add-GlobalSSHDDirective -Config $sshdConfig -Line 'HostKey __PROGRAMDATA__/ssh/ssh_host_ed25519_key'
     $sshdConfig = Add-GlobalSSHDDirective -Config $sshdConfig -Line "AllowUsers $GuestUser"
     Set-Content -LiteralPath $sshdConfigPath -Value $sshdConfig -Encoding ascii
 
@@ -80,6 +75,7 @@ try {
     if (-not (Get-NetFirewallRule -Name 'OpenSSH-Server-In-TCP' -ErrorAction SilentlyContinue)) {
         New-NetFirewallRule -Name 'OpenSSH-Server-In-TCP' -DisplayName 'OpenSSH Server (sshd)' -Enabled True -Direction Inbound -Protocol TCP -Action Allow -LocalPort 22 | Out-Null
     }
+    Set-NetFirewallRule -Name 'OpenSSH-Server-In-TCP' -Enabled True -Direction Inbound -Action Allow -Profile Any
 
     Set-Service -Name vmickvpexchange -StartupType Automatic
     Start-Service -Name vmickvpexchange
@@ -111,6 +107,11 @@ try {
     $administrators = Get-LocalGroup -SID 'S-1-5-32-544'
     Remove-LocalGroupMember -Group $administrators.Name -Member $GuestUser -ErrorAction SilentlyContinue
 
+    Stop-Service -Name sshd
+    Remove-Item -LiteralPath $authorizedKeys -Force -ErrorAction SilentlyContinue
+    Get-ChildItem -LiteralPath $sshDirectory -Filter 'ssh_host_*' -File -ErrorAction SilentlyContinue |
+        Remove-Item -Force
+
     $winlogonPath = 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon'
     Remove-ItemProperty -Path $winlogonPath -Name AutoAdminLogon, DefaultUserName, DefaultPassword, AutoLogonCount -ErrorAction SilentlyContinue
 
@@ -119,6 +120,13 @@ try {
     Remove-Item -LiteralPath 'C:\Windows\System32\Sysprep\Unattend.xml' -Force -ErrorAction SilentlyContinue
 
     Set-Content -LiteralPath $completePath -Value 'ready' -Encoding ascii
+    Set-Content -LiteralPath (Join-Path $setupDirectory 'generalize-requested.txt') -Value 'ready' -Encoding ascii
+
+    $sysprep = Join-Path $env:SystemRoot 'System32\Sysprep\Sysprep.exe'
+    & $sysprep /generalize /oobe /shutdown /quiet
+    if ($LASTEXITCODE -ne 0) {
+        throw "Sysprep failed with exit code $LASTEXITCODE."
+    }
 } catch {
     $_.Exception.Message | Set-Content -LiteralPath $failurePath -Encoding utf8
 } finally {

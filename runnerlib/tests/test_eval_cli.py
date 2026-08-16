@@ -86,7 +86,15 @@ class TestEvalCommand:
         # A reusable job referenced by the PR workflow.
         _write_yaml(jobs_dir / "test-go.yaml", {
             "name": "test-go",
-            "job": {"image": "golang:1.26", "command": "go test ./..."},
+            "job": {
+                "image": "golang:1.26",
+                "command": "go test ./...",
+                "worker_class": "vm",
+                "characteristics": {"os": "windows"},
+                "resources": {"cpu": {"limit": "2"}, "memory": {"limit": "4Gi"}},
+                "disable_run_local": True,
+                "run_local": {"as_runner": True},
+            },
         })
         # PR workflow matches push; release workflow does not.
         _write_yaml(wf_dir / "pr.yaml", {
@@ -128,6 +136,69 @@ class TestEvalCommand:
         assert "job_file" not in by_name["test-go"]
         assert by_name["test-go"]["container_image"] == "golang:1.26"
         assert by_name["test-go"]["depends_on"] == ["lint"]
+        assert by_name["test-go"]["worker_class"] == "vm"
+        assert by_name["test-go"]["characteristics"] == {"os": "windows"}
+        assert by_name["test-go"]["resources"] == {"cpu": {"limit": "2"}, "memory": {"limit": "4Gi"}}
+        assert by_name["test-go"]["disable_run_local"] is True
+        assert by_name["test-go"]["run_local"] == {"as_runner": True}
+
+    def test_explicit_workflow_ignores_event_filter(self, temp_dirs):
+        """An explicit workflow runs even when its event filter does not match."""
+        ci_dir, src_dir, jobs_dir, triggers_file = temp_dirs
+        wf_dir = ci_dir / ".reactorcide" / "workflows"
+        wf_dir.mkdir(parents=True)
+        selected = _write_yaml(wf_dir / "release.yaml", {
+            "name": "Release",
+            "on": {"events": ["pull_request_merged"]},
+            "vars": {"channel": "stable"},
+            "jobs": {"release": {"image": "alpine", "command": "echo release"}},
+        })
+        _write_yaml(wf_dir / "other.yaml", {
+            "name": "Other",
+            "on": {"events": ["push"]},
+            "jobs": {"other": {"image": "alpine", "command": "echo other"}},
+        })
+
+        result = runner.invoke(app, [
+            "eval",
+            "--ci-source-dir", str(ci_dir),
+            "--source-dir", str(src_dir),
+            "--event-type", "push",
+            "--workflow-file", str(selected),
+            "--triggers-file", str(triggers_file),
+        ])
+
+        assert result.exit_code == 0, result.stdout
+        with open(triggers_file) as f:
+            data = json.load(f)
+        assert [workflow["name"] for workflow in data["workflows"]] == ["Release"]
+        assert data["workflows"][0]["vars"] == {"channel": "stable"}
+
+    def test_changed_file_option_controls_workflow_paths(self, temp_dirs):
+        """Explicit changed paths replace automatic Git change detection."""
+        ci_dir, src_dir, jobs_dir, triggers_file = temp_dirs
+        wf_dir = ci_dir / ".reactorcide" / "workflows"
+        wf_dir.mkdir(parents=True)
+        _write_yaml(wf_dir / "docs.yaml", {
+            "name": "Docs",
+            "on": {"events": ["push"]},
+            "paths": {"include": ["docs/**"]},
+            "jobs": {"docs": {"image": "alpine", "command": "echo docs"}},
+        })
+
+        result = runner.invoke(app, [
+            "eval",
+            "--ci-source-dir", str(ci_dir),
+            "--source-dir", str(src_dir),
+            "--event-type", "push",
+            "--changed-file", "docs/guide.md",
+            "--triggers-file", str(triggers_file),
+        ])
+
+        assert result.exit_code == 0, result.stdout
+        with open(triggers_file) as f:
+            data = json.load(f)
+        assert [workflow["name"] for workflow in data["workflows"]] == ["Docs"]
 
     def test_eval_workflow_mode_no_match_is_success(self, temp_dirs):
         """A workflow that matches no event still exits 0 with an explanation."""

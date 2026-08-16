@@ -75,6 +75,7 @@ func TestSecretGrantsSetAcceptsFlagsAfterName(t *testing.T) {
 		"reactorcide", "secret-grants",
 		"--api-url", server.URL,
 		"--token", "fake-test-token-not-real",
+		"--allow-insecure-transport",
 		"set", "my-grant",
 		"--secret-path", "catalystcommunity/registry",
 		"--secret-match", "exact",

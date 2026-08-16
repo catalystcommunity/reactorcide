@@ -22,6 +22,7 @@ import (
 	"net/http"
 
 	rpctransport "github.com/catalystcommunity/csilgen/transports/go"
+	"github.com/catalystcommunity/reactorcide/webapp/internal/transportsecurity"
 	"github.com/catalystcommunity/reactorcide/webapp/internal/uiclient/csilapi"
 )
 
@@ -31,8 +32,9 @@ const rpcPath = "/csil/v1/rpc"
 // generated ReactorcideAuthClient/ReactorcideUiClient call. It owns only the
 // CSIL-RPC envelope + HTTP, never application types.
 type CSILRPCTransport struct {
-	BaseURL    string
-	HTTPClient *http.Client
+	BaseURL                string
+	HTTPClient             *http.Client
+	AllowInsecureTransport bool
 	// Headers are static headers applied to every request (e.g. a proxy
 	// auth header). They are unrelated to the per-call session token, which
 	// rides the envelope "auth" field instead (see StaticAuth and
@@ -53,6 +55,9 @@ var _ csilapi.Transport = (*CSILRPCTransport)(nil)
 // *csilapi.ClientError, matching the generated client's documented error
 // shape.
 func (t *CSILRPCTransport) Call(ctx context.Context, service, op string, req []byte) ([]byte, error) {
+	if err := transportsecurity.ValidateURL(t.BaseURL, t.AllowInsecureTransport, "web CSIL-RPC connection"); err != nil {
+		return nil, &csilapi.ClientError{Err: err}
+	}
 	auth := t.StaticAuth
 	hasAuth := auth != ""
 	if token, ok := AuthTokenFromContext(ctx); ok {
@@ -83,6 +88,7 @@ func (t *CSILRPCTransport) Call(ctx context.Context, service, op string, req []b
 	if client == nil {
 		client = http.DefaultClient
 	}
+	client = transportsecurity.HTTPClient(client, t.AllowInsecureTransport, "web CSIL-RPC connection")
 	httpResp, err := client.Do(httpReq)
 	if err != nil {
 		return nil, &csilapi.ClientError{Err: err}

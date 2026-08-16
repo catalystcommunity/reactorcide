@@ -15,8 +15,9 @@ import json
 import os
 import subprocess
 import sys
-import urllib.request
 import urllib.error
+import urllib.parse
+import urllib.request
 import uuid
 from pathlib import Path
 from typing import Dict, List, Optional, Any
@@ -49,6 +50,11 @@ class JobTrigger:
         run_as_user: Container user for deployed workers
         for_each: Values that expand this trigger into one job per value
         item_var: Environment variable name for the current for_each value
+        worker_class: Worker policy class for the job
+        characteristics: Worker routing characteristics for the job
+        resources: CPU and memory requests and limits for the job
+        disable_run_local: Whether local execution is prohibited
+        run_local: Local-only execution settings
     """
     job_name: str
     depends_on: List[str] = field(default_factory=list)
@@ -72,10 +78,29 @@ class JobTrigger:
     for_each: Optional[List[Any]] = None
     item_var: Optional[str] = None
     worker_class: Optional[str] = None
+    characteristics: Optional[Dict[str, Any]] = None
+    resources: Optional[Dict[str, Any]] = None
+    disable_run_local: Optional[bool] = None
+    run_local: Optional[Dict[str, Any]] = None
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary, excluding None values."""
         return {k: v for k, v in asdict(self).items() if v is not None}
+
+
+class _SecureRedirectHandler(urllib.request.HTTPRedirectHandler):
+    """Reject a redirect that would send a credential without TLS."""
+
+    def __init__(self, allow_insecure_transport: bool):
+        self._allow_insecure_transport = allow_insecure_transport
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        scheme = urllib.parse.urlparse(newurl).scheme.lower()
+        if scheme not in {"http", "https"}:
+            raise urllib.error.URLError("redirect uses an unsupported transport")
+        if scheme != "https" and not self._allow_insecure_transport:
+            raise urllib.error.URLError("redirect would use a transport without TLS")
+        return super().redirect_request(req, fp, code, msg, headers, newurl)
 
 
 class WorkflowContext:
@@ -84,7 +109,7 @@ class WorkflowContext:
     job state, and trigger mechanisms.
     """
 
-    def __init__(self, triggers_file: str = "/job/triggers.json"):
+    def __init__(self, triggers_file: str = "/job/triggers.json", allow_insecure_transport: bool = False):
         self.triggers_file = Path(triggers_file)
         self.output_file = Path(os.getenv("RC_WF_OUTPUT_FILE", "/job/workflow-output.json"))
         self.vars_file = Path(os.getenv("RC_WF_VARS_FILE", "/job/workflow-vars.json"))
@@ -94,6 +119,7 @@ class WorkflowContext:
         self._job_id = os.getenv("REACTORCIDE_JOB_ID")
         self._workflow_id = os.getenv("RC_WF_ID")
         self._trigger_operation_id = str(uuid.uuid4())
+        self._allow_insecure_transport = allow_insecure_transport
 
     @property
     def job_id(self) -> Optional[str]:
@@ -122,6 +148,13 @@ class WorkflowContext:
 
     def workflow_vars(self) -> Dict[str, Any]:
         """Load current workflow variables from RC_WF_VARS_FILE."""
+        inline = os.getenv("RC_WF_VARS_JSON")
+        if inline:
+            try:
+                data = json.loads(inline)
+                return data if isinstance(data, dict) else {}
+            except json.JSONDecodeError:
+                return {}
         if not self.vars_file.exists():
             return {}
         try:
@@ -308,6 +341,7 @@ class WorkflowContext:
                 "policy_revision": batch.get("policy_revision", ""),
                 "policy_rule_id": batch.get("policy_rule_id", ""),
                 "approval_id": batch.get("approval_id"),
+                "vars": batch.get("vars", {}),
                 "jobs": [t.to_dict() for t in batch["jobs"]],
             }
             workflows_payload.append(item)
@@ -368,6 +402,17 @@ class WorkflowContext:
             return False
 
         url = f"{self._coordinator_url}/api/v1/jobs/{self._job_id}/triggers"
+        scheme = urllib.parse.urlparse(url).scheme.lower()
+        if scheme not in {"http", "https"}:
+            print("⚠ Refusing to send API credentials on an unsupported transport.", file=sys.stderr)
+            return False
+        if scheme != "https" and not self._allow_insecure_transport:
+            print(
+                "⚠ Refusing to send API credentials without TLS. "
+                "Use --allow-insecure-transport only on an isolated development network.",
+                file=sys.stderr,
+            )
+            return False
         body = json.dumps(trigger_data).encode("utf-8")
 
         req = urllib.request.Request(
@@ -381,7 +426,8 @@ class WorkflowContext:
         )
 
         try:
-            with urllib.request.urlopen(req, timeout=30) as resp:
+            opener = urllib.request.build_opener(_SecureRedirectHandler(self._allow_insecure_transport))
+            with opener.open(req, timeout=30) as resp:
                 if resp.status == 201:
                     return True
                 print(

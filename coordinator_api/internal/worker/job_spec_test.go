@@ -713,6 +713,19 @@ func TestMergeJobSpecs_MultipleOverlays(t *testing.T) {
 	}
 }
 
+func TestMergeJobSpecsPreservesLocalSafetyAndWorkerClass(t *testing.T) {
+	base := &JobSpec{
+		Name:            "base",
+		DisableRunLocal: true,
+		WorkerClass:     "vm",
+		RunLocal:        &RunLocalSpec{AsRunner: true},
+	}
+	result, _ := MergeJobSpecs(base, nil, nil)
+	if !result.DisableRunLocal || result.WorkerClass != "vm" || result.RunLocal == nil || !result.RunLocal.AsRunner {
+		t.Fatalf("merged job lost execution fields: %#v", result)
+	}
+}
+
 // TestLoadJobSpecWithOverlays tests the full overlay loading flow
 func TestLoadJobSpecWithOverlays(t *testing.T) {
 	tmpDir, err := os.MkdirTemp("", "overlay-test-*")

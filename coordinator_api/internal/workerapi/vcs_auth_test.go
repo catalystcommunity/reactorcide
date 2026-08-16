@@ -166,6 +166,36 @@ func TestRequestJob_NoSourceURL_VcsAuthAbsent(t *testing.T) {
 	}
 }
 
+func TestProviderForCheckoutURLRequiresExactTrustedHost(t *testing.T) {
+	tests := []struct {
+		name string
+		url  string
+		want string
+	}{
+		{name: "github", url: "https://github.com/example/repo.git", want: "github"},
+		{name: "github mixed case", url: "https://GitHub.com/example/repo.git", want: "github"},
+		{name: "gitlab", url: "https://gitlab.com/example/repo.git", want: "gitlab"},
+		{name: "github lookalike", url: "https://github.com.attacker.example/example/repo.git"},
+		{name: "github prefix", url: "https://notgithub.com/example/repo.git"},
+		{name: "gitlab lookalike", url: "https://gitlab.com.attacker.example/example/repo.git"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			provider, ok := providerForCheckoutURL(tt.url)
+			if tt.want == "" {
+				if ok {
+					t.Fatalf("providerForCheckoutURL(%q) = %q, want no provider", tt.url, provider)
+				}
+				return
+			}
+			if !ok || string(provider) != tt.want {
+				t.Fatalf("providerForCheckoutURL(%q) = %q, %v; want %q, true", tt.url, provider, ok, tt.want)
+			}
+		})
+	}
+}
+
 // TestRequestJob_RotationVCSCredential_TakesPrecedenceOverLegacyRef asserts
 // RequestJob reuses internal/vcs's rotation-aware resolution (an active
 // project_vcs_credentials row wins over the project's legacy static

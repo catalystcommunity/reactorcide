@@ -212,6 +212,20 @@ func normalizeEvalFormat(data []byte, isYAML bool) []byte {
 // both flat format (image/command at top level) and eval format
 // (image/command nested under a "job" block with triggers/description).
 func LoadJobSpec(path string) (*JobSpec, error) {
+	spec, err := LoadJobSpecPartial(path)
+	if err != nil {
+		return nil, err
+	}
+	if err := FinalizeJobSpec(spec); err != nil {
+		return nil, err
+	}
+	return spec, nil
+}
+
+// LoadJobSpecPartial reads a job without applying the built-in image or
+// command requirements. Local contexts use this form before they apply
+// project defaults and command-line overlays.
+func LoadJobSpecPartial(path string) (*JobSpec, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read job file: %w", err)
@@ -235,21 +249,27 @@ func LoadJobSpec(path string) (*JobSpec, error) {
 		}
 	}
 
-	// Set defaults
 	if spec.Name == "" {
 		spec.Name = filepath.Base(path)
-	}
-	if spec.Image == "" {
-		spec.Image = DefaultRunnerImage
-	}
-	if spec.Command == "" {
-		return nil, fmt.Errorf("job file must specify a command")
 	}
 	if err := validateCheckoutSpec(spec.Checkout); err != nil {
 		return nil, err
 	}
-
 	return &spec, nil
+}
+
+// FinalizeJobSpec applies built-in defaults and validates a resolved job.
+func FinalizeJobSpec(spec *JobSpec) error {
+	if spec.Image == "" {
+		spec.Image = DefaultRunnerImage
+	}
+	if spec.Command == "" {
+		return fmt.Errorf("job must specify a command")
+	}
+	if err := validateCheckoutSpec(spec.Checkout); err != nil {
+		return err
+	}
+	return nil
 }
 
 const defaultCodeDir = "/job/src"
@@ -661,16 +681,18 @@ type SecretOverride struct {
 // and any warnings about secret overrides.
 func MergeJobSpecs(base *JobSpec, overlays []*JobSpec, overlayFiles []string) (*JobSpec, []SecretOverride) {
 	result := &JobSpec{
-		Name:           base.Name,
-		Command:        base.Command,
-		CommandPrefix:  base.CommandPrefix,
-		Image:          base.Image,
-		WorkingDir:     base.WorkingDir,
-		CodeDir:        base.CodeDir,
-		JobDir:         base.JobDir,
-		TimeoutSeconds: base.TimeoutSeconds,
-		CPULimit:       base.CPULimit,
-		MemoryLimit:    base.MemoryLimit,
+		Name:            base.Name,
+		Command:         base.Command,
+		CommandPrefix:   base.CommandPrefix,
+		Image:           base.Image,
+		WorkingDir:      base.WorkingDir,
+		CodeDir:         base.CodeDir,
+		JobDir:          base.JobDir,
+		TimeoutSeconds:  base.TimeoutSeconds,
+		CPULimit:        base.CPULimit,
+		MemoryLimit:     base.MemoryLimit,
+		WorkerClass:     base.WorkerClass,
+		DisableRunLocal: base.DisableRunLocal,
 	}
 
 	// Deep copy characteristics/resources (whole-map replace on overlay, like
@@ -770,6 +792,12 @@ func MergeJobSpecs(base *JobSpec, overlays []*JobSpec, overlayFiles []string) (*
 		if overlay.MemoryLimit != "" {
 			result.MemoryLimit = overlay.MemoryLimit
 		}
+		if overlay.WorkerClass != "" {
+			result.WorkerClass = overlay.WorkerClass
+		}
+		if overlay.DisableRunLocal {
+			result.DisableRunLocal = true
+		}
 		if overlay.RunAs != nil {
 			result.RunAs = &RunAsSpec{
 				User: overlay.RunAs.User,
@@ -844,12 +872,15 @@ func MergeJobSpecs(base *JobSpec, overlays []*JobSpec, overlayFiles []string) (*
 // overrides.
 func LoadJobSpecWithOverlays(jobPath string, overlayPaths []string) (*JobSpec, []SecretOverride, error) {
 	// Load base job spec
-	base, err := LoadJobSpec(jobPath)
+	base, err := LoadJobSpecPartial(jobPath)
 	if err != nil {
 		return nil, nil, err
 	}
 
 	if len(overlayPaths) == 0 {
+		if err := FinalizeJobSpec(base); err != nil {
+			return nil, nil, err
+		}
 		return base, nil, nil
 	}
 
@@ -871,12 +902,8 @@ func LoadJobSpecWithOverlays(jobPath string, overlayPaths []string) (*JobSpec, [
 		return nil, nil, err
 	}
 
-	// Apply defaults if not set after merge
-	if merged.Image == "" {
-		merged.Image = DefaultRunnerImage
-	}
-	if merged.Command == "" {
-		return nil, nil, fmt.Errorf("job must specify a command (not set in job file or overlays)")
+	if err := FinalizeJobSpec(merged); err != nil {
+		return nil, nil, err
 	}
 
 	return merged, secretOverrides, nil

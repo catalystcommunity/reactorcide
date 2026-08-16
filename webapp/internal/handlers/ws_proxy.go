@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/catalystcommunity/reactorcide/webapp/internal/config"
+	"github.com/catalystcommunity/reactorcide/webapp/internal/transportsecurity"
 	"github.com/gorilla/websocket"
 	"github.com/sirupsen/logrus"
 )
@@ -64,6 +65,10 @@ func (p *WSProxy) JobStream(w http.ResponseWriter, r *http.Request) {
 // service token, and copies frames both directions until either side
 // closes. Terminates the matching half when its peer goes away.
 func (p *WSProxy) proxy(w http.ResponseWriter, r *http.Request, upstream string, canView func(string) bool) {
+	if err := transportsecurity.ValidateURL(config.APIUrl, config.AllowInsecureTransport, "web coordinator connection"); err != nil {
+		http.Error(w, "coordinator transport is not secure", http.StatusBadGateway)
+		return
+	}
 	clientConn, err := p.upgrader.Upgrade(w, r, nil)
 	if err != nil {
 		p.logger.WithError(err).Warn("Browser WS upgrade failed")

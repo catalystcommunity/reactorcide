@@ -13,6 +13,7 @@ import (
 	"text/tabwriter"
 	"time"
 
+	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/transportsecurity"
 	"github.com/urfave/cli/v2"
 	"gopkg.in/yaml.v3"
 )
@@ -21,9 +22,10 @@ import (
 // uses. It carries the bearer token and base URL resolved from flags or the
 // REACTORCIDE_API_URL / REACTORCIDE_API_TOKEN environment variables.
 type apiClient struct {
-	apiURL string
-	token  string
-	client *http.Client
+	apiURL                 string
+	token                  string
+	client                 *http.Client
+	allowInsecureTransport bool
 }
 
 type apiError struct {
@@ -43,7 +45,7 @@ func apiFlags() []cli.Flag {
 		&cli.StringFlag{
 			Name:    "api-url",
 			Aliases: []string{"u"},
-			Usage:   "Coordinator API URL (e.g., http://localhost:6080)",
+			Usage:   "Coordinator API URL (HTTPS required unless --allow-insecure-transport is set)",
 			EnvVars: []string{"REACTORCIDE_API_URL"},
 		},
 		&cli.StringFlag{
@@ -51,6 +53,10 @@ func apiFlags() []cli.Flag {
 			Aliases: []string{"t"},
 			Usage:   "API token for authentication",
 			EnvVars: []string{"REACTORCIDE_API_TOKEN"},
+		},
+		&cli.BoolFlag{
+			Name:  "allow-insecure-transport",
+			Usage: "Allow credentials and secrets over a transport without TLS (development only)",
 		},
 	}
 }
@@ -77,6 +83,15 @@ func lineageString(ctx *cli.Context, name string) string {
 	return ""
 }
 
+func lineageBool(ctx *cli.Context, name string) bool {
+	for _, c := range ctx.Lineage() {
+		if c.Bool(name) {
+			return true
+		}
+	}
+	return false
+}
+
 func apiURLConfigured(ctx *cli.Context) bool {
 	return lineageString(ctx, "api-url") != ""
 }
@@ -85,6 +100,10 @@ func newAPIClient(ctx *cli.Context) (*apiClient, error) {
 	apiURL := lineageString(ctx, "api-url")
 	if apiURL == "" {
 		return nil, fmt.Errorf("API URL is required (use --api-url or REACTORCIDE_API_URL)")
+	}
+	allowInsecure := lineageBool(ctx, "allow-insecure-transport")
+	if err := transportsecurity.ValidateURL(apiURL, allowInsecure, "coordinator API"); err != nil {
+		return nil, err
 	}
 	token := lineageString(ctx, "token")
 	var err error
@@ -98,13 +117,19 @@ func newAPIClient(ctx *cli.Context) (*apiClient, error) {
 		return nil, fmt.Errorf("API token is required (use --token or REACTORCIDE_API_TOKEN)")
 	}
 	return &apiClient{
-		apiURL: strings.TrimSuffix(apiURL, "/"),
-		token:  token,
-		client: &http.Client{Timeout: 30 * time.Second},
+		apiURL:                 strings.TrimSuffix(apiURL, "/"),
+		token:                  token,
+		allowInsecureTransport: allowInsecure,
+		client: transportsecurity.HTTPClient(
+			&http.Client{Timeout: 30 * time.Second}, allowInsecure, "coordinator API",
+		),
 	}, nil
 }
 
 func (c *apiClient) doJSON(method, path string, requestBody interface{}, expectedStatus int, responseBody interface{}) error {
+	if err := transportsecurity.ValidateURL(c.apiURL, c.allowInsecureTransport, "coordinator API"); err != nil {
+		return err
+	}
 	var body io.Reader
 	if requestBody != nil {
 		data, err := json.Marshal(requestBody)

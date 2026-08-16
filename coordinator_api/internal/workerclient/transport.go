@@ -24,6 +24,7 @@ import (
 	"sync"
 
 	rpctransport "github.com/catalystcommunity/csilgen/transports/go"
+	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/transportsecurity"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/workerclient/csilapi"
 )
 
@@ -35,6 +36,9 @@ const rpcPath = "/csil/v1/rpc"
 type CSILRPCTransport struct {
 	BaseURL    string
 	HTTPClient *http.Client
+	// AllowInsecureTransport is true only after an operator supplies the
+	// explicit command-line safety override.
+	AllowInsecureTransport bool
 	// Headers are static headers applied to every request (e.g. a proxy
 	// auth header). They are unrelated to the per-call session token, which
 	// rides the envelope "auth" field instead (see SetSession).
@@ -93,6 +97,9 @@ func sessionTokenFromContext(ctx context.Context) (string, bool) {
 // *csilapi.ClientError, matching the generated client's documented error
 // shape.
 func (t *CSILRPCTransport) Call(ctx context.Context, service, op string, req []byte) ([]byte, error) {
+	if err := transportsecurity.ValidateURL(t.BaseURL, t.AllowInsecureTransport, "worker CSIL-RPC connection"); err != nil {
+		return nil, &csilapi.ClientError{Err: err}
+	}
 	auth := t.Session()
 	if override, ok := sessionTokenFromContext(ctx); ok {
 		auth = override
@@ -122,6 +129,7 @@ func (t *CSILRPCTransport) Call(ctx context.Context, service, op string, req []b
 	if client == nil {
 		client = http.DefaultClient
 	}
+	client = transportsecurity.HTTPClient(client, t.AllowInsecureTransport, "worker CSIL-RPC connection")
 	httpResp, err := client.Do(httpReq)
 	if err != nil {
 		return nil, &csilapi.ClientError{Err: err}

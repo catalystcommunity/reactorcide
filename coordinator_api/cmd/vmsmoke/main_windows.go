@@ -13,14 +13,12 @@
 //	cd coordinator_api
 //	go build -o vmsmoke.exe ./cmd/vmsmoke
 //
-// Run it elevated (or as a user in the Hyper-V Administrators group). The
-// private key path is read from a file; its contents never go on the command
-// line or into logs:
+// Run it elevated (or as a user in the Hyper-V Administrators group):
 //
-//	.\vmsmoke.exe -bundle C:\reactorcide\vm-images\win11-base -user runner -key C:\Users\me\.ssh\reactorcide_vm
+//	.\vmsmoke.exe -bundle C:\reactorcide\vm-images\win11-base -user reactorcide
 //
-// See docs/vm-runners-windows.md for producing the base bundle, the switch
-// note, and baking in the worker's SSH public key.
+// See docs/vm-runners-windows.md for producing the base bundle and the switch
+// note. The lifecycle injects new client and host keys into each VM clone.
 package main
 
 import (
@@ -36,9 +34,7 @@ import (
 
 func main() {
 	bundle := flag.String("bundle", "", "path to the base image bundle directory (holding disk.vhdx) or a base .vhdx file (required)")
-	user := flag.String("user", "runner", "guest SSH user")
-	keyFile := flag.String("key", "", "path to the worker's SSH private key file (PEM)")
-	password := flag.String("password", "", "guest SSH password (used only if -key is empty; discouraged)")
+	user := flag.String("user", "reactorcide", "guest SSH user")
 	timeout := flag.Duration("timeout", 10*time.Minute, "overall timeout for the smoke run")
 	flag.Parse()
 
@@ -48,21 +44,7 @@ func main() {
 		os.Exit(2)
 	}
 
-	creds := vmrunner.GuestCreds{User: *user, Password: *password}
-	if *keyFile != "" {
-		key, err := os.ReadFile(*keyFile)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "vmsmoke: read key file: %v\n", err)
-			os.Exit(1)
-		}
-		creds.PrivateKeyPEM = key
-	}
-	if len(creds.PrivateKeyPEM) == 0 && creds.Password == "" {
-		fmt.Fprintln(os.Stderr, "vmsmoke: need -key or -password to authenticate to the guest")
-		os.Exit(2)
-	}
-
-	if err := run(*bundle, creds, *timeout); err != nil {
+	if err := run(*bundle, vmrunner.GuestCreds{User: *user}, *timeout); err != nil {
 		fmt.Fprintf(os.Stderr, "vmsmoke: FAILED: %v\n", err)
 		os.Exit(1)
 	}
@@ -86,7 +68,7 @@ func run(bundle string, creds vmrunner.GuestCreds, timeout time.Duration) error 
 
 	job := &vmrunner.JobConfig{
 		Image:    bundle,
-		Command:  []string{"cmd", "/c", "echo hello"},
+		Command:  []string{"powershell.exe", "-NoProfile", "-NonInteractive", "-Command", "Write-Output hello; Start-Sleep -Seconds 5"},
 		Platform: vmrunner.GuestPlatformWindows,
 		JobID:    "vmsmoke",
 	}
@@ -122,6 +104,16 @@ func run(bundle string, creds vmrunner.GuestCreds, timeout time.Duration) error 
 		return fmt.Errorf("guest command exited with code %d", code)
 	}
 	fmt.Println("vmsmoke: guest command exited 0")
+	sample, err := runner.SampleResource(ctx, id, true)
+	if err != nil {
+		return fmt.Errorf("collect VM resource metrics: %w", err)
+	}
+	if sample.CPUCount == 0 || sample.MemoryTotalBytes == 0 || sample.StorageTotalBytes == 0 {
+		return fmt.Errorf("VM resource metrics are incomplete: cpu_count=%d memory_total_bytes=%d storage_total_bytes=%d",
+			sample.CPUCount, sample.MemoryTotalBytes, sample.StorageTotalBytes)
+	}
+	fmt.Printf("vmsmoke: metrics cpu_count=%d memory_total_bytes=%d storage_total_bytes=%d\n",
+		sample.CPUCount, sample.MemoryTotalBytes, sample.StorageTotalBytes)
 	return nil
 }
 

@@ -43,6 +43,9 @@ spec:
           args:
             - --coordinator-url
             - {{ default (printf "http://%s.%s.svc.cluster.local:%v" (include "app.name" .) .Release.Namespace .Values.app.service.port) .Values.worker.coordinatorUrl | quote }}
+            {{- if .Values.worker.allowInsecureTransport }}
+            - --allow-insecure-transport
+            {{- end }}
             {{- if .Values.worker.os }}
             - --os
             - {{ .Values.worker.os | quote }}

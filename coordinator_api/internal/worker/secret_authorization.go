@@ -106,6 +106,11 @@ func matchesAnySecretPath(patterns []string, value string) bool {
 	return false
 }
 
+// SecretPathAllowed applies an execution profile secret-path allowlist.
+func SecretPathAllowed(patterns []string, value string) bool {
+	return matchesAnySecretPath(patterns, value)
+}
+
 func isJobScopedSecret(job *models.Job, path string) bool {
 	if job.JobID != "" && path == "jobs/"+job.JobID {
 		return true

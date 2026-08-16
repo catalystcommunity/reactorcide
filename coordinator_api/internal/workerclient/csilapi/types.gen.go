@@ -203,10 +203,11 @@ type AppendMetricBatchResponse struct {
 
 // ReportResultRequest represents a structured data type
 type ReportResultRequest struct {
-	LeaseId  string  `json:"lease_id" yaml:"lease_id"`
-	ExitCode int64   `json:"exit_code" yaml:"exit_code"`
-	Status   string  `json:"status" yaml:"status"`
-	Error    *string `json:"error,omitempty" yaml:"error,omitempty"`
+	LeaseId        string  `json:"lease_id" yaml:"lease_id"`
+	ExitCode       int64   `json:"exit_code" yaml:"exit_code"`
+	Status         string  `json:"status" yaml:"status"`
+	Error          *string `json:"error,omitempty" yaml:"error,omitempty"`
+	WorkflowOutput *string `json:"workflow_output,omitempty" yaml:"workflow_output,omitempty"`
 }
 
 // ReportResultResponse represents a structured data type

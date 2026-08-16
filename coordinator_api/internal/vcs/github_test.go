@@ -475,9 +475,10 @@ func TestGitHubClient_UpdateCommitStatus(t *testing.T) {
 	defer server.Close()
 
 	client, err := NewGitHubClient(Config{
-		Provider: GitHub,
-		Token:    "test-token",
-		BaseURL:  server.URL,
+		Provider:               GitHub,
+		Token:                  "test-token",
+		BaseURL:                server.URL,
+		AllowInsecureTransport: true,
 	})
 	require.NoError(t, err)
 

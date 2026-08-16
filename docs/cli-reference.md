@@ -18,6 +18,11 @@ these environment variables:
 Use `--api-url` and `--token` to override them. If you give no token, the
 command prompts for one. The prompt hides the value.
 
+The URL must use HTTPS because these commands send credentials and can send
+secrets. Use `--allow-insecure-transport` only on an isolated development
+network. You must set this option on the command line. There is no environment
+variable for it. The check also rejects a redirect from HTTPS to HTTP.
+
 You can put a flag before or after a positional argument. These two commands
 are the same:
 
@@ -47,7 +52,7 @@ Commands that show records accept `--format`:
 
 | Command | Purpose |
 | --- | --- |
-| `run-local <job-file>` | Run a job in a container on this machine. |
+| `run-local <file>` | Run one job or one workflow on this machine. |
 | `submit <job-file>` | Submit a job to a coordinator. |
 | `jobs list` | List jobs. |
 | `jobs get <job-id>` | Show one job. |
@@ -66,6 +71,82 @@ Filter `jobs list` with `--status`, `--queue-name`, `--source-type`,
 reactorcide jobs list --status failed --limit 20
 reactorcide jobs get 019fc939-397e-7974-a099-6e8d29c760b8 --format yaml
 reactorcide jobs cancel 019fc939-397e-7974-a099-6e8d29c760b8
+```
+
+For a workflow file, use `--max-parallel` to set the local concurrency. Use
+`--event`, `--branch`, and `--changed-file` to supply event data. An explicit
+workflow file runs even when its `on` filter does not match the event.
+The command writes `reactorcide-workflow-summary.json` in the local workspace.
+This file contains the node states and the final workflow variable names. It
+does not contain variable values.
+
+Use `local-context sync` to copy non-secret project defaults from a
+coordinator. The context file does not contain the API token or secret values.
+
+```bash
+reactorcide local-context sync --project <project-id> --name dev
+reactorcide run-local --context dev .reactorcide/workflows/test.yaml
+reactorcide local-context show --name dev
+reactorcide local-context remove --name dev
+```
+
+An offline run uses the last synchronized context. The CLI shows the age of
+that context at the start of the run.
+
+To copy only the secrets that one workflow references, add
+`--include-workflow-secrets`. The CLI writes the values to the encrypted local
+secret store. It does not print the values. Add `--replace-secrets` to replace
+an existing local value. The caller must own the project or administer its
+organization. A non-user token must also have secret-management access. The
+coordinator checks the secret grant for each selected workflow job name. The
+coordinator records the reference names in the audit log. It does not record
+the values.
+
+The context file has an optional `overrides` block. A later synchronization
+keeps this block.
+
+```yaml
+overrides:
+  runner_image: registry.example.com/runner:test
+  eval_image: registry.example.com/runner:test
+  timeout_seconds: 1800
+  checkout_mode: shared
+```
+
+Runtime values use this order, from highest priority to lowest priority:
+
+1. Command options and overlay files.
+2. Values in the context `overrides` block.
+3. Values in the workflow or job.
+4. Synchronized project values.
+5. Built-in defaults.
+
+The coordinator sends one effective, non-secret context response for the
+project. The response includes the runner defaults, the execution profile
+limits, the worker class, and secret references. A user must have a role in
+the project. The context file does not store the API token. The endpoint is
+`GET /api/v1/projects/<project-id>/local-context`.
+
+## Worker Administration Commands
+
+| Command | Purpose |
+| --- | --- |
+| `workers list` | List enrolled workers. |
+| `workers set-status` | Activate, quarantine, or disable a worker. |
+| `workers drain` | Stop new work on a worker. |
+| `workers pools` | Manage pools. |
+| `workers tokens` | Manage enrollment tokens. |
+| `workers queues` | Manage queues. |
+| `workers classes` | Manage worker classes and pool grants. |
+
+The token create command requires `--output-file`. It creates a new file with
+mode `0600`. It never prints the raw token.
+
+```bash
+reactorcide workers pools create windows-hyperv
+reactorcide workers tokens create <pool-id> \
+  --name windows-host-1 \
+  --output-file ./enrollment-token
 ```
 
 ## Workflow Commands

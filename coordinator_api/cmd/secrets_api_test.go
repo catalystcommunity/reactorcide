@@ -62,6 +62,7 @@ func TestSecretsCommandSetUsesAPIWhenURLProvided(t *testing.T) {
 		"secrets",
 		"--api-url", server.URL,
 		"--token", "api-token",
+		"--allow-insecure-transport",
 		"set",
 		"--stdin",
 		"app", "API_KEY",
@@ -94,7 +95,7 @@ func TestSecretsCommandUsesAPIEnvVars(t *testing.T) {
 
 	app := cli.NewApp()
 	app.Commands = []*cli.Command{SecretsCommand}
-	if err := app.Run([]string{"reactorcide", "secrets", "list-paths"}); err != nil {
+	if err := app.Run([]string{"reactorcide", "secrets", "--allow-insecure-transport", "list-paths"}); err != nil {
 		t.Fatalf("command failed: %v", err)
 	}
 	if !sawRequest {
@@ -133,9 +134,10 @@ func TestSecretsAPIClientOperations(t *testing.T) {
 	defer server.Close()
 
 	client := &secretsAPIClient{apiClient: &apiClient{
-		apiURL: server.URL,
-		token:  "api-token",
-		client: server.Client(),
+		apiURL:                 server.URL,
+		token:                  "api-token",
+		client:                 server.Client(),
+		allowInsecureTransport: true,
 	}}
 	if err := client.Init(); err != nil {
 		t.Fatalf("Init failed: %v", err)

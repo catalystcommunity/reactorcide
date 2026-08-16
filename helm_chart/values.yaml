@@ -24,7 +24,7 @@ app:
   apiTokenSecret:
     name: ""  # default: defaults.apiTokenSecretName
     key: ""   # default: "token"
-  # Gateway API HTTPRoute configuration (routes /api/* to coordinator)
+  # Gateway API HTTPRoute configuration (routes /api/* and /csil/* to coordinator)
   gateway:
     enabled: false
     # List of domains to create HTTPRoutes for
@@ -67,6 +67,9 @@ web:
     type: ClusterIP
     port: 4080
   apiUrl: "http://reactorcideapp:6080"
+  # The default in-cluster API URL uses HTTP. Set this to false when apiUrl
+  # uses HTTPS.
+  allowInsecureTransport: true
   # API token for authenticating with the coordinator API
   apiTokenSecret:
     name: "base-reactorcide-api-token"
@@ -133,6 +136,10 @@ worker:
   # (http://<app-name>.<namespace>.svc.cluster.local:<app.service.port>);
   # only set this for out-of-cluster or cross-namespace workers.
   coordinatorUrl: ""
+  # The default in-cluster Service uses HTTP. This explicit exception permits
+  # credentials on that isolated connection. Set this to false when
+  # coordinatorUrl uses HTTPS.
+  allowInsecureTransport: true
   # Enrollment token (secret) -- ZERO-TOUCH by default.
   #
   # Leave enrollmentTokenSecret.name EMPTY (the default) and the chart

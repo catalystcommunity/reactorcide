@@ -4,12 +4,14 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 	"time"
 
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/checkauth"
+	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/secrets"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store/models"
 	"github.com/google/uuid"
@@ -29,6 +31,8 @@ type ProjectMockStore struct {
 	GetSecretGrantFunc    func(ctx context.Context, userID string, projectID *string, ref string) (*models.SecretGrant, error)
 	UpdateSecretGrantFunc func(ctx context.Context, grant *models.SecretGrant) error
 	DeleteSecretGrantFunc func(ctx context.Context, userID string, projectID *string, ref string) error
+	RoleAssignments       []models.RoleAssignment
+	JobSecretGrants       []models.SecretGrant
 
 	CreateProjectCalls     []models.Project
 	GetProjectByIDCalls    []string
@@ -42,6 +46,7 @@ type ProjectMockStore struct {
 		ProjectID *string
 		Ref       string
 	}
+	AuditEvents []models.AuditEvent
 }
 
 func (m *ProjectMockStore) CreateProject(ctx context.Context, project *models.Project) error {
@@ -135,6 +140,11 @@ func (m *ProjectMockStore) DeleteSecretGrant(ctx context.Context, userID string,
 	return nil
 }
 
+func (m *ProjectMockStore) AppendAuditEvent(_ context.Context, event *models.AuditEvent) error {
+	m.AuditEvents = append(m.AuditEvents, *event)
+	return nil
+}
+
 // Stub implementations for remaining store.Store interface methods
 func (m *ProjectMockStore) Initialize() (func(), error)                             { return nil, nil }
 func (m *ProjectMockStore) EnsureDefaultUser() error                                { return nil }
@@ -142,6 +152,25 @@ func (m *ProjectMockStore) EnsureDefaultQueue(ctx context.Context) error        
 func (m *ProjectMockStore) CreateUser(ctx context.Context, user *models.User) error { return nil }
 func (m *ProjectMockStore) GetUserByID(ctx context.Context, userID string) (*models.User, error) {
 	return nil, nil
+}
+func (m *ProjectMockStore) ListGroupsForUser(context.Context, string) ([]models.Group, error) {
+	return nil, nil
+}
+func (m *ProjectMockStore) ListRoleAssignmentsForPrincipal(context.Context, string, []string) ([]models.RoleAssignment, error) {
+	return append([]models.RoleAssignment(nil), m.RoleAssignments...), nil
+}
+func (m *ProjectMockStore) ListSecretGrantsForJob(context.Context, string, *string, string) ([]models.SecretGrant, error) {
+	return append([]models.SecretGrant(nil), m.JobSecretGrants...), nil
+}
+func (m *ProjectMockStore) GetExecutionProfile(context.Context, string, string) (*models.ExecutionProfile, error) {
+	ceiling := 120
+	return &models.ExecutionProfile{Name: "standard", RuntimeCapabilities: []string{"builder"}, TimeoutCeilingSeconds: &ceiling, ResourceCeilings: models.JSONB{"cpu_limit": "2"}}, nil
+}
+func (m *ProjectMockStore) GetWorkerClass(context.Context, string, string) (*models.WorkerClass, error) {
+	return &models.WorkerClass{ClassID: "class-1", Name: "default"}, nil
+}
+func (m *ProjectMockStore) ListPoolsForWorkerClass(context.Context, string) ([]models.WorkerPool, error) {
+	return []models.WorkerPool{{PoolID: "pool-1"}}, nil
 }
 func (m *ProjectMockStore) CreateJob(ctx context.Context, job *models.Job) error { return nil }
 func (m *ProjectMockStore) GetJobByID(ctx context.Context, jobID string) (*models.Job, error) {
@@ -799,6 +828,106 @@ func TestProjectHandler_CreateGlobalSecretGrant_UsesBodyProjectScope(t *testing.
 	require.Equal(t, "project-grant", grant.Name)
 	require.NotNil(t, grant.ProjectID)
 	require.Equal(t, projectID, *grant.ProjectID)
+}
+
+func TestProjectHandler_GetLocalContextUsesEffectiveProjectSettings(t *testing.T) {
+	projectID := uuid.New().String()
+	ownerID := "test-user-id"
+	mockStore := &ProjectMockStore{GetProjectByIDFunc: func(context.Context, string) (*models.Project, error) {
+		project := testProject(projectID)
+		project.UserID = &ownerID
+		project.OrgID = ownerID
+		project.DefaultJobCommand = "make test"
+		project.CheckoutMode = models.CheckoutModeShared
+		project.VCSTokenSecret = "project/vcs:token"
+		return project, nil
+	}}
+	handler := NewProjectHandler(mockStore)
+	req := withProjectID(withUser(httptest.NewRequest(http.MethodGet, "/api/v1/projects/"+projectID+"/local-context", nil)), projectID)
+	w := httptest.NewRecorder()
+	handler.GetLocalContext(w, req)
+	require.Equal(t, http.StatusOK, w.Code)
+	var response LocalContextResponse
+	require.NoError(t, json.NewDecoder(w.Body).Decode(&response))
+	require.Equal(t, projectID, response.ProjectID)
+	require.Equal(t, "make test", response.DefaultJobCommand)
+	require.Equal(t, models.CheckoutModeShared, response.CheckoutMode)
+	require.Equal(t, []string{"builder"}, response.RuntimeCapabilities)
+	require.Equal(t, []string{"pool-1"}, response.WorkerPoolIDs)
+	require.Equal(t, "project/vcs:token", response.SecretReferences["vcs"])
+}
+
+func TestProjectHandler_GetLocalContextHidesAnotherProject(t *testing.T) {
+	projectID := uuid.New().String()
+	ownerID := "another-user"
+	mockStore := &ProjectMockStore{GetProjectByIDFunc: func(context.Context, string) (*models.Project, error) {
+		project := testProject(projectID)
+		project.UserID = &ownerID
+		project.OrgID = ownerID
+		return project, nil
+	}}
+	handler := NewProjectHandler(mockStore)
+	req := withProjectID(withUser(httptest.NewRequest(http.MethodGet, "/api/v1/projects/"+projectID+"/local-context", nil)), projectID)
+	w := httptest.NewRecorder()
+	handler.GetLocalContext(w, req)
+	require.Equal(t, http.StatusNotFound, w.Code)
+}
+
+func TestProjectScopedSecretBatchRejectsAnotherProject(t *testing.T) {
+	projectID := uuid.New().String()
+	ownerID := "another-user"
+	mockStore := &ProjectMockStore{GetProjectByIDFunc: func(context.Context, string) (*models.Project, error) {
+		project := testProject(projectID)
+		project.UserID = &ownerID
+		project.OrgID = ownerID
+		return project, nil
+	}}
+	handler := &SecretsHandler{store: mockStore}
+	req := withUser(httptest.NewRequest(http.MethodPost, "/api/v1/secrets/batch/get", nil))
+	selection := LocalContextSecretSelection{Path: "private/path", Key: "token", JobName: "build"}
+	_, _, err := handler.batchGetProvider(req, &BatchGetRequest{ProjectID: projectID, Refs: []secrets.SecretRef{{Path: selection.Path, Key: selection.Key}}, Selections: []LocalContextSecretSelection{selection}})
+	require.True(t, errors.Is(err, store.ErrForbidden), "error = %v", err)
+}
+
+func TestProjectScopedSecretBatchRejectsProjectMember(t *testing.T) {
+	projectID := uuid.New().String()
+	ownerID := "project-owner"
+	mockStore := &ProjectMockStore{GetProjectByIDFunc: func(context.Context, string) (*models.Project, error) {
+		project := testProject(projectID)
+		project.UserID = &ownerID
+		project.OrgID = ownerID
+		return project, nil
+	}}
+	mockStore.RoleAssignments = []models.RoleAssignment{{
+		PrincipalType: models.PrincipalTypeUser,
+		PrincipalID:   "test-user-id",
+		ScopeType:     models.ScopeTypeProject,
+		ScopeID:       &projectID,
+		Role:          models.RoleMember,
+	}}
+	mockStore.JobSecretGrants = []models.SecretGrant{{
+		SecretPathMatch:   models.SecretGrantMatchExact,
+		SecretPathPattern: "private/path",
+		JobNameMatch:      models.SecretGrantMatchExact,
+		JobNamePattern:    "deploy",
+	}}
+	handler := &SecretsHandler{store: mockStore}
+	req := withUser(httptest.NewRequest(http.MethodPost, "/api/v1/secrets/batch/get", nil))
+	selection := LocalContextSecretSelection{Path: "private/path", Key: "token", JobName: "deploy"}
+	_, _, err := handler.batchGetProvider(req, &BatchGetRequest{ProjectID: projectID, Refs: []secrets.SecretRef{{Path: selection.Path, Key: selection.Key}}, Selections: []LocalContextSecretSelection{selection}})
+	require.ErrorIs(t, err, store.ErrForbidden)
+}
+
+func TestProjectScopedSecretBatchAuditContainsReferencesNotValues(t *testing.T) {
+	mockStore := &ProjectMockStore{}
+	project := testProject(uuid.New().String())
+	refs := []secrets.SecretRef{{Path: "project/build", Key: "token"}}
+	recordLocalContextSecretBatchRead(context.Background(), mockStore, project, refs)
+	require.Len(t, mockStore.AuditEvents, 1)
+	event := mockStore.AuditEvents[0]
+	require.Equal(t, "local_context.secret_batch_read", event.Action)
+	require.Equal(t, []string{"project/build:token"}, event.Details["references"])
+	require.NotContains(t, event.Details, "values")
 }
 
 // helper functions

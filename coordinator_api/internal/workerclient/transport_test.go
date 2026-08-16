@@ -77,7 +77,7 @@ func TestClient_RegisterThenRequestJob_CarriesSessionInAuth(t *testing.T) {
 	server := httptest.NewServer(handler)
 	defer server.Close()
 
-	c := New(server.URL)
+	c := NewWithTransport(&CSILRPCTransport{BaseURL: server.URL, AllowInsecureTransport: true})
 
 	regResp, err := c.Register(context.Background(), "enroll-token-xyz", csilapi.WorkerInfo{WorkerKey: "worker-key-1", Os: "linux", Arch: "amd64"})
 	require.NoError(t, err)
@@ -87,6 +87,13 @@ func TestClient_RegisterThenRequestJob_CarriesSessionInAuth(t *testing.T) {
 	jobResp, err := c.RequestJob(context.Background(), csilapi.WorkerCharacteristics{Os: "linux", Arch: "amd64"})
 	require.NoError(t, err)
 	require.False(t, jobResp.HasLease)
+}
+
+func TestTransportRejectsHTTPWithoutExplicitOverride(t *testing.T) {
+	transport := &CSILRPCTransport{BaseURL: "http://127.0.0.1:1"}
+	_, err := transport.Call(context.Background(), "Test", "test", nil)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "encrypted, peer-authenticated")
 }
 
 // TestClient_ServiceError_TranslatesToServiceCallError asserts a
@@ -101,7 +108,7 @@ func TestClient_ServiceError_TranslatesToServiceCallError(t *testing.T) {
 	server := httptest.NewServer(handler)
 	defer server.Close()
 
-	c := New(server.URL)
+	c := NewWithTransport(&CSILRPCTransport{BaseURL: server.URL, AllowInsecureTransport: true})
 	c.SetSession("some-stale-session")
 
 	_, err := c.Heartbeat(context.Background(), "running", nil)
@@ -125,7 +132,7 @@ func TestClient_SetSession_OverridesStoredToken(t *testing.T) {
 	server := httptest.NewServer(handler)
 	defer server.Close()
 
-	c := New(server.URL)
+	c := NewWithTransport(&CSILRPCTransport{BaseURL: server.URL, AllowInsecureTransport: true})
 	c.SetSession("preexisting-session")
 
 	_, err := c.Heartbeat(context.Background(), "idle", nil)

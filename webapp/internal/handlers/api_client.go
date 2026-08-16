@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/catalystcommunity/reactorcide/webapp/internal/config"
+	"github.com/catalystcommunity/reactorcide/webapp/internal/transportsecurity"
 )
 
 // APIClient handles communication with the coordinator API
@@ -18,7 +19,11 @@ type APIClient struct {
 
 func NewAPIClient() *APIClient {
 	return &APIClient{
-		httpClient: &http.Client{Timeout: 30 * time.Second},
+		httpClient: transportsecurity.HTTPClient(
+			&http.Client{Timeout: 30 * time.Second},
+			config.AllowInsecureTransport,
+			"web coordinator connection",
+		),
 	}
 }
 
@@ -119,6 +124,9 @@ type LogEntry struct {
 }
 
 func (c *APIClient) doRequest(method, path string) ([]byte, int, error) {
+	if err := transportsecurity.ValidateURL(config.APIUrl, config.AllowInsecureTransport, "web coordinator connection"); err != nil {
+		return nil, 0, err
+	}
 	url := config.APIUrl + path
 	req, err := http.NewRequest(method, url, nil)
 	if err != nil {

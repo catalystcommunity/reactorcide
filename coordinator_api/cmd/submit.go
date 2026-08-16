@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/transportsecurity"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/worker"
 	"github.com/urfave/cli/v2"
 )
@@ -19,19 +20,7 @@ var SubmitCommand = &cli.Command{
 	Name:      "submit",
 	Usage:     "Submit a job to a remote Reactorcide coordinator",
 	ArgsUsage: "<job-file>",
-	Flags: []cli.Flag{
-		&cli.StringFlag{
-			Name:    "api-url",
-			Aliases: []string{"u"},
-			Usage:   "Coordinator API URL (e.g., http://localhost:6080)",
-			EnvVars: []string{"REACTORCIDE_API_URL"},
-		},
-		&cli.StringFlag{
-			Name:    "token",
-			Aliases: []string{"t"},
-			Usage:   "API token for authentication",
-			EnvVars: []string{"REACTORCIDE_API_TOKEN"},
-		},
+	Flags: append(apiFlags(),
 		&cli.StringSliceFlag{
 			Name:    "overlay",
 			Aliases: []string{"o"},
@@ -51,7 +40,7 @@ var SubmitCommand = &cli.Command{
 			Value: 5,
 			Usage: "Polling interval in seconds when using --wait",
 		},
-	},
+	),
 	Action: submitAction,
 }
 
@@ -136,6 +125,10 @@ func submitAction(ctx *cli.Context) error {
 	if apiURL == "" {
 		return fmt.Errorf("API URL is required (use --api-url or REACTORCIDE_API_URL)")
 	}
+	allowInsecure := ctx.Bool("allow-insecure-transport")
+	if err := transportsecurity.ValidateURL(apiURL, allowInsecure, "coordinator API"); err != nil {
+		return err
+	}
 
 	// Normalize API URL (remove trailing slash)
 	apiURL = strings.TrimSuffix(apiURL, "/")
@@ -178,7 +171,7 @@ func submitAction(ctx *cli.Context) error {
 
 	// Submit the job
 	fmt.Fprintf(os.Stderr, "Submitting job: %s\n", spec.Name)
-	jobResp, err := submitJobToAPI(apiURL, token, req)
+	jobResp, err := submitJobToAPI(apiURL, token, req, allowInsecure)
 	if err != nil {
 		return fmt.Errorf("failed to submit job: %w", err)
 	}
@@ -193,7 +186,7 @@ func submitAction(ctx *cli.Context) error {
 		fmt.Println("\nWaiting for completion...")
 		startTime := time.Now()
 
-		finalResp, err := waitForJobCompletion(apiURL, token, jobResp.JobID, pollInterval)
+		finalResp, err := waitForJobCompletion(apiURL, token, jobResp.JobID, pollInterval, allowInsecure)
 		if err != nil {
 			return fmt.Errorf("failed while waiting for job: %w", err)
 		}
@@ -276,7 +269,10 @@ func specToCreateJobRequest(spec *worker.JobSpec) *CreateJobRequest {
 }
 
 // submitJobToAPI sends a job creation request to the coordinator API
-func submitJobToAPI(apiURL, token string, req *CreateJobRequest) (*JobResponse, error) {
+func submitJobToAPI(apiURL, token string, req *CreateJobRequest, allowInsecure bool) (*JobResponse, error) {
+	if err := transportsecurity.ValidateURL(apiURL, allowInsecure, "coordinator API"); err != nil {
+		return nil, err
+	}
 	jsonBody, err := json.Marshal(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
@@ -290,7 +286,7 @@ func submitJobToAPI(apiURL, token string, req *CreateJobRequest) (*JobResponse, 
 	httpReq.Header.Set("Content-Type", "application/json")
 	httpReq.Header.Set("Authorization", "Bearer "+token)
 
-	client := &http.Client{Timeout: 30 * time.Second}
+	client := transportsecurity.HTTPClient(&http.Client{Timeout: 30 * time.Second}, allowInsecure, "coordinator API")
 	resp, err := client.Do(httpReq)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
@@ -312,8 +308,11 @@ func submitJobToAPI(apiURL, token string, req *CreateJobRequest) (*JobResponse, 
 }
 
 // waitForJobCompletion polls the API until the job reaches a terminal state
-func waitForJobCompletion(apiURL, token, jobID string, pollInterval int) (*JobResponse, error) {
-	client := &http.Client{Timeout: 30 * time.Second}
+func waitForJobCompletion(apiURL, token, jobID string, pollInterval int, allowInsecure bool) (*JobResponse, error) {
+	if err := transportsecurity.ValidateURL(apiURL, allowInsecure, "coordinator API"); err != nil {
+		return nil, err
+	}
+	client := transportsecurity.HTTPClient(&http.Client{Timeout: 30 * time.Second}, allowInsecure, "coordinator API")
 	lastStatus := ""
 
 	for {

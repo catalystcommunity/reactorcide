@@ -278,7 +278,8 @@ ReportResultRequest = {
     lease_id: text,
     exit_code: int,
     status: text,
-    ? error: text
+    ? error: text,
+    ? workflow_output: text
 }
 ReportResultResponse = {
     ok: bool

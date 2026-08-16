@@ -900,6 +900,9 @@ def eval_cmd(
     base_ref: str = typer.Option("", envvar="REACTORCIDE_BASE_REF", help="PR base branch name"),
     is_fork_pr: str = typer.Option("", envvar="REACTORCIDE_IS_FORK_PR", help="Set to 'true' when PR is cross-repository"),
     triggers_file: str = typer.Option("/job/triggers.json", help="Path to write triggers output"),
+    workflow_file: str = typer.Option("", "--workflow-file", help="Evaluate only this workflow file and ignore its event filter"),
+    changed_file: Optional[List[str]] = typer.Option(None, "--changed-file", help="Changed source path; repeat for each path"),
+    allow_insecure_transport: bool = typer.Option(False, "--allow-insecure-transport", help="Allow API credentials without TLS on an isolated development network"),
 ):
     """Evaluate job definitions against an event and generate triggers.
 
@@ -960,8 +963,8 @@ def eval_cmd(
 
     # Get changed files via git diff if source dir is a git repo. Both the
     # workflow and bare-jobs paths use this for path-based trigger filtering.
-    changed = None
-    if source_path.exists() and (source_path / ".git").exists():
+    changed = list(changed_file) if changed_file else None
+    if changed is None and source_path.exists() and (source_path / ".git").exists():
         try:
             if diff_base:
                 # Use the stable base SHA (works correctly even after merge)
@@ -992,13 +995,30 @@ def eval_cmd(
         is_fork_pr=is_fork_pr,
     )
 
-    workflow_ctx = WorkflowContext(triggers_file=triggers_file)
+    workflow_ctx = WorkflowContext(triggers_file=triggers_file, allow_insecure_transport=allow_insecure_transport)
 
     # Prefer workflow-centric definitions (.reactorcide/workflows/*.yaml). A
     # workflow names its pipeline and groups its jobs, and one event can match
     # several workflows (per team/product/etc). Fall back to bare job files
     # (.reactorcide/jobs/*.yaml) when no workflow files exist.
     workflow_defs = load_workflow_definitions(ci_source_path)
+
+    selected_workflow_path = None
+    if workflow_file:
+        selected_workflow_path = Path(workflow_file)
+        if not selected_workflow_path.is_absolute():
+            selected_workflow_path = ci_source_path / selected_workflow_path
+        selected_workflow_path = selected_workflow_path.resolve()
+        try:
+            selected_workflow_path.relative_to(ci_source_path.resolve())
+        except ValueError:
+            raise ValueError("selected workflow file is outside the CI source directory")
+        workflow_defs = [
+            workflow for workflow in workflow_defs
+            if Path(workflow.source_file).resolve() == selected_workflow_path
+        ]
+        if not workflow_defs:
+            raise ValueError(f"selected workflow file was not loaded: {workflow_file}")
 
     if workflow_defs:
         log_stdout(
@@ -1071,7 +1091,10 @@ def eval_cmd(
 
         for wf in candidate_workflows:
             is_new_workflow = wf.workflow_id not in base_workflow_ids
-            matched_wf, reason = workflow_match_reason(wf, event_type, branch, changed)
+            if selected_workflow_path is not None:
+                matched_wf, reason = True, "selected explicitly"
+            else:
+                matched_wf, reason = workflow_match_reason(wf, event_type, branch, changed)
             if not matched_wf:
                 log_stdout(f"  – skipped workflow '{wf.name}': {reason}")
                 continue
@@ -1141,6 +1164,7 @@ def eval_cmd(
                 "policy_revision": trusted_policy.revision if trusted_policy else "",
                 "policy_rule_id": decision.rule_id if decision else "",
                 "approval_id": decision.approval_id if decision and decision.approval_id else None,
+                "vars": selected_wf.vars,
                 "jobs": job_triggers,
             })
             job_names = ", ".join(t.job_name for t in job_triggers) or "(no jobs)"
@@ -1224,6 +1248,7 @@ def eval_cmd(
 def trigger_cmd(
     job_files: List[str] = typer.Argument(..., help="Paths to job definition YAML files"),
     triggers_file: str = typer.Option("/job/triggers.json", help="Path to write triggers output"),
+    allow_insecure_transport: bool = typer.Option(False, "--allow-insecure-transport", help="Allow API credentials without TLS on an isolated development network"),
 ):
     """Read job definition files and submit them as triggers.
 
@@ -1317,6 +1342,11 @@ def trigger_cmd(
             job_dir=defn.job.job_dir or None,
             working_dir=defn.job.working_dir or None,
             run_as_user=defn.job.run_as_user or None,
+            worker_class=defn.job.worker_class or None,
+            characteristics=defn.job.characteristics or None,
+            resources=defn.job.resources or None,
+            disable_run_local=True if defn.job.disable_run_local else None,
+            run_local=defn.job.run_local or None,
             for_each=defn.job.for_each or None,
             item_var=defn.job.item_var or None,
             source_type="git" if source_url else None,
@@ -1334,7 +1364,7 @@ def trigger_cmd(
         raise typer.Exit(0)
 
     # Write triggers using WorkflowContext (handles both file and API submission)
-    workflow_ctx = WorkflowContext(triggers_file=triggers_file)
+    workflow_ctx = WorkflowContext(triggers_file=triggers_file, allow_insecure_transport=allow_insecure_transport)
     workflow_ctx.triggers = triggers
     workflow_ctx.flush_triggers()
 

@@ -21,6 +21,7 @@ type client interface {
 	AppendLogBatch(ctx context.Context, req csilapi.AppendLogBatchRequest) (csilapi.AppendLogBatchResponse, error)
 	AppendMetricBatch(ctx context.Context, req csilapi.AppendMetricBatchRequest) (csilapi.AppendMetricBatchResponse, error)
 	ReportResult(ctx context.Context, leaseID string, exitCode int, status string, errMsg string) (csilapi.ReportResultResponse, error)
+	ReportResultWithOutput(ctx context.Context, leaseID string, exitCode int, status string, errMsg, workflowOutput string) (csilapi.ReportResultResponse, error)
 }
 
 // workerInfo builds the WorkerInfo sent on Register from cfg.

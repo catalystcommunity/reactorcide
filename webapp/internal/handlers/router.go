@@ -12,7 +12,10 @@ import (
 func NewRouter() http.Handler {
 	mux := http.NewServeMux()
 	client := NewAPIClient()
-	uiClients := uiclient.New(config.APIUrl)
+	uiClients := uiclient.NewWithTransport(&uiclient.CSILRPCTransport{
+		BaseURL:                config.APIUrl,
+		AllowInsecureTransport: config.AllowInsecureTransport,
+	})
 	webHandler := NewWebHandler(client, uiClients)
 	wsProxy := NewWSProxy()
 

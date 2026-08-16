@@ -11,7 +11,9 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 
+	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/resources"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/secrets"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/worker"
 	"github.com/google/uuid"
@@ -30,6 +32,19 @@ var remoteOnlyOpPatterns = []*regexp.Regexp{
 	regexp.MustCompile(`\bgh\s+release\b`),
 	regexp.MustCompile(`\bgh\s+issue\b`),
 	regexp.MustCompile(`\bgh\s+api\b`),
+}
+
+func applyLocalJobResources(spec *worker.JobSpec) (string, error) {
+	if spec == nil || len(spec.Resources) == 0 {
+		return "", nil
+	}
+	cpuRequest, cpuLimit, memoryLimit, err := resources.ParseResources(spec.Resources)
+	if err != nil {
+		return "", err
+	}
+	spec.CPULimit = cpuLimit
+	spec.MemoryLimit = memoryLimit
+	return cpuRequest, nil
 }
 
 // scanRemoteOnlyOps returns the ops detected in cmd that typically depend on
@@ -228,6 +243,14 @@ var RunLocalCommand = &cli.Command{
 			Name:  "user",
 			Usage: "User to run the job container as: a numeric uid[:gid] (e.g. \"1001:1001\"), or the symbolic name \"runner\" (image runner uid 1001), \"root\", or \"host\" (the invoking user). Overrides the host-uid default. Mutually exclusive with --as-runner.",
 		},
+		&cli.StringFlag{Name: "event", Value: "push", Usage: "Workflow event type for local evaluation"},
+		&cli.StringFlag{Name: "branch", Usage: "Workflow branch value for local evaluation"},
+		&cli.StringSliceFlag{Name: "changed-file", Usage: "Changed source path for workflow path rules; repeat for each path"},
+		&cli.StringFlag{Name: "eval-image", Value: worker.DefaultRunnerImage, Usage: "Image that evaluates a workflow"},
+		&cli.IntFlag{Name: "max-parallel", Value: 1, Usage: "Maximum number of workflow nodes to run at once"},
+		&cli.StringFlag{Name: "context", Usage: "Synchronized local context name"},
+		&cli.StringFlag{Name: "workflow-vars-file", Hidden: true},
+		&cli.StringFlag{Name: "result-dir", Hidden: true},
 	},
 	Action: runLocalAction,
 }
@@ -421,6 +444,13 @@ func runLocalAction(ctx *cli.Context) error {
 	}
 
 	jobFile := ctx.Args().Get(0)
+	isWorkflow, err := isWorkflowDefinitionFile(jobFile)
+	if err != nil {
+		return err
+	}
+	if isWorkflow {
+		return runLocalWorkflow(ctx, jobFile)
+	}
 	dryRun := ctx.Bool("dry-run")
 	jobDir := ctx.String("job-dir")
 	backend := ctx.String("backend")
@@ -432,10 +462,28 @@ func runLocalAction(ctx *cli.Context) error {
 		return err
 	}
 
-	// Load job specification with overlays
-	spec, secretOverrides, err := worker.LoadJobSpecWithOverlays(jobFile, inputFiles)
+	var local *localContext
+	if contextName := ctx.String("context"); contextName != "" {
+		value, err := loadLocalContext(contextName)
+		if err != nil {
+			return err
+		}
+		local = &value
+		fmt.Println(localContextStatusLine(contextName, value, time.Now()))
+	}
+
+	// Apply project defaults first and command-line overlays last.
+	spec, secretOverrides, err := loadLocalJobSpec(jobFile, inputFiles, local)
 	if err != nil {
 		return err
+	}
+	if local != nil {
+		if err := validateLocalContextLimits(spec, *local); err != nil {
+			return err
+		}
+		if err := validateLocalContextUser(ctx, spec, *local); err != nil {
+			return err
+		}
 	}
 
 	// Refuse to execute jobs explicitly marked as remote-only.
@@ -601,11 +649,25 @@ func runLocalAction(ctx *cli.Context) error {
 		}
 	}
 
+	cpuRequest, err := applyLocalJobResources(spec)
+	if err != nil {
+		return fmt.Errorf("invalid job resources: %w", err)
+	}
+
 	// Convert spec to JobConfig using temp workspace, then set SourceDir
 	// so the runner mounts the resolved source at the configured code dir.
 	jobConfig := spec.ToJobConfig(tempWorkspace, jobID, "local")
+	jobConfig.CPURequest = cpuRequest
 	jobConfig.SourceDir = srcMount
 	jobConfig.RunAsUser = fmt.Sprintf("%d:%d", uid, gid)
+	if varsFile := strings.TrimSpace(ctx.String("workflow-vars-file")); varsFile != "" {
+		absVarsFile, err := filepath.Abs(varsFile)
+		if err != nil {
+			return fmt.Errorf("failed to resolve workflow variables file: %w", err)
+		}
+		jobConfig.ExtraMounts = append(jobConfig.ExtraMounts, fmt.Sprintf("%s:/job/workflow-vars.json:ro", absVarsFile))
+		jobConfig.Env["RC_WF_VARS_FILE"] = "/job/workflow-vars.json"
+	}
 
 	// When running as the image's runner uid (--as-runner / --user 1001:1001),
 	// the container already has a real /etc/passwd entry (`runner`, home
@@ -680,7 +742,32 @@ func runLocalAction(ctx *cli.Context) error {
 	}
 
 	// Execute the job
-	return executeLocalJob(context.Background(), runner, jobConfig, masker)
+	runErr := executeLocalJob(context.Background(), runner, jobConfig, masker)
+	if resultDir := strings.TrimSpace(ctx.String("result-dir")); resultDir != "" {
+		if err := collectLocalJobResult(tempWorkspace, resultDir); err != nil && runErr == nil {
+			return err
+		}
+	}
+	return runErr
+}
+
+func collectLocalJobResult(workspaceDir, resultDir string) error {
+	if err := os.MkdirAll(resultDir, 0o700); err != nil {
+		return fmt.Errorf("create local result directory: %w", err)
+	}
+	for _, name := range []string{"workflow-output.json"} {
+		data, err := os.ReadFile(filepath.Join(workspaceDir, name))
+		if os.IsNotExist(err) {
+			continue
+		}
+		if err != nil {
+			return fmt.Errorf("read local result %s: %w", name, err)
+		}
+		if err := os.WriteFile(filepath.Join(resultDir, name), data, 0o600); err != nil {
+			return fmt.Errorf("write local result %s: %w", name, err)
+		}
+	}
+	return nil
 }
 
 func performLocalDryRun(spec *worker.JobSpec, config *worker.JobConfig, masker *secrets.Masker, jobDir string) error {

@@ -21,6 +21,24 @@ func TestNewStorageWithPath(t *testing.T) {
 	}
 }
 
+func TestStorageHasDistinguishesEmptyValueFromMissingKey(t *testing.T) {
+	storage := NewStorageWithPath(t.TempDir())
+	if err := storage.Init("password", false); err != nil {
+		t.Fatal(err)
+	}
+	if err := storage.Set("project/test", "empty", "", "password"); err != nil {
+		t.Fatal(err)
+	}
+	exists, err := storage.Has("project/test", "empty", "password")
+	if err != nil || !exists {
+		t.Fatalf("stored empty value exists = %v, error = %v", exists, err)
+	}
+	exists, err = storage.Has("project/test", "missing", "password")
+	if err != nil || exists {
+		t.Fatalf("missing value exists = %v, error = %v", exists, err)
+	}
+}
+
 func setupTestStorage(t *testing.T) (*Storage, string, func()) {
 	t.Helper()
 	tempDir, err := os.MkdirTemp("", "secrets-test-*")

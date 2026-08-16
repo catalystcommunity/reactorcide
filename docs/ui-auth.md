@@ -11,6 +11,12 @@ trigger is re-validated and re-authorized on the coordinator side over CSIL-RPC
 caller lacks capability for are simply not rendered, but that's a UX nicety, not a security
 boundary.
 
+The webapp coordinator URL must use HTTPS. The webapp sends service credentials
+and user sessions on this connection. For an isolated development network, add
+`--allow-insecure-transport` to the `reactorcide-web serve` command. This option
+has no environment variable equivalent. Reactorcide also rejects a redirect
+from HTTPS to HTTP.
+
 ## Auth modes
 
 Set with `REACTORCIDE_UI_AUTH_MODE` on the **coordinator**. Default: `none`.

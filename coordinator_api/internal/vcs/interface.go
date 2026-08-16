@@ -201,7 +201,8 @@ type Client interface {
 
 // Config holds VCS configuration
 type Config struct {
-	Provider Provider
-	Token    string // API token for status updates
-	BaseURL  string // Base URL for Enterprise instances (optional)
+	Provider               Provider
+	Token                  string // API token for status updates
+	BaseURL                string // Base URL for Enterprise instances (optional)
+	AllowInsecureTransport bool   // explicit development-only exception
 }

@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/catalystcommunity/reactorcide/webapp/internal/config"
 	"github.com/catalystcommunity/reactorcide/webapp/internal/templates"
 )
 
@@ -18,6 +19,9 @@ func (fn roundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) {
 }
 
 func TestWorkflowEntryJobsPrependsRootEvaluation(t *testing.T) {
+	oldURL := config.APIUrl
+	config.APIUrl = "https://coordinator.example.com"
+	t.Cleanup(func() { config.APIUrl = oldURL })
 	client := NewAPIClient()
 	client.httpClient.Transport = roundTripFunc(func(req *http.Request) (*http.Response, error) {
 		if req.URL.Path != "/api/v1/jobs/eval-1" {

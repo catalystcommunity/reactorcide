@@ -27,9 +27,21 @@ import (
 // (169.254.0.0/16, which Windows self-assigns when DHCP has not yet completed)
 // are skipped so a half-booted guest does not resolve to a dead address.
 func parseVMIPv4(raw string) (string, bool) {
+	addresses := parseVMIPv4s(raw)
+	if len(addresses) == 0 {
+		return "", false
+	}
+	return addresses[0], true
+}
+
+// parseVMIPv4s returns all usable IPv4 candidates. Hyper-V can briefly report
+// a stale address copied from the sealed base image before the clone publishes
+// its current DHCP lease, so the Windows lifecycle tests every candidate for
+// reachability instead of accepting the first value.
+func parseVMIPv4s(raw string) []string {
 	raw = strings.TrimSpace(raw)
 	if raw == "" || strings.EqualFold(raw, "null") {
-		return "", false
+		return nil
 	}
 
 	var candidates []string
@@ -51,6 +63,7 @@ func parseVMIPv4(raw string) (string, bool) {
 		candidates = strings.Fields(raw)
 	}
 
+	var addresses []string
 	for _, c := range candidates {
 		ip := net.ParseIP(strings.TrimSpace(c))
 		if ip == nil {
@@ -63,9 +76,9 @@ func parseVMIPv4(raw string) (string, bool) {
 		if v4[0] == 169 && v4[1] == 254 {
 			continue // APIPA: DHCP has not assigned a real lease yet
 		}
-		return v4.String(), true
+		addresses = append(addresses, v4.String())
 	}
-	return "", false
+	return addresses
 }
 
 // psQuote renders s as a PowerShell single-quoted string literal, escaping any

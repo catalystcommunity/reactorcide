@@ -5,8 +5,10 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/jobtelemetry"
@@ -51,10 +53,8 @@ type VMConfig struct {
 
 	// OCIPlainHTTPRegistries lists registry hosts (as they appear in an
 	// image reference, e.g. "registry.internal:5000") to reach over plain
-	// HTTP instead of HTTPS when ImageSource is "oci" -- for a local/dev
-	// registry that doesn't terminate TLS. Loopback hosts are already
-	// treated as plain HTTP without being listed here (see
-	// vmrunner.WithPlainHTTPRegistries).
+	// HTTP instead of HTTPS when ImageSource is "oci". Each host must come
+	// from an explicit command-line option.
 	OCIPlainHTTPRegistries []string
 
 	// SSHUser is the guest OS account SSHTransport authenticates as.
@@ -91,9 +91,6 @@ type VMConfig struct {
 //   - REACTORCIDE_VM_REGISTRY_AUTH_FILE         (default:
 //     ~/.config/reactorcide/oci-auth.json; Docker-compatible credentials for
 //     several registry hosts)
-//   - REACTORCIDE_VM_IMAGE_REGISTRY_PLAIN_HTTP (optional, comma-separated
-//     registry hosts to reach over plain HTTP instead of HTTPS; only used
-//     when REACTORCIDE_VM_IMAGE_SOURCE is "oci")
 //   - REACTORCIDE_VM_SSH_USER              (default: "reactorcide")
 //   - REACTORCIDE_VM_SSH_PASSWORD          (optional, no default)
 //   - REACTORCIDE_VM_SSH_PRIVATE_KEY_FILE  (optional; path to a PEM private
@@ -103,6 +100,25 @@ type VMConfig struct {
 //     guest SSH host public key)
 //   - REACTORCIDE_VM_METRICS_DIR            (optional local JSONL debug output)
 //   - REACTORCIDE_VM_METRICS_INTERVAL       (default: 5s)
+var vmPlainHTTPConfig struct {
+	sync.RWMutex
+	hosts []string
+}
+
+// ConfigureVMPlainHTTPRegistries supplies explicit CLI-only registry
+// exceptions before the worker constructs its VM backend.
+func ConfigureVMPlainHTTPRegistries(hosts []string) {
+	vmPlainHTTPConfig.Lock()
+	defer vmPlainHTTPConfig.Unlock()
+	vmPlainHTTPConfig.hosts = append([]string(nil), hosts...)
+}
+
+func configuredVMPlainHTTPRegistries() []string {
+	vmPlainHTTPConfig.RLock()
+	defer vmPlainHTTPConfig.RUnlock()
+	return append([]string(nil), vmPlainHTTPConfig.hosts...)
+}
+
 func LoadVMConfig() (VMConfig, error) {
 	imageSource := os.Getenv("REACTORCIDE_VM_IMAGE_SOURCE")
 	if imageSource == "" {
@@ -121,15 +137,6 @@ func LoadVMConfig() (VMConfig, error) {
 	ociRegistryAuthFile := os.Getenv("REACTORCIDE_VM_REGISTRY_AUTH_FILE")
 	if ociRegistryAuthFile == "" {
 		ociRegistryAuthFile = vmrunner.DefaultRegistryAuthFile()
-	}
-
-	var ociPlainHTTPRegistries []string
-	if raw := os.Getenv("REACTORCIDE_VM_IMAGE_REGISTRY_PLAIN_HTTP"); raw != "" {
-		for _, h := range strings.Split(raw, ",") {
-			if h = strings.TrimSpace(h); h != "" {
-				ociPlainHTTPRegistries = append(ociPlainHTTPRegistries, h)
-			}
-		}
 	}
 
 	sshUser := os.Getenv("REACTORCIDE_VM_SSH_USER")
@@ -151,7 +158,7 @@ func LoadVMConfig() (VMConfig, error) {
 		ImageDir:               imageDir,
 		OCIImageCacheDir:       ociImageCacheDir,
 		OCIRegistryAuthFile:    ociRegistryAuthFile,
-		OCIPlainHTTPRegistries: ociPlainHTTPRegistries,
+		OCIPlainHTTPRegistries: configuredVMPlainHTTPRegistries(),
 		SSHUser:                sshUser,
 		SSHPassword:            os.Getenv("REACTORCIDE_VM_SSH_PASSWORD"),
 		MetricsDir:             metricsDir,
@@ -249,7 +256,11 @@ type vmRunnerAdapter struct {
 }
 
 func (a *vmRunnerAdapter) SpawnJob(ctx context.Context, config *JobConfig) (string, error) {
-	return a.inner.SpawnJob(ctx, toVMJobConfig(config, a.guestUser, runtime.GOOS))
+	vmConfig, err := toVMJobConfig(config, a.guestUser, runtime.GOOS)
+	if err != nil {
+		return "", err
+	}
+	return a.inner.SpawnJob(ctx, vmConfig)
 }
 
 func (a *vmRunnerAdapter) StreamLogs(ctx context.Context, jobID string) (io.ReadCloser, io.ReadCloser, error) {
@@ -322,10 +333,11 @@ func (a *vmRunnerAdapter) PruneImages(ctx context.Context, maxUnused time.Durati
 	return a.ociImages.Prune(ctx, maxUnused, now)
 }
 
-// toVMJobConfig translates process inputs and credential files into the
-// platform-neutral VM transport model. Host bind mounts and runtime
-// capabilities have no native-guest equivalent.
-func toVMJobConfig(config *JobConfig, guestUser, hostOS string) *vmrunner.JobConfig {
+// toVMJobConfig translates process inputs, the workspace, /job-scoped input
+// mounts, result files, and credentials into the platform-neutral VM transport
+// model. Arbitrary host bind mounts and runtime capabilities have no native
+// guest equivalent.
+func toVMJobConfig(config *JobConfig, guestUser, hostOS string) (*vmrunner.JobConfig, error) {
 	env := make(map[string]string, len(config.Env))
 	for key, value := range config.Env {
 		env[key] = value
@@ -348,6 +360,8 @@ func toVMJobConfig(config *JobConfig, guestUser, hostOS string) *vmrunner.JobCon
 			"REACTORCIDE_JOB_DIR",
 			"REACTORCIDE_WORKING_DIR",
 			"REACTORCIDE_TRIGGERS_FILE",
+			"RC_WF_OUTPUT_FILE",
+			"RC_WF_VARS_FILE",
 			"REACTORCIDE_VCS_AUTH_DIR",
 			"GIT_CONFIG_GLOBAL",
 		} {
@@ -379,6 +393,18 @@ func toVMJobConfig(config *JobConfig, guestUser, hostOS string) *vmrunner.JobCon
 		)
 	}
 	trees := []vmrunner.GuestTree{}
+	if config.WorkspaceDir != "" {
+		if info, err := os.Stat(config.WorkspaceDir); err != nil {
+			return nil, fmt.Errorf("inspect VM workspace: %w", err)
+		} else if !info.IsDir() {
+			return nil, fmt.Errorf("VM workspace must be a directory")
+		}
+		destination := "/job"
+		if platform == vmrunner.GuestPlatformWindows {
+			destination = windowsGuestPath(destination, guestUser)
+		}
+		trees = append(trees, vmrunner.GuestTree{SourcePath: config.WorkspaceDir, Destination: destination})
+	}
 	if config.SourceDir != "" {
 		destination := config.SourceMountPath
 		if destination == "" {
@@ -392,6 +418,44 @@ func toVMJobConfig(config *JobConfig, guestUser, hostOS string) *vmrunner.JobCon
 			Destination: destination,
 		})
 	}
+	for _, mount := range config.ExtraMounts {
+		hostPath, guestPath, ok := vmJobInputMount(mount)
+		if !ok {
+			continue
+		}
+		info, err := os.Stat(hostPath)
+		if err != nil {
+			return nil, fmt.Errorf("inspect VM input mount: %w", err)
+		}
+		if platform == vmrunner.GuestPlatformWindows {
+			guestPath = windowsGuestPath(guestPath, guestUser)
+		}
+		if info.IsDir() {
+			trees = append(trees, vmrunner.GuestTree{SourcePath: hostPath, Destination: guestPath})
+			continue
+		}
+		if !info.Mode().IsRegular() {
+			return nil, fmt.Errorf("VM input mount source must be a regular file or directory")
+		}
+		data, err := os.ReadFile(hostPath)
+		if err != nil {
+			return nil, fmt.Errorf("read VM input mount: %w", err)
+		}
+		files = append(files, vmrunner.GuestFile{Path: guestPath, Data: data, Mode: info.Mode().Perm()})
+	}
+	results := []vmrunner.GuestResultFile{}
+	if config.WorkspaceDir != "" {
+		for _, result := range []struct {
+			name string
+			max  int64
+		}{{name: "workflow-output.json", max: 1 << 20}, {name: "triggers.json", max: 8 << 20}} {
+			source := "/job/" + result.name
+			if platform == vmrunner.GuestPlatformWindows {
+				source = windowsGuestPath(source, guestUser)
+			}
+			results = append(results, vmrunner.GuestResultFile{SourcePath: source, DestinationPath: filepath.Join(config.WorkspaceDir, result.name), MaxBytes: result.max, Optional: true})
+		}
+	}
 	return &vmrunner.JobConfig{
 		Image:       config.Image,
 		Command:     config.Command,
@@ -400,11 +464,29 @@ func toVMJobConfig(config *JobConfig, guestUser, hostOS string) *vmrunner.JobCon
 		WorkingDir:  workingDir,
 		Files:       files,
 		Trees:       trees,
+		Results:     results,
 		CPURequest:  config.CPURequest,
 		CPULimit:    config.CPULimit,
 		MemoryLimit: config.MemoryLimit,
 		JobID:       config.JobID,
+	}, nil
+}
+
+// vmJobInputMount selects bind mounts whose destination is inside /job. VM
+// guests cannot reproduce arbitrary host mounts such as /etc/passwd, but job
+// inputs such as /job/ci and /job/workflow-vars.json must be staged.
+func vmJobInputMount(mount string) (hostPath, guestPath string, ok bool) {
+	trimmed := strings.TrimSpace(mount)
+	trimmed = strings.TrimSuffix(strings.TrimSuffix(trimmed, ":ro"), ":rw")
+	marker := strings.LastIndex(trimmed, ":/job")
+	if marker < 1 {
+		return "", "", false
 	}
+	hostPath, guestPath = trimmed[:marker], trimmed[marker+1:]
+	if guestPath != "/job" && !strings.HasPrefix(guestPath, "/job/") {
+		return "", "", false
+	}
+	return hostPath, guestPath, true
 }
 
 func windowsGuestPath(path, guestUser string) string {

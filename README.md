@@ -29,7 +29,7 @@ go build -o reactorcide .
 cd ..
 ```
 
-## Run a Job Locally
+## Run a Job or Workflow Locally
 
 You need Docker, or containerd with nerdctl. The default backend is Docker.
 Add `--backend containerd` when you use nerdctl.
@@ -42,6 +42,19 @@ Add `--backend containerd` when you use nerdctl.
 
 `run-local` bind-mounts `--job-dir` and uses the host user by default. Use
 `--as-runner` to use the deployed runner user.
+
+You can also give `run-local` one workflow file. Reactorcide evaluates the
+selected workflow and runs its jobs. The event filter does not block an
+explicitly selected file. Reactorcide writes the final result to
+`reactorcide-workflow-summary.json` in the local workspace.
+The summary contains variable names. It does not contain variable values.
+
+```bash
+./coordinator_api/reactorcide run-local \
+  --job-dir ./ \
+  --max-parallel 4 \
+  ./.reactorcide/workflows/test.yaml
+```
 
 ## Operate a Coordinator
 

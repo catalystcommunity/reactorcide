@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/transportsecurity"
 	"github.com/urfave/cli/v2"
 )
 
@@ -16,19 +17,7 @@ var LogsCommand = &cli.Command{
 	Name:      "logs",
 	Usage:     "Get logs for a job from a remote Reactorcide coordinator",
 	ArgsUsage: "<job-id>",
-	Flags: []cli.Flag{
-		&cli.StringFlag{
-			Name:    "api-url",
-			Aliases: []string{"u"},
-			Usage:   "Coordinator API URL (e.g., http://localhost:6080)",
-			EnvVars: []string{"REACTORCIDE_API_URL"},
-		},
-		&cli.StringFlag{
-			Name:    "token",
-			Aliases: []string{"t"},
-			Usage:   "API token for authentication",
-			EnvVars: []string{"REACTORCIDE_API_TOKEN"},
-		},
+	Flags: append(apiFlags(),
 		&cli.StringFlag{
 			Name:    "stream",
 			Aliases: []string{"s"},
@@ -40,7 +29,7 @@ var LogsCommand = &cli.Command{
 			Aliases: []string{"o"},
 			Usage:   "Output file (default: stdout)",
 		},
-	},
+	),
 	Action: logsAction,
 }
 
@@ -57,6 +46,10 @@ func logsAction(ctx *cli.Context) error {
 
 	if apiURL == "" {
 		return fmt.Errorf("API URL is required (use --api-url or REACTORCIDE_API_URL)")
+	}
+	allowInsecure := ctx.Bool("allow-insecure-transport")
+	if err := transportsecurity.ValidateURL(apiURL, allowInsecure, "coordinator API"); err != nil {
+		return err
 	}
 
 	// Normalize API URL (remove trailing slash)
@@ -78,7 +71,7 @@ func logsAction(ctx *cli.Context) error {
 		return fmt.Errorf("API token is required (use --token or REACTORCIDE_API_TOKEN)")
 	}
 
-	logs, err := fetchJobLogs(apiURL, token, jobID, stream)
+	logs, err := fetchJobLogs(apiURL, token, jobID, stream, allowInsecure)
 	if err != nil {
 		return fmt.Errorf("failed to fetch logs: %w", err)
 	}
@@ -96,7 +89,10 @@ func logsAction(ctx *cli.Context) error {
 }
 
 // fetchJobLogs retrieves logs for a job from the coordinator API
-func fetchJobLogs(apiURL, token, jobID, stream string) ([]byte, error) {
+func fetchJobLogs(apiURL, token, jobID, stream string, allowInsecure bool) ([]byte, error) {
+	if err := transportsecurity.ValidateURL(apiURL, allowInsecure, "coordinator API"); err != nil {
+		return nil, err
+	}
 	url := fmt.Sprintf("%s/api/v1/jobs/%s/logs", apiURL, jobID)
 	if stream != "" && stream != "combined" {
 		url = fmt.Sprintf("%s?stream=%s", url, stream)
@@ -109,7 +105,7 @@ func fetchJobLogs(apiURL, token, jobID, stream string) ([]byte, error) {
 
 	req.Header.Set("Authorization", "Bearer "+token)
 
-	client := &http.Client{Timeout: 60 * time.Second}
+	client := transportsecurity.HTTPClient(&http.Client{Timeout: 60 * time.Second}, allowInsecure, "coordinator API")
 	resp, err := client.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)

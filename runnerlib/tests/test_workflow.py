@@ -277,6 +277,13 @@ class TestWorkflowContext:
 
                 assert ctx.workflow_vars() == {"targets": ["linux"], "flag": True}
 
+    def test_workflow_vars_loads_inline_json(self):
+        """The coordinator can supply variables without a shared file."""
+        with patch.dict(os.environ, {"RC_WF_VARS_JSON": '{"target":"windows"}'}, clear=False):
+            ctx = WorkflowContext()
+
+            assert ctx.workflow_vars() == {"target": "windows"}
+
     def test_set_workflow_var_and_output(self):
         """Test writing workflow variables and outputs."""
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -535,6 +542,21 @@ class TestWorkflowContextManager:
 
 
 class TestAPITriggerSubmission:
+    def test_rejects_credentials_without_tls(self, tmp_path):
+        triggers_file = tmp_path / "triggers.json"
+        with patch.dict(os.environ, {
+            "REACTORCIDE_COORDINATOR_URL": "http://coordinator:6080",
+            "REACTORCIDE_API_TOKEN": "test-token",
+            "REACTORCIDE_JOB_ID": "job-123",
+        }):
+            ctx = WorkflowContext(triggers_file=str(triggers_file))
+            ctx.trigger_job("test")
+
+            with patch("urllib.request.build_opener") as build_opener:
+                ctx.flush_triggers()
+
+            build_opener.assert_not_called()
+
     """Tests for API-based trigger submission."""
 
     def test_submit_triggers_via_api_success(self):
@@ -547,7 +569,7 @@ class TestAPITriggerSubmission:
                 "REACTORCIDE_API_TOKEN": "test-token",
                 "REACTORCIDE_JOB_ID": "job-123",
             }):
-                ctx = WorkflowContext(triggers_file=str(triggers_file))
+                ctx = WorkflowContext(triggers_file=str(triggers_file), allow_insecure_transport=True)
                 ctx.trigger_job("test", env={"KEY": "value"})
 
                 # Mock the API call to succeed
@@ -556,12 +578,14 @@ class TestAPITriggerSubmission:
                 mock_response.__enter__ = MagicMock(return_value=mock_response)
                 mock_response.__exit__ = MagicMock(return_value=False)
 
-                with patch('urllib.request.urlopen', return_value=mock_response) as mock_urlopen:
+                mock_opener = MagicMock()
+                mock_opener.open.return_value = mock_response
+                with patch('urllib.request.build_opener', return_value=mock_opener):
                     ctx.flush_triggers()
 
                     # Verify API was called
-                    mock_urlopen.assert_called_once()
-                    req = mock_urlopen.call_args[0][0]
+                    mock_opener.open.assert_called_once()
+                    req = mock_opener.open.call_args[0][0]
                     assert req.full_url == "http://coordinator:6080/api/v1/jobs/job-123/triggers"
                     assert req.get_header("Authorization") == "Bearer test-token"
                     assert req.get_header("Content-type") == "application/json"

@@ -5,24 +5,25 @@ builder uses PowerShell, Hyper-V, DISM, BCDBoot, and OpenSSH. These components
 are part of Windows 11 Pro with Hyper-V and OpenSSH Client enabled. The builder
 does not need Packer, WinRM, RDP, VMConnect, or the Windows ADK.
 
-The build has no guest interaction. You must supply a licensed Windows ISO and
-its expected SHA-256 value.
+The build has no guest interaction. Microsoft provides a public Windows 11
+Enterprise Evaluation ISO. The repository has a script that downloads the
+current supported example and verifies the Microsoft SHA-256 value.
 
 ## Build result
 
-The default command creates these files:
+The default command creates this file:
 
 ```text
 C:\ProgramData\Reactorcide\vm-images\win11-base\disk.vhdx
-C:\ProgramData\Reactorcide\vm-images\win11-base\ssh_host_ed25519_key.pub
-C:\ProgramData\Reactorcide\secrets\guest-ssh-key
-C:\ProgramData\Reactorcide\secrets\guest-ssh-key.pub
-C:\ProgramData\Reactorcide\config\guest-ssh-host.pub
 ```
 
-The worker private key stays on the host. The guest image contains only its
-matching public key. The builder copies the guest SSH host public key to the
-worker config directory.
+The image contains no SSH client key, SSH authorization key, or SSH host key.
+The worker creates all SSH keys for each VM job.
+
+The builder runs Sysprep with the `generalize` option before it captures the
+image. The worker writes a new unattended specialization file into each VM
+clone. Each clone gets a unique Windows computer name. This process does not
+need a console session.
 
 ## Requirements
 
@@ -36,13 +37,25 @@ host must have these items:
 - A Windows installation ISO
 - Enough disk space for the ISO, build files, and output VHDX
 
+Run the host preparation script on a new Windows host:
+
+```powershell
+Set-ExecutionPolicy -Scope Process Bypass -Force
+.\prepare-windows-host.ps1
+```
+
+Restart Windows if the script tells you to restart it. The script enables
+Hyper-V, OpenSSH Client, and OpenSSH Server. It does not install a third-party
+service.
+
 The default switch is `Default Switch`. The guest uses Windows Update to
 install OpenSSH Server. If your network blocks Windows capability downloads,
 the build stops. Configure a Windows Features on Demand source before you run
 the builder in that environment.
 
 The current answer file selects the `en-US` locale. The default image name is
-`Windows 11 Pro`. Use `-ImageName` when the ISO uses a different image name.
+`Windows 11 Pro`. The public evaluation ISO uses `Windows 11 Enterprise
+Evaluation`. Use `-ImageName` when the ISO uses a different image name.
 This command lists the image names:
 
 ```powershell
@@ -67,14 +80,38 @@ scp -r deployment/windows micro@windows-host:reactorcide-windows
 
 ## Build the base image
 
+Download the public evaluation ISO on the Windows host:
+
+```powershell
+.\download-windows-evaluation.ps1
+```
+
+The script downloads Windows 11 Enterprise Evaluation 25H2 from an official
+Microsoft redirect. It checks the ISO against the SHA-256 value in the
+Microsoft hash document. The evaluation is valid for 90 days. It is suitable
+for an example and for VM runner tests. Use media with the correct license for
+long-lived production workers.
+
+See the [Microsoft Evaluation Center](https://www.microsoft.com/en-us/evalcenter/evaluate-windows-11-enterprise)
+for the release terms and the current download information.
+
+The script refuses to replace a file that has a different hash. You can put
+the ISO on another disk:
+
+```powershell
+.\download-windows-evaluation.ps1 `
+  -Destination E:\Reactorcide\downloads\windows-11-enterprise-evaluation.iso
+```
+
 Run this command in an elevated SSH PowerShell session:
 
 ```powershell
 Set-ExecutionPolicy -Scope Process Bypass -Force
 Set-Location C:\Users\micro\reactorcide-windows
 .\build-windows-image.ps1 `
-  -IsoPath C:\ISO\Windows11.iso `
-  -IsoSha256 EXPECTED_64_CHARACTER_SHA256
+  -IsoPath C:\ProgramData\Reactorcide\downloads\windows-11-enterprise-evaluation-25h2-en-us.iso `
+  -IsoSha256 A61ADEAB895EF5A4DB436E0A7011C92A2FF17BB0357F58B13BBC4062E535E7B9 `
+  -ImageName 'Windows 11 Enterprise Evaluation'
 ```
 
 Do not use a SHA-256 value that you calculated from an untrusted download as
@@ -100,18 +137,16 @@ Use these options when necessary:
   -TimeoutMinutes 120
 ```
 
-Use separate state, image, and temporary build disks when the host has them:
+Use separate image and temporary build disks when the host has them:
 
 ```powershell
 .\build-windows-image.ps1 `
   -IsoPath C:\ISO\Windows11.iso `
   -IsoSha256 EXPECTED_64_CHARACTER_SHA256 `
-  -StateDirectory D:\Reactorcide\state `
   -OutputDirectory E:\Reactorcide\images\win11-base `
   -BuildDirectory F:\Reactorcide\image-builds
 ```
 
-`StateDirectory` receives the worker private key and guest host public key.
 `OutputDirectory` receives the reusable bundle. `BuildDirectory` holds the
 large temporary VHDX while Windows is applied and prepared.
 
@@ -144,21 +179,24 @@ The builder stops and deletes incomplete output when a script fails.
 The builder completes these operations:
 
 1. It verifies the ISO SHA-256.
-2. It generates a dedicated Ed25519 worker key when the key does not exist.
-3. It creates a dynamic GPT VHDX with EFI, MSR, and Windows partitions.
-4. It applies the selected Windows image with DISM.
-5. It adds an unattended first-boot file and the worker public key.
-6. It boots a temporary Generation 2 VM with Secure Boot.
+2. It creates a dynamic GPT VHDX with EFI, MSR, and Windows partitions.
+3. It applies the selected Windows image with DISM.
+4. It adds an unattended first-boot file.
+5. It boots a temporary Generation 2 VM with Secure Boot.
+6. It enables a virtual TPM and disables automatic checkpoints for the
+   temporary VM.
 7. Windows completes OOBE without user input.
-8. The guest installs OpenSSH Server and generates stable host keys.
-9. The guest enables key authentication and disables SSH password
-   authentication.
+8. The guest installs OpenSSH Server.
+9. The guest enables key authentication, disables SSH password
+   authentication, selects the injected Ed25519 host key, and permits SSH on
+   all Windows firewall profiles.
 10. The guest creates the job directory and enables Hyper-V Data Exchange.
 11. The guest runs the selected provisioning scripts.
 12. The guest changes its local password to an unknown random value.
 13. The guest removes the job account from the Administrators group.
-14. The guest removes cached answer files and shuts down.
-15. The host captures the guest SSH host public key and seals the bundle.
+14. The guest removes all SSH authorization and host keys.
+15. The guest removes cached answer files and shuts down.
+16. The host seals the bundle.
 
 The temporary build password exists only in the temporary offline answer file.
 The builder does not print it. The guest changes the password and removes the
@@ -172,15 +210,13 @@ Run the smoke test after the build:
 ```powershell
 C:\Users\micro\reactorcide-deploy\vmsmoke.exe `
   -bundle C:\ProgramData\Reactorcide\vm-images\win11-base `
-  -user reactorcide `
-  -key C:\ProgramData\Reactorcide\secrets\guest-ssh-key
+  -user reactorcide
 ```
 
 The result must end with `vmsmoke: OK`. The test must leave no VM in Hyper-V.
 
-The service config example already uses the generated private-key and host-key
-paths. Add the real coordinator URL and worker enrollment-token file before
-you start the service.
+Add the real coordinator URL and worker enrollment-token file to the service
+config before you start the service.
 
 ## Publish and share the image through OCI
 
@@ -192,9 +228,13 @@ Publish the complete Windows bundle after validation:
   registry.example.com/reactorcide/windows-11:base
 ```
 
-The command publishes `disk.vhdx` and `ssh_host_ed25519_key.pub` as one
-compressed OCI artifact. It prints a digest reference. Use that immutable
-digest in jobs and worker prefetch configuration.
+The command publishes `disk.vhdx` as one compressed OCI artifact. It prints a
+digest reference. Use that immutable digest in jobs and worker prefetch
+configuration.
+
+The key-free Windows bundle uses the version 2 Windows layer media type. Build
+and publish a new image. Do not reuse a version 1 bundle that contains SSH
+keys.
 
 Configure each worker with these values:
 
@@ -205,43 +245,43 @@ REACTORCIDE_VM_REGISTRY_AUTH_FILE=D:\Reactorcide\state\config\oci-auth.json
 ```
 
 The worker downloads a referenced image once and uses its local cache for later
-jobs. It verifies the guest host key from the resolved OCI bundle. Hundreds of
-workers can use the same digest, but each worker must have a separate writable
-cache. The registry and its blob storage deduplicate the shared artifact.
+jobs. Hundreds of workers can use the same digest, but each worker must have a
+separate writable cache. The registry and its blob storage deduplicate the
+shared artifact.
 
 Use `--vm-image-prefetch` on the worker command to download important images
 before the worker registers. Use the digest reference, not a mutable tag.
 
+Registries use HTTPS by default. For an isolated development registry that
+does not use TLS, add `--vm-image-registry-plain-http HOST` to the worker
+command. The option has no environment variable equivalent.
+
 ## Credential roles
 
-The host uses three different identity records:
+The host uses these identity records:
 
 - The coordinator enrollment token authorizes the worker to join one worker
   pool. Create it in the coordinator worker administration page. Store it in
   `C:\ProgramData\Reactorcide\secrets\enrollment-token`.
-- The worker guest key authenticates the host to each guest clone. The image
-  builder generates this key pair. It keeps the private key on the host and
-  puts only the public key in the image.
-- The guest SSH host key authenticates each guest clone to the worker. The
-  image builder generates it in the guest and copies only its public key to
-  the host.
+- A new client key authenticates the worker to one guest clone. The worker
+  keeps the private key in memory. It injects the public key into the per-job
+  differencing disk before boot.
+- A new host key authenticates one guest clone to the worker. The worker puts
+  the private key only in the per-job differencing disk. It pins the matching
+  public key for that SSH connection.
 
 The worker also creates a stable `worker_key` in its data directory when it
 starts for the first time. This value identifies the registered worker. It is
 not an enrollment token and it is not an SSH key.
 
-Do not reuse a personal SSH key as the worker guest key. Do not copy the guest
-private host key out of the image.
+Do not copy a per-job private key from the VM scratch directory.
 
-## Image identity limits
+## Image identity
 
-The builder does not run Sysprep after it configures SSH. A job clone must
-start SSH immediately and must not enter OOBE. As a result, clones have the
-same local machine identity and SSH host key.
+The builder runs Sysprep before it captures the base image. The worker writes
+an unattended file into each clone before boot. Windows then gives each clone
+a unique computer name and machine identity. Each clone also has different SSH
+keys.
 
-Do not join these ephemeral clones to a Windows domain. Do not use this image
-for jobs that require a unique persistent machine identity. The worker checks
-the captured host key because all clones come from the same trusted base.
-
-Build a separate image and key pair for each independent trust domain. Do not
-publish a credential-bearing image for unrelated operators.
+Do not join these short-lived clones to a Windows domain. Use a separate image
+and lifecycle for domain-managed machines.

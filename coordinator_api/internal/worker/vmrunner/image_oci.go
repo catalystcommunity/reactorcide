@@ -9,10 +9,10 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
-	"strings"
 	"sync"
 	"time"
 
+	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/transportsecurity"
 	"github.com/opencontainers/go-digest"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 	"oras.land/oras-go/v2"
@@ -33,8 +33,8 @@ import (
 //   - The current macOS format has one VMMacBundleLayerMediaType layer. The
 //     layer is a tar+zstd archive that materializes as a four-file bundle.
 //   - The current Windows format has one VMWindowsBundleLayerMediaType layer.
-//     The layer is a tar+zstd archive that contains the VHDX and the guest SSH
-//     host public key.
+//     The layer is a tar+zstd archive that contains the VHDX. SSH keys are not
+//     part of the immutable artifact.
 //   - VMImageLayerMediaType remains accepted for the prototype legacy
 //     single-disk format used by early tests.
 //
@@ -56,9 +56,9 @@ const (
 	// contains the complete four-file bundle as a tar+zstd stream.
 	VMMacBundleLayerMediaType = "application/vnd.reactorcide.vm-image.macos.bundle.v1.tar+zstd"
 
-	// VMWindowsBundleLayerMediaType contains disk.vhdx and the stable guest
-	// SSH host public key as a deterministic tar+zstd stream.
-	VMWindowsBundleLayerMediaType = "application/vnd.reactorcide.vm-image.windows.bundle.v1.tar+zstd"
+	// VMWindowsBundleLayerMediaType contains disk.vhdx as a deterministic
+	// tar+zstd stream.
+	VMWindowsBundleLayerMediaType = "application/vnd.reactorcide.vm-image.windows.bundle.v2.tar+zstd"
 )
 
 const DefaultImageMaxUnused = 30 * 24 * time.Hour
@@ -120,8 +120,8 @@ func WithCredentialStore(store credentials.Store) OCIImageSourceOption {
 // WithPlainHTTPRegistries marks the given registry hosts (as they appear in
 // an image reference, e.g. "127.0.0.1:5000" or "registry.internal:5000") as
 // reachable over plain HTTP instead of HTTPS -- for a local/dev registry
-// that doesn't terminate TLS. "localhost", "127.0.0.1", and "::1" (with any
-// port) are always treated as plain HTTP without needing this option.
+// that does not terminate TLS. Loopback registries also require this
+// explicit option.
 func WithPlainHTTPRegistries(hosts ...string) OCIImageSourceOption {
 	return func(s *OCIImageSource) {
 		for _, h := range hosts {
@@ -241,11 +241,14 @@ func (s *OCIImageSource) resolveLocked(ctx context.Context, imageRef string) (st
 // from for ref, wired with ambient docker-config credentials and plain-HTTP
 // detection. It is OCIImageSource's default sourceFactory.
 func (s *OCIImageSource) defaultSource(ref registry.Reference) (oras.ReadOnlyTarget, error) {
+	plainHTTP := s.plainHTTP(ref.Host())
 	repo := &remote.Repository{
 		Reference: ref,
-		PlainHTTP: s.plainHTTP(ref.Host()),
+		PlainHTTP: plainHTTP,
 		Client: &auth.Client{
-			Client:     s.httpClient,
+			Client: transportsecurity.HTTPClient(
+				s.httpClient, plainHTTP, "OCI VM image registry",
+			),
 			Cache:      auth.NewCache(),
 			Credential: credentials.Credential(s.credentialStore),
 		},
@@ -253,24 +256,10 @@ func (s *OCIImageSource) defaultSource(ref registry.Reference) (oras.ReadOnlyTar
 	return repo, nil
 }
 
-// plainHTTP reports whether host should be reached over plain HTTP:
-// explicitly configured via WithPlainHTTPRegistries, or a loopback address
-// (a local/dev registry almost never terminates TLS).
+// plainHTTP reports whether the operator explicitly configured host for HTTP.
 func (s *OCIImageSource) plainHTTP(host string) bool {
-	if _, ok := s.plainHTTPHosts[host]; ok {
-		return true
-	}
-	return isLoopbackRegistryHost(host)
-}
-
-// isLoopbackRegistryHost strips an optional ":port" and reports whether
-// what remains is a loopback hostname.
-func isLoopbackRegistryHost(host string) bool {
-	h := host
-	if i := strings.LastIndex(h, ":"); i >= 0 {
-		h = h[:i]
-	}
-	return h == "localhost" || h == "127.0.0.1" || h == "::1"
+	_, ok := s.plainHTTPHosts[host]
+	return ok
 }
 
 // layerPath fetches the cached manifest at manifestDesc, finds its single

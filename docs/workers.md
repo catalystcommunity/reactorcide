@@ -250,23 +250,20 @@ learns to shut itself down cleanly.
 
 ## Operator setup flow
 
-1. **Create a pool and an enrollment token** — `/app/workers` in the webapp, or the
-   `create-pool`/`create-enrollment-token` CSIL ops directly. Copy the token value out
-   immediately; it is never shown again.
-2. **Store the token as a secret**, never in a committed file — a Kubernetes `Secret`, a VM's
-   `.env`, or wherever your deployment target's secret store lives. See "Deploying workers"
-   below for the concrete mechanics per deployment shape.
-3. **Deploy the worker(s)** pointed at your coordinator URL and that token/secret reference,
-   with whatever `os`/`arch`/`custom` characteristics distinguish that worker pool (a GPU
-   node pool might set `--custom gpu=true`).
-4. **Pre-create any non-default queues** your jobs will target (`/app/workers/queues` or
-   `create-queue`) — for example the `{os: linux, gpu: true}` queue a GPU job's
-   `characteristics: {gpu: true}` will resolve to. This step is optional: submitting a job
-   with novel characteristics before any matching queue exists still works (find-or-create
-   makes the queue on the fly) — pre-creating is purely for operator visibility/control
-   before the first job lands.
-5. **Submit jobs** with whatever `characteristics`/`resources` they need; the coordinator
-   handles queue resolution and worker matching from here on.
+1. Create a pool with `reactorcide workers pools create NAME` or use
+   `/app/workers` in the web application.
+2. Create an enrollment token with `reactorcide workers tokens create POOL_ID
+   --output-file FILE`. The command writes the raw token to the new protected
+   file. The coordinator does not show the raw token again.
+3. Store the token in the secret store for the deployment target. Do not store
+   the token in a committed file. See the deployment instructions below.
+4. Deploy the workers. Set the coordinator URL and the token file. Set the
+   `os`, `arch`, and `custom` characteristics for the worker pool.
+5. If necessary, create non-default queues before you submit a job. Use
+   `/app/workers/queues` or `reactorcide workers queues create`. This step is
+   optional. The coordinator can create a queue for new characteristics.
+6. Submit jobs with the necessary `characteristics` and `resources`. The
+   coordinator selects a queue and a matching worker.
 
 ## Deploying workers
 
@@ -457,6 +454,7 @@ worker (`coordinator_api/cmd/worker.go`):
 | Flag | Env var | Purpose |
 | --- | --- | --- |
 | `--coordinator-url` | `REACTORCIDE_COORDINATOR_URL` | required; base URL of the coordinator |
+| `--allow-insecure-transport` | — | explicit development-only exception for a connection without TLS |
 | `--enrollment-token-file` | — (file path) | preferred way to supply the enrollment token |
 | — | `REACTORCIDE_WORKER_ENROLLMENT_TOKEN` | fallback if no `--enrollment-token-file` |
 | `--data-dir` | `REACTORCIDE_WORKER_DATA_DIR` | directory persisting `worker_key` |
@@ -472,6 +470,7 @@ worker (`coordinator_api/cmd/worker.go`):
 | `--storage-metrics-interval` | `REACTORCIDE_WORKER_STORAGE_METRICS_INTERVAL` | storage sample interval from `1s` through `1m` |
 | `--telemetry-send-interval` | `REACTORCIDE_WORKER_TELEMETRY_SEND_INTERVAL` | maximum interval between telemetry batches |
 | `--telemetry-buffer-batches` | `REACTORCIDE_WORKER_TELEMETRY_BUFFER_BATCHES` | retained unsent batches for each lease |
+| `--vm-image-registry-plain-http` | — | explicit development-only HTTP registry host; repeat for more hosts |
 
 The worker process also still reads a few runner/job-execution env vars that
 are unrelated to the coordinator protocol:

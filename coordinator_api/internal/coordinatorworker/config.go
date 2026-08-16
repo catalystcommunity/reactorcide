@@ -29,6 +29,10 @@ type Config struct {
 	// is appended by the transport.
 	CoordinatorURL string
 
+	// AllowInsecureTransport permits a connection that is not encrypted and
+	// peer-authenticated. Only an explicit CLI flag can set this value.
+	AllowInsecureTransport bool
+
 	// EnrollmentToken is the durable, per-pool credential presented to
 	// Register. It is never logged and never persisted by this package. The
 	// caller owns how it is sourced and stored.

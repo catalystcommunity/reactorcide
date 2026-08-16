@@ -2,8 +2,6 @@ package worker
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -17,6 +15,7 @@ import (
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store/models"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/vcs"
+	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/workflowengine"
 	"github.com/google/uuid"
 	"github.com/lib/pq"
 )
@@ -289,28 +288,34 @@ func (tp *TriggerProcessor) mergeWorkflowVar(ctx context.Context, workflowID, ke
 	if key == "" {
 		return nil
 	}
-	jsonValue := interfaceToJSONB(value)
-	hash := hashJSONB(jsonValue)
 	vars, err := ws.GetWorkflowVars(ctx, workflowID)
 	if err != nil {
 		return err
 	}
-	if existing, ok := vars[key]; ok {
-		existingHash := hashJSONB(existing)
-		if existingHash != hash {
+	existing := make(map[string]interface{}, len(vars))
+	for existingKey, existingValue := range vars {
+		existing[existingKey] = workflowValueFromJSONB(existingValue)
+	}
+	added, mergeErr := workflowengine.MergeValue(existing, key, value)
+	hash := workflowengine.ValueHash(value)
+	if mergeErr != nil {
+		if previous, ok := vars[key]; ok {
 			tp.recordWorkflowEvent(ctx, workflowID, sourceNodeID, sourceJobID, "workflow_var_conflict", "conflicting workflow variable values", models.JSONB{
 				"key":           key,
-				"existing_hash": existingHash,
+				"existing_hash": workflowengine.ValueHash(workflowValueFromJSONB(previous)),
 				"new_hash":      hash,
 			})
-			return fmt.Errorf("workflow variable %q conflict", key)
 		}
+		return mergeErr
+	}
+	if !added {
 		tp.recordWorkflowEvent(ctx, workflowID, sourceNodeID, sourceJobID, "workflow_var_set", "duplicate workflow variable value ignored", models.JSONB{
 			"key":        key,
 			"value_hash": hash,
 		})
 		return nil
 	}
+	jsonValue := interfaceToJSONB(value)
 	if err := ws.UpsertWorkflowVar(ctx, &models.WorkflowVar{
 		WorkflowID:   workflowID,
 		Key:          key,
@@ -329,19 +334,17 @@ func (tp *TriggerProcessor) mergeWorkflowVar(ctx context.Context, workflowID, ke
 }
 
 func (tp *TriggerProcessor) createWorkflowNodes(ctx context.Context, wf *models.WorkflowInstance, specs []triggerJobSpec) error {
-	for _, spec := range specs {
-		items := spec.ForEach
-		if len(items) == 0 {
-			if err := tp.createWorkflowNode(ctx, wf, spec, nil, nil); err != nil {
-				return err
-			}
-			continue
+	expansionSpecs := make([]workflowengine.ExpansionSpec, len(specs))
+	for i := range specs {
+		expansionSpecs[i] = workflowengine.ExpansionSpec{Name: specs[i].JobName, ForEach: specs[i].ForEach, ItemVar: specs[i].ItemVar, Payload: specs[i]}
+	}
+	for _, expansion := range workflowengine.Expand(expansionSpecs) {
+		spec := expansion.Payload.(triggerJobSpec)
+		if expansion.ItemIndex != nil {
+			spec.ItemVar = expansion.ItemVar
 		}
-		for i, item := range items {
-			idx := i
-			if err := tp.createWorkflowNode(ctx, wf, spec, &idx, item); err != nil {
-				return err
-			}
+		if err := tp.createWorkflowNode(ctx, wf, spec, expansion.ItemIndex, expansion.ItemValue); err != nil {
+			return err
 		}
 	}
 	return nil
@@ -427,51 +430,76 @@ func (tp *TriggerProcessor) EvaluateWorkflow(ctx context.Context, wf *models.Wor
 	return tp.evaluateWorkflow(ctx, wf)
 }
 
+type coordinatorWorkflowEngineAdapter struct {
+	tp      *TriggerProcessor
+	wf      *models.WorkflowInstance
+	store   workflowStore
+	nodes   []models.WorkflowNode
+	created []string
+}
+
+func (a *coordinatorWorkflowEngineAdapter) Nodes(ctx context.Context) ([]workflowengine.Node, error) {
+	nodes, err := a.store.ListWorkflowNodes(ctx, a.wf.WorkflowID)
+	if err != nil {
+		return nil, err
+	}
+	a.nodes = nodes
+	return workflowRuleNodes(nodes), nil
+}
+
+func (a *coordinatorWorkflowEngineAdapter) ApplyDecision(ctx context.Context, decision workflowengine.Decision) error {
+	node := workflowNodeByID(a.nodes, decision.NodeID)
+	if node == nil {
+		return fmt.Errorf("workflow node %q was not found", decision.NodeID)
+	}
+	switch decision.Action {
+	case workflowengine.ActionWait:
+		node.Status = "waiting"
+		node.DecisionReason = decision.Reason
+		if err := a.store.UpdateWorkflowNode(ctx, node); err != nil {
+			return err
+		}
+		a.tp.recordWorkflowEvent(ctx, a.wf.WorkflowID, &node.NodeID, nil, "node_waiting", decision.Reason, nil)
+	case workflowengine.ActionSkip:
+		now := time.Now().UTC()
+		node.Status = "skipped"
+		node.DecisionReason = decision.Reason
+		node.CompletedAt = &now
+		if err := a.store.UpdateWorkflowNode(ctx, node); err != nil {
+			return err
+		}
+		a.tp.recordWorkflowEvent(ctx, a.wf.WorkflowID, &node.NodeID, nil, "node_skipped", decision.Reason, nil)
+	}
+	return nil
+}
+
+func (a *coordinatorWorkflowEngineAdapter) Start(ctx context.Context, decision workflowengine.Decision) error {
+	node := workflowNodeByID(a.nodes, decision.NodeID)
+	if node == nil {
+		return fmt.Errorf("workflow node %q was not found", decision.NodeID)
+	}
+	jobID, err := a.tp.submitWorkflowNode(ctx, a.wf, node)
+	if err != nil {
+		return err
+	}
+	a.created = append(a.created, jobID)
+	return nil
+}
+
 func (tp *TriggerProcessor) evaluateWorkflow(ctx context.Context, wf *models.WorkflowInstance) ([]string, error) {
 	ws, err := tp.workflowStore()
 	if err != nil {
 		return nil, err
 	}
-	nodes, err := ws.ListWorkflowNodes(ctx, wf.WorkflowID)
-	if err != nil {
-		return nil, err
-	}
-	var created []string
-	for i := range nodes {
-		node := &nodes[i]
-		if node.Status != "pending" && node.Status != "waiting" {
-			continue
-		}
-		ready, reason := dependenciesReady(nodes, node)
-		if !ready {
-			node.Status = "waiting"
-			node.DecisionReason = reason
-			_ = ws.UpdateWorkflowNode(ctx, node)
-			tp.recordWorkflowEvent(ctx, wf.WorkflowID, &node.NodeID, nil, "node_waiting", reason, nil)
-			continue
-		}
-		ok, reason := evaluateWorkflowCondition(nodes, node)
-		if !ok {
-			now := time.Now().UTC()
-			node.Status = "skipped"
-			node.DecisionReason = reason
-			node.CompletedAt = &now
-			if err := ws.UpdateWorkflowNode(ctx, node); err != nil {
-				return created, err
-			}
-			tp.recordWorkflowEvent(ctx, wf.WorkflowID, &node.NodeID, nil, "node_skipped", reason, nil)
-			continue
-		}
-		jobID, err := tp.submitWorkflowNode(ctx, wf, node)
-		if err != nil {
-			return created, err
-		}
-		created = append(created, jobID)
+	adapter := &coordinatorWorkflowEngineAdapter{tp: tp, wf: wf, store: ws}
+	engine := workflowengine.Engine{Store: adapter, Executor: adapter}
+	if _, err := engine.Advance(ctx, -1); err != nil {
+		return adapter.created, err
 	}
 	if err := tp.refreshWorkflowStatus(ctx, wf); err != nil {
-		return created, err
+		return adapter.created, err
 	}
-	return created, nil
+	return adapter.created, nil
 }
 
 func (tp *TriggerProcessor) submitWorkflowNode(ctx context.Context, wf *models.WorkflowInstance, node *models.WorkflowNode) (string, error) {
@@ -676,24 +704,55 @@ func (tp *TriggerProcessor) mergeWorkflowOutputFile(ctx context.Context, workspa
 		}
 		return err
 	}
+	return tp.mergeWorkflowOutputData(ctx, data, wf, node, job)
+}
+
+func (tp *TriggerProcessor) mergeWorkflowOutputData(ctx context.Context, data []byte, wf *models.WorkflowInstance, node *models.WorkflowNode, job *models.Job) error {
 	var output workflowOutputFile
 	if err := json.Unmarshal(data, &output); err != nil {
 		return fmt.Errorf("parse workflow output file: %w", err)
 	}
-	if len(output.Vars) > 0 {
-		if err := tp.addWorkflowVars(ctx, wf, output.Vars, &node.NodeID, &job.JobID); err != nil {
+	for _, value := range workflowengine.OutputValues(node.Name, output.Vars, output.Outputs) {
+		if err := tp.mergeWorkflowVar(ctx, wf.WorkflowID, value.Key, value.Value, &node.NodeID, &job.JobID); err != nil {
 			return err
 		}
 	}
-	if len(output.Outputs) > 0 {
-		for key, value := range output.Outputs {
-			outputKey := fmt.Sprintf("%s.%s", node.Name, key)
-			if err := tp.mergeWorkflowVar(ctx, wf.WorkflowID, outputKey, value, &node.NodeID, &job.JobID); err != nil {
-				return err
-			}
+	return nil
+}
+
+// ProcessWorkflowCompletionData advances a workflow and merges an output
+// document returned by a remote worker.
+func (tp *TriggerProcessor) ProcessWorkflowCompletionData(ctx context.Context, data []byte, job *models.Job) error {
+	ws, err := tp.workflowStore()
+	if err != nil {
+		return nil
+	}
+	if job.WorkflowID == nil || *job.WorkflowID == "" {
+		return nil
+	}
+	wf, err := ws.GetWorkflowInstance(ctx, *job.WorkflowID)
+	if err != nil {
+		return err
+	}
+	node, err := ws.GetWorkflowNodeByJobID(ctx, job.JobID)
+	if err != nil {
+		return err
+	}
+	if len(data) > 0 {
+		if err := tp.mergeWorkflowOutputData(ctx, data, wf, node, job); err != nil {
+			return tp.failWorkflowNode(ctx, ws, wf, node, job, err)
 		}
 	}
-	return nil
+	now := time.Now().UTC()
+	node.Status = workflowNodeStatusFromJob(job.Status)
+	node.CompletedAt = &now
+	node.DecisionReason = fmt.Sprintf("job finished with status %s", job.Status)
+	if err := ws.UpdateWorkflowNode(ctx, node); err != nil {
+		return err
+	}
+	tp.recordWorkflowEvent(ctx, wf.WorkflowID, &node.NodeID, &job.JobID, "node_completed", node.DecisionReason, models.JSONB{"status": job.Status, "exit_code": job.ExitCode})
+	_, err = tp.evaluateWorkflow(ctx, wf)
+	return err
 }
 
 func (tp *TriggerProcessor) refreshWorkflowStatus(ctx context.Context, wf *models.WorkflowInstance) error {
@@ -808,46 +867,11 @@ func (tp *TriggerProcessor) recordWorkflowEvent(ctx context.Context, workflowID 
 }
 
 func dependenciesReady(nodes []models.WorkflowNode, node *models.WorkflowNode) (bool, string) {
-	for _, dep := range node.DependsOn {
-		group := nodesByName(nodes, dep)
-		if len(group) == 0 {
-			return false, "waiting for dependency " + dep + " to be registered"
-		}
-		for _, candidate := range group {
-			if !isWorkflowNodeTerminal(candidate.Status) {
-				return false, "waiting on " + candidate.DisplayName
-			}
-		}
-	}
-	return true, "all dependencies terminal"
+	return workflowengine.DependenciesReady(workflowRuleNodes(nodes), workflowRuleNode(*node))
 }
 
 func evaluateWorkflowCondition(nodes []models.WorkflowNode, node *models.WorkflowNode) (bool, string) {
-	condition := strings.TrimSpace(node.Condition)
-	if condition == "" || condition == "all_success" || condition == "all_success(needs)" {
-		for _, dep := range node.DependsOn {
-			for _, candidate := range nodesByName(nodes, dep) {
-				if candidate.Status != "completed" {
-					return false, "condition all_success(needs) is false"
-				}
-			}
-		}
-		return true, "condition all_success(needs) is true"
-	}
-	if condition == "always" || condition == "always()" {
-		return true, "condition always() is true"
-	}
-	if condition == "any_failed" || condition == "any_failed(needs)" {
-		for _, dep := range node.DependsOn {
-			for _, candidate := range nodesByName(nodes, dep) {
-				if isWorkflowNodeFailure(candidate.Status) {
-					return true, "condition any_failed(needs) is true"
-				}
-			}
-		}
-		return false, "condition any_failed(needs) is false"
-	}
-	return false, "unsupported condition " + condition
+	return workflowengine.EvaluateCondition(workflowRuleNodes(nodes), workflowRuleNode(*node))
 }
 
 // ComputeWorkflowStatus is the exported form of computeWorkflowStatus, used
@@ -881,36 +905,7 @@ func ComputeWorkflowStatus(nodes []models.WorkflowNode) string {
 // any cancellation, eager or not: a genuinely failed node mixed with
 // cascaded cancellations on its siblings is a failure, not a clean cancel.
 func computeWorkflowStatus(nodes []models.WorkflowNode) string {
-	if len(nodes) == 0 {
-		return "skipped"
-	}
-	allSkipped := true
-	allTerminal := true
-	anyCancelled := false
-	for _, node := range nodes {
-		if node.Status == "failed" || node.Status == "timeout" {
-			return "failed"
-		}
-		if node.Status == "cancelled" {
-			anyCancelled = true
-		}
-		if node.Status != "skipped" {
-			allSkipped = false
-		}
-		if !isWorkflowNodeTerminal(node.Status) {
-			allTerminal = false
-		}
-	}
-	if !allTerminal {
-		return "running"
-	}
-	if anyCancelled {
-		return "cancelled"
-	}
-	if allSkipped {
-		return "skipped"
-	}
-	return "success"
+	return workflowengine.ComputeStatus(workflowRuleNodes(nodes))
 }
 
 func workflowNodeStatusFromJob(status string) string {
@@ -925,7 +920,28 @@ func workflowNodeStatusFromJob(status string) string {
 }
 
 func isWorkflowNodeTerminal(status string) bool {
-	return status == "completed" || status == "failed" || status == "cancelled" || status == "timeout" || status == "skipped"
+	return workflowengine.Terminal(status)
+}
+
+func workflowRuleNodes(nodes []models.WorkflowNode) []workflowengine.Node {
+	out := make([]workflowengine.Node, len(nodes))
+	for i := range nodes {
+		out[i] = workflowRuleNode(nodes[i])
+	}
+	return out
+}
+
+func workflowRuleNode(node models.WorkflowNode) workflowengine.Node {
+	return workflowengine.Node{ID: node.NodeID, Name: node.Name, DisplayName: node.DisplayName, Status: node.Status, DependsOn: []string(node.DependsOn), Condition: node.Condition}
+}
+
+func workflowNodeByID(nodes []models.WorkflowNode, id string) *models.WorkflowNode {
+	for i := range nodes {
+		if nodes[i].NodeID == id {
+			return &nodes[i]
+		}
+	}
+	return nil
 }
 
 func isWorkflowNodeFailure(status string) bool {
@@ -954,16 +970,29 @@ func interfaceToJSONB(value interface{}) models.JSONB {
 	data, _ := json.Marshal(value)
 	var result interface{}
 	_ = json.Unmarshal(data, &result)
-	if m, ok := result.(map[string]interface{}); ok {
-		return models.JSONB(m)
-	}
 	return models.JSONB{"value": result}
 }
 
-func hashJSONB(value models.JSONB) string {
-	data, _ := json.Marshal(value)
-	sum := sha256.Sum256(data)
-	return hex.EncodeToString(sum[:])
+func workflowValueFromJSONB(value models.JSONB) interface{} {
+	if len(value) == 1 {
+		if unwrapped, ok := value["value"]; ok {
+			return unwrapped
+		}
+	}
+	// Compatibility with object values stored before all workflow values used
+	// the uniform wrapper.
+	return map[string]interface{}(value)
+}
+
+// EncodeWorkflowVars returns the JSON object that runnerlib receives. The
+// database uses a JSON object wrapper because WorkflowVar.Value is a JSONB
+// map. This function removes that storage-only wrapper for every value.
+func EncodeWorkflowVars(values map[string]models.JSONB) ([]byte, error) {
+	decoded := make(map[string]interface{}, len(values))
+	for key, value := range values {
+		decoded[key] = workflowValueFromJSONB(value)
+	}
+	return json.Marshal(decoded)
 }
 
 func stringifyWorkflowValue(value interface{}) string {

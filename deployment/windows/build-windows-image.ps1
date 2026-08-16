@@ -11,12 +11,6 @@ param(
 
     [string]$OutputDirectory = 'C:\ProgramData\Reactorcide\vm-images\win11-base',
 
-    [string]$StateDirectory = 'C:\ProgramData\Reactorcide',
-
-    [string]$WorkerKeyPath,
-
-    [string]$GuestHostKeyPath,
-
     [string]$BuildDirectory,
 
     [ValidatePattern('^[A-Za-z][A-Za-z0-9_-]{0,19}$')]
@@ -46,20 +40,13 @@ if (-not $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administra
     throw 'Run this script in an elevated PowerShell session.'
 }
 
-foreach ($command in @('New-VHD', 'New-VM', 'Get-WindowsImage', 'ssh-keygen.exe')) {
+foreach ($command in @('New-VHD', 'New-VM', 'Get-WindowsImage')) {
     if (-not (Get-Command $command -ErrorAction SilentlyContinue)) {
         throw "The required command is not available: $command"
     }
 }
 
-$stateRoot = [IO.Path]::GetFullPath($StateDirectory)
 $outputRoot = [IO.Path]::GetFullPath($OutputDirectory)
-if (-not $WorkerKeyPath) {
-    $WorkerKeyPath = Join-Path $stateRoot 'secrets\guest-ssh-key'
-}
-if (-not $GuestHostKeyPath) {
-    $GuestHostKeyPath = Join-Path $stateRoot 'config\guest-ssh-host.pub'
-}
 if (-not $BuildDirectory) {
     $BuildDirectory = Join-Path (Split-Path -Parent $outputRoot) '.image-builds'
 }
@@ -86,28 +73,6 @@ $buildComplete = $false
 
 try {
     New-Item -ItemType Directory -Path $buildRoot -Force | Out-Null
-    New-Item -ItemType Directory -Path (Split-Path -Parent $WorkerKeyPath) -Force | Out-Null
-
-    if (-not (Test-Path -LiteralPath $WorkerKeyPath)) {
-        $startInfo = [Diagnostics.ProcessStartInfo]::new()
-        $startInfo.FileName = (Get-Command ssh-keygen.exe).Source
-        $startInfo.Arguments = '-q -t ed25519 -N "" -C reactorcide-vm-worker -f "' + $WorkerKeyPath + '"'
-        $startInfo.UseShellExecute = $false
-        $keygen = [Diagnostics.Process]::Start($startInfo)
-        $keygen.WaitForExit()
-        if ($keygen.ExitCode -ne 0) {
-            throw 'ssh-keygen could not create the worker guest key.'
-        }
-    }
-    if (-not (Test-Path -LiteralPath ($WorkerKeyPath + '.pub'))) {
-        throw 'The worker guest public key is missing.'
-    }
-
-    & icacls.exe $WorkerKeyPath /inheritance:r /grant:r '*S-1-5-18:F' '*S-1-5-32-544:F' | Out-Null
-    if ($LASTEXITCODE -ne 0) {
-        throw 'The worker guest private-key access rules could not be set.'
-    }
-
     $iso = Mount-DiskImage -ImagePath $resolvedIsoPath -PassThru
     $isoVolume = $iso | Get-Volume
     $isoRoot = $isoVolume.DriveLetter + ':\'
@@ -151,7 +116,6 @@ try {
     $guestSetupDirectory = Join-Path $windowsRoot 'ReactorcideSetup'
     New-Item -ItemType Directory -Path $guestSetupDirectory -Force | Out-Null
     Copy-Item -LiteralPath (Join-Path $templateDirectory 'provision-guest.ps1') -Destination $guestSetupDirectory
-    Copy-Item -LiteralPath ($WorkerKeyPath + '.pub') -Destination (Join-Path $guestSetupDirectory 'worker-key.pub')
     if ($ProvisionScript.Count -gt 0) {
         $guestProvisionDirectory = Join-Path $guestSetupDirectory 'provision'
         New-Item -ItemType Directory -Path $guestProvisionDirectory -Force | Out-Null
@@ -181,7 +145,9 @@ try {
     $vmCreated = $true
     Set-VMProcessor -VMName $vmName -Count $CPUs
     Set-VMFirmware -VMName $vmName -EnableSecureBoot On -SecureBootTemplate 'MicrosoftWindows'
-    Set-VM -VMName $vmName -AutomaticStopAction TurnOff
+    Set-VMKeyProtector -VMName $vmName -NewLocalKeyProtector
+    Enable-VMTPM -VMName $vmName
+    Set-VM -VMName $vmName -AutomaticStopAction TurnOff -AutomaticCheckpointsEnabled $false
     Start-VM -Name $vmName
 
     $deadline = (Get-Date).AddMinutes($TimeoutMinutes)
@@ -212,27 +178,25 @@ try {
     if (-not (Test-Path -LiteralPath (Join-Path $windowsRoot 'ReactorcideSetup\complete.txt'))) {
         throw 'The guest shut down before provisioning completed.'
     }
+    if (-not (Test-Path -LiteralPath (Join-Path $windowsRoot 'ReactorcideSetup\generalize-requested.txt'))) {
+        throw 'The guest did not request image generalization.'
+    }
     $cachedAnswerFiles = @(Get-ChildItem -LiteralPath (Join-Path $windowsRoot 'Windows\Panther') -Filter '*unattend*.xml' -File -Recurse -ErrorAction SilentlyContinue)
     if ($cachedAnswerFiles.Count -gt 0 -or (Test-Path -LiteralPath (Join-Path $windowsRoot 'Windows\System32\Sysprep\Unattend.xml'))) {
         throw 'The guest did not remove all cached answer files.'
     }
-    $guestHostKeyPath = Join-Path $windowsRoot 'ProgramData\ssh\ssh_host_ed25519_key.pub'
-    if (-not (Test-Path -LiteralPath $guestHostKeyPath)) {
-        throw 'The guest SSH host public key is missing.'
+    $sealedAuthorizedKeys = Join-Path $windowsRoot ("Users\$GuestUser\.ssh\authorized_keys")
+    $sealedHostKeys = @(Get-ChildItem -LiteralPath (Join-Path $windowsRoot 'ProgramData\ssh') -Filter 'ssh_host_*' -File -ErrorAction SilentlyContinue)
+    if ((Test-Path -LiteralPath $sealedAuthorizedKeys) -or $sealedHostKeys.Count -gt 0) {
+        throw 'The guest image still contains SSH keys.'
     }
-
     New-Item -ItemType Directory -Path $outputRoot | Out-Null
-    Copy-Item -LiteralPath $guestHostKeyPath -Destination (Join-Path $outputRoot 'ssh_host_ed25519_key.pub')
-    New-Item -ItemType Directory -Path (Split-Path -Parent $GuestHostKeyPath) -Force | Out-Null
-    Copy-Item -LiteralPath $guestHostKeyPath -Destination $GuestHostKeyPath -Force
     Dismount-VHD -Path $buildVHDX
     $vhdMounted = $false
     Move-Item -LiteralPath $buildVHDX -Destination (Join-Path $outputRoot 'disk.vhdx')
     $buildComplete = $true
 
     Write-Output "Created image bundle: $outputRoot"
-    Write-Output "Worker private key: $WorkerKeyPath"
-    Write-Output "Guest host public key: $GuestHostKeyPath"
 } finally {
     if ($vmCreated -and (Get-VM -Name $vmName -ErrorAction SilentlyContinue)) {
         Stop-VM -Name $vmName -TurnOff -Force -ErrorAction SilentlyContinue

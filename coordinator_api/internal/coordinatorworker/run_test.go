@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"reflect"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -13,6 +14,27 @@ import (
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/workerclient/csilapi"
 	"github.com/stretchr/testify/require"
 )
+
+func TestWithRunnerlibInsecureTransportOnlyChangesTriggerCommands(t *testing.T) {
+	tests := []struct {
+		name string
+		in   []string
+		want []string
+	}{
+		{name: "eval", in: []string{"runnerlib", "eval", "--event-type", "push"}, want: []string{"runnerlib", "eval", "--event-type", "push", "--allow-insecure-transport"}},
+		{name: "shell eval", in: []string{"sh", "-c", "runnerlib eval --event-type $EVENT"}, want: []string{"sh", "-c", "runnerlib eval --event-type $EVENT --allow-insecure-transport"}},
+		{name: "already set", in: []string{"runnerlib", "trigger", "--allow-insecure-transport", "job.yaml"}, want: []string{"runnerlib", "trigger", "--allow-insecure-transport", "job.yaml"}},
+		{name: "ordinary job", in: []string{"sh", "-c", "make test"}, want: []string{"sh", "-c", "make test"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := withRunnerlibInsecureTransport(tt.in)
+			if !reflect.DeepEqual(got, tt.want) {
+				t.Fatalf("command = %#v, want %#v", got, tt.want)
+			}
+		})
+	}
+}
 
 var (
 	errSpawnFailed      = errors.New("fake: spawn failed")

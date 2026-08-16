@@ -180,6 +180,7 @@ func (t *SSHTransport) Start(ctx context.Context, addr GuestAddr, creds GuestCre
 		stderr:   stderrPipe,
 		pidFile:  pidFile,
 		platform: command.Platform,
+		results:  command.Results,
 		doneCh:   make(chan struct{}),
 	}, nil
 }
@@ -299,6 +300,7 @@ type sshSession struct {
 	// the job command; Signal's kill-fallback reads it back.
 	pidFile  string
 	platform GuestPlatform
+	results  []GuestResultFile
 
 	waitOnce sync.Once
 	waitCode int
@@ -319,10 +321,107 @@ func (s *sshSession) Stderr() io.Reader { return s.stderr }
 func (s *sshSession) Wait() (int, error) {
 	s.waitOnce.Do(func() {
 		s.waitCode, s.waitErr = exitCodeFromWaitErr(s.sess.Wait())
+		if resultErr := downloadGuestResults(s.client, s.platform, s.results); resultErr != nil && s.waitErr == nil {
+			s.waitErr = resultErr
+		}
 		close(s.doneCh)
 	})
 	<-s.doneCh
 	return s.waitCode, s.waitErr
+}
+
+func downloadGuestResults(client *ssh.Client, platform GuestPlatform, results []GuestResultFile) error {
+	for _, result := range results {
+		if strings.TrimSpace(result.SourcePath) == "" || strings.TrimSpace(result.DestinationPath) == "" {
+			return errors.New("vmrunner/ssh: guest result paths must not be empty")
+		}
+		data, missing, err := downloadGuestResult(client, platform, result.SourcePath, result.MaxBytes)
+		if err != nil {
+			return err
+		}
+		if missing && result.Optional {
+			continue
+		}
+		if missing {
+			return fmt.Errorf("vmrunner/ssh: required guest result is missing")
+		}
+		if err := writeGuestResult(result.DestinationPath, data); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func downloadGuestResult(client *ssh.Client, platform GuestPlatform, source string, maxBytes int64) ([]byte, bool, error) {
+	if maxBytes <= 0 {
+		maxBytes = 1 << 20
+	}
+	sess, err := client.NewSession()
+	if err != nil {
+		return nil, false, fmt.Errorf("vmrunner/ssh: create result session: %w", err)
+	}
+	defer sess.Close()
+	stdout, err := sess.StdoutPipe()
+	if err != nil {
+		return nil, false, fmt.Errorf("vmrunner/ssh: open result output: %w", err)
+	}
+	command := "[ -f " + shellQuote(source) + " ] || exit 44; cat -- " + shellQuote(source)
+	if platform == GuestPlatformWindows {
+		quoted := powerShellQuote(source)
+		command = "powershell.exe -NoProfile -NonInteractive -Command \"$p=" + quoted + "; if (-not (Test-Path -LiteralPath $p -PathType Leaf)) { exit 44 }; $b=[IO.File]::ReadAllBytes($p); $o=[Console]::OpenStandardOutput(); $o.Write($b,0,$b.Length)\""
+	}
+	if err := sess.Start(command); err != nil {
+		return nil, false, fmt.Errorf("vmrunner/ssh: start result download: %w", err)
+	}
+	data, readErr := io.ReadAll(io.LimitReader(stdout, maxBytes+1))
+	if int64(len(data)) > maxBytes {
+		_ = sess.Close()
+		return nil, false, fmt.Errorf("vmrunner/ssh: guest result exceeds %d bytes", maxBytes)
+	}
+	waitErr := sess.Wait()
+	if exitErr, ok := waitErr.(*ssh.ExitError); ok && exitErr.ExitStatus() == 44 {
+		return nil, true, nil
+	}
+	if waitErr != nil {
+		return nil, false, fmt.Errorf("vmrunner/ssh: download guest result: %w", waitErr)
+	}
+	if readErr != nil {
+		return nil, false, fmt.Errorf("vmrunner/ssh: read guest result: %w", readErr)
+	}
+	return data, false, nil
+}
+
+func writeGuestResult(destination string, data []byte) error {
+	dir := filepath.Dir(destination)
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return fmt.Errorf("vmrunner/ssh: create result directory: %w", err)
+	}
+	temp, err := os.CreateTemp(dir, ".reactorcide-result-*")
+	if err != nil {
+		return fmt.Errorf("vmrunner/ssh: create result file: %w", err)
+	}
+	tempPath := temp.Name()
+	defer os.Remove(tempPath)
+	if err := temp.Chmod(0o600); err != nil {
+		_ = temp.Close()
+		return fmt.Errorf("vmrunner/ssh: secure result file: %w", err)
+	}
+	if _, err := temp.Write(data); err != nil {
+		_ = temp.Close()
+		return fmt.Errorf("vmrunner/ssh: write result file: %w", err)
+	}
+	if err := temp.Close(); err != nil {
+		return fmt.Errorf("vmrunner/ssh: close result file: %w", err)
+	}
+	if err := os.Rename(tempPath, destination); err != nil {
+		if removeErr := os.Remove(destination); removeErr != nil && !os.IsNotExist(removeErr) {
+			return fmt.Errorf("vmrunner/ssh: replace result file: %w", err)
+		}
+		if retryErr := os.Rename(tempPath, destination); retryErr != nil {
+			return fmt.Errorf("vmrunner/ssh: install result file: %w", retryErr)
+		}
+	}
+	return nil
 }
 
 // Signal asks the remote command to terminate. It sends the RFC 4254
