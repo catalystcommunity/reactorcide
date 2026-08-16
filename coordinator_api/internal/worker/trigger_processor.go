@@ -753,6 +753,15 @@ func (tp *TriggerProcessor) createAndSubmitJob(ctx context.Context, spec trigger
 // ParseJobCharacteristics / internal/resources.ParseResources) -- every
 // other field is either copied verbatim or defaulted, so it never fails.
 func (tp *TriggerProcessor) buildJobFromTrigger(spec triggerJobSpec, parentJob *models.Job) (*models.Job, error) {
+	return tp.buildJobFromTriggerWithCapabilityLimit(spec, parentJob, true)
+}
+
+// buildJobFromTriggerWithCapabilityLimit builds a child job and optionally
+// limits its capabilities to the authority parent's capability set. Direct
+// triggers always use the limit. Validated workflows can disable it when the
+// selected execution profile has a null capability list, which means that the
+// profile does not apply a capability limit.
+func (tp *TriggerProcessor) buildJobFromTriggerWithCapabilityLimit(spec triggerJobSpec, parentJob *models.Job, limitCapabilities bool) (*models.Job, error) {
 	now := time.Now().UTC()
 	parentJobID := parentJob.JobID
 
@@ -890,9 +899,11 @@ func (tp *TriggerProcessor) buildJobFromTrigger(spec triggerJobSpec, parentJob *
 		for _, capability := range parentJob.Capabilities {
 			allowed[capability] = true
 		}
-		for _, capability := range spec.Capabilities {
-			if !allowed[capability] {
-				return nil, fmt.Errorf("triggered job %q cannot add runtime capability %q", spec.JobName, capability)
+		if limitCapabilities {
+			for _, capability := range spec.Capabilities {
+				if !allowed[capability] {
+					return nil, fmt.Errorf("triggered job %q cannot add runtime capability %q", spec.JobName, capability)
+				}
 			}
 		}
 		job.Capabilities = spec.Capabilities

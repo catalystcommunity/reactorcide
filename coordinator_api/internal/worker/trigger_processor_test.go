@@ -959,6 +959,16 @@ func TestBuildJobFromTrigger_ResourcesOverride(t *testing.T) {
 	})
 }
 
+func TestBuildJobFromTrigger_DirectTriggerCannotAddCapability(t *testing.T) {
+	tp := NewTriggerProcessor(&MockStore{}, nil)
+	parentJob := &models.Job{JobID: "parent-id"}
+	spec := triggerJobSpec{JobName: "child-job", Capabilities: []string{"builder"}}
+
+	if _, err := tp.buildJobFromTrigger(spec, parentJob); err == nil {
+		t.Fatal("expected a direct trigger to reject a capability that the parent does not have")
+	}
+}
+
 func TestBuildJobEnv_PassesAPICredentials(t *testing.T) {
 	// Set up environment variables that the worker reads
 	t.Setenv("REACTORCIDE_JOB_API_URL", "http://coordinator:6080")
