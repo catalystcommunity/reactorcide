@@ -350,9 +350,8 @@ func (s *WorkerService) RequestJob(ctx context.Context, req csilapi.RequestJobRe
 	}, nil
 }
 
-// finalizeClaimedCancellingJob closes the claim-time cancel race exactly
-// like internal/worker/corndogs_worker.go's identically-named method: a job
-// can already be "cancelling" by the time its corndogs task is claimed here
+// finalizeClaimedCancellingJob closes the claim-time cancel race. A job can
+// already be "cancelling" by the time its corndogs task is claimed here
 // (jobcontrol.transitionJob lost its own pre-claim CancelTask race, or a
 // cancel landed in the narrow window around the running-transition write
 // above). There's no execution to hand out: finalize straight to
@@ -375,6 +374,7 @@ func (s *WorkerService) finalizeClaimedCancellingJob(ctx context.Context, job *m
 		logging.Log.WithError(err).WithField("job_id", job.JobID).Warn("Failed to cancel corndogs task for a job cancelled before claim")
 	}
 	s.publishJobUpdate(ctx, finalized, now)
+	s.advanceWorkflowAfterCoordinatorFinalization(ctx, finalized)
 }
 
 // finalizeSecretDenial fails a claimed job cleanly when coordinator-side
@@ -396,6 +396,22 @@ func (s *WorkerService) finalizeSecretDenial(ctx context.Context, job *models.Jo
 		return
 	}
 	s.publishJobUpdate(ctx, finalized, now)
+	s.advanceWorkflowAfterCoordinatorFinalization(ctx, finalized)
+}
+
+// advanceWorkflowAfterCoordinatorFinalization processes a terminal workflow
+// job when the coordinator does not return a lease. No worker can report a
+// result for these jobs, so the coordinator must process the completion here.
+func (s *WorkerService) advanceWorkflowAfterCoordinatorFinalization(ctx context.Context, job *models.Job) {
+	if s.deps.WorkflowFinalizer == nil || job.WorkflowID == nil || *job.WorkflowID == "" {
+		return
+	}
+	if err := s.deps.WorkflowFinalizer.ProcessWorkflowCompletion(ctx, "", job); err != nil {
+		logging.Log.WithError(err).WithFields(map[string]interface{}{
+			"job_id":      job.JobID,
+			"workflow_id": *job.WorkflowID,
+		}).Warn("Failed to advance workflow after coordinator finalized job")
+	}
 }
 
 // --- Heartbeat ---------------------------------------------------------

@@ -159,6 +159,82 @@ func TestWorkflowAdvancesAcrossJobLifecycle(t *testing.T) {
 	}
 }
 
+// TestSecretDenialAdvancesWorkflow guards the coordinator-only terminal path.
+// The worker gets no lease after a secret denial, so it cannot report the
+// result that normally advances the workflow.
+func TestSecretDenialAdvancesWorkflow(t *testing.T) {
+	h := newTestHarness()
+	fin := &fakeWorkflowFinalizer{}
+	h.deps.WorkflowFinalizer = fin
+
+	job, token := seedQueueAndJobWithSecretRef(t, h, false)
+	workflowID := "wf-secret-denial"
+	job.WorkflowID = &workflowID
+	if err := h.store.UpdateJob(context.Background(), job); err != nil {
+		t.Fatalf("failed to bind job to workflow: %v", err)
+	}
+
+	resp, err := h.service.RequestJob(ctxWithAuth(token), csilapi.RequestJobRequest{
+		WorkerCharacteristics: csilapi.WorkerCharacteristics{Os: "linux", Arch: "amd64"},
+	})
+	if err != nil {
+		t.Fatalf("RequestJob failed: %v", err)
+	}
+	if resp.HasLease || resp.Lease != nil {
+		t.Fatalf("secret denial must not return a lease; got %+v", resp)
+	}
+	if len(fin.started) != 1 || fin.started[0] != job.JobID {
+		t.Fatalf("expected workflow start for %q, got %v", job.JobID, fin.started)
+	}
+	if len(fin.completed) != 1 || fin.completed[0] != job.JobID {
+		t.Fatalf("expected workflow completion for %q after secret denial, got %v", job.JobID, fin.completed)
+	}
+}
+
+// TestClaimTimeCancellationAdvancesWorkflow guards the other terminal path
+// that does not return a lease to a worker.
+func TestClaimTimeCancellationAdvancesWorkflow(t *testing.T) {
+	h := newTestHarness()
+	fin := &fakeWorkflowFinalizer{}
+	h.deps.WorkflowFinalizer = fin
+	ctx := context.Background()
+
+	queueUUID := "55555555-5555-5555-5555-555555555556"
+	h.store.seedQueue(models.Queue{
+		QueueUUID:       queueUUID,
+		Characteristics: mustCharacteristics(t, map[string]any{"os": "linux"}),
+	})
+	workflowID := "wf-claim-cancel"
+	job := &models.Job{
+		UserID:     "user-1",
+		Name:       "cancel-before-lease",
+		JobCommand: "echo hi",
+		Status:     "cancelling",
+		WorkflowID: &workflowID,
+	}
+	h.store.seedJob(job)
+	if _, err := h.corndogs.SubmitTaskToQueue(ctx, queueUUID, &corndogs.TaskPayload{JobID: job.JobID}, 0); err != nil {
+		t.Fatalf("failed to submit task: %v", err)
+	}
+	token, _ := h.registerWorker(t, "wf-cancel-worker", "linux", "amd64", nil)
+
+	resp, err := h.service.RequestJob(ctxWithAuth(token), csilapi.RequestJobRequest{
+		WorkerCharacteristics: csilapi.WorkerCharacteristics{Os: "linux", Arch: "amd64"},
+	})
+	if err != nil {
+		t.Fatalf("RequestJob failed: %v", err)
+	}
+	if resp.HasLease || resp.Lease != nil {
+		t.Fatalf("claim-time cancellation must not return a lease; got %+v", resp)
+	}
+	if len(fin.started) != 0 {
+		t.Fatalf("cancelled job must not start its workflow node; got %v", fin.started)
+	}
+	if len(fin.completed) != 1 || fin.completed[0] != job.JobID {
+		t.Fatalf("expected workflow completion for %q after cancellation, got %v", job.JobID, fin.completed)
+	}
+}
+
 // TestWorkflowFinalizerSkippedForNonWorkflowJob guards that a plain job (no
 // workflow) never touches the workflow finalizer.
 func TestWorkflowFinalizerSkippedForNonWorkflowJob(t *testing.T) {
