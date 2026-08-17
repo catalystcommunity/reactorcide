@@ -13,7 +13,7 @@ import yaml
 
 
 ID_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,62}$")
-SUBJECT_PREFIXES = ("vcs_team:", "reactorcide_group:")
+SUBJECT_PREFIXES = ("vcs_team:", "vcs_user:", "reactorcide_group:")
 
 
 @dataclass

@@ -9,6 +9,23 @@ import (
 	"github.com/urfave/cli/v2"
 )
 
+func TestSecretGrantAPIRequestPreservesExplicitEmptySelectors(t *testing.T) {
+	data, err := json.Marshal(secretGrantAPIRequest{ExecutionProfiles: []string{}, CIOrigins: []string{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var body map[string]interface{}
+	if err := json.Unmarshal(data, &body); err != nil {
+		t.Fatal(err)
+	}
+	for _, field := range []string{"execution_profiles", "ci_origins"} {
+		values, ok := body[field].([]interface{})
+		if !ok || len(values) != 0 {
+			t.Fatalf("%s = %v, want explicit empty list", field, body[field])
+		}
+	}
+}
+
 // Regression test for Bug 1: "apply" used to register both --file and
 // --format with the "-f" short alias, which made urfave/cli panic while
 // building the command's flag set the first time "apply" was invoked
@@ -81,6 +98,8 @@ func TestSecretGrantsSetAcceptsFlagsAfterName(t *testing.T) {
 		"--secret-match", "exact",
 		"--job-name", "my-job",
 		"--job-match", "exact",
+		"--execution-profile", "standard",
+		"--ci-origin", "base",
 	})
 
 	if err := app.Run(args); err != nil {
@@ -100,5 +119,13 @@ func TestSecretGrantsSetAcceptsFlagsAfterName(t *testing.T) {
 	}
 	if gotBody["job_name_match"] != "exact" {
 		t.Fatalf("job_name_match = %v, want exact", gotBody["job_name_match"])
+	}
+	profiles, ok := gotBody["execution_profiles"].([]interface{})
+	if !ok || len(profiles) != 1 || profiles[0] != "standard" {
+		t.Fatalf("execution_profiles = %v, want [standard]", gotBody["execution_profiles"])
+	}
+	origins, ok := gotBody["ci_origins"].([]interface{})
+	if !ok || len(origins) != 1 || origins[0] != "base" {
+		t.Fatalf("ci_origins = %v, want [base]", gotBody["ci_origins"])
 	}
 }

@@ -7,6 +7,7 @@ import (
 	"net/http"
 	pathmatch "path"
 	"regexp"
+	"slices"
 	"strings"
 
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/checkauth"
@@ -430,6 +431,22 @@ func applySecretGrantRequest(grant *models.SecretGrant, req SecretGrantRequest) 
 	if req.Description != "" {
 		grant.Description = req.Description
 	}
+	if req.ExecutionProfiles != nil {
+		for _, profile := range req.ExecutionProfiles {
+			if strings.TrimSpace(profile) == "" {
+				return fmt.Errorf("execution profile cannot be empty")
+			}
+		}
+		grant.ExecutionProfiles = append([]string(nil), req.ExecutionProfiles...)
+	}
+	if req.CIOrigins != nil {
+		for _, origin := range req.CIOrigins {
+			if origin != "base" && origin != "head" {
+				return fmt.Errorf("invalid ci_origin %q", origin)
+			}
+		}
+		grant.CIOrigins = append([]string(nil), req.CIOrigins...)
+	}
 	return nil
 }
 
@@ -466,7 +483,9 @@ func secretGrantEquivalent(a, b models.SecretGrant) bool {
 		a.SecretPathPattern == b.SecretPathPattern &&
 		a.JobNameMatch == b.JobNameMatch &&
 		a.JobNamePattern == b.JobNamePattern &&
-		a.Description == b.Description
+		a.Description == b.Description &&
+		slices.Equal(a.ExecutionProfiles, b.ExecutionProfiles) &&
+		slices.Equal(a.CIOrigins, b.CIOrigins)
 }
 
 func stringPtrEqual(a, b *string) bool {

@@ -61,6 +61,19 @@ def test_unmatched_path_falls_back_to_base(tmp_path):
     assert decision.ci_origin == "base"
 
 
+def test_vcs_user_can_authorize_head_ci(tmp_path):
+    body = POLICY.replace("[repository_write]", "[vcs_user:github/junipuff]")
+    write_policy(tmp_path, body)
+    policy = load_trusted_policy(tmp_path)
+    decision = decide_workflow(
+        policy, "backend-tests", [".reactorcide/workflows/backend.yaml"],
+        [".reactorcide/workflows/backend.yaml"], "pull_request_updated",
+        "main", "same", {"vcs_user:github/junipuff"}, [], "base", "head",
+    )
+    assert decision.allowed
+    assert decision.ci_origin == "head"
+
+
 @pytest.mark.parametrize("value", ["/absolute", "../escape", "a/../b", "a//b", "a\\b", "./a"])
 def test_policy_rejects_unsafe_paths(tmp_path, value):
     write_policy(tmp_path, POLICY.replace(".reactorcide/jobs/backend/**", value))

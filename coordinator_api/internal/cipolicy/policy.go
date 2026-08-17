@@ -206,6 +206,9 @@ func validateSubjects(subjects []string, allowProjectOwner bool) error {
 		if strings.HasPrefix(subject, "vcs_team:") && len(strings.TrimPrefix(subject, "vcs_team:")) > 0 {
 			continue
 		}
+		if strings.HasPrefix(subject, "vcs_user:") && len(strings.TrimPrefix(subject, "vcs_user:")) > 0 {
+			continue
+		}
 		if strings.HasPrefix(subject, "reactorcide_group:") && len(strings.TrimPrefix(subject, "reactorcide_group:")) > 0 {
 			continue
 		}

@@ -122,7 +122,9 @@ reactorcide secret-grants set deploy-production \
   --secret-path deploy/production \
   --secret-match prefix \
   --job-name "github.com/example/repo:deploy" \
-  --job-match exact
+  --job-match exact \
+  --execution-profile standard \
+  --ci-origin base
 
 reactorcide secret-grants delete deploy-production --project github.com/example/repo
 ```
@@ -145,6 +147,10 @@ items:
         jobName:
           value: github.com/example/repo:deploy
           match: exact
+      executionProfiles:
+        - standard
+      ciOrigins:
+        - base
       description: Allow deploy jobs to read production deploy secrets
 ```
 

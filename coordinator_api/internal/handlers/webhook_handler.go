@@ -169,6 +169,9 @@ func (h *WebhookHandler) attachCIEvaluationFacts(ctx context.Context, job *model
 		job.JobEnvVars = models.JSONB{}
 	}
 	subjects := []string{}
+	if subject := vcsUserSubject(event.Provider, event.SenderLogin); subject != "" {
+		subjects = append(subjects, subject)
+	}
 	if resolver, ok := client.(vcs.ActorSubjectResolver); ok {
 		resolved, err := resolver.ResolveActorSubjects(ctx, event.Repository.FullName, event.SenderLogin)
 		if err != nil {
@@ -222,6 +225,15 @@ func uniqueStrings(values []string) []string {
 		}
 	}
 	return result
+}
+
+func vcsUserSubject(provider vcs.Provider, login string) string {
+	providerName := strings.ToLower(strings.TrimSpace(string(provider)))
+	login = strings.ToLower(strings.TrimSpace(login))
+	if providerName == "" || login == "" {
+		return ""
+	}
+	return "vcs_user:" + providerName + "/" + login
 }
 
 // webhookSecretCandidate is one secret value to try against an incoming
@@ -500,11 +512,16 @@ func (h *WebhookHandler) processApprovalComment(ctx context.Context, event *vcs.
 		return fmt.Errorf("loading pull request: %w", err)
 	}
 	subjects := []string{}
+	if subject := vcsUserSubject(event.Provider, event.SenderLogin); subject != "" {
+		subjects = append(subjects, subject)
+	}
 	if resolver, ok := statusClient.(vcs.ActorSubjectResolver); ok {
-		subjects, err = resolver.ResolveActorSubjects(ctx, event.Repository.FullName, event.SenderLogin)
+		resolved, resolveErr := resolver.ResolveActorSubjects(ctx, event.Repository.FullName, event.SenderLogin)
+		err = resolveErr
 		if err != nil {
 			return fmt.Errorf("resolving approver facts: %w", err)
 		}
+		subjects = append(subjects, resolved...)
 	}
 	var approverUserID *string
 	if link, linkErr := factsStore.ResolveVCSIdentityLink(ctx, string(event.Provider), event.SenderLogin); linkErr == nil && link != nil && link.VerifiedBy != "" {

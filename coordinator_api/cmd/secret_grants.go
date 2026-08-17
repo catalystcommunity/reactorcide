@@ -72,6 +72,10 @@ var SecretGrantsCommand = &cli.Command{
 				&cli.StringFlag{Name: "job-name", Usage: "Job name pattern. Omit to match any job name"},
 				&cli.StringFlag{Name: "job-match", Value: models.SecretGrantMatchAny, Usage: "Job name match: any, exact, prefix, glob, regex"},
 				&cli.StringFlag{Name: "description", Usage: "Grant description"},
+				&cli.StringSliceFlag{Name: "execution-profile", Usage: "Allowed execution profile; repeatable. Omit for any profile"},
+				&cli.StringSliceFlag{Name: "ci-origin", Usage: "Allowed CI origin: base or head; repeatable. Omit for either origin"},
+				&cli.BoolFlag{Name: "clear-execution-profiles", Usage: "Remove the execution profile limit"},
+				&cli.BoolFlag{Name: "clear-ci-origins", Usage: "Remove the CI origin limit"},
 			},
 			Action: func(ctx *cli.Context) error {
 				if ctx.NArg() < 1 {
@@ -88,6 +92,22 @@ var SecretGrantsCommand = &cli.Command{
 					JobNameMatch:      ctx.String("job-match"),
 					JobNamePattern:    ctx.String("job-name"),
 					Description:       ctx.String("description"),
+				}
+				if ctx.IsSet("execution-profile") && ctx.Bool("clear-execution-profiles") {
+					return fmt.Errorf("--execution-profile and --clear-execution-profiles are mutually exclusive")
+				}
+				if ctx.IsSet("ci-origin") && ctx.Bool("clear-ci-origins") {
+					return fmt.Errorf("--ci-origin and --clear-ci-origins are mutually exclusive")
+				}
+				if ctx.Bool("clear-execution-profiles") {
+					req.ExecutionProfiles = []string{}
+				} else if ctx.IsSet("execution-profile") {
+					req.ExecutionProfiles = ctx.StringSlice("execution-profile")
+				}
+				if ctx.Bool("clear-ci-origins") {
+					req.CIOrigins = []string{}
+				} else if ctx.IsSet("ci-origin") {
+					req.CIOrigins = ctx.StringSlice("ci-origin")
 				}
 				if req.JobNamePattern != "" && req.JobNameMatch == models.SecretGrantMatchAny {
 					req.JobNameMatch = models.SecretGrantMatchExact
@@ -165,15 +185,17 @@ type secretGrantAPIClient struct {
 }
 
 type secretGrantAPIRequest struct {
-	Name              string `json:"name,omitempty" yaml:"name,omitempty"`
-	ProjectID         string `json:"project_id,omitempty" yaml:"project_id,omitempty"`
-	Project           string `json:"project,omitempty" yaml:"project,omitempty"`
-	SecretPathMatch   string `json:"secret_path_match,omitempty" yaml:"secret_path_match,omitempty"`
-	SecretPathPattern string `json:"secret_path_pattern,omitempty" yaml:"secret_path_pattern,omitempty"`
-	JobNameMatch      string `json:"job_name_match,omitempty" yaml:"job_name_match,omitempty"`
-	JobNamePattern    string `json:"job_name_pattern,omitempty" yaml:"job_name_pattern,omitempty"`
-	Description       string `json:"description,omitempty" yaml:"description,omitempty"`
-	State             string `json:"state,omitempty" yaml:"state,omitempty"`
+	Name              string   `json:"name,omitempty" yaml:"name,omitempty"`
+	ProjectID         string   `json:"project_id,omitempty" yaml:"project_id,omitempty"`
+	Project           string   `json:"project,omitempty" yaml:"project,omitempty"`
+	SecretPathMatch   string   `json:"secret_path_match,omitempty" yaml:"secret_path_match,omitempty"`
+	SecretPathPattern string   `json:"secret_path_pattern,omitempty" yaml:"secret_path_pattern,omitempty"`
+	JobNameMatch      string   `json:"job_name_match,omitempty" yaml:"job_name_match,omitempty"`
+	JobNamePattern    string   `json:"job_name_pattern,omitempty" yaml:"job_name_pattern,omitempty"`
+	Description       string   `json:"description,omitempty" yaml:"description,omitempty"`
+	State             string   `json:"state,omitempty" yaml:"state,omitempty"`
+	ExecutionProfiles []string `json:"execution_profiles" yaml:"execution_profiles,omitempty"`
+	CIOrigins         []string `json:"ci_origins" yaml:"ci_origins,omitempty"`
 }
 
 type secretGrantListResponse struct {
@@ -223,8 +245,10 @@ type secretGrantResource struct {
 				Match string `yaml:"match"`
 			} `yaml:"jobName"`
 		} `yaml:"subject"`
-		Description string `yaml:"description"`
-		State       string `yaml:"state"`
+		Description       string   `yaml:"description"`
+		State             string   `yaml:"state"`
+		ExecutionProfiles []string `yaml:"executionProfiles"`
+		CIOrigins         []string `yaml:"ciOrigins"`
 	} `yaml:"spec"`
 }
 
@@ -322,6 +346,8 @@ func loadSecretGrantApplyFile(path string) (secretGrantApplyRequest, error) {
 			JobNamePattern:    item.Spec.Subject.JobName.Value,
 			Description:       item.Spec.Description,
 			State:             item.Spec.State,
+			ExecutionProfiles: item.Spec.ExecutionProfiles,
+			CIOrigins:         item.Spec.CIOrigins,
 		}
 		if grant.SecretPathMatch == "" {
 			grant.SecretPathMatch = models.SecretGrantMatchPrefix
