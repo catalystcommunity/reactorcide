@@ -256,6 +256,10 @@ See [Secrets](./secrets.md).
 | `secret-grants delete <name-or-id>` | Delete a grant. |
 | `secret-grants apply --file <file>` | Apply a set of grants from a file. |
 
+Use repeated `--execution-profile` and `--ci-origin` options with
+`secret-grants set` to limit a grant. Valid CI origins are `base` and `head`.
+Use `--clear-execution-profiles` or `--clear-ci-origins` to remove a limit.
+
 See [VCS Credentials and Secret Grants](./vcs-credentials-and-secret-grants.md).
 
 ## VM Image Commands

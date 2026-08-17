@@ -39,6 +39,25 @@ func TestParseAndDecide(t *testing.T) {
 	}
 }
 
+func TestVCSUserCanAuthorizeHeadCI(t *testing.T) {
+	input := `version: 1
+defaults: {ci_source: base, profile: standard}
+head_ci:
+- id: maintainers
+  actors: {any: [vcs_user:github/todpunk, vcs_user:github/junipuff]}
+  workflows: [backend-tests]
+  paths: [.reactorcide/jobs/backend/**]
+  use: {ci_source: head, profile: pr-untrusted, workers: default}`
+	policy, err := Parse(map[string][]byte{".reactorcide/policy.yaml": []byte(input)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	decision, err := Decide(policy, Facts{WorkflowID: "backend-tests", ChangedCIPaths: []string{".reactorcide/jobs/backend/test.yaml"}, HeadRepositoryRelation: "same", ActorSubjects: map[string]bool{"vcs_user:github/junipuff": true}})
+	if err != nil || !decision.Allowed || decision.CISource != "head" {
+		t.Fatalf("decision=%+v err=%v", decision, err)
+	}
+}
+
 func TestRejectsUnsafeAndUnknownInput(t *testing.T) {
 	cases := []string{
 		`version: 1

@@ -165,17 +165,19 @@ type ListProjectsResponse struct {
 }
 
 type SecretGrantRequest struct {
-	Name              string `json:"name,omitempty"`
-	ProjectID         string `json:"project_id,omitempty"`
-	Project           string `json:"project,omitempty"`
-	SecretPathMatch   string `json:"secret_path_match,omitempty"`
-	SecretPathPattern string `json:"secret_path_pattern,omitempty"`
-	SecretPathPrefix  string `json:"secret_path_prefix,omitempty"`
-	JobNameMatch      string `json:"job_name_match,omitempty"`
-	JobNamePattern    string `json:"job_name_pattern,omitempty"`
-	JobName           string `json:"job_name,omitempty"`
-	Description       string `json:"description,omitempty"`
-	State             string `json:"state,omitempty"`
+	Name              string   `json:"name,omitempty"`
+	ProjectID         string   `json:"project_id,omitempty"`
+	Project           string   `json:"project,omitempty"`
+	SecretPathMatch   string   `json:"secret_path_match,omitempty"`
+	SecretPathPattern string   `json:"secret_path_pattern,omitempty"`
+	SecretPathPrefix  string   `json:"secret_path_prefix,omitempty"`
+	JobNameMatch      string   `json:"job_name_match,omitempty"`
+	JobNamePattern    string   `json:"job_name_pattern,omitempty"`
+	JobName           string   `json:"job_name,omitempty"`
+	Description       string   `json:"description,omitempty"`
+	State             string   `json:"state,omitempty"`
+	ExecutionProfiles []string `json:"execution_profiles,omitempty"`
+	CIOrigins         []string `json:"ci_origins,omitempty"`
 }
 
 type ListSecretGrantsResponse struct {

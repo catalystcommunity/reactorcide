@@ -269,6 +269,7 @@ head_ci:
   - id: backend-team
     actors:
       any:
+        - vcs_user:github/alice
         - repository_write
         - reactorcide_group:backend
         - vcs_team:example/backend
@@ -321,9 +322,14 @@ One complete rule must authorize all applicable facts. The rule checks:
 The supported actor and approval subjects are:
 
 - `repository_write`
+- `vcs_user:PROVIDER/LOGIN`
 - `vcs_team:OWNER/TEAM`
 - `reactorcide_group:NAME`
 - `project_owner` for approvals and policy maintainers only
+
+Use a lowercase provider and login in `vcs_user:`. For example, use
+`vcs_user:github/alice`. Reactorcide gets this identity from the signed VCS
+event. This subject does not need LinkKeys or a Reactorcide user record.
 
 `reactorcide_group:` needs a verified VCS identity link. An administrator can
 create and remove identity links with these REST paths:

@@ -775,6 +775,8 @@ func TestProjectHandler_ApplySecretGrants_DryRunPrune(t *testing.T) {
 			JobNameMatch:      models.SecretGrantMatchPrefix,
 			JobNamePattern:    "github.com/org/repo:",
 			Description:       "test grant",
+			ExecutionProfiles: []string{"standard"},
+			CIOrigins:         []string{"base"},
 		}},
 	}
 	data, err := json.Marshal(body)
@@ -790,10 +792,33 @@ func TestProjectHandler_ApplySecretGrants_DryRunPrune(t *testing.T) {
 	require.True(t, resp.DryRun)
 	require.Len(t, resp.Created, 1)
 	require.Equal(t, "new-grant", resp.Created[0].Name)
+	require.Equal(t, []string{"standard"}, []string(resp.Created[0].ExecutionProfiles))
+	require.Equal(t, []string{"base"}, []string(resp.Created[0].CIOrigins))
 	require.Len(t, resp.Deleted, 1)
 	require.Equal(t, "old-grant", resp.Deleted[0].Name)
 	require.Empty(t, mockStore.CreateSecretGrantCalls)
 	require.Empty(t, mockStore.DeleteSecretGrantCalls)
+}
+
+func TestApplySecretGrantRequestRejectsUnknownCIOrigin(t *testing.T) {
+	grant := &models.SecretGrant{}
+	err := applySecretGrantRequest(grant, SecretGrantRequest{
+		Name: "invalid-origin", SecretPathPattern: "path", CIOrigins: []string{"branch"},
+	})
+	require.EqualError(t, err, `invalid ci_origin "branch"`)
+}
+
+func TestApplySecretGrantRequestCanClearSelectors(t *testing.T) {
+	grant := &models.SecretGrant{
+		ExecutionProfiles: []string{"standard"}, CIOrigins: []string{"base"},
+	}
+	err := applySecretGrantRequest(grant, SecretGrantRequest{
+		Name: "clear-selectors", SecretPathPattern: "path",
+		ExecutionProfiles: []string{}, CIOrigins: []string{},
+	})
+	require.NoError(t, err)
+	require.Empty(t, grant.ExecutionProfiles)
+	require.Empty(t, grant.CIOrigins)
 }
 
 func TestProjectHandler_CreateGlobalSecretGrant_UsesBodyProjectScope(t *testing.T) {

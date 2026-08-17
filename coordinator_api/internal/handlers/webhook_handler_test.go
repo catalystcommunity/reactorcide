@@ -20,6 +20,11 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestVCSUserSubjectIsStable(t *testing.T) {
+	assert.Equal(t, "vcs_user:github/junipuff", vcsUserSubject(vcs.GitHub, " JuniPuff "))
+	assert.Empty(t, vcsUserSubject(vcs.GitHub, ""))
+}
+
 // WebhookMockStore implements store.Store for webhook handler testing
 type WebhookMockStore struct {
 	CreateJobFunc           func(ctx context.Context, job *models.Job) error
@@ -318,6 +323,7 @@ func TestWebhookHandler_PREvent_SubmitsToCorndogs(t *testing.T) {
 		Provider:     vcs.GitHub,
 		EventType:    "pull_request",
 		GenericEvent: vcs.EventPullRequestOpened,
+		SenderLogin:  "JuniPuff",
 		Repository: vcs.RepositoryInfo{
 			FullName: "test-org/test-repo",
 			CloneURL: "https://github.com/test-org/test-repo.git",
@@ -362,6 +368,7 @@ func TestWebhookHandler_PREvent_SubmitsToCorndogs(t *testing.T) {
 	assert.Equal(t, "abc123", createdJob.JobEnvVars["REACTORCIDE_SHA"])
 	assert.Equal(t, "feature-branch", createdJob.JobEnvVars["REACTORCIDE_PR_REF"])
 	assert.Equal(t, "main", createdJob.JobEnvVars["REACTORCIDE_PR_BASE_REF"])
+	assert.Equal(t, `["vcs_user:github/junipuff"]`, createdJob.JobEnvVars["REACTORCIDE_ACTOR_SUBJECTS"])
 	// CI source should be set (same-repo mode since project has no DefaultCISourceURL)
 	require.NotNil(t, createdJob.CISourceURL)
 	assert.Equal(t, "https://github.com/test-org/test-repo.git", *createdJob.CISourceURL)
