@@ -441,7 +441,7 @@ func prepareSelectedCITree(ciRoot, workflowFile string) (string, string, func(),
 		cleanup()
 		return "", "", nil, err
 	}
-	for _, relative := range []string{filepath.Join(".reactorcide", "jobs"), filepath.Join(".reactorcide", "policies"), filepath.Join(".reactorcide", "policy.yaml")} {
+	for _, relative := range []string{filepath.Join(".reactorcide", "jobs")} {
 		source := filepath.Join(ciRoot, relative)
 		if _, err := os.Stat(source); os.IsNotExist(err) {
 			continue

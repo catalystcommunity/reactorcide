@@ -341,6 +341,7 @@ class WorkflowContext:
                 "policy_revision": batch.get("policy_revision", ""),
                 "policy_rule_id": batch.get("policy_rule_id", ""),
                 "approval_id": batch.get("approval_id"),
+                "dependency_paths": batch.get("dependency_paths", []),
                 "vars": batch.get("vars", {}),
                 "jobs": [t.to_dict() for t in batch["jobs"]],
             }

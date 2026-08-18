@@ -32,6 +32,9 @@ mkdir -p "${SERVER_OUT}" "${CLIENT_OUT}"
 
 echo "Generating coordinator server package -> ${SERVER_OUT}"
 csilgen generate --input "${CSIL_INPUT}" --target go --output "${SERVER_OUT}"
+# The CLI uses the coordinator package's client with the same transport as
+# worker administration commands. Generate the client into this package too.
+csilgen generate --input "${CSIL_INPUT}" --target go-client --output "${SERVER_OUT}"
 
 echo "Generating webapp client package -> ${CLIENT_OUT}"
 csilgen generate --input "${CSIL_INPUT}" --target go-client --output "${CLIENT_OUT}"

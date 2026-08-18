@@ -123,6 +123,7 @@ class TestWorkflowContext:
                 "ci_sha": "head-sha", "execution_profile": "pr-untrusted",
                 "worker_class": "default", "policy_revision": "policy-revision",
                 "policy_rule_id": "backend-team", "approval_id": None,
+                "dependency_paths": [".reactorcide/workflows/backend.yaml"],
                 "jobs": [JobTrigger(job_name="test", job_command="true")],
             }],
             policy_violations=[{

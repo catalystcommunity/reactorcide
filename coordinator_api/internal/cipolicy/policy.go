@@ -7,20 +7,19 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io"
 	"path"
 	"regexp"
-	"sort"
 	"strings"
 
 	"gopkg.in/yaml.v3"
 )
 
 type Policy struct {
-	Version           int          `yaml:"version" json:"version"`
-	Defaults          Defaults     `yaml:"defaults" json:"defaults"`
-	PolicyMaintainers SubjectMatch `yaml:"policy_maintainers" json:"policy_maintainers"`
-	HeadCI            []Rule       `yaml:"head_ci" json:"head_ci"`
-	Revision          string       `yaml:"-" json:"revision"`
+	Version  int      `yaml:"version" json:"version"`
+	Defaults Defaults `yaml:"defaults" json:"defaults"`
+	HeadCI   []Rule   `yaml:"head_ci" json:"head_ci"`
+	Revision string   `yaml:"-" json:"-"`
 }
 
 type Defaults struct {
@@ -48,51 +47,37 @@ type Rule struct {
 }
 
 type filePolicy struct {
-	Version           int          `yaml:"version"`
-	Defaults          Defaults     `yaml:"defaults"`
-	PolicyMaintainers SubjectMatch `yaml:"policy_maintainers"`
-	HeadCI            []Rule       `yaml:"head_ci"`
+	Version  int      `yaml:"version"`
+	Defaults Defaults `yaml:"defaults"`
+	HeadCI   []Rule   `yaml:"head_ci"`
 }
 
 var securityIDPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,62}$`)
 
-// Parse parses the main policy and optional fragments. The map key is the
-// repository-relative path. The main path is `.reactorcide/policy.yaml`.
-func Parse(files map[string][]byte) (*Policy, error) {
-	mainData, ok := files[".reactorcide/policy.yaml"]
-	if !ok {
-		return nil, fmt.Errorf(".reactorcide/policy.yaml is required")
-	}
-	main, err := parseFile(".reactorcide/policy.yaml", mainData)
+// ParseDocument parses one coordinator-managed YAML or JSON policy document.
+func ParseDocument(data []byte) (*Policy, error) {
+	main, err := parseFile("CI policy", data)
 	if err != nil {
 		return nil, err
 	}
-	result := &Policy{Version: main.Version, Defaults: main.Defaults, PolicyMaintainers: main.PolicyMaintainers, HeadCI: append([]Rule(nil), main.HeadCI...)}
-	paths := make([]string, 0, len(files)-1)
-	for filePath := range files {
-		if filePath != ".reactorcide/policy.yaml" {
-			paths = append(paths, filePath)
-		}
-	}
-	sort.Strings(paths)
-	for _, filePath := range paths {
-		if !strings.HasPrefix(filePath, ".reactorcide/policies/") || !strings.HasSuffix(filePath, ".yaml") {
-			return nil, fmt.Errorf("unsupported policy fragment path %q", filePath)
-		}
-		fragment, err := parseFile(filePath, files[filePath])
-		if err != nil {
-			return nil, err
-		}
-		if fragment.Version != 0 && fragment.Version != result.Version {
-			return nil, fmt.Errorf("%s: version does not match main policy", filePath)
-		}
-		result.HeadCI = append(result.HeadCI, fragment.HeadCI...)
-	}
+	result := &Policy{Version: main.Version, Defaults: main.Defaults, HeadCI: append([]Rule(nil), main.HeadCI...)}
 	if err := validatePolicy(result); err != nil {
 		return nil, err
 	}
-	canonicalRules := make([]map[string]any, 0, len(result.HeadCI))
-	for _, rule := range result.HeadCI {
+	canonical, err := CanonicalDocument(result)
+	if err != nil {
+		return nil, err
+	}
+	hash := sha256.Sum256(canonical)
+	result.Revision = hex.EncodeToString(hash[:])
+	return result, nil
+}
+
+// CanonicalDocument returns the stable JSON representation that the
+// coordinator stores and pins to an evaluation job.
+func CanonicalDocument(policy *Policy) ([]byte, error) {
+	canonicalRules := make([]map[string]any, 0, len(policy.HeadCI))
+	for _, rule := range policy.HeadCI {
 		canonicalRules = append(canonicalRules, map[string]any{
 			"actors": map[string]any{"any": emptySlice(rule.Actors.Any)}, "approval": map[string]any{"any": emptySlice(rule.Approval.Any)},
 			"base_branches": emptySlice(rule.BaseBranches), "events": emptySlice(rule.Events), "head_repository": rule.HeadRepository,
@@ -100,16 +85,11 @@ func Parse(files map[string][]byte) (*Policy, error) {
 			"workflows": emptySlice(rule.Workflows),
 		})
 	}
-	canonical, err := json.Marshal(map[string]any{
-		"defaults": map[string]any{"ci_source": result.Defaults.CISource, "profile": result.Defaults.Profile},
-		"head_ci":  canonicalRules, "policy_maintainers": map[string]any{"any": emptySlice(result.PolicyMaintainers.Any)}, "version": result.Version,
+	return json.Marshal(map[string]any{
+		"defaults": map[string]any{"ci_source": policy.Defaults.CISource, "profile": policy.Defaults.Profile},
+		"head_ci":  canonicalRules,
+		"version":  policy.Version,
 	})
-	if err != nil {
-		return nil, err
-	}
-	hash := sha256.Sum256(canonical)
-	result.Revision = hex.EncodeToString(hash[:])
-	return result, nil
 }
 
 func emptySlice(values []string) []string {
@@ -124,6 +104,13 @@ func parseFile(name string, data []byte) (*filePolicy, error) {
 	decoder.KnownFields(true)
 	var policy filePolicy
 	if err := decoder.Decode(&policy); err != nil {
+		return nil, fmt.Errorf("%s: %w", name, err)
+	}
+	var extra interface{}
+	if err := decoder.Decode(&extra); err != io.EOF {
+		if err == nil {
+			return nil, fmt.Errorf("%s: multiple documents are not allowed", name)
+		}
 		return nil, fmt.Errorf("%s: %w", name, err)
 	}
 	return &policy, nil
@@ -141,9 +128,6 @@ func validatePolicy(policy *Policy) error {
 	}
 	if policy.Defaults.CISource != "base" {
 		return fmt.Errorf("default ci_source must be base")
-	}
-	if err := validateSubjects(policy.PolicyMaintainers.Any, true); err != nil {
-		return fmt.Errorf("policy_maintainers: %w", err)
 	}
 	seenRules := map[string]bool{}
 	seenWorkflows := map[string]string{}
@@ -268,7 +252,7 @@ func Decide(policy *Policy, facts Facts) (Decision, error) {
 		matches = append(matches, Decision{CISource: "head", Profile: rule.Use.Profile, WorkerClass: rule.Use.Workers, RuleID: rule.ID, Allowed: true})
 	}
 	if len(matches) == 0 {
-		base.Reasons = []string{"no complete trusted-base policy rule authorized head CI"}
+		base.Reasons = []string{"no complete coordinator policy rule authorized head CI"}
 		return base, nil
 	}
 	selected := matches[0]

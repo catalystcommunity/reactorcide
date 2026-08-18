@@ -310,6 +310,37 @@ DeleteProjectResponse = {
     deleted: bool
 }
 
+CiPolicyDetail = {
+    policy_id: text,
+    project_id: text,
+    revision: text,
+    document: text,
+    created_at: text,
+    updated_at: text,
+    ? updated_by: text
+}
+GetCiPolicyRequest = {
+    project_id: text
+}
+GetCiPolicyResponse = {
+    policy: CiPolicyDetail
+}
+PutCiPolicyRequest = {
+    project_id: text,
+    document: text,
+    ? expected_revision: text
+}
+PutCiPolicyResponse = {
+    policy: CiPolicyDetail
+}
+DeleteCiPolicyRequest = {
+    project_id: text,
+    ? expected_revision: text
+}
+DeleteCiPolicyResponse = {
+    deleted: bool
+}
+
 GroupSummary = {
     group_id: text,
     org_id: text,
@@ -1008,6 +1039,9 @@ service ReactorcideUi {
     create-project: CreateProjectRequest -> CreateProjectResponse / ServiceError,
     update-project: UpdateProjectRequest -> UpdateProjectResponse / ServiceError,
     delete-project: DeleteProjectRequest -> DeleteProjectResponse / ServiceError,
+    get-ci-policy: GetCiPolicyRequest -> GetCiPolicyResponse / ServiceError,
+    put-ci-policy: PutCiPolicyRequest -> PutCiPolicyResponse / ServiceError,
+    delete-ci-policy: DeleteCiPolicyRequest -> DeleteCiPolicyResponse / ServiceError,
     list-groups: ListGroupsRequest -> ListGroupsResponse / ServiceError,
     create-group: CreateGroupRequest -> CreateGroupResponse / ServiceError,
     update-group: UpdateGroupRequest -> UpdateGroupResponse / ServiceError,

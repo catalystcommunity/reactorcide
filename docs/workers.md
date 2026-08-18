@@ -525,7 +525,7 @@ organization starts with the `default` class. Mark a class as protected when
 an untrusted execution profile must not select it. The token needs
 `workers:manage`.
 
-See [Organizations and Trusted CI Policy](./organizations-and-ci-policy.md)
+See [Organizations and Coordinator CI Policy](./organizations-and-ci-policy.md)
 for the REST paths and the relationship between policy, profiles, classes, and
 pools.
 

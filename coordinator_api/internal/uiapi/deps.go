@@ -5,11 +5,13 @@ import (
 
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/auth"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/authz"
+	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/checkauth"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/corndogs"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/objects"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/secrets"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store/models"
+	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/tokencaps"
 )
 
 // Deps is the shared dependency bag every ReactorcideAuth/ReactorcideUi op
@@ -55,24 +57,57 @@ func NewDeps(store DataStore, backend auth.LoginBackend, keyManager *secrets.Mas
 	return d
 }
 
-// resolveIdentity resolves the CSIL-RPC envelope's auth token (if any) into
-// an authz.Identity and, when a session was successfully resolved, the
-// underlying *models.User. A missing/empty auth field, an unknown token, or
-// an expired/revoked session all resolve to (AnonymousIdentity, nil, nil) —
-// callers that require a logged-in identity must check the returned user
-// themselves (see requireUser) rather than treating a resolution error as
-// fatal, since anonymous callers are legitimate for many ops (e.g.
-// get-auth-config, cancel-job in mode none).
+// resolveIdentity resolves the CSIL-RPC envelope's auth value as a UI session
+// or an API token. An invalid value resolves to an anonymous identity. Callers
+// that require a UI session must also require a non-nil user.
 func (d *Deps) resolveIdentity(ctx context.Context) (authz.Identity, *models.User) {
+	id, user, _ := d.resolveIdentityDetails(ctx)
+	return id, user
+}
+
+func (d *Deps) resolveIdentityDetails(ctx context.Context) (authz.Identity, *models.User, *checkauth.Principal) {
 	token, ok := AuthTokenFromContext(ctx)
 	if !ok || token == "" {
-		return authz.AnonymousIdentity(), nil
+		return authz.AnonymousIdentity(), nil, nil
 	}
 	user, _, err := d.Sessions.ResolveSession(ctx, token)
-	if err != nil || user == nil {
-		return authz.AnonymousIdentity(), nil
+	if err == nil && user != nil {
+		return authz.IdentityFromUser(user), user, nil
 	}
-	return authz.IdentityFromUser(user), user
+	apiToken, tokenUser, err := d.Store.ValidateAPIToken(ctx, token)
+	if err != nil || apiToken == nil {
+		return authz.AnonymousIdentity(), nil, nil
+	}
+	capabilities, err := tokencaps.New(apiToken.Capabilities...)
+	if err != nil {
+		return authz.AnonymousIdentity(), nil, nil
+	}
+	principal := &checkauth.Principal{
+		CredentialID: apiToken.TokenID, CredentialType: apiToken.SubjectType,
+		UserID: apiToken.UserID, AllOrganizations: apiToken.AllOrganizations,
+		OrganizationIDs: append([]string(nil), apiToken.OrganizationIDs...),
+		AllCapabilities: apiToken.AllCapabilities, Capabilities: capabilities,
+	}
+	if apiToken.OwnerOrgID != nil {
+		principal.OwnerOrgID = *apiToken.OwnerOrgID
+	}
+	if apiToken.BoundJobID != nil {
+		principal.BoundJobID = *apiToken.BoundJobID
+	}
+	return authz.IdentityFromPrincipal(principal, tokenUser), tokenUser, principal
+}
+
+func (d *Deps) requireManagementIdentity(ctx context.Context) (context.Context, authz.Identity, *models.User, error) {
+	id, user, principal := d.resolveIdentityDetails(ctx)
+	if id.Anonymous || (id.UserID == "" && id.Token == nil) {
+		return ctx, authz.Identity{}, nil, NewServiceError("unauthorized", "a valid session or API token is required for this operation")
+	}
+	if principal != nil {
+		ctx = checkauth.SetPrincipalContext(ctx, principal)
+		ctx = checkauth.SetUserContext(ctx, user)
+		ctx = checkauth.SetVerifiedContext(ctx, true)
+	}
+	return ctx, id, user, nil
 }
 
 // requireUser resolves the caller like resolveIdentity, but returns a
@@ -80,8 +115,8 @@ func (d *Deps) resolveIdentity(ctx context.Context) (authz.Identity, *models.Use
 // session is present. Use for ops the permission matrix never grants to an
 // anonymous caller under any auth mode (e.g. every management op).
 func (d *Deps) requireUser(ctx context.Context) (authz.Identity, *models.User, error) {
-	id, user := d.resolveIdentity(ctx)
-	if user == nil {
+	id, user, principal := d.resolveIdentityDetails(ctx)
+	if user == nil || principal != nil {
 		return authz.Identity{}, nil, NewServiceError("unauthorized", "a valid session is required for this operation")
 	}
 	return id, user, nil

@@ -28,10 +28,10 @@ func (u *JobStatusUpdater) UpdateCIPolicyStatus(ctx context.Context, job *models
 		return nil
 	}
 	state := StatusSuccess
-	description := "CI changes satisfy trusted base policy"
+	description := "CI changes satisfy coordinator policy"
 	if len(violations) > 0 {
 		state = StatusFailure
-		description = fmt.Sprintf("Trusted base policy denied %d CI change(s)", len(violations))
+		description = fmt.Sprintf("Coordinator policy denied %d CI change(s)", len(violations))
 	}
 	if err := client.UpdateCommitStatus(ctx, metadata.Repo, StatusUpdate{SHA: metadata.CommitSHA, State: state,
 		TargetURL: u.getJobURL(job.JobID), Description: description, Context: "Reactorcide CI Policy"}); err != nil {
@@ -52,7 +52,7 @@ func (u *JobStatusUpdater) UpdateCIPolicyStatus(ctx context.Context, job *models
 	}
 	var body strings.Builder
 	if len(violations) == 0 {
-		body.WriteString("Trusted base policy allowed all changed CI files.")
+		body.WriteString("Coordinator policy allowed all changed CI files.")
 	} else {
 		body.WriteString("The following CI files were not authorized. Safe base CI continues.\n")
 		for _, violation := range violations {

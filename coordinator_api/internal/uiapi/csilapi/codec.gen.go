@@ -4104,6 +4104,381 @@ func DecodeDeleteProjectResponse(csilData []byte) (DeleteProjectResponse, error)
 	return csilDecDeleteProjectResponse(csilRoot)
 }
 
+// csilEncCiPolicyDetail builds the canonical CBOR value tree for a CiPolicyDetail.
+func csilEncCiPolicyDetail(csilV CiPolicyDetail) cborValue {
+	csilEntries := make(cborMap, 0, 7)
+	csilEntries = append(csilEntries, cborEntry{cborText("document"), cborText(csilV.Document)})
+	csilEntries = append(csilEntries, cborEntry{cborText("revision"), cborText(csilV.Revision)})
+	csilEntries = append(csilEntries, cborEntry{cborText("policy_id"), cborText(csilV.PolicyId)})
+	csilEntries = append(csilEntries, cborEntry{cborText("created_at"), cborText(csilV.CreatedAt)})
+	csilEntries = append(csilEntries, cborEntry{cborText("project_id"), cborText(csilV.ProjectId)})
+	csilEntries = append(csilEntries, cborEntry{cborText("updated_at"), cborText(csilV.UpdatedAt)})
+	if csilV.UpdatedBy != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("updated_by"), cborText((*csilV.UpdatedBy))})
+	}
+	return csilEntries
+}
+
+// csilDecCiPolicyDetail reconstructs a CiPolicyDetail from a decoded CBOR value tree.
+func csilDecCiPolicyDetail(csilRoot cborValue) (CiPolicyDetail, error) {
+	var csilOut CiPolicyDetail
+	{
+		csilField, csilErr := cborRequire(csilRoot, "policy_id")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.PolicyId = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "project_id")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.ProjectId = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "revision")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Revision = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "document")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Document = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "created_at")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.CreatedAt = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "updated_at")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.UpdatedAt = csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "updated_by"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.UpdatedBy = &csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeCiPolicyDetail encodes a CiPolicyDetail to canonical CSIL CBOR bytes.
+func EncodeCiPolicyDetail(csilV CiPolicyDetail) []byte {
+	return cborEncode(csilEncCiPolicyDetail(csilV))
+}
+
+// DecodeCiPolicyDetail decodes canonical CSIL CBOR bytes into a CiPolicyDetail.
+func DecodeCiPolicyDetail(csilData []byte) (CiPolicyDetail, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero CiPolicyDetail
+		return csilZero, csilErr
+	}
+	return csilDecCiPolicyDetail(csilRoot)
+}
+
+// csilEncGetCiPolicyRequest builds the canonical CBOR value tree for a GetCiPolicyRequest.
+func csilEncGetCiPolicyRequest(csilV GetCiPolicyRequest) cborValue {
+	csilEntries := make(cborMap, 0, 1)
+	csilEntries = append(csilEntries, cborEntry{cborText("project_id"), cborText(csilV.ProjectId)})
+	return csilEntries
+}
+
+// csilDecGetCiPolicyRequest reconstructs a GetCiPolicyRequest from a decoded CBOR value tree.
+func csilDecGetCiPolicyRequest(csilRoot cborValue) (GetCiPolicyRequest, error) {
+	var csilOut GetCiPolicyRequest
+	{
+		csilField, csilErr := cborRequire(csilRoot, "project_id")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.ProjectId = csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeGetCiPolicyRequest encodes a GetCiPolicyRequest to canonical CSIL CBOR bytes.
+func EncodeGetCiPolicyRequest(csilV GetCiPolicyRequest) []byte {
+	return cborEncode(csilEncGetCiPolicyRequest(csilV))
+}
+
+// DecodeGetCiPolicyRequest decodes canonical CSIL CBOR bytes into a GetCiPolicyRequest.
+func DecodeGetCiPolicyRequest(csilData []byte) (GetCiPolicyRequest, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero GetCiPolicyRequest
+		return csilZero, csilErr
+	}
+	return csilDecGetCiPolicyRequest(csilRoot)
+}
+
+// csilEncGetCiPolicyResponse builds the canonical CBOR value tree for a GetCiPolicyResponse.
+func csilEncGetCiPolicyResponse(csilV GetCiPolicyResponse) cborValue {
+	csilEntries := make(cborMap, 0, 1)
+	csilEntries = append(csilEntries, cborEntry{cborText("policy"), csilEncCiPolicyDetail(csilV.Policy)})
+	return csilEntries
+}
+
+// csilDecGetCiPolicyResponse reconstructs a GetCiPolicyResponse from a decoded CBOR value tree.
+func csilDecGetCiPolicyResponse(csilRoot cborValue) (GetCiPolicyResponse, error) {
+	var csilOut GetCiPolicyResponse
+	{
+		csilField, csilErr := cborRequire(csilRoot, "policy")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (csilDecCiPolicyDetail)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Policy = csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeGetCiPolicyResponse encodes a GetCiPolicyResponse to canonical CSIL CBOR bytes.
+func EncodeGetCiPolicyResponse(csilV GetCiPolicyResponse) []byte {
+	return cborEncode(csilEncGetCiPolicyResponse(csilV))
+}
+
+// DecodeGetCiPolicyResponse decodes canonical CSIL CBOR bytes into a GetCiPolicyResponse.
+func DecodeGetCiPolicyResponse(csilData []byte) (GetCiPolicyResponse, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero GetCiPolicyResponse
+		return csilZero, csilErr
+	}
+	return csilDecGetCiPolicyResponse(csilRoot)
+}
+
+// csilEncPutCiPolicyRequest builds the canonical CBOR value tree for a PutCiPolicyRequest.
+func csilEncPutCiPolicyRequest(csilV PutCiPolicyRequest) cborValue {
+	csilEntries := make(cborMap, 0, 3)
+	csilEntries = append(csilEntries, cborEntry{cborText("document"), cborText(csilV.Document)})
+	csilEntries = append(csilEntries, cborEntry{cborText("project_id"), cborText(csilV.ProjectId)})
+	if csilV.ExpectedRevision != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("expected_revision"), cborText((*csilV.ExpectedRevision))})
+	}
+	return csilEntries
+}
+
+// csilDecPutCiPolicyRequest reconstructs a PutCiPolicyRequest from a decoded CBOR value tree.
+func csilDecPutCiPolicyRequest(csilRoot cborValue) (PutCiPolicyRequest, error) {
+	var csilOut PutCiPolicyRequest
+	{
+		csilField, csilErr := cborRequire(csilRoot, "project_id")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.ProjectId = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "document")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Document = csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "expected_revision"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.ExpectedRevision = &csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodePutCiPolicyRequest encodes a PutCiPolicyRequest to canonical CSIL CBOR bytes.
+func EncodePutCiPolicyRequest(csilV PutCiPolicyRequest) []byte {
+	return cborEncode(csilEncPutCiPolicyRequest(csilV))
+}
+
+// DecodePutCiPolicyRequest decodes canonical CSIL CBOR bytes into a PutCiPolicyRequest.
+func DecodePutCiPolicyRequest(csilData []byte) (PutCiPolicyRequest, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero PutCiPolicyRequest
+		return csilZero, csilErr
+	}
+	return csilDecPutCiPolicyRequest(csilRoot)
+}
+
+// csilEncPutCiPolicyResponse builds the canonical CBOR value tree for a PutCiPolicyResponse.
+func csilEncPutCiPolicyResponse(csilV PutCiPolicyResponse) cborValue {
+	csilEntries := make(cborMap, 0, 1)
+	csilEntries = append(csilEntries, cborEntry{cborText("policy"), csilEncCiPolicyDetail(csilV.Policy)})
+	return csilEntries
+}
+
+// csilDecPutCiPolicyResponse reconstructs a PutCiPolicyResponse from a decoded CBOR value tree.
+func csilDecPutCiPolicyResponse(csilRoot cborValue) (PutCiPolicyResponse, error) {
+	var csilOut PutCiPolicyResponse
+	{
+		csilField, csilErr := cborRequire(csilRoot, "policy")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (csilDecCiPolicyDetail)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Policy = csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodePutCiPolicyResponse encodes a PutCiPolicyResponse to canonical CSIL CBOR bytes.
+func EncodePutCiPolicyResponse(csilV PutCiPolicyResponse) []byte {
+	return cborEncode(csilEncPutCiPolicyResponse(csilV))
+}
+
+// DecodePutCiPolicyResponse decodes canonical CSIL CBOR bytes into a PutCiPolicyResponse.
+func DecodePutCiPolicyResponse(csilData []byte) (PutCiPolicyResponse, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero PutCiPolicyResponse
+		return csilZero, csilErr
+	}
+	return csilDecPutCiPolicyResponse(csilRoot)
+}
+
+// csilEncDeleteCiPolicyRequest builds the canonical CBOR value tree for a DeleteCiPolicyRequest.
+func csilEncDeleteCiPolicyRequest(csilV DeleteCiPolicyRequest) cborValue {
+	csilEntries := make(cborMap, 0, 2)
+	csilEntries = append(csilEntries, cborEntry{cborText("project_id"), cborText(csilV.ProjectId)})
+	if csilV.ExpectedRevision != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("expected_revision"), cborText((*csilV.ExpectedRevision))})
+	}
+	return csilEntries
+}
+
+// csilDecDeleteCiPolicyRequest reconstructs a DeleteCiPolicyRequest from a decoded CBOR value tree.
+func csilDecDeleteCiPolicyRequest(csilRoot cborValue) (DeleteCiPolicyRequest, error) {
+	var csilOut DeleteCiPolicyRequest
+	{
+		csilField, csilErr := cborRequire(csilRoot, "project_id")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.ProjectId = csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "expected_revision"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.ExpectedRevision = &csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeDeleteCiPolicyRequest encodes a DeleteCiPolicyRequest to canonical CSIL CBOR bytes.
+func EncodeDeleteCiPolicyRequest(csilV DeleteCiPolicyRequest) []byte {
+	return cborEncode(csilEncDeleteCiPolicyRequest(csilV))
+}
+
+// DecodeDeleteCiPolicyRequest decodes canonical CSIL CBOR bytes into a DeleteCiPolicyRequest.
+func DecodeDeleteCiPolicyRequest(csilData []byte) (DeleteCiPolicyRequest, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero DeleteCiPolicyRequest
+		return csilZero, csilErr
+	}
+	return csilDecDeleteCiPolicyRequest(csilRoot)
+}
+
+// csilEncDeleteCiPolicyResponse builds the canonical CBOR value tree for a DeleteCiPolicyResponse.
+func csilEncDeleteCiPolicyResponse(csilV DeleteCiPolicyResponse) cborValue {
+	csilEntries := make(cborMap, 0, 1)
+	csilEntries = append(csilEntries, cborEntry{cborText("deleted"), cborBool(csilV.Deleted)})
+	return csilEntries
+}
+
+// csilDecDeleteCiPolicyResponse reconstructs a DeleteCiPolicyResponse from a decoded CBOR value tree.
+func csilDecDeleteCiPolicyResponse(csilRoot cborValue) (DeleteCiPolicyResponse, error) {
+	var csilOut DeleteCiPolicyResponse
+	{
+		csilField, csilErr := cborRequire(csilRoot, "deleted")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsBool)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Deleted = csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeDeleteCiPolicyResponse encodes a DeleteCiPolicyResponse to canonical CSIL CBOR bytes.
+func EncodeDeleteCiPolicyResponse(csilV DeleteCiPolicyResponse) []byte {
+	return cborEncode(csilEncDeleteCiPolicyResponse(csilV))
+}
+
+// DecodeDeleteCiPolicyResponse decodes canonical CSIL CBOR bytes into a DeleteCiPolicyResponse.
+func DecodeDeleteCiPolicyResponse(csilData []byte) (DeleteCiPolicyResponse, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero DeleteCiPolicyResponse
+		return csilZero, csilErr
+	}
+	return csilDecDeleteCiPolicyResponse(csilRoot)
+}
+
 // csilEncGroupSummary builds the canonical CBOR value tree for a GroupSummary.
 func csilEncGroupSummary(csilV GroupSummary) cborValue {
 	csilEntries := make(cborMap, 0, 6)

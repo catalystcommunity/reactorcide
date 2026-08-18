@@ -6,7 +6,6 @@ import hashlib
 import json
 import re
 from dataclasses import dataclass, field
-from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Set
 
 import yaml
@@ -33,7 +32,6 @@ class TrustedPolicy:
     revision: str
     rules: List[Dict[str, Any]]
     defaults: Dict[str, str]
-    maintainers: List[str]
 
 
 def _safe_relative_path(value: str) -> str:
@@ -75,70 +73,53 @@ def _canonical_policy(value: Dict[str, Any]) -> str:
     return hashlib.sha256(encoded).hexdigest()
 
 
-def load_trusted_policy(base_root: Path) -> Optional[TrustedPolicy]:
-    """Load policy only from the trusted base checkout."""
-    main_path = base_root / ".reactorcide" / "policy.yaml"
-    if not main_path.is_file():
+def load_coordinator_policy(document: str) -> Optional[TrustedPolicy]:
+    """Load a policy document that the coordinator pinned to this eval job."""
+    if not document:
         return None
-    files = [main_path]
-    fragment_dir = base_root / ".reactorcide" / "policies"
-    if fragment_dir.is_dir():
-        files.extend(sorted(fragment_dir.glob("*.yaml")))
+    data = yaml.safe_load(document) or {}
+    if not isinstance(data, dict):
+        raise ValueError("coordinator CI policy must contain a mapping")
+    _known_keys(data, ("version", "defaults", "head_ci"), "coordinator CI policy")
+    if data.get("version") != 1:
+        raise ValueError("coordinator CI policy version must be 1")
 
-    combined: Dict[str, Any] = {}
     rules: List[Dict[str, Any]] = []
     seen_rules: Set[str] = set()
     seen_workflows: Set[str] = set()
-    for index, file_path in enumerate(files):
-        resolved = file_path.resolve()
-        try:
-            resolved.relative_to(base_root.resolve())
-        except ValueError as exc:
-            raise ValueError(f"policy path escapes trusted base: {file_path}") from exc
-        data = yaml.safe_load(file_path.read_text()) or {}
-        if not isinstance(data, dict):
-            raise ValueError(f"{file_path} must contain a mapping")
-        _known_keys(data, ("version", "defaults", "policy_maintainers", "head_ci"), str(file_path))
-        version = data.get("version", 1 if index else None)
-        if version != 1:
-            raise ValueError(f"{file_path} policy version must be 1")
-        if index == 0:
-            combined = dict(data)
-            combined["head_ci"] = []
-        for rule in data.get("head_ci") or []:
-            if not isinstance(rule, dict):
-                raise ValueError(f"{file_path} head_ci entries must be mappings")
-            _known_keys(rule, ("id", "actors", "workflows", "paths", "events", "base_branches", "head_repository", "approval", "use"), f"rule in {file_path}")
-            rule_id = str(rule.get("id") or "")
-            if not ID_RE.fullmatch(rule_id) or rule_id in seen_rules:
-                raise ValueError(f"invalid or duplicate policy rule id {rule_id!r}")
-            seen_rules.add(rule_id)
-            workflows = rule.get("workflows") or []
-            paths = rule.get("paths") or []
-            if not workflows or not paths:
-                raise ValueError(f"rule {rule_id} must select workflows and paths")
-            for workflow_id in workflows:
-                if not ID_RE.fullmatch(str(workflow_id)) or workflow_id in seen_workflows:
-                    raise ValueError(f"invalid or duplicate workflow security id {workflow_id!r}")
-                seen_workflows.add(str(workflow_id))
-            for path_value in paths:
-                _safe_relative_path(str(path_value))
-            _subjects(rule.get("actors"), f"rule {rule_id} actors")
-            _subjects(rule.get("approval"), f"rule {rule_id} approval", allow_owner=True)
-            relation = rule.get("head_repository") or "same"
-            if relation not in ("same", "fork", "any"):
-                raise ValueError(f"rule {rule_id} has invalid head_repository")
-            use = rule.get("use") or {}
-            _known_keys(use, ("ci_source", "profile", "workers"), f"rule {rule_id} use")
-            if use.get("ci_source") != "head" or not use.get("profile") or not use.get("workers"):
-                raise ValueError(f"rule {rule_id} must select head, profile, and workers")
-            rules.append(rule)
+    for rule in data.get("head_ci") or []:
+        if not isinstance(rule, dict):
+            raise ValueError("coordinator CI policy head_ci entries must be mappings")
+        _known_keys(rule, ("id", "actors", "workflows", "paths", "events", "base_branches", "head_repository", "approval", "use"), "coordinator CI policy rule")
+        rule_id = str(rule.get("id") or "")
+        if not ID_RE.fullmatch(rule_id) or rule_id in seen_rules:
+            raise ValueError(f"invalid or duplicate policy rule id {rule_id!r}")
+        seen_rules.add(rule_id)
+        workflows = rule.get("workflows") or []
+        paths = rule.get("paths") or []
+        if not workflows or not paths:
+            raise ValueError(f"rule {rule_id} must select workflows and paths")
+        for workflow_id in workflows:
+            if not ID_RE.fullmatch(str(workflow_id)) or workflow_id in seen_workflows:
+                raise ValueError(f"invalid or duplicate workflow security id {workflow_id!r}")
+            seen_workflows.add(str(workflow_id))
+        for path_value in paths:
+            _safe_relative_path(str(path_value))
+        _subjects(rule.get("actors"), f"rule {rule_id} actors")
+        _subjects(rule.get("approval"), f"rule {rule_id} approval", allow_owner=True)
+        relation = rule.get("head_repository") or "same"
+        if relation not in ("same", "fork", "any"):
+            raise ValueError(f"rule {rule_id} has invalid head_repository")
+        use = rule.get("use") or {}
+        _known_keys(use, ("ci_source", "profile", "workers"), f"rule {rule_id} use")
+        if use.get("ci_source") != "head" or not use.get("profile") or not use.get("workers"):
+            raise ValueError(f"rule {rule_id} must select head, profile, and workers")
+        rules.append(rule)
 
-    defaults = combined.get("defaults") or {}
+    defaults = data.get("defaults") or {}
     _known_keys(defaults, ("ci_source", "profile"), "defaults")
     if defaults.get("ci_source", "base") != "base":
         raise ValueError("default ci_source must be base")
-    maintainers = _subjects(combined.get("policy_maintainers"), "policy_maintainers", allow_owner=True)
     canonical_rules = []
     for rule in rules:
         use = rule.get("use") or {}
@@ -156,7 +137,6 @@ def load_trusted_policy(base_root: Path) -> Optional[TrustedPolicy]:
     combined = {
         "defaults": {"ci_source": "base", "profile": str(defaults.get("profile") or "standard")},
         "head_ci": canonical_rules,
-        "policy_maintainers": {"any": maintainers},
         "version": 1,
     }
     return TrustedPolicy(
@@ -164,7 +144,6 @@ def load_trusted_policy(base_root: Path) -> Optional[TrustedPolicy]:
         revision=_canonical_policy(combined),
         rules=rules,
         defaults={"ci_source": "base", "profile": str(defaults.get("profile") or "standard")},
-        maintainers=maintainers,
     )
 
 
@@ -204,7 +183,7 @@ def decide_workflow(
     base_sha: str,
     head_sha: str,
 ) -> PolicyDecision:
-    """Select one atomic CI origin from trusted-base policy."""
+    """Select one atomic CI origin from coordinator policy."""
     base = PolicyDecision(profile=policy.defaults["profile"], reasons=["trusted base CI continues"])
     candidates: List[PolicyDecision] = []
     relevant_paths = sorted(set(changed_ci_paths).intersection(dependency_paths))
@@ -216,7 +195,7 @@ def decide_workflow(
             continue
         if not all(any(path_matches(pattern, item) for pattern in patterns) for item in dependency_paths):
             continue
-        if not all(any(path_matches(pattern, item) for pattern in patterns) for item in relevant_paths):
+        if not all(any(path_matches(pattern, item) for pattern in patterns) for item in changed_ci_paths):
             continue
         if rule.get("events") and event not in rule["events"]:
             continue
@@ -252,7 +231,7 @@ def decide_workflow(
             allowed=True,
         ))
     if not candidates:
-        base.reasons.insert(0, "no complete trusted-base rule authorized head CI")
+        base.reasons.insert(0, "no complete coordinator rule authorized head CI")
         return base
     selected = candidates[0]
     for candidate in candidates[1:]:
@@ -262,4 +241,12 @@ def decide_workflow(
 
 
 def ci_paths(changed_paths: Optional[List[str]]) -> List[str]:
-    return sorted({_safe_relative_path(path) for path in (changed_paths or []) if path.startswith(".reactorcide/")})
+    result = set()
+    for value in changed_paths or []:
+        if not value.startswith(".reactorcide/"):
+            continue
+        path = _safe_relative_path(value)
+        if path == ".reactorcide/policy.yaml" or path.startswith(".reactorcide/policies/"):
+            continue
+        result.add(path)
+    return sorted(result)

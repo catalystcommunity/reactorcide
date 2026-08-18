@@ -316,3 +316,25 @@ func (r *Resolver) RequireProjectOwner(ctx context.Context, id Identity, project
 	}
 	return nil
 }
+
+// RequireProjectPolicyManager permits project owners and administrators. A
+// scoped API token must have policies:manage for the project's organization.
+func (r *Resolver) RequireProjectPolicyManager(ctx context.Context, id Identity, projectID string) error {
+	if id.Anonymous || projectID == "" {
+		return &PermissionError{Capability: "project_policy_manager", Detail: "project:" + projectID}
+	}
+	if id.Token != nil {
+		project, err := r.store.GetProjectByID(ctx, projectID)
+		if err != nil {
+			return err
+		}
+		if !id.tokenAllows(project.OwnershipOrgID(), tokencaps.PoliciesManage) {
+			return &PermissionError{Capability: "project_policy_manager", Detail: "project:" + projectID}
+		}
+		if id.UserID == "" {
+			return nil
+		}
+		return r.RequireProjectOwner(ctx, UserIdentity(id.UserID), projectID)
+	}
+	return r.RequireProjectOwner(ctx, id, projectID)
+}

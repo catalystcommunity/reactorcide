@@ -152,6 +152,15 @@ func (c *ReactorcideUiClient) SetDefaultOrg(ctx context.Context, req SetDefaultO
 	return DecodeSetDefaultOrgResponse(csilResp)
 }
 
+func (c *ReactorcideUiClient) DeleteOrg(ctx context.Context, req DeleteOrgRequest) (DeleteOrgResponse, error) {
+	var csilZero DeleteOrgResponse
+	csilResp, csilErr := c.transport.Call(ctx, "ReactorcideUi", "delete-org", EncodeDeleteOrgRequest(req))
+	if csilErr != nil {
+		return csilZero, csilErr
+	}
+	return DecodeDeleteOrgResponse(csilResp)
+}
+
 func (c *ReactorcideUiClient) ListExecutionProfiles(ctx context.Context, req ListExecutionProfilesRequest) (ListExecutionProfilesResponse, error) {
 	var csilZero ListExecutionProfilesResponse
 	csilResp, csilErr := c.transport.Call(ctx, "ReactorcideUi", "list-execution-profiles", EncodeListExecutionProfilesRequest(req))
@@ -267,6 +276,33 @@ func (c *ReactorcideUiClient) DeleteProject(ctx context.Context, req DeleteProje
 		return csilZero, csilErr
 	}
 	return DecodeDeleteProjectResponse(csilResp)
+}
+
+func (c *ReactorcideUiClient) GetCiPolicy(ctx context.Context, req GetCiPolicyRequest) (GetCiPolicyResponse, error) {
+	var csilZero GetCiPolicyResponse
+	csilResp, csilErr := c.transport.Call(ctx, "ReactorcideUi", "get-ci-policy", EncodeGetCiPolicyRequest(req))
+	if csilErr != nil {
+		return csilZero, csilErr
+	}
+	return DecodeGetCiPolicyResponse(csilResp)
+}
+
+func (c *ReactorcideUiClient) PutCiPolicy(ctx context.Context, req PutCiPolicyRequest) (PutCiPolicyResponse, error) {
+	var csilZero PutCiPolicyResponse
+	csilResp, csilErr := c.transport.Call(ctx, "ReactorcideUi", "put-ci-policy", EncodePutCiPolicyRequest(req))
+	if csilErr != nil {
+		return csilZero, csilErr
+	}
+	return DecodePutCiPolicyResponse(csilResp)
+}
+
+func (c *ReactorcideUiClient) DeleteCiPolicy(ctx context.Context, req DeleteCiPolicyRequest) (DeleteCiPolicyResponse, error) {
+	var csilZero DeleteCiPolicyResponse
+	csilResp, csilErr := c.transport.Call(ctx, "ReactorcideUi", "delete-ci-policy", EncodeDeleteCiPolicyRequest(req))
+	if csilErr != nil {
+		return csilZero, csilErr
+	}
+	return DecodeDeleteCiPolicyResponse(csilResp)
 }
 
 func (c *ReactorcideUiClient) ListGroups(ctx context.Context, req ListGroupsRequest) (ListGroupsResponse, error) {
