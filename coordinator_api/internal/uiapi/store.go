@@ -39,6 +39,9 @@ type DataStore interface {
 
 	// --- projects (additive) ---
 	ListProjectsByOrg(ctx context.Context, orgID string, limit, offset int) ([]models.Project, error)
+	GetCIPolicyByProject(ctx context.Context, projectID string) (*models.CIPolicy, error)
+	UpsertCIPolicy(ctx context.Context, policy *models.CIPolicy, expectedRevision *string) error
+	DeleteCIPolicy(ctx context.Context, projectID string, expectedRevision *string) error
 
 	// --- auth_identities (additive) ---
 	GetAuthIdentityByUserID(ctx context.Context, userID string) (*models.AuthIdentity, error)

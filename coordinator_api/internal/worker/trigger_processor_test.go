@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/characteristics"
+	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/cipolicy"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/corndogs"
 	pb "github.com/catalystcommunity/reactorcide/coordinator_api/internal/corndogs/v1alpha1"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store/models"
@@ -96,20 +97,55 @@ func TestValidateWorkflowAuthorityPinsExactOrigin(t *testing.T) {
 	if err := (&vcs.JobMetadata{VCSProvider: "github", Repo: "org/repo", CommitSHA: headSHA, IsEval: true}).ApplyToJob(parent); err != nil {
 		t.Fatal(err)
 	}
+	policy, err := cipolicy.ParseDocument([]byte(`version: 1
+defaults: {ci_source: base, profile: standard}
+head_ci:
+- id: backend
+  actors: {any: [repository_write]}
+  workflows: [tests]
+  paths: [.reactorcide/workflows/tests.yaml]
+  events: [pull_request_updated]
+  base_branches: [main]
+  head_repository: fork
+  use: {ci_source: head, profile: pr-untrusted, workers: default}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	document, err := cipolicy.CanonicalDocument(policy)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if parent.JobEnvVars == nil {
+		parent.JobEnvVars = models.JSONB{}
+	}
+	parent.JobEnvVars["REACTORCIDE_CI_POLICY"] = string(document)
+	parent.JobEnvVars["REACTORCIDE_CI_POLICY_REVISION"] = policy.Revision
+	parent.JobEnvVars["REACTORCIDE_ACTOR_SUBJECTS"] = `["repository_write"]`
+	parent.JobEnvVars["REACTORCIDE_EVENT_TYPE"] = "pull_request_updated"
+	parent.JobEnvVars["REACTORCIDE_BASE_REF"] = "main"
+	parent.JobEnvVars["REACTORCIDE_IS_FORK_PR"] = "true"
 	tp := NewTriggerProcessor(&MockStore{}, nil)
 	base := &triggerWorkflowSpec{ID: "tests", TriggerType: "runnerlib_eval", CIOrigin: "base",
 		CIRepository: baseRepo, CISHA: baseSHA, ExecutionProfile: "standard", WorkerClass: "default"}
-	if err := tp.validateWorkflowAuthority(context.Background(), parent, base); err != nil {
+	if err := tp.validateWorkflowAuthority(context.Background(), parent, base, nil); err != nil {
 		t.Fatalf("base authority rejected: %v", err)
 	}
 	head := &triggerWorkflowSpec{ID: "tests", TriggerType: "runnerlib_eval", CIOrigin: "head",
 		CIRepository: headRepo, CISHA: headSHA, ExecutionProfile: "pr-untrusted", WorkerClass: "default",
-		PolicyRevision: "revision", PolicyRuleID: "backend"}
-	if err := tp.validateWorkflowAuthority(context.Background(), parent, head); err != nil {
+		PolicyRevision: policy.Revision, PolicyRuleID: "backend", DependencyPaths: []string{".reactorcide/workflows/tests.yaml"}}
+	if err := tp.validateWorkflowAuthority(context.Background(), parent, head, []string{".reactorcide/workflows/tests.yaml"}); err != nil {
 		t.Fatalf("head authority rejected: %v", err)
 	}
+	if err := tp.validateWorkflowAuthority(context.Background(), parent, head, []string{".reactorcide/workflows/tests.yaml", ".reactorcide/scripts/untrusted.sh"}); err == nil {
+		t.Fatal("head workflow accepted a changed CI path outside its coordinator rule")
+	}
+	head.PolicyRuleID = "forged-rule"
+	if err := tp.validateWorkflowAuthority(context.Background(), parent, head, []string{".reactorcide/workflows/tests.yaml"}); err == nil {
+		t.Fatal("head workflow accepted a forged policy rule ID")
+	}
+	head.PolicyRuleID = "backend"
 	head.CISHA = "branch-name"
-	if err := tp.validateWorkflowAuthority(context.Background(), parent, head); err == nil {
+	if err := tp.validateWorkflowAuthority(context.Background(), parent, head, []string{".reactorcide/workflows/tests.yaml"}); err == nil {
 		t.Fatal("head workflow was not pinned to the exact event SHA")
 	}
 }
@@ -142,6 +178,9 @@ func TestRunnerlibEvalCrossLanguageFixture(t *testing.T) {
 	workflow := envelope.Workflows[0]
 	if workflow.ID != "backend-tests" || workflow.CIOrigin != "head" || workflow.CISHA != "head-sha" || len(workflow.Jobs) != 1 {
 		t.Fatalf("workflow provenance did not survive JSON parsing: %+v", workflow)
+	}
+	if len(workflow.DependencyPaths) != 1 || workflow.DependencyPaths[0] != ".reactorcide/workflows/backend.yaml" {
+		t.Fatalf("workflow dependency paths did not survive JSON parsing: %+v", workflow.DependencyPaths)
 	}
 }
 

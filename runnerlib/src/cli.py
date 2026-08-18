@@ -934,7 +934,7 @@ def eval_cmd(
 
     # A pull request always evaluates trusted definitions from the exact base
     # checkout. The head checkout is separate and remains candidate data until
-    # the base policy permits a workflow to use it.
+    # the coordinator policy permits a workflow to use it.
     dual_checkout = bool(pr_number and not (ci_root_path / ".reactorcide").is_dir())
     if dual_checkout:
         ci_source_path = ci_root_path / "base"
@@ -1030,9 +1030,9 @@ def eval_cmd(
                    + (f", branch '{branch}'" if branch else "")
                    + (f", {len(changed)} changed file(s)" if changed else ""))
 
-        from src.ci_policy import ci_paths, decide_workflow, load_trusted_policy
+        from src.ci_policy import ci_paths, decide_workflow, load_coordinator_policy
 
-        trusted_policy = load_trusted_policy(ci_source_path)
+        trusted_policy = load_coordinator_policy(os.getenv("REACTORCIDE_CI_POLICY", ""))
         changed_ci = ci_paths(changed)
         head_workflows = {}
         if dual_checkout and (ci_root_path / "head").is_dir():
@@ -1131,7 +1131,7 @@ def eval_cmd(
                         decision.reasons = ["head workflow is missing an explicit trusted policy id"]
                     else:
                         selected_wf = candidate
-                        authorized_paths.update(affected_paths)
+                        authorized_paths.update(changed_ci)
                 if not decision.allowed:
                     for path_value in affected_paths:
                         violations.append({
@@ -1164,6 +1164,7 @@ def eval_cmd(
                 "policy_revision": trusted_policy.revision if trusted_policy else "",
                 "policy_rule_id": decision.rule_id if decision else "",
                 "approval_id": decision.approval_id if decision and decision.approval_id else None,
+                "dependency_paths": sorted(policy_dependency_paths),
                 "vars": selected_wf.vars,
                 "jobs": job_triggers,
             })
@@ -1171,12 +1172,7 @@ def eval_cmd(
             log_stdout(f"  ✓ matched workflow '{wf.name}' ({reason}): {len(job_triggers)} job(s): {job_names}")
 
         if dual_checkout and changed_ci:
-            maintainer_allowed = bool(trusted_policy and set(trusted_policy.maintainers).intersection(actor_subjects))
             for path_value in changed_ci:
-                is_policy_path = path_value == ".reactorcide/policy.yaml" or path_value.startswith(".reactorcide/policies/")
-                if is_policy_path and maintainer_allowed:
-                    authorized_paths.add(path_value)
-                    log_stdout("This policy change does not apply to the current pull request. The trusted base policy remains active.")
                 if path_value not in authorized_paths and not any(item["path"] == path_value for item in violations):
                     violations.append({
                         "path": path_value,
@@ -1204,6 +1200,7 @@ def eval_cmd(
                 "policy_revision": trusted_policy.revision if trusted_policy else "",
                 "policy_rule_id": "",
                 "approval_id": None,
+                "dependency_paths": [repo_relative(selected_no_match.source_file)],
                 "vars": selected_no_match.vars,
                 "jobs": [],
             })

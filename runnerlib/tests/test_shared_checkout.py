@@ -25,10 +25,8 @@ def test_shared_checkout_uses_one_object_store_and_small_ci_views(tmp_path, monk
     _git(base_repo, "init")
     _git(base_repo, "config", "user.email", "test@example.invalid")
     _git(base_repo, "config", "user.name", "Test User")
-    policy = base_repo / ".reactorcide" / "policy.yaml"
     workflow = base_repo / ".reactorcide" / "workflows" / "test.yaml"
     workflow.parent.mkdir(parents=True)
-    policy.write_text("version: 1\ndefaults:\n  ci_source: base\n  profile: standard\n")
     workflow.write_text("id: tests\nname: Base tests\n")
     (base_repo / "large-source.bin").write_bytes(b"x" * 1024 * 1024)
     base_sha = _commit(base_repo, "base")

@@ -385,8 +385,8 @@ can submit triggers only for its parent job.
 ## CI Admission and Reports
 
 For a pull request, the evaluator prepares exact base and head views. It loads
-policy only from the base view. The `isolated` checkout mode uses separate Git
-clones. The `shared` mode uses one non-shallow, blob-filtered Git object store
+policy only from coordinator state. The `isolated` checkout mode uses separate
+Git clones. The `shared` mode uses one non-shallow, blob-filtered Git object store
 and stages only `.reactorcide` files for the two CI views. Both modes keep the
 trust boundary.
 
@@ -407,5 +407,5 @@ Use these documents with this design:
 - [Worker Operation](./docs/workers.md)
 - [Workflow Design](./docs/workflow-design.md)
 - [Job Definition Reference](./docs/job-definitions.md)
-- [Organizations and Trusted CI Policy](./docs/organizations-and-ci-policy.md)
+- [Organizations and Coordinator CI Policy](./docs/organizations-and-ci-policy.md)
 - [VCS Credentials and Secret Grants](./docs/vcs-credentials-and-secret-grants.md)

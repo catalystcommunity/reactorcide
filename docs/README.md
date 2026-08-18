@@ -12,7 +12,7 @@ Use this page to select the correct guide.
   workflows.
 - [Security Model](./security-model.md): Understand trust boundaries before
   you give secrets or runtime capabilities to a job.
-- [Organizations and Trusted CI Policy](./organizations-and-ci-policy.md):
+- [Organizations and Coordinator CI Policy](./organizations-and-ci-policy.md):
   Configure tenants, token scope, worker classes, execution profiles, CI
   admission, approvals, reports, and audit export.
 

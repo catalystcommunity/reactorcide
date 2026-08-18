@@ -1,4 +1,4 @@
-# Organizations and Trusted CI Policy
+# Organizations and Coordinator CI Policy
 
 This guide explains organization ownership and pull-request CI admission. Use
 it when you operate a shared coordinator or when a repository must run changed
@@ -6,10 +6,10 @@ CI definitions from a pull-request branch.
 
 ## Compatibility Defaults
 
-You do not need a policy file to run existing trusted-base CI.
+You do not need a coordinator policy to run existing trusted-base CI.
 
 - Existing workflow definitions continue to run from the trusted base commit.
-- A pull request cannot run changed CI definitions without a trusted-base
+- A pull request cannot run changed CI definitions without a coordinator
   policy rule.
 - A CI-file change without a policy produces a failed `Reactorcide CI Policy`
   status. Safe trusted-base workflows continue.
@@ -18,8 +18,8 @@ You do not need a policy file to run existing trusted-base CI.
 - The `standard` execution profile preserves the previous execution limits.
 - The default worker class is `default`.
 
-The first policy file cannot authorize itself. Add the first policy through a
-trusted base-branch change.
+Create the first policy with the coordinator API or CLI. A repository change
+cannot create or replace it.
 
 ## Organizations
 
@@ -242,14 +242,55 @@ The ID must match the organization-name grammar. The ID is the security
 identity. The name is only a display label. A policy rule cannot authorize a
 workflow that has only a generated compatibility ID.
 
-## Policy Files
+## Coordinator CI Policy
 
-Put the main policy at `.reactorcide/policy.yaml`. You can put additional rule
-sets in `.reactorcide/policies/*.yaml`. Reactorcide sorts fragments by path and
-calculates one revision for the complete policy set.
+Store one CI policy for each project in the coordinator. Do not put this
+policy in the source repository. Reactorcide does not read
+`.reactorcide/policy.yaml` or `.reactorcide/policies/` during evaluation.
 
-The evaluator always loads policy from the exact trusted base SHA. A policy
-change in a pull request does not apply to that pull request.
+The coordinator validates the policy and calculates its revision. It puts an
+exact policy copy on each evaluation job. It then checks the evaluation result
+against the same copy. A policy update does not change a job that is already
+in progress.
+
+Keep an operator copy, such as `ci-policy.yaml`, outside the source repository.
+Use the CLI to validate and store it:
+
+```bash
+reactorcide policy validate --file ci-policy.yaml
+reactorcide policy set \
+  --api-url https://reactorcide.example.com \
+  --token "$REACTORCIDE_API_TOKEN" \
+  --project application \
+  --file ci-policy.yaml
+```
+
+The token needs `policies:manage` for the project organization. Use the project
+ID when this is the token's only capability. Project name and repository URL
+resolution also need `projects:read`. A project owner, an organization
+administrator, or a global administrator can also manage the policy with an
+authenticated session.
+
+### Migrate an Old Repository Policy
+
+Complete this migration after the coordinator database migration is active:
+
+1. Copy the old `.reactorcide/policy.yaml` content to an operator file outside
+   the repository.
+2. Add each rule from `.reactorcide/policies/*.yaml` to the `head_ci` list in
+   the operator file.
+3. Remove `policy_maintainers`. Coordinator authorization now controls policy
+   changes.
+4. Run `reactorcide policy validate --file OPERATOR_FILE`.
+5. Run `reactorcide policy set --project PROJECT --file OPERATOR_FILE` with the
+   coordinator URL and an authorized session or API token.
+6. Run `reactorcide policy get --project PROJECT` and record the revision.
+7. Delete `.reactorcide/policy.yaml` and `.reactorcide/policies/` from the
+   repository.
+
+Set the coordinator policy before you delete the old files. The old files have
+no authority after this release, but this order prevents an interval with no
+head-CI policy.
 
 Example:
 
@@ -259,11 +300,6 @@ version: 1
 defaults:
   ci_source: base
   profile: standard
-
-policy_maintainers:
-  any:
-    - reactorcide_group:ci-admins
-    - vcs_team:example/ci-admins
 
 head_ci:
   - id: backend-team
@@ -325,7 +361,7 @@ The supported actor and approval subjects are:
 - `vcs_user:PROVIDER/LOGIN`
 - `vcs_team:OWNER/TEAM`
 - `reactorcide_group:NAME`
-- `project_owner` for approvals and policy maintainers only
+- `project_owner` for approvals only
 
 Use a lowercase provider and login in `vcs_user:`. For example, use
 `vcs_user:github/alice`. Reactorcide gets this identity from the signed VCS
@@ -339,18 +375,21 @@ GET|POST  /api/v1/vcs-identities
 DELETE    /api/v1/vcs-identities/LINK_ID
 ```
 
-## Validate and Explain Policy
+## Get, Validate, and Explain Policy
 
-The policy commands read local repository files. They do not contact GitHub or
-the coordinator.
+The `get`, `set`, and `delete` commands contact the coordinator. The `validate`
+and `explain` commands read one local file and do not contact the coordinator.
 
 ```bash
-reactorcide policy validate --path .
+reactorcide policy get \
+  --api-url https://reactorcide.example.com \
+  --token "$REACTORCIDE_API_TOKEN" \
+  --project application
+
+reactorcide policy validate --file ci-policy.yaml
 
 reactorcide policy explain \
-  --path . \
-  --project application \
-  --pr 42 \
+  --file ci-policy.yaml \
   --workflow backend-tests \
   --changed-path .reactorcide/workflows/backend.yaml \
   --changed-path .reactorcide/jobs/backend/test.yaml \
@@ -360,8 +399,9 @@ reactorcide policy explain \
   --actor repository_write
 ```
 
-The `--project` and `--pr` values label the output. Supply verified actor and
-approval subjects when you reproduce a coordinator decision.
+Supply verified actor and approval subjects when you reproduce a coordinator
+decision. Use `--expected-revision` with `set` or `delete` to prevent an update
+from replacing a newer policy.
 
 ## Approvals
 
@@ -376,7 +416,7 @@ A verified GitHub user can add this exact command to a pull request:
 /reactorcide approve WORKFLOW PROFILE POLICY-REVISION
 ```
 
-The coordinator reads the current SHAs from GitHub. The trusted-base policy
+The coordinator reads the current SHAs from GitHub. The coordinator policy
 must permit the approver subject.
 
 An operator can create the same record through the API:
@@ -400,8 +440,9 @@ approval subject.
 
 ## GitHub Status and Report
 
-Runnerlib returns workflow decisions and policy violations in one evaluation
-result. The coordinator then writes a commit status on the exact head SHA:
+Runnerlib returns workflow candidates and policy facts in one evaluation
+result. The coordinator makes the authoritative decision. It then writes a
+commit status on the exact head SHA:
 
 ```text
 Context: Reactorcide CI Policy

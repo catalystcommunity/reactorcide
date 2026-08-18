@@ -217,9 +217,9 @@ jobs:
 
 See [Job Definition Reference](./job-definitions.md).
 
-Trusted-base workflows do not need a policy file. Add a policy only when a
-pull request must run changed workflow or job definitions. See [Organizations
-and Trusted CI Policy](./organizations-and-ci-policy.md).
+Trusted-base workflows do not need a coordinator policy. Add a policy only
+when a pull request must run changed workflow or job definitions. See
+[Organizations and Coordinator CI Policy](./organizations-and-ci-policy.md).
 
 ## Configure a GitHub Webhook
 

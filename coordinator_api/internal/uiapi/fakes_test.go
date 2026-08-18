@@ -27,13 +27,14 @@ type fakeStore struct {
 	mu     sync.Mutex
 	nextID int
 
-	users     map[string]models.User
-	orgs      map[string]models.Organization
-	projects  map[string]models.Project
-	jobs      map[string]models.Job
-	workflows map[string]models.WorkflowInstance
-	nodes     map[string][]models.WorkflowNode
-	events    []models.WorkflowEvent
+	users      map[string]models.User
+	orgs       map[string]models.Organization
+	projects   map[string]models.Project
+	ciPolicies map[string]models.CIPolicy
+	jobs       map[string]models.Job
+	workflows  map[string]models.WorkflowInstance
+	nodes      map[string][]models.WorkflowNode
+	events     []models.WorkflowEvent
 
 	groups       map[string]models.Group
 	groupMembers map[string]map[string]bool // groupID -> set of userID
@@ -55,6 +56,7 @@ type fakeStore struct {
 	secretGrants map[string]models.SecretGrant
 
 	authCredentials map[string]models.AuthCredential
+	apiTokens       map[string]models.APIToken
 
 	queues           map[string]models.Queue
 	pools            map[string]models.WorkerPool
@@ -68,6 +70,7 @@ func newFakeStore() *fakeStore {
 		users:                   map[string]models.User{},
 		orgs:                    map[string]models.Organization{},
 		projects:                map[string]models.Project{},
+		ciPolicies:              map[string]models.CIPolicy{},
 		jobs:                    map[string]models.Job{},
 		workflows:               map[string]models.WorkflowInstance{},
 		nodes:                   map[string][]models.WorkflowNode{},
@@ -83,6 +86,7 @@ func newFakeStore() *fakeStore {
 		vcsCreds:                map[string]models.ProjectVCSCredential{},
 		secretGrants:            map[string]models.SecretGrant{},
 		authCredentials:         map[string]models.AuthCredential{},
+		apiTokens:               map[string]models.APIToken{},
 		queues:                  map[string]models.Queue{},
 		pools:                   map[string]models.WorkerPool{},
 		enrollmentTokens:        map[string]models.PoolEnrollmentToken{},
@@ -318,6 +322,51 @@ func (f *fakeStore) DeleteProject(_ context.Context, projectID string) error {
 	return nil
 }
 
+func (f *fakeStore) GetCIPolicyByProject(_ context.Context, projectID string) (*models.CIPolicy, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	policy, ok := f.ciPolicies[projectID]
+	if !ok {
+		return nil, store.ErrNotFound
+	}
+	return &policy, nil
+}
+
+func (f *fakeStore) UpsertCIPolicy(_ context.Context, policy *models.CIPolicy, expectedRevision *string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if expectedRevision != nil {
+		existing, ok := f.ciPolicies[policy.ProjectID]
+		if !ok || existing.Revision != *expectedRevision {
+			return store.ErrConflict
+		}
+	}
+	if existing, ok := f.ciPolicies[policy.ProjectID]; ok {
+		policy.PolicyID = existing.PolicyID
+		policy.CreatedAt = existing.CreatedAt
+	} else {
+		policy.PolicyID = f.genID("policy")
+		policy.CreatedAt = fakeNow()
+	}
+	policy.UpdatedAt = fakeNow()
+	f.ciPolicies[policy.ProjectID] = *policy
+	return nil
+}
+
+func (f *fakeStore) DeleteCIPolicy(_ context.Context, projectID string, expectedRevision *string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	policy, ok := f.ciPolicies[projectID]
+	if !ok {
+		return store.ErrNotFound
+	}
+	if expectedRevision != nil && policy.Revision != *expectedRevision {
+		return store.ErrConflict
+	}
+	delete(f.ciPolicies, projectID)
+	return nil
+}
+
 func (f *fakeStore) ListProjects(_ context.Context, limit, offset int) ([]models.Project, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -404,7 +453,20 @@ func (f *fakeStore) IsPRMerged(_ context.Context, repo string, prNumber int) (bo
 func (f *fakeStore) MarkPRMerged(_ context.Context, repo string, prNumber int) error { return nil }
 
 func (f *fakeStore) ValidateAPIToken(_ context.Context, token string) (*models.APIToken, *models.User, error) {
-	return nil, nil, store.ErrNotFound
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	apiToken, ok := f.apiTokens[token]
+	if !ok {
+		return nil, nil, store.ErrNotFound
+	}
+	var user *models.User
+	if apiToken.UserID != "" {
+		if row, ok := f.users[apiToken.UserID]; ok {
+			copy := row
+			user = &copy
+		}
+	}
+	return &apiToken, user, nil
 }
 
 func (f *fakeStore) CreateAPIToken(_ context.Context, apiToken *models.APIToken) error { return nil }

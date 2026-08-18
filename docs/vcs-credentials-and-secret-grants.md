@@ -223,6 +223,6 @@ the project. The optional `execution_profiles` and `ci_origins` selectors can
 limit a grant to approved profiles and to base or head CI. A job name alone
 cannot grant a head-CI job access to a trusted secret.
 
-See [Organizations and Trusted CI Policy](./organizations-and-ci-policy.md)
+See [Organizations and Coordinator CI Policy](./organizations-and-ci-policy.md)
 for profile definitions, CI-origin selection, approvals, and VCS policy
 reports.

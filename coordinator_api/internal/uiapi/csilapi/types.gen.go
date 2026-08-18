@@ -408,6 +408,50 @@ type DeleteProjectResponse struct {
 	Deleted bool `json:"deleted" yaml:"deleted"`
 }
 
+// CiPolicyDetail represents a structured data type
+type CiPolicyDetail struct {
+	PolicyId  string  `json:"policy_id" yaml:"policy_id"`
+	ProjectId string  `json:"project_id" yaml:"project_id"`
+	Revision  string  `json:"revision" yaml:"revision"`
+	Document  string  `json:"document" yaml:"document"`
+	CreatedAt string  `json:"created_at" yaml:"created_at"`
+	UpdatedAt string  `json:"updated_at" yaml:"updated_at"`
+	UpdatedBy *string `json:"updated_by,omitempty" yaml:"updated_by,omitempty"`
+}
+
+// GetCiPolicyRequest represents a structured data type
+type GetCiPolicyRequest struct {
+	ProjectId string `json:"project_id" yaml:"project_id"`
+}
+
+// GetCiPolicyResponse represents a structured data type
+type GetCiPolicyResponse struct {
+	Policy CiPolicyDetail `json:"policy" yaml:"policy"`
+}
+
+// PutCiPolicyRequest represents a structured data type
+type PutCiPolicyRequest struct {
+	ProjectId        string  `json:"project_id" yaml:"project_id"`
+	Document         string  `json:"document" yaml:"document"`
+	ExpectedRevision *string `json:"expected_revision,omitempty" yaml:"expected_revision,omitempty"`
+}
+
+// PutCiPolicyResponse represents a structured data type
+type PutCiPolicyResponse struct {
+	Policy CiPolicyDetail `json:"policy" yaml:"policy"`
+}
+
+// DeleteCiPolicyRequest represents a structured data type
+type DeleteCiPolicyRequest struct {
+	ProjectId        string  `json:"project_id" yaml:"project_id"`
+	ExpectedRevision *string `json:"expected_revision,omitempty" yaml:"expected_revision,omitempty"`
+}
+
+// DeleteCiPolicyResponse represents a structured data type
+type DeleteCiPolicyResponse struct {
+	Deleted bool `json:"deleted" yaml:"deleted"`
+}
+
 // GroupSummary represents a structured data type
 type GroupSummary struct {
 	GroupId     string  `json:"group_id" yaml:"group_id"`

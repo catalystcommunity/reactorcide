@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/cipolicy"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/corndogs"
 	pb "github.com/catalystcommunity/reactorcide/coordinator_api/internal/corndogs/v1alpha1"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store"
@@ -25,16 +26,33 @@ func TestVCSUserSubjectIsStable(t *testing.T) {
 	assert.Empty(t, vcsUserSubject(vcs.GitHub, ""))
 }
 
+const testCIPolicyDocument = `version: 1
+defaults: {ci_source: base, profile: standard}
+head_ci:
+- id: tests
+  actors: {any: [repository_write]}
+  workflows: [tests]
+  paths: [.reactorcide/**]
+  use: {ci_source: head, profile: pr-untrusted, workers: default}`
+
 // WebhookMockStore implements store.Store for webhook handler testing
 type WebhookMockStore struct {
 	CreateJobFunc           func(ctx context.Context, job *models.Job) error
 	UpdateJobFunc           func(ctx context.Context, job *models.Job) error
 	GetProjectByRepoURLFunc func(ctx context.Context, repoURL string) (*models.Project, error)
 	GetUserByIDFunc         func(ctx context.Context, userID string) (*models.User, error)
+	GetCIPolicyFunc         func(ctx context.Context, projectID string) (*models.CIPolicy, error)
 
 	CreateJobCalls           []*models.Job
 	UpdateJobCalls           []*models.Job
 	GetProjectByRepoURLCalls []string
+}
+
+func (m *WebhookMockStore) GetCIPolicyByProject(ctx context.Context, projectID string) (*models.CIPolicy, error) {
+	if m.GetCIPolicyFunc != nil {
+		return m.GetCIPolicyFunc(ctx, projectID)
+	}
+	return nil, store.ErrNotFound
 }
 
 func (m *WebhookMockStore) CreateJob(ctx context.Context, job *models.Job) error {
@@ -308,9 +326,18 @@ func TestWebhookHandler_GitHubPing_ReturnsPong(t *testing.T) {
 
 func TestWebhookHandler_PREvent_SubmitsToCorndogs(t *testing.T) {
 	project := webhookTestProject()
+	parsedPolicy, err := cipolicy.ParseDocument([]byte(testCIPolicyDocument))
+	require.NoError(t, err)
+	canonicalPolicy, err := cipolicy.CanonicalDocument(parsedPolicy)
+	require.NoError(t, err)
+	var policyDocument models.JSONB
+	require.NoError(t, json.Unmarshal(canonicalPolicy, &policyDocument))
 	mockStore := &WebhookMockStore{
 		GetProjectByRepoURLFunc: func(ctx context.Context, repoURL string) (*models.Project, error) {
 			return project, nil
+		},
+		GetCIPolicyFunc: func(ctx context.Context, projectID string) (*models.CIPolicy, error) {
+			return &models.CIPolicy{ProjectID: projectID, Document: policyDocument, Revision: parsedPolicy.Revision}, nil
 		},
 	}
 	mockCorndogs := corndogs.NewMockClient()
@@ -369,6 +396,8 @@ func TestWebhookHandler_PREvent_SubmitsToCorndogs(t *testing.T) {
 	assert.Equal(t, "feature-branch", createdJob.JobEnvVars["REACTORCIDE_PR_REF"])
 	assert.Equal(t, "main", createdJob.JobEnvVars["REACTORCIDE_PR_BASE_REF"])
 	assert.Equal(t, `["vcs_user:github/junipuff"]`, createdJob.JobEnvVars["REACTORCIDE_ACTOR_SUBJECTS"])
+	assert.Equal(t, parsedPolicy.Revision, createdJob.JobEnvVars["REACTORCIDE_CI_POLICY_REVISION"])
+	assert.NotEmpty(t, createdJob.JobEnvVars["REACTORCIDE_CI_POLICY"])
 	// CI source should be set (same-repo mode since project has no DefaultCISourceURL)
 	require.NotNil(t, createdJob.CISourceURL)
 	assert.Equal(t, "https://github.com/test-org/test-repo.git", *createdJob.CISourceURL)

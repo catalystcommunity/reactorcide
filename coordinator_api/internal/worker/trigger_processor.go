@@ -12,6 +12,7 @@ import (
 	"github.com/catalystcommunity/app-utils-go/logging"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/audit"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/characteristics"
+	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/cipolicy"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/corndogs"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/profiles"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/resources"
@@ -84,6 +85,7 @@ type triggerWorkflowSpec struct {
 	PolicyRevision   string                 `json:"policy_revision,omitempty"`
 	PolicyRuleID     string                 `json:"policy_rule_id,omitempty"`
 	ApprovalID       *string                `json:"approval_id,omitempty"`
+	DependencyPaths  []string               `json:"dependency_paths,omitempty"`
 	Vars             map[string]interface{} `json:"vars"`
 	OperationID      string                 `json:"-"`
 	TriggerType      string                 `json:"-"`
@@ -229,30 +231,15 @@ func (tp *TriggerProcessor) ProcessTriggersFromData(ctx context.Context, data []
 		return nil, fmt.Errorf("failed to parse triggers data: %w", err)
 	}
 	isEvalResult := strings.TrimSpace(tf.TriggerType) == "runnerlib_eval"
-	for _, violation := range tf.PolicyViolations {
-		if strings.TrimSpace(violation.Path) == "" {
-			return nil, fmt.Errorf("policy violation path is required")
-		}
-		logging.Log.WithFields(map[string]interface{}{
-			"parent_job_id": parentJob.JobID, "path": violation.Path,
-			"workflow_security_id": violation.WorkflowID, "rule": violation.Rule,
-			"base_sha": violation.BaseSHA, "head_sha": violation.HeadSHA,
-		}).Warn("CI policy violation reported by evaluator; safe workflow triggers will continue")
-		audit.Record(ctx, tp.store, parentJob.OrgID, "ci_policy.violation", "job", parentJob.JobID, models.JSONB{
-			"path": violation.Path, "workflow_id": violation.WorkflowID, "actor": violation.Actor,
-			"rule": violation.Rule, "base_sha": violation.BaseSHA, "head_sha": violation.HeadSHA,
-		})
-	}
-
 	if tf.Type != "trigger_job" {
 		return nil, fmt.Errorf("unexpected trigger type: %q", tf.Type)
 	}
 	if isEvalResult {
 		audit.Record(ctx, tp.store, parentJob.OrgID, "ci_policy.input", "job", parentJob.JobID, models.JSONB{
 			"project_id": parentJob.ProjectID, "policy_repository": parentJob.CIRepository,
-			"policy_path": ".reactorcide/policy.yaml", "base_sha": parentJob.CISHA,
+			"policy_revision": parentJob.JobEnvVars["REACTORCIDE_CI_POLICY_REVISION"], "base_sha": parentJob.CISHA,
 			"head_sha": stringValue(parentJob.SourceRef), "changed_ci_paths": tf.ChangedCIPaths,
-			"actor": parentJob.JobEnvVars["REACTORCIDE_HEAD_ACTOR"], "actor_subjects": tf.ActorSubjects,
+			"actor": parentJob.JobEnvVars["REACTORCIDE_HEAD_ACTOR"], "actor_subjects": parentJob.JobEnvVars["REACTORCIDE_ACTOR_SUBJECTS"],
 		})
 	}
 	// Normalize to a list of workflow batches. The multi-workflow form
@@ -274,7 +261,7 @@ func (tp *TriggerProcessor) ProcessTriggersFromData(ctx context.Context, data []
 			batches[i].TriggerType = "runnerlib"
 		}
 		if isEvalResult {
-			if err := tp.validateWorkflowAuthority(ctx, parentJob, &batches[i]); err != nil {
+			if err := tp.validateWorkflowAuthority(ctx, parentJob, &batches[i], tf.ChangedCIPaths); err != nil {
 				return nil, err
 			}
 			audit.Record(ctx, tp.store, parentJob.OrgID, "ci_policy.decision", "workflow", batches[i].ID, models.JSONB{
@@ -287,6 +274,35 @@ func (tp *TriggerProcessor) ProcessTriggersFromData(ctx context.Context, data []
 		}
 	}
 	if isEvalResult {
+		headAuthorized := false
+		for i := range batches {
+			if batches[i].CIOrigin == "head" {
+				headAuthorized = true
+				break
+			}
+		}
+		if headAuthorized {
+			tf.PolicyViolations = nil
+		} else {
+			tf.PolicyViolations = make([]policyViolation, 0, len(tf.ChangedCIPaths))
+			for _, pathValue := range uniqueNonEmpty(tf.ChangedCIPaths) {
+				tf.PolicyViolations = append(tf.PolicyViolations, policyViolation{
+					Path: pathValue, Actor: fmt.Sprint(parentJob.JobEnvVars["REACTORCIDE_HEAD_ACTOR"]),
+					BaseSHA: parentJob.CISHA, HeadSHA: stringValue(parentJob.SourceRef),
+				})
+			}
+		}
+		for _, violation := range tf.PolicyViolations {
+			logging.Log.WithFields(map[string]interface{}{
+				"parent_job_id": parentJob.JobID, "path": violation.Path,
+				"workflow_security_id": violation.WorkflowID, "rule": violation.Rule,
+				"base_sha": violation.BaseSHA, "head_sha": violation.HeadSHA,
+			}).Warn("CI policy rejected head CI; safe base workflow triggers will continue")
+			audit.Record(ctx, tp.store, parentJob.OrgID, "ci_policy.violation", "job", parentJob.JobID, models.JSONB{
+				"path": violation.Path, "workflow_id": violation.WorkflowID, "actor": violation.Actor,
+				"rule": violation.Rule, "base_sha": violation.BaseSHA, "head_sha": violation.HeadSHA,
+			})
+		}
 		if updater, ok := tp.statusUpdater.(interface {
 			UpdateCIPolicyStatus(context.Context, *models.Job, []vcs.CIPolicyViolation) error
 		}); ok {
@@ -346,7 +362,7 @@ func (tp *TriggerProcessor) ProcessTriggersFromData(ctx context.Context, data []
 	return createdJobIDs, nil
 }
 
-func (tp *TriggerProcessor) validateWorkflowAuthority(ctx context.Context, parentJob *models.Job, spec *triggerWorkflowSpec) error {
+func (tp *TriggerProcessor) validateWorkflowAuthority(ctx context.Context, parentJob *models.Job, spec *triggerWorkflowSpec, changedCIPaths []string) error {
 	metadata, err := vcs.MetadataFromJob(parentJob)
 	if err != nil || metadata == nil || !metadata.IsEval || spec.TriggerType != "runnerlib_eval" {
 		return fmt.Errorf("runnerlib evaluation workflow authority requires an evaluation job")
@@ -367,6 +383,56 @@ func (tp *TriggerProcessor) validateWorkflowAuthority(ctx context.Context, paren
 	if spec.ExecutionProfile == "" || spec.WorkerClass == "" {
 		return fmt.Errorf("workflow %q must select an execution profile and worker class", spec.ID)
 	}
+	approvalSubjects := map[string]bool{}
+	if spec.ApprovalID != nil {
+		approvals, ok := tp.store.(triggerApprovalStore)
+		if !ok {
+			return fmt.Errorf("workflow %q approval cannot be verified", spec.ID)
+		}
+		approval, err := approvals.GetCIApprovalByID(ctx, *spec.ApprovalID)
+		if err != nil || approval.OrgID != parentJob.OrgID || parentJob.ProjectID == nil || approval.ProjectID != *parentJob.ProjectID ||
+			approval.HeadSHA != stringValue(parentJob.SourceRef) || approval.BaseSHA != parentJob.CISHA || approval.PolicyRevision != spec.PolicyRevision ||
+			(approval.WorkflowScope != spec.ID && approval.WorkflowScope != "*") || approval.ExecutionProfile != spec.ExecutionProfile ||
+			!approval.IsValid(time.Now().UTC(), stringValue(parentJob.SourceRef), spec.PolicyRevision) {
+			return fmt.Errorf("workflow %q approval is not valid for this decision", spec.ID)
+		}
+		approvalSubjects[approval.ApproverSubject] = true
+	}
+	if spec.CIOrigin == "head" {
+		policyDocument, _ := parentJob.JobEnvVars["REACTORCIDE_CI_POLICY"].(string)
+		policyRevision, _ := parentJob.JobEnvVars["REACTORCIDE_CI_POLICY_REVISION"].(string)
+		policy, err := cipolicy.ParseDocument([]byte(policyDocument))
+		if err != nil || policyDocument == "" || policy.Revision != policyRevision || spec.PolicyRevision != policyRevision {
+			return fmt.Errorf("workflow %q does not have a valid coordinator policy snapshot", spec.ID)
+		}
+		if len(changedCIPaths) == 0 || len(spec.DependencyPaths) == 0 || !intersects(changedCIPaths, spec.DependencyPaths) {
+			return fmt.Errorf("workflow %q has no changed CI dependency", spec.ID)
+		}
+		actorSubjects := parseStringSet(parentJob.JobEnvVars["REACTORCIDE_ACTOR_SUBJECTS"])
+		allPolicyPaths := uniqueNonEmpty(append(append([]string{}, changedCIPaths...), spec.DependencyPaths...))
+		baseBranch := envString(parentJob, "REACTORCIDE_BASE_REF")
+		if baseBranch == "" {
+			baseBranch = envString(parentJob, "REACTORCIDE_PR_BASE_REF")
+		}
+		if baseBranch == "" {
+			baseBranch = envString(parentJob, "REACTORCIDE_BRANCH")
+		}
+		relation := "same"
+		if envString(parentJob, "REACTORCIDE_IS_FORK_PR") == "true" {
+			relation = "fork"
+		}
+		decision, err := cipolicy.Decide(policy, cipolicy.Facts{
+			WorkflowID: spec.ID, ChangedCIPaths: allPolicyPaths,
+			Event: envString(parentJob, "REACTORCIDE_EVENT_TYPE"), BaseBranch: baseBranch,
+			HeadRepositoryRelation: relation, ActorSubjects: actorSubjects, ApprovalSubjects: approvalSubjects,
+		})
+		if err != nil {
+			return fmt.Errorf("workflow %q policy decision failed: %w", spec.ID, err)
+		}
+		if !decision.Allowed || decision.RuleID != spec.PolicyRuleID || decision.Profile != spec.ExecutionProfile || decision.WorkerClass != spec.WorkerClass {
+			return fmt.Errorf("workflow %q is not authorized by the coordinator policy", spec.ID)
+		}
+	}
 	if ps, ok := tp.store.(triggerProfileStore); ok {
 		parentName := parentJob.ExecutionProfile
 		if parentName == "" {
@@ -384,20 +450,51 @@ func (tp *TriggerProcessor) validateWorkflowAuthority(ctx context.Context, paren
 			return fmt.Errorf("workflow %q selects a worker class denied by profile %q", spec.ID, spec.ExecutionProfile)
 		}
 	}
-	if spec.ApprovalID != nil {
-		approvals, ok := tp.store.(triggerApprovalStore)
-		if !ok {
-			return fmt.Errorf("workflow %q approval cannot be verified", spec.ID)
-		}
-		approval, err := approvals.GetCIApprovalByID(ctx, *spec.ApprovalID)
-		if err != nil || approval.OrgID != parentJob.OrgID || parentJob.ProjectID == nil || approval.ProjectID != *parentJob.ProjectID ||
-			approval.HeadSHA != stringValue(parentJob.SourceRef) || approval.BaseSHA != parentJob.CISHA || approval.PolicyRevision != spec.PolicyRevision ||
-			(approval.WorkflowScope != spec.ID && approval.WorkflowScope != "*") || approval.ExecutionProfile != spec.ExecutionProfile ||
-			!approval.IsValid(time.Now().UTC(), stringValue(parentJob.SourceRef), spec.PolicyRevision) {
-			return fmt.Errorf("workflow %q approval is not valid for this decision", spec.ID)
+	return nil
+}
+
+func envString(job *models.Job, key string) string {
+	value, _ := job.JobEnvVars[key].(string)
+	return value
+}
+
+func parseStringSet(value interface{}) map[string]bool {
+	result := map[string]bool{}
+	raw, _ := value.(string)
+	var values []string
+	if json.Unmarshal([]byte(raw), &values) == nil {
+		for _, item := range values {
+			if item != "" {
+				result[item] = true
+			}
 		}
 	}
-	return nil
+	return result
+}
+
+func uniqueNonEmpty(values []string) []string {
+	seen := map[string]bool{}
+	result := make([]string, 0, len(values))
+	for _, value := range values {
+		if value != "" && !seen[value] {
+			seen[value] = true
+			result = append(result, value)
+		}
+	}
+	return result
+}
+
+func intersects(left, right []string) bool {
+	values := map[string]bool{}
+	for _, item := range left {
+		values[item] = true
+	}
+	for _, item := range right {
+		if values[item] {
+			return true
+		}
+	}
+	return false
 }
 
 func stringValue(value *string) string {

@@ -278,6 +278,33 @@ func (c *ReactorcideUiClient) DeleteProject(ctx context.Context, req DeleteProje
 	return DecodeDeleteProjectResponse(csilResp)
 }
 
+func (c *ReactorcideUiClient) GetCiPolicy(ctx context.Context, req GetCiPolicyRequest) (GetCiPolicyResponse, error) {
+	var csilZero GetCiPolicyResponse
+	csilResp, csilErr := c.transport.Call(ctx, "ReactorcideUi", "get-ci-policy", EncodeGetCiPolicyRequest(req))
+	if csilErr != nil {
+		return csilZero, csilErr
+	}
+	return DecodeGetCiPolicyResponse(csilResp)
+}
+
+func (c *ReactorcideUiClient) PutCiPolicy(ctx context.Context, req PutCiPolicyRequest) (PutCiPolicyResponse, error) {
+	var csilZero PutCiPolicyResponse
+	csilResp, csilErr := c.transport.Call(ctx, "ReactorcideUi", "put-ci-policy", EncodePutCiPolicyRequest(req))
+	if csilErr != nil {
+		return csilZero, csilErr
+	}
+	return DecodePutCiPolicyResponse(csilResp)
+}
+
+func (c *ReactorcideUiClient) DeleteCiPolicy(ctx context.Context, req DeleteCiPolicyRequest) (DeleteCiPolicyResponse, error) {
+	var csilZero DeleteCiPolicyResponse
+	csilResp, csilErr := c.transport.Call(ctx, "ReactorcideUi", "delete-ci-policy", EncodeDeleteCiPolicyRequest(req))
+	if csilErr != nil {
+		return csilZero, csilErr
+	}
+	return DecodeDeleteCiPolicyResponse(csilResp)
+}
+
 func (c *ReactorcideUiClient) ListGroups(ctx context.Context, req ListGroupsRequest) (ListGroupsResponse, error) {
 	var csilZero ListGroupsResponse
 	csilResp, csilErr := c.transport.Call(ctx, "ReactorcideUi", "list-groups", EncodeListGroupsRequest(req))

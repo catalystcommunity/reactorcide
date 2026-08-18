@@ -290,14 +290,16 @@ Use `reactorcide profiles list --org NAME` to list execution profiles. Use
 `profiles get`, `apply`, and `delete` to manage them. The `apply` command reads
 a YAML profile file. The token needs `policies:manage` for the organization.
 
-Use `reactorcide policy validate --path REPOSITORY` to validate the trusted
-policy files. Use `reactorcide policy explain --workflow ID` with the event,
-path, actor, and approval flags to inspect a decision without starting a job.
+Use `reactorcide policy get`, `set`, and `delete` to manage the coordinator CI
+policy for a project. The token needs `policies:manage` for the project
+organization. Use a project ID when the token does not also have
+`projects:read`. Use `--expected-revision` with `set` or `delete` when
+concurrent updates are possible.
 
-The policy commands read the repository at `--path`. The `--project` and
-`--pr` values label the output. They do not fetch pull request data. Add one
-`--changed-path` option for each changed CI file. Add verified actor and
-approval subjects when you reproduce a coordinator decision.
+Use `reactorcide policy validate --file POLICY_FILE` to validate a local policy
+file. Use `reactorcide policy explain --file POLICY_FILE --workflow ID` with
+the event, path, actor, and approval flags to inspect a decision without
+starting a job. Add one `--changed-path` option for each changed CI file.
 
 Use `reactorcide approvals create` to create a SHA-bound approval through the
 API. A GitHub user can also add this exact command to a pull request:
@@ -308,13 +310,13 @@ API. A GitHub user can also add this exact command to a pull request:
 
 The coordinator gets the current head and base SHA from GitHub. It creates an
 approval only for subjects that GitHub or a verified identity link confirms.
-The trusted base policy must still allow the subject, workflow, profile, and
+The coordinator policy must still allow the subject, workflow, profile, and
 revision.
 
 Use `GET /api/v1/audit?org=NAME` to export organization audit events. The
 token needs `audit:read` for that organization. Set
 `REACTORCIDE_AUDIT_RETENTION_DAYS` to control age-based audit retention.
 
-See [Organizations and Trusted CI Policy](./organizations-and-ci-policy.md)
+See [Organizations and Coordinator CI Policy](./organizations-and-ci-policy.md)
 for complete examples, the policy schema, worker classes, execution profiles,
 checkout precedence, GitHub status reporting, and upgrade checks.

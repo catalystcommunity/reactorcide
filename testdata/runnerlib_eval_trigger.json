@@ -15,6 +15,9 @@
       "policy_revision": "policy-revision",
       "policy_rule_id": "backend-team",
       "approval_id": null,
+      "dependency_paths": [
+        ".reactorcide/workflows/backend.yaml"
+      ],
       "vars": {},
       "jobs": [
         {

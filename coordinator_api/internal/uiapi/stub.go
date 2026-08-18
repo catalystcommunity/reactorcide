@@ -121,6 +121,18 @@ func (StubUi) UpdateProject(ctx context.Context, req csilapi.UpdateProjectReques
 	return csilapi.UpdateProjectResponse{}, ErrUnimplemented("ReactorcideUi/update-project")
 }
 
+func (StubUi) GetCiPolicy(ctx context.Context, req csilapi.GetCiPolicyRequest) (csilapi.GetCiPolicyResponse, error) {
+	return csilapi.GetCiPolicyResponse{}, ErrUnimplemented("ReactorcideUi/get-ci-policy")
+}
+
+func (StubUi) PutCiPolicy(ctx context.Context, req csilapi.PutCiPolicyRequest) (csilapi.PutCiPolicyResponse, error) {
+	return csilapi.PutCiPolicyResponse{}, ErrUnimplemented("ReactorcideUi/put-ci-policy")
+}
+
+func (StubUi) DeleteCiPolicy(ctx context.Context, req csilapi.DeleteCiPolicyRequest) (csilapi.DeleteCiPolicyResponse, error) {
+	return csilapi.DeleteCiPolicyResponse{}, ErrUnimplemented("ReactorcideUi/delete-ci-policy")
+}
+
 func (StubUi) DeleteProject(ctx context.Context, req csilapi.DeleteProjectRequest) (csilapi.DeleteProjectResponse, error) {
 	return csilapi.DeleteProjectResponse{}, ErrUnimplemented("ReactorcideUi/delete-project")
 }

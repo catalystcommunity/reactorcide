@@ -22,7 +22,7 @@ head_ci:
 `
 
 func TestParseAndDecide(t *testing.T) {
-	policy, err := Parse(map[string][]byte{".reactorcide/policy.yaml": []byte(validPolicy)})
+	policy, err := ParseDocument([]byte(validPolicy))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -48,7 +48,7 @@ head_ci:
   workflows: [backend-tests]
   paths: [.reactorcide/jobs/backend/**]
   use: {ci_source: head, profile: pr-untrusted, workers: default}`
-	policy, err := Parse(map[string][]byte{".reactorcide/policy.yaml": []byte(input)})
+	policy, err := ParseDocument([]byte(input))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -62,6 +62,7 @@ func TestRejectsUnsafeAndUnknownInput(t *testing.T) {
 	cases := []string{
 		`version: 1
 unknown: true`,
+		validPolicy + "\n---\nversion: 1\n",
 		`version: 1
 head_ci:
 - id: x
@@ -109,36 +110,15 @@ head_ci:
   use: {ci_source: head, profile: p, workers: default}`,
 	}
 	for _, input := range cases {
-		if _, err := Parse(map[string][]byte{".reactorcide/policy.yaml": []byte(input)}); err == nil {
+		if _, err := ParseDocument([]byte(input)); err == nil {
 			t.Fatalf("accepted invalid policy:\n%s", input)
 		}
-	}
-}
-
-func TestFragmentOrderIsCanonical(t *testing.T) {
-	fragment := []byte(`version: 1
-head_ci:
-- id: docs
-  workflows: [docs]
-  paths: [.reactorcide/jobs/docs/**]
-  use: {ci_source: head, profile: pr-untrusted, workers: default}`)
-	one, err := Parse(map[string][]byte{".reactorcide/policy.yaml": []byte(validPolicy), ".reactorcide/policies/z.yaml": fragment})
-	if err != nil {
-		t.Fatal(err)
-	}
-	two, err := Parse(map[string][]byte{".reactorcide/policies/z.yaml": fragment, ".reactorcide/policy.yaml": []byte(validPolicy)})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if one.Revision != two.Revision {
-		t.Fatalf("revision differs: %s != %s", one.Revision, two.Revision)
 	}
 }
 
 func TestRevisionMatchesRunnerlibCanonicalForm(t *testing.T) {
 	input := `version: 1
 defaults: {ci_source: base, profile: standard}
-policy_maintainers: {any: [reactorcide_group:ci-admins]}
 head_ci:
 - id: backend
   actors: {any: [repository_write]}
@@ -148,11 +128,11 @@ head_ci:
   base_branches: [main]
   head_repository: any
   use: {ci_source: head, profile: pr-untrusted, workers: default}`
-	policy, err := Parse(map[string][]byte{".reactorcide/policy.yaml": []byte(input)})
+	policy, err := ParseDocument([]byte(input))
 	if err != nil {
 		t.Fatal(err)
 	}
-	const expected = "a85ce6d79bcd69eb24ee4768b1ff32e0b848befc528cb512681041dd2caf59da"
+	const expected = "46de77ac374340d3ebca826a7f04345129e4b99344e622d79f75303f0f883e34"
 	if policy.Revision != expected {
 		t.Fatalf("revision=%s want %s", policy.Revision, expected)
 	}

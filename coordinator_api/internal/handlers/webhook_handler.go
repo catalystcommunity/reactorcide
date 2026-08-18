@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -13,6 +14,7 @@ import (
 
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/audit"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/authz"
+	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/cipolicy"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/config"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/corndogs"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/metrics"
@@ -144,6 +146,10 @@ type vcsReportGenerationStore interface {
 	StartVCSReportGeneration(context.Context, *models.VCSReportTarget, string) error
 }
 
+type ciPolicyStore interface {
+	GetCIPolicyByProject(context.Context, string) (*models.CIPolicy, error)
+}
+
 func (h *WebhookHandler) startVCSReportGeneration(ctx context.Context, job *models.Job, project *models.Project, event *vcs.WebhookEvent) error {
 	if event.PullRequest == nil {
 		return nil
@@ -213,6 +219,33 @@ func (h *WebhookHandler) attachCIEvaluationFacts(ctx context.Context, job *model
 	if encoded, err := json.Marshal(uniqueStrings(subjects)); err == nil {
 		job.JobEnvVars["REACTORCIDE_ACTOR_SUBJECTS"] = string(encoded)
 	}
+	h.attachCIPolicy(ctx, job, project)
+}
+
+func (h *WebhookHandler) attachCIPolicy(ctx context.Context, job *models.Job, project *models.Project) {
+	policies, ok := h.store.(ciPolicyStore)
+	if !ok {
+		return
+	}
+	stored, err := policies.GetCIPolicyByProject(ctx, project.ProjectID)
+	if err != nil {
+		if !errors.Is(err, store.ErrNotFound) {
+			h.logger.WithError(err).WithField("project_id", project.ProjectID).Error("Could not load coordinator CI policy; head CI will fail closed")
+		}
+		return
+	}
+	document, err := json.Marshal(stored.Document)
+	if err != nil {
+		h.logger.WithError(err).WithField("project_id", project.ProjectID).Error("Could not encode coordinator CI policy; head CI will fail closed")
+		return
+	}
+	parsed, err := cipolicy.ParseDocument(document)
+	if err != nil || parsed.Revision != stored.Revision {
+		h.logger.WithError(err).WithField("project_id", project.ProjectID).Error("Coordinator CI policy failed integrity validation; head CI will fail closed")
+		return
+	}
+	job.JobEnvVars["REACTORCIDE_CI_POLICY"] = string(document)
+	job.JobEnvVars["REACTORCIDE_CI_POLICY_REVISION"] = stored.Revision
 }
 
 func uniqueStrings(values []string) []string {

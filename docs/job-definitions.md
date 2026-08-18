@@ -401,5 +401,5 @@ A job specification that you submit directly to the coordinator can use the
 top-level `worker_class` field. This field is not part of the repository job
 schema on this page.
 
-See [Organizations and Trusted CI Policy](./organizations-and-ci-policy.md)
+See [Organizations and Coordinator CI Policy](./organizations-and-ci-policy.md)
 for the policy schema, profile fields, approval rules, and GitHub reporting.
