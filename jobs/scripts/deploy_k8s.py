@@ -90,6 +90,10 @@ def read_config() -> Dict[str, Any]:
         'release': os.environ.get('REACTORCIDE_HELM_RELEASE', 'reactorcide'),
         'image_tag': os.environ.get('REACTORCIDE_IMAGE_TAG', ''),
         'helm_values': os.environ.get('REACTORCIDE_HELM_VALUES', ''),
+        'registry_server': os.environ.get('REACTORCIDE_REGISTRY_SERVER', '').strip(),
+        'registry_pull_secret_name': os.environ.get('REACTORCIDE_REGISTRY_PULL_SECRET_NAME', '').strip(),
+        'registry_username': os.environ.get('REACTORCIDE_REGISTRY_USERNAME', '').strip(),
+        'registry_password': os.environ.get('REACTORCIDE_REGISTRY_PASSWORD', '').strip(),
         'db_uri': os.environ.get('REACTORCIDE_DB_URI', ''),
         'provision_postgres': os.environ.get('REACTORCIDE_PROVISION_POSTGRES', 'false').lower() == 'true',
         'postgres_team': os.environ.get('REACTORCIDE_POSTGRES_TEAM', 'reactorcide'),
@@ -152,6 +156,60 @@ def create_namespace(namespace: str, dry_run: bool = False) -> None:
     """Create namespace if it doesn't exist."""
     log(f"Creating namespace: {namespace}")
     run_cmd(f"kubectl create namespace {namespace} --dry-run=client -o yaml | kubectl apply -f -", dry_run=dry_run)
+
+
+def apply_registry_pull_secret(config: Dict[str, Any], dry_run: bool = False) -> None:
+    """Create or update the registry pull Secret without command arguments."""
+    server = config.get('registry_server', '')
+    secret_name = config.get('registry_pull_secret_name', '')
+    username = config.get('registry_username', '')
+    password = config.get('registry_password', '')
+    configured = [server, secret_name, username, password]
+
+    if not any(configured):
+        return
+    if not all(configured):
+        raise RuntimeError("Registry pull configuration is incomplete")
+
+    register_secret(username)
+    register_secret(password)
+    auth = base64.b64encode(f"{username}:{password}".encode()).decode()
+    docker_config = {
+        "auths": {
+            server: {
+                "username": username,
+                "password": password,
+                "auth": auth,
+            }
+        }
+    }
+    manifest = {
+        "apiVersion": "v1",
+        "kind": "Secret",
+        "metadata": {
+            "name": secret_name,
+            "namespace": config['namespace'],
+        },
+        "type": "kubernetes.io/dockerconfigjson",
+        "data": {
+            ".dockerconfigjson": base64.b64encode(
+                json.dumps(docker_config, separators=(",", ":")).encode()
+            ).decode(),
+        },
+    }
+
+    if dry_run:
+        log(f"Would apply registry pull Secret: {secret_name}")
+        return
+
+    log(f"Applying registry pull Secret: {secret_name}")
+    subprocess.run(
+        ["kubectl", "apply", "-f", "-"],
+        input=json.dumps(manifest),
+        text=True,
+        check=True,
+        capture_output=True,
+    )
 
 
 def provision_postgres(config: Dict[str, Any], dry_run: bool = False) -> str:
@@ -286,8 +344,13 @@ def deploy_corndogs(config: Dict[str, Any], dry_run: bool = False) -> str:
         f"--set securityContext.runAsNonRoot=true "
         f"--set securityContext.runAsUser=10001 "
         f"--set securityContext.runAsGroup=10001 "
-        f"--wait --timeout 5m"
     )
+    if config.get('registry_pull_secret_name'):
+        cmd += (
+            "--set imagePullSecrets[0].name="
+            f"{config['registry_pull_secret_name']} "
+        )
+    cmd += "--wait --timeout 5m"
     run_cmd(cmd, dry_run=dry_run)
 
     # corndogs 0.7.0 RPC is raw TCP (CSIL StreamCarrier), NOT HTTP -- the address
@@ -308,6 +371,11 @@ def build_helm_values(config: Dict[str, Any], db_uri: str, corndogs_url: str) ->
         values_file = Path("/tmp/values-overlay.yaml")
         values_file.write_text(config['helm_values'])
         args.extend(["-f", str(values_file)])
+
+    pull_secret_name = config.get('registry_pull_secret_name', '')
+    if pull_secret_name:
+        args.extend(["--set", f"imagePullSecrets[0].name={pull_secret_name}"])
+        args.extend(["--set", f"worker.jobImagePullSecrets[0]={pull_secret_name}"])
 
     # Database
     register_secret(db_uri)
@@ -623,6 +691,12 @@ def deploy(config: Dict[str, Any], dry_run: bool = False) -> int:
     log("")
     log("Step 4: Creating namespace")
     create_namespace(namespace, dry_run=dry_run)
+
+    # Step 4b: Apply the registry pull Secret
+    if config.get('registry_pull_secret_name'):
+        log("")
+        log("Step 4b: Applying registry pull Secret")
+        apply_registry_pull_secret(config, dry_run=dry_run)
 
     # Step 5a: Provision PostgreSQL or use provided URI
     db_uri = config['db_uri']

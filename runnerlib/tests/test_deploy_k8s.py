@@ -33,6 +33,75 @@ def _deployment_config():
     }
 
 
+def test_registry_pull_secret_stays_out_of_process_arguments(monkeypatch):
+    """Registry credentials go to kubectl through standard input."""
+    deploy = _load_deploy_module()
+    config = _deployment_config() | {
+        "registry_server": "containers.example.com",
+        "registry_pull_secret_name": "registry-pull",
+        "registry_username": "pull-user",
+        "registry_password": "pull-password",
+    }
+    calls = []
+
+    def run_process(args, **kwargs):
+        calls.append((list(args), kwargs))
+        return subprocess.CompletedProcess(args=args, returncode=0)
+
+    monkeypatch.setattr(deploy.subprocess, "run", run_process)
+    monkeypatch.delenv("REACTORCIDE_SECRETS_SOCKET", raising=False)
+
+    deploy.apply_registry_pull_secret(config)
+
+    assert len(calls) == 1
+    process_arguments = " ".join(calls[0][0])
+    assert config["registry_username"] not in process_arguments
+    assert config["registry_password"] not in process_arguments
+    manifest = calls[0][1]["input"]
+    assert config["registry_username"] not in manifest
+    assert config["registry_password"] not in manifest
+
+
+def test_registry_pull_secret_is_added_to_service_and_job_pods():
+    """Helm attaches the registry Secret to service and job pods."""
+    deploy = _load_deploy_module()
+    config = _deployment_config() | {
+        "helm_values": "",
+        "image_tag": "",
+        "registry_pull_secret_name": "registry-pull",
+        "object_store_type": "memory",
+        "vcs_enabled": False,
+        "vcs_base_url": "",
+        "default_org": "default",
+        "worker_coordinator_url": "",
+        "worker_enrollment_token_secret": "",
+    }
+
+    args = deploy.build_helm_values(config, "postgresql://configured", "corndogs:5080")
+
+    assert "imagePullSecrets[0].name=registry-pull" in args
+    assert "worker.jobImagePullSecrets[0]=registry-pull" in args
+
+
+def test_registry_pull_secret_is_added_to_corndogs(monkeypatch):
+    """The separate Corndogs release uses the registry pull Secret."""
+    deploy = _load_deploy_module()
+    commands = []
+    config = _deployment_config() | {
+        "registry_pull_secret_name": "registry-pull",
+    }
+
+    monkeypatch.setattr(
+        deploy,
+        "run_cmd",
+        lambda command, **kwargs: commands.append(command),
+    )
+
+    deploy.deploy_corndogs(config)
+
+    assert any("imagePullSecrets[0].name=registry-pull" in command for command in commands)
+
+
 def test_deploy_bootstraps_token_before_web(monkeypatch):
     """A missing token causes a control-plane deploy before the web deploy."""
     deploy = _load_deploy_module()
