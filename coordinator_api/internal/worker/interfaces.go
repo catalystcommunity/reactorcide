@@ -55,6 +55,14 @@ type JobRunner interface {
 	SampleResources(ctx context.Context, jobID string, options ResourceSampleOptions) (ResourceSnapshot, error)
 }
 
+// WorkflowOutputReader is an optional runner capability for backends whose
+// job workspace is not mounted on the worker host. The coordinator worker
+// calls TakeWorkflowOutput after WaitForCompletion and before Cleanup.
+// Implementations must not log the returned document.
+type WorkflowOutputReader interface {
+	TakeWorkflowOutput(jobID string) (string, bool)
+}
+
 // ResourceSampleOptions selects the resource groups for one snapshot.
 type ResourceSampleOptions struct {
 	IncludeStorage bool

@@ -352,6 +352,11 @@ func runLease(c client, runner worker.JobRunner, lease csilapi.Lease, tracker *l
 		errMsg = masker.MaskString(errMsg)
 	}
 	workflowOutput := readWorkflowOutput(workspaceDir)
+	if outputReader, ok := runner.(worker.WorkflowOutputReader); ok {
+		if output, captured := outputReader.TakeWorkflowOutput(runnerID); captured {
+			workflowOutput = output
+		}
+	}
 	reportResultWithOutput(c, lease.LeaseId, exitCode, status, errMsg, workflowOutput)
 }
 

@@ -43,10 +43,11 @@ type appendLogsCall struct {
 }
 
 type reportResultCall struct {
-	LeaseID  string
-	ExitCode int
-	Status   string
-	ErrMsg   string
+	LeaseID        string
+	ExitCode       int
+	Status         string
+	ErrMsg         string
+	WorkflowOutput string
 }
 
 func (f *fakeClient) Register(ctx context.Context, enrollmentToken string, info csilapi.WorkerInfo) (csilapi.RegisterResponse, error) {
@@ -114,7 +115,7 @@ func (f *fakeClient) ReportResult(ctx context.Context, leaseID string, exitCode 
 
 func (f *fakeClient) ReportResultWithOutput(ctx context.Context, leaseID string, exitCode int, status string, errMsg, workflowOutput string) (csilapi.ReportResultResponse, error) {
 	f.mu.Lock()
-	f.ReportResultCalls = append(f.ReportResultCalls, reportResultCall{LeaseID: leaseID, ExitCode: exitCode, Status: status, ErrMsg: errMsg})
+	f.ReportResultCalls = append(f.ReportResultCalls, reportResultCall{LeaseID: leaseID, ExitCode: exitCode, Status: status, ErrMsg: errMsg, WorkflowOutput: workflowOutput})
 	f.mu.Unlock()
 	if f.ReportResultFunc != nil {
 		return f.ReportResultFunc(ctx, leaseID, exitCode, status, errMsg)
@@ -172,11 +173,23 @@ type fakeRunner struct {
 	// forced removal unblocking WaitForCompletion the way a real runner's
 	// Cleanup would.
 	CleanupFunc func(id string) error
+	// WorkflowOutputCaptured distinguishes an empty captured document from a
+	// backend that does not have pod-local output for this job.
+	WorkflowOutput         string
+	WorkflowOutputCaptured bool
 
 	SpawnCalls    []*worker.JobConfig
 	StopCalls     []fakeStopCall
 	CleanupCalls  []string
 	SampleOptions []worker.ResourceSampleOptions
+}
+
+func (f *fakeRunner) TakeWorkflowOutput(string) (string, bool) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	output, captured := f.WorkflowOutput, f.WorkflowOutputCaptured
+	f.WorkflowOutputCaptured = false
+	return output, captured
 }
 
 type fakeStopCall struct {

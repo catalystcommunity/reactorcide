@@ -872,3 +872,102 @@ class TestEvalEndToEnd:
 
         assert len(data["jobs"]) == 1
         assert data["jobs"][0]["job_name"] == "release"
+
+
+class TestSharedCIPathAttribution:
+    """Changed .reactorcide/ paths no workflow claims (plugins, scripts,
+    tests) attribute to every candidate workflow, so a head-CI rule whose
+    paths cover them can authorize the change."""
+
+    POLICY_BROAD = """
+version: 1
+defaults:
+  ci_source: base
+  profile: standard
+head_ci:
+  - id: ci-dev
+    actors:
+      any:
+        - vcs_user:github/todpunk
+    workflows:
+      - app-pr
+    paths:
+      - ".reactorcide/**"
+    events:
+      - pull_request_updated
+    base_branches:
+      - main
+    head_repository: same
+    use:
+      ci_source: head
+      profile: pr-untrusted
+      workers: default
+"""
+
+    POLICY_NARROW = POLICY_BROAD.replace(
+        '- ".reactorcide/**"',
+        '- ".reactorcide/workflows/**"\n      - ".reactorcide/jobs/**"',
+    )
+
+    def _make_checkout(self, root: Path) -> None:
+        workflows = root / ".reactorcide" / "workflows"
+        jobs = root / ".reactorcide" / "jobs"
+        plugins = root / ".reactorcide" / "plugins"
+        workflows.mkdir(parents=True)
+        jobs.mkdir(parents=True)
+        plugins.mkdir(parents=True)
+        _write_yaml(workflows / "pr.yaml", {
+            "id": "app-pr",
+            "name": "App PR",
+            "on": {"events": ["pull_request_updated"]},
+            "jobs": {"test": {"job_file": "test.yaml"}},
+        })
+        _write_yaml(jobs / "test.yaml", {
+            "name": "test",
+            "job": {"image": "alpine:latest", "command": "make test"},
+        })
+        (plugins / "plugin_ci.py").write_text("VALUE = 1\n")
+
+    def _run_eval(self, policy: str):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            base = Path(tmpdir)
+            ci_dir = base / "ci"
+            src_dir = base / "src"
+            src_dir.mkdir()
+            self._make_checkout(ci_dir / "base")
+            self._make_checkout(ci_dir / "head")
+            (ci_dir / "head" / ".reactorcide" / "plugins" / "plugin_ci.py").write_text("VALUE = 2\n")
+            triggers_file = base / "triggers.json"
+
+            result = runner.invoke(app, [
+                "eval",
+                "--ci-source-dir", str(ci_dir),
+                "--source-dir", str(src_dir),
+                "--event-type", "pull_request_updated",
+                "--pr-number", "5",
+                "--base-ref", "main",
+                "--changed-file", ".reactorcide/plugins/plugin_ci.py",
+                "--triggers-file", str(triggers_file),
+            ], env={
+                "REACTORCIDE_CI_POLICY": policy,
+                "REACTORCIDE_ACTOR_SUBJECTS": '["vcs_user:github/todpunk"]',
+                "REACTORCIDE_SHA": "headsha",
+                "REACTORCIDE_DIFF_BASE": "basesha",
+            })
+            assert result.exit_code == 0, result.output
+            with open(triggers_file) as f:
+                return json.load(f)
+
+    def test_plugin_change_qualifies_for_authorized_head_ci(self):
+        data = self._run_eval(self.POLICY_BROAD)
+        assert data["policy_violations"] == []
+        workflow = data["workflows"][0]
+        assert workflow["ci_origin"] == "head"
+        assert workflow["policy_rule_id"] == "ci-dev"
+        assert ".reactorcide/plugins/plugin_ci.py" in workflow["dependency_paths"]
+
+    def test_plugin_change_denied_by_narrow_rule_paths(self):
+        data = self._run_eval(self.POLICY_NARROW)
+        assert data["workflows"][0]["ci_origin"] == "base"
+        violation_paths = {item["path"] for item in data["policy_violations"]}
+        assert ".reactorcide/plugins/plugin_ci.py" in violation_paths

@@ -18,6 +18,10 @@ rules:
   - apiGroups: [""]
     resources: ["pods/log"]
     verbs: ["get"]
+  # Read workflow output from the job pod's private /job volume.
+  - apiGroups: [""]
+    resources: ["pods/exec"]
+    verbs: ["create"]
   # Read CPU and memory data from metrics-server.
   - apiGroups: ["metrics.k8s.io"]
     resources: ["pods"]
