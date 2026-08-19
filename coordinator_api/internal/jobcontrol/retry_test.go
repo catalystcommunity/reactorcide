@@ -337,6 +337,7 @@ func TestRetryJob_ClonesSpecFields(t *testing.T) {
 		TimeoutSeconds:     1800,
 		Priority:           5,
 		Capabilities:       []string{"docker"},
+		ImagePullSecrets:   []string{"regcred"},
 		RunAsUser:          "runner",
 		QueueName:          "reactorcide-jobs",
 		AutoTargetState:    "running",
@@ -404,6 +405,9 @@ func TestRetryJob_ClonesSpecFields(t *testing.T) {
 	}
 	if len(newJob.Capabilities) != 1 || newJob.Capabilities[0] != "docker" {
 		t.Errorf("expected Capabilities [docker], got %+v", newJob.Capabilities)
+	}
+	if len(newJob.ImagePullSecrets) != 1 || newJob.ImagePullSecrets[0] != "regcred" {
+		t.Errorf("expected ImagePullSecrets [regcred], got %+v", newJob.ImagePullSecrets)
 	}
 	if newJob.PRNumber == nil || *newJob.PRNumber != 42 {
 		t.Errorf("expected PRNumber 42, got %v", newJob.PRNumber)

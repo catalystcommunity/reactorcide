@@ -87,6 +87,7 @@ type Lease struct {
 	TimeoutSeconds     int64     `json:"timeout_seconds" yaml:"timeout_seconds"`
 	CancelGraceSeconds int64     `json:"cancel_grace_seconds" yaml:"cancel_grace_seconds"`
 	Capabilities       []string  `json:"capabilities" yaml:"capabilities"`
+	ImagePullSecrets   []string  `json:"image_pull_secrets" yaml:"image_pull_secrets"`
 	RunAsUser          string    `json:"run_as_user" yaml:"run_as_user"`
 	VcsAuth            *VCSAuth  `json:"vcs_auth,omitempty" yaml:"vcs_auth,omitempty"`
 }

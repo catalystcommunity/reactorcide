@@ -270,20 +270,21 @@ func runLease(c client, runner worker.JobRunner, lease csilapi.Lease, tracker *l
 	}
 
 	jobConfig := &worker.JobConfig{
-		Image:          lease.Image,
-		Command:        lease.Command,
-		Env:            env,
-		WorkspaceDir:   workspaceDir,
-		WorkingDir:     lease.WorkingDir,
-		Capabilities:   append([]string{}, lease.Capabilities...),
-		RunAsUser:      lease.RunAsUser,
-		ExtraMounts:    extraMounts,
-		VCSAuth:        vcsAuth,
-		TimeoutSeconds: int(lease.TimeoutSeconds),
-		CPURequest:     lease.Resources.CpuRequest,
-		CPULimit:       lease.Resources.CpuLimit,
-		MemoryLimit:    lease.Resources.MemoryLimit,
-		JobID:          lease.JobId,
+		Image:            lease.Image,
+		Command:          lease.Command,
+		Env:              env,
+		WorkspaceDir:     workspaceDir,
+		WorkingDir:       lease.WorkingDir,
+		Capabilities:     append([]string{}, lease.Capabilities...),
+		ImagePullSecrets: append([]string{}, lease.ImagePullSecrets...),
+		RunAsUser:        lease.RunAsUser,
+		ExtraMounts:      extraMounts,
+		VCSAuth:          vcsAuth,
+		TimeoutSeconds:   int(lease.TimeoutSeconds),
+		CPURequest:       lease.Resources.CpuRequest,
+		CPULimit:         lease.Resources.CpuLimit,
+		MemoryLimit:      lease.Resources.MemoryLimit,
+		JobID:            lease.JobId,
 	}
 	if cfg.AllowInsecureTransport {
 		jobConfig.Command = withRunnerlibInsecureTransport(jobConfig.Command)

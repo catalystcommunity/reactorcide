@@ -124,14 +124,8 @@ Expression-based `for_each` over workflow vars is future work.
 
 ## Workflow Variables
 
-Use short environment names with separate prefixes for internal and user-facing state:
-
-| Prefix | Owner | Purpose |
-|---|---|---|
-| `RC_WF_` | Reactorcide | Internal workflow metadata |
-| `RC_WFU_` | User/developer | User workflow variables exposed as scalar env vars |
-
-Internal variables:
+Reactorcide reserves the short `RC_WF_` prefix for workflow metadata in the
+job environment:
 
 | Variable | Meaning |
 |---|---|
@@ -140,12 +134,13 @@ Internal variables:
 | `RC_WF_NODE_NAME` | Display node name, such as `test[0]` |
 | `RC_WF_RUN_ID` | Node run id |
 | `RC_WF_VARS_FILE` | JSON file containing all workflow vars visible to the job |
+| `RC_WF_VARS_JSON` | Inline JSON with the same vars, set on remote leases |
 | `RC_WF_OUTPUT_FILE` | JSON file the job writes to publish vars and outputs |
 
 User vars:
 
-- Scalar workflow vars are injected as `RC_WFU_<NAME>`, with non-alphanumeric characters converted to `_`.
-- Large values, lists, and objects should be read from `RC_WF_VARS_FILE`.
+- Jobs read workflow vars from `RC_WF_VARS_FILE` (or `RC_WF_VARS_JSON` when
+  set). Workflow vars are not injected as individual environment variables.
 - `for_each.item_var: SUITE` injects `SUITE` for the expanded job.
 
 `RC_WF_VARS_FILE` is a flat JSON object:

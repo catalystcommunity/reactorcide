@@ -132,6 +132,11 @@ type CreateJobRequest struct {
 	RunAsUser      string `json:"run_as_user,omitempty"`
 	QueueName      string `json:"queue_name,omitempty"`
 
+	// ImagePullSecrets lists Kubernetes Secret NAMES for pulling the job
+	// image — never credentials. The worker enforces its allowlist before
+	// Kubernetes Job creation.
+	ImagePullSecrets []string `json:"image_pull_secrets,omitempty"`
+
 	// Characteristics routes this job to a queue; values must be scalar
 	// (string, int, or bool -- see
 	// internal/characteristics.ParseJobCharacteristics). Omitted or missing
@@ -177,6 +182,9 @@ type JobResponse struct {
 	JobEnvVars  map[string]string `json:"job_env_vars,omitempty"`
 	JobEnvFile  string            `json:"job_env_file,omitempty"`
 	RunAsUser   string            `json:"run_as_user,omitempty"`
+
+	// ImagePullSecrets holds Kubernetes Secret names only, never values.
+	ImagePullSecrets []string `json:"image_pull_secrets,omitempty"`
 
 	// Execution info
 	TimeoutSeconds int        `json:"timeout_seconds"`
@@ -1160,6 +1168,9 @@ func (h *JobHandler) validateCreateJobRequest(req *CreateJobRequest) error {
 	if _, err := worker.NormalizeRunAsUser(req.RunAsUser); err != nil {
 		return store.ErrInvalidInput
 	}
+	if err := worker.ValidateImagePullSecretNames(req.ImagePullSecrets); err != nil {
+		return store.ErrInvalidInput
+	}
 
 	// Validate CI source fields if provided
 	if req.CISourceType != "" {
@@ -1256,6 +1267,8 @@ func (h *JobHandler) createJobFromRequest(req *CreateJobRequest, userID string) 
 		RunnerImage: req.RunnerImage,
 		JobEnvFile:  req.JobEnvFile,
 		RunAsUser:   req.RunAsUser,
+
+		ImagePullSecrets: req.ImagePullSecrets,
 
 		QueueName: req.QueueName,
 	}
@@ -1399,15 +1412,16 @@ func (h *JobHandler) jobToResponse(job *models.Job) JobResponse {
 		CISourceURL:  ciSourceURL,
 		CISourceRef:  ciSourceRef,
 
-		CodeDir:        job.CodeDir,
-		JobDir:         job.JobDir,
-		JobCommand:     job.JobCommand,
-		RunnerImage:    job.RunnerImage,
-		JobEnvFile:     job.JobEnvFile,
-		RunAsUser:      job.RunAsUser,
-		TimeoutSeconds: job.TimeoutSeconds,
-		Priority:       job.Priority,
-		QueueName:      job.QueueName,
+		CodeDir:          job.CodeDir,
+		JobDir:           job.JobDir,
+		JobCommand:       job.JobCommand,
+		RunnerImage:      job.RunnerImage,
+		JobEnvFile:       job.JobEnvFile,
+		RunAsUser:        job.RunAsUser,
+		ImagePullSecrets: job.ImagePullSecrets,
+		TimeoutSeconds:   job.TimeoutSeconds,
+		Priority:         job.Priority,
+		QueueName:        job.QueueName,
 
 		StartedAt:   job.StartedAt,
 		CompletedAt: job.CompletedAt,

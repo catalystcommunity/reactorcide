@@ -1529,3 +1529,56 @@ func writeTriggersFile(t *testing.T, dir string, tf triggersFile) {
 		t.Fatalf("failed to write triggers file: %v", err)
 	}
 }
+
+// TestTriggerImagePullSecrets_JobFileParseOverlayAndBuild covers the
+// image_pull_secrets flow through a reusable job_file definition, the inline
+// trigger overlay (non-empty replaces, omitted keeps), and buildJobFromTrigger
+// storage on the job model with validation.
+func TestTriggerImagePullSecrets_JobFileParseOverlayAndBuild(t *testing.T) {
+	mockStore := &MockStore{}
+	tp := NewTriggerProcessor(mockStore, nil)
+
+	workspaceDir := t.TempDir()
+	jobsDir := filepath.Join(workspaceDir, "src", ".reactorcide", "jobs")
+	if err := os.MkdirAll(jobsDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	jobYAML := "name: private-image-job\njob:\n  image: containers.example.com/private/tool:1\n  command: echo ok\n  image_pull_secrets:\n    - regcred\n"
+	if err := os.WriteFile(filepath.Join(jobsDir, "private.yaml"), []byte(jobYAML), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	base, err := tp.loadJobFile(workspaceDir, ".reactorcide/jobs/private.yaml")
+	if err != nil {
+		t.Fatalf("loadJobFile failed: %v", err)
+	}
+	if len(base.ImagePullSecrets) != 1 || base.ImagePullSecrets[0] != "regcred" {
+		t.Fatalf("job file parse got %v", base.ImagePullSecrets)
+	}
+
+	// Omitted overlay field keeps the base list.
+	kept := tp.overlaySpec(base, triggerJobSpec{JobName: "kept"})
+	if len(kept.ImagePullSecrets) != 1 || kept.ImagePullSecrets[0] != "regcred" {
+		t.Fatalf("omitted overlay should keep base list, got %v", kept.ImagePullSecrets)
+	}
+
+	// Non-empty overlay list replaces the base list.
+	replaced := tp.overlaySpec(base, triggerJobSpec{JobName: "replaced", ImagePullSecrets: []string{"other-cred"}})
+	if len(replaced.ImagePullSecrets) != 1 || replaced.ImagePullSecrets[0] != "other-cred" {
+		t.Fatalf("overlay should replace base list, got %v", replaced.ImagePullSecrets)
+	}
+
+	parentJob := &models.Job{JobID: "parent-id", UserID: "user-123", QueueName: "q", RunnerImage: "default:runner", TimeoutSeconds: 600}
+	job, err := tp.buildJobFromTrigger(kept, parentJob)
+	if err != nil {
+		t.Fatalf("buildJobFromTrigger failed: %v", err)
+	}
+	if len(job.ImagePullSecrets) != 1 || job.ImagePullSecrets[0] != "regcred" {
+		t.Fatalf("job model should carry image pull secrets, got %v", job.ImagePullSecrets)
+	}
+
+	// Invalid names are rejected at job build time.
+	if _, err := tp.buildJobFromTrigger(triggerJobSpec{JobName: "bad", ImagePullSecrets: []string{"Bad_Name"}}, parentJob); err == nil {
+		t.Fatal("expected invalid image pull secret name to fail job build")
+	}
+}

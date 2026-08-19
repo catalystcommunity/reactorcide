@@ -604,6 +604,7 @@ func buildLease(leaseID string, job *models.Job, resolved *resolvedLeaseSecrets,
 		TimeoutSeconds:     int64(job.TimeoutSeconds),
 		CancelGraceSeconds: int64(worker.DefaultCancelGrace / time.Second),
 		Capabilities:       append([]string{}, job.Capabilities...),
+		ImagePullSecrets:   append([]string{}, job.ImagePullSecrets...),
 		RunAsUser:          job.RunAsUser,
 		VcsAuth:            vcsAuth,
 	}

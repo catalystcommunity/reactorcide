@@ -142,6 +142,7 @@ job:
   job_dir: "/job/src"           # Optional: runnerlib/job working directory
   working_dir: "/job/src"       # Optional: raw process working directory
   capabilities: []              # Optional: runtime services such as docker or builder
+  image_pull_secrets: []        # Optional: Kubernetes Secret names for the image pull
   run_as:
     user: runner                # Optional: runner, root, or numeric uid[:gid]
   timeout: 1800                # Optional: timeout in seconds
@@ -228,11 +229,46 @@ paths:
 | `job.job_dir` | string | Container path runnerlib treats as the job directory. Defaults to `code_dir`. |
 | `job.working_dir` | string | Raw process working directory. Defaults to `job_dir`. |
 | `job.capabilities` | list | Runtime services the job needs, such as `docker` or `builder`. Capabilities do not imply root. |
+| `job.image_pull_secrets` | list | Names of Kubernetes Secrets that permit the image pull. Write names only, never credential values. The worker rejects a name that is not in its operator allowlist. See [Job Image Pull Secrets](#job-image-pull-secrets). |
 | `job.run_as.user` | string | Container user for deployed workers: `runner`, `root`, or numeric `uid[:gid]`. Defaults to `runner`. |
 | `job.timeout` | integer | Timeout in seconds. Falls back to the project's `default_timeout_seconds` if not set. |
 | `job.priority` | integer | Scheduling priority. Higher values are scheduled first. |
 
 For the path and run identity contract across local, VM, and Kubernetes execution, see [Runtime Behavior](./runtime-behavior.md).
+
+### Job Image Pull Secrets
+
+Use `job.image_pull_secrets` when the job image is in a private registry:
+
+```yaml
+job:
+  image: containers.example.com/private/team/toolchain@sha256:example
+  command: make test
+  image_pull_secrets:
+    - regcred
+```
+
+Each list item is the NAME of a Kubernetes Secret. Do not put credentials or
+secret values in the list. Each referenced Secret must:
+
+- Exist in the configured Kubernetes job namespace.
+- Have type `kubernetes.io/dockerconfigjson`.
+- Contain credentials for the registry in the selected image.
+
+The worker validates each name and rejects the job before Kubernetes Job
+creation when a name is empty, invalid, duplicated, or not approved by the
+operator allowlist (`worker.allowedJobImagePullSecrets`, see
+[Workers](./workers.md#job-image-pull-secrets)). An empty allowlist rejects
+all job-level requests. Kubernetes reports a missing Secret or an invalid
+registry credential; Reactorcide does not read Secret data to improve the
+error.
+
+An overlay that omits `image_pull_secrets` keeps the base list. An overlay
+with a non-empty list replaces the base list.
+
+Docker, containerd, and local execution accept and keep the field but do not
+read Kubernetes Secrets. The local container runtime uses its own configured
+credential store to pull the image.
 
 ### Local-only Run Settings
 

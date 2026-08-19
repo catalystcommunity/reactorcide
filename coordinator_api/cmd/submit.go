@@ -76,6 +76,10 @@ type CreateJobRequest struct {
 	RunAsUser      string `json:"run_as_user,omitempty"`
 	QueueName      string `json:"queue_name,omitempty"`
 
+	// ImagePullSecrets lists Kubernetes Secret NAMES for pulling the job
+	// image — never credentials.
+	ImagePullSecrets []string `json:"image_pull_secrets,omitempty"`
+
 	// Characteristics/Resources. Passed through verbatim from the job spec's
 	// top-level `characteristics`/`resources` blocks; the coordinator
 	// validates and applies them (queue routing, resource defaults).
@@ -235,15 +239,16 @@ func specToCreateJobRequest(spec *worker.JobSpec) *CreateJobRequest {
 		environment["REACTORCIDE_CHECKOUT_MODE"] = spec.Checkout.Mode
 	}
 	req := &CreateJobRequest{
-		Name:            spec.Name,
-		JobCommand:      spec.Command,
-		RunnerImage:     spec.Image,
-		JobEnvVars:      environment,
-		CodeDir:         worker.DefaultJobCodeDir(spec.CodeDir),
-		JobDir:          worker.DefaultJobDir(spec.CodeDir, spec.JobDir),
-		Characteristics: spec.Characteristics,
-		WorkerClass:     spec.WorkerClass,
-		Resources:       spec.Resources,
+		Name:             spec.Name,
+		JobCommand:       spec.Command,
+		RunnerImage:      spec.Image,
+		JobEnvVars:       environment,
+		CodeDir:          worker.DefaultJobCodeDir(spec.CodeDir),
+		JobDir:           worker.DefaultJobDir(spec.CodeDir, spec.JobDir),
+		Characteristics:  spec.Characteristics,
+		WorkerClass:      spec.WorkerClass,
+		Resources:        spec.Resources,
+		ImagePullSecrets: spec.ImagePullSecrets,
 	}
 	if spec.RunAs != nil {
 		req.RunAsUser = spec.RunAs.User

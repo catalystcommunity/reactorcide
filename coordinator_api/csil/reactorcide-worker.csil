@@ -155,6 +155,12 @@ Lease = {
     timeout_seconds: int,
     cancel_grace_seconds: int,
     capabilities: [* text],
+    ;; image_pull_secrets carries Kubernetes Secret NAMES the job requested
+    ;; for pulling its image -- never credential values. The worker
+    ;; validates the names against its operator allowlist before it creates
+    ;; a Kubernetes Job; non-Kubernetes runners preserve the field and never
+    ;; read a Kubernetes Secret.
+    image_pull_secrets: [* text],
     run_as_user: text,
     ? vcs_auth: VCSAuth
 }

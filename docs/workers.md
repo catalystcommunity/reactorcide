@@ -476,8 +476,10 @@ The worker process also still reads a few runner/job-execution env vars that
 are unrelated to the coordinator protocol:
 `REACTORCIDE_JOB_API_URL` / `REACTORCIDE_API_TOKEN` (let job containers
 submit triggers), `REACTORCIDE_K8S_JOB_NAMESPACE` /
-`REACTORCIDE_K8S_JOB_SERVICE_ACCOUNT` / `REACTORCIDE_K8S_JOB_IMAGE_PULL_SECRETS`
-(KubernetesRunner), and `REACTORCIDE_BUILDER_*` (builder sidecar config).
+`REACTORCIDE_K8S_JOB_SERVICE_ACCOUNT` / `REACTORCIDE_K8S_JOB_IMAGE_PULL_SECRETS` /
+`REACTORCIDE_K8S_JOB_ALLOWED_IMAGE_PULL_SECRETS`
+(KubernetesRunner, see [Job Image Pull Secrets](#job-image-pull-secrets)),
+and `REACTORCIDE_BUILDER_*` (builder sidecar config).
 
 **Removed** (do not set these on a worker anymore — the worker no longer
 polls corndogs or touches Postgres/object storage directly):
@@ -486,6 +488,56 @@ polls corndogs or touches Postgres/object storage directly):
 `REACTORCIDE_DB_URI`, `REACTORCIDE_CORNDOGS_BASE_URL`, `CORNDOGS_API_KEY`,
 `REACTORCIDE_OBJECT_STORE_*`, `REACTORCIDE_MASTER_KEYS`,
 `REACTORCIDE_SECRETS_STORAGE_TYPE`.
+
+## Job Image Pull Secrets
+
+Four separate settings control private image pulls. Each setting holds
+Kubernetes Secret NAMES only, never credential values:
+
+- Top-level Helm `imagePullSecrets` lets the Reactorcide service pods
+  (coordinator, worker, web) pull their own images.
+- `worker.jobImagePullSecrets` adds the listed Secrets to every generated
+  job pod (`REACTORCIDE_K8S_JOB_IMAGE_PULL_SECRETS`).
+- `worker.allowedJobImagePullSecrets` permits a job to request the listed
+  Secrets with its own `image_pull_secrets` list
+  (`REACTORCIDE_K8S_JOB_ALLOWED_IMAGE_PULL_SECRETS`). A name in the global
+  `worker.jobImagePullSecrets` list is also an approved name. A name that is
+  only in `allowedJobImagePullSecrets` is attached only when a job requests
+  it.
+- Job `image_pull_secrets` selects secrets for one job. See
+  [Job Definitions](./job-definitions.md#job-image-pull-secrets).
+
+The allowlist is operator configuration on the worker deployment, not
+coordinator state. The worker enforces it before it creates a Kubernetes
+Job, so a compromised coordinator or job definition cannot attach an
+arbitrary namespace Secret to a job pod. With an empty allowlist, the worker
+rejects every job-level request. This is the secure default: a pod-level
+image pull secret reference makes the kubelet send that Secret's registry
+credentials to the registry that hosts the job image, and the job author
+controls the image reference.
+
+Each referenced Secret must exist in the configured Kubernetes job
+namespace, have type `kubernetes.io/dockerconfigjson`, and contain
+credentials for the registry in the selected image. Create the Secret and
+add its name to the allowlist in one operator step:
+
+```bash
+kubectl create secret docker-registry regcred \
+  --docker-server=containers.example.com \
+  --docker-username=ci-pull \
+  --docker-password-stdin \
+  -n reactorcide-jobs < /path/to/registry-password
+```
+
+```yaml
+# values.yaml
+worker:
+  allowedJobImagePullSecrets:
+    - regcred
+```
+
+Kubernetes reports a missing Secret or a bad credential as a pod image pull
+error. Reactorcide does not read Secret data to improve that error.
 
 ## Note for personal/local redeploy scripts
 

@@ -158,6 +158,13 @@ type JobConfig struct {
 	// CapabilityDocker, CapabilityGPU constants.
 	Capabilities []string
 
+	// ImagePullSecrets lists names of Kubernetes Secrets the job requested
+	// for pulling its image. Names only, never values. KubernetesRunner
+	// enforces its allowlist and adds approved names to the pod spec's
+	// imagePullSecrets; other runners preserve the field and never read a
+	// Kubernetes Secret.
+	ImagePullSecrets []string
+
 	// RunAsUser optionally overrides the container user ("uid:gid"). When
 	// empty, runners default to RunnerUser. Capabilities provision runtime
 	// services/privileges but do not implicitly change the job user.

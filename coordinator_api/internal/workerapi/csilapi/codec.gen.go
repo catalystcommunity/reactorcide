@@ -1080,7 +1080,7 @@ func DecodeVCSAuth(csilData []byte) (VCSAuth, error) {
 
 // csilEncLease builds the canonical CBOR value tree for a Lease.
 func csilEncLease(csilV Lease) cborValue {
-	csilEntries := make(cborMap, 0, 13)
+	csilEntries := make(cborMap, 0, 14)
 	csilEntries = append(csilEntries, cborEntry{cborText("env"), cborEncArray(csilV.Env, func(csilElem EnvVar) cborValue { return csilEncEnvVar(csilElem) })})
 	csilEntries = append(csilEntries, cborEntry{cborText("image"), cborText(csilV.Image)})
 	csilEntries = append(csilEntries, cborEntry{cborText("job_id"), cborText(csilV.JobId)})
@@ -1095,6 +1095,7 @@ func csilEncLease(csilV Lease) cborValue {
 	csilEntries = append(csilEntries, cborEntry{cborText("working_dir"), cborText(csilV.WorkingDir)})
 	csilEntries = append(csilEntries, cborEntry{cborText("capabilities"), cborEncArray(csilV.Capabilities, func(csilElem string) cborValue { return cborText(csilElem) })})
 	csilEntries = append(csilEntries, cborEntry{cborText("timeout_seconds"), cborInt(csilV.TimeoutSeconds)})
+	csilEntries = append(csilEntries, cborEntry{cborText("image_pull_secrets"), cborEncArray(csilV.ImagePullSecrets, func(csilElem string) cborValue { return cborText(csilElem) })})
 	csilEntries = append(csilEntries, cborEntry{cborText("cancel_grace_seconds"), cborInt(csilV.CancelGraceSeconds)})
 	return csilEntries
 }
@@ -1222,6 +1223,17 @@ func csilDecLease(csilRoot cborValue) (Lease, error) {
 			return csilOut, csilErr
 		}
 		csilOut.Capabilities = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "image_pull_secrets")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (func(csilV cborValue) ([]string, error) { return cborDecArray(csilV, cborAsText) })(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.ImagePullSecrets = csilVal
 	}
 	{
 		csilField, csilErr := cborRequire(csilRoot, "run_as_user")
