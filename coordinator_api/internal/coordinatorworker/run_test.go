@@ -143,6 +143,29 @@ func TestRunLoop_HappyPath(t *testing.T) {
 	require.Len(t, fr.snapshotCleanupCalls(), 1, "expected Cleanup to be called once the job finished")
 }
 
+func TestRunLoopReportsRunnerWorkflowOutput(t *testing.T) {
+	const output = `{"vars":{"asset_uploads":{"linux":"signed-target"}}}`
+	lease := csilapi.Lease{
+		LeaseId:    "lease-output",
+		JobId:      "job-output",
+		Image:      "alpine:latest",
+		Command:    []string{"true"},
+		WorkingDir: "/job",
+	}
+	fakeCoordinator := &fakeClient{RequestJobFunc: singleLeaseThenNone(lease)}
+	fakeJobRunner := &fakeRunner{WorkflowOutput: output, WorkflowOutputCaptured: true}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
+	defer cancel()
+	done := make(chan error, 1)
+	go func() { done <- runLoop(ctx, testConfig(), fakeCoordinator, runnerFactoryFor(fakeJobRunner)) }()
+
+	require.Eventually(t, func() bool { return len(fakeCoordinator.snapshotReportResults()) == 1 }, 5*time.Second, 20*time.Millisecond)
+	cancel()
+	require.ErrorIs(t, <-done, context.Canceled)
+	require.Equal(t, output, fakeCoordinator.snapshotReportResults()[0].WorkflowOutput)
+}
+
 // TestRunLoop_NoLeaseBackoff asserts the poll loop keeps calling RequestJob
 // (rather than exiting or hammering with no delay) when the coordinator has
 // no work, and that it shuts down cleanly on context cancellation.

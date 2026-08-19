@@ -349,6 +349,15 @@ One complete rule must authorize all applicable facts. The rule checks:
 - The stable workflow ID.
 - Every executable workflow and job path for that workflow.
 - Every applicable changed CI path.
+
+A changed `.reactorcide/` file that no workflow claims as its own YAML or
+job file — a plugin, script, test, or helper file — is a shared CI path.
+The evaluator attributes a shared CI path to every candidate workflow,
+because plugin and script code loads globally. A rule whose `paths` cover
+the shared path authorizes the change; a rule with narrower `paths` refuses
+it.
+
+The remaining checks are:
 - The event and base branch, when configured.
 - Whether the head repository is the same repository or a fork.
 - The verified actor, when configured.

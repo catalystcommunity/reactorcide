@@ -1075,6 +1075,21 @@ def eval_cmd(
         authorized_paths = set()
         violations = []
         base_workflow_ids = {workflow.workflow_id for workflow in workflow_defs}
+        # Shared CI paths: changed .reactorcide/ files no workflow claims as
+        # its own YAML or job file — plugins, scripts, tests, helper data.
+        # Plugin/script code loads globally, so a change to it is a CI change
+        # for every workflow. Attributing these paths to each candidate
+        # workflow lets a head-CI rule whose paths cover them authorize the
+        # change (and run the workflow from head so the changed code is what
+        # gets tested); a rule with narrower paths still refuses them.
+        claimed_ci_paths = set()
+        for workflow in list(workflow_defs) + list(head_workflows.values()):
+            claimed_ci_paths.add(repo_relative(workflow.source_file))
+            claimed_ci_paths.update(
+                repo_relative(job.source_file) for job in workflow.jobs if job.source_file
+            )
+        claimed_ci_paths.discard("")
+        shared_ci_paths = {path for path in changed_ci if path not in claimed_ci_paths}
         candidate_workflows = list(workflow_defs)
         if trusted_policy:
             permitted_new_ids = {
@@ -1109,6 +1124,7 @@ def eval_cmd(
                 policy_dependency_paths = {repo_relative(candidate.source_file)}
                 policy_dependency_paths.update(repo_relative(job.source_file) for job in candidate.jobs if job.source_file)
                 policy_dependency_paths.discard("")
+            policy_dependency_paths |= shared_ci_paths
             affected_paths = sorted(set(changed_ci).intersection(policy_dependency_paths))
             if dual_checkout and changed_ci and trusted_policy and affected_paths:
                 decision = decide_workflow(

@@ -22,16 +22,25 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
-	"k8s.io/apimachinery/pkg/watch"
 	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
+	"k8s.io/client-go/tools/remotecommand"
 )
+
+const (
+	kubernetesWorkflowOutputReader = "workflow-output-reader"
+	maxKubernetesWorkflowOutput    = 1 << 20
+)
+
+type podCommandExecutor func(ctx context.Context, podName, containerName string, command []string, stdout, stderr io.Writer) error
 
 // KubernetesRunner implements JobRunner using Kubernetes Jobs
 // It creates K8s Job resources and streams logs directly via the K8s API
 // to ensure secret masking is applied before logs reach any aggregator.
 type KubernetesRunner struct {
 	clientset      kubernetes.Interface
+	restConfig     *rest.Config
 	namespace      string
 	serviceAccount string
 	runnerImage    string
@@ -43,6 +52,9 @@ type KubernetesRunner struct {
 	// with both empty every job-level request is rejected (secure default).
 	allowedJobImagePullSecrets []string
 	builder                    BuilderConfig
+	execInPod                  podCommandExecutor
+	workflowOutputMu           sync.Mutex
+	workflowOutputs            map[string]string
 }
 
 // KubernetesRunnerConfig holds configuration for the K8s runner
@@ -108,6 +120,7 @@ func NewKubernetesRunnerWithConfig(cfg KubernetesRunnerConfig) (*KubernetesRunne
 
 	return &KubernetesRunner{
 		clientset:                  clientset,
+		restConfig:                 config,
 		namespace:                  namespace,
 		serviceAccount:             serviceAccount,
 		runnerImage:                cfg.RunnerImage,
@@ -115,6 +128,7 @@ func NewKubernetesRunnerWithConfig(cfg KubernetesRunnerConfig) (*KubernetesRunne
 		imagePullSecrets:           cfg.ImagePullSecrets,
 		allowedJobImagePullSecrets: cfg.AllowedJobImagePullSecrets,
 		builder:                    LoadBuilderConfig(),
+		workflowOutputs:            make(map[string]string),
 	}, nil
 }
 
@@ -322,6 +336,23 @@ func (kr *KubernetesRunner) SpawnJob(ctx context.Context, config *JobConfig) (st
 				},
 			},
 		},
+	}
+	if config.Env["RC_WF_OUTPUT_FILE"] != "" {
+		podSpec.Containers = append(podSpec.Containers, corev1.Container{
+			Name:            kubernetesWorkflowOutputReader,
+			Image:           "busybox:1.36",
+			ImagePullPolicy: corev1.PullIfNotPresent,
+			Command:         []string{"sh", "-c", `trap 'exit 0' TERM INT; while :; do sleep 3600 & wait $!; done`},
+			SecurityContext: &corev1.SecurityContext{
+				RunAsUser: runAsUser,
+			},
+			VolumeMounts: []corev1.VolumeMount{
+				{
+					Name:      "job",
+					MountPath: "/job",
+				},
+			},
+		})
 	}
 
 	var vcsAuthSecretName string
@@ -755,58 +786,154 @@ func (kr *KubernetesRunner) jobTerminal(ctx context.Context, job *batchv1.Job, j
 	return 0, false
 }
 
-// WaitForCompletion waits for the Kubernetes Job to complete and returns the
-// exit code. The Kubernetes API server closes long-lived watch connections
-// after its (randomized ~30-60m) server-side timeout, so a single watch is NOT
-// safe for long jobs (e.g. a multi-arch release build) -- a closed channel does
-// NOT mean the job ended. We therefore poll the Job's status each cycle and
-// re-establish the watch whenever it closes, only concluding when the Job
-// reaches a terminal condition or ctx is cancelled.
+// WaitForCompletion waits for the main job container to exit. The workflow
+// output reader stays alive so the worker can copy workflow-output.json from
+// the pod-local /job volume before Cleanup removes the pod.
 func (kr *KubernetesRunner) WaitForCompletion(ctx context.Context, jobName string) (int, error) {
 	logger := logging.Log.WithField("job_name", jobName)
+	ticker := time.NewTicker(500 * time.Millisecond)
+	defer ticker.Stop()
 
 	for {
-		if err := ctx.Err(); err != nil {
-			return -1, err
+		select {
+		case <-ctx.Done():
+			return -1, ctx.Err()
+		case <-ticker.C:
 		}
 
-		// Check current status first: catches a Job that reached terminal while
-		// no watch was open (e.g. during the gap after an API-server timeout).
+		pods, err := kr.clientset.CoreV1().Pods(kr.namespace).List(ctx, metav1.ListOptions{
+			LabelSelector: fmt.Sprintf("reactorcide.io/job-name=%s", jobName),
+		})
+		if err != nil {
+			return -1, fmt.Errorf("failed to list pods for job: %w", err)
+		}
+		for i := range pods.Items {
+			pod := &pods.Items[i]
+			if reason, message := kr.checkPodStartupFailure(pod); reason != "" {
+				return -1, &PodStartupError{Reason: reason, Message: message}
+			}
+			if code, done := mainContainerExitCode(pod); done {
+				if !podHasWorkflowOutputReader(pod) {
+					logger.WithField("exit_code", code).Info("Job container completed")
+					return code, nil
+				}
+				ready, readerErr := workflowOutputReaderReady(pod)
+				if readerErr != nil {
+					return -1, readerErr
+				}
+				if !ready {
+					continue
+				}
+				output, err := kr.readWorkflowOutputFromPod(ctx, pod.Name)
+				if err != nil {
+					return -1, fmt.Errorf("failed to read workflow output: %w", err)
+				}
+				kr.storeWorkflowOutput(jobName, output)
+				logger.WithField("exit_code", code).Info("Job container completed")
+				return code, nil
+			}
+		}
+
+		// A Job can fail before a pod starts, or Stop can delete its pod. Keep
+		// the Job condition as a fallback for those paths.
 		if job, err := kr.clientset.BatchV1().Jobs(kr.namespace).Get(ctx, jobName, metav1.GetOptions{}); err == nil {
 			if code, done := kr.jobTerminal(ctx, job, jobName, logger); done {
 				return code, nil
 			}
 		}
-
-		watcher, err := kr.clientset.BatchV1().Jobs(kr.namespace).Watch(ctx, metav1.ListOptions{
-			FieldSelector: fmt.Sprintf("metadata.name=%s", jobName),
-		})
-		if err != nil {
-			return -1, fmt.Errorf("failed to watch job: %w", err)
-		}
-
-		terminal, code := false, -1
-		for event := range watcher.ResultChan() {
-			if event.Type == watch.Error {
-				break // re-establish the watch
-			}
-			job, ok := event.Object.(*batchv1.Job)
-			if !ok {
-				continue
-			}
-			if c, done := kr.jobTerminal(ctx, job, jobName, logger); done {
-				code, terminal = c, true
-				break
-			}
-		}
-		watcher.Stop()
-		if terminal {
-			return code, nil
-		}
-		// ResultChan closed without a terminal condition -> the API server timed
-		// out the watch on a still-running job. Loop to re-Get + re-watch. The
-		// ctx check at the top prevents an unbounded spin.
 	}
+}
+
+func mainContainerExitCode(pod *corev1.Pod) (int, bool) {
+	for _, status := range pod.Status.ContainerStatuses {
+		if status.Name == "job" && status.State.Terminated != nil {
+			return int(status.State.Terminated.ExitCode), true
+		}
+	}
+	return 0, false
+}
+
+func podHasWorkflowOutputReader(pod *corev1.Pod) bool {
+	for _, container := range pod.Spec.Containers {
+		if container.Name == kubernetesWorkflowOutputReader {
+			return true
+		}
+	}
+	return false
+}
+
+func workflowOutputReaderReady(pod *corev1.Pod) (bool, error) {
+	for _, status := range pod.Status.ContainerStatuses {
+		if status.Name != kubernetesWorkflowOutputReader {
+			continue
+		}
+		if status.State.Running != nil {
+			return true, nil
+		}
+		if status.State.Terminated != nil {
+			return false, fmt.Errorf("workflow output reader exited before output capture")
+		}
+		return false, nil
+	}
+	return false, nil
+}
+
+func (kr *KubernetesRunner) readWorkflowOutputFromPod(ctx context.Context, podName string) (string, error) {
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	command := []string{"sh", "-c", "if [ -f /job/workflow-output.json ]; then head -c 1048577 /job/workflow-output.json; fi"}
+	if err := kr.executePodCommand(ctx, podName, kubernetesWorkflowOutputReader, command, &stdout, &stderr); err != nil {
+		return "", err
+	}
+	if stdout.Len() > maxKubernetesWorkflowOutput {
+		return "", fmt.Errorf("workflow output exceeds %d bytes", maxKubernetesWorkflowOutput)
+	}
+	return stdout.String(), nil
+}
+
+func (kr *KubernetesRunner) executePodCommand(ctx context.Context, podName, containerName string, command []string, stdout, stderr io.Writer) error {
+	if kr.execInPod != nil {
+		return kr.execInPod(ctx, podName, containerName, command, stdout, stderr)
+	}
+	if kr.restConfig == nil {
+		return fmt.Errorf("Kubernetes REST config is unavailable")
+	}
+	request := kr.clientset.CoreV1().RESTClient().Post().
+		Resource("pods").
+		Name(podName).
+		Namespace(kr.namespace).
+		SubResource("exec").
+		VersionedParams(&corev1.PodExecOptions{
+			Container: containerName,
+			Command:   command,
+			Stdout:    true,
+			Stderr:    true,
+		}, scheme.ParameterCodec)
+	executor, err := remotecommand.NewSPDYExecutor(kr.restConfig, "POST", request.URL())
+	if err != nil {
+		return err
+	}
+	return executor.StreamWithContext(ctx, remotecommand.StreamOptions{Stdout: stdout, Stderr: stderr})
+}
+
+func (kr *KubernetesRunner) storeWorkflowOutput(jobName, output string) {
+	kr.workflowOutputMu.Lock()
+	defer kr.workflowOutputMu.Unlock()
+	if kr.workflowOutputs == nil {
+		kr.workflowOutputs = make(map[string]string)
+	}
+	kr.workflowOutputs[jobName] = output
+}
+
+// TakeWorkflowOutput returns and removes output captured from the pod-local
+// workspace. The bool is true when capture completed, including when the job
+// did not create an output file.
+func (kr *KubernetesRunner) TakeWorkflowOutput(jobName string) (string, bool) {
+	kr.workflowOutputMu.Lock()
+	defer kr.workflowOutputMu.Unlock()
+	output, ok := kr.workflowOutputs[jobName]
+	delete(kr.workflowOutputs, jobName)
+	return output, ok
 }
 
 // Stop requests a graceful shutdown of the job's pod(s) by deleting them with
@@ -865,6 +992,7 @@ func (kr *KubernetesRunner) Cleanup(ctx context.Context, jobName string) error {
 	logger := logging.Log.WithField("job_name", jobName)
 
 	logger.Info("Cleaning up Kubernetes Job")
+	defer kr.TakeWorkflowOutput(jobName)
 
 	// Delete the job with propagation policy to delete pods
 	propagationPolicy := metav1.DeletePropagationBackground
@@ -1004,24 +1132,24 @@ func (kr *KubernetesRunner) waitForPod(ctx context.Context, jobName string) (str
 					return "", &PodStartupError{Reason: reason, Message: message}
 				}
 
-				// Wait for pod to be running or completed
-				if pod.Status.Phase == corev1.PodRunning ||
-					pod.Status.Phase == corev1.PodSucceeded ||
+				// Wait for the main container. A support sidecar can make the pod
+				// Running before the job container starts.
+				if mainContainerStarted(pod) || pod.Status.Phase == corev1.PodSucceeded ||
 					pod.Status.Phase == corev1.PodFailed {
 					return pod.Name, nil
-				}
-				// Also accept if container is waiting but pod exists
-				if pod.Status.Phase == corev1.PodPending {
-					// Check if any container has started
-					for _, status := range pod.Status.ContainerStatuses {
-						if status.State.Running != nil || status.State.Terminated != nil {
-							return pod.Name, nil
-						}
-					}
 				}
 			}
 		}
 	}
+}
+
+func mainContainerStarted(pod *corev1.Pod) bool {
+	for _, status := range pod.Status.ContainerStatuses {
+		if status.Name == "job" {
+			return status.State.Running != nil || status.State.Terminated != nil
+		}
+	}
+	return false
 }
 
 // checkPodStartupFailure checks if the pod has a startup failure condition
@@ -1193,3 +1321,4 @@ func (kr *KubernetesRunner) GetJobStatus(ctx context.Context, jobName string) (s
 
 // Ensure KubernetesRunner implements JobRunner interface
 var _ JobRunner = (*KubernetesRunner)(nil)
+var _ WorkflowOutputReader = (*KubernetesRunner)(nil)

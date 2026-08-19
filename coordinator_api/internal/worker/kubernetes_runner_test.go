@@ -4,9 +4,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"strings"
 	"testing"
+	"time"
 
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes/fake"
 )
@@ -39,6 +42,9 @@ func TestKubernetesRunnerHomeMatchesHOME(t *testing.T) {
 		t.Fatalf("listing jobs failed: %v", err)
 	}
 	podSpec := jobs.Items[0].Spec.Template.Spec
+	if len(podSpec.Containers) != 1 {
+		t.Fatalf("non-workflow job should not have a workflow output reader, got %d containers", len(podSpec.Containers))
+	}
 
 	foundHomeMount := false
 	for _, m := range podSpec.Containers[0].VolumeMounts {
@@ -58,6 +64,121 @@ func TestKubernetesRunnerHomeMatchesHOME(t *testing.T) {
 	}
 	if prep := strings.Join(podSpec.InitContainers[0].Command, " "); !strings.Contains(prep, "/home/runner") {
 		t.Errorf("prepare init container does not make /home/runner writable: %q", prep)
+	}
+}
+
+func TestKubernetesRunnerAddsWorkflowOutputReader(t *testing.T) {
+	clientset := fake.NewSimpleClientset()
+	runner := &KubernetesRunner{
+		clientset:      clientset,
+		namespace:      "reactorcide",
+		serviceAccount: "default",
+		dindImage:      "docker:27-dind",
+	}
+	if _, err := runner.SpawnJob(context.Background(), &JobConfig{
+		JobID:      "output-job",
+		Image:      "reactorcide/runnerbase:test",
+		Command:    []string{"sh", "-c", "echo ok"},
+		Env:        map[string]string{"RC_WF_OUTPUT_FILE": "/job/workflow-output.json"},
+		WorkingDir: "/job",
+	}); err != nil {
+		t.Fatalf("SpawnJob failed: %v", err)
+	}
+
+	jobs, err := clientset.BatchV1().Jobs("reactorcide").List(context.Background(), metav1.ListOptions{})
+	if err != nil {
+		t.Fatalf("listing jobs failed: %v", err)
+	}
+	podSpec := jobs.Items[0].Spec.Template.Spec
+	if len(podSpec.Containers) != 2 {
+		t.Fatalf("expected job and workflow output reader containers, got %d", len(podSpec.Containers))
+	}
+	reader := podSpec.Containers[1]
+	if reader.Name != kubernetesWorkflowOutputReader {
+		t.Fatalf("expected %q container, got %q", kubernetesWorkflowOutputReader, reader.Name)
+	}
+	if reader.SecurityContext == nil || reader.SecurityContext.RunAsUser == nil || *reader.SecurityContext.RunAsUser != 1001 {
+		t.Fatalf("workflow output reader should use job uid 1001, got %v", reader.SecurityContext)
+	}
+	if len(reader.VolumeMounts) != 1 || reader.VolumeMounts[0].Name != "job" || reader.VolumeMounts[0].MountPath != "/job" {
+		t.Fatalf("workflow output reader must mount the private job volume: %#v", reader.VolumeMounts)
+	}
+}
+
+func TestKubernetesRunnerWaitCapturesWorkflowOutput(t *testing.T) {
+	const output = `{"vars":{"release_id":"release-123"}}`
+	clientset := fake.NewSimpleClientset(&corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "output-pod",
+			Namespace: "reactorcide",
+			Labels:    map[string]string{"reactorcide.io/job-name": "output-job"},
+		},
+		Spec: corev1.PodSpec{Containers: []corev1.Container{
+			{Name: "job"},
+			{Name: kubernetesWorkflowOutputReader},
+		}},
+		Status: corev1.PodStatus{ContainerStatuses: []corev1.ContainerStatus{
+			{Name: "job", State: corev1.ContainerState{Terminated: &corev1.ContainerStateTerminated{ExitCode: 0}}},
+			{Name: kubernetesWorkflowOutputReader, State: corev1.ContainerState{Running: &corev1.ContainerStateRunning{}}},
+		}},
+	})
+	runner := &KubernetesRunner{
+		clientset: clientset,
+		namespace: "reactorcide",
+		execInPod: func(_ context.Context, podName, containerName string, command []string, stdout, _ io.Writer) error {
+			if podName != "output-pod" || containerName != kubernetesWorkflowOutputReader {
+				t.Fatalf("unexpected exec target %s/%s", podName, containerName)
+			}
+			if !strings.Contains(strings.Join(command, " "), "workflow-output.json") {
+				t.Fatalf("exec command does not read workflow output: %v", command)
+			}
+			_, err := io.WriteString(stdout, output)
+			return err
+		},
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	exitCode, err := runner.WaitForCompletion(ctx, "output-job")
+	if err != nil {
+		t.Fatalf("WaitForCompletion failed: %v", err)
+	}
+	if exitCode != 0 {
+		t.Fatalf("expected exit code 0, got %d", exitCode)
+	}
+	got, ok := runner.TakeWorkflowOutput("output-job")
+	if !ok || got != output {
+		t.Fatalf("captured output = %q, %v; want %q, true", got, ok, output)
+	}
+	if _, ok := runner.TakeWorkflowOutput("output-job"); ok {
+		t.Fatal("TakeWorkflowOutput must remove captured output")
+	}
+}
+
+func TestKubernetesRunnerRejectsOversizeWorkflowOutput(t *testing.T) {
+	runner := &KubernetesRunner{
+		execInPod: func(_ context.Context, _, _ string, _ []string, stdout, _ io.Writer) error {
+			_, err := io.WriteString(stdout, strings.Repeat("x", maxKubernetesWorkflowOutput+1))
+			return err
+		},
+	}
+	_, err := runner.readWorkflowOutputFromPod(context.Background(), "output-pod")
+	if err == nil || !strings.Contains(err.Error(), "exceeds") {
+		t.Fatalf("expected an output size error, got %v", err)
+	}
+}
+
+func TestMainContainerStartedIgnoresSupportSidecar(t *testing.T) {
+	pod := &corev1.Pod{Status: corev1.PodStatus{ContainerStatuses: []corev1.ContainerStatus{
+		{Name: kubernetesWorkflowOutputReader, State: corev1.ContainerState{Running: &corev1.ContainerStateRunning{}}},
+		{Name: "job", State: corev1.ContainerState{Waiting: &corev1.ContainerStateWaiting{Reason: "ContainerCreating"}}},
+	}}}
+	if mainContainerStarted(pod) {
+		t.Fatal("support sidecar must not make the main job container ready for log streaming")
+	}
+	pod.Status.ContainerStatuses[1].State = corev1.ContainerState{Running: &corev1.ContainerStateRunning{}}
+	if !mainContainerStarted(pod) {
+		t.Fatal("running job container should be ready for log streaming")
 	}
 }
 

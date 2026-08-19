@@ -109,3 +109,12 @@ worker validates each job-level name against
 rejects the job before Kubernetes Job creation when a name is not approved.
 The worker never reads Secret data. Docker, containerd, and local execution
 keep the field but do not read Kubernetes Secrets.
+
+The Kubernetes job workspace is an `emptyDir`. The worker host cannot read
+this volume. The runner adds a workflow output reader container to each
+workflow job pod.
+After the main container stops, the worker reads
+`/job/workflow-output.json` from this container. The worker limits the file to
+1 MiB and sends it through the authenticated worker result call. The worker
+does not send this file through the job log stream. The worker Role must allow
+`create` on `pods/exec`.
