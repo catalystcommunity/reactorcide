@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"sort"
 	"strings"
 
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/cipolicy"
@@ -204,6 +205,17 @@ func explainPolicy(ctx *cli.Context) error {
 			return err
 		}
 		fmt.Printf("\nWorkflow: %s\nCI source: %s\nProfile: %s\nWorker class: %s\nRule: %s\nAllowed head CI: %t\n", workflowID, decision.CISource, decision.Profile, decision.WorkerClass, decision.RuleID, decision.Allowed)
+		if len(decision.BaseNodes) > 0 {
+			names := make([]string, 0, len(decision.BaseNodes))
+			for name := range decision.BaseNodes {
+				names = append(names, name)
+			}
+			sort.Strings(names)
+			for _, name := range names {
+				grant := decision.BaseNodes[name]
+				fmt.Printf("Base node: %s (ci_source %s, profile %s, workers %s)\n", name, grant.CISource, grant.Profile, grant.WorkerClass)
+			}
+		}
 		for _, reason := range decision.Reasons {
 			fmt.Printf("Reason: %s\n", reason)
 		}

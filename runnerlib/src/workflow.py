@@ -86,6 +86,11 @@ class JobTrigger:
     resources: Optional[Dict[str, Any]] = None
     disable_run_local: Optional[bool] = None
     run_local: Optional[Dict[str, Any]] = None
+    # Per-node authority override for policy-controlled trusted base nodes in
+    # a head-CI workflow. Only eval sets these from a coordinator policy
+    # decision; the coordinator verifies them against the same policy.
+    ci_origin: Optional[str] = None
+    execution_profile: Optional[str] = None
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary, excluding None values."""

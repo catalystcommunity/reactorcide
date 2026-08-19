@@ -284,10 +284,26 @@ hyphens. The `name` field remains a display label. If `id` is absent, runnerlib
 derives a compatibility ID from the trusted workflow file path. A policy rule
 that permits head CI must use an explicit stable ID.
 
-One workflow uses one CI origin. Its jobs cannot mix base and head definitions.
+One workflow uses one CI origin by default. Its jobs cannot mix base and head
+definitions unless a coordinator policy rule names trusted base nodes for
+that workflow. A `base_nodes` policy entry pins the named nodes to the exact
+base CI SHA and a trusted execution profile, while the other nodes run head
+CI with the untrusted profile. Head content can order dependencies between
+these nodes, but it cannot define, change, or replace a policy-controlled
+node. The coordinator records the effective authority on each node, and a
+retry replays that recorded authority. See [Organizations and Coordinator CI
+Policy](./organizations-and-ci-policy.md).
+
 The runnerlib evaluation result carries the workflow ID, source file, CI
-origin, safe workflow triggers, and policy violations. A policy violation does
-not remove safe workflow triggers. The payload has no protocol version field.
+origin, safe workflow triggers, per-node authority overrides, and policy
+violations. A policy violation does not remove safe workflow triggers. The
+payload has no protocol version field.
+
+A workflow author does not configure node authority in repository YAML.
+Reserved authority fields such as `execution_profile` and `ci_origin` are
+rejected in workflow job entries and job files. Write the control nodes as
+normal nodes, give the workflow a stable `id`, and ask an operator to store
+the policy rule that grants the node authority.
 
 All workflows for one pull request write structured entries to one shared VCS
 report. The workflow ID is the report section key.

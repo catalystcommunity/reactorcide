@@ -239,6 +239,11 @@ func RetryWorkflow(ctx context.Context, st store.Store, corndogsClient corndogs.
 			ItemIndex:   cloneIntPtr(on.ItemIndex),
 			ItemValue:   cloneJSONB(on.ItemValue),
 			ItemVar:     on.ItemVar,
+			// A retry replays the recorded node authority. It must not
+			// evaluate a newer policy implicitly.
+			CIOrigin: on.CIOrigin, CIRepository: on.CIRepository, CISHA: on.CISHA,
+			ExecutionProfile: on.ExecutionProfile, WorkerClass: on.WorkerClass,
+			PolicyRevision: on.PolicyRevision, PolicyRuleID: on.PolicyRuleID, ApprovalID: cloneStringPtr(on.ApprovalID),
 		}
 		if err := ws.CreateWorkflowNode(ctx, node); err != nil {
 			return newWf, fmt.Errorf("failed to create retried workflow node %q: %w", on.Name, err)

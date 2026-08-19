@@ -160,6 +160,13 @@ type triggerJobSpec struct {
 	ItemVar          string        `json:"item_var"`
 	WorkerClass      string        `json:"worker_class"`
 
+	// CIOrigin and ExecutionProfile carry a per-node authority override for
+	// policy-controlled trusted base nodes inside a head-CI workflow. Only
+	// runnerlib eval output sets them, and validateWorkflowAuthority verifies
+	// them against the pinned coordinator policy before any node is created.
+	CIOrigin         string `json:"ci_origin,omitempty"`
+	ExecutionProfile string `json:"execution_profile,omitempty"`
+
 	// Characteristics/Resources, when set, override the parent (eval) job's
 	// characteristics/resources for this triggered job. See
 	// buildJobFromTrigger.
@@ -265,6 +272,15 @@ func (tp *TriggerProcessor) ProcessTriggersFromData(ctx context.Context, data []
 		batches[i].TriggerType = strings.TrimSpace(tf.TriggerType)
 		if batches[i].TriggerType == "" {
 			batches[i].TriggerType = "runnerlib"
+		}
+		if !isEvalResult {
+			// Only verified eval output can carry per-node authority. Any
+			// other trigger source must not name node authority at all.
+			for j := range batches[i].Jobs {
+				if batches[i].Jobs[j].CIOrigin != "" || batches[i].Jobs[j].ExecutionProfile != "" {
+					return nil, fmt.Errorf("triggered job %q cannot set node authority", batches[i].Jobs[j].JobName)
+				}
+			}
 		}
 		if isEvalResult {
 			if err := tp.validateWorkflowAuthority(ctx, parentJob, &batches[i], tf.ChangedCIPaths); err != nil {
@@ -404,6 +420,7 @@ func (tp *TriggerProcessor) validateWorkflowAuthority(ctx context.Context, paren
 		}
 		approvalSubjects[approval.ApproverSubject] = true
 	}
+	var nodeAuthority map[string]cipolicy.NodeDecision
 	if spec.CIOrigin == "head" {
 		policyDocument, _ := parentJob.JobEnvVars["REACTORCIDE_CI_POLICY"].(string)
 		policyRevision, _ := parentJob.JobEnvVars["REACTORCIDE_CI_POLICY_REVISION"].(string)
@@ -438,6 +455,7 @@ func (tp *TriggerProcessor) validateWorkflowAuthority(ctx context.Context, paren
 		if !decision.Allowed || decision.RuleID != spec.PolicyRuleID || decision.Profile != spec.ExecutionProfile || decision.WorkerClass != spec.WorkerClass {
 			return fmt.Errorf("workflow %q is not authorized by the coordinator policy", spec.ID)
 		}
+		nodeAuthority = decision.BaseNodes
 	}
 	if ps, ok := tp.store.(triggerProfileStore); ok {
 		parentName := parentJob.ExecutionProfile
@@ -454,6 +472,70 @@ func (tp *TriggerProcessor) validateWorkflowAuthority(ctx context.Context, paren
 		}
 		if len(childProfile.AllowedWorkerClasses) > 0 && !containsString(childProfile.AllowedWorkerClasses, spec.WorkerClass) {
 			return fmt.Errorf("workflow %q selects a worker class denied by profile %q", spec.ID, spec.ExecutionProfile)
+		}
+	}
+	return tp.validateNodeAuthority(ctx, parentJob, spec, nodeAuthority)
+}
+
+// validateNodeAuthority verifies per-node trusted-base authority claims in an
+// eval batch against the coordinator policy decision for that workflow. Every
+// check fails closed: a claim without a policy grant, a policy grant without a
+// matching node, an inexact base CI revision, an unknown or stronger profile,
+// and a denied worker class all reject the batch.
+func (tp *TriggerProcessor) validateNodeAuthority(ctx context.Context, parentJob *models.Job, spec *triggerWorkflowSpec, nodeAuthority map[string]cipolicy.NodeDecision) error {
+	claimed := map[string]bool{}
+	for i := range spec.Jobs {
+		job := &spec.Jobs[i]
+		if job.CIOrigin == "" && job.ExecutionProfile == "" {
+			continue
+		}
+		grant, ok := nodeAuthority[job.JobName]
+		if !ok {
+			return fmt.Errorf("workflow %q node %q claims authority that no coordinator policy grants", spec.ID, job.JobName)
+		}
+		if claimed[job.JobName] {
+			return fmt.Errorf("workflow %q claims authority for node %q more than one time", spec.ID, job.JobName)
+		}
+		claimed[job.JobName] = true
+		if job.CIOrigin != grant.CISource || job.ExecutionProfile != grant.Profile || job.WorkerClass != grant.WorkerClass {
+			return fmt.Errorf("workflow %q node %q authority does not match the coordinator policy", spec.ID, job.JobName)
+		}
+		if parentJob.CIRepository == "" || parentJob.CISHA == "" || job.CISourceURL != parentJob.CIRepository || job.CISourceRef != parentJob.CISHA {
+			return fmt.Errorf("workflow %q node %q must use the exact trusted base CI revision", spec.ID, job.JobName)
+		}
+	}
+	for name := range nodeAuthority {
+		if !claimed[name] {
+			return fmt.Errorf("workflow %q is missing policy-controlled base node %q", spec.ID, name)
+		}
+	}
+	if len(nodeAuthority) == 0 {
+		return nil
+	}
+	// A node profile must not raise authority above the evaluation job that
+	// admits it, and the node worker class must be allowed by that profile.
+	ps, ok := tp.store.(triggerProfileStore)
+	if !ok {
+		return fmt.Errorf("workflow %q node authority cannot be verified", spec.ID)
+	}
+	parentName := parentJob.ExecutionProfile
+	if parentName == "" {
+		parentName = "standard"
+	}
+	parentProfile, err := ps.GetExecutionProfile(ctx, parentJob.OrgID, parentName)
+	if err != nil {
+		return fmt.Errorf("workflow %q node authority cannot be verified", spec.ID)
+	}
+	for name, grant := range nodeAuthority {
+		nodeProfile, err := ps.GetExecutionProfile(ctx, parentJob.OrgID, grant.Profile)
+		if err != nil {
+			return fmt.Errorf("workflow %q node %q selects an unknown execution profile", spec.ID, name)
+		}
+		if err := profiles.WeakerOrEqual(nodeProfile, parentProfile); err != nil {
+			return fmt.Errorf("workflow %q node %q raises profile authority: %w", spec.ID, name, err)
+		}
+		if len(nodeProfile.AllowedWorkerClasses) > 0 && !containsString(nodeProfile.AllowedWorkerClasses, grant.WorkerClass) {
+			return fmt.Errorf("workflow %q node %q selects a worker class denied by profile %q", spec.ID, name, grant.Profile)
 		}
 	}
 	return nil
@@ -596,6 +678,11 @@ func (tp *TriggerProcessor) processWorkflowBatch(ctx context.Context, parentJob 
 		return nil, fmt.Errorf("failed to create workflow: %w", err)
 	}
 	for i := range specs {
+		if specs[i].CIOrigin != "" || specs[i].ExecutionProfile != "" {
+			// Policy-controlled trusted base node: keep the verified base CI
+			// pin and worker class that validateWorkflowAuthority checked.
+			continue
+		}
 		specs[i].WorkerClass = wf.WorkerClass
 		specs[i].CISourceURL = wf.CIRepository
 		specs[i].CISourceRef = wf.CISHA

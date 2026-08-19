@@ -223,6 +223,12 @@ the project. The optional `execution_profiles` and `ci_origins` selectors can
 limit a grant to approved profiles and to base or head CI. A job name alone
 cannot grant a head-CI job access to a trusted secret.
 
+Grant checks use the effective authority of the job. For a policy-controlled
+trusted base node in a head-CI workflow, the job carries the node authority:
+`ci_origin` is `base` and the profile is the trusted node profile. Grant the
+secret to the exact node name with `--execution-profile` and `--ci-origin
+base` so the untrusted nodes in the same workflow can never match the grant.
+
 See [Organizations and Coordinator CI Policy](./organizations-and-ci-policy.md)
 for profile definitions, CI-origin selection, approvals, and VCS policy
 reports.

@@ -30,9 +30,19 @@ type SubjectMatch struct {
 	Any []string `yaml:"any" json:"any"`
 }
 type Use struct {
-	CISource string `yaml:"ci_source" json:"ci_source"`
-	Profile  string `yaml:"profile" json:"profile"`
-	Workers  string `yaml:"workers" json:"workers"`
+	CISource  string          `yaml:"ci_source" json:"ci_source"`
+	Profile   string          `yaml:"profile" json:"profile"`
+	Workers   string          `yaml:"workers" json:"workers"`
+	BaseNodes []NodeAuthority `yaml:"base_nodes,omitempty" json:"base_nodes,omitempty"`
+}
+
+// NodeAuthority grants selected workflow nodes trusted base-CI authority
+// inside a head-CI workflow. Only coordinator policy can carry this grant.
+type NodeAuthority struct {
+	Nodes    []string `yaml:"nodes" json:"nodes"`
+	CISource string   `yaml:"ci_source" json:"ci_source"`
+	Profile  string   `yaml:"profile" json:"profile"`
+	Workers  string   `yaml:"workers" json:"workers"`
 }
 type Rule struct {
 	ID             string       `yaml:"id" json:"id"`
@@ -53,6 +63,11 @@ type filePolicy struct {
 }
 
 var securityIDPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,62}$`)
+
+// nodeNamePattern accepts workflow node map keys. Node names come from
+// trusted base workflow YAML, so the pattern permits the wider identifier
+// grammar that workflow definitions already use.
+var nodeNamePattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$`)
 
 // ParseDocument parses one coordinator-managed YAML or JSON policy document.
 func ParseDocument(data []byte) (*Policy, error) {
@@ -78,10 +93,23 @@ func ParseDocument(data []byte) (*Policy, error) {
 func CanonicalDocument(policy *Policy) ([]byte, error) {
 	canonicalRules := make([]map[string]any, 0, len(policy.HeadCI))
 	for _, rule := range policy.HeadCI {
+		use := map[string]any{"ci_source": rule.Use.CISource, "profile": rule.Use.Profile, "workers": rule.Use.Workers}
+		// base_nodes joins the canonical form only when present so that the
+		// revision of a policy without node authority stays unchanged.
+		if len(rule.Use.BaseNodes) > 0 {
+			canonicalNodes := make([]map[string]any, 0, len(rule.Use.BaseNodes))
+			for _, authority := range rule.Use.BaseNodes {
+				canonicalNodes = append(canonicalNodes, map[string]any{
+					"ci_source": authority.CISource, "nodes": emptySlice(authority.Nodes),
+					"profile": authority.Profile, "workers": authority.Workers,
+				})
+			}
+			use["base_nodes"] = canonicalNodes
+		}
 		canonicalRules = append(canonicalRules, map[string]any{
 			"actors": map[string]any{"any": emptySlice(rule.Actors.Any)}, "approval": map[string]any{"any": emptySlice(rule.Approval.Any)},
 			"base_branches": emptySlice(rule.BaseBranches), "events": emptySlice(rule.Events), "head_repository": rule.HeadRepository,
-			"id": rule.ID, "paths": emptySlice(rule.Paths), "use": map[string]any{"ci_source": rule.Use.CISource, "profile": rule.Use.Profile, "workers": rule.Use.Workers},
+			"id": rule.ID, "paths": emptySlice(rule.Paths), "use": use,
 			"workflows": emptySlice(rule.Workflows),
 		})
 	}
@@ -175,6 +203,27 @@ func validatePolicy(policy *Policy) error {
 		if rule.Use.Profile == "" || rule.Use.Workers == "" {
 			return fmt.Errorf("rule %s must select a profile and worker class", rule.ID)
 		}
+		seenNodes := map[string]bool{}
+		for j, authority := range rule.Use.BaseNodes {
+			if len(authority.Nodes) == 0 {
+				return fmt.Errorf("rule %s base_nodes[%d] must name at least one node", rule.ID, j)
+			}
+			for _, node := range authority.Nodes {
+				if !nodeNamePattern.MatchString(node) {
+					return fmt.Errorf("rule %s base_nodes[%d] has invalid node name %q", rule.ID, j, node)
+				}
+				if seenNodes[node] {
+					return fmt.Errorf("rule %s names node %q in more than one base_nodes entry", rule.ID, node)
+				}
+				seenNodes[node] = true
+			}
+			if authority.CISource != "base" {
+				return fmt.Errorf("rule %s base_nodes[%d] ci_source must be base", rule.ID, j)
+			}
+			if authority.Profile == "" || authority.Workers == "" {
+				return fmt.Errorf("rule %s base_nodes[%d] must select a profile and worker class", rule.ID, j)
+			}
+		}
 	}
 	return nil
 }
@@ -229,8 +278,43 @@ type Facts struct {
 
 type Decision struct {
 	CISource, Profile, WorkerClass, RuleID string
-	Allowed                                bool
-	Reasons                                []string
+	// BaseNodes maps a node name to the trusted base authority that the
+	// matched rule grants it. Empty for workflows without node authority.
+	BaseNodes map[string]NodeDecision
+	Allowed   bool
+	Reasons   []string
+}
+
+// NodeDecision is the effective authority for one policy-controlled node.
+type NodeDecision struct {
+	CISource, Profile, WorkerClass string
+}
+
+// BaseNodeDecisions flattens a rule's base_nodes entries to one map keyed by
+// node name. Validation guarantees that a node name appears only one time.
+func BaseNodeDecisions(authorities []NodeAuthority) map[string]NodeDecision {
+	if len(authorities) == 0 {
+		return nil
+	}
+	result := make(map[string]NodeDecision)
+	for _, authority := range authorities {
+		for _, node := range authority.Nodes {
+			result[node] = NodeDecision{CISource: authority.CISource, Profile: authority.Profile, WorkerClass: authority.Workers}
+		}
+	}
+	return result
+}
+
+func equalNodeDecisions(a, b map[string]NodeDecision) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for name, decision := range a {
+		if other, ok := b[name]; !ok || other != decision {
+			return false
+		}
+	}
+	return true
 }
 
 func Decide(policy *Policy, facts Facts) (Decision, error) {
@@ -249,7 +333,7 @@ func Decide(policy *Policy, facts Facts) (Decision, error) {
 		if len(rule.Approval.Any) > 0 && !anyFact(rule.Approval.Any, facts.ApprovalSubjects) {
 			continue
 		}
-		matches = append(matches, Decision{CISource: "head", Profile: rule.Use.Profile, WorkerClass: rule.Use.Workers, RuleID: rule.ID, Allowed: true})
+		matches = append(matches, Decision{CISource: "head", Profile: rule.Use.Profile, WorkerClass: rule.Use.Workers, RuleID: rule.ID, BaseNodes: BaseNodeDecisions(rule.Use.BaseNodes), Allowed: true})
 	}
 	if len(matches) == 0 {
 		base.Reasons = []string{"no complete coordinator policy rule authorized head CI"}
@@ -257,7 +341,7 @@ func Decide(policy *Policy, facts Facts) (Decision, error) {
 	}
 	selected := matches[0]
 	for _, match := range matches[1:] {
-		if match.Profile != selected.Profile || match.WorkerClass != selected.WorkerClass {
+		if match.Profile != selected.Profile || match.WorkerClass != selected.WorkerClass || !equalNodeDecisions(match.BaseNodes, selected.BaseNodes) {
 			return base, fmt.Errorf("ambiguous head CI authority for workflow %q", facts.WorkflowID)
 		}
 	}

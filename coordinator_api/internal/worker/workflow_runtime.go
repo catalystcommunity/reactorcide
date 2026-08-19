@@ -393,6 +393,19 @@ func (tp *TriggerProcessor) createWorkflowNode(ctx context.Context, wf *models.W
 		ItemValue:   itemValue,
 		ItemVar:     spec.ItemVar,
 	}
+	if spec.CIOrigin != "" || spec.ExecutionProfile != "" {
+		// Record the effective authority for a policy-controlled node so
+		// submission and retries replay the recorded decision instead of
+		// evaluating a newer policy implicitly.
+		node.CIOrigin = spec.CIOrigin
+		node.CIRepository = spec.CISourceURL
+		node.CISHA = spec.CISourceRef
+		node.ExecutionProfile = spec.ExecutionProfile
+		node.WorkerClass = spec.WorkerClass
+		node.PolicyRevision = wf.PolicyRevision
+		node.PolicyRuleID = wf.PolicyRuleID
+		node.ApprovalID = wf.ApprovalID
+	}
 	if history, ok := tp.store.(workflowHistoryStore); ok {
 		duration, err := history.GetLastSuccessfulWorkflowNodeDuration(ctx, wf, name)
 		if err != nil {
@@ -535,34 +548,73 @@ func (tp *TriggerProcessor) submitWorkflowNode(ctx context.Context, wf *models.W
 	if err != nil {
 		return "", err
 	}
+	// Effective authority: the workflow decision by default, replaced by the
+	// node's recorded authority for a policy-controlled trusted base node.
 	authorityParent := *parentJob
-	authorityParent.WorkerClass = wf.WorkerClass
-	authorityParent.ExecutionProfile = wf.ExecutionProfile
-	authorityParent.CIOrigin = wf.CIOrigin
-	authorityParent.CIRepository = wf.CIRepository
-	authorityParent.CISHA = wf.CISHA
+	effectiveWorkerClass := wf.WorkerClass
+	effectiveProfileName := wf.ExecutionProfile
+	effectiveCIOrigin := wf.CIOrigin
+	effectiveCIRepository := wf.CIRepository
+	effectiveCISHA := wf.CISHA
+	effectivePolicyRuleID := wf.PolicyRuleID
+	effectiveApprovalID := wf.ApprovalID
+	if node.HasAuthorityOverride() {
+		// Fail closed when the recorded node authority is incomplete or does
+		// not belong to the workflow's recorded policy decision.
+		if node.CIOrigin == "" || node.ExecutionProfile == "" || node.WorkerClass == "" || node.CIRepository == "" || node.CISHA == "" {
+			return "", fmt.Errorf("workflow node %q has an incomplete recorded authority", node.DisplayName)
+		}
+		if node.PolicyRevision != wf.PolicyRevision {
+			return "", fmt.Errorf("workflow node %q authority does not match the recorded policy revision", node.DisplayName)
+		}
+		effectiveWorkerClass = node.WorkerClass
+		effectiveProfileName = node.ExecutionProfile
+		effectiveCIOrigin = node.CIOrigin
+		effectiveCIRepository = node.CIRepository
+		effectiveCISHA = node.CISHA
+		effectivePolicyRuleID = node.PolicyRuleID
+		effectiveApprovalID = node.ApprovalID
+	}
+	authorityParent.WorkerClass = effectiveWorkerClass
+	authorityParent.ExecutionProfile = effectiveProfileName
+	authorityParent.CIOrigin = effectiveCIOrigin
+	authorityParent.CIRepository = effectiveCIRepository
+	authorityParent.CISHA = effectiveCISHA
 	authorityParent.PolicyRevision = wf.PolicyRevision
-	authorityParent.PolicyRuleID = wf.PolicyRuleID
-	authorityParent.ApprovalID = wf.ApprovalID
+	authorityParent.PolicyRuleID = effectivePolicyRuleID
+	authorityParent.ApprovalID = effectiveApprovalID
 	var executionProfile *models.ExecutionProfile
 	limitCapabilities := true
-	if ps, ok := tp.store.(triggerProfileStore); ok && wf.ExecutionProfile != "" {
-		executionProfile, err = ps.GetExecutionProfile(ctx, wf.OrgID, wf.ExecutionProfile)
+	ps, hasProfileStore := tp.store.(triggerProfileStore)
+	if node.HasAuthorityOverride() && !hasProfileStore {
+		return "", fmt.Errorf("workflow node %q execution profile cannot be verified", node.DisplayName)
+	}
+	if hasProfileStore && effectiveProfileName != "" {
+		executionProfile, err = ps.GetExecutionProfile(ctx, wf.OrgID, effectiveProfileName)
 		if err != nil {
 			return "", fmt.Errorf("load workflow execution profile: %w", err)
 		}
 		limitCapabilities = executionProfile.RuntimeCapabilities != nil
 		authorityParent.Capabilities = executionProfile.RuntimeCapabilities
 	}
-	if wf.CIRepository != "" {
-		authorityParent.CISourceURL = &wf.CIRepository
+	if effectiveCIRepository != "" {
+		authorityParent.CISourceURL = &effectiveCIRepository
 	}
-	if wf.CISHA != "" {
-		authorityParent.CISourceRef = &wf.CISHA
+	if effectiveCISHA != "" {
+		authorityParent.CISourceRef = &effectiveCISHA
 	}
 	job, err := tp.buildJobFromTriggerWithCapabilityLimit(spec, &authorityParent, limitCapabilities)
 	if err != nil {
 		return "", err
+	}
+	// The recorded authority decides the executable CI revision, not the
+	// stored spec. This keeps a trusted node on the exact recorded base SHA
+	// and an ordinary node on the workflow decision, including on retries.
+	if effectiveCIRepository != "" {
+		job.CISourceURL = &effectiveCIRepository
+	}
+	if effectiveCISHA != "" {
+		job.CISourceRef = &effectiveCISHA
 	}
 	if executionProfile != nil {
 		if !executionProfile.MayRunAsRoot && (job.RunAsUser == "root" || job.RunAsUser == "0" || strings.HasPrefix(job.RunAsUser, "0:")) {

@@ -303,7 +303,10 @@ WITH workflow_rows AS (
 		wi.origin_job_id,
 		COALESCE(wi.origin_type, '') AS origin_type,
 		COALESCE(wi.trigger_operation_id, '') AS trigger_operation_id,
-		COALESCE(wi.trigger_type, '') AS trigger_type
+		COALESCE(wi.trigger_type, '') AS trigger_type,
+		COALESCE(wi.ci_origin, '') AS ci_origin,
+		COALESCE(wi.execution_profile, '') AS execution_profile,
+		COALESCE(wi.worker_class, '') AS worker_class
 	FROM workflow_instances wi
 	LEFT JOIN projects wip ON wip.project_id = wi.project_id
 	LEFT JOIN users wipo ON wipo.user_id = wip.user_id
@@ -342,7 +345,10 @@ loose_rows AS (
 		j.parent_job_id AS origin_job_id,
 		'' AS origin_type,
 		'' AS trigger_operation_id,
-		'' AS trigger_type
+		'' AS trigger_type,
+		COALESCE(j.ci_origin, '') AS ci_origin,
+		COALESCE(j.execution_profile, '') AS execution_profile,
+		COALESCE(j.worker_class, '') AS worker_class
 	FROM jobs j
 	LEFT JOIN projects ljp ON ljp.project_id = j.project_id
 	LEFT JOIN users ljpo ON ljpo.user_id = ljp.user_id

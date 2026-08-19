@@ -327,3 +327,33 @@ def test_generate_triggers_for_workflow_jobs(temp_ci_dir):
     # No job_file leaks into the emitted trigger (coordinator can't resolve it
     # in coordinator-mediated mode).
     assert "job_file" not in d
+
+
+@pytest.mark.parametrize("reserved", [
+    "authority", "ci_origin", "execution_profile",
+    "policy_revision", "policy_rule_id", "approval_id",
+])
+def test_reserved_authority_fields_are_rejected(temp_ci_dir, reserved):
+    """Repository YAML must not be able to set or replace node authority."""
+    data = {
+        "name": "wf",
+        "on": {"events": ["push"]},
+        "jobs": {"build": {"image": "x", "command": "echo a", reserved: "standard"}},
+    }
+    with pytest.raises(ValueError, match="reserved authority field"):
+        parse_workflow_definition(data, temp_ci_dir)
+
+
+def test_reserved_authority_field_in_job_file_is_rejected(temp_ci_dir):
+    _write(temp_ci_dir / ".reactorcide" / "jobs" / "build.yaml", {
+        "name": "build",
+        "execution_profile": "standard",
+        "job": {"image": "x", "command": "echo a"},
+    })
+    data = {
+        "name": "wf",
+        "on": {"events": ["push"]},
+        "jobs": {"build": {"job_file": "build.yaml"}},
+    }
+    with pytest.raises(ValueError, match="reserved authority field"):
+        parse_workflow_definition(data, temp_ci_dir)

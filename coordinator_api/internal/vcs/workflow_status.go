@@ -136,6 +136,9 @@ func (u *JobStatusUpdater) renderWorkflowCommentBody(wf *models.WorkflowInstance
 	}
 	var b strings.Builder
 	fmt.Fprintf(&b, "## %s for commit `%s`\n\n", name, shortSHA)
+	if wf.CIOrigin != "" && wf.ExecutionProfile != "" {
+		fmt.Fprintf(&b, "CI origin `%s` · profile `%s`\n\n", wf.CIOrigin, wf.ExecutionProfile)
+	}
 	b.WriteString("| Job | Status | Duration | Reason |\n")
 	b.WriteString("|-----|--------|----------|--------|\n")
 	for i := range nodes {
@@ -149,8 +152,34 @@ func (u *JobStatusUpdater) renderWorkflowCommentBody(wf *models.WorkflowInstance
 			escapeTableCell(node.DecisionReason),
 		)
 	}
+	if authority := renderNodeAuthorityLines(nodes); authority != "" {
+		b.WriteString(authority)
+	}
 	fmt.Fprintf(&b, "\n<sub>Updated %s · %s</sub>\n", time.Now().UTC().Format(time.RFC3339), marker)
 	return b.String()
+}
+
+// renderNodeAuthorityLines lists the effective authority of every node that
+// carries a policy-controlled override, so an operator can see the node CI
+// origin and profile without environment values.
+func renderNodeAuthorityLines(nodes []models.WorkflowNode) string {
+	var b strings.Builder
+	for i := range nodes {
+		node := &nodes[i]
+		if !node.HasAuthorityOverride() {
+			continue
+		}
+		shortSHA := node.CISHA
+		if len(shortSHA) > 7 {
+			shortSHA = shortSHA[:7]
+		}
+		fmt.Fprintf(&b, "- `%s`: CI `%s@%s` · profile `%s`\n",
+			workflowNodeDisplayName(node), node.CIOrigin, shortSHA, node.ExecutionProfile)
+	}
+	if b.Len() == 0 {
+		return ""
+	}
+	return "\nPolicy-controlled node authority:\n" + b.String()
 }
 
 func workflowNodeDisplayName(node *models.WorkflowNode) string {

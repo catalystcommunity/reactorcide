@@ -707,6 +707,33 @@ def _entry_to_job_dict(name: str, entry: Dict[str, Any]) -> Dict[str, Any]:
     return out
 
 
+# Node authority is coordinator policy state. Repository YAML must not be
+# able to set or replace it, so these keys are rejected outright in workflow
+# job entries and referenced job files.
+_RESERVED_AUTHORITY_KEYS = (
+    "authority",
+    "ci_origin",
+    "execution_profile",
+    "policy_revision",
+    "policy_rule_id",
+    "approval_id",
+)
+
+
+def _reject_reserved_authority_keys(name: str, merged: Dict[str, Any]) -> None:
+    scopes = [merged]
+    job_cfg = merged.get("job")
+    if isinstance(job_cfg, dict):
+        scopes.append(job_cfg)
+    for scope in scopes:
+        for key in _RESERVED_AUTHORITY_KEYS:
+            if key in scope:
+                raise ValueError(
+                    f"job {name!r} uses reserved authority field {key!r}; "
+                    "node authority comes only from coordinator policy"
+                )
+
+
 def _parse_workflow_job(
     name: str,
     entry: Any,
@@ -735,6 +762,8 @@ def _parse_workflow_job(
             merged[key] = {**merged[key], **val}
         else:
             merged[key] = val
+
+    _reject_reserved_authority_keys(name, merged)
 
     # The workflow entry key is the authoritative node name; a workflow never
     # inherits per-job triggers/paths from a referenced job file.

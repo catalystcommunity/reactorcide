@@ -90,6 +90,24 @@
             <dt>Queue</dt>
             <dd>{{.Job.QueueName}}</dd>
         </div>
+        {{if .Job.CIOrigin}}
+        <div>
+            <dt>CI origin</dt>
+            <dd><code>{{.Job.CIOrigin}}</code></dd>
+        </div>
+        {{end}}
+        {{if .Job.ExecutionProfile}}
+        <div>
+            <dt>Execution profile</dt>
+            <dd><code>{{.Job.ExecutionProfile}}</code></dd>
+        </div>
+        {{end}}
+        {{if .Job.WorkerClass}}
+        <div>
+            <dt>Worker class</dt>
+            <dd><code>{{.Job.WorkerClass}}</code></dd>
+        </div>
+        {{end}}
     </dl>
 </div>
 

@@ -1,6 +1,9 @@
 package cipolicy
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 const validPolicy = `version: 1
 defaults:
@@ -113,6 +116,96 @@ head_ci:
 		if _, err := ParseDocument([]byte(input)); err == nil {
 			t.Fatalf("accepted invalid policy:\n%s", input)
 		}
+	}
+}
+
+const nodeAuthorityPolicy = `version: 1
+defaults: {ci_source: base, profile: standard}
+head_ci:
+- id: csilgen
+  actors: {any: [repository_write]}
+  workflows: [csilgen-pr]
+  paths: ['.reactorcide/**']
+  events: [pull_request_opened, pull_request_updated]
+  base_branches: [main]
+  head_repository: any
+  use:
+    ci_source: head
+    profile: pr-untrusted
+    workers: default
+    base_nodes:
+    - nodes: [asset-prepare, asset-seal]
+      ci_source: base
+      profile: standard
+      workers: default
+`
+
+func TestParseAndDecideNodeAuthority(t *testing.T) {
+	policy, err := ParseDocument([]byte(nodeAuthorityPolicy))
+	if err != nil {
+		t.Fatal(err)
+	}
+	decision, err := Decide(policy, Facts{WorkflowID: "csilgen-pr", ChangedCIPaths: []string{".reactorcide/workflows/pr.yaml"}, Event: "pull_request_updated", BaseBranch: "main", HeadRepositoryRelation: "same", ActorSubjects: map[string]bool{"repository_write": true}})
+	if err != nil || !decision.Allowed {
+		t.Fatalf("decision=%+v err=%v", decision, err)
+	}
+	if len(decision.BaseNodes) != 2 {
+		t.Fatalf("base nodes=%+v", decision.BaseNodes)
+	}
+	for _, name := range []string{"asset-prepare", "asset-seal"} {
+		grant, ok := decision.BaseNodes[name]
+		if !ok || grant.CISource != "base" || grant.Profile != "standard" || grant.WorkerClass != "default" {
+			t.Fatalf("node %q grant=%+v ok=%t", name, grant, ok)
+		}
+	}
+	// A policy without base_nodes yields no node authority.
+	plain, err := ParseDocument([]byte(validPolicy))
+	if err != nil {
+		t.Fatal(err)
+	}
+	plainDecision, err := Decide(plain, Facts{WorkflowID: "backend-tests", ChangedCIPaths: []string{".reactorcide/jobs/backend/test.yaml"}, Event: "pull_request_updated", BaseBranch: "main", HeadRepositoryRelation: "same", ActorSubjects: map[string]bool{"repository_write": true}})
+	if err != nil || !plainDecision.Allowed || plainDecision.BaseNodes != nil {
+		t.Fatalf("plain decision=%+v err=%v", plainDecision, err)
+	}
+}
+
+func TestBaseNodesValidation(t *testing.T) {
+	template := `version: 1
+head_ci:
+- id: x
+  workflows: [safe]
+  paths: [.reactorcide/jobs/**]
+  use:
+    ci_source: head
+    profile: pr-untrusted
+    workers: default
+    base_nodes:
+%s`
+	cases := []string{
+		"    - nodes: []\n      ci_source: base\n      profile: standard\n      workers: default",
+		"    - nodes: ['bad name']\n      ci_source: base\n      profile: standard\n      workers: default",
+		"    - nodes: [seal]\n      ci_source: head\n      profile: standard\n      workers: default",
+		"    - nodes: [seal]\n      ci_source: base\n      profile: ''\n      workers: default",
+		"    - nodes: [seal]\n      ci_source: base\n      profile: standard\n      workers: ''",
+		"    - nodes: [seal]\n      ci_source: base\n      profile: standard\n      workers: default\n    - nodes: [seal]\n      ci_source: base\n      profile: standard\n      workers: default",
+	}
+	for _, entry := range cases {
+		input := []byte(strings.ReplaceAll(template, "%s", entry))
+		if _, err := ParseDocument(input); err == nil {
+			t.Fatalf("accepted invalid base_nodes:\n%s", entry)
+		}
+	}
+}
+
+func TestNodeAuthorityRevisionMatchesRunnerlibCanonicalForm(t *testing.T) {
+	policy, err := ParseDocument([]byte(nodeAuthorityPolicy))
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Golden value computed with runnerlib src.ci_policy.load_coordinator_policy.
+	const expected = "d8cdd4911ee9b9e51e369d447deeffaa0f0c80cfe744a43e01ebe556cbc1a04b"
+	if policy.Revision != expected {
+		t.Fatalf("revision=%s want %s", policy.Revision, expected)
 	}
 }
 
