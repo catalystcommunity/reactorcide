@@ -159,6 +159,46 @@ command: |-
     tar -C /job/src/deployment -czf - docker-compose.prod.yml nginx.conf | ssh "${REACTORCIDE_DEPLOY_USER}@${REACTORCIDE_DEPLOY_HOST}" "tar -C ${REMOTE_DIR} -xzf -"
 
     echo ""
+    echo "Step 3b: Configuring registry authentication"
+    if [ -z "${REACTORCIDE_REGISTRY_SERVER:-}" ] && [ -z "${REACTORCIDE_REGISTRY_USERNAME:-}" ] && [ -z "${REACTORCIDE_REGISTRY_PASSWORD:-}" ]; then
+      echo "Registry authentication not configured"
+    elif [ -z "${REACTORCIDE_REGISTRY_SERVER:-}" ] || [ -z "${REACTORCIDE_REGISTRY_USERNAME:-}" ] || [ -z "${REACTORCIDE_REGISTRY_PASSWORD:-}" ]; then
+      echo "ERROR: Registry authentication configuration is incomplete"
+      exit 1
+    else
+      REGISTRY_AUTH_DIR="$(mktemp -d)"
+      chmod 700 "${REGISTRY_AUTH_DIR}"
+      python3 - "${REGISTRY_AUTH_DIR}/config.json" <<'PY'
+    import base64
+    import json
+    import os
+    import sys
+
+    server = os.environ["REACTORCIDE_REGISTRY_SERVER"]
+    username = os.environ["REACTORCIDE_REGISTRY_USERNAME"]
+    password = os.environ["REACTORCIDE_REGISTRY_PASSWORD"]
+    auth = base64.b64encode(f"{username}:{password}".encode()).decode()
+    config = {
+        "auths": {
+            server: {
+                "username": username,
+                "password": password,
+                "auth": auth,
+            }
+        }
+    }
+    with open(sys.argv[1], "w", encoding="utf-8") as handle:
+        json.dump(config, handle, separators=(",", ":"))
+    os.chmod(sys.argv[1], 0o600)
+    PY
+      ssh "${REACTORCIDE_DEPLOY_USER}@${REACTORCIDE_DEPLOY_HOST}" "mkdir -p ${REMOTE_DIR}/.docker && chmod 700 ${REMOTE_DIR}/.docker"
+      tar -C "${REGISTRY_AUTH_DIR}" -czf - config.json | ssh "${REACTORCIDE_DEPLOY_USER}@${REACTORCIDE_DEPLOY_HOST}" "tar -C ${REMOTE_DIR}/.docker -xzf - && chmod 600 ${REMOTE_DIR}/.docker/config.json"
+      ssh "${REACTORCIDE_DEPLOY_USER}@${REACTORCIDE_DEPLOY_HOST}" "sudo install -d -m 700 /root/.docker && sudo install -m 600 ${REMOTE_DIR}/.docker/config.json /root/.docker/config.json"
+      rm -rf "${REGISTRY_AUTH_DIR}"
+      echo "Registry authentication configured"
+    fi
+
+    echo ""
     echo "Step 4: Checking environment configuration on VM"
     ssh "${REACTORCIDE_DEPLOY_USER}@${REACTORCIDE_DEPLOY_HOST}" bash -s <<'REMOTE_EOF'
     set -euo pipefail
@@ -168,7 +208,7 @@ command: |-
     if [ -f .env ]; then
       echo "Existing .env found - preserving configuration"
       echo "Current config (passwords masked):"
-      grep -v PASSWORD .env | grep -v SECRET | grep -v URI || true
+      grep -Ev '(PASSWORD|SECRET|TOKEN|URI|KEY|CREDENTIAL)' .env || true
 
       # Update container runtime if it changed
       if grep -q "^REACTORCIDE_CONTAINER_RUNTIME=" .env; then
@@ -259,8 +299,11 @@ command: |-
       # - nerdctl binary (needed by OCI runtime shim for logging)
       printf 'services:\n  worker:\n    volumes:\n      - /run/containerd:/run/containerd\n      - /var/lib/containerd:/var/lib/containerd\n      - /var/lib/nerdctl:/var/lib/nerdctl\n      - /etc/containerd:/etc/containerd:ro\n      - /opt/cni/bin:/opt/cni/bin:ro\n      - /etc/cni/net.d:/etc/cni/net.d:ro\n      - %s:/usr/local/bin/nerdctl:ro\n' "$NERDCTL_PATH" > docker-compose.override.yml
     else
-      # Docker only needs the socket
+      # Docker needs the socket.
       printf 'services:\n  worker:\n    volumes:\n      - %s:%s\n' "${CONTAINER_SOCKET}" "${CONTAINER_SOCKET}" > docker-compose.override.yml
+    fi
+    if [ -f "$HOME/reactorcide/.docker/config.json" ]; then
+      printf '      - %s:/root/.docker/config.json:ro\n' "$HOME/reactorcide/.docker/config.json" >> docker-compose.override.yml
     fi
     echo "Created docker-compose.override.yml for ${CONTAINER_RUNTIME}"
     REMOTE_EOF
