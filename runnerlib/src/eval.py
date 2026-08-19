@@ -77,6 +77,9 @@ class JobConfig:
             CI-only state (PR diff base, push back to remote, etc.). Has no
             effect in CI — eval/trigger generation ignores it.
         capabilities: Runtime capabilities the job needs (e.g. "builder").
+        image_pull_secrets: Names of Kubernetes Secrets that permit the image
+            pull. Names only, never credential values. The worker enforces
+            its operator allowlist before it creates a Kubernetes Job.
         depends_on: Workflow node names that must finish before this job.
         condition: Workflow condition evaluated after dependencies finish.
         for_each: Literal values used to expand one trigger into many nodes.
@@ -97,6 +100,7 @@ class JobConfig:
     raw_command: bool = False
     disable_run_local: bool = False
     capabilities: List[str] = field(default_factory=list)
+    image_pull_secrets: List[str] = field(default_factory=list)
     depends_on: List[str] = field(default_factory=list)
     condition: str = "all_success"
     for_each: List[Any] = field(default_factory=list)
@@ -238,6 +242,37 @@ def _parse_paths_config(data: Any) -> PathsConfig:
     )
 
 
+_IMAGE_PULL_SECRET_NAME_RE = re.compile(
+    r"^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)*$"
+)
+
+
+def _parse_image_pull_secrets(data: Any) -> List[str]:
+    """Parse and validate job image pull secret NAMES (never values).
+
+    Each name must be a valid Kubernetes Secret name. Empty, invalid, and
+    duplicate names are rejected here so a bad job definition fails at
+    evaluation, before the worker rejects it again.
+    """
+    if not data:
+        return []
+    if not isinstance(data, list):
+        raise ValueError("image_pull_secrets must be a list of Kubernetes Secret names")
+    names: List[str] = []
+    seen = set()
+    for item in data:
+        name = str(item or "")
+        if not name:
+            raise ValueError("image_pull_secrets must not contain an empty name")
+        if len(name) > 253 or not _IMAGE_PULL_SECRET_NAME_RE.fullmatch(name):
+            raise ValueError(f"image_pull_secrets name {name!r} is not a valid Kubernetes Secret name")
+        if name in seen:
+            raise ValueError(f"image_pull_secrets contains duplicate name {name!r}")
+        seen.add(name)
+        names.append(name)
+    return names
+
+
 def _parse_job_config(data: Any) -> JobConfig:
     """Parse job config from YAML data."""
     if not isinstance(data, dict):
@@ -254,6 +289,7 @@ def _parse_job_config(data: Any) -> JobConfig:
         raw_command=bool(data.get("raw_command", False)),
         disable_run_local=bool(data.get("disable_run_local", False)),
         capabilities=data.get("capabilities") or [],
+        image_pull_secrets=_parse_image_pull_secrets(data.get("image_pull_secrets")),
         depends_on=data.get("depends_on") or [],
         condition=data.get("condition", "all_success") or "all_success",
         for_each=data.get("for_each") or [],
@@ -576,6 +612,7 @@ def generate_triggers(
             priority=defn.job.priority,
             timeout=defn.job.timeout,
             capabilities=defn.job.capabilities or None,
+            image_pull_secrets=defn.job.image_pull_secrets or None,
             code_dir=defn.job.code_dir or None,
             job_dir=defn.job.job_dir or None,
             working_dir=defn.job.working_dir or None,

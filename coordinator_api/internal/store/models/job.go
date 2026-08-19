@@ -83,7 +83,11 @@ type Job struct {
 	TimeoutSeconds int            `gorm:"default:3600" json:"timeout_seconds"`
 	Priority       int            `gorm:"default:0" json:"priority"`
 	Capabilities   pq.StringArray `gorm:"type:text[]" json:"capabilities"`
-	RunAsUser      string         `gorm:"type:text" json:"run_as_user"`
+	// ImagePullSecrets holds Kubernetes Secret NAMES the job may use to pull
+	// its image — never credentials. The worker enforces its allowlist
+	// before Kubernetes Job creation.
+	ImagePullSecrets pq.StringArray `gorm:"type:text[]" json:"image_pull_secrets"`
+	RunAsUser        string         `gorm:"type:text" json:"run_as_user"`
 
 	// Queue integration
 	//

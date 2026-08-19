@@ -1035,3 +1035,78 @@ func TestResolveSecretsInEnv(t *testing.T) {
 		}
 	})
 }
+
+// TestJobSpecImagePullSecrets_ParseAndValidate covers flat YAML, eval-format
+// YAML, and JSON parsing of image_pull_secrets, plus name validation at
+// finalize time.
+func TestJobSpecImagePullSecrets_ParseAndValidate(t *testing.T) {
+	dir := t.TempDir()
+
+	flat := filepath.Join(dir, "flat.yaml")
+	if err := os.WriteFile(flat, []byte("name: flat\ncommand: echo ok\nimage_pull_secrets:\n  - regcred\n  - team-cred\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	spec, err := LoadJobSpec(flat)
+	if err != nil {
+		t.Fatalf("LoadJobSpec flat failed: %v", err)
+	}
+	if len(spec.ImagePullSecrets) != 2 || spec.ImagePullSecrets[0] != "regcred" || spec.ImagePullSecrets[1] != "team-cred" {
+		t.Fatalf("flat parse got %v", spec.ImagePullSecrets)
+	}
+
+	eval := filepath.Join(dir, "eval.yaml")
+	if err := os.WriteFile(eval, []byte("name: eval\njob:\n  command: echo ok\n  image: img:1\n  image_pull_secrets:\n    - regcred\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	spec, err = LoadJobSpec(eval)
+	if err != nil {
+		t.Fatalf("LoadJobSpec eval failed: %v", err)
+	}
+	if len(spec.ImagePullSecrets) != 1 || spec.ImagePullSecrets[0] != "regcred" {
+		t.Fatalf("eval parse got %v", spec.ImagePullSecrets)
+	}
+
+	asJSON := filepath.Join(dir, "job.json")
+	if err := os.WriteFile(asJSON, []byte(`{"name":"j","command":"echo ok","image_pull_secrets":["regcred"]}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	spec, err = LoadJobSpec(asJSON)
+	if err != nil {
+		t.Fatalf("LoadJobSpec json failed: %v", err)
+	}
+	if len(spec.ImagePullSecrets) != 1 || spec.ImagePullSecrets[0] != "regcred" {
+		t.Fatalf("json parse got %v", spec.ImagePullSecrets)
+	}
+
+	bad := filepath.Join(dir, "bad.yaml")
+	if err := os.WriteFile(bad, []byte("name: bad\ncommand: echo ok\nimage_pull_secrets:\n  - regcred\n  - regcred\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := LoadJobSpec(bad); err == nil {
+		t.Fatal("expected duplicate image_pull_secrets to be rejected")
+	}
+}
+
+// TestMergeJobSpecs_ImagePullSecretsOverlay guards overlay semantics: an
+// omitted field keeps the base list; a non-empty overlay list replaces it.
+func TestMergeJobSpecs_ImagePullSecretsOverlay(t *testing.T) {
+	base := &JobSpec{Name: "base", Command: "echo", ImagePullSecrets: []string{"base-cred"}}
+
+	merged, _ := MergeJobSpecs(base, []*JobSpec{{}}, []string{"empty-overlay"})
+	if len(merged.ImagePullSecrets) != 1 || merged.ImagePullSecrets[0] != "base-cred" {
+		t.Fatalf("omitted overlay should keep base list, got %v", merged.ImagePullSecrets)
+	}
+
+	merged, _ = MergeJobSpecs(base, []*JobSpec{{ImagePullSecrets: []string{"override-cred"}}}, []string{"overlay"})
+	if len(merged.ImagePullSecrets) != 1 || merged.ImagePullSecrets[0] != "override-cred" {
+		t.Fatalf("overlay list should replace base list, got %v", merged.ImagePullSecrets)
+	}
+	if base.ImagePullSecrets[0] != "base-cred" {
+		t.Fatalf("merge must not mutate base, got %v", base.ImagePullSecrets)
+	}
+
+	cfg := merged.ToJobConfig("/ws", "job-1", "queue")
+	if len(cfg.ImagePullSecrets) != 1 || cfg.ImagePullSecrets[0] != "override-cred" {
+		t.Fatalf("ToJobConfig should carry image pull secrets, got %v", cfg.ImagePullSecrets)
+	}
+}

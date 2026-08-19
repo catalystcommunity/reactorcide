@@ -384,3 +384,105 @@ func TestIsPodStartupError(t *testing.T) {
 		})
 	}
 }
+
+// TestKubernetesRunnerImagePullSecrets_CombinesGlobalAndApprovedJobLevel
+// guards the pod-level imagePullSecrets composition: the operator's global
+// list first, then the job's approved names, deduplicated in stable order.
+func TestKubernetesRunnerImagePullSecrets_CombinesGlobalAndApprovedJobLevel(t *testing.T) {
+	clientset := fake.NewSimpleClientset()
+	runner := &KubernetesRunner{
+		clientset:                  clientset,
+		namespace:                  "reactorcide",
+		serviceAccount:             "default",
+		dindImage:                  "docker:27-dind",
+		imagePullSecrets:           []string{"global-cred", "shared-cred"},
+		allowedJobImagePullSecrets: []string{"regcred"},
+	}
+	if _, err := runner.SpawnJob(context.Background(), &JobConfig{
+		JobID:            "pull-secret-job",
+		Image:            "containers.example.com/private/tool:1",
+		Command:          []string{"sh", "-c", "echo ok"},
+		ImagePullSecrets: []string{"regcred", "shared-cred"},
+	}); err != nil {
+		t.Fatalf("SpawnJob failed: %v", err)
+	}
+	jobs, err := clientset.BatchV1().Jobs("reactorcide").List(context.Background(), metav1.ListOptions{})
+	if err != nil {
+		t.Fatalf("listing jobs failed: %v", err)
+	}
+	podSpec := jobs.Items[0].Spec.Template.Spec
+	var names []string
+	for _, ref := range podSpec.ImagePullSecrets {
+		names = append(names, ref.Name)
+	}
+	want := []string{"global-cred", "shared-cred", "regcred"}
+	if strings.Join(names, ",") != strings.Join(want, ",") {
+		t.Fatalf("expected pod imagePullSecrets %v, got %v", want, names)
+	}
+}
+
+// TestKubernetesRunnerImagePullSecrets_RejectsUnapprovedBeforeJobCreation
+// guards the worker-side allowlist: an unapproved name fails before any
+// Kubernetes Job exists, and the secure default (no allowlist) rejects all
+// job-level requests.
+func TestKubernetesRunnerImagePullSecrets_RejectsUnapprovedBeforeJobCreation(t *testing.T) {
+	clientset := fake.NewSimpleClientset()
+	runner := &KubernetesRunner{
+		clientset:                  clientset,
+		namespace:                  "reactorcide",
+		serviceAccount:             "default",
+		dindImage:                  "docker:27-dind",
+		imagePullSecrets:           []string{"global-cred"},
+		allowedJobImagePullSecrets: []string{"regcred"},
+	}
+	_, err := runner.SpawnJob(context.Background(), &JobConfig{
+		JobID:            "unapproved-job",
+		Image:            "containers.example.com/private/tool:1",
+		Command:          []string{"sh", "-c", "echo ok"},
+		ImagePullSecrets: []string{"sneaky-cred"},
+	})
+	if err == nil || !strings.Contains(err.Error(), "sneaky-cred") {
+		t.Fatalf("expected allowlist rejection naming sneaky-cred, got %v", err)
+	}
+	jobs, listErr := clientset.BatchV1().Jobs("reactorcide").List(context.Background(), metav1.ListOptions{})
+	if listErr != nil {
+		t.Fatalf("listing jobs failed: %v", listErr)
+	}
+	if len(jobs.Items) != 0 {
+		t.Fatalf("expected no Kubernetes Job to be created, found %d", len(jobs.Items))
+	}
+
+	// Secure default: with no allowlist configured at all, any request fails.
+	runner.imagePullSecrets = nil
+	runner.allowedJobImagePullSecrets = nil
+	if _, err := runner.SpawnJob(context.Background(), &JobConfig{
+		JobID:            "secure-default-job",
+		Image:            "containers.example.com/private/tool:1",
+		Command:          []string{"sh", "-c", "echo ok"},
+		ImagePullSecrets: []string{"regcred"},
+	}); err == nil {
+		t.Fatal("expected rejection under the secure default (empty allowlist)")
+	}
+}
+
+// TestKubernetesRunnerImagePullSecrets_InvalidNamesRejected guards worker
+// re-validation of names independent of coordinator validation.
+func TestKubernetesRunnerImagePullSecrets_InvalidNamesRejected(t *testing.T) {
+	runner := &KubernetesRunner{
+		clientset:                  fake.NewSimpleClientset(),
+		namespace:                  "reactorcide",
+		serviceAccount:             "default",
+		dindImage:                  "docker:27-dind",
+		allowedJobImagePullSecrets: []string{"regcred"},
+	}
+	for _, bad := range [][]string{{""}, {"Bad_Name"}, {"regcred", "regcred"}} {
+		if _, err := runner.SpawnJob(context.Background(), &JobConfig{
+			JobID:            "invalid-name-job",
+			Image:            "img:1",
+			Command:          []string{"true"},
+			ImagePullSecrets: bad,
+		}); err == nil {
+			t.Fatalf("expected rejection for names %v", bad)
+		}
+	}
+}

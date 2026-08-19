@@ -31,13 +31,18 @@ import (
 // It creates K8s Job resources and streams logs directly via the K8s API
 // to ensure secret masking is applied before logs reach any aggregator.
 type KubernetesRunner struct {
-	clientset        kubernetes.Interface
-	namespace        string
-	serviceAccount   string
-	runnerImage      string
-	dindImage        string
+	clientset      kubernetes.Interface
+	namespace      string
+	serviceAccount string
+	runnerImage    string
+	dindImage      string
+	// imagePullSecrets is the operator's global list, added to every job pod.
 	imagePullSecrets []string
-	builder          BuilderConfig
+	// allowedJobImagePullSecrets is the operator allowlist for job-requested
+	// names. A job-level name must be in this list or in imagePullSecrets;
+	// with both empty every job-level request is rejected (secure default).
+	allowedJobImagePullSecrets []string
+	builder                    BuilderConfig
 }
 
 // KubernetesRunnerConfig holds configuration for the K8s runner
@@ -46,8 +51,11 @@ type KubernetesRunnerConfig struct {
 	ServiceAccount   string   // Service account for job pods (default: "default")
 	RunnerImage      string   // Default runner image if job doesn't specify one
 	DindImage        string   // Docker-in-Docker sidecar image (default: "docker:27-dind")
-	ImagePullSecrets []string // Image pull secrets for private registries
-	NodeName         string   // Node to schedule job pods on (for workspace sharing via HostPath)
+	ImagePullSecrets []string // Image pull secrets added to every job pod
+	// AllowedJobImagePullSecrets lists Secret names a job may request via
+	// image_pull_secrets in addition to ImagePullSecrets above.
+	AllowedJobImagePullSecrets []string
+	NodeName                   string // Node to schedule job pods on (for workspace sharing via HostPath)
 }
 
 // NewKubernetesRunner creates a new Kubernetes-based job runner
@@ -58,14 +66,8 @@ func NewKubernetesRunner() (*KubernetesRunner, error) {
 		ServiceAccount: os.Getenv("REACTORCIDE_K8S_JOB_SERVICE_ACCOUNT"),
 		DindImage:      os.Getenv("REACTORCIDE_DIND_IMAGE"),
 	}
-	if secrets := strings.TrimSpace(os.Getenv("REACTORCIDE_K8S_JOB_IMAGE_PULL_SECRETS")); secrets != "" {
-		for _, secret := range strings.Split(secrets, ",") {
-			secret = strings.TrimSpace(secret)
-			if secret != "" {
-				cfg.ImagePullSecrets = append(cfg.ImagePullSecrets, secret)
-			}
-		}
-	}
+	cfg.ImagePullSecrets = splitSecretNameList(os.Getenv("REACTORCIDE_K8S_JOB_IMAGE_PULL_SECRETS"))
+	cfg.AllowedJobImagePullSecrets = splitSecretNameList(os.Getenv("REACTORCIDE_K8S_JOB_ALLOWED_IMAGE_PULL_SECRETS"))
 	return NewKubernetesRunnerWithConfig(cfg)
 }
 
@@ -105,14 +107,28 @@ func NewKubernetesRunnerWithConfig(cfg KubernetesRunnerConfig) (*KubernetesRunne
 	}
 
 	return &KubernetesRunner{
-		clientset:        clientset,
-		namespace:        namespace,
-		serviceAccount:   serviceAccount,
-		runnerImage:      cfg.RunnerImage,
-		dindImage:        dindImage,
-		imagePullSecrets: cfg.ImagePullSecrets,
-		builder:          LoadBuilderConfig(),
+		clientset:                  clientset,
+		namespace:                  namespace,
+		serviceAccount:             serviceAccount,
+		runnerImage:                cfg.RunnerImage,
+		dindImage:                  dindImage,
+		imagePullSecrets:           cfg.ImagePullSecrets,
+		allowedJobImagePullSecrets: cfg.AllowedJobImagePullSecrets,
+		builder:                    LoadBuilderConfig(),
 	}, nil
+}
+
+// splitSecretNameList parses a comma-separated Secret name list from an
+// environment value, trimming whitespace and dropping empty entries.
+func splitSecretNameList(value string) []string {
+	var names []string
+	for _, name := range strings.Split(strings.TrimSpace(value), ",") {
+		name = strings.TrimSpace(name)
+		if name != "" {
+			names = append(names, name)
+		}
+	}
+	return names
 }
 
 // SpawnJob creates and starts a Kubernetes Job resource
@@ -354,8 +370,11 @@ func (kr *KubernetesRunner) SpawnJob(ctx context.Context, config *JobConfig) (st
 		})
 	}
 
-	// Add image pull secrets if configured
-	for _, secret := range kr.imagePullSecrets {
+	// Add image pull secrets: the operator's global list first, then the
+	// job's approved names, deduplicated with order preserved. Pod-level, so
+	// the references apply to the main container, init containers, and
+	// sidecars. Names only — the worker never reads Secret data.
+	for _, secret := range CombineImagePullSecrets(kr.imagePullSecrets, config.ImagePullSecrets) {
 		podSpec.ImagePullSecrets = append(podSpec.ImagePullSecrets, corev1.LocalObjectReference{
 			Name: secret,
 		})
@@ -905,6 +924,15 @@ func (kr *KubernetesRunner) validateConfig(config *JobConfig) error {
 	}
 	if config.JobID == "" {
 		return fmt.Errorf("job ID is required")
+	}
+	// Enforce job-level image pull secret rules here, in the worker, before
+	// any Kubernetes Job is created. Coordinator-side validation is not
+	// load-bearing.
+	if err := ValidateImagePullSecretNames(config.ImagePullSecrets); err != nil {
+		return err
+	}
+	if err := EnforceImagePullSecretAllowlist(config.ImagePullSecrets, kr.imagePullSecrets, kr.allowedJobImagePullSecrets); err != nil {
+		return err
 	}
 	return nil
 }

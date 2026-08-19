@@ -94,6 +94,18 @@ The Kubernetes runner creates Kubernetes Jobs and streams their logs. It honors 
 - `REACTORCIDE_K8S_JOB_NAMESPACE`
 - `REACTORCIDE_K8S_JOB_SERVICE_ACCOUNT`
 - `REACTORCIDE_K8S_JOB_IMAGE_PULL_SECRETS`
+- `REACTORCIDE_K8S_JOB_ALLOWED_IMAGE_PULL_SECRETS`
 - `REACTORCIDE_DIND_IMAGE`
 
 Helm values expose the same settings under the worker configuration.
+
+The runner puts image pull secret references at pod level, in
+`Job.spec.template.spec.imagePullSecrets`. They apply to the main container,
+init containers, and sidecars. The final list is the operator's global list
+(`REACTORCIDE_K8S_JOB_IMAGE_PULL_SECRETS`) followed by the job's approved
+`image_pull_secrets` names, with duplicates removed and order preserved. The
+worker validates each job-level name against
+`REACTORCIDE_K8S_JOB_ALLOWED_IMAGE_PULL_SECRETS` (plus the global list) and
+rejects the job before Kubernetes Job creation when a name is not approved.
+The worker never reads Secret data. Docker, containerd, and local execution
+keep the field but do not read Kubernetes Secrets.

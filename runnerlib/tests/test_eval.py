@@ -1028,3 +1028,62 @@ class TestEndToEnd:
 
         assert len(matched) == 1
         assert matched[0].name == "release"
+
+
+class TestImagePullSecrets:
+    """image_pull_secrets: Kubernetes Secret NAMES only, parsed, validated,
+    and passed through to trigger JSON."""
+
+    def test_parse_from_job_yaml(self):
+        data = {
+            "name": "private",
+            "job": {
+                "image": "containers.example.com/private/tool:1",
+                "command": "make test",
+                "image_pull_secrets": ["regcred", "team.registry-cred"],
+            },
+        }
+        defn = parse_job_definition(data)
+        assert defn.job.image_pull_secrets == ["regcred", "team.registry-cred"]
+
+    def test_default_is_empty(self):
+        defn = parse_job_definition({"name": "plain", "job": {"command": "true"}})
+        assert defn.job.image_pull_secrets == []
+
+    def test_trigger_passthrough(self):
+        defs = [
+            JobDefinition(
+                name="private",
+                job=JobConfig(
+                    image="containers.example.com/private/tool:1",
+                    command="make test",
+                    image_pull_secrets=["regcred"],
+                ),
+            ),
+        ]
+        ctx = EventContext(event_type="push")
+        triggers = generate_triggers(defs, ctx)
+        assert triggers[0].image_pull_secrets == ["regcred"]
+        assert triggers[0].to_dict()["image_pull_secrets"] == ["regcred"]
+
+    def test_trigger_omitted_when_empty(self):
+        defs = [JobDefinition(name="plain", job=JobConfig(image="a:1", command="true"))]
+        triggers = generate_triggers(defs, EventContext(event_type="push"))
+        assert triggers[0].image_pull_secrets is None
+        assert "image_pull_secrets" not in triggers[0].to_dict()
+
+    def test_rejects_empty_name(self):
+        with pytest.raises(ValueError, match="empty name"):
+            parse_job_definition({"name": "j", "job": {"command": "true", "image_pull_secrets": [""]}})
+
+    def test_rejects_invalid_name(self):
+        with pytest.raises(ValueError, match="not a valid Kubernetes Secret name"):
+            parse_job_definition({"name": "j", "job": {"command": "true", "image_pull_secrets": ["Bad_Name"]}})
+
+    def test_rejects_duplicate_name(self):
+        with pytest.raises(ValueError, match="duplicate"):
+            parse_job_definition({"name": "j", "job": {"command": "true", "image_pull_secrets": ["regcred", "regcred"]}})
+
+    def test_rejects_non_list(self):
+        with pytest.raises(ValueError, match="must be a list"):
+            parse_job_definition({"name": "j", "job": {"command": "true", "image_pull_secrets": "regcred"}})

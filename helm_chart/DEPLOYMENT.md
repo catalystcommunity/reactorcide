@@ -326,6 +326,31 @@ account.
 
 See [Worker Operation](../docs/workers.md).
 
+### Private Job Images
+
+Four settings control private image pulls. Each setting holds Kubernetes
+Secret names only, never credential values:
+
+- Top-level `imagePullSecrets` lets the Reactorcide service pods pull their
+  own images.
+- `worker.jobImagePullSecrets` adds the listed Secrets to every generated
+  job pod.
+- `worker.allowedJobImagePullSecrets` permits a job to request the listed
+  Secrets with its own `image_pull_secrets` list. With an empty list, the
+  worker rejects every job-level request.
+- Job `image_pull_secrets` selects secrets for one job.
+
+```yaml
+worker:
+  allowedJobImagePullSecrets:
+    - regcred
+```
+
+Each referenced Secret must exist in the job namespace, have type
+`kubernetes.io/dockerconfigjson`, and contain credentials for the registry in
+the selected image. See
+[Job Image Pull Secrets](../docs/workers.md#job-image-pull-secrets).
+
 ## Builder Jobs
 
 A job with `capabilities: [builder]` uses a BuildKit sidecar. Configure

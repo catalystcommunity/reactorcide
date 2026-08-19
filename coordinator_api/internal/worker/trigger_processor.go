@@ -152,9 +152,13 @@ type triggerJobSpec struct {
 	Priority       *int              `json:"priority"`
 	Timeout        *int              `json:"timeout"`
 	Capabilities   []string          `json:"capabilities"`
-	ForEach        []interface{}     `json:"for_each"`
-	ItemVar        string            `json:"item_var"`
-	WorkerClass    string            `json:"worker_class"`
+	// ImagePullSecrets holds Kubernetes Secret NAMES for pulling the job
+	// image — never credentials. The worker enforces its allowlist before
+	// Kubernetes Job creation.
+	ImagePullSecrets []string      `json:"image_pull_secrets"`
+	ForEach          []interface{} `json:"for_each"`
+	ItemVar          string        `json:"item_var"`
+	WorkerClass      string        `json:"worker_class"`
 
 	// Characteristics/Resources, when set, override the parent (eval) job's
 	// characteristics/resources for this triggered job. See
@@ -183,7 +187,9 @@ type jobDefinitionJobConfig struct {
 	Priority     *int       `yaml:"priority"`
 	RawCommand   bool       `yaml:"raw_command"`
 	Capabilities []string   `yaml:"capabilities"`
-	WorkerClass  string     `yaml:"worker_class"`
+	// ImagePullSecrets — Kubernetes Secret names only, see triggerJobSpec.
+	ImagePullSecrets []string `yaml:"image_pull_secrets"`
+	WorkerClass      string   `yaml:"worker_class"`
 	// Characteristics/Resources -- see triggerJobSpec's doc comment.
 	Characteristics map[string]interface{} `yaml:"characteristics"`
 	Resources       map[string]interface{} `yaml:"resources"`
@@ -634,20 +640,21 @@ func (tp *TriggerProcessor) loadJobFile(workspaceDir, jobFile string) (triggerJo
 	}
 
 	spec := triggerJobSpec{
-		JobName:         def.Name,
-		ContainerImage:  def.Job.Image,
-		JobCommand:      def.Job.Command,
-		CodeDir:         def.Job.CodeDir,
-		JobDir:          def.Job.JobDir,
-		WorkingDir:      def.Job.WorkingDir,
-		RunAsUser:       runAsUserFromSpec(def.Job.RunAs),
-		Timeout:         def.Job.Timeout,
-		Priority:        def.Job.Priority,
-		Capabilities:    def.Job.Capabilities,
-		WorkerClass:     def.Job.WorkerClass,
-		Env:             def.Environment,
-		Characteristics: def.Job.Characteristics,
-		Resources:       def.Job.Resources,
+		JobName:          def.Name,
+		ContainerImage:   def.Job.Image,
+		JobCommand:       def.Job.Command,
+		CodeDir:          def.Job.CodeDir,
+		JobDir:           def.Job.JobDir,
+		WorkingDir:       def.Job.WorkingDir,
+		RunAsUser:        runAsUserFromSpec(def.Job.RunAs),
+		Timeout:          def.Job.Timeout,
+		Priority:         def.Job.Priority,
+		Capabilities:     def.Job.Capabilities,
+		ImagePullSecrets: def.Job.ImagePullSecrets,
+		WorkerClass:      def.Job.WorkerClass,
+		Env:              def.Environment,
+		Characteristics:  def.Job.Characteristics,
+		Resources:        def.Job.Resources,
 	}
 
 	return spec, nil
@@ -721,6 +728,9 @@ func (tp *TriggerProcessor) overlaySpec(base, overlay triggerJobSpec) triggerJob
 	}
 	if len(overlay.Capabilities) > 0 {
 		result.Capabilities = overlay.Capabilities
+	}
+	if len(overlay.ImagePullSecrets) > 0 {
+		result.ImagePullSecrets = overlay.ImagePullSecrets
 	}
 	if len(overlay.ForEach) > 0 {
 		result.ForEach = overlay.ForEach
@@ -1004,6 +1014,12 @@ func (tp *TriggerProcessor) buildJobFromTriggerWithCapabilityLimit(spec triggerJ
 			}
 		}
 		job.Capabilities = spec.Capabilities
+	}
+	if len(spec.ImagePullSecrets) > 0 {
+		if err := ValidateImagePullSecretNames(spec.ImagePullSecrets); err != nil {
+			return nil, fmt.Errorf("triggered job %q: %w", spec.JobName, err)
+		}
+		job.ImagePullSecrets = spec.ImagePullSecrets
 	}
 
 	// Copy event metadata from parent

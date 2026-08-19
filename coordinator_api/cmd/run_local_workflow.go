@@ -35,25 +35,29 @@ type localWorkflowSpec struct {
 }
 
 type localTriggerJob struct {
-	JobName         string                 `json:"job_name"`
-	DependsOn       []string               `json:"depends_on"`
-	Condition       string                 `json:"condition"`
-	Env             map[string]string      `json:"env"`
-	ContainerImage  string                 `json:"container_image"`
-	JobCommand      string                 `json:"job_command"`
-	CodeDir         string                 `json:"code_dir"`
-	JobDir          string                 `json:"job_dir"`
-	WorkingDir      string                 `json:"working_dir"`
-	RunAsUser       string                 `json:"run_as_user"`
-	Timeout         *int                   `json:"timeout"`
-	Capabilities    []string               `json:"capabilities"`
-	ForEach         []interface{}          `json:"for_each"`
-	ItemVar         string                 `json:"item_var"`
-	Characteristics map[string]interface{} `json:"characteristics"`
-	Resources       map[string]interface{} `json:"resources"`
-	WorkerClass     string                 `json:"worker_class"`
-	DisableRunLocal bool                   `json:"disable_run_local"`
-	RunLocal        *worker.RunLocalSpec   `json:"run_local"`
+	JobName        string            `json:"job_name"`
+	DependsOn      []string          `json:"depends_on"`
+	Condition      string            `json:"condition"`
+	Env            map[string]string `json:"env"`
+	ContainerImage string            `json:"container_image"`
+	JobCommand     string            `json:"job_command"`
+	CodeDir        string            `json:"code_dir"`
+	JobDir         string            `json:"job_dir"`
+	WorkingDir     string            `json:"working_dir"`
+	RunAsUser      string            `json:"run_as_user"`
+	Timeout        *int              `json:"timeout"`
+	Capabilities   []string          `json:"capabilities"`
+	// ImagePullSecrets is preserved for parity with remote execution; local
+	// execution never reads a Kubernetes Secret — the local container
+	// runtime's own credential store handles private pulls.
+	ImagePullSecrets []string               `json:"image_pull_secrets"`
+	ForEach          []interface{}          `json:"for_each"`
+	ItemVar          string                 `json:"item_var"`
+	Characteristics  map[string]interface{} `json:"characteristics"`
+	Resources        map[string]interface{} `json:"resources"`
+	WorkerClass      string                 `json:"worker_class"`
+	DisableRunLocal  bool                   `json:"disable_run_local"`
+	RunLocal         *worker.RunLocalSpec   `json:"run_local"`
 }
 
 type localWorkflowNode struct {
@@ -792,7 +796,7 @@ func localNodeJobSpec(node *localWorkflowNode, local localContext) worker.JobSpe
 	if local.Overrides.JobCommand != "" {
 		command = local.Overrides.JobCommand
 	}
-	spec := worker.JobSpec{Name: node.DisplayName, Image: image, Command: command, Environment: env, CodeDir: node.Spec.CodeDir, JobDir: node.Spec.JobDir, WorkingDir: node.Spec.WorkingDir, Capabilities: node.Spec.Capabilities, Characteristics: node.Spec.Characteristics, Resources: node.Spec.Resources, WorkerClass: node.Spec.WorkerClass, DisableRunLocal: node.Spec.DisableRunLocal, RunLocal: node.Spec.RunLocal}
+	spec := worker.JobSpec{Name: node.DisplayName, Image: image, Command: command, Environment: env, CodeDir: node.Spec.CodeDir, JobDir: node.Spec.JobDir, WorkingDir: node.Spec.WorkingDir, Capabilities: node.Spec.Capabilities, ImagePullSecrets: node.Spec.ImagePullSecrets, Characteristics: node.Spec.Characteristics, Resources: node.Spec.Resources, WorkerClass: node.Spec.WorkerClass, DisableRunLocal: node.Spec.DisableRunLocal, RunLocal: node.Spec.RunLocal}
 	if node.Spec.Timeout != nil {
 		spec.TimeoutSeconds = *node.Spec.Timeout
 	} else {

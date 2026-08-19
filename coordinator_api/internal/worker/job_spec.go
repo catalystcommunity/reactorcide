@@ -69,6 +69,14 @@ type JobSpec struct {
 	//            KubernetesRunner: nvidia.com/gpu resource request
 	Capabilities []string `json:"capabilities" yaml:"capabilities"`
 
+	// ImagePullSecrets lists the NAMES of Kubernetes Secrets (type
+	// kubernetes.io/dockerconfigjson, in the job namespace) the job pod may
+	// use to pull its image. Names only — never credentials. The worker
+	// enforces its operator allowlist before Kubernetes Job creation; the
+	// Docker/containerd/local runners preserve the field but never read a
+	// Kubernetes Secret.
+	ImagePullSecrets []string `json:"image_pull_secrets" yaml:"image_pull_secrets"`
+
 	// Timeout in seconds (0 = no timeout)
 	TimeoutSeconds int `json:"timeout_seconds" yaml:"timeout_seconds"`
 
@@ -269,6 +277,9 @@ func FinalizeJobSpec(spec *JobSpec) error {
 	if err := validateCheckoutSpec(spec.Checkout); err != nil {
 		return err
 	}
+	if err := ValidateImagePullSecretNames(spec.ImagePullSecrets); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -355,19 +366,20 @@ func (s *JobSpec) ToJobConfig(workspaceDir, jobID, queueName string) *JobConfig 
 	env["REACTORCIDE_JOB_DIR"] = jobDir
 
 	config := &JobConfig{
-		Image:           s.Image,
-		Command:         command,
-		Env:             env,
-		WorkspaceDir:    workspaceDir,
-		SourceMountPath: codeDir,
-		WorkingDir:      workingDir,
-		Capabilities:    s.Capabilities,
-		TimeoutSeconds:  s.TimeoutSeconds,
-		CPULimit:        s.CPULimit,
-		MemoryLimit:     s.MemoryLimit,
-		JobID:           jobID,
-		QueueName:       queueName,
-		RunAsUser:       runAsUser,
+		Image:            s.Image,
+		Command:          command,
+		Env:              env,
+		WorkspaceDir:     workspaceDir,
+		SourceMountPath:  codeDir,
+		WorkingDir:       workingDir,
+		Capabilities:     s.Capabilities,
+		ImagePullSecrets: s.ImagePullSecrets,
+		TimeoutSeconds:   s.TimeoutSeconds,
+		CPULimit:         s.CPULimit,
+		MemoryLimit:      s.MemoryLimit,
+		JobID:            jobID,
+		QueueName:        queueName,
+		RunAsUser:        runAsUser,
 	}
 
 	return config
@@ -726,6 +738,13 @@ func MergeJobSpecs(base *JobSpec, overlays []*JobSpec, overlayFiles []string) (*
 		copy(result.Capabilities, base.Capabilities)
 	}
 
+	// Deep copy image pull secret names (whole-list replace on overlay, like
+	// Capabilities)
+	if len(base.ImagePullSecrets) > 0 {
+		result.ImagePullSecrets = make([]string, len(base.ImagePullSecrets))
+		copy(result.ImagePullSecrets, base.ImagePullSecrets)
+	}
+
 	// Deep copy source
 	if base.Source != nil {
 		result.Source = &SourceSpec{
@@ -823,6 +842,13 @@ func MergeJobSpecs(base *JobSpec, overlays []*JobSpec, overlayFiles []string) (*
 		if len(overlay.Capabilities) > 0 {
 			result.Capabilities = make([]string, len(overlay.Capabilities))
 			copy(result.Capabilities, overlay.Capabilities)
+		}
+
+		// Override image pull secret names if set in overlay; an omitted
+		// field keeps the base list
+		if len(overlay.ImagePullSecrets) > 0 {
+			result.ImagePullSecrets = make([]string, len(overlay.ImagePullSecrets))
+			copy(result.ImagePullSecrets, overlay.ImagePullSecrets)
 		}
 
 		// Override characteristics/resources (whole-map replace) if set in

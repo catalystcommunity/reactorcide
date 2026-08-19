@@ -421,10 +421,11 @@ func cloneJobForRetry(original *models.Job) *models.Job {
 		JobEnvVars:  cloneJSONB(original.JobEnvVars),
 		JobEnvFile:  original.JobEnvFile,
 
-		TimeoutSeconds: original.TimeoutSeconds,
-		Priority:       original.Priority,
-		Capabilities:   append(pq.StringArray(nil), original.Capabilities...),
-		RunAsUser:      original.RunAsUser,
+		TimeoutSeconds:   original.TimeoutSeconds,
+		Priority:         original.Priority,
+		Capabilities:     append(pq.StringArray(nil), original.Capabilities...),
+		ImagePullSecrets: append(pq.StringArray(nil), original.ImagePullSecrets...),
+		RunAsUser:        original.RunAsUser,
 
 		QueueName:       original.QueueName,
 		WorkerClass:     original.WorkerClass,

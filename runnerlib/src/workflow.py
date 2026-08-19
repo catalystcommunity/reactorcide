@@ -44,6 +44,8 @@ class JobTrigger:
         job_command: Command to run in the job
         priority: Job priority (higher = more important)
         timeout: Job timeout in seconds
+        image_pull_secrets: Names of Kubernetes Secrets that permit the image
+            pull. Names only, never credential values.
         code_dir: Container path where source code is mounted or checked out
         job_dir: Container path runnerlib treats as the job directory
         working_dir: Raw process working directory
@@ -71,6 +73,8 @@ class JobTrigger:
     priority: Optional[int] = None
     timeout: Optional[int] = None
     capabilities: Optional[List[str]] = None
+    # Kubernetes Secret NAMES for pulling the job image - never credentials.
+    image_pull_secrets: Optional[List[str]] = None
     code_dir: Optional[str] = None
     job_dir: Optional[str] = None
     working_dir: Optional[str] = None

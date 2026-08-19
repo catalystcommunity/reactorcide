@@ -334,3 +334,18 @@ func assertNoSecretInCorndogsPayloads(t *testing.T, h *testHarness, secretValue 
 		}
 	}
 }
+
+// TestBuildLease_CarriesImagePullSecretNames guards lease delivery of the
+// job's image pull secret NAMES (never values) to the worker.
+func TestBuildLease_CarriesImagePullSecretNames(t *testing.T) {
+	job := &models.Job{
+		JobID:            "job-1",
+		JobCommand:       "echo ok",
+		RunnerImage:      "img:1",
+		ImagePullSecrets: []string{"regcred", "team-cred"},
+	}
+	lease := buildLease("lease-1", job, &resolvedLeaseSecrets{}, nil)
+	if len(lease.ImagePullSecrets) != 2 || lease.ImagePullSecrets[0] != "regcred" || lease.ImagePullSecrets[1] != "team-cred" {
+		t.Fatalf("lease image_pull_secrets = %v, want [regcred team-cred]", lease.ImagePullSecrets)
+	}
+}

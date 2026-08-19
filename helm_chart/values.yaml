@@ -195,7 +195,14 @@ worker:
   # Settings used by KubernetesRunner for the per-Reactorcide-job Kubernetes Jobs.
   jobNamespace: ""
   jobServiceAccount: ""
+  # Names of Kubernetes Secrets (type kubernetes.io/dockerconfigjson, in the
+  # job namespace) added to EVERY generated job pod.
   jobImagePullSecrets: []
+  # Names of Kubernetes Secrets a job MAY request with its own
+  # image_pull_secrets list. A job-level name must be in this list or in
+  # jobImagePullSecrets. With both lists empty, the worker rejects every
+  # job-level image pull secret request.
+  allowedJobImagePullSecrets: []
   autoscaling:
     enabled: false
     minReplicas: 1
