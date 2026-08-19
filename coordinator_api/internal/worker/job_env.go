@@ -53,32 +53,6 @@ func BuildJobEnv(job *models.Job) map[string]string {
 		env["RC_WF_NODE_NAME"] = job.WorkflowNodeName
 	}
 
-	// Add source configuration if present
-	if job.SourceType != nil {
-		env["REACTORCIDE_SOURCE_TYPE"] = string(*job.SourceType)
-		if job.SourceURL != nil {
-			env["REACTORCIDE_SOURCE_URL"] = *job.SourceURL
-		}
-		if job.SourceRef != nil {
-			env["REACTORCIDE_SOURCE_REF"] = *job.SourceRef
-		}
-		if job.SourcePath != nil {
-			env["REACTORCIDE_SOURCE_PATH"] = *job.SourcePath
-		}
-	}
-
-	// Add CI source configuration if present
-	if job.CISourceType != nil {
-		env["REACTORCIDE_CI_SOURCE_TYPE"] = string(*job.CISourceType)
-		env["REACTORCIDE_CI_SOURCE_DIR"] = "/job/ci"
-		if job.CISourceURL != nil {
-			env["REACTORCIDE_CI_SOURCE_URL"] = *job.CISourceURL
-		}
-		if job.CISourceRef != nil {
-			env["REACTORCIDE_CI_SOURCE_REF"] = *job.CISourceRef
-		}
-	}
-
 	// Pass API credentials so job containers can submit triggers via API
 	jobAPIURL := os.Getenv("REACTORCIDE_JOB_API_URL")
 	apiToken := os.Getenv("REACTORCIDE_API_TOKEN")
@@ -114,6 +88,33 @@ func BuildJobEnv(job *models.Job) map[string]string {
 				}
 			}
 			env[key] = valueStr
+		}
+	}
+
+	// Add authoritative source configuration after job-specific variables.
+	// An eval job can carry an older CI source in its inherited environment.
+	// The selected workflow source on the job model must take precedence.
+	if job.SourceType != nil {
+		env["REACTORCIDE_SOURCE_TYPE"] = string(*job.SourceType)
+		if job.SourceURL != nil {
+			env["REACTORCIDE_SOURCE_URL"] = *job.SourceURL
+		}
+		if job.SourceRef != nil {
+			env["REACTORCIDE_SOURCE_REF"] = *job.SourceRef
+		}
+		if job.SourcePath != nil {
+			env["REACTORCIDE_SOURCE_PATH"] = *job.SourcePath
+		}
+	}
+
+	if job.CISourceType != nil {
+		env["REACTORCIDE_CI_SOURCE_TYPE"] = string(*job.CISourceType)
+		env["REACTORCIDE_CI_SOURCE_DIR"] = "/job/ci"
+		if job.CISourceURL != nil {
+			env["REACTORCIDE_CI_SOURCE_URL"] = *job.CISourceURL
+		}
+		if job.CISourceRef != nil {
+			env["REACTORCIDE_CI_SOURCE_REF"] = *job.CISourceRef
 		}
 	}
 
