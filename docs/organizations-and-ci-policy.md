@@ -384,6 +384,68 @@ GET|POST  /api/v1/vcs-identities
 DELETE    /api/v1/vcs-identities/LINK_ID
 ```
 
+## Policy-Controlled Node Authority
+
+A head-CI rule can give selected workflow nodes trusted base authority while
+the other nodes run head CI with the untrusted profile. Use this for a
+pull-request workflow that needs trusted control nodes, for example a node
+that reads an asset-cache secret before untrusted build nodes run.
+
+Add a `base_nodes` list to the rule `use` block:
+
+```yaml
+head_ci:
+  - id: csilgen
+    actors:
+      any: [repository_write]
+    workflows: [csilgen-pr]
+    paths: ['.reactorcide/**']
+    use:
+      ci_source: head
+      profile: pr-untrusted
+      workers: default
+      base_nodes:
+        - nodes: [asset-prepare, asset-seal]
+          ci_source: base
+          profile: standard
+          workers: default
+```
+
+Each entry names exact workflow node names. Each entry must set
+`ci_source: base`, one profile, and one worker class. A node name can appear
+in only one entry for a rule.
+
+The rules for a policy-controlled base node are:
+
+- The evaluator resolves the node and all of its executable CI content from
+  the exact base CI SHA. This includes the workflow definition, the job file,
+  plugins, scripts, and helper files.
+- The tested source stays at the pull-request head SHA.
+- The base specification wins. A head change to the node command, image,
+  environment, `job_file`, dependencies, `for_each`, capabilities, or
+  condition has no effect on the node that runs. A head node with the same
+  name is ignored. A trusted node that head removed still runs.
+- Repository YAML cannot set or replace node authority. The evaluator rejects
+  a workflow job entry or job file that contains a reserved authority field.
+- The coordinator verifies each node authority claim against its own policy
+  copy. The node profile must be the same or weaker than the evaluation job
+  profile. The node worker class must be allowed by the node profile.
+- The coordinator stores the effective CI origin, CI repository, CI SHA,
+  profile, worker class, policy revision, rule, and approval on each node
+  that differs from the workflow default.
+- A retry replays the recorded node authority. A retry does not evaluate a
+  newer policy.
+- Admission fails closed when the base workflow does not contain a named
+  node, when the node profile does not exist, when the policy revision does
+  not match, or when a required approval is missing. The workflow then runs
+  trusted base CI, and the policy status reports the violation.
+
+Secret authorization uses the effective node authority. A grant with
+`--execution-profile standard --ci-origin base` and an exact job name matches
+only the trusted node. An untrusted node never receives a secret when its
+profile denies secrets, and normal workflow variables still flow between the
+two authority levels.
+
 ## Get, Validate, and Explain Policy
 
 The `get`, `set`, and `delete` commands contact the coordinator. The `validate`

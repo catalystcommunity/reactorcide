@@ -971,3 +971,224 @@ head_ci:
         assert data["workflows"][0]["ci_origin"] == "base"
         violation_paths = {item["path"] for item in data["policy_violations"]}
         assert ".reactorcide/plugins/plugin_ci.py" in violation_paths
+
+
+class TestEvalMixedTrustNodeAuthority:
+    """Policy-controlled trusted base nodes inside a head-CI workflow.
+
+    The coordinator policy names asset-prepare and asset-seal as trusted base
+    nodes. The eval must resolve those nodes from the exact base workflow
+    specification while the other nodes run head CI with the untrusted
+    profile."""
+
+    POLICY = """
+version: 1
+defaults:
+  ci_source: base
+  profile: standard
+head_ci:
+  - id: csilgen
+    actors:
+      any: [repository_write]
+    workflows: [csilgen-pr]
+    paths: ['.reactorcide/**']
+    events: [pull_request_updated]
+    base_branches: [main]
+    head_repository: any
+    use:
+      ci_source: head
+      profile: pr-untrusted
+      workers: default
+      base_nodes:
+        - nodes: [asset-prepare, asset-seal]
+          ci_source: base
+          profile: standard
+          workers: default
+"""
+
+    BASE_URL = "https://example.test/upstream.git"
+    HEAD_URL = "https://example.test/fork.git"
+
+    def _make_base_checkout(self, root: Path, include_seal: bool = True) -> None:
+        workflows = root / ".reactorcide" / "workflows"
+        jobs = root / ".reactorcide" / "jobs"
+        workflows.mkdir(parents=True)
+        jobs.mkdir(parents=True)
+        wf_jobs = {
+            "asset-prepare": {"job_file": "prepare.yaml"},
+            "build": {"job_file": "build.yaml", "depends_on": ["asset-prepare"]},
+        }
+        if include_seal:
+            wf_jobs["asset-seal"] = {"job_file": "seal.yaml", "depends_on": ["build"]}
+        _write_yaml(workflows / "pr.yaml", {
+            "id": "csilgen-pr",
+            "name": "CSILgen PR",
+            "on": {"events": ["pull_request_updated"], "branches": ["main"]},
+            "jobs": wf_jobs,
+        })
+        _write_yaml(jobs / "prepare.yaml", {
+            "name": "asset-prepare",
+            "job": {"image": "alpine:latest", "command": "prepare-base"},
+        })
+        _write_yaml(jobs / "build.yaml", {
+            "name": "build",
+            "job": {"image": "alpine:latest", "command": "make build"},
+        })
+        _write_yaml(jobs / "seal.yaml", {
+            "name": "asset-seal",
+            "job": {"image": "alpine:latest", "command": "seal-base"},
+        })
+
+    def _make_head_checkout(self, root: Path, tamper: bool = True, reserved_field: bool = False,
+                            drop_seal: bool = False) -> None:
+        self._make_base_checkout(root)
+        workflows = root / ".reactorcide" / "workflows"
+        jobs = root / ".reactorcide" / "jobs"
+        wf_jobs = {
+            "asset-prepare": {"job_file": "prepare.yaml"},
+            "build": {"job_file": "build.yaml", "depends_on": ["asset-prepare"]},
+            "asset-seal": {"job_file": "seal.yaml", "depends_on": ["build"]},
+        }
+        if tamper:
+            # The head tries to replace every part of the trusted node
+            # specification. None of this may reach the trusted node that runs.
+            wf_jobs["asset-prepare"] = {
+                "image": "evil:latest",
+                "command": "exfiltrate",
+                "depends_on": [],
+                "for_each": ["a", "b"],
+                "condition": "always",
+                "capabilities": ["docker"],
+                "environment": {"EVIL": "yes"},
+            }
+            _write_yaml(jobs / "prepare.yaml", {
+                "name": "asset-prepare",
+                "job": {"image": "evil:latest", "command": "exfiltrate-jobfile"},
+            })
+            wf_jobs["build"] = {"job_file": "build.yaml", "depends_on": ["asset-prepare"]}
+            _write_yaml(jobs / "build.yaml", {
+                "name": "build",
+                "job": {"image": "alpine:latest", "command": "make build-head"},
+            })
+        if reserved_field:
+            wf_jobs["build"] = {"job_file": "build.yaml", "execution_profile": "standard"}
+        if drop_seal:
+            wf_jobs.pop("asset-seal", None)
+        _write_yaml(workflows / "pr.yaml", {
+            "id": "csilgen-pr",
+            "name": "CSILgen PR",
+            "on": {"events": ["pull_request_updated"], "branches": ["main"]},
+            "jobs": wf_jobs,
+        })
+
+    def _run_eval(self, make_base, make_head):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            base = Path(tmpdir)
+            ci_dir = base / "ci"
+            src_dir = base / "src"
+            src_dir.mkdir()
+            make_base(ci_dir / "base")
+            make_head(ci_dir / "head")
+            triggers_file = base / "triggers.json"
+            result = runner.invoke(app, [
+                "eval",
+                "--ci-source-dir", str(ci_dir),
+                "--source-dir", str(src_dir),
+                "--event-type", "pull_request_updated",
+                "--pr-number", "7",
+                "--base-ref", "main",
+                "--changed-file", ".reactorcide/workflows/pr.yaml",
+                "--triggers-file", str(triggers_file),
+            ], env={
+                "REACTORCIDE_CI_POLICY": self.POLICY,
+                "REACTORCIDE_ACTOR_SUBJECTS": '["repository_write"]',
+                "REACTORCIDE_SHA": "headsha",
+                "REACTORCIDE_DIFF_BASE": "basesha",
+                "REACTORCIDE_CI_SOURCE_URL": self.BASE_URL,
+                "REACTORCIDE_CI_SOURCE_REF": "basesha",
+                "REACTORCIDE_HEAD_URL": self.HEAD_URL,
+            })
+            assert result.exit_code == 0, result.output
+            with open(triggers_file) as f:
+                return json.load(f)
+
+    def _jobs_by_name(self, workflow):
+        return {job["job_name"]: job for job in workflow["jobs"]}
+
+    def test_mixed_trust_workflow_pins_node_authority(self):
+        data = self._run_eval(self._make_base_checkout, self._make_head_checkout)
+        assert data["policy_violations"] == []
+        workflow = data["workflows"][0]
+        assert workflow["ci_origin"] == "head"
+        assert workflow["execution_profile"] == "pr-untrusted"
+        jobs = self._jobs_by_name(workflow)
+
+        prepare = jobs["asset-prepare"]
+        assert prepare["ci_origin"] == "base"
+        assert prepare["execution_profile"] == "standard"
+        assert prepare["worker_class"] == "default"
+        assert prepare["ci_source_url"] == self.BASE_URL
+        assert prepare["ci_source_ref"] == "basesha"
+
+        build = jobs["build"]
+        assert "ci_origin" not in build
+        assert "execution_profile" not in build
+        assert build["ci_source_url"] == self.HEAD_URL
+        assert build["ci_source_ref"] == "headsha"
+        assert "make build-head" in build["job_command"]
+
+        seal = jobs["asset-seal"]
+        assert seal["ci_origin"] == "base"
+        assert seal["execution_profile"] == "standard"
+        assert seal["ci_source_ref"] == "basesha"
+        assert seal["depends_on"] == ["build"]
+        assert "seal-base" in seal["job_command"]
+
+    def test_head_changes_to_trusted_node_have_no_effect(self):
+        data = self._run_eval(self._make_base_checkout, self._make_head_checkout)
+        prepare = self._jobs_by_name(data["workflows"][0])["asset-prepare"]
+        # The base specification wins for every field the head tampered with.
+        assert prepare["container_image"] == "alpine:latest"
+        assert "prepare-base" in prepare["job_command"]
+        assert "exfiltrate" not in prepare["job_command"]
+        assert prepare.get("depends_on", []) == []
+        assert "for_each" not in prepare
+        assert "capabilities" not in prepare
+        assert prepare["env"].get("EVIL") is None
+        assert prepare.get("condition", "all_success") == "all_success"
+
+    def test_head_removing_trusted_node_still_runs_it(self):
+        data = self._run_eval(
+            self._make_base_checkout,
+            lambda root: self._make_head_checkout(root, drop_seal=True),
+        )
+        workflow = data["workflows"][0]
+        assert workflow["ci_origin"] == "head"
+        jobs = self._jobs_by_name(workflow)
+        assert "asset-seal" in jobs
+        assert jobs["asset-seal"]["ci_origin"] == "base"
+        assert "seal-base" in jobs["asset-seal"]["job_command"]
+
+    def test_missing_base_node_fails_closed_to_base_ci(self):
+        data = self._run_eval(
+            lambda root: self._make_base_checkout(root, include_seal=False),
+            self._make_head_checkout,
+        )
+        workflow = data["workflows"][0]
+        assert workflow["ci_origin"] == "base"
+        for job in workflow["jobs"]:
+            assert "ci_origin" not in job
+            assert "execution_profile" not in job
+        violation_ids = {item.get("workflow_id") for item in data["policy_violations"]}
+        assert "csilgen-pr" in violation_ids
+
+    def test_reserved_authority_field_in_head_yaml_fails_closed(self):
+        data = self._run_eval(
+            self._make_base_checkout,
+            lambda root: self._make_head_checkout(root, tamper=False, reserved_field=True),
+        )
+        workflow = data["workflows"][0]
+        # The head workflow file is rejected, so no head candidate exists and
+        # the decision fails closed to trusted base CI.
+        assert workflow["ci_origin"] == "base"
+        assert data["policy_violations"] != []

@@ -53,6 +53,9 @@ type JobResponse struct {
 	ProjectID        *string    `json:"project_id,omitempty"`
 	WorkflowID       *string    `json:"workflow_id,omitempty"`
 	WorkflowNodeName string     `json:"workflow_node_name,omitempty"`
+	CIOrigin         string     `json:"ci_origin,omitempty"`
+	ExecutionProfile string     `json:"execution_profile,omitempty"`
+	WorkerClass      string     `json:"worker_class,omitempty"`
 }
 
 // ListJobsResponse matches the coordinator API's list response
@@ -91,6 +94,9 @@ type WorkflowSummary struct {
 	OriginType         string            `json:"origin_type,omitempty"`
 	TriggerOperationID string            `json:"trigger_operation_id,omitempty"`
 	TriggerType        string            `json:"trigger_type,omitempty"`
+	CIOrigin           string            `json:"ci_origin,omitempty"`
+	ExecutionProfile   string            `json:"execution_profile,omitempty"`
+	WorkerClass        string            `json:"worker_class,omitempty"`
 	Children           []WorkflowSummary `json:"children,omitempty"`
 }
 

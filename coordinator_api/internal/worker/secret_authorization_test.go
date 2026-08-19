@@ -91,6 +91,65 @@ func TestAuthorizeSecretAccess_SupportsGrantPatterns(t *testing.T) {
 	require.Error(t, AuthorizeSecretAccess(context.Background(), grantStore, job, "catalystcommunity/registry", "password"))
 }
 
+// secretProfileMockStore also serves execution profiles so the profile gate
+// (DenySecrets, SecretPathAllowlist) applies before grant matching.
+type secretProfileMockStore struct {
+	secretGrantMockStore
+	profiles map[string]*models.ExecutionProfile
+}
+
+func (s *secretProfileMockStore) GetExecutionProfile(_ context.Context, orgID, name string) (*models.ExecutionProfile, error) {
+	profile, ok := s.profiles[name]
+	if !ok || profile.OrgID != orgID {
+		return nil, errProfileNotFound
+	}
+	copied := *profile
+	return &copied, nil
+}
+
+var errProfileNotFound = &profileNotFoundError{}
+
+type profileNotFoundError struct{}
+
+func (*profileNotFoundError) Error() string { return "profile not found" }
+
+// A trusted base node in a mixed-trust workflow receives only the secrets
+// that its exact grant, profile, and CI origin allow. An untrusted node in
+// the same workflow never receives a secret because its profile denies them,
+// even when a broad grant exists.
+func TestAuthorizeSecretAccess_MixedTrustNodeBoundary(t *testing.T) {
+	projectID := "project-1"
+	grantStore := &secretProfileMockStore{
+		secretGrantMockStore: secretGrantMockStore{
+			grants: []models.SecretGrant{{
+				GrantID: "grant-1", Name: "asset-cache", UserID: "org-1", ProjectID: &projectID,
+				SecretPathMatch: models.SecretGrantMatchExact, SecretPathPattern: "catalyst/asset-cache",
+				JobNameMatch: models.SecretGrantMatchExact, JobNamePattern: "asset-prepare",
+				ExecutionProfiles: []string{"standard"}, CIOrigins: []string{"base"},
+			}},
+		},
+		profiles: map[string]*models.ExecutionProfile{
+			"standard":     {OrgID: "org-1", Name: "standard"},
+			"pr-untrusted": {OrgID: "org-1", Name: "pr-untrusted", DenySecrets: true},
+		},
+	}
+
+	trusted := &models.Job{JobID: "job-1", OrgID: "org-1", UserID: "org-1", ProjectID: &projectID,
+		Name: "asset-prepare", ExecutionProfile: "standard", CIOrigin: "base"}
+	require.NoError(t, AuthorizeSecretAccess(context.Background(), grantStore, trusted, "catalyst/asset-cache", "secret_key"))
+	// The exact grant does not cover other paths or other node names.
+	require.Error(t, AuthorizeSecretAccess(context.Background(), grantStore, trusted, "catalyst/other", "secret_key"))
+	seal := *trusted
+	seal.Name = "asset-seal"
+	require.Error(t, AuthorizeSecretAccess(context.Background(), grantStore, &seal, "catalyst/asset-cache", "secret_key"))
+
+	// An untrusted head node is denied by its profile before any grant match.
+	untrusted := &models.Job{JobID: "job-2", OrgID: "org-1", UserID: "org-1", ProjectID: &projectID,
+		Name: "asset-prepare", ExecutionProfile: "pr-untrusted", CIOrigin: "head"}
+	err := AuthorizeSecretAccess(context.Background(), grantStore, untrusted, "catalyst/asset-cache", "secret_key")
+	require.ErrorContains(t, err, "denied by execution profile")
+}
+
 func TestAuthorizeSecretAccess_RequiresOrganizationProjectProfileAndProvenance(t *testing.T) {
 	projectID := "project-1"
 	job := &models.Job{JobID: "job-1", OrgID: "org-1", ProjectID: &projectID, Name: "deploy",

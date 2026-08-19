@@ -12,6 +12,7 @@ import yaml
 
 
 ID_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,62}$")
+NODE_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$")
 SUBJECT_PREFIXES = ("vcs_team:", "vcs_user:", "reactorcide_group:")
 
 
@@ -23,6 +24,9 @@ class PolicyDecision:
     rule_id: str = ""
     approval_id: str = ""
     allowed: bool = False
+    # Node name -> {"ci_source", "profile", "worker_class"} for nodes that the
+    # matched rule pins to trusted base CI. Empty without node authority.
+    base_nodes: Dict[str, Dict[str, str]] = field(default_factory=dict)
     reasons: List[str] = field(default_factory=list)
 
 
@@ -73,6 +77,46 @@ def _canonical_policy(value: Dict[str, Any]) -> str:
     return hashlib.sha256(encoded).hexdigest()
 
 
+def _validate_base_nodes(rule_id: str, entries: Any) -> None:
+    if entries is None:
+        return
+    if not isinstance(entries, list):
+        raise ValueError(f"rule {rule_id} base_nodes must be a list")
+    seen: Set[str] = set()
+    for index, entry in enumerate(entries):
+        if not isinstance(entry, dict):
+            raise ValueError(f"rule {rule_id} base_nodes[{index}] must be a mapping")
+        _known_keys(entry, ("nodes", "ci_source", "profile", "workers"), f"rule {rule_id} base_nodes[{index}]")
+        nodes = entry.get("nodes") or []
+        if not isinstance(nodes, list) or not nodes:
+            raise ValueError(f"rule {rule_id} base_nodes[{index}] must name at least one node")
+        for node in nodes:
+            name = str(node)
+            if not NODE_NAME_RE.fullmatch(name):
+                raise ValueError(f"rule {rule_id} base_nodes[{index}] has invalid node name {name!r}")
+            if name in seen:
+                raise ValueError(f"rule {rule_id} names node {name!r} in more than one base_nodes entry")
+            seen.add(name)
+        if entry.get("ci_source") != "base":
+            raise ValueError(f"rule {rule_id} base_nodes[{index}] ci_source must be base")
+        if not entry.get("profile") or not entry.get("workers"):
+            raise ValueError(f"rule {rule_id} base_nodes[{index}] must select a profile and worker class")
+
+
+def base_node_decisions(rule: Dict[str, Any]) -> Dict[str, Dict[str, str]]:
+    """Flatten a rule's base_nodes entries to one map keyed by node name."""
+    result: Dict[str, Dict[str, str]] = {}
+    use = rule.get("use") or {}
+    for entry in use.get("base_nodes") or []:
+        for node in entry.get("nodes") or []:
+            result[str(node)] = {
+                "ci_source": str(entry.get("ci_source") or "base"),
+                "profile": str(entry.get("profile") or ""),
+                "worker_class": str(entry.get("workers") or ""),
+            }
+    return result
+
+
 def load_coordinator_policy(document: str) -> Optional[TrustedPolicy]:
     """Load a policy document that the coordinator pinned to this eval job."""
     if not document:
@@ -111,9 +155,10 @@ def load_coordinator_policy(document: str) -> Optional[TrustedPolicy]:
         if relation not in ("same", "fork", "any"):
             raise ValueError(f"rule {rule_id} has invalid head_repository")
         use = rule.get("use") or {}
-        _known_keys(use, ("ci_source", "profile", "workers"), f"rule {rule_id} use")
+        _known_keys(use, ("ci_source", "profile", "workers", "base_nodes"), f"rule {rule_id} use")
         if use.get("ci_source") != "head" or not use.get("profile") or not use.get("workers"):
             raise ValueError(f"rule {rule_id} must select head, profile, and workers")
+        _validate_base_nodes(rule_id, use.get("base_nodes"))
         rules.append(rule)
 
     defaults = data.get("defaults") or {}
@@ -123,6 +168,19 @@ def load_coordinator_policy(document: str) -> Optional[TrustedPolicy]:
     canonical_rules = []
     for rule in rules:
         use = rule.get("use") or {}
+        canonical_use = {"ci_source": "head", "profile": str(use["profile"]), "workers": str(use["workers"])}
+        # base_nodes joins the canonical form only when present so that the
+        # revision of a policy without node authority stays unchanged.
+        if use.get("base_nodes"):
+            canonical_use["base_nodes"] = [
+                {
+                    "ci_source": str(entry.get("ci_source") or "base"),
+                    "nodes": [str(node) for node in entry.get("nodes") or []],
+                    "profile": str(entry.get("profile") or ""),
+                    "workers": str(entry.get("workers") or ""),
+                }
+                for entry in use.get("base_nodes") or []
+            ]
         canonical_rules.append({
             "actors": {"any": _subjects(rule.get("actors"), "actors")},
             "approval": {"any": _subjects(rule.get("approval"), "approval", allow_owner=True)},
@@ -131,7 +189,7 @@ def load_coordinator_policy(document: str) -> Optional[TrustedPolicy]:
             "head_repository": str(rule.get("head_repository") or "same"),
             "id": str(rule["id"]),
             "paths": [str(item) for item in rule.get("paths") or []],
-            "use": {"ci_source": "head", "profile": str(use["profile"]), "workers": str(use["workers"])},
+            "use": canonical_use,
             "workflows": [str(item) for item in rule.get("workflows") or []],
         })
     combined = {
@@ -229,13 +287,18 @@ def decide_workflow(
             rule_id=str(rule["id"]),
             approval_id=approval_id,
             allowed=True,
+            base_nodes=base_node_decisions(rule),
         ))
     if not candidates:
         base.reasons.insert(0, "no complete coordinator rule authorized head CI")
         return base
     selected = candidates[0]
     for candidate in candidates[1:]:
-        if (candidate.profile, candidate.worker_class) != (selected.profile, selected.worker_class):
+        if (candidate.profile, candidate.worker_class, candidate.base_nodes) != (
+            selected.profile,
+            selected.worker_class,
+            selected.base_nodes,
+        ):
             raise ValueError(f"ambiguous authority for workflow {workflow_id!r}")
     return selected
 

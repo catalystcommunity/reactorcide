@@ -687,6 +687,93 @@ func TestRetryWorkflow_CreatesFreshInstanceAndSubmits(t *testing.T) {
 	}
 }
 
+// retryProfileStore adds execution profile lookups so submitWorkflowNode can
+// verify a node authority override during a workflow retry.
+type retryProfileStore struct {
+	*retryMockStore
+	profiles map[string]*models.ExecutionProfile
+}
+
+func (s *retryProfileStore) GetExecutionProfile(_ context.Context, orgID, name string) (*models.ExecutionProfile, error) {
+	profile, ok := s.profiles[name]
+	if !ok || profile.OrgID != orgID {
+		return nil, store.ErrNotFound
+	}
+	cp := *profile
+	return &cp, nil
+}
+
+// TestRetryWorkflow_KeepsRecordedNodeAuthority verifies that a workflow retry
+// replays each node's recorded authority (CI origin, exact CI SHA, profile,
+// worker class, policy revision, rule) instead of evaluating a newer policy,
+// and that the retried trusted node's job uses the recorded base revision.
+func TestRetryWorkflow_KeepsRecordedNodeAuthority(t *testing.T) {
+	base, old := newRetryWorkflowFixture(t)
+	st := &retryProfileStore{retryMockStore: base, profiles: map[string]*models.ExecutionProfile{
+		"standard":     {OrgID: "org-1", Name: "standard", MayRunAsRoot: true},
+		"pr-untrusted": {OrgID: "org-1", Name: "pr-untrusted", DenySecrets: true},
+	}}
+	old.OrgID = "org-1"
+	old.CIOrigin = "head"
+	old.CIRepository = "https://example.test/fork.git"
+	old.CISHA = "head-sha"
+	old.ExecutionProfile = "pr-untrusted"
+	old.WorkerClass = "default"
+	old.PolicyRevision = "rev-1"
+	old.PolicyRuleID = "csilgen"
+	old = base.addWorkflow(old)
+	base.addNode(&models.WorkflowNode{
+		NodeID: "node-old-2", WorkflowID: old.WorkflowID, Name: "asset-prepare", DisplayName: "asset-prepare",
+		Status: "failed", JobID: strPtr("job-old-2"),
+		JobSpec: models.JSONB{"job_name": "asset-prepare", "job_command": "prepare",
+			"ci_origin": "base", "execution_profile": "standard", "worker_class": "default",
+			"ci_source_url": "https://example.test/upstream.git", "ci_source_ref": "base-sha"},
+		CIOrigin: "base", CIRepository: "https://example.test/upstream.git", CISHA: "base-sha",
+		ExecutionProfile: "standard", WorkerClass: "default",
+		PolicyRevision: "rev-1", PolicyRuleID: "csilgen",
+	})
+	base.addJob(&models.Job{JobID: "job-old-2", UserID: "user-1", Status: "failed",
+		WorkflowID: strPtr(old.WorkflowID), WorkflowNodeID: strPtr("node-old-2")})
+
+	mockCorndogs := corndogs.NewMockClient()
+	newWf, err := RetryWorkflow(context.Background(), st, mockCorndogs, old.WorkflowID)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if newWf.PolicyRevision != "rev-1" || newWf.ExecutionProfile != "pr-untrusted" || newWf.CIOrigin != "head" {
+		t.Fatalf("workflow authority not copied: %+v", newWf)
+	}
+	newNodes, err := st.ListWorkflowNodes(context.Background(), newWf.WorkflowID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var trusted *models.WorkflowNode
+	for i := range newNodes {
+		if newNodes[i].Name == "asset-prepare" {
+			trusted = &newNodes[i]
+		}
+	}
+	if trusted == nil {
+		t.Fatal("retried workflow lost the trusted node")
+	}
+	if trusted.CIOrigin != "base" || trusted.CISHA != "base-sha" || trusted.CIRepository != "https://example.test/upstream.git" ||
+		trusted.ExecutionProfile != "standard" || trusted.WorkerClass != "default" ||
+		trusted.PolicyRevision != "rev-1" || trusted.PolicyRuleID != "csilgen" {
+		t.Fatalf("node authority not replayed: %+v", trusted)
+	}
+	if trusted.JobID == nil {
+		t.Fatal("trusted node was not resubmitted")
+	}
+	job, err := st.GetJobByID(context.Background(), *trusted.JobID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if job.ExecutionProfile != "standard" || job.CIOrigin != "base" ||
+		job.CISourceRef == nil || *job.CISourceRef != "base-sha" {
+		t.Fatalf("retried trusted job authority = %+v", job)
+	}
+}
+
 // TestRetryWorkflow_NotRetryable_Refused verifies a workflow instance not
 // in "failed"/"cancelled" cannot be retried.
 func TestRetryWorkflow_NotRetryable_Refused(t *testing.T) {

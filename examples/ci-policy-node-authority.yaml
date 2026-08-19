@@ -1,0 +1,68 @@
+# Operator CI policy example: mixed-trust workflow nodes (CSILgen pattern).
+#
+# Keep this file outside the source repository and store it with:
+#
+#   reactorcide policy validate --file ci-policy-node-authority.yaml
+#   reactorcide policy set --project PROJECT_ID --file ci-policy-node-authority.yaml
+#
+# The csilgen-pr workflow runs its build and test nodes from the pull-request
+# head with the untrusted profile. The asset-prepare and asset-seal control
+# nodes run from the exact trusted base CI SHA with the standard profile, so
+# they can read the asset-cache secret and write signed staging URLs to
+# workflow variables. Untrusted nodes upload only through those signed URLs
+# and never receive the secret itself.
+#
+# Secret grants for the control nodes use exact names and the effective node
+# authority, for example:
+#
+#   reactorcide secret-grants set csilgen-asset-prepare \
+#     --project PROJECT_ID \
+#     --secret-path catalystsquad/asset-cache \
+#     --secret-match exact \
+#     --job-name asset-prepare \
+#     --job-match exact \
+#     --execution-profile standard \
+#     --ci-origin base
+#
+# The job files reference the secret only as ${secret:catalystsquad/asset-cache:KEY}.
+#
+# The pr-untrusted profile denies the builder capability. When the CLI build
+# nodes need `builder`, create a custom profile that keeps secrets and root
+# denied but allows the capability, and select it in `use.profile`:
+#
+#   name: pr-untrusted-builder
+#   deny_secrets: true
+#   may_run_as_root: false
+#   runtime_capabilities: [builder]
+#   trusted_cache_writes: false
+
+version: 1
+
+defaults:
+  ci_source: base
+  profile: standard
+
+head_ci:
+  - id: csilgen-pr-authors
+    actors:
+      any:
+        - repository_write
+    workflows:
+      - csilgen-pr
+    paths:
+      - '.reactorcide/**'
+    events:
+      - pull_request_opened
+      - pull_request_updated
+    base_branches:
+      - main
+    head_repository: any
+    use:
+      ci_source: head
+      profile: pr-untrusted
+      workers: default
+      base_nodes:
+        - nodes: [asset-prepare, asset-seal]
+          ci_source: base
+          profile: standard
+          workers: default

@@ -393,6 +393,15 @@ trust boundary.
 Each workflow has a stable security ID. The admission decision records the CI
 origin, exact SHA, profile, worker class, policy revision, rule, and approval.
 
+A head-CI policy rule can also name trusted base nodes. Those nodes resolve
+their workflow specification and executable CI content from the exact base CI
+SHA and run with a policy-selected trusted profile, while the other nodes run
+head CI with the untrusted profile. The coordinator verifies each node
+authority claim against its policy copy, stores the effective authority on
+the workflow node, and fails closed on any mismatch. Retries replay the
+recorded node authority. See [Organizations and Coordinator CI
+Policy](./docs/organizations-and-ci-policy.md).
+
 The coordinator stores VCS report entries as structured database records. One
 reconciler owns the shared pull-request comment. It uses a database advisory
 lock and revision counters. A VCS comment error does not change a workflow

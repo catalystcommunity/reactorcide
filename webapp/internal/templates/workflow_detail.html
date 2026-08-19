@@ -81,6 +81,18 @@
             <dd><code>{{shortSHA .Workflow.CommitSHA}}</code></dd>
         </div>
         {{end}}
+        {{if .Workflow.CIOrigin}}
+        <div>
+            <dt>CI origin</dt>
+            <dd><code>{{.Workflow.CIOrigin}}</code></dd>
+        </div>
+        {{end}}
+        {{if .Workflow.ExecutionProfile}}
+        <div>
+            <dt>Execution profile</dt>
+            <dd><code>{{.Workflow.ExecutionProfile}}</code></dd>
+        </div>
+        {{end}}
     </dl>
 </div>
 
@@ -104,6 +116,7 @@
             <th>Duration</th>
             <th>Exit</th>
             <th>Node</th>
+            <th>Authority</th>
         </tr>
     </thead>
     <tbody>
@@ -125,6 +138,7 @@
                 {{end}}
             </td>
             <td class="meta">{{if .WorkflowNodeName}}{{.WorkflowNodeName}}{{else}}-{{end}}</td>
+            <td class="meta">{{if .CIOrigin}}<code>{{.CIOrigin}}</code>{{if .ExecutionProfile}} / <code>{{.ExecutionProfile}}</code>{{end}}{{else}}-{{end}}</td>
         </tr>
         {{end}}
     </tbody>

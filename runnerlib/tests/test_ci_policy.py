@@ -94,6 +94,80 @@ def test_policy_rejects_unknown_and_duplicate_security_fields(replacement):
         load_coordinator_policy(replacement)
 
 
+NODE_AUTHORITY_POLICY = """version: 1
+defaults: {ci_source: base, profile: standard}
+head_ci:
+- id: csilgen
+  actors: {any: [repository_write]}
+  workflows: [csilgen-pr]
+  paths: ['.reactorcide/**']
+  events: [pull_request_opened, pull_request_updated]
+  base_branches: [main]
+  head_repository: any
+  use:
+    ci_source: head
+    profile: pr-untrusted
+    workers: default
+    base_nodes:
+    - nodes: [asset-prepare, asset-seal]
+      ci_source: base
+      profile: standard
+      workers: default
+"""
+
+
+def test_base_nodes_decision_and_revision_match_coordinator():
+    policy = load_coordinator_policy(NODE_AUTHORITY_POLICY)
+    # Golden value shared with the Go cipolicy package
+    # (TestNodeAuthorityRevisionMatchesRunnerlibCanonicalForm).
+    assert policy.revision == "d8cdd4911ee9b9e51e369d447deeffaa0f0c80cfe744a43e01ebe556cbc1a04b"
+    decision = decide_workflow(
+        policy, "csilgen-pr", [".reactorcide/workflows/pr.yaml"],
+        [".reactorcide/workflows/pr.yaml"], "pull_request_updated",
+        "main", "same", {"repository_write"}, [], "base", "head",
+    )
+    assert decision.allowed
+    assert decision.base_nodes == {
+        "asset-prepare": {"ci_source": "base", "profile": "standard", "worker_class": "default"},
+        "asset-seal": {"ci_source": "base", "profile": "standard", "worker_class": "default"},
+    }
+    # A policy without base_nodes keeps an empty node authority map.
+    plain = load_coordinator_policy(POLICY)
+    plain_decision = decide_workflow(
+        plain, "backend-tests", [".reactorcide/workflows/backend.yaml"],
+        [".reactorcide/workflows/backend.yaml"], "pull_request_updated",
+        "main", "same", {"repository_write"}, [], "base", "head",
+    )
+    assert plain_decision.allowed
+    assert plain_decision.base_nodes == {}
+
+
+@pytest.mark.parametrize("replacement", [
+    ("- nodes: [asset-prepare, asset-seal]", "- nodes: []"),
+    ("- nodes: [asset-prepare, asset-seal]", "- nodes: ['bad name']"),
+    ("      ci_source: base\n      profile: standard\n      workers: default",
+     "      ci_source: head\n      profile: standard\n      workers: default"),
+    ("      profile: standard\n      workers: default", "      profile: ''\n      workers: default"),
+    ("      profile: standard\n      workers: default", "      profile: standard\n      workers: ''"),
+])
+def test_base_nodes_validation_rejects_invalid_entries(replacement):
+    old, new = replacement
+    body = NODE_AUTHORITY_POLICY.replace(old, new)
+    assert body != NODE_AUTHORITY_POLICY
+    with pytest.raises(ValueError):
+        load_coordinator_policy(body)
+
+
+def test_base_nodes_do_not_change_plain_policy_revision():
+    with_nodes = load_coordinator_policy(NODE_AUTHORITY_POLICY)
+    marker = "    base_nodes:\n    - nodes: [asset-prepare, asset-seal]\n      ci_source: base\n      profile: standard\n      workers: default\n"
+    without_nodes = load_coordinator_policy(NODE_AUTHORITY_POLICY.replace(marker, ""))
+    assert with_nodes.revision != without_nodes.revision
+    # The canonical form of a policy without node authority has no base_nodes
+    # key at all, so pre-existing policies keep their stored revision.
+    assert "base_nodes" not in str(without_nodes.raw)
+
+
 def test_approval_is_bound_to_shas_revision_profile_and_workflow():
     body = POLICY.replace("    use:\n", "    approval:\n      any: [reactorcide_group:reviewers]\n    use:\n")
     policy = load_coordinator_policy(body)

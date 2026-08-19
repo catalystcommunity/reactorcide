@@ -101,10 +101,26 @@ type WorkflowNode struct {
 	DecisionReason           string         `gorm:"type:text" json:"decision_reason"`
 	CompletedAt              *time.Time     `json:"completed_at"`
 	LastSuccessfulDurationMs *int64         `gorm:"type:bigint" json:"last_successful_duration_ms"`
+	// Per-node authority override. Empty values mean the node inherits the
+	// workflow-level authority. Only coordinator policy can set an override.
+	CIOrigin         string  `gorm:"type:text" json:"ci_origin"`
+	CIRepository     string  `gorm:"type:text" json:"ci_repository"`
+	CISHA            string  `gorm:"column:ci_sha;type:text" json:"ci_sha"`
+	ExecutionProfile string  `gorm:"type:text" json:"execution_profile"`
+	WorkerClass      string  `gorm:"type:text" json:"worker_class"`
+	PolicyRevision   string  `gorm:"type:text" json:"policy_revision"`
+	PolicyRuleID     string  `gorm:"type:text" json:"policy_rule_id"`
+	ApprovalID       *string `gorm:"type:uuid" json:"approval_id,omitempty"`
 }
 
 func (WorkflowNode) TableName() string {
 	return "workflow_nodes"
+}
+
+// HasAuthorityOverride reports whether this node carries its own recorded
+// authority instead of inheriting the workflow-level authority.
+func (n *WorkflowNode) HasAuthorityOverride() bool {
+	return n.CIOrigin != "" || n.ExecutionProfile != "" || n.WorkerClass != ""
 }
 
 type WorkflowVar struct {
@@ -167,6 +183,9 @@ type WorkflowSummary struct {
 	OriginType         string            `json:"origin_type,omitempty"`
 	TriggerOperationID string            `json:"trigger_operation_id,omitempty"`
 	TriggerType        string            `json:"trigger_type,omitempty"`
+	CIOrigin           string            `json:"ci_origin,omitempty"`
+	ExecutionProfile   string            `json:"execution_profile,omitempty"`
+	WorkerClass        string            `json:"worker_class,omitempty"`
 	Children           []WorkflowSummary `gorm:"-" json:"children,omitempty"`
 }
 

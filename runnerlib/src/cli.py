@@ -1114,6 +1114,7 @@ def eval_cmd(
                     selected_no_match = wf
                 continue
             selected_wf = wf
+            selected_jobs = None
             decision = None
             dependency_paths = {repo_relative(wf.source_file)}
             dependency_paths.update(repo_relative(job.source_file) for job in wf.jobs if job.source_file)
@@ -1140,14 +1141,48 @@ def eval_cmd(
                     diff_base,
                     source_ref,
                 )
-                if decision.allowed:
-                    if candidate is None or not candidate.explicit_id:
+                if decision.allowed and (candidate is None or not candidate.explicit_id):
+                    decision.allowed = False
+                    decision.ci_origin = "base"
+                    decision.reasons = ["head workflow is missing an explicit trusted policy id"]
+                trusted_defs = {}
+                if decision.allowed and decision.base_nodes:
+                    # Policy-controlled trusted nodes resolve from the exact
+                    # base workflow specification. Head content cannot supply
+                    # or replace them; a grant that the base workflow cannot
+                    # satisfy fails closed and head CI is refused entirely.
+                    base_jobs = [] if is_new_workflow else list(wf.jobs)
+                    missing_node = None
+                    for node_name in sorted(decision.base_nodes):
+                        base_def = next((job for job in base_jobs if job.name == node_name), None)
+                        if base_def is None:
+                            missing_node = node_name
+                            break
+                        trusted_defs[node_name] = base_def
+                    if missing_node is not None:
                         decision.allowed = False
                         decision.ci_origin = "base"
-                        decision.reasons = ["head workflow is missing an explicit trusted policy id"]
-                    else:
-                        selected_wf = candidate
-                        authorized_paths.update(changed_ci)
+                        decision.reasons = [
+                            f"policy base node '{missing_node}' is missing from the trusted base workflow"
+                        ]
+                if decision.allowed:
+                    selected_wf = candidate
+                    if trusted_defs:
+                        # The base specification wins for trusted nodes: a
+                        # same-named head node is replaced, and a trusted
+                        # node that head removed still runs.
+                        selected_jobs = []
+                        substituted = set()
+                        for job_def in candidate.jobs:
+                            if job_def.name in trusted_defs:
+                                selected_jobs.append(trusted_defs[job_def.name])
+                                substituted.add(job_def.name)
+                            else:
+                                selected_jobs.append(job_def)
+                        for node_name in sorted(trusted_defs):
+                            if node_name not in substituted:
+                                selected_jobs.append(trusted_defs[node_name])
+                    authorized_paths.update(changed_ci)
                 if not decision.allowed:
                     for path_value in affected_paths:
                         violations.append({
@@ -1162,12 +1197,25 @@ def eval_cmd(
             if is_new_workflow and (decision is None or not decision.allowed):
                 continue
 
-            job_triggers = generate_triggers(selected_wf.jobs, ctx)
+            job_triggers = generate_triggers(
+                selected_jobs if selected_jobs is not None else selected_wf.jobs, ctx
+            )
             if decision and decision.allowed:
                 for trigger in job_triggers:
-                    trigger.ci_source_url = head_url or source_url
-                    trigger.ci_source_ref = source_ref
-                    trigger.worker_class = decision.worker_class
+                    node_authority = decision.base_nodes.get(trigger.job_name) if decision.base_nodes else None
+                    if node_authority:
+                        # Trusted base node: executable CI content and node
+                        # authority stay pinned to the exact base CI SHA.
+                        # Tested source stays at the pull-request head SHA.
+                        trigger.ci_source_url = ci_source_url
+                        trigger.ci_source_ref = ci_source_ref
+                        trigger.worker_class = node_authority["worker_class"]
+                        trigger.execution_profile = node_authority["profile"]
+                        trigger.ci_origin = "base"
+                    else:
+                        trigger.ci_source_url = head_url or source_url
+                        trigger.ci_source_ref = source_ref
+                        trigger.worker_class = decision.worker_class
             batches.append({
                 "id": wf.workflow_id,
                 "name": wf.name,

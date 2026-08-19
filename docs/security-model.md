@@ -177,6 +177,18 @@ origin. An approval binds to the project, pull request, head repository, head
 SHA, base SHA, policy revision, workflow, and profile. A new head SHA makes the
 approval invalid.
 
+A head-CI policy rule can name trusted base nodes with `base_nodes`. Only
+coordinator policy can give a node more authority than the workflow head-CI
+default. The trusted node and all of its executable CI content resolve from
+the exact base CI SHA, while the tested source stays at the head SHA. A
+pull-request head cannot add, change, rename, or replace a trusted node. The
+coordinator verifies each node authority claim against its policy copy,
+stores the effective authority on the node, and fails closed on any mismatch.
+A retry replays the recorded node authority. An untrusted node never receives
+a resolved secret from a trusted node; only normal workflow variables cross
+the boundary. Treat a signed URL in a workflow variable as a temporary
+credential and do not write it to a log or summary.
+
 A GitHub approval comment names the workflow, profile, and coordinator-policy
 revision. The coordinator gets the pull request SHAs from GitHub. It records
 only provider-verified or identity-linked approver subjects. The admission

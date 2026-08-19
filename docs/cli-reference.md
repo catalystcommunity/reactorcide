@@ -167,7 +167,9 @@ reactorcide workers tokens create <pool-id> \
 Filter `workflows list` with `--status`, `--project-id`, and `--user-id`.
 
 `workflows retry` keeps the original instance for history. `workflows
-retry-unsuccessful` changes the original instance.
+retry-unsuccessful` changes the original instance. Both retry forms replay
+the recorded workflow and node authority, including the exact CI SHA and
+execution profile. A retry does not evaluate a newer coordinator policy.
 
 ```bash
 reactorcide workflows list --status failed
