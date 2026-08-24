@@ -374,6 +374,11 @@ uiAuth:
   localRpName: ""
   # rp only: host:port TCP CSIL-RPC address of your LinkKeys RP server, and
   # comma-separated pinned SPKI SHA-256 fingerprints for its TLS certificate.
+  # The coordinator dials this address itself, so it must be reachable from
+  # the coordinator pod. A public hostname often resolves to a load-balancer
+  # IP that pods cannot reach; prefer the in-cluster service address, e.g.
+  # "linkkeys-example.linkkeys-example.svc.cluster.local:4987". The
+  # fingerprint pin, not the hostname, is the trust anchor.
   linkkeysRpAddr: ""
   linkkeysRpFingerprints: ""
   # rp only, first boot: the RP server's API key. Presented once — the

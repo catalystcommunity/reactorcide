@@ -110,6 +110,82 @@ func TestLoginSubmit_BeginsLoginAndRedirects(t *testing.T) {
 	if loc := rec.Header().Get("Location"); loc != "https://idp.example/authorize?attempt=attempt-1" {
 		t.Errorf("Location = %q, want the coordinator's redirect_url", loc)
 	}
+
+	// The attempt token must be stashed before leaving for the IDP: the
+	// callback redirect carries only encrypted_token, so this cookie is the
+	// only way complete-login ever sees the other half.
+	attemptCookie := findCookie(rec, loginAttemptCookieName)
+	if attemptCookie == nil {
+		t.Fatalf("expected a %s cookie to be set", loginAttemptCookieName)
+	}
+	if attemptCookie.Value != "attempt-1" {
+		t.Errorf("cookie value = %q, want the attempt token", attemptCookie.Value)
+	}
+	if !attemptCookie.HttpOnly {
+		t.Errorf("attempt cookie must be HttpOnly")
+	}
+	if !attemptCookie.Secure {
+		t.Errorf("attempt cookie must be Secure by default")
+	}
+	if attemptCookie.SameSite != http.SameSiteLaxMode {
+		t.Errorf("attempt cookie SameSite = %v, want Lax so it survives the IDP redirect", attemptCookie.SameSite)
+	}
+}
+
+// findCookie returns the named cookie from a recorded response, or nil.
+func findCookie(rec *httptest.ResponseRecorder, name string) *http.Cookie {
+	var found *http.Cookie
+	for _, c := range rec.Result().Cookies() {
+		if c.Name == name {
+			found = c
+		}
+	}
+	return found
+}
+
+// TestAuthCallback_UsesAttemptCookie exercises the shape a real IDP callback
+// has: only encrypted_token in the query, the attempt token in the cookie
+// LoginSubmit set. Before the cookie existed this request could not complete
+// a login at all.
+func TestAuthCallback_UsesAttemptCookie(t *testing.T) {
+	fc := newFakeCoordinator()
+	withAuthMode(fc, "rp", false, true)
+	withNoopCapabilities(fc)
+	expires := time.Now().Add(30 * 24 * time.Hour).UTC().Format(time.RFC3339)
+	fc.handle("ReactorcideAuth", "complete-login", func(payload []byte, _ string, _ bool) ([]byte, string, bool) {
+		req, err := csilapi.DecodeCompleteLoginRequest(payload)
+		if err != nil {
+			return fakeServiceErrorPayload("bad_request", err.Error()), "ServiceError", true
+		}
+		if req.AttemptToken != "attempt-1" || req.EncryptedToken != "enc-abc" {
+			return fakeServiceErrorPayload("bad_request", "unexpected attempt/encrypted token"), "ServiceError", true
+		}
+		return csilapi.EncodeCompleteLoginResponse(csilapi.CompleteLoginResponse{
+			SessionToken: "session-token-xyz",
+			ExpiresAt:    expires,
+		}), "CompleteLoginResponse", false
+	})
+	h := newTestWebHandler(t, fc)
+
+	req := httptest.NewRequest(http.MethodGet, "/app/auth/callback?encrypted_token=enc-abc", nil)
+	req.AddCookie(&http.Cookie{Name: loginAttemptCookieName, Value: "attempt-1"})
+	rec := httptest.NewRecorder()
+	h.withSession(h.AuthCallback)(rec, req)
+
+	if rec.Code != http.StatusFound {
+		t.Fatalf("status = %d, want 302; body=%s", rec.Code, rec.Body.String())
+	}
+	if loc := rec.Header().Get("Location"); loc != "/app/" {
+		t.Errorf("Location = %q, want /app/", loc)
+	}
+	if c := findCookie(rec, sessionCookieName); c == nil || c.Value != "session-token-xyz" {
+		t.Fatalf("expected the session cookie to be set from the completed login")
+	}
+	// Single-use server-side, so the browser must not keep it.
+	spent := findCookie(rec, loginAttemptCookieName)
+	if spent == nil || spent.MaxAge >= 0 {
+		t.Errorf("expected the spent attempt cookie to be cleared, got %+v", spent)
+	}
 }
 
 func TestLoginSubmit_EmptyIdentityRejectedServerSide(t *testing.T) {

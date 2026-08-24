@@ -16,6 +16,22 @@ import (
 // JS cannot read it, and is scoped to the whole app (path=/).
 const sessionCookieName = "rc_session"
 
+// loginAttemptCookieName is the browser-facing cookie that carries the
+// opaque attempt token begin-login issued, from POST /app/login to GET
+// /app/auth/callback. The coordinator deliberately keeps the pending LinkKeys
+// login server-side (in auth_login_attempts, keyed by the SHA-256 hash of
+// this token) and hands the browser only this single-use token, so the
+// callback needs some way to present it again. The IDP's callback redirect
+// carries the encrypted token and nothing else, which is why this cannot ride
+// in the URL.
+const loginAttemptCookieName = "rc_login_attempt"
+
+// loginAttemptCookieTTL is how long the attempt cookie survives. It matches
+// the coordinator's own LoginAttemptExpiry (auth.LoginAttemptExpiry, 5
+// minutes): the attempt is dead server-side after that, so keeping the
+// cookie longer only leaves a useless value in the browser.
+const loginAttemptCookieTTL = 5 * time.Minute
+
 // authConfigTTL bounds how often GET /app/login and every page render
 // re-fetch get-auth-config from the coordinator. Auth mode is operator
 // config, not per-user state, so a short cache is safe and cuts an RPC off
@@ -253,6 +269,51 @@ func (h *WebHandler) setSessionCookie(w http.ResponseWriter, token string, expir
 func (h *WebHandler) clearSessionCookie(w http.ResponseWriter) {
 	http.SetCookie(w, &http.Cookie{
 		Name:     sessionCookieName,
+		Value:    "",
+		Path:     "/",
+		MaxAge:   -1,
+		Expires:  time.Unix(0, 0),
+		HttpOnly: true,
+		Secure:   !config.WebCookieInsecure,
+		SameSite: http.SameSiteLaxMode,
+	})
+}
+
+// loginAttemptToken reads the attempt token the login form stashed. Never
+// log this value: it is the redeemable half of a pending login.
+func (h *WebHandler) loginAttemptToken(r *http.Request) string {
+	c, err := r.Cookie(loginAttemptCookieName)
+	if err != nil {
+		return ""
+	}
+	return c.Value
+}
+
+// setLoginAttemptCookie stashes the attempt token for the callback. Same
+// flags as the session cookie — HttpOnly, Secure unless dev, SameSite=Lax so
+// it survives the IDP's top-level redirect back to /app/auth/callback — but
+// short-lived, since it is redeemable exactly once and only for the next few
+// minutes.
+func (h *WebHandler) setLoginAttemptCookie(w http.ResponseWriter, token string) {
+	http.SetCookie(w, &http.Cookie{
+		Name:     loginAttemptCookieName,
+		Value:    token,
+		Path:     "/",
+		Expires:  time.Now().Add(loginAttemptCookieTTL),
+		MaxAge:   int(loginAttemptCookieTTL.Seconds()),
+		HttpOnly: true,
+		Secure:   !config.WebCookieInsecure,
+		SameSite: http.SameSiteLaxMode,
+	})
+}
+
+// clearLoginAttemptCookie removes the attempt cookie. Called on every
+// callback outcome, success or failure: the token is single-use server-side
+// either way, so leaving it set would only feed a confusing second attempt.
+// Flags must match setLoginAttemptCookie's or some browsers won't delete it.
+func (h *WebHandler) clearLoginAttemptCookie(w http.ResponseWriter) {
+	http.SetCookie(w, &http.Cookie{
+		Name:     loginAttemptCookieName,
 		Value:    "",
 		Path:     "/",
 		MaxAge:   -1,

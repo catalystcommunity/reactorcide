@@ -40,7 +40,7 @@ job YAML, env files checked into a repo, or command output.
 |----------|----------------|---------|
 | `REACTORCIDE_UI_AUTH_MODE` | always (has a default) | `none` (default) \| `local-rp` \| `rp`. Misconfiguration fails fast at startup (`ValidateUIAuthMode`) rather than silently falling back to `none`. |
 | `REACTORCIDE_LOCAL_RP_NAME` | `mode=local-rp` | Display name (audit/UI metadata only, never an identity input) used when generating this coordinator's local-RP identity bundle. |
-| `REACTORCIDE_LINKKEYS_RP_ADDR` | `mode=rp` | `host:port` TCP CSIL-RPC address of your LinkKeys RP server. |
+| `REACTORCIDE_LINKKEYS_RP_ADDR` | `mode=rp` | `host:port` TCP CSIL-RPC address of your LinkKeys RP server. **The coordinator dials this address itself, so it must be reachable from the coordinator, not only from a browser.** In Kubernetes, a public hostname often resolves to a load-balancer IP that pods cannot reach; use the in-cluster service address (for example `linkkeys.linkkeys-ns.svc.cluster.local:4987`) instead. The TLS pin below, not the hostname, is the trust anchor, so an internal address is just as safe. |
 | `REACTORCIDE_LINKKEYS_RP_FINGERPRINTS` | `mode=rp` | Comma-separated pinned SPKI SHA-256 fingerprints for the RP server's TLS certificate (mirrors the RP's own `_linkkeys` DNS TXT record). |
 | `REACTORCIDE_LINKKEYS_RP_API_KEY` | `mode=rp`, first boot only | The RP server's API key. Presented once on first boot; the coordinator persists it encrypted (Fernet, under the active master key) in `auth_credentials` (`name='rp_api_key'`) and you can drop the env var afterward — same env-or-DB convention as `REACTORCIDE_MASTER_KEYS`. |
 | `REACTORCIDE_FIRST_ADMIN` | optional | An identity selector (`handle@domain` or `uuid@domain`, or a bare `domain` to match any handle at it) that is granted global admin the *first time* it completes a real login, as long as no global admin exists yet. Safe to leave set permanently — it's a no-op once an admin exists. |
@@ -53,7 +53,29 @@ job YAML, env files checked into a repo, or command output.
 For both LinkKeys modes, Reactorcide reads the `_linkkeys_apis` TXT record for
 the identity domain. It uses the published `https` endpoint for the browser
 login route. If the record does not contain an HTTPS endpoint, Reactorcide uses
-the identity domain.
+the identity domain. The LinkKeys local-RP SDK does this discovery, so both
+modes resolve the endpoint the same way.
+
+If the selector holds a handle (`alice@example.com`), Reactorcide adds
+`username=alice` to the browser login URL. The LinkKeys IDP uses this value
+only to fill the Username field. It is not identity or authentication
+evidence, and the user must still authenticate. This parameter replaced the
+older `user_hint`.
+
+## Login troubleshooting
+
+The coordinator logs the cause of every login failure it cannot classify, at
+`error` level, with the message `login failed while beginning login` or
+`login failed while completing login`. The browser only ever sees a generic
+message, so read the coordinator log first. Common causes:
+
+- `dial RP: ... connection refused` — `REACTORCIDE_LINKKEYS_RP_ADDR` is not
+  reachable from the coordinator. See the note on that variable above.
+- `certificate fingerprint ... does not match any pinned RP fingerprint` —
+  `REACTORCIDE_LINKKEYS_RP_FINGERPRINTS` is stale. Re-read the RP domain's
+  `_linkkeys` TXT record.
+- `Rp/sign-request: ...` with an auth status — the stored RP API key is wrong
+  or lacks the `api_access` relation on the RP server.
 
 ## First admin and bootstrap-admin
 
