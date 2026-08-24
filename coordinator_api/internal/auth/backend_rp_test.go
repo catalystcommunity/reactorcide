@@ -90,8 +90,11 @@ func TestRPBackendBeginLogin(t *testing.T) {
 	if !strings.Contains(redirectURL, "signed_request=signed-request-blob") {
 		t.Fatalf("redirectURL = %q, missing signed_request", redirectURL)
 	}
-	if !strings.Contains(redirectURL, "user_hint=alice") {
-		t.Fatalf("redirectURL = %q, missing user_hint for the handle in the selector", redirectURL)
+	if !strings.Contains(redirectURL, "username=alice") {
+		t.Fatalf("redirectURL = %q, missing username prefill for the handle in the selector", redirectURL)
+	}
+	if strings.Contains(redirectURL, "user_hint=") {
+		t.Fatalf("redirectURL = %q, still sends the retired user_hint parameter", redirectURL)
 	}
 
 	var pending rpPending
@@ -134,8 +137,8 @@ func TestRPBackendBeginLoginUsesDiscoveredHTTPSBase(t *testing.T) {
 	if u.Query().Get("signed_request") != "signed-request-blob" {
 		t.Fatalf("redirectURL = %q, missing signed_request", redirectURL)
 	}
-	if u.Query().Get("user_hint") != "alice" {
-		t.Fatalf("redirectURL = %q, missing user_hint", redirectURL)
+	if u.Query().Get("username") != "alice" {
+		t.Fatalf("redirectURL = %q, missing username prefill", redirectURL)
 	}
 }
 

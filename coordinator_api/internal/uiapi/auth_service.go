@@ -13,6 +13,8 @@ import (
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store/models"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/uiapi/csilapi"
+
+	"github.com/sirupsen/logrus"
 )
 
 // AuthService implements csilapi.ReactorcideAuth against Deps' auth.LoginService
@@ -74,7 +76,15 @@ func callbackURL() (string, error) {
 // caller-facing ServiceErr, per the stable code vocabulary
 // (unauthorized/forbidden/not_found/invalid_argument/login_disabled/
 // conflict/internal).
-func mapLoginErr(err error) error {
+//
+// stage names the login step for the caller-facing message and the log line
+// ("beginning" or "completing"). Every unclassified error is logged before it
+// is flattened to "internal": the caller-facing message is deliberately
+// opaque, so without this the real cause (an unreachable LinkKeys RP, a
+// rejected API key, a TLS pin mismatch) leaves no trace at all. LinkKeys
+// backend errors carry addresses and step names, never tokens, assertions, or
+// key material.
+func mapLoginErr(stage string, err error) error {
 	switch {
 	case err == nil:
 		return nil
@@ -91,7 +101,9 @@ func mapLoginErr(err error) error {
 		// (replayed), or expired-and-swept attempt token.
 		return NewServiceError("invalid_argument", "attempt_token is invalid or has already been used")
 	default:
-		return NewServiceError("internal", "an internal error occurred completing login")
+		logrus.WithError(err).WithField("auth_mode", string(auth.CurrentMode())).
+			Errorf("login failed while %s login", stage)
+		return NewServiceError("internal", "an internal error occurred "+stage+" login")
 	}
 }
 
@@ -117,7 +129,7 @@ func (s *AuthService) BeginLogin(ctx context.Context, req csilapi.BeginLoginRequ
 
 	started, err := s.deps.LoginService.StartLogin(ctx, hint, cb)
 	if err != nil {
-		return csilapi.BeginLoginResponse{}, mapLoginErr(err)
+		return csilapi.BeginLoginResponse{}, mapLoginErr("beginning", err)
 	}
 	return csilapi.BeginLoginResponse{
 		RedirectUrl:  started.RedirectURL,
@@ -192,7 +204,7 @@ func (s *AuthService) CompleteLogin(ctx context.Context, req csilapi.CompleteLog
 
 	token, user, err := s.deps.LoginService.FinishLogin(ctx, req.AttemptToken, arrivedURLFor(req.EncryptedToken))
 	if err != nil {
-		return csilapi.CompleteLoginResponse{}, mapLoginErr(err)
+		return csilapi.CompleteLoginResponse{}, mapLoginErr("completing", err)
 	}
 
 	ai, err := s.buildAuthenticatedIdentity(ctx, user)

@@ -75,8 +75,8 @@ func (b *RPBackend) Mode() Mode { return ModeRP }
 
 // BeginLogin is steps 1-2 of example.md's flow: Rp/sign-request, then build
 // the browser-redirect URL to the user's chosen LinkKeys domain
-// (identitySelector's domain; its handle, if present, rides along as an
-// optional user_hint).
+// (identitySelector's domain; its handle, if present, rides along as the
+// optional `username` prefill).
 func (b *RPBackend) BeginLogin(ctx context.Context, identitySelector, callbackURL string) (string, []byte, error) {
 	handle, domain, err := ParseSelector(identitySelector)
 	if err != nil {
@@ -100,19 +100,34 @@ func (b *RPBackend) BeginLogin(ctx context.Context, identitySelector, callbackUR
 		return "", nil, fmt.Errorf("auth: decode sign-request response: %w", err)
 	}
 
-	u := resolveBrowserEndpoint(b.dns, domain, "/auth/authorize")
-	q := u.Query()
-	q.Set("signed_request", signed.SignedRequest)
-	if handle != "" {
-		q.Set("user_hint", handle)
+	// The browser URL is built by the SDK's shared discovery helpers
+	// (localrp.BrowserRouteAuthorize), the same ones BeginLocalLogin uses, so
+	// the `_linkkeys_apis` https= endpoint is honored in exactly one place.
+	redirect, err := resolveBrowserEndpoint(b.dns, domain, localrp.BrowserRouteAuthorize, signed.SignedRequest)
+	if err != nil {
+		return "", nil, fmt.Errorf("auth: build rp browser endpoint: %w", err)
 	}
-	u.RawQuery = q.Encode()
+	// The handle prefills the IDP's Username field. LinkKeys renamed this
+	// parameter from `user_hint` to `username` (sdks/local-rp/go/example.md);
+	// `user_hint` remains a compatibility alias, but new integrations must
+	// send `username`. The IDP never treats it as identity or authentication
+	// evidence — the user still authenticates.
+	if handle != "" {
+		u, err := url.Parse(redirect)
+		if err != nil {
+			return "", nil, fmt.Errorf("auth: parse rp browser endpoint: %w", err)
+		}
+		q := u.Query()
+		q.Set("username", handle)
+		u.RawQuery = q.Encode()
+		redirect = u.String()
+	}
 
 	pendingBlob, err := json.Marshal(rpPending{Nonce: nonce, UserDomain: domain})
 	if err != nil {
 		return "", nil, fmt.Errorf("auth: marshal pending rp login: %w", err)
 	}
-	return u.String(), pendingBlob, nil
+	return redirect, pendingBlob, nil
 }
 
 // CompleteLogin is steps 3-6 of example.md's flow: Rp/decrypt-token,
@@ -230,17 +245,18 @@ func resolveAPIBase(dns localrp.DnsResolver, domain string) string {
 	return fallback
 }
 
-// resolveBrowserEndpoint returns a browser-facing LinkKeys URL. It uses the
-// HTTPS endpoint from _linkkeys_apis and keeps an optional path prefix. If
-// discovery is not available, it uses the identity domain.
-func resolveBrowserEndpoint(dns localrp.DnsResolver, domain, endpointPath string) *url.URL {
-	base, err := url.Parse(resolveAPIBase(dns, domain))
-	if err != nil || base.Scheme != "https" || base.Host == "" {
-		base = &url.URL{Scheme: "https", Host: domain}
+// resolveBrowserEndpoint returns a browser-facing LinkKeys URL for route
+// (localrp.BrowserRouteAuthorize or localrp.BrowserRouteLocalRp) carrying
+// signedRequest. Discovery and URL assembly are the SDK's
+// ResolveBrowserBase/BuildBrowserEndpoint — the identity domain is a trust
+// domain, not necessarily the host serving the login routes, so the
+// `_linkkeys_apis` https= endpoint wins. A domain that serves its browser
+// routes at the apex, and so publishes no usable record, falls back to
+// `https://<domain>`.
+func resolveBrowserEndpoint(dns localrp.DnsResolver, domain, route, signedRequest string) (string, error) {
+	base, err := localrp.ResolveBrowserBase(dns, domain)
+	if err != nil {
+		base = "https://" + domain
 	}
-	base.Path = strings.TrimRight(base.Path, "/") + "/" + strings.TrimLeft(endpointPath, "/")
-	base.RawPath = ""
-	base.RawQuery = ""
-	base.Fragment = ""
-	return base
+	return localrp.BuildBrowserEndpoint(base, route, signedRequest)
 }

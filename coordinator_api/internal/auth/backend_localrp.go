@@ -88,34 +88,36 @@ func (b *LocalRPBackend) Fingerprint() string {
 
 func (b *LocalRPBackend) Mode() Mode { return ModeLocalRP }
 
+// BeginLogin hands the raw "[handle@]domain" selector to the SDK: since
+// linkkeys 0.14.5 BeginLocalLogin parses a full login itself, adds the
+// `username` prefill for the handle, and resolves the browser endpoint from
+// `_linkkeys_apis` through the injected DNS resolver. Its RedirectURL is
+// used as returned — rewriting it here is what the SDK now explicitly warns
+// against, and PendingLogin.UserDomain still carries the identity domain
+// verification binds to.
 func (b *LocalRPBackend) BeginLogin(_ context.Context, identitySelector, callbackURL string) (string, []byte, error) {
-	_, domain, err := ParseSelector(identitySelector)
-	if err != nil {
+	// Parsed only to reject a malformed selector with this package's own
+	// error before the SDK sees it; the SDK gets the full selector.
+	if _, _, err := ParseSelector(identitySelector); err != nil {
 		return "", nil, err
 	}
 
 	redirect, pending, err := localrp.BeginLocalLogin(localrp.BeginLocalLoginConfig{
 		KeyMaterial: b.identity,
 		CallbackURL: callbackURL,
-		UserDomain:  domain,
+		UserDomain:  identitySelector,
+		DNS:         b.dns,
 		Now:         b.now(),
 	})
 	if err != nil {
 		return "", nil, fmt.Errorf("auth: local-rp begin login: %w", err)
 	}
 
-	sdkRedirect, err := url.Parse(redirect.RedirectURL)
-	if err != nil {
-		return "", nil, fmt.Errorf("auth: parse local-rp redirect: %w", err)
-	}
-	discoveredRedirect := resolveBrowserEndpoint(b.dns, domain, "/auth/local-rp")
-	discoveredRedirect.RawQuery = sdkRedirect.RawQuery
-
 	blob, err := json.Marshal(pending)
 	if err != nil {
 		return "", nil, fmt.Errorf("auth: marshal pending local-rp login: %w", err)
 	}
-	return discoveredRedirect.String(), blob, nil
+	return redirect.RedirectURL, blob, nil
 }
 
 func (b *LocalRPBackend) CompleteLogin(_ context.Context, pendingBlob []byte, arrivedURL string) (*VerifiedIdentity, error) {

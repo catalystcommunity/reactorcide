@@ -64,6 +64,8 @@ github.com/catalystcommunity/csilgen/transports/go v0.0.0-20260713013116-a661c87
 github.com/catalystcommunity/csilgen/transports/go v0.0.0-20260713013116-a661c8727022/go.mod h1:7CdM6CycSuRgLJ1Qt8A10qJZlIIlvSZG8PfkU8s0fCM=
 github.com/catalystcommunity/linkkeys/sdks/local-rp/go v0.0.0-20260717001953-57cebd1f53ff h1:v71ChY7dW4+YgOE243VNC2ZG4rdbWxTyvrkDFqFPvx4=
 github.com/catalystcommunity/linkkeys/sdks/local-rp/go v0.0.0-20260717001953-57cebd1f53ff/go.mod h1:wsRI1EVGMxokp2eWK/3BhRVEKvzETh3qPTUT5hoUCFM=
+github.com/catalystcommunity/linkkeys/sdks/local-rp/go v0.0.0-20260824061508-709f5386bed3 h1:bNK7zTaq9LeG5pbPgf2s5L27rpN0wpvL82HlgMh4dAw=
+github.com/catalystcommunity/linkkeys/sdks/local-rp/go v0.0.0-20260824061508-709f5386bed3/go.mod h1:wsRI1EVGMxokp2eWK/3BhRVEKvzETh3qPTUT5hoUCFM=
 github.com/cenkalti/backoff/v4 v4.3.0 h1:MyRJ/UdXutAwSAT+s3wNd7MfTIcy71VQueUuFK343L8=
 github.com/cenkalti/backoff/v4 v4.3.0/go.mod h1:Y3VNntkOUPxTVeUxJ/G5vcM//AlwfmyYozVcomhLiZE=
 github.com/cenkalti/backoff/v5 v5.0.3 h1:ZN+IMa753KfX5hd8vVaMixjnqRZ3y8CuJKRKj1xcsSM=

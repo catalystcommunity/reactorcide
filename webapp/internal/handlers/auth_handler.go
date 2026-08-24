@@ -75,6 +75,16 @@ func (h *WebHandler) LoginSubmit(w http.ResponseWriter, r *http.Request) {
 		h.redirectLoginError(w, r, "login did not return a redirect", identity)
 		return
 	}
+	if resp.AttemptToken == "" {
+		h.redirectLoginError(w, r, "login did not return an attempt token", identity)
+		return
+	}
+
+	// Stash the attempt token before leaving for the IDP. The IDP appends
+	// only `encrypted_token` to the callback URL, so this cookie is the sole
+	// way GET /app/auth/callback can present the other half that
+	// complete-login requires. Never logged, never rendered.
+	h.setLoginAttemptCookie(w, resp.AttemptToken)
 
 	http.Redirect(w, r, resp.RedirectUrl, http.StatusFound)
 }
@@ -89,15 +99,24 @@ func (h *WebHandler) redirectLoginError(w http.ResponseWriter, r *http.Request, 
 }
 
 // AuthCallback handles GET /app/auth/callback: the browser lands here after
-// completing the external login flow, carrying the attempt token (issued by
-// begin-login) and the encrypted token the IDP/local-rp minted. Trading
-// those for a session token is Auth.CompleteLogin's job; success sets the
-// session cookie and sends the browser on to /app/. Neither the attempt nor
-// the encrypted token, nor the resulting session token, is ever logged.
+// completing the external login flow, carrying the encrypted token the
+// IDP/local-rp minted. The matching attempt token comes from the cookie
+// LoginSubmit set — the IDP appends only `encrypted_token`, so it is never in
+// the URL (an `attempt` query parameter is still honored for a caller that
+// supplies one deliberately, e.g. a test harness). Trading the pair for a
+// session token is Auth.CompleteLogin's job; success sets the session cookie
+// and sends the browser on to /app/. Neither the attempt nor the encrypted
+// token, nor the resulting session token, is ever logged.
 func (h *WebHandler) AuthCallback(w http.ResponseWriter, r *http.Request) {
-	attempt := r.URL.Query().Get("attempt")
+	attempt := h.loginAttemptToken(r)
+	if attempt == "" {
+		attempt = r.URL.Query().Get("attempt")
+	}
 	encryptedToken := r.URL.Query().Get("encrypted_token")
 	if attempt == "" || encryptedToken == "" {
+		// The attempt is single-use and may simply have expired mid-login;
+		// clear it so a retry starts from a clean slate.
+		h.clearLoginAttemptCookie(w)
 		h.renderError(w, r, http.StatusBadRequest, "Missing login callback parameters", nil)
 		return
 	}
@@ -110,6 +129,9 @@ func (h *WebHandler) AuthCallback(w http.ResponseWriter, r *http.Request) {
 		AttemptToken:   attempt,
 		EncryptedToken: encryptedToken,
 	})
+	// The coordinator consumes the attempt whatever the outcome, so the
+	// cookie is spent either way.
+	h.clearLoginAttemptCookie(w)
 	if err != nil {
 		var svcErr *uiclient.ServiceCallError
 		if errors.As(err, &svcErr) {
