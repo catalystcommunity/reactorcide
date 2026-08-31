@@ -89,6 +89,20 @@ One event can produce more than one workflow. Use the `workflows` array. Each en
 The parent evaluation job spawns each workflow. It is not a workflow member in
 the execution model. Each workflow gets its own name and status check.
 
+The coordinator processes each workflow in a separate database transaction.
+It publishes the workflow status after that transaction commits. A refusal in
+one workflow does not stop the other workflows in the request.
+
+If an execution profile cannot admit a workflow node, the coordinator stores
+the workflow and the failed node. It sets the disposition to `not_admitted`.
+It also stores the reason in the workflow, the workflow event, the audit log,
+the VCS status description, and the pull-request report. No job row exists for
+the refused node because the node did not start.
+
+The trigger API returns HTTP 201 when it records all workflow outcomes. Its
+response includes `accepted`, `not_admitted`, or `submission_failed` for each
+workflow. A malformed request or a storage failure remains an API error.
+
 The `workflows` array takes precedence. When it is absent, the legacy `workflow` plus `jobs` form collapses to one workflow. When the workflow name is empty, the coordinator uses the default name `Reactorcide Jobs, repo: <name>`.
 
 The coordinator cannot read `job_file` references from an API submission, because it has no workspace. runnerlib resolves each `job_file` before it submits, so the `workflows` form always contains complete job specs.

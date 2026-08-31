@@ -10,15 +10,22 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/authz"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/checkauth"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store/models"
+	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/tokencaps"
 )
 
 func (h *ProjectHandler) ListGlobalSecretGrants(w http.ResponseWriter, r *http.Request) {
 	user := checkauth.GetUserFromContext(r.Context())
-	if user == nil {
+	principal := checkauth.GetPrincipalFromContext(r.Context())
+	if user == nil && principal == nil {
 		h.respondWithError(w, http.StatusUnauthorized, store.ErrUnauthorized)
+		return
+	}
+	if principal != nil && (principal.CredentialType == "job_token" || !principal.HasCapability(tokencaps.SecretsManage)) {
+		h.respondWithError(w, http.StatusForbidden, store.ErrForbidden)
 		return
 	}
 	grantStore, ok := h.store.(projectSecretGrantStore)
@@ -26,16 +33,100 @@ func (h *ProjectHandler) ListGlobalSecretGrants(w http.ResponseWriter, r *http.R
 		h.respondWithError(w, http.StatusNotImplemented, errors.New("secret grant store not available"))
 		return
 	}
-	ownerID, projectID, ok := h.secretGrantScopeFromQuery(w, r, user.UserID)
-	if !ok {
+	projectRef := strings.TrimSpace(r.URL.Query().Get("project_id"))
+	if projectRef == "" {
+		projectRef = strings.TrimSpace(r.URL.Query().Get("project"))
+	}
+	scope := strings.TrimSpace(r.URL.Query().Get("scope"))
+	if (scope != "" && scope != "global") || (projectRef != "" && scope != "") {
+		h.respondWithError(w, http.StatusBadRequest, store.ErrInvalidInput)
 		return
 	}
-	grants, err := grantStore.ListSecretGrants(r.Context(), ownerID, projectID)
+	var grants []models.SecretGrant
+	var err error
+	if projectRef != "" {
+		project, resolveErr := h.resolveSecretGrantProject(r, projectRef)
+		if resolveErr != nil {
+			h.respondWithError(w, http.StatusNotFound, resolveErr)
+			return
+		}
+		allowed, authErr := h.canManageSecretGrantScope(r, project.OwnershipOrgID(), &project.ProjectID)
+		if authErr != nil {
+			h.respondWithError(w, http.StatusInternalServerError, authErr)
+			return
+		}
+		if !allowed {
+			h.respondWithError(w, http.StatusForbidden, store.ErrForbidden)
+			return
+		}
+		grants, err = grantStore.ListSecretGrants(r.Context(), project.OwnershipOrgID(), &project.ProjectID)
+	} else {
+		grants, err = grantStore.ListAllSecretGrants(r.Context())
+		if err == nil {
+			visible := make([]models.SecretGrant, 0, len(grants))
+			accessByScope := map[string]bool{}
+			for i := range grants {
+				if scope == "global" && grants[i].ProjectID != nil {
+					continue
+				}
+				scopeKey := grants[i].UserID + "\x00"
+				if grants[i].ProjectID != nil {
+					scopeKey += *grants[i].ProjectID
+				}
+				allowed, checked := accessByScope[scopeKey]
+				if !checked {
+					var authErr error
+					allowed, authErr = h.canManageSecretGrantScope(r, grants[i].UserID, grants[i].ProjectID)
+					if authErr != nil {
+						h.respondWithError(w, http.StatusInternalServerError, authErr)
+						return
+					}
+					accessByScope[scopeKey] = allowed
+				}
+				if allowed {
+					visible = append(visible, grants[i])
+				}
+			}
+			grants = visible
+		}
+	}
 	if err != nil {
 		h.respondWithError(w, http.StatusInternalServerError, err)
 		return
 	}
 	h.respondWithJSON(w, http.StatusOK, ListSecretGrantsResponse{Grants: grants, Total: len(grants)})
+}
+
+func (h *ProjectHandler) canManageSecretGrantScope(r *http.Request, orgID string, projectID *string) (bool, error) {
+	principal := checkauth.GetPrincipalFromContext(r.Context())
+	user := checkauth.GetUserFromContext(r.Context())
+	if principal != nil {
+		if !principal.HasCapability(tokencaps.SecretsManage) || !principal.HasOrganization(orgID) {
+			return false, nil
+		}
+		if principal.CredentialType == "instance_token" || principal.CredentialType == "service_token" {
+			return true, nil
+		}
+		if principal.CredentialType != "user_token" {
+			return false, nil
+		}
+	}
+	if user == nil || !user.IsActive() {
+		return false, nil
+	}
+	if user.UserID == orgID {
+		return true, nil
+	}
+	roleStore, ok := h.store.(authz.RoleStore)
+	if !ok {
+		return false, nil
+	}
+	identity := authz.IdentityFromPrincipal(principal, user)
+	resolver := authz.NewResolver(roleStore)
+	if projectID != nil && *projectID != "" {
+		return resolver.IsProjectOwner(r.Context(), identity, *projectID)
+	}
+	return resolver.IsOrgAdmin(r.Context(), identity, orgID)
 }
 
 func (h *ProjectHandler) CreateGlobalSecretGrant(w http.ResponseWriter, r *http.Request) {

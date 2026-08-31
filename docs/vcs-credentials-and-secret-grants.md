@@ -69,8 +69,14 @@ List grants:
 
 ```bash
 curl -H "Authorization: Bearer <token>" \
-  https://reactorcide.example.com/api/v1/projects/<project_id>/secret-grants
+  https://reactorcide.example.com/api/v1/secret-grants
 ```
+
+This request returns all grant metadata that the token can manage. The
+coordinator filters the result by token organization, token capabilities, and
+current user roles. It never returns secret values. Add `?project=<project>`
+to select one project. Add `?scope=global` to list only organization-wide
+grants. The project route remains available for one project.
 
 Create a grant:
 
@@ -115,7 +121,11 @@ The CLI uses `REACTORCIDE_API_URL` and `REACTORCIDE_API_TOKEN`, or matching
 `--api-url` and `--token` flags.
 
 ```bash
+reactorcide secret-grants list
+
 reactorcide secret-grants list --project github.com/example/repo
+
+reactorcide secret-grants list --global-only
 
 reactorcide secret-grants set deploy-production \
   --project github.com/example/repo \

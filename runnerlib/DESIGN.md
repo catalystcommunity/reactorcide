@@ -160,6 +160,12 @@ Eval matches:
 - Changed path include and exclude globs
 
 It resolves reusable `job_file` entries and creates complete job triggers.
+For a pull request that changes CI files, eval returns inactive base and head
+workflow candidates. The evaluation job receives a coordinator policy snapshot,
+revision, and active approval snapshot. Triggered jobs inherit these values.
+Runnerlib treats them as opaque values and does not evaluate them. The
+coordinator loads current approvals, selects the allowed candidate, and applies
+the execution authority.
 See [Job Definition Reference](../docs/job-definitions.md).
 
 ## Workflow Triggers

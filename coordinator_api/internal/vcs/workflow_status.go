@@ -119,10 +119,34 @@ func (u *JobStatusUpdater) getWorkflowStatusDescription(wf *models.WorkflowInsta
 	case "skipped":
 		return "Workflow skipped"
 	case "failed":
+		if reason := workflowAdmissionReason(nodes); reason != "" {
+			return truncateWorkflowDescription("Workflow not admitted: "+reason, 140)
+		}
 		return "Workflow failed"
 	default:
 		return fmt.Sprintf("Workflow running (%d/%d done)", done, total)
 	}
+}
+
+func workflowAdmissionReason(nodes []models.WorkflowNode) string {
+	const prefix = "workflow not admitted:"
+	for i := range nodes {
+		reason := strings.TrimSpace(nodes[i].DecisionReason)
+		if strings.HasPrefix(strings.ToLower(reason), prefix) {
+			return strings.TrimSpace(reason[len(prefix):])
+		}
+	}
+	return ""
+}
+
+func truncateWorkflowDescription(value string, limit int) string {
+	if limit <= 0 || len(value) <= limit {
+		return value
+	}
+	if limit <= 3 {
+		return value[:limit]
+	}
+	return value[:limit-3] + "..."
 }
 
 func (u *JobStatusUpdater) renderWorkflowCommentBody(wf *models.WorkflowInstance, nodes []models.WorkflowNode, marker string) string {

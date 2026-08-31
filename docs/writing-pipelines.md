@@ -37,7 +37,14 @@ The workflow model is described in [Workflow Design](./workflow-design.md). It k
 
 ### Job Triggering
 
-Jobs trigger follow-up jobs by writing to `/job/triggers.json`. The worker reads this file after job completion, records workflow nodes, submits ready jobs to the queue, and leaves blocked jobs waiting in the coordinator without occupying worker slots.
+Jobs trigger follow-up jobs through runnerlib. Runnerlib writes
+`/job/triggers.json` first. In a coordinator job, runnerlib then sends the
+trigger data to the authenticated coordinator API. The coordinator records
+workflow nodes, submits ready jobs, and leaves blocked jobs waiting without
+occupying worker slots. If the authenticated API request fails, runnerlib
+fails the job. A remote worker does not use the local file as a fallback.
+
+`run-local` can use the trigger file without API credentials.
 
 Source code is available at `REACTORCIDE_CODE_DIR` (default `/job/src`). The job working directory is `REACTORCIDE_JOB_DIR` (defaulting to the code directory). Prefer these environment variables in reusable pipeline scripts so jobs continue to work when a definition customizes `code_dir` or `job_dir`.
 

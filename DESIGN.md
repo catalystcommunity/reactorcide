@@ -384,28 +384,37 @@ can submit triggers only for its parent job.
 
 ## CI Admission and Reports
 
-For a pull request, the evaluator prepares exact base and head views. It loads
-policy only from coordinator state. The `isolated` checkout mode uses separate
-Git clones. The `shared` mode uses one non-shallow, blob-filtered Git object store
-and stages only `.reactorcide` files for the two CI views. Both modes keep the
+For a pull request, the evaluator prepares exact base and head views. The
+coordinator gives it an exact policy snapshot, revision, and active approval
+snapshot. Triggered jobs inherit these values. Runnerlib does not evaluate
+this policy. The `isolated` checkout mode uses separate Git clones.
+The `shared` mode uses one non-shallow, blob-filtered Git object store and
+stages only `.reactorcide` files for the two CI views. Both modes keep the
 trust boundary.
 
 Each workflow has a stable security ID. The admission decision records the CI
 origin, exact SHA, profile, worker class, policy revision, rule, and approval.
 
-A head-CI policy rule can also name trusted base nodes. Those nodes resolve
-their workflow specification and executable CI content from the exact base CI
-SHA and run with a policy-selected trusted profile, while the other nodes run
-head CI with the untrusted profile. The coordinator verifies each node
-authority claim against its policy copy, stores the effective authority on
-the workflow node, and fails closed on any mismatch. Retries replay the
-recorded node authority. See [Organizations and Coordinator CI
-Policy](./docs/organizations-and-ci-policy.md).
+A head-CI policy rule can also name trusted base nodes. After evaluation, the
+coordinator verifies the policy snapshot and loads active approvals. It selects
+the allowed workflow candidate and applies node authority. Trusted base nodes
+use their workflow specification and executable CI content from the exact base
+CI SHA. Other nodes use head CI with the untrusted profile. The coordinator
+stores the effective authority on each workflow node and fails closed on any
+mismatch. Retries replay the recorded node authority. See
+[Organizations and Coordinator CI Policy](./docs/organizations-and-ci-policy.md).
 
 The coordinator stores VCS report entries as structured database records. One
 reconciler owns the shared pull-request comment. It uses a database advisory
 lock and revision counters. A VCS comment error does not change a workflow
 result.
+
+The coordinator processes each workflow from an evaluation result as an
+independent transaction. It publishes the workflow VCS status after the
+transaction commits. A profile refusal creates a durable `not_admitted`
+workflow outcome with the exact reason. It does not stop sibling workflows.
+The CI policy status can remain successful because policy selection and
+workflow admission are different decisions.
 
 ## Source of Truth
 

@@ -86,11 +86,6 @@ class JobTrigger:
     resources: Optional[Dict[str, Any]] = None
     disable_run_local: Optional[bool] = None
     run_local: Optional[Dict[str, Any]] = None
-    # Per-node authority override for policy-controlled trusted base nodes in
-    # a head-CI workflow. Only eval sets these from a coordinator policy
-    # decision; the coordinator verifies them against the same policy.
-    ci_origin: Optional[str] = None
-    execution_profile: Optional[str] = None
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary, excluding None values."""
@@ -314,9 +309,8 @@ class WorkflowContext:
     def flush_workflow_batches(
         self,
         batches: List[Dict[str, Any]],
-        policy_violations: Optional[List[Dict[str, Any]]] = None,
         changed_ci_paths: Optional[List[str]] = None,
-        actor_subjects: Optional[List[str]] = None,
+        policy_candidates: Optional[Dict[str, List[Dict[str, Any]]]] = None,
     ) -> None:
         """Write and submit triggers grouped into named workflows.
 
@@ -330,45 +324,49 @@ class WorkflowContext:
         API when credentials are available; on success the file is removed so
         the worker does not also create jobs from it.
         """
-        policy_violations = policy_violations or []
-        if not batches and not policy_violations:
+        if not batches and not policy_candidates:
             return
 
         self.triggers_file.parent.mkdir(parents=True, exist_ok=True)
 
-        workflows_payload = []
-        for batch in batches:
+        def workflow_payload(batch: Dict[str, Any], include_authority: bool = True) -> Dict[str, Any]:
             item = {
                 "id": batch.get("id", ""),
                 "name": batch["name"],
                 "source_file": batch.get("source_file", ""),
-                "ci_origin": batch.get("ci_origin", "base"),
-                "ci_repository": batch.get("ci_repository", ""),
-                "ci_sha": batch.get("ci_sha", ""),
-                "execution_profile": batch.get("execution_profile", "standard"),
-                "worker_class": batch.get("worker_class", "default"),
-                "policy_revision": batch.get("policy_revision", ""),
-                "policy_rule_id": batch.get("policy_rule_id", ""),
-                "approval_id": batch.get("approval_id"),
                 "dependency_paths": batch.get("dependency_paths", []),
+                "event_matched": batch.get("event_matched", False),
+                "explicit_id": batch.get("explicit_id", False),
                 "vars": batch.get("vars", {}),
                 "jobs": [t.to_dict() for t in batch["jobs"]],
             }
-            workflows_payload.append(item)
+            if include_authority:
+                item.update({
+                    "ci_origin": batch.get("ci_origin", "base"),
+                    "ci_repository": batch.get("ci_repository", ""),
+                    "ci_sha": batch.get("ci_sha", ""),
+                    "execution_profile": batch.get("execution_profile", "standard"),
+                    "worker_class": batch.get("worker_class", "default"),
+                    "policy_revision": batch.get("policy_revision", ""),
+                    "policy_rule_id": batch.get("policy_rule_id", ""),
+                    "approval_id": batch.get("approval_id"),
+                })
+            return item
+
+        workflows_payload = [workflow_payload(batch) for batch in batches]
 
         trigger_data = {
             "type": "trigger_job",
             "operation_id": self._trigger_operation_id,
             "trigger_type": "runnerlib_eval",
             "workflows": workflows_payload,
-            "policy_violations": policy_violations + [
-                violation
-                for batch in batches
-                for violation in batch.get("policy_violations", [])
-            ],
             "changed_ci_paths": changed_ci_paths or [],
-            "actor_subjects": actor_subjects or [],
         }
+        if policy_candidates:
+            trigger_data["policy_candidates"] = {
+                origin: [workflow_payload(batch, include_authority=False) for batch in candidates]
+                for origin, candidates in policy_candidates.items()
+            }
 
         with open(self.triggers_file, 'w') as f:
             json.dump(trigger_data, f, indent=2)
@@ -391,9 +389,9 @@ class WorkflowContext:
         """
         Submit triggers to the coordinator API.
 
-        Returns True on success, False on failure or if credentials are not available.
-        On failure, logs a warning but does not raise — the triggers.json file
-        remains as a fallback for the worker's file-based processing.
+        Return True after an API submission. Return False when API credentials
+        are not available. Raise RuntimeError when an authenticated submission
+        fails. A remote worker does not process the local triggers.json file.
         """
         if not self._coordinator_url or not self._api_token or not self._job_id:
             # Only warn when running inside the coordinator (job_id is set)
@@ -414,15 +412,12 @@ class WorkflowContext:
         url = f"{self._coordinator_url}/api/v1/jobs/{self._job_id}/triggers"
         scheme = urllib.parse.urlparse(url).scheme.lower()
         if scheme not in {"http", "https"}:
-            print("⚠ Refusing to send API credentials on an unsupported transport.", file=sys.stderr)
-            return False
+            raise RuntimeError("Trigger API URL uses an unsupported transport")
         if scheme != "https" and not self._allow_insecure_transport:
-            print(
-                "⚠ Refusing to send API credentials without TLS. "
-                "Use --allow-insecure-transport only on an isolated development network.",
-                file=sys.stderr,
+            raise RuntimeError(
+                "Trigger API submission requires TLS. Use --allow-insecure-transport "
+                "only on an isolated development network."
             )
-            return False
         body = json.dumps(trigger_data).encode("utf-8")
 
         req = urllib.request.Request(
@@ -440,19 +435,15 @@ class WorkflowContext:
             with opener.open(req, timeout=30) as resp:
                 if resp.status == 201:
                     return True
-                print(
-                    f"⚠ Trigger API returned status {resp.status}, "
-                    f"falling back to file-based triggers",
-                    file=sys.stderr,
+                raise RuntimeError(
+                    f"Trigger API returned status {resp.status}"
                 )
-                return False
-        except (urllib.error.URLError, urllib.error.HTTPError, OSError) as exc:
-            print(
-                f"⚠ Failed to submit triggers via API: {exc} — "
-                f"falling back to file-based triggers",
-                file=sys.stderr,
-            )
-            return False
+        except urllib.error.HTTPError as exc:
+            raise RuntimeError(
+                f"Trigger API returned status {exc.code}"
+            ) from exc
+        except (urllib.error.URLError, OSError) as exc:
+            raise RuntimeError("Trigger API submission failed") from exc
 
     def is_job_running(self, job_name: str) -> bool:
         """

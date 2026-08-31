@@ -61,6 +61,37 @@ head_ci:
 	}
 }
 
+func TestApprovalSubjectsAreScopedToProfile(t *testing.T) {
+	input := `version: 1
+defaults: {ci_source: base, profile: standard}
+head_ci:
+- id: approved
+  approval: {any: [project_owner]}
+  workflows: [backend-tests]
+  paths: [.reactorcide/jobs/backend/**]
+  use: {ci_source: head, profile: pr-untrusted, workers: default}`
+	policy, err := ParseDocument([]byte(input))
+	if err != nil {
+		t.Fatal(err)
+	}
+	facts := Facts{
+		WorkflowID: "backend-tests", ChangedCIPaths: []string{".reactorcide/jobs/backend/test.yaml"},
+		HeadRepositoryRelation: "same",
+		ApprovalSubjectsByProfile: map[string]map[string]bool{
+			"standard": {"project_owner": true},
+		},
+	}
+	decision, err := Decide(policy, facts)
+	if err != nil || decision.Allowed {
+		t.Fatalf("wrong-profile approval was accepted: decision=%+v err=%v", decision, err)
+	}
+	facts.ApprovalSubjectsByProfile["pr-untrusted"] = map[string]bool{"project_owner": true}
+	decision, err = Decide(policy, facts)
+	if err != nil || !decision.Allowed || len(decision.ApprovalSubjects) != 1 || decision.ApprovalSubjects[0] != "project_owner" {
+		t.Fatalf("profile-scoped approval was rejected: decision=%+v err=%v", decision, err)
+	}
+}
+
 func TestRejectsUnsafeAndUnknownInput(t *testing.T) {
 	cases := []string{
 		`version: 1
@@ -202,7 +233,7 @@ func TestNodeAuthorityRevisionMatchesRunnerlibCanonicalForm(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// Golden value computed with runnerlib src.ci_policy.load_coordinator_policy.
+	// Keep the revision stable for stored policies and SHA-bound approvals.
 	const expected = "d8cdd4911ee9b9e51e369d447deeffaa0f0c80cfe744a43e01ebe556cbc1a04b"
 	if policy.Revision != expected {
 		t.Fatalf("revision=%s want %s", policy.Revision, expected)

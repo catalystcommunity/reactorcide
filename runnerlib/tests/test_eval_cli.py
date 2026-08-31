@@ -875,39 +875,7 @@ class TestEvalEndToEnd:
 
 
 class TestSharedCIPathAttribution:
-    """Changed .reactorcide/ paths no workflow claims (plugins, scripts,
-    tests) attribute to every candidate workflow, so a head-CI rule whose
-    paths cover them can authorize the change."""
-
-    POLICY_BROAD = """
-version: 1
-defaults:
-  ci_source: base
-  profile: standard
-head_ci:
-  - id: ci-dev
-    actors:
-      any:
-        - vcs_user:github/todpunk
-    workflows:
-      - app-pr
-    paths:
-      - ".reactorcide/**"
-    events:
-      - pull_request_updated
-    base_branches:
-      - main
-    head_repository: same
-    use:
-      ci_source: head
-      profile: pr-untrusted
-      workers: default
-"""
-
-    POLICY_NARROW = POLICY_BROAD.replace(
-        '- ".reactorcide/**"',
-        '- ".reactorcide/workflows/**"\n      - ".reactorcide/jobs/**"',
-    )
+    """Runnerlib reports shared CI changes without making a policy decision."""
 
     def _make_checkout(self, root: Path) -> None:
         workflows = root / ".reactorcide" / "workflows"
@@ -928,7 +896,7 @@ head_ci:
         })
         (plugins / "plugin_ci.py").write_text("VALUE = 1\n")
 
-    def _run_eval(self, policy: str):
+    def _run_eval(self, changed_file=".reactorcide/plugins/plugin_ci.py"):
         with tempfile.TemporaryDirectory() as tmpdir:
             base = Path(tmpdir)
             ci_dir = base / "ci"
@@ -946,11 +914,11 @@ head_ci:
                 "--event-type", "pull_request_updated",
                 "--pr-number", "5",
                 "--base-ref", "main",
-                "--changed-file", ".reactorcide/plugins/plugin_ci.py",
+                "--changed-file", changed_file,
                 "--triggers-file", str(triggers_file),
             ], env={
-                "REACTORCIDE_CI_POLICY": policy,
-                "REACTORCIDE_ACTOR_SUBJECTS": '["vcs_user:github/todpunk"]',
+                "REACTORCIDE_CI_POLICY": "opaque coordinator snapshot",
+                "REACTORCIDE_CI_POLICY_REVISION": "opaque-revision",
                 "REACTORCIDE_SHA": "headsha",
                 "REACTORCIDE_DIFF_BASE": "basesha",
             })
@@ -958,53 +926,26 @@ head_ci:
             with open(triggers_file) as f:
                 return json.load(f)
 
-    def test_plugin_change_qualifies_for_authorized_head_ci(self):
-        data = self._run_eval(self.POLICY_BROAD)
-        assert data["policy_violations"] == []
-        workflow = data["workflows"][0]
-        assert workflow["ci_origin"] == "head"
-        assert workflow["policy_rule_id"] == "ci-dev"
-        assert ".reactorcide/plugins/plugin_ci.py" in workflow["dependency_paths"]
+    def test_plugin_change_emits_inactive_candidates_without_reading_policy(self):
+        data = self._run_eval()
+        assert "policy_violations" not in data
+        assert data["changed_ci_paths"] == [".reactorcide/plugins/plugin_ci.py"]
+        assert len(data["policy_candidates"]["base"]) == 1
+        assert len(data["policy_candidates"]["head"]) == 1
+        for candidate in data["policy_candidates"]["base"] + data["policy_candidates"]["head"]:
+            assert candidate["id"] == "app-pr"
+            assert candidate["explicit_id"] is True
+            assert "ci_origin" not in candidate
+            assert "execution_profile" not in candidate
+            assert "policy_rule_id" not in candidate
 
-    def test_plugin_change_denied_by_narrow_rule_paths(self):
-        data = self._run_eval(self.POLICY_NARROW)
-        assert data["workflows"][0]["ci_origin"] == "base"
-        violation_paths = {item["path"] for item in data["policy_violations"]}
-        assert ".reactorcide/plugins/plugin_ci.py" in violation_paths
+    def test_legacy_policy_filename_is_an_ordinary_changed_ci_path(self):
+        data = self._run_eval(".reactorcide/policy.yaml")
+        assert data["changed_ci_paths"] == [".reactorcide/policy.yaml"]
 
 
 class TestEvalMixedTrustNodeAuthority:
-    """Policy-controlled trusted base nodes inside a head-CI workflow.
-
-    The coordinator policy names asset-prepare and asset-seal as trusted base
-    nodes. The eval must resolve those nodes from the exact base workflow
-    specification while the other nodes run head CI with the untrusted
-    profile."""
-
-    POLICY = """
-version: 1
-defaults:
-  ci_source: base
-  profile: standard
-head_ci:
-  - id: csilgen
-    actors:
-      any: [repository_write]
-    workflows: [csilgen-pr]
-    paths: ['.reactorcide/**']
-    events: [pull_request_updated]
-    base_branches: [main]
-    head_repository: any
-    use:
-      ci_source: head
-      profile: pr-untrusted
-      workers: default
-      base_nodes:
-        - nodes: [asset-prepare, asset-seal]
-          ci_source: base
-          profile: standard
-          workers: default
-"""
+    """Runnerlib reports both definitions for coordinator node selection."""
 
     BASE_URL = "https://example.test/upstream.git"
     HEAD_URL = "https://example.test/fork.git"
@@ -1100,8 +1041,6 @@ head_ci:
                 "--changed-file", ".reactorcide/workflows/pr.yaml",
                 "--triggers-file", str(triggers_file),
             ], env={
-                "REACTORCIDE_CI_POLICY": self.POLICY,
-                "REACTORCIDE_ACTOR_SUBJECTS": '["repository_write"]',
                 "REACTORCIDE_SHA": "headsha",
                 "REACTORCIDE_DIFF_BASE": "basesha",
                 "REACTORCIDE_CI_SOURCE_URL": self.BASE_URL,
@@ -1115,80 +1054,53 @@ head_ci:
     def _jobs_by_name(self, workflow):
         return {job["job_name"]: job for job in workflow["jobs"]}
 
-    def test_mixed_trust_workflow_pins_node_authority(self):
+    def test_mixed_trust_workflow_emits_inert_candidates(self):
         data = self._run_eval(self._make_base_checkout, self._make_head_checkout)
-        assert data["policy_violations"] == []
-        workflow = data["workflows"][0]
-        assert workflow["ci_origin"] == "head"
-        assert workflow["execution_profile"] == "pr-untrusted"
-        jobs = self._jobs_by_name(workflow)
-
-        prepare = jobs["asset-prepare"]
-        assert prepare["ci_origin"] == "base"
-        assert prepare["execution_profile"] == "standard"
-        assert prepare["worker_class"] == "default"
-        assert prepare["ci_source_url"] == self.BASE_URL
-        assert prepare["ci_source_ref"] == "basesha"
-
-        build = jobs["build"]
-        assert "ci_origin" not in build
-        assert "execution_profile" not in build
-        assert build["ci_source_url"] == self.HEAD_URL
-        assert build["ci_source_ref"] == "headsha"
-        assert "make build-head" in build["job_command"]
-
-        seal = jobs["asset-seal"]
-        assert seal["ci_origin"] == "base"
-        assert seal["execution_profile"] == "standard"
-        assert seal["ci_source_ref"] == "basesha"
-        assert seal["depends_on"] == ["build"]
-        assert "seal-base" in seal["job_command"]
+        assert "policy_violations" not in data
+        base = data["policy_candidates"]["base"][0]
+        head = data["policy_candidates"]["head"][0]
+        assert base["id"] == head["id"] == "csilgen-pr"
+        assert base["event_matched"] is True
+        assert head["event_matched"] is True
+        for candidate in (base, head):
+            assert "ci_origin" not in candidate
+            assert "execution_profile" not in candidate
+            for job in candidate["jobs"]:
+                assert "ci_origin" not in job
+                assert "execution_profile" not in job
 
     def test_head_changes_to_trusted_node_have_no_effect(self):
         data = self._run_eval(self._make_base_checkout, self._make_head_checkout)
-        prepare = self._jobs_by_name(data["workflows"][0])["asset-prepare"]
-        # The base specification wins for every field the head tampered with.
-        assert prepare["container_image"] == "alpine:latest"
-        assert "prepare-base" in prepare["job_command"]
-        assert "exfiltrate" not in prepare["job_command"]
-        assert prepare.get("depends_on", []) == []
-        assert "for_each" not in prepare
-        assert "capabilities" not in prepare
-        assert prepare["env"].get("EVIL") is None
-        assert prepare.get("condition", "all_success") == "all_success"
+        base_prepare = self._jobs_by_name(data["policy_candidates"]["base"][0])["asset-prepare"]
+        head_prepare = self._jobs_by_name(data["policy_candidates"]["head"][0])["asset-prepare"]
+        assert "prepare-base" in base_prepare["job_command"]
+        assert "exfiltrate" in head_prepare["job_command"]
+        assert "ci_origin" not in base_prepare
+        assert "ci_origin" not in head_prepare
 
     def test_head_removing_trusted_node_still_runs_it(self):
         data = self._run_eval(
             self._make_base_checkout,
             lambda root: self._make_head_checkout(root, drop_seal=True),
         )
-        workflow = data["workflows"][0]
-        assert workflow["ci_origin"] == "head"
-        jobs = self._jobs_by_name(workflow)
-        assert "asset-seal" in jobs
-        assert jobs["asset-seal"]["ci_origin"] == "base"
-        assert "seal-base" in jobs["asset-seal"]["job_command"]
+        base_jobs = self._jobs_by_name(data["policy_candidates"]["base"][0])
+        head_jobs = self._jobs_by_name(data["policy_candidates"]["head"][0])
+        assert "asset-seal" in base_jobs
+        assert "asset-seal" not in head_jobs
 
     def test_missing_base_node_fails_closed_to_base_ci(self):
         data = self._run_eval(
             lambda root: self._make_base_checkout(root, include_seal=False),
             self._make_head_checkout,
         )
-        workflow = data["workflows"][0]
-        assert workflow["ci_origin"] == "base"
-        for job in workflow["jobs"]:
-            assert "ci_origin" not in job
-            assert "execution_profile" not in job
-        violation_ids = {item.get("workflow_id") for item in data["policy_violations"]}
-        assert "csilgen-pr" in violation_ids
+        base_jobs = self._jobs_by_name(data["policy_candidates"]["base"][0])
+        assert "asset-seal" not in base_jobs
+        assert "asset-seal" in self._jobs_by_name(data["policy_candidates"]["head"][0])
 
     def test_reserved_authority_field_in_head_yaml_fails_closed(self):
         data = self._run_eval(
             self._make_base_checkout,
             lambda root: self._make_head_checkout(root, tamper=False, reserved_field=True),
         )
-        workflow = data["workflows"][0]
-        # The head workflow file is rejected, so no head candidate exists and
-        # the decision fails closed to trusted base CI.
-        assert workflow["ci_origin"] == "base"
-        assert data["policy_violations"] != []
+        assert data["workflows"][0]["ci_origin"] == "base"
+        assert data["policy_candidates"]["head"] == []

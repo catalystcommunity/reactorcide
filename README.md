@@ -78,6 +78,7 @@ You need Python 3.13 or later, `uv`, Go, and a container runtime.
 ./tools setup
 ./tools dev
 ./tools test
+./tools deadcode
 ```
 
 The development stack uses local development credentials. Do not use it for

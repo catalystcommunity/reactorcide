@@ -10,6 +10,8 @@ from pathlib import Path
 from unittest.mock import patch, MagicMock, call
 from uuid import UUID
 
+import pytest
+
 from src.workflow import (
     JobTrigger,
     WorkflowContext,
@@ -119,19 +121,27 @@ class TestWorkflowContext:
             [{
                 "id": "backend-tests", "name": "Backend Tests",
                 "source_file": ".reactorcide/workflows/backend.yaml",
-                "ci_origin": "head", "ci_repository": "https://example.invalid/fork/repo.git",
-                "ci_sha": "head-sha", "execution_profile": "pr-untrusted",
-                "worker_class": "default", "policy_revision": "policy-revision",
-                "policy_rule_id": "backend-team", "approval_id": None,
+                "ci_origin": "base", "ci_repository": "https://example.invalid/upstream/repo.git",
+                "ci_sha": "base-sha", "execution_profile": "standard",
+                "worker_class": "default",
                 "dependency_paths": [".reactorcide/workflows/backend.yaml"],
                 "jobs": [JobTrigger(job_name="test", job_command="true")],
             }],
-            policy_violations=[{
-                "path": ".reactorcide/jobs/unrelated.yaml", "workflow_id": "unrelated",
-                "actor": "alice", "rule": "", "base_sha": "base-sha", "head_sha": "head-sha",
-            }],
             changed_ci_paths=[".reactorcide/workflows/backend.yaml", ".reactorcide/jobs/unrelated.yaml"],
-            actor_subjects=["repository_write"],
+            policy_candidates={
+                "base": [{
+                    "id": "backend-tests", "name": "Backend Tests", "explicit_id": True,
+                    "event_matched": True, "source_file": ".reactorcide/workflows/backend.yaml",
+                    "dependency_paths": [".reactorcide/workflows/backend.yaml"],
+                    "jobs": [JobTrigger(job_name="test", job_command="true")],
+                }],
+                "head": [{
+                    "id": "backend-tests", "name": "Backend Tests", "explicit_id": True,
+                    "event_matched": True, "source_file": ".reactorcide/workflows/backend.yaml",
+                    "dependency_paths": [".reactorcide/workflows/backend.yaml"],
+                    "jobs": [JobTrigger(job_name="test", job_command="true")],
+                }],
+            },
         )
         expected = Path(__file__).parents[2] / "testdata" / "runnerlib_eval_trigger.json"
         assert json.loads(triggers_file.read_text()) == json.loads(expected.read_text())
@@ -557,9 +567,11 @@ class TestAPITriggerSubmission:
             ctx.trigger_job("test")
 
             with patch("urllib.request.build_opener") as build_opener:
-                ctx.flush_triggers()
+                with pytest.raises(RuntimeError, match="requires TLS"):
+                    ctx.flush_triggers()
 
             build_opener.assert_not_called()
+            assert triggers_file.exists()
 
     """Tests for API-based trigger submission."""
 
@@ -606,7 +618,7 @@ class TestAPITriggerSubmission:
                 assert not triggers_file.exists()
 
     def test_submit_triggers_via_api_failure_leaves_file(self):
-        """Test that API failure leaves triggers.json as fallback."""
+        """Test that an authenticated API failure fails and keeps the file."""
         with tempfile.TemporaryDirectory() as tmpdir:
             triggers_file = Path(tmpdir) / "triggers.json"
 
@@ -615,15 +627,17 @@ class TestAPITriggerSubmission:
                 "REACTORCIDE_API_TOKEN": "test-token",
                 "REACTORCIDE_JOB_ID": "job-123",
             }):
-                ctx = WorkflowContext(triggers_file=str(triggers_file))
+                ctx = WorkflowContext(triggers_file=str(triggers_file), allow_insecure_transport=True)
                 ctx.trigger_job("test")
 
-                # Mock the API call to fail
                 import urllib.error
-                with patch('urllib.request.urlopen', side_effect=urllib.error.URLError("connection refused")):
-                    ctx.flush_triggers()
+                mock_opener = MagicMock()
+                mock_opener.open.side_effect = urllib.error.URLError("connection refused")
+                with patch('urllib.request.build_opener', return_value=mock_opener):
+                    with pytest.raises(RuntimeError, match="submission failed"):
+                        ctx.flush_triggers()
 
-                # triggers.json should still exist as fallback
+                # Keep the file for diagnosis. The remote worker does not use it.
                 assert triggers_file.exists()
 
                 with open(triggers_file) as f:
@@ -658,7 +672,7 @@ class TestAPITriggerSubmission:
                     assert triggers_file.exists()
 
     def test_api_http_error_leaves_file(self):
-        """Test that HTTP errors leave triggers.json as fallback."""
+        """Test that an HTTP error fails and keeps triggers.json."""
         with tempfile.TemporaryDirectory() as tmpdir:
             triggers_file = Path(tmpdir) / "triggers.json"
 
@@ -667,18 +681,21 @@ class TestAPITriggerSubmission:
                 "REACTORCIDE_API_TOKEN": "test-token",
                 "REACTORCIDE_JOB_ID": "job-123",
             }):
-                ctx = WorkflowContext(triggers_file=str(triggers_file))
+                ctx = WorkflowContext(triggers_file=str(triggers_file), allow_insecure_transport=True)
                 ctx.trigger_job("test")
 
                 import urllib.error
-                with patch('urllib.request.urlopen', side_effect=urllib.error.HTTPError(
+                mock_opener = MagicMock()
+                mock_opener.open.side_effect = urllib.error.HTTPError(
                     url="http://coordinator:6080/api/v1/jobs/job-123/triggers",
                     code=500,
                     msg="Internal Server Error",
                     hdrs={},
                     fp=None,
-                )):
-                    ctx.flush_triggers()
+                )
+                with patch('urllib.request.build_opener', return_value=mock_opener):
+                    with pytest.raises(RuntimeError, match="status 500"):
+                        ctx.flush_triggers()
 
                 # triggers.json should still exist
                 assert triggers_file.exists()

@@ -39,22 +39,14 @@ func (ps PostgresDbStore) GetCIApprovalByID(ctx context.Context, approvalID stri
 	return &approval, nil
 }
 
-func (ps PostgresDbStore) FindValidCIApprovals(ctx context.Context, projectID string, prNumber int, headSHA, baseSHA, revision, workflow string, now time.Time) ([]models.CIApproval, error) {
-	var approvals []models.CIApproval
-	err := ps.getDB(ctx).Where(`project_id = ? AND pr_number = ? AND head_sha = ? AND base_sha = ?
-		AND policy_revision = ? AND workflow_scope IN (?, '*') AND invalidated_at IS NULL
-		AND (expires_at IS NULL OR expires_at > ?)`, projectID, prNumber, headSHA, baseSHA, revision, workflow, now).Find(&approvals).Error
-	return approvals, err
-}
-
 // ListActiveCIApprovalsForTarget returns candidate approvals for evaluation.
-// The evaluator binds each candidate to the trusted policy revision, workflow,
-// and execution profile before it can grant authority.
-func (ps PostgresDbStore) ListActiveCIApprovalsForTarget(ctx context.Context, projectID string, prNumber int, headSHA, baseSHA string, now time.Time) ([]models.CIApproval, error) {
+// The coordinator binds each candidate to the trusted policy revision,
+// workflow, and execution profile before it can grant authority.
+func (ps PostgresDbStore) ListActiveCIApprovalsForTarget(ctx context.Context, projectID string, prNumber int, headRepository, headSHA, baseSHA string, now time.Time) ([]models.CIApproval, error) {
 	var approvals []models.CIApproval
-	err := ps.getDB(ctx).Where(`project_id = ? AND pr_number = ? AND head_sha = ? AND base_sha = ?
+	err := ps.getDB(ctx).Where(`project_id = ? AND pr_number = ? AND head_repository = ? AND head_sha = ? AND base_sha = ?
 		AND invalidated_at IS NULL AND (expires_at IS NULL OR expires_at > ?)`,
-		projectID, prNumber, headSHA, baseSHA, now).Find(&approvals).Error
+		projectID, prNumber, headRepository, headSHA, baseSHA, now).Find(&approvals).Error
 	return approvals, err
 }
 

@@ -267,17 +267,19 @@ func validateRepoPath(value string) error {
 }
 
 type Facts struct {
-	WorkflowID             string
-	ChangedCIPaths         []string
-	Event                  string
-	BaseBranch             string
-	HeadRepositoryRelation string
-	ActorSubjects          map[string]bool
-	ApprovalSubjects       map[string]bool
+	WorkflowID                string
+	ChangedCIPaths            []string
+	Event                     string
+	BaseBranch                string
+	HeadRepositoryRelation    string
+	ActorSubjects             map[string]bool
+	ApprovalSubjects          map[string]bool
+	ApprovalSubjectsByProfile map[string]map[string]bool
 }
 
 type Decision struct {
 	CISource, Profile, WorkerClass, RuleID string
+	ApprovalSubjects                       []string
 	// BaseNodes maps a node name to the trusted base authority that the
 	// matched rule grants it. Empty for workflows without node authority.
 	BaseNodes map[string]NodeDecision
@@ -330,10 +332,14 @@ func Decide(policy *Policy, facts Facts) (Decision, error) {
 		if len(rule.Actors.Any) > 0 && !anyFact(rule.Actors.Any, facts.ActorSubjects) {
 			continue
 		}
-		if len(rule.Approval.Any) > 0 && !anyFact(rule.Approval.Any, facts.ApprovalSubjects) {
+		approvalFacts := facts.ApprovalSubjects
+		if facts.ApprovalSubjectsByProfile != nil {
+			approvalFacts = facts.ApprovalSubjectsByProfile[rule.Use.Profile]
+		}
+		if len(rule.Approval.Any) > 0 && !anyFact(rule.Approval.Any, approvalFacts) {
 			continue
 		}
-		matches = append(matches, Decision{CISource: "head", Profile: rule.Use.Profile, WorkerClass: rule.Use.Workers, RuleID: rule.ID, BaseNodes: BaseNodeDecisions(rule.Use.BaseNodes), Allowed: true})
+		matches = append(matches, Decision{CISource: "head", Profile: rule.Use.Profile, WorkerClass: rule.Use.Workers, RuleID: rule.ID, ApprovalSubjects: append([]string(nil), rule.Approval.Any...), BaseNodes: BaseNodeDecisions(rule.Use.BaseNodes), Allowed: true})
 	}
 	if len(matches) == 0 {
 		base.Reasons = []string{"no complete coordinator policy rule authorized head CI"}

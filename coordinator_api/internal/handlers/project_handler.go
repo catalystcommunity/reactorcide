@@ -25,6 +25,7 @@ type ProjectHandler struct {
 
 type projectSecretGrantStore interface {
 	CreateSecretGrant(ctx context.Context, grant *models.SecretGrant) error
+	ListAllSecretGrants(ctx context.Context) ([]models.SecretGrant, error)
 	ListSecretGrants(ctx context.Context, userID string, projectID *string) ([]models.SecretGrant, error)
 	GetSecretGrant(ctx context.Context, userID string, projectID *string, ref string) (*models.SecretGrant, error)
 	UpdateSecretGrant(ctx context.Context, grant *models.SecretGrant) error

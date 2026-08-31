@@ -34,6 +34,7 @@ usage() {
     echo "  test-e2e           Run end-to-end tests"
     echo "  test-e2e-quick     Run quick E2E tests"
     echo "  test-run-local-paths Run run-local path contract smoke test"
+    echo "  deadcode           Report unreachable Go functions, including test reachability"
     echo ""
     exit 0
 }
@@ -314,6 +315,13 @@ test_run_local_paths(){
     bash "${PROJECT_ROOT_DIR}/scripts/test-run-local-paths.sh" "$@"
 }
 
+deadcode(){
+    log_status "Checking for unreachable Go functions"
+    cd "${PROJECT_ROOT_DIR}/coordinator_api"
+    go run golang.org/x/tools/cmd/deadcode@v0.49.0 -test ./...
+    cd "${PROJECT_ROOT_DIR}"
+}
+
 # This should be last in the script, all other functions are named beforehand.
 case "$1" in
     "setup")
@@ -379,6 +387,10 @@ case "$1" in
     "test-run-local-paths")
         shift
         test_run_local_paths "$@"
+        ;;
+    "deadcode")
+        shift
+        deadcode "$@"
         ;;
     *)
         usage

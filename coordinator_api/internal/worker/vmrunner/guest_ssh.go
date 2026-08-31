@@ -659,27 +659,6 @@ func powerShellQuote(value string) string {
 	return "'" + strings.ReplaceAll(value, "'", "''") + "'"
 }
 
-// shellExports renders env as `export NAME='value'; ` statements, skipping
-// any name that isn't a valid shell identifier rather than risking
-// injection through a malformed key.
-func shellExports(env map[string]string) string {
-	if len(env) == 0 {
-		return ""
-	}
-	var b strings.Builder
-	for k, v := range env {
-		if !isValidEnvName(k) {
-			continue
-		}
-		b.WriteString("export ")
-		b.WriteString(k)
-		b.WriteString("=")
-		b.WriteString(shellQuote(v))
-		b.WriteString("; ")
-	}
-	return b.String()
-}
-
 func isValidEnvName(name string) bool {
 	if name == "" {
 		return false

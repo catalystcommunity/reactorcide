@@ -87,6 +87,7 @@ func TestBuildEvalJob_PROpened(t *testing.T) {
 	assert.Equal(t, "42", job.JobEnvVars["REACTORCIDE_PR_NUMBER"])
 	assert.Equal(t, "feature-branch", job.JobEnvVars["REACTORCIDE_PR_REF"])
 	assert.Equal(t, "main", job.JobEnvVars["REACTORCIDE_PR_BASE_REF"])
+	assert.Equal(t, "org/repo", job.JobEnvVars["REACTORCIDE_HEAD_REPOSITORY"])
 	assert.Equal(t, "https://github.com/org/ci-repo.git", job.JobEnvVars["REACTORCIDE_CI_SOURCE_URL"])
 	assert.Equal(t, "main", job.JobEnvVars["REACTORCIDE_CI_SOURCE_REF"])
 }
@@ -142,6 +143,7 @@ func TestBuildEvalJob_PRFromFork(t *testing.T) {
 	assert.Equal(t, "https://github.com/fork-owner/repo.git", job.JobEnvVars["REACTORCIDE_SOURCE_URL"])
 	assert.Equal(t, "https://github.com/fork-owner/repo.git", job.JobEnvVars["REACTORCIDE_HEAD_URL"])
 	assert.Equal(t, "lilac/text-overflow", job.JobEnvVars["REACTORCIDE_HEAD_REF"])
+	assert.Equal(t, "fork-owner/repo", job.JobEnvVars["REACTORCIDE_HEAD_REPOSITORY"])
 	assert.Equal(t, "https://github.com/upstream/repo.git", job.JobEnvVars["REACTORCIDE_BASE_URL"])
 	assert.Equal(t, "main", job.JobEnvVars["REACTORCIDE_BASE_REF"])
 	assert.Equal(t, "true", job.JobEnvVars["REACTORCIDE_IS_FORK_PR"])

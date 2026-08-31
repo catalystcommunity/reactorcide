@@ -7,44 +7,55 @@
       "id": "backend-tests",
       "name": "Backend Tests",
       "source_file": ".reactorcide/workflows/backend.yaml",
-      "ci_origin": "head",
-      "ci_repository": "https://example.invalid/fork/repo.git",
-      "ci_sha": "head-sha",
-      "execution_profile": "pr-untrusted",
+      "ci_origin": "base",
+      "ci_repository": "https://example.invalid/upstream/repo.git",
+      "ci_sha": "base-sha",
+      "execution_profile": "standard",
       "worker_class": "default",
-      "policy_revision": "policy-revision",
-      "policy_rule_id": "backend-team",
+      "policy_revision": "",
+      "policy_rule_id": "",
       "approval_id": null,
-      "dependency_paths": [
-        ".reactorcide/workflows/backend.yaml"
-      ],
+      "dependency_paths": [".reactorcide/workflows/backend.yaml"],
+      "event_matched": false,
+      "explicit_id": false,
       "vars": {},
       "jobs": [
-        {
-          "job_name": "test",
-          "depends_on": [],
-          "condition": "all_success",
-          "env": {},
-          "job_command": "true"
-        }
+        {"job_name": "test", "depends_on": [], "condition": "all_success", "env": {}, "job_command": "true"}
       ]
-    }
-  ],
-  "policy_violations": [
-    {
-      "path": ".reactorcide/jobs/unrelated.yaml",
-      "workflow_id": "unrelated",
-      "actor": "alice",
-      "rule": "",
-      "base_sha": "base-sha",
-      "head_sha": "head-sha"
     }
   ],
   "changed_ci_paths": [
     ".reactorcide/workflows/backend.yaml",
     ".reactorcide/jobs/unrelated.yaml"
   ],
-  "actor_subjects": [
-    "repository_write"
-  ]
+  "policy_candidates": {
+    "base": [
+      {
+        "id": "backend-tests",
+        "name": "Backend Tests",
+        "source_file": ".reactorcide/workflows/backend.yaml",
+        "dependency_paths": [".reactorcide/workflows/backend.yaml"],
+        "event_matched": true,
+        "explicit_id": true,
+        "vars": {},
+        "jobs": [
+          {"job_name": "test", "depends_on": [], "condition": "all_success", "env": {}, "job_command": "true"}
+        ]
+      }
+    ],
+    "head": [
+      {
+        "id": "backend-tests",
+        "name": "Backend Tests",
+        "source_file": ".reactorcide/workflows/backend.yaml",
+        "dependency_paths": [".reactorcide/workflows/backend.yaml"],
+        "event_matched": true,
+        "explicit_id": true,
+        "vars": {},
+        "jobs": [
+          {"job_name": "test", "depends_on": [], "condition": "all_success", "env": {}, "job_command": "true"}
+        ]
+      }
+    ]
+  }
 }

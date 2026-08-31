@@ -137,7 +137,7 @@ type webhookSecretRotationStore interface {
 type ciEvaluationFactsStore interface {
 	ResolveVCSIdentityLink(ctx context.Context, provider, subject string) (*models.VCSIdentityLink, error)
 	ListGroupsForUser(ctx context.Context, userID string) ([]models.Group, error)
-	ListActiveCIApprovalsForTarget(ctx context.Context, projectID string, prNumber int, headSHA, baseSHA string, now time.Time) ([]models.CIApproval, error)
+	ListActiveCIApprovalsForTarget(ctx context.Context, projectID string, prNumber int, headRepository, headSHA, baseSHA string, now time.Time) ([]models.CIApproval, error)
 	InvalidateCIApprovalsForNewHead(ctx context.Context, projectID string, prNumber int, headSHA string) (int64, error)
 	CreateCIApproval(context.Context, *models.CIApproval) error
 }
@@ -208,9 +208,15 @@ func (h *WebhookHandler) attachCIEvaluationFacts(ctx context.Context, job *model
 				audit.Record(ctx, h.store, project.OwnershipOrgID(), "ci_approval.invalidate", "project", project.ProjectID,
 					models.JSONB{"pr_number": pr.Number, "new_head_sha": pr.HeadSHA, "count": invalidated})
 			}
-			approvals, err := factsStore.ListActiveCIApprovalsForTarget(ctx, project.ProjectID, pr.Number, pr.HeadSHA, pr.BaseSHA, time.Now().UTC())
+			headRepository := event.Repository.FullName
+			if pr.HeadRepository != nil && pr.HeadRepository.FullName != "" {
+				headRepository = pr.HeadRepository.FullName
+			}
+			approvals, err := factsStore.ListActiveCIApprovalsForTarget(
+				ctx, project.ProjectID, pr.Number, headRepository, pr.HeadSHA, pr.BaseSHA, time.Now().UTC(),
+			)
 			if err != nil {
-				h.logger.WithError(err).Warn("Could not load CI approvals; approval checks will fail closed")
+				h.logger.WithError(err).Warn("Could not load CI approval snapshot; coordinator checks will fail closed")
 			} else if encoded, marshalErr := json.Marshal(approvals); marshalErr == nil {
 				job.JobEnvVars["REACTORCIDE_CI_APPROVALS"] = string(encoded)
 			}

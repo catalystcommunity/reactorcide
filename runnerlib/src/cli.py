@@ -1030,9 +1030,18 @@ def eval_cmd(
                    + (f", branch '{branch}'" if branch else "")
                    + (f", {len(changed)} changed file(s)" if changed else ""))
 
-        from src.ci_policy import ci_paths, decide_workflow, load_coordinator_policy
+        def ci_paths(changed_paths):
+            result = set()
+            for value in changed_paths or []:
+                if not value.startswith(".reactorcide/"):
+                    continue
+                path = value.replace("\\", "/")
+                parts = path.split("/")
+                if path.startswith("/") or any(part in ("", ".", "..") for part in parts):
+                    raise ValueError(f"unsafe repository path {value!r}")
+                result.add(path)
+            return sorted(result)
 
-        trusted_policy = load_coordinator_policy(os.getenv("REACTORCIDE_CI_POLICY", ""))
         changed_ci = ci_paths(changed)
         head_workflows = {}
         if dual_checkout and (ci_root_path / "head").is_dir():
@@ -1048,16 +1057,6 @@ def eval_cmd(
         base_ids = [workflow.workflow_id for workflow in workflow_defs]
         if len(base_ids) != len(set(base_ids)):
             raise ValueError("trusted base has duplicate workflow security ids")
-        try:
-            actor_subjects = set(json.loads(os.getenv("REACTORCIDE_ACTOR_SUBJECTS", "[]")))
-        except (TypeError, ValueError, json.JSONDecodeError):
-            actor_subjects = set()
-        try:
-            approvals = json.loads(os.getenv("REACTORCIDE_CI_APPROVALS", "[]"))
-            if not isinstance(approvals, list):
-                approvals = []
-        except (TypeError, ValueError, json.JSONDecodeError):
-            approvals = []
 
         def repo_relative(path_value):
             if not path_value:
@@ -1070,180 +1069,53 @@ def eval_cmd(
                     continue
             raise ValueError(f"CI path escapes prepared checkouts: {path_value}")
 
+        def batch_for(wf, matched, include_authority):
+            dependency_paths = {repo_relative(wf.source_file)}
+            dependency_paths.update(repo_relative(job.source_file) for job in wf.jobs if job.source_file)
+            dependency_paths.discard("")
+            batch = {
+                "id": wf.workflow_id,
+                "name": wf.name,
+                "source_file": repo_relative(wf.source_file),
+                "dependency_paths": sorted(dependency_paths),
+                "event_matched": matched,
+                "explicit_id": wf.explicit_id,
+                "vars": wf.vars,
+                "jobs": generate_triggers(wf.jobs, ctx),
+            }
+            if include_authority:
+                batch.update({
+                    "ci_origin": "base",
+                    "ci_repository": ci_source_url,
+                    "ci_sha": ci_source_ref,
+                    "execution_profile": "standard",
+                    "worker_class": "default",
+                })
+            return batch
+
         batches = []
         selected_no_match = None
-        authorized_paths = set()
-        violations = []
-        base_workflow_ids = {workflow.workflow_id for workflow in workflow_defs}
-        # Shared CI paths: changed .reactorcide/ files no workflow claims as
-        # its own YAML or job file — plugins, scripts, tests, helper data.
-        # Plugin/script code loads globally, so a change to it is a CI change
-        # for every workflow. Attributing these paths to each candidate
-        # workflow lets a head-CI rule whose paths cover them authorize the
-        # change (and run the workflow from head so the changed code is what
-        # gets tested); a rule with narrower paths still refuses them.
-        claimed_ci_paths = set()
-        for workflow in list(workflow_defs) + list(head_workflows.values()):
-            claimed_ci_paths.add(repo_relative(workflow.source_file))
-            claimed_ci_paths.update(
-                repo_relative(job.source_file) for job in workflow.jobs if job.source_file
-            )
-        claimed_ci_paths.discard("")
-        shared_ci_paths = {path for path in changed_ci if path not in claimed_ci_paths}
-        candidate_workflows = list(workflow_defs)
-        if trusted_policy:
-            permitted_new_ids = {
-                str(workflow_id)
-                for rule in trusted_policy.rules
-                for workflow_id in rule.get("workflows") or []
-            }
-            candidate_workflows.extend(
-                workflow
-                for workflow_id, workflow in head_workflows.items()
-                if workflow_id not in base_workflow_ids
-                and workflow_id in permitted_new_ids
-                and workflow.explicit_id
-            )
-
-        for wf in candidate_workflows:
-            is_new_workflow = wf.workflow_id not in base_workflow_ids
+        for wf in workflow_defs:
             matched_wf, reason = workflow_match_reason(wf, event_type, branch, changed)
             if not matched_wf:
                 log_stdout(f"  – skipped workflow '{wf.name}': {reason}")
                 if selected_workflow_path is not None:
                     selected_no_match = wf
                 continue
-            selected_wf = wf
-            selected_jobs = None
-            decision = None
-            dependency_paths = {repo_relative(wf.source_file)}
-            dependency_paths.update(repo_relative(job.source_file) for job in wf.jobs if job.source_file)
-            dependency_paths.discard("")
-            candidate = head_workflows.get(wf.workflow_id)
-            policy_dependency_paths = set(dependency_paths)
-            if candidate is not None:
-                policy_dependency_paths = {repo_relative(candidate.source_file)}
-                policy_dependency_paths.update(repo_relative(job.source_file) for job in candidate.jobs if job.source_file)
-                policy_dependency_paths.discard("")
-            policy_dependency_paths |= shared_ci_paths
-            affected_paths = sorted(set(changed_ci).intersection(policy_dependency_paths))
-            if dual_checkout and changed_ci and trusted_policy and affected_paths:
-                decision = decide_workflow(
-                    trusted_policy,
-                    wf.workflow_id,
-                    sorted(policy_dependency_paths),
-                    changed_ci,
-                    event_type,
-                    base_ref or pr_base_ref or branch,
-                    "fork" if is_fork_pr == "true" else "same",
-                    actor_subjects,
-                    approvals,
-                    diff_base,
-                    source_ref,
-                )
-                if decision.allowed and (candidate is None or not candidate.explicit_id):
-                    decision.allowed = False
-                    decision.ci_origin = "base"
-                    decision.reasons = ["head workflow is missing an explicit trusted policy id"]
-                trusted_defs = {}
-                if decision.allowed and decision.base_nodes:
-                    # Policy-controlled trusted nodes resolve from the exact
-                    # base workflow specification. Head content cannot supply
-                    # or replace them; a grant that the base workflow cannot
-                    # satisfy fails closed and head CI is refused entirely.
-                    base_jobs = [] if is_new_workflow else list(wf.jobs)
-                    missing_node = None
-                    for node_name in sorted(decision.base_nodes):
-                        base_def = next((job for job in base_jobs if job.name == node_name), None)
-                        if base_def is None:
-                            missing_node = node_name
-                            break
-                        trusted_defs[node_name] = base_def
-                    if missing_node is not None:
-                        decision.allowed = False
-                        decision.ci_origin = "base"
-                        decision.reasons = [
-                            f"policy base node '{missing_node}' is missing from the trusted base workflow"
-                        ]
-                if decision.allowed:
-                    selected_wf = candidate
-                    if trusted_defs:
-                        # The base specification wins for trusted nodes: a
-                        # same-named head node is replaced, and a trusted
-                        # node that head removed still runs.
-                        selected_jobs = []
-                        substituted = set()
-                        for job_def in candidate.jobs:
-                            if job_def.name in trusted_defs:
-                                selected_jobs.append(trusted_defs[job_def.name])
-                                substituted.add(job_def.name)
-                            else:
-                                selected_jobs.append(job_def)
-                        for node_name in sorted(trusted_defs):
-                            if node_name not in substituted:
-                                selected_jobs.append(trusted_defs[node_name])
-                    authorized_paths.update(changed_ci)
-                if not decision.allowed:
-                    for path_value in affected_paths:
-                        violations.append({
-                            "path": path_value,
-                            "workflow_id": wf.workflow_id,
-                            "actor": os.getenv("REACTORCIDE_HEAD_ACTOR", ""),
-                            "rule": decision.rule_id,
-                            "base_sha": diff_base,
-                            "head_sha": source_ref,
-                        })
+            batch = batch_for(wf, True, True)
+            batches.append(batch)
+            job_names = ", ".join(t.job_name for t in batch["jobs"]) or "(no jobs)"
+            log_stdout(f"  ✓ matched workflow '{wf.name}' ({reason}): {len(batch['jobs'])} job(s): {job_names}")
 
-            if is_new_workflow and (decision is None or not decision.allowed):
-                continue
-
-            job_triggers = generate_triggers(
-                selected_jobs if selected_jobs is not None else selected_wf.jobs, ctx
-            )
-            if decision and decision.allowed:
-                for trigger in job_triggers:
-                    node_authority = decision.base_nodes.get(trigger.job_name) if decision.base_nodes else None
-                    if node_authority:
-                        # Trusted base node: executable CI content and node
-                        # authority stay pinned to the exact base CI SHA.
-                        # Tested source stays at the pull-request head SHA.
-                        trigger.ci_source_url = ci_source_url
-                        trigger.ci_source_ref = ci_source_ref
-                        trigger.worker_class = node_authority["worker_class"]
-                        trigger.execution_profile = node_authority["profile"]
-                        trigger.ci_origin = "base"
-                    else:
-                        trigger.ci_source_url = head_url or source_url
-                        trigger.ci_source_ref = source_ref
-                        trigger.worker_class = decision.worker_class
-            batches.append({
-                "id": wf.workflow_id,
-                "name": wf.name,
-                "source_file": repo_relative(selected_wf.source_file),
-                "ci_origin": decision.ci_origin if decision else "base",
-                "ci_repository": (head_url or source_url) if decision and decision.allowed else ci_source_url,
-                "ci_sha": source_ref if decision and decision.allowed else ci_source_ref,
-                "execution_profile": decision.profile if decision else "standard",
-                "worker_class": decision.worker_class if decision else "default",
-                "policy_revision": trusted_policy.revision if trusted_policy else "",
-                "policy_rule_id": decision.rule_id if decision else "",
-                "approval_id": decision.approval_id if decision and decision.approval_id else None,
-                "dependency_paths": sorted(policy_dependency_paths),
-                "vars": selected_wf.vars,
-                "jobs": job_triggers,
-            })
-            job_names = ", ".join(t.job_name for t in job_triggers) or "(no jobs)"
-            log_stdout(f"  ✓ matched workflow '{wf.name}' ({reason}): {len(job_triggers)} job(s): {job_names}")
-
+        policy_candidates = None
         if dual_checkout and changed_ci:
-            for path_value in changed_ci:
-                if path_value not in authorized_paths and not any(item["path"] == path_value for item in violations):
-                    violations.append({
-                        "path": path_value,
-                        "actor": os.getenv("REACTORCIDE_HEAD_ACTOR", ""),
-                        "base_sha": diff_base,
-                        "head_sha": source_ref,
-                    })
+            policy_candidates = {"base": [], "head": []}
+            for wf in workflow_defs:
+                matched_wf, _ = workflow_match_reason(wf, event_type, branch, changed)
+                policy_candidates["base"].append(batch_for(wf, matched_wf, False))
+            for wf in head_workflows.values():
+                matched_wf, _ = workflow_match_reason(wf, event_type, branch, changed)
+                policy_candidates["head"].append(batch_for(wf, matched_wf, False))
         # Drop workflows that matched but resolved to zero jobs — nothing to run.
         batches = [b for b in batches if b["jobs"]]
 
@@ -1251,7 +1123,7 @@ def eval_cmd(
         # the chosen event does not match. Emit an empty workflow so run-local
         # reports a skipped workflow instead of treating a missing trigger
         # file as an evaluation failure.
-        if selected_no_match is not None and not batches and not violations:
+        if selected_no_match is not None and not batches and not policy_candidates:
             batches.append({
                 "id": selected_no_match.workflow_id,
                 "name": selected_no_match.name,
@@ -1261,15 +1133,12 @@ def eval_cmd(
                 "ci_sha": ci_source_ref,
                 "execution_profile": "standard",
                 "worker_class": "default",
-                "policy_revision": trusted_policy.revision if trusted_policy else "",
-                "policy_rule_id": "",
-                "approval_id": None,
                 "dependency_paths": [repo_relative(selected_no_match.source_file)],
                 "vars": selected_no_match.vars,
                 "jobs": [],
             })
 
-        if not batches and not violations:
+        if not batches and not policy_candidates:
             log_stdout(
                 f"No workflows produced jobs for event '{event_type}'. "
                 f"Evaluated {len(workflow_defs)} workflow(s); nothing to run. "
@@ -1277,7 +1146,7 @@ def eval_cmd(
             )
             raise typer.Exit(0)
 
-        workflow_ctx.flush_workflow_batches(batches, violations, changed_ci, sorted(actor_subjects))
+        workflow_ctx.flush_workflow_batches(batches, changed_ci, policy_candidates)
         total = sum(len(b["jobs"]) for b in batches)
         log_stdout(f"Wrote {len(batches)} workflow(s) / {total} trigger(s) to {triggers_file}")
         raise typer.Exit(0)

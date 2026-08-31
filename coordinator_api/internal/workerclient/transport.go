@@ -10,9 +10,7 @@
 // time (there is no per-request "which logged-in user" question the way the
 // webapp has), so the session token is carried as internal transport state --
 // set once by Client.Register and refreshed by Client.Heartbeat -- rather
-// than pulled from the call's context on every request. A caller that needs
-// to override the token for a single call (e.g. tests exercising a
-// stale/garbage session) can still do so via WithSessionToken.
+// rather than pulled from the call's context on every request.
 package workerclient
 
 import (
@@ -67,30 +65,6 @@ func (t *CSILRPCTransport) Session() string {
 	return t.session
 }
 
-// sessionTokenKey is an unexported context key so this package's per-call
-// auth override never collides with keys set elsewhere.
-type sessionTokenKey struct{}
-
-// WithSessionToken returns a context that overrides the transport's stored
-// session token for a single call. Ordinary run-loop usage never needs
-// this -- Client.Register/Heartbeat manage the stored session automatically
-// -- but tests exercising a stale, revoked, or forged session value use it
-// to make one call under a specific token without mutating shared transport
-// state.
-//
-// NOTE: nothing calls this yet. It is kept for the stale/revoked/forged
-// session tests it was written for; Call already reads the override via
-// sessionTokenFromContext, so those tests need no further plumbing. Delete
-// both if that coverage is dropped.
-func WithSessionToken(ctx context.Context, token string) context.Context {
-	return context.WithValue(ctx, sessionTokenKey{}, token)
-}
-
-func sessionTokenFromContext(ctx context.Context) (string, bool) {
-	token, ok := ctx.Value(sessionTokenKey{}).(string)
-	return token, ok
-}
-
 // Call encodes req into a CsilRpcRequest envelope, POSTs it, and returns the
 // response payload bytes (which the generated client decodes). A
 // "ServiceError" response variant or a non-zero transport status becomes a
@@ -101,9 +75,6 @@ func (t *CSILRPCTransport) Call(ctx context.Context, service, op string, req []b
 		return nil, &csilapi.ClientError{Err: err}
 	}
 	auth := t.Session()
-	if override, ok := sessionTokenFromContext(ctx); ok {
-		auth = override
-	}
 	hasAuth := auth != ""
 
 	rpcReq := rpctransport.NewRpcRequest(service, op, req)

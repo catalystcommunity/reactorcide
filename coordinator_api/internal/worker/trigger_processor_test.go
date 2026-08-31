@@ -88,6 +88,20 @@ func TestProcessTriggers_WrongType(t *testing.T) {
 	}
 }
 
+func TestApplyBaseAuthorityClearsEvaluatorDecisionMetadata(t *testing.T) {
+	parent := &models.Job{CIRepository: "trusted/repo", CISHA: "base-sha"}
+	spec := &triggerWorkflowSpec{CIOrigin: "head", PolicyRevision: "claimed-revision", PolicyRuleID: "claimed-rule"}
+	approvalID := "claimed-approval"
+	spec.ApprovalID = &approvalID
+
+	NewTriggerProcessor(&MockStore{}, nil).applyBaseAuthority(parent, spec, "standard")
+
+	if spec.CIOrigin != "base" || spec.CIRepository != parent.CIRepository || spec.CISHA != parent.CISHA ||
+		spec.PolicyRevision != "" || spec.PolicyRuleID != "" || spec.ApprovalID != nil {
+		t.Fatalf("base authority retained evaluator decision metadata: %+v", spec)
+	}
+}
+
 func TestValidateWorkflowAuthorityPinsExactOrigin(t *testing.T) {
 	baseRepo, baseSHA := "https://example.test/upstream.git", "base-sha"
 	headRepo, headSHA := "https://example.test/fork.git", "head-sha"
@@ -111,15 +125,9 @@ head_ci:
 	if err != nil {
 		t.Fatal(err)
 	}
-	document, err := cipolicy.CanonicalDocument(policy)
-	if err != nil {
-		t.Fatal(err)
-	}
 	if parent.JobEnvVars == nil {
 		parent.JobEnvVars = models.JSONB{}
 	}
-	parent.JobEnvVars["REACTORCIDE_CI_POLICY"] = string(document)
-	parent.JobEnvVars["REACTORCIDE_CI_POLICY_REVISION"] = policy.Revision
 	parent.JobEnvVars["REACTORCIDE_ACTOR_SUBJECTS"] = `["repository_write"]`
 	parent.JobEnvVars["REACTORCIDE_EVENT_TYPE"] = "pull_request_updated"
 	parent.JobEnvVars["REACTORCIDE_BASE_REF"] = "main"
@@ -136,30 +144,9 @@ head_ci:
 	if err := tp.validateWorkflowAuthority(context.Background(), parent, head, []string{".reactorcide/workflows/tests.yaml"}); err != nil {
 		t.Fatalf("head authority rejected: %v", err)
 	}
-	if err := tp.validateWorkflowAuthority(context.Background(), parent, head, []string{".reactorcide/workflows/tests.yaml", ".reactorcide/scripts/untrusted.sh"}); err == nil {
-		t.Fatal("head workflow accepted a changed CI path outside its coordinator rule")
-	}
-	head.PolicyRuleID = "forged-rule"
-	if err := tp.validateWorkflowAuthority(context.Background(), parent, head, []string{".reactorcide/workflows/tests.yaml"}); err == nil {
-		t.Fatal("head workflow accepted a forged policy rule ID")
-	}
-	head.PolicyRuleID = "backend"
 	head.CISHA = "branch-name"
 	if err := tp.validateWorkflowAuthority(context.Background(), parent, head, []string{".reactorcide/workflows/tests.yaml"}); err == nil {
 		t.Fatal("head workflow was not pinned to the exact event SHA")
-	}
-}
-
-func TestEvalResultViolationOnlyDoesNotRequireWorkflow(t *testing.T) {
-	parent := &models.Job{JobID: "eval", OrgID: "org"}
-	tp := NewTriggerProcessor(&MockStore{}, nil)
-	data := []byte(`{"type":"trigger_job","trigger_type":"runnerlib_eval","policy_violations":[{"path":".reactorcide/jobs/new.yaml"}]}`)
-	created, err := tp.ProcessTriggersFromData(context.Background(), data, "", parent)
-	if err != nil {
-		t.Fatalf("violation-only result failed: %v", err)
-	}
-	if len(created) != 0 {
-		t.Fatalf("expected no jobs, got %d", len(created))
 	}
 }
 
@@ -172,15 +159,18 @@ func TestRunnerlibEvalCrossLanguageFixture(t *testing.T) {
 	if err := json.Unmarshal(data, &envelope); err != nil {
 		t.Fatalf("Go could not parse the runnerlib protocol fixture: %v", err)
 	}
-	if envelope.TriggerType != "runnerlib_eval" || len(envelope.Workflows) != 1 || len(envelope.PolicyViolations) != 1 {
+	if envelope.TriggerType != "runnerlib_eval" || len(envelope.Workflows) != 1 || envelope.PolicyCandidates == nil {
 		t.Fatalf("unexpected runnerlib evaluation fixture: %+v", envelope)
 	}
 	workflow := envelope.Workflows[0]
-	if workflow.ID != "backend-tests" || workflow.CIOrigin != "head" || workflow.CISHA != "head-sha" || len(workflow.Jobs) != 1 {
+	if workflow.ID != "backend-tests" || workflow.CIOrigin != "base" || workflow.CISHA != "base-sha" || len(workflow.Jobs) != 1 {
 		t.Fatalf("workflow provenance did not survive JSON parsing: %+v", workflow)
 	}
 	if len(workflow.DependencyPaths) != 1 || workflow.DependencyPaths[0] != ".reactorcide/workflows/backend.yaml" {
 		t.Fatalf("workflow dependency paths did not survive JSON parsing: %+v", workflow.DependencyPaths)
+	}
+	if len(envelope.PolicyCandidates.Base) != 1 || len(envelope.PolicyCandidates.Head) != 1 || envelope.PolicyCandidates.Head[0].CIOrigin != "" {
+		t.Fatalf("policy candidates did not remain inert: %+v", envelope.PolicyCandidates)
 	}
 }
 
@@ -1580,55 +1570,5 @@ func TestTriggerImagePullSecrets_JobFileParseOverlayAndBuild(t *testing.T) {
 	// Invalid names are rejected at job build time.
 	if _, err := tp.buildJobFromTrigger(triggerJobSpec{JobName: "bad", ImagePullSecrets: []string{"Bad_Name"}}, parentJob); err == nil {
 		t.Fatal("expected invalid image pull secret name to fail job build")
-	}
-}
-
-// TestValidateWorkflowAuthority_SharedPluginPathAuthorized guards the
-// coordinator side of shared CI path attribution: the evaluator attributes
-// changed plugin/script/test paths (which no workflow claims as its own
-// YAML or job file) to every candidate workflow, and a rule whose paths
-// cover them must authorize head CI here as well.
-func TestValidateWorkflowAuthority_SharedPluginPathAuthorized(t *testing.T) {
-	baseRepo, baseSHA := "https://example.test/upstream.git", "base-sha"
-	headRepo, headSHA := "https://example.test/repo.git", "head-sha"
-	parent := &models.Job{JobID: "eval", OrgID: "org", CIRepository: baseRepo, CISHA: baseSHA,
-		CISourceURL: &baseRepo, CISourceRef: &baseSHA, SourceURL: &headRepo, SourceRef: &headSHA,
-		ExecutionProfile: "standard"}
-	if err := (&vcs.JobMetadata{VCSProvider: "github", Repo: "org/repo", CommitSHA: headSHA, IsEval: true}).ApplyToJob(parent); err != nil {
-		t.Fatal(err)
-	}
-	policy, err := cipolicy.ParseDocument([]byte(`version: 1
-defaults: {ci_source: base, profile: standard}
-head_ci:
-- id: ci-dev
-  actors: {any: [vcs_user:github/todpunk]}
-  workflows: [app-pr]
-  paths: [".reactorcide/**"]
-  events: [pull_request_updated]
-  base_branches: [main]
-  head_repository: same
-  use: {ci_source: head, profile: pr-untrusted, workers: default}`))
-	if err != nil {
-		t.Fatal(err)
-	}
-	document, err := cipolicy.CanonicalDocument(policy)
-	if err != nil {
-		t.Fatal(err)
-	}
-	parent.JobEnvVars = models.JSONB{
-		"REACTORCIDE_CI_POLICY":          string(document),
-		"REACTORCIDE_CI_POLICY_REVISION": policy.Revision,
-		"REACTORCIDE_ACTOR_SUBJECTS":     `["vcs_user:github/todpunk"]`,
-		"REACTORCIDE_EVENT_TYPE":         "pull_request_updated",
-		"REACTORCIDE_BASE_REF":           "main",
-	}
-	tp := NewTriggerProcessor(&MockStore{}, nil)
-	head := &triggerWorkflowSpec{ID: "app-pr", TriggerType: "runnerlib_eval", CIOrigin: "head",
-		CIRepository: headRepo, CISHA: headSHA, ExecutionProfile: "pr-untrusted", WorkerClass: "default",
-		PolicyRevision: policy.Revision, PolicyRuleID: "ci-dev",
-		DependencyPaths: []string{".reactorcide/workflows/pr.yaml", ".reactorcide/jobs/test.yaml", ".reactorcide/plugins/plugin_ci.py"}}
-	changed := []string{".reactorcide/plugins/plugin_ci.py"}
-	if err := tp.validateWorkflowAuthority(context.Background(), parent, head, changed); err != nil {
-		t.Fatalf("plugin-path head authority rejected: %v", err)
 	}
 }
