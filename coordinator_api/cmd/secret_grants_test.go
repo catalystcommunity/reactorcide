@@ -129,3 +129,35 @@ func TestSecretGrantsSetAcceptsFlagsAfterName(t *testing.T) {
 		t.Fatalf("ci_origins = %v, want [base]", gotBody["ci_origins"])
 	}
 }
+
+func TestSecretGrantListUsesAggregateEndpoint(t *testing.T) {
+	queries := make(chan string, 2)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet || r.URL.Path != "/api/v1/secret-grants" {
+			t.Fatalf("unexpected request %s %s", r.Method, r.URL.String())
+		}
+		queries <- r.URL.RawQuery
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"grants":[],"total":0}`))
+	}))
+	defer server.Close()
+
+	client := &secretGrantAPIClient{secretsAPIClient: &secretsAPIClient{apiClient: &apiClient{
+		apiURL:                 server.URL,
+		token:                  "fake-test-token-not-real",
+		client:                 server.Client(),
+		allowInsecureTransport: true,
+	}}}
+	if _, err := client.List("", false); err != nil {
+		t.Fatalf("list all grants: %v", err)
+	}
+	if query := <-queries; query != "" {
+		t.Fatalf("aggregate query = %q, want empty", query)
+	}
+	if _, err := client.List("", true); err != nil {
+		t.Fatalf("list organization-wide grants: %v", err)
+	}
+	if query := <-queries; query != "scope=global" {
+		t.Fatalf("organization-wide query = %q, want scope=global", query)
+	}
+}

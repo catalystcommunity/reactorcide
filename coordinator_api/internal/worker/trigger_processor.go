@@ -3,9 +3,11 @@ package worker
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -28,6 +30,44 @@ type TriggerProcessor struct {
 	store          store.Store
 	corndogsClient corndogs.ClientInterface
 	statusUpdater  vcs.JobStatusUpdaterInterface
+}
+
+// TriggerWorkflowOutcome reports the durable result for one workflow in a
+// multi-workflow trigger request. Disposition separates admission from job
+// execution state so clients do not report a refused workflow as a build.
+type TriggerWorkflowOutcome struct {
+	WorkflowID         string   `json:"workflow_id"`
+	WorkflowSecurityID string   `json:"workflow_security_id,omitempty"`
+	Name               string   `json:"name"`
+	Status             string   `json:"status"`
+	Disposition        string   `json:"disposition"`
+	Reason             string   `json:"reason,omitempty"`
+	CreatedJobIDs      []string `json:"created_job_ids"`
+}
+
+// TriggerProcessingResult is the durable result of one trigger request.
+type TriggerProcessingResult struct {
+	CreatedJobIDs []string                 `json:"created_job_ids"`
+	Workflows     []TriggerWorkflowOutcome `json:"workflows,omitempty"`
+}
+
+// InvalidTriggerError identifies a request that the client can correct.
+type InvalidTriggerError struct {
+	cause error
+}
+
+func (e *InvalidTriggerError) Error() string { return e.cause.Error() }
+func (e *InvalidTriggerError) Unwrap() error { return e.cause }
+
+func invalidTrigger(err error) error {
+	return &InvalidTriggerError{cause: err}
+}
+
+// IsInvalidTriggerError reports whether trigger processing rejected the
+// request shape before it started durable workflow work.
+func IsInvalidTriggerError(err error) bool {
+	var invalid *InvalidTriggerError
+	return errors.As(err, &invalid)
 }
 
 // NewTriggerProcessor creates a new TriggerProcessor.
@@ -54,14 +94,18 @@ type triggersFile struct {
 	// .reactorcide workflow YAML, so one event can spawn several independently
 	// named workflows (per team/product/etc). Takes precedence over the legacy
 	// single-workflow fields below when present.
-	Workflows []triggerWorkflowSpec `json:"workflows,omitempty"`
+	Workflows        []triggerWorkflowSpec `json:"workflows,omitempty"`
+	PolicyCandidates *policyCandidateSet   `json:"policy_candidates,omitempty"`
 	// Workflow + Jobs are the legacy single-workflow form (bare .reactorcide/
 	// jobs), still accepted: they collapse to exactly one workflow.
-	Workflow         *triggerWorkflowSpec `json:"workflow,omitempty"`
-	Jobs             []triggerJobSpec     `json:"jobs"`
-	PolicyViolations []policyViolation    `json:"policy_violations,omitempty"`
-	ChangedCIPaths   []string             `json:"changed_ci_paths,omitempty"`
-	ActorSubjects    []string             `json:"actor_subjects,omitempty"`
+	Workflow       *triggerWorkflowSpec `json:"workflow,omitempty"`
+	Jobs           []triggerJobSpec     `json:"jobs"`
+	ChangedCIPaths []string             `json:"changed_ci_paths,omitempty"`
+}
+
+type policyCandidateSet struct {
+	Base []triggerWorkflowSpec `json:"base"`
+	Head []triggerWorkflowSpec `json:"head"`
 }
 
 type policyViolation struct {
@@ -86,20 +130,23 @@ type triggerWorkflowSpec struct {
 	PolicyRuleID     string                 `json:"policy_rule_id,omitempty"`
 	ApprovalID       *string                `json:"approval_id,omitempty"`
 	DependencyPaths  []string               `json:"dependency_paths,omitempty"`
+	EventMatched     bool                   `json:"event_matched,omitempty"`
+	ExplicitID       bool                   `json:"explicit_id,omitempty"`
 	Vars             map[string]interface{} `json:"vars"`
 	OperationID      string                 `json:"-"`
 	TriggerType      string                 `json:"-"`
 	// Jobs are this workflow's nodes (multi-workflow form). Empty in the legacy
 	// single-workflow form, where jobs live in triggersFile.Jobs instead.
-	Jobs []triggerJobSpec `json:"jobs,omitempty"`
+	Jobs          []triggerJobSpec                 `json:"jobs,omitempty"`
+	NodeAuthority map[string]cipolicy.NodeDecision `json:"-"`
 }
 
 type triggerProfileStore interface {
 	GetExecutionProfile(ctx context.Context, orgID, name string) (*models.ExecutionProfile, error)
 }
 
-type triggerApprovalStore interface {
-	GetCIApprovalByID(ctx context.Context, approvalID string) (*models.CIApproval, error)
+type triggerApprovalListStore interface {
+	ListActiveCIApprovalsForTarget(ctx context.Context, projectID string, prNumber int, headRepository, headSHA, baseSHA string, now time.Time) ([]models.CIApproval, error)
 }
 
 type triggerReportGenerationStore interface {
@@ -161,9 +208,9 @@ type triggerJobSpec struct {
 	WorkerClass      string        `json:"worker_class"`
 
 	// CIOrigin and ExecutionProfile carry a per-node authority override for
-	// policy-controlled trusted base nodes inside a head-CI workflow. Only
-	// runnerlib eval output sets them, and validateWorkflowAuthority verifies
-	// them against the pinned coordinator policy before any node is created.
+	// policy-controlled trusted base nodes inside a head-CI workflow. The
+	// coordinator sets these fields from the policy snapshot after Runnerlib
+	// returns inactive workflow candidates.
 	CIOrigin         string `json:"ci_origin,omitempty"`
 	ExecutionProfile string `json:"execution_profile,omitempty"`
 
@@ -232,28 +279,34 @@ func (tp *TriggerProcessor) ProcessTriggers(ctx context.Context, workspaceDir st
 // in the database, submits them to Corndogs, and returns the created job IDs.
 // workspaceDir is the host workspace directory used to resolve job_file references.
 func (tp *TriggerProcessor) ProcessTriggersFromData(ctx context.Context, data []byte, workspaceDir string, parentJob *models.Job) ([]string, error) {
+	return tp.processTriggersFromData(ctx, data, workspaceDir, parentJob, nil)
+}
+
+// ProcessTriggersFromDataWithOutcomes processes triggers and also returns a
+// durable outcome for each workflow. A recorded workflow refusal is an
+// outcome, not a request error, so other workflows continue.
+func (tp *TriggerProcessor) ProcessTriggersFromDataWithOutcomes(ctx context.Context, data []byte, workspaceDir string, parentJob *models.Job) (TriggerProcessingResult, error) {
+	result := TriggerProcessingResult{}
+	createdJobIDs, err := tp.processTriggersFromData(ctx, data, workspaceDir, parentJob, &result)
+	result.CreatedJobIDs = createdJobIDs
+	return result, err
+}
+
+func (tp *TriggerProcessor) processTriggersFromData(ctx context.Context, data []byte, workspaceDir string, parentJob *models.Job, result *TriggerProcessingResult) ([]string, error) {
 	var topLevel map[string]json.RawMessage
 	if err := json.Unmarshal(data, &topLevel); err != nil {
-		return nil, fmt.Errorf("failed to parse triggers data: %w", err)
+		return nil, invalidTrigger(fmt.Errorf("failed to parse triggers data: %w", err))
 	}
 	if _, versioned := topLevel["version"]; versioned {
-		return nil, fmt.Errorf("trigger payload must not include a version field")
+		return nil, invalidTrigger(fmt.Errorf("trigger payload must not include a version field"))
 	}
 	var tf triggersFile
 	if err := json.Unmarshal(data, &tf); err != nil {
-		return nil, fmt.Errorf("failed to parse triggers data: %w", err)
+		return nil, invalidTrigger(fmt.Errorf("failed to parse triggers data: %w", err))
 	}
 	isEvalResult := strings.TrimSpace(tf.TriggerType) == "runnerlib_eval"
 	if tf.Type != "trigger_job" {
-		return nil, fmt.Errorf("unexpected trigger type: %q", tf.Type)
-	}
-	if isEvalResult {
-		audit.Record(ctx, tp.store, parentJob.OrgID, "ci_policy.input", "job", parentJob.JobID, models.JSONB{
-			"project_id": parentJob.ProjectID, "policy_repository": parentJob.CIRepository,
-			"policy_revision": parentJob.JobEnvVars["REACTORCIDE_CI_POLICY_REVISION"], "base_sha": parentJob.CISHA,
-			"head_sha": stringValue(parentJob.SourceRef), "changed_ci_paths": tf.ChangedCIPaths,
-			"actor": parentJob.JobEnvVars["REACTORCIDE_HEAD_ACTOR"], "actor_subjects": parentJob.JobEnvVars["REACTORCIDE_ACTOR_SUBJECTS"],
-		})
+		return nil, invalidTrigger(fmt.Errorf("unexpected trigger type: %q", tf.Type))
 	}
 	// Normalize to a list of workflow batches. The multi-workflow form
 	// (tf.Workflows) wins; otherwise the legacy single-workflow form
@@ -266,6 +319,40 @@ func (tp *TriggerProcessor) ProcessTriggersFromData(ctx context.Context, data []
 			batch.Vars = tf.Workflow.Vars
 		}
 		batches = []triggerWorkflowSpec{batch}
+	}
+	policyViolations := []policyViolation(nil)
+	if isEvalResult && tf.PolicyCandidates != nil {
+		var err error
+		batches, policyViolations, err = tp.selectPolicyCandidates(ctx, parentJob, tf.PolicyCandidates, tf.ChangedCIPaths)
+		if err != nil {
+			return nil, err
+		}
+	} else if isEvalResult {
+		policy, err := policySnapshot(parentJob)
+		if err != nil {
+			return nil, err
+		}
+		defaultProfile := "standard"
+		if policy != nil {
+			defaultProfile = policy.Defaults.Profile
+		}
+		for i := range batches {
+			if batches[i].CIOrigin == "head" || batches[i].PolicyRuleID != "" || batches[i].ApprovalID != nil {
+				return nil, fmt.Errorf("runnerlib evaluation output cannot select CI policy authority")
+			}
+			tp.applyBaseAuthority(parentJob, &batches[i], defaultProfile)
+			if policy != nil {
+				batches[i].PolicyRevision = policy.Revision
+			}
+		}
+	}
+	if isEvalResult {
+		audit.Record(ctx, tp.store, parentJob.OrgID, "ci_policy.input", "job", parentJob.JobID, models.JSONB{
+			"project_id": parentJob.ProjectID, "policy_repository": parentJob.CIRepository,
+			"policy_revision": envString(parentJob, "REACTORCIDE_CI_POLICY_REVISION"), "base_sha": parentJob.CISHA,
+			"head_sha": stringValue(parentJob.SourceRef), "changed_ci_paths": tf.ChangedCIPaths,
+			"actor": parentJob.JobEnvVars["REACTORCIDE_HEAD_ACTOR"], "actor_subjects": parentJob.JobEnvVars["REACTORCIDE_ACTOR_SUBJECTS"],
+		})
 	}
 	for i := range batches {
 		batches[i].OperationID = strings.TrimSpace(tf.OperationID)
@@ -304,17 +391,17 @@ func (tp *TriggerProcessor) ProcessTriggersFromData(ctx context.Context, data []
 			}
 		}
 		if headAuthorized {
-			tf.PolicyViolations = nil
-		} else {
-			tf.PolicyViolations = make([]policyViolation, 0, len(tf.ChangedCIPaths))
+			policyViolations = nil
+		} else if policyViolations == nil {
+			policyViolations = make([]policyViolation, 0, len(tf.ChangedCIPaths))
 			for _, pathValue := range uniqueNonEmpty(tf.ChangedCIPaths) {
-				tf.PolicyViolations = append(tf.PolicyViolations, policyViolation{
+				policyViolations = append(policyViolations, policyViolation{
 					Path: pathValue, Actor: fmt.Sprint(parentJob.JobEnvVars["REACTORCIDE_HEAD_ACTOR"]),
 					BaseSHA: parentJob.CISHA, HeadSHA: stringValue(parentJob.SourceRef),
 				})
 			}
 		}
-		for _, violation := range tf.PolicyViolations {
+		for _, violation := range policyViolations {
 			logging.Log.WithFields(map[string]interface{}{
 				"parent_job_id": parentJob.JobID, "path": violation.Path,
 				"workflow_security_id": violation.WorkflowID, "rule": violation.Rule,
@@ -328,8 +415,8 @@ func (tp *TriggerProcessor) ProcessTriggersFromData(ctx context.Context, data []
 		if updater, ok := tp.statusUpdater.(interface {
 			UpdateCIPolicyStatus(context.Context, *models.Job, []vcs.CIPolicyViolation) error
 		}); ok {
-			violations := make([]vcs.CIPolicyViolation, len(tf.PolicyViolations))
-			for i, item := range tf.PolicyViolations {
+			violations := make([]vcs.CIPolicyViolation, len(policyViolations))
+			for i, item := range policyViolations {
 				violations[i] = vcs.CIPolicyViolation{Path: item.Path, WorkflowID: item.WorkflowID, Actor: item.Actor,
 					Rule: item.Rule, BaseSHA: item.BaseSHA, HeadSHA: item.HeadSHA}
 			}
@@ -370,11 +457,40 @@ func (tp *TriggerProcessor) ProcessTriggersFromData(ctx context.Context, data []
 
 	var createdJobIDs []string
 	for i := range batches {
-		ids, err := tp.processWorkflowBatch(ctx, parentJob, &batches[i], workspaceDir)
+		ids, wf, err := tp.processWorkflowBatch(ctx, parentJob, &batches[i], workspaceDir)
 		if err != nil {
+			var recorded *recordedWorkflowFailure
+			if wf != nil && errors.As(err, &recorded) {
+				createdJobIDs = append(createdJobIDs, ids...)
+				outcome := workflowOutcome(wf, ids, recorded.Disposition, recorded.Reason)
+				if result != nil {
+					result.Workflows = append(result.Workflows, outcome)
+				}
+				logging.Log.WithFields(map[string]interface{}{
+					"parent_job_id":        parentJob.JobID,
+					"workflow_id":          wf.WorkflowID,
+					"workflow_security_id": wf.WorkflowSecurityID,
+					"workflow_name":        wf.Name,
+					"disposition":          recorded.Disposition,
+					"reason":               recorded.Reason,
+				}).Warn("Workflow was recorded without starting all jobs")
+				audit.Record(ctx, tp.store, parentJob.OrgID, "workflow."+recorded.Disposition, "workflow", wf.WorkflowID, models.JSONB{
+					"workflow_security_id": wf.WorkflowSecurityID,
+					"workflow_name":        wf.Name,
+					"node_id":              recorded.NodeID,
+					"node_name":            recorded.NodeName,
+					"profile":              wf.ExecutionProfile,
+					"policy_rule_id":       wf.PolicyRuleID,
+					"reason":               recorded.Reason,
+				})
+				continue
+			}
 			return createdJobIDs, err
 		}
 		createdJobIDs = append(createdJobIDs, ids...)
+		if result != nil && wf != nil {
+			result.Workflows = append(result.Workflows, workflowOutcome(wf, ids, "accepted", ""))
+		}
 	}
 	if isEvalResult {
 		if err := tp.completeReportGeneration(ctx, parentJob); err != nil {
@@ -384,7 +500,277 @@ func (tp *TriggerProcessor) ProcessTriggersFromData(ctx context.Context, data []
 	return createdJobIDs, nil
 }
 
-func (tp *TriggerProcessor) validateWorkflowAuthority(ctx context.Context, parentJob *models.Job, spec *triggerWorkflowSpec, changedCIPaths []string) error {
+func workflowOutcome(wf *models.WorkflowInstance, jobIDs []string, disposition, reason string) TriggerWorkflowOutcome {
+	ids := append([]string(nil), jobIDs...)
+	if ids == nil {
+		ids = []string{}
+	}
+	return TriggerWorkflowOutcome{
+		WorkflowID: wf.WorkflowID, WorkflowSecurityID: wf.WorkflowSecurityID,
+		Name: wf.Name, Status: wf.Status, Disposition: disposition,
+		Reason: reason, CreatedJobIDs: ids,
+	}
+}
+
+func (tp *TriggerProcessor) applyBaseAuthority(parentJob *models.Job, spec *triggerWorkflowSpec, profile string) {
+	spec.CIOrigin = "base"
+	spec.CIRepository = parentJob.CIRepository
+	spec.CISHA = parentJob.CISHA
+	spec.ExecutionProfile = profile
+	spec.WorkerClass = "default"
+	spec.PolicyRevision = ""
+	spec.PolicyRuleID = ""
+	spec.ApprovalID = nil
+	spec.NodeAuthority = nil
+}
+
+func policySnapshot(parentJob *models.Job) (*cipolicy.Policy, error) {
+	policyDocument := envString(parentJob, "REACTORCIDE_CI_POLICY")
+	policyRevision := envString(parentJob, "REACTORCIDE_CI_POLICY_REVISION")
+	if policyDocument == "" && policyRevision == "" {
+		return nil, nil
+	}
+	policy, err := cipolicy.ParseDocument([]byte(policyDocument))
+	if err != nil || policyDocument == "" || policyRevision == "" || policy.Revision != policyRevision {
+		return nil, fmt.Errorf("coordinator CI policy snapshot failed integrity validation")
+	}
+	return policy, nil
+}
+
+func candidateMap(candidates []triggerWorkflowSpec) (map[string]triggerWorkflowSpec, error) {
+	result := make(map[string]triggerWorkflowSpec, len(candidates))
+	for _, candidate := range candidates {
+		if strings.TrimSpace(candidate.ID) == "" {
+			return nil, fmt.Errorf("CI policy candidate is missing a workflow security ID")
+		}
+		if _, exists := result[candidate.ID]; exists {
+			return nil, fmt.Errorf("duplicate CI policy candidate workflow ID %q", candidate.ID)
+		}
+		if candidate.CIOrigin != "" || candidate.PolicyRevision != "" || candidate.PolicyRuleID != "" || candidate.ApprovalID != nil {
+			return nil, fmt.Errorf("CI policy candidate %q contains an authority decision", candidate.ID)
+		}
+		for _, job := range candidate.Jobs {
+			if job.CIOrigin != "" || job.ExecutionProfile != "" {
+				return nil, fmt.Errorf("CI policy candidate %q node %q contains an authority decision", candidate.ID, job.JobName)
+			}
+		}
+		result[candidate.ID] = candidate
+	}
+	return result, nil
+}
+
+func (tp *TriggerProcessor) selectPolicyCandidates(ctx context.Context, parentJob *models.Job, candidates *policyCandidateSet, changedCIPaths []string) ([]triggerWorkflowSpec, []policyViolation, error) {
+	metadata, err := vcs.MetadataFromJob(parentJob)
+	if err != nil || metadata == nil || !metadata.IsEval || parentJob.ProjectID == nil {
+		return nil, nil, fmt.Errorf("CI policy candidates require a project evaluation job")
+	}
+	baseByID, err := candidateMap(candidates.Base)
+	if err != nil {
+		return nil, nil, err
+	}
+	headByID, err := candidateMap(candidates.Head)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	defaultProfile := "standard"
+	policy, err := policySnapshot(parentJob)
+	if err != nil {
+		return nil, nil, err
+	}
+	if policy != nil {
+		defaultProfile = policy.Defaults.Profile
+	}
+
+	approvals := []models.CIApproval(nil)
+	decisionTime := time.Now().UTC()
+	headRepository := envString(parentJob, "REACTORCIDE_HEAD_REPOSITORY")
+	if policy != nil && metadata.PRNumber > 0 {
+		if approvalStore, ok := tp.store.(triggerApprovalListStore); ok {
+			approvals, err = approvalStore.ListActiveCIApprovalsForTarget(ctx, *parentJob.ProjectID, metadata.PRNumber, headRepository, stringValue(parentJob.SourceRef), parentJob.CISHA, decisionTime)
+			if err != nil {
+				return nil, nil, fmt.Errorf("load coordinator CI approvals: %w", err)
+			}
+		}
+	}
+
+	claimedPaths := map[string]bool{}
+	for _, byID := range []map[string]triggerWorkflowSpec{baseByID, headByID} {
+		for _, candidate := range byID {
+			for _, dependency := range candidate.DependencyPaths {
+				claimedPaths[dependency] = true
+			}
+		}
+	}
+	sharedPaths := []string{}
+	for _, changed := range uniqueNonEmpty(changedCIPaths) {
+		if !claimedPaths[changed] {
+			sharedPaths = append(sharedPaths, changed)
+		}
+	}
+
+	ids := make([]string, 0, len(baseByID)+len(headByID))
+	seenIDs := map[string]bool{}
+	for id := range baseByID {
+		seenIDs[id] = true
+		ids = append(ids, id)
+	}
+	for id := range headByID {
+		if !seenIDs[id] {
+			ids = append(ids, id)
+		}
+	}
+	sort.Strings(ids)
+
+	actorSubjects := parseStringSet(parentJob.JobEnvVars["REACTORCIDE_ACTOR_SUBJECTS"])
+	selected := make([]triggerWorkflowSpec, 0, len(ids))
+	headAuthorized := false
+	for _, id := range ids {
+		base, hasBase := baseByID[id]
+		head, hasHead := headByID[id]
+		useHead := false
+		var decision cipolicy.Decision
+		var approvalID *string
+		if policy != nil && hasHead && head.EventMatched && head.ExplicitID {
+			dependencies := uniqueNonEmpty(append(append([]string{}, head.DependencyPaths...), sharedPaths...))
+			if len(changedCIPaths) > 0 && intersects(changedCIPaths, dependencies) {
+				approvalMatchesTarget := func(approval models.CIApproval) bool {
+					return approval.OrgID == parentJob.OrgID && approval.ProjectID == *parentJob.ProjectID &&
+						approval.PRNumber == metadata.PRNumber && approval.HeadRepository == headRepository &&
+						approval.HeadSHA == stringValue(parentJob.SourceRef) &&
+						approval.BaseSHA == parentJob.CISHA && approval.PolicyRevision == policy.Revision &&
+						(approval.WorkflowScope == id || approval.WorkflowScope == "*") &&
+						approval.IsValid(decisionTime, stringValue(parentJob.SourceRef), policy.Revision)
+				}
+				approvalFacts := map[string]map[string]bool{}
+				for _, approval := range approvals {
+					if !approvalMatchesTarget(approval) {
+						continue
+					}
+					if approvalFacts[approval.ExecutionProfile] == nil {
+						approvalFacts[approval.ExecutionProfile] = map[string]bool{}
+					}
+					approvalFacts[approval.ExecutionProfile][approval.ApproverSubject] = true
+				}
+				allPolicyPaths := uniqueNonEmpty(append(append([]string{}, changedCIPaths...), dependencies...))
+				baseBranch := envString(parentJob, "REACTORCIDE_BASE_REF")
+				if baseBranch == "" {
+					baseBranch = envString(parentJob, "REACTORCIDE_PR_BASE_REF")
+				}
+				if baseBranch == "" {
+					baseBranch = envString(parentJob, "REACTORCIDE_BRANCH")
+				}
+				relation := "same"
+				if envString(parentJob, "REACTORCIDE_IS_FORK_PR") == "true" {
+					relation = "fork"
+				}
+				decision, err = cipolicy.Decide(policy, cipolicy.Facts{
+					WorkflowID: id, ChangedCIPaths: allPolicyPaths,
+					Event: envString(parentJob, "REACTORCIDE_EVENT_TYPE"), BaseBranch: baseBranch,
+					HeadRepositoryRelation: relation, ActorSubjects: actorSubjects,
+					ApprovalSubjectsByProfile: approvalFacts,
+				})
+				if err != nil {
+					return nil, nil, fmt.Errorf("workflow %q policy decision failed: %w", id, err)
+				}
+				if decision.Allowed {
+					useHead = true
+					if len(decision.ApprovalSubjects) > 0 {
+						useHead = false
+						for i := range approvals {
+							approval := &approvals[i]
+							if approvalMatchesTarget(*approval) && approval.ExecutionProfile == decision.Profile &&
+								containsString(decision.ApprovalSubjects, approval.ApproverSubject) {
+								value := approval.ApprovalID
+								approvalID = &value
+								useHead = true
+								break
+							}
+						}
+					}
+				}
+			}
+		}
+
+		if useHead && len(decision.BaseNodes) > 0 {
+			if !hasBase {
+				useHead = false
+			} else {
+				baseJobs := map[string]triggerJobSpec{}
+				for _, job := range base.Jobs {
+					baseJobs[job.JobName] = job
+				}
+				for name := range decision.BaseNodes {
+					if _, ok := baseJobs[name]; !ok {
+						useHead = false
+						break
+					}
+				}
+				if useHead {
+					claimed := map[string]bool{}
+					for i := range head.Jobs {
+						grant, ok := decision.BaseNodes[head.Jobs[i].JobName]
+						if !ok {
+							continue
+						}
+						head.Jobs[i] = baseJobs[head.Jobs[i].JobName]
+						head.Jobs[i].CIOrigin = grant.CISource
+						head.Jobs[i].ExecutionProfile = grant.Profile
+						head.Jobs[i].WorkerClass = grant.WorkerClass
+						head.Jobs[i].CISourceURL = parentJob.CIRepository
+						head.Jobs[i].CISourceRef = parentJob.CISHA
+						claimed[head.Jobs[i].JobName] = true
+					}
+					for name, grant := range decision.BaseNodes {
+						if claimed[name] {
+							continue
+						}
+						job := baseJobs[name]
+						job.CIOrigin = grant.CISource
+						job.ExecutionProfile = grant.Profile
+						job.WorkerClass = grant.WorkerClass
+						job.CISourceURL = parentJob.CIRepository
+						job.CISourceRef = parentJob.CISHA
+						head.Jobs = append(head.Jobs, job)
+					}
+				}
+			}
+		}
+		if useHead {
+			head.CIOrigin = "head"
+			head.CIRepository = stringValue(parentJob.SourceURL)
+			head.CISHA = stringValue(parentJob.SourceRef)
+			head.ExecutionProfile = decision.Profile
+			head.WorkerClass = decision.WorkerClass
+			head.PolicyRevision = policy.Revision
+			head.PolicyRuleID = decision.RuleID
+			head.ApprovalID = approvalID
+			head.NodeAuthority = decision.BaseNodes
+			selected = append(selected, head)
+			headAuthorized = true
+			continue
+		}
+		if hasBase && base.EventMatched {
+			tp.applyBaseAuthority(parentJob, &base, defaultProfile)
+			if policy != nil {
+				base.PolicyRevision = policy.Revision
+			}
+			selected = append(selected, base)
+		}
+	}
+
+	if headAuthorized {
+		return selected, nil, nil
+	}
+	violations := make([]policyViolation, 0, len(changedCIPaths))
+	for _, pathValue := range uniqueNonEmpty(changedCIPaths) {
+		violations = append(violations, policyViolation{Path: pathValue,
+			Actor: envString(parentJob, "REACTORCIDE_HEAD_ACTOR"), BaseSHA: parentJob.CISHA, HeadSHA: stringValue(parentJob.SourceRef)})
+	}
+	return selected, violations, nil
+}
+
+func (tp *TriggerProcessor) validateWorkflowAuthority(ctx context.Context, parentJob *models.Job, spec *triggerWorkflowSpec, _ []string) error {
 	metadata, err := vcs.MetadataFromJob(parentJob)
 	if err != nil || metadata == nil || !metadata.IsEval || spec.TriggerType != "runnerlib_eval" {
 		return fmt.Errorf("runnerlib evaluation workflow authority requires an evaluation job")
@@ -405,57 +791,8 @@ func (tp *TriggerProcessor) validateWorkflowAuthority(ctx context.Context, paren
 	if spec.ExecutionProfile == "" || spec.WorkerClass == "" {
 		return fmt.Errorf("workflow %q must select an execution profile and worker class", spec.ID)
 	}
-	approvalSubjects := map[string]bool{}
-	if spec.ApprovalID != nil {
-		approvals, ok := tp.store.(triggerApprovalStore)
-		if !ok {
-			return fmt.Errorf("workflow %q approval cannot be verified", spec.ID)
-		}
-		approval, err := approvals.GetCIApprovalByID(ctx, *spec.ApprovalID)
-		if err != nil || approval.OrgID != parentJob.OrgID || parentJob.ProjectID == nil || approval.ProjectID != *parentJob.ProjectID ||
-			approval.HeadSHA != stringValue(parentJob.SourceRef) || approval.BaseSHA != parentJob.CISHA || approval.PolicyRevision != spec.PolicyRevision ||
-			(approval.WorkflowScope != spec.ID && approval.WorkflowScope != "*") || approval.ExecutionProfile != spec.ExecutionProfile ||
-			!approval.IsValid(time.Now().UTC(), stringValue(parentJob.SourceRef), spec.PolicyRevision) {
-			return fmt.Errorf("workflow %q approval is not valid for this decision", spec.ID)
-		}
-		approvalSubjects[approval.ApproverSubject] = true
-	}
-	var nodeAuthority map[string]cipolicy.NodeDecision
-	if spec.CIOrigin == "head" {
-		policyDocument, _ := parentJob.JobEnvVars["REACTORCIDE_CI_POLICY"].(string)
-		policyRevision, _ := parentJob.JobEnvVars["REACTORCIDE_CI_POLICY_REVISION"].(string)
-		policy, err := cipolicy.ParseDocument([]byte(policyDocument))
-		if err != nil || policyDocument == "" || policy.Revision != policyRevision || spec.PolicyRevision != policyRevision {
-			return fmt.Errorf("workflow %q does not have a valid coordinator policy snapshot", spec.ID)
-		}
-		if len(changedCIPaths) == 0 || len(spec.DependencyPaths) == 0 || !intersects(changedCIPaths, spec.DependencyPaths) {
-			return fmt.Errorf("workflow %q has no changed CI dependency", spec.ID)
-		}
-		actorSubjects := parseStringSet(parentJob.JobEnvVars["REACTORCIDE_ACTOR_SUBJECTS"])
-		allPolicyPaths := uniqueNonEmpty(append(append([]string{}, changedCIPaths...), spec.DependencyPaths...))
-		baseBranch := envString(parentJob, "REACTORCIDE_BASE_REF")
-		if baseBranch == "" {
-			baseBranch = envString(parentJob, "REACTORCIDE_PR_BASE_REF")
-		}
-		if baseBranch == "" {
-			baseBranch = envString(parentJob, "REACTORCIDE_BRANCH")
-		}
-		relation := "same"
-		if envString(parentJob, "REACTORCIDE_IS_FORK_PR") == "true" {
-			relation = "fork"
-		}
-		decision, err := cipolicy.Decide(policy, cipolicy.Facts{
-			WorkflowID: spec.ID, ChangedCIPaths: allPolicyPaths,
-			Event: envString(parentJob, "REACTORCIDE_EVENT_TYPE"), BaseBranch: baseBranch,
-			HeadRepositoryRelation: relation, ActorSubjects: actorSubjects, ApprovalSubjects: approvalSubjects,
-		})
-		if err != nil {
-			return fmt.Errorf("workflow %q policy decision failed: %w", spec.ID, err)
-		}
-		if !decision.Allowed || decision.RuleID != spec.PolicyRuleID || decision.Profile != spec.ExecutionProfile || decision.WorkerClass != spec.WorkerClass {
-			return fmt.Errorf("workflow %q is not authorized by the coordinator policy", spec.ID)
-		}
-		nodeAuthority = decision.BaseNodes
+	if spec.CIOrigin == "head" && (spec.PolicyRevision == "" || spec.PolicyRuleID == "") {
+		return fmt.Errorf("head workflow %q lacks a coordinator policy decision", spec.ID)
 	}
 	if ps, ok := tp.store.(triggerProfileStore); ok {
 		parentName := parentJob.ExecutionProfile
@@ -474,7 +811,7 @@ func (tp *TriggerProcessor) validateWorkflowAuthority(ctx context.Context, paren
 			return fmt.Errorf("workflow %q selects a worker class denied by profile %q", spec.ID, spec.ExecutionProfile)
 		}
 	}
-	return tp.validateNodeAuthority(ctx, parentJob, spec, nodeAuthority)
+	return tp.validateNodeAuthority(ctx, parentJob, spec, spec.NodeAuthority)
 }
 
 // validateNodeAuthority verifies per-node trusted-base authority claims in an
@@ -661,21 +998,59 @@ func (tp *TriggerProcessor) resolveJobSpecs(jobs []triggerJobSpec, workspaceDir 
 // this parent eval) from a batch, registers its nodes, and evaluates it. The
 // eval is the workflow's parent but does NOT join it, so a single event can
 // spawn several independently-named workflows.
-func (tp *TriggerProcessor) processWorkflowBatch(ctx context.Context, parentJob *models.Job, spec *triggerWorkflowSpec, workspaceDir string) ([]string, error) {
+func (tp *TriggerProcessor) processWorkflowBatch(ctx context.Context, parentJob *models.Job, spec *triggerWorkflowSpec, workspaceDir string) ([]string, *models.WorkflowInstance, error) {
 	if len(spec.Jobs) == 0 {
-		return nil, nil
+		return nil, nil, nil
+	}
+	txStore, ok := tp.store.(workflowTransactionStore)
+	if !ok {
+		return tp.processWorkflowBatchUnit(ctx, parentJob, spec, workspaceDir)
+	}
+
+	var ids []string
+	var wf *models.WorkflowInstance
+	var batchErr error
+	err := txStore.InTransaction(ctx, func(txCtx context.Context) error {
+		txCtx = context.WithValue(txCtx, deferWorkflowPublishContextKey{}, true)
+		ids, wf, batchErr = tp.processWorkflowBatchUnit(txCtx, parentJob, spec, workspaceDir)
+		if batchErr == nil {
+			return nil
+		}
+		var recorded *recordedWorkflowFailure
+		if errors.As(batchErr, &recorded) {
+			// The failed node and its reason are the intended durable outcome.
+			return nil
+		}
+		return batchErr
+	})
+	if err != nil {
+		return nil, nil, err
+	}
+	// Publish only after the workflow transaction commits. This prevents a
+	// VCS target from linking to a workflow that a later rollback removes.
+	if wf != nil {
+		if publishErr := tp.refreshWorkflowStatus(ctx, wf); publishErr != nil {
+			return ids, wf, publishErr
+		}
+	}
+	return ids, wf, batchErr
+}
+
+func (tp *TriggerProcessor) processWorkflowBatchUnit(ctx context.Context, parentJob *models.Job, spec *triggerWorkflowSpec, workspaceDir string) ([]string, *models.WorkflowInstance, error) {
+	if len(spec.Jobs) == 0 {
+		return nil, nil, nil
 	}
 	specs := spec.Jobs
 	if spec.TriggerType != "runnerlib_eval" {
 		var err error
 		specs, err = tp.resolveJobSpecs(spec.Jobs, workspaceDir)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 	}
 	wf, err := tp.ensureWorkflow(ctx, parentJob, spec)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create workflow: %w", err)
+		return nil, nil, fmt.Errorf("failed to create workflow: %w", err)
 	}
 	for i := range specs {
 		if specs[i].CIOrigin != "" || specs[i].ExecutionProfile != "" {
@@ -689,27 +1064,29 @@ func (tp *TriggerProcessor) processWorkflowBatch(ctx context.Context, parentJob 
 	}
 	if len(spec.Vars) > 0 {
 		if err := tp.addWorkflowVars(ctx, wf, spec.Vars, nil, &parentJob.JobID); err != nil {
-			return nil, fmt.Errorf("failed to add workflow vars: %w", err)
+			return nil, wf, fmt.Errorf("failed to add workflow vars: %w", err)
 		}
 	}
 	existingNodes, err := tp.workflowStore()
 	if err != nil {
-		return nil, err
+		return nil, wf, err
 	}
 	registered, err := existingNodes.ListWorkflowNodes(ctx, wf.WorkflowID)
 	if err != nil {
-		return nil, err
+		return nil, wf, err
 	}
 	if len(registered) > 0 {
-		return tp.evaluateWorkflow(ctx, wf)
+		ids, err := tp.evaluateWorkflow(ctx, wf)
+		return ids, wf, err
 	}
 	if err := tp.createWorkflowNodes(ctx, wf, specs); err != nil {
-		return nil, fmt.Errorf("failed to create workflow nodes: %w", err)
+		return nil, wf, fmt.Errorf("failed to create workflow nodes: %w", err)
 	}
 	if err := tp.refreshRootForChildRegistration(ctx, wf); err != nil {
-		return nil, fmt.Errorf("failed to register child workflow with root: %w", err)
+		return nil, wf, fmt.Errorf("failed to register child workflow with root: %w", err)
 	}
-	return tp.evaluateWorkflow(ctx, wf)
+	ids, err := tp.evaluateWorkflow(ctx, wf)
+	return ids, wf, err
 }
 
 // loadJobFile reads a YAML job definition file from the workspace and converts it to a triggerJobSpec.

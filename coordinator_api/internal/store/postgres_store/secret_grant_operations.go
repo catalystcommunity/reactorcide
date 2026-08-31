@@ -32,6 +32,17 @@ func (ps PostgresDbStore) ListSecretGrants(ctx context.Context, userID string, p
 	return grants, nil
 }
 
+// ListAllSecretGrants returns grant metadata across all organizations. The
+// API handler must filter this result against the authenticated principal
+// before it sends a response.
+func (ps PostgresDbStore) ListAllSecretGrants(ctx context.Context) ([]models.SecretGrant, error) {
+	var grants []models.SecretGrant
+	if err := ps.getDB(ctx).Order("org_id ASC, project_id ASC NULLS FIRST, created_at ASC").Find(&grants).Error; err != nil {
+		return nil, fmt.Errorf("failed to list all secret grants: %w", err)
+	}
+	return grants, nil
+}
+
 // GetSecretGrantByID retrieves a secret grant by its ID, with no user or
 // project scoping. UpdateSecretGrant and DeleteSecretGrant identify their
 // target by grant ID alone:

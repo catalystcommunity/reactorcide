@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/cipolicy"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store"
@@ -17,7 +18,8 @@ import (
 // multiProfileStore serves several execution profiles for one organization.
 type multiProfileStore struct {
 	*workflowRuntimeStore
-	profiles map[string]*models.ExecutionProfile
+	profiles  map[string]*models.ExecutionProfile
+	approvals []models.CIApproval
 }
 
 func (s *multiProfileStore) GetExecutionProfile(_ context.Context, orgID, name string) (*models.ExecutionProfile, error) {
@@ -27,6 +29,10 @@ func (s *multiProfileStore) GetExecutionProfile(_ context.Context, orgID, name s
 	}
 	copied := *profile
 	return &copied, nil
+}
+
+func (s *multiProfileStore) ListActiveCIApprovalsForTarget(_ context.Context, _ string, _ int, _, _, _ string, _ time.Time) ([]models.CIApproval, error) {
+	return append([]models.CIApproval(nil), s.approvals...), nil
 }
 
 func mixedTrustProfiles() map[string]*models.ExecutionProfile {
@@ -76,14 +82,36 @@ func mixedTrustEvalParent(t *testing.T, policyDocument []byte) (*models.Job, *ci
 		t.Fatal(err)
 	}
 	parent.JobEnvVars = models.JSONB{
-		"REACTORCIDE_CI_POLICY":          string(document),
-		"REACTORCIDE_CI_POLICY_REVISION": policy.Revision,
 		"REACTORCIDE_ACTOR_SUBJECTS":     `["repository_write"]`,
 		"REACTORCIDE_EVENT_TYPE":         "pull_request_updated",
 		"REACTORCIDE_BASE_REF":           "main",
 		"REACTORCIDE_IS_FORK_PR":         "true",
+		"REACTORCIDE_HEAD_REPOSITORY":    "fork/repo",
+		"REACTORCIDE_CI_POLICY":          string(document),
+		"REACTORCIDE_CI_POLICY_REVISION": policy.Revision,
 	}
 	return parent, policy
+}
+
+func mixedTrustCandidates() *policyCandidateSet {
+	return &policyCandidateSet{
+		Base: []triggerWorkflowSpec{{
+			ID: "csilgen-pr", Name: "CSILgen PR", EventMatched: true, ExplicitID: true,
+			DependencyPaths: []string{".reactorcide/workflows/pr.yaml"},
+			Jobs: []triggerJobSpec{
+				{JobName: "asset-prepare", JobCommand: "prepare-base"},
+				{JobName: "asset-seal", JobCommand: "seal-base", DependsOn: []string{"build"}},
+			},
+		}},
+		Head: []triggerWorkflowSpec{{
+			ID: "csilgen-pr", Name: "CSILgen PR", EventMatched: true, ExplicitID: true,
+			DependencyPaths: []string{".reactorcide/workflows/pr.yaml"},
+			Jobs: []triggerJobSpec{
+				{JobName: "asset-prepare", JobCommand: "untrusted-prepare"},
+				{JobName: "build", JobCommand: "build-head", DependsOn: []string{"asset-prepare"}},
+			},
+		}},
+	}
 }
 
 func mixedTrustBatch(parent *models.Job, policy *cipolicy.Policy) *triggerWorkflowSpec {
@@ -93,6 +121,7 @@ func mixedTrustBatch(parent *models.Job, policy *cipolicy.Policy) *triggerWorkfl
 		CIRepository: headRepo, CISHA: headSHA, ExecutionProfile: "pr-untrusted", WorkerClass: "default",
 		PolicyRevision: policy.Revision, PolicyRuleID: "csilgen",
 		DependencyPaths: []string{".reactorcide/workflows/pr.yaml"},
+		NodeAuthority:   cipolicy.BaseNodeDecisions(policy.HeadCI[0].Use.BaseNodes),
 		Jobs: []triggerJobSpec{
 			{JobName: "asset-prepare", CIOrigin: "base", ExecutionProfile: "standard", WorkerClass: "default",
 				CISourceURL: parent.CIRepository, CISourceRef: parent.CISHA},
@@ -110,6 +139,97 @@ func newMixedTrustProcessor() *TriggerProcessor {
 		workflowRuntimeStore: newWorkflowRuntimeStore(),
 		profiles:             mixedTrustProfiles(),
 	}, nil)
+}
+
+func TestSelectPolicyCandidatesAppliesCoordinatorAuthority(t *testing.T) {
+	parent, policy := mixedTrustEvalParent(t, []byte(mixedTrustPolicy))
+	projectID := "project"
+	parent.ProjectID = &projectID
+	if err := (&vcs.JobMetadata{VCSProvider: "github", Repo: "org/repo", PRNumber: 7, CommitSHA: *parent.SourceRef, IsEval: true}).ApplyToJob(parent); err != nil {
+		t.Fatal(err)
+	}
+	processorStore := &multiProfileStore{
+		workflowRuntimeStore: newWorkflowRuntimeStore(), profiles: mixedTrustProfiles(),
+	}
+	tp := NewTriggerProcessor(processorStore, nil)
+	candidates := mixedTrustCandidates()
+	selected, violations, err := tp.selectPolicyCandidates(context.Background(), parent, candidates, []string{".reactorcide/workflows/pr.yaml"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(violations) != 0 || len(selected) != 1 {
+		t.Fatalf("unexpected selection: workflows=%d violations=%+v", len(selected), violations)
+	}
+	workflow := selected[0]
+	if workflow.CIOrigin != "head" || workflow.PolicyRuleID != "csilgen" || workflow.PolicyRevision != policy.Revision {
+		t.Fatalf("coordinator did not apply head authority: %+v", workflow)
+	}
+	jobs := map[string]triggerJobSpec{}
+	for _, job := range workflow.Jobs {
+		jobs[job.JobName] = job
+	}
+	if jobs["asset-prepare"].JobCommand != "prepare-base" || jobs["asset-prepare"].CIOrigin != "base" {
+		t.Fatalf("trusted prepare node did not come from base: %+v", jobs["asset-prepare"])
+	}
+	if jobs["asset-seal"].JobCommand != "seal-base" || jobs["asset-seal"].CIOrigin != "base" {
+		t.Fatalf("missing trusted seal node was not restored from base: %+v", jobs["asset-seal"])
+	}
+	if jobs["build"].JobCommand != "build-head" || jobs["build"].CIOrigin != "" {
+		t.Fatalf("ordinary head node changed unexpectedly: %+v", jobs["build"])
+	}
+}
+
+func TestSelectPolicyCandidatesLoadsApprovalForExactTarget(t *testing.T) {
+	approvalPolicy := strings.Replace(mixedTrustPolicy,
+		"actors: {any: [repository_write]}", "approval: {any: [project_owner]}", 1)
+	parent, policy := mixedTrustEvalParent(t, []byte(approvalPolicy))
+	projectID := "project"
+	parent.ProjectID = &projectID
+	if err := (&vcs.JobMetadata{VCSProvider: "github", Repo: "org/repo", PRNumber: 7, CommitSHA: *parent.SourceRef, IsEval: true}).ApplyToJob(parent); err != nil {
+		t.Fatal(err)
+	}
+	approval := models.CIApproval{
+		ApprovalID: "approval", OrgID: "org", ProjectID: projectID, PRNumber: 7,
+		HeadRepository: "wrong/repo", HeadSHA: *parent.SourceRef, BaseSHA: parent.CISHA,
+		PolicyRevision: policy.Revision, WorkflowScope: "csilgen-pr",
+		ExecutionProfile: "pr-untrusted", ApproverSubject: "project_owner",
+	}
+	processorStore := &multiProfileStore{workflowRuntimeStore: newWorkflowRuntimeStore(), profiles: mixedTrustProfiles(), approvals: []models.CIApproval{approval}}
+	tp := NewTriggerProcessor(processorStore, nil)
+
+	selected, violations, err := tp.selectPolicyCandidates(context.Background(), parent, mixedTrustCandidates(), []string{".reactorcide/workflows/pr.yaml"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(selected) != 1 || selected[0].CIOrigin != "base" || len(violations) == 0 {
+		t.Fatalf("wrong-repository approval was accepted: selected=%+v violations=%+v", selected, violations)
+	}
+
+	processorStore.approvals[0].HeadRepository = "fork/repo"
+	selected, violations, err = tp.selectPolicyCandidates(context.Background(), parent, mixedTrustCandidates(), []string{".reactorcide/workflows/pr.yaml"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(selected) != 1 || selected[0].CIOrigin != "head" || len(violations) != 0 || selected[0].ApprovalID == nil || *selected[0].ApprovalID != "approval" {
+		t.Fatalf("exact-target approval was rejected: selected=%+v violations=%+v", selected, violations)
+	}
+}
+
+func TestSelectPolicyCandidatesRejectsChangedPolicySnapshotRevision(t *testing.T) {
+	parent, _ := mixedTrustEvalParent(t, []byte(mixedTrustPolicy))
+	projectID := "project"
+	parent.ProjectID = &projectID
+	parent.JobEnvVars["REACTORCIDE_CI_POLICY_REVISION"] = "different-revision"
+	if err := (&vcs.JobMetadata{VCSProvider: "github", Repo: "org/repo", PRNumber: 7, CommitSHA: *parent.SourceRef, IsEval: true}).ApplyToJob(parent); err != nil {
+		t.Fatal(err)
+	}
+
+	_, _, err := NewTriggerProcessor(newWorkflowRuntimeStore(), nil).selectPolicyCandidates(
+		context.Background(), parent, &policyCandidateSet{}, []string{".reactorcide/workflows/pr.yaml"},
+	)
+	if err == nil || !strings.Contains(err.Error(), "snapshot failed integrity validation") {
+		t.Fatalf("changed policy snapshot was accepted: %v", err)
+	}
 }
 
 // A head-CI workflow can run ordinary nodes with an untrusted profile and

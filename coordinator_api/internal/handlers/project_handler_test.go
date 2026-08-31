@@ -14,6 +14,7 @@ import (
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/secrets"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store/models"
+	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/tokencaps"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -21,18 +22,19 @@ import (
 
 // ProjectMockStore implements store.Store for project handler testing
 type ProjectMockStore struct {
-	CreateProjectFunc     func(ctx context.Context, project *models.Project) error
-	GetProjectByIDFunc    func(ctx context.Context, projectID string) (*models.Project, error)
-	UpdateProjectFunc     func(ctx context.Context, project *models.Project) error
-	DeleteProjectFunc     func(ctx context.Context, projectID string) error
-	ListProjectsFunc      func(ctx context.Context, limit, offset int) ([]models.Project, error)
-	CreateSecretGrantFunc func(ctx context.Context, grant *models.SecretGrant) error
-	ListSecretGrantsFunc  func(ctx context.Context, userID string, projectID *string) ([]models.SecretGrant, error)
-	GetSecretGrantFunc    func(ctx context.Context, userID string, projectID *string, ref string) (*models.SecretGrant, error)
-	UpdateSecretGrantFunc func(ctx context.Context, grant *models.SecretGrant) error
-	DeleteSecretGrantFunc func(ctx context.Context, userID string, projectID *string, ref string) error
-	RoleAssignments       []models.RoleAssignment
-	JobSecretGrants       []models.SecretGrant
+	CreateProjectFunc       func(ctx context.Context, project *models.Project) error
+	GetProjectByIDFunc      func(ctx context.Context, projectID string) (*models.Project, error)
+	UpdateProjectFunc       func(ctx context.Context, project *models.Project) error
+	DeleteProjectFunc       func(ctx context.Context, projectID string) error
+	ListProjectsFunc        func(ctx context.Context, limit, offset int) ([]models.Project, error)
+	CreateSecretGrantFunc   func(ctx context.Context, grant *models.SecretGrant) error
+	ListAllSecretGrantsFunc func(ctx context.Context) ([]models.SecretGrant, error)
+	ListSecretGrantsFunc    func(ctx context.Context, userID string, projectID *string) ([]models.SecretGrant, error)
+	GetSecretGrantFunc      func(ctx context.Context, userID string, projectID *string, ref string) (*models.SecretGrant, error)
+	UpdateSecretGrantFunc   func(ctx context.Context, grant *models.SecretGrant) error
+	DeleteSecretGrantFunc   func(ctx context.Context, userID string, projectID *string, ref string) error
+	RoleAssignments         []models.RoleAssignment
+	JobSecretGrants         []models.SecretGrant
 
 	CreateProjectCalls     []models.Project
 	GetProjectByIDCalls    []string
@@ -109,6 +111,13 @@ func (m *ProjectMockStore) CreateSecretGrant(ctx context.Context, grant *models.
 func (m *ProjectMockStore) ListSecretGrants(ctx context.Context, userID string, projectID *string) ([]models.SecretGrant, error) {
 	if m.ListSecretGrantsFunc != nil {
 		return m.ListSecretGrantsFunc(ctx, userID, projectID)
+	}
+	return nil, nil
+}
+
+func (m *ProjectMockStore) ListAllSecretGrants(ctx context.Context) ([]models.SecretGrant, error) {
+	if m.ListAllSecretGrantsFunc != nil {
+		return m.ListAllSecretGrantsFunc(ctx)
 	}
 	return nil, nil
 }
@@ -238,6 +247,121 @@ func withUser(r *http.Request) *http.Request {
 	user := &models.User{UserID: "test-user-id"}
 	ctx := checkauth.SetUserContext(r.Context(), user)
 	return r.WithContext(ctx)
+}
+
+func TestListGlobalSecretGrantsReturnsAllTokenAccessibleScopes(t *testing.T) {
+	projectID := "project-1"
+	mockStore := &ProjectMockStore{
+		ListAllSecretGrantsFunc: func(context.Context) ([]models.SecretGrant, error) {
+			return []models.SecretGrant{
+				{Name: "org-global", UserID: "org-1"},
+				{Name: "project", UserID: "org-1", ProjectID: &projectID},
+				{Name: "hidden", UserID: "org-2"},
+			}, nil
+		},
+	}
+	caps, err := tokencaps.New(tokencaps.SecretsManage)
+	require.NoError(t, err)
+	principal := &checkauth.Principal{CredentialType: "service_token", OrganizationIDs: []string{"org-1"}, Capabilities: caps}
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/secret-grants", nil)
+	req = req.WithContext(checkauth.SetPrincipalContext(req.Context(), principal))
+	w := httptest.NewRecorder()
+
+	NewProjectHandler(mockStore).ListGlobalSecretGrants(w, req)
+
+	require.Equal(t, http.StatusOK, w.Code)
+	var response ListSecretGrantsResponse
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &response))
+	require.Len(t, response.Grants, 2)
+	assert.Equal(t, "org-global", response.Grants[0].Name)
+	assert.Equal(t, "project", response.Grants[1].Name)
+}
+
+func TestListGlobalSecretGrantsIntersectsUserTokenWithLiveRole(t *testing.T) {
+	projectID := "project-1"
+	mockStore := &ProjectMockStore{
+		ListAllSecretGrantsFunc: func(context.Context) ([]models.SecretGrant, error) {
+			return []models.SecretGrant{
+				{Name: "organization", UserID: "org-1"},
+				{Name: "owned-project", UserID: "org-1", ProjectID: &projectID},
+			}, nil
+		},
+		RoleAssignments: []models.RoleAssignment{{
+			PrincipalType: models.PrincipalTypeUser,
+			PrincipalID:   "user-1",
+			ScopeType:     models.ScopeTypeProject,
+			ScopeID:       &projectID,
+			Role:          models.RoleOwner,
+		}},
+	}
+	caps, err := tokencaps.New(tokencaps.SecretsManage)
+	require.NoError(t, err)
+	principal := &checkauth.Principal{CredentialType: "user_token", UserID: "user-1", OrganizationIDs: []string{"org-1"}, Capabilities: caps}
+	user := &models.User{UserID: "user-1"}
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/secret-grants", nil)
+	ctx := checkauth.SetPrincipalContext(req.Context(), principal)
+	ctx = checkauth.SetUserContext(ctx, user)
+	req = req.WithContext(ctx)
+	w := httptest.NewRecorder()
+
+	NewProjectHandler(mockStore).ListGlobalSecretGrants(w, req)
+
+	require.Equal(t, http.StatusOK, w.Code)
+	var response ListSecretGrantsResponse
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &response))
+	require.Len(t, response.Grants, 1)
+	assert.Equal(t, "owned-project", response.Grants[0].Name)
+}
+
+func TestListGlobalSecretGrantsFiltersOrganizationWideScope(t *testing.T) {
+	projectID := "project-1"
+	mockStore := &ProjectMockStore{
+		ListAllSecretGrantsFunc: func(context.Context) ([]models.SecretGrant, error) {
+			return []models.SecretGrant{
+				{Name: "org-global", UserID: "org-1"},
+				{Name: "project", UserID: "org-1", ProjectID: &projectID},
+			}, nil
+		},
+	}
+	caps, err := tokencaps.New(tokencaps.SecretsManage)
+	require.NoError(t, err)
+	principal := &checkauth.Principal{CredentialType: "service_token", OrganizationIDs: []string{"org-1"}, Capabilities: caps}
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/secret-grants?scope=global", nil)
+	req = req.WithContext(checkauth.SetPrincipalContext(req.Context(), principal))
+	w := httptest.NewRecorder()
+
+	NewProjectHandler(mockStore).ListGlobalSecretGrants(w, req)
+
+	require.Equal(t, http.StatusOK, w.Code)
+	var response ListSecretGrantsResponse
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &response))
+	require.Len(t, response.Grants, 1)
+	assert.Equal(t, "org-global", response.Grants[0].Name)
+}
+
+func TestListGlobalSecretGrantsRequiresManageCapability(t *testing.T) {
+	mockStore := &ProjectMockStore{}
+	principal := &checkauth.Principal{CredentialType: "service_token", OrganizationIDs: []string{"org-1"}}
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/secret-grants", nil)
+	req = req.WithContext(checkauth.SetPrincipalContext(req.Context(), principal))
+	w := httptest.NewRecorder()
+
+	NewProjectHandler(mockStore).ListGlobalSecretGrants(w, req)
+
+	assert.Equal(t, http.StatusForbidden, w.Code)
+}
+
+func TestListGlobalSecretGrantsRejectsConflictingFilters(t *testing.T) {
+	caps, err := tokencaps.New(tokencaps.SecretsManage)
+	require.NoError(t, err)
+	principal := &checkauth.Principal{CredentialType: "service_token", OrganizationIDs: []string{"org-1"}, Capabilities: caps}
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/secret-grants?project=project-1&scope=global", nil)
+	req = req.WithContext(checkauth.SetPrincipalContext(req.Context(), principal))
+	w := httptest.NewRecorder()
+
+	NewProjectHandler(&ProjectMockStore{}).ListGlobalSecretGrants(w, req)
+
+	assert.Equal(t, http.StatusBadRequest, w.Code)
 }
 
 // helper to set project_id in context

@@ -22,20 +22,26 @@ var SecretGrantsCommand = &cli.Command{
 	Flags: append(apiFlags(),
 		&cli.StringFlag{
 			Name:  "project",
-			Usage: "Project scope by ID, name, or repo URL. Omit for org/global grants",
+			Usage: "Project scope by ID, name, or repo URL. For list, omit this option to include all accessible scopes",
 		},
 	),
 	Subcommands: []*cli.Command{
 		{
 			Name:  "list",
-			Usage: "List secret grants",
-			Flags: []cli.Flag{secretGrantFormatFlag()},
+			Usage: "List every secret grant the API token can manage",
+			Flags: []cli.Flag{
+				secretGrantFormatFlag(),
+				&cli.BoolFlag{Name: "global-only", Usage: "List only organization-wide grants"},
+			},
 			Action: func(ctx *cli.Context) error {
+				if ctx.String("project") != "" && ctx.Bool("global-only") {
+					return fmt.Errorf("--project and --global-only are mutually exclusive")
+				}
 				client, err := newSecretGrantsAPIClient(ctx)
 				if err != nil {
 					return err
 				}
-				grants, err := client.List(ctx.String("project"))
+				grants, err := client.List(ctx.String("project"), ctx.Bool("global-only"))
 				if err != nil {
 					return err
 				}
@@ -264,9 +270,13 @@ func newSecretGrantsAPIClient(ctx *cli.Context) (*secretGrantAPIClient, error) {
 	return &secretGrantAPIClient{secretsAPIClient: client}, nil
 }
 
-func (c *secretGrantAPIClient) List(project string) ([]models.SecretGrant, error) {
+func (c *secretGrantAPIClient) List(project string, globalOnly bool) ([]models.SecretGrant, error) {
 	var response secretGrantListResponse
-	if err := c.doJSON(http.MethodGet, "/api/v1/secret-grants"+secretGrantProjectQuery(project), nil, http.StatusOK, &response); err != nil {
+	query := secretGrantProjectQuery(project)
+	if globalOnly {
+		query = "?scope=global"
+	}
+	if err := c.doJSON(http.MethodGet, "/api/v1/secret-grants"+query, nil, http.StatusOK, &response); err != nil {
 		return nil, err
 	}
 	return response.Grants, nil
@@ -362,6 +372,19 @@ func loadSecretGrantApplyFile(path string) (secretGrantApplyRequest, error) {
 
 func printSecretGrants(format string, grants []models.SecretGrant) error {
 	sort.Slice(grants, func(i, j int) bool {
+		if grants[i].UserID != grants[j].UserID {
+			return grants[i].UserID < grants[j].UserID
+		}
+		leftProject, rightProject := "", ""
+		if grants[i].ProjectID != nil {
+			leftProject = *grants[i].ProjectID
+		}
+		if grants[j].ProjectID != nil {
+			rightProject = *grants[j].ProjectID
+		}
+		if leftProject != rightProject {
+			return leftProject < rightProject
+		}
 		return grants[i].Name < grants[j].Name
 	})
 	switch format {
@@ -373,7 +396,7 @@ func printSecretGrants(format string, grants []models.SecretGrant) error {
 		fmt.Print(string(data))
 	case "table":
 		w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-		fmt.Fprintln(w, "NAME\tSCOPE\tSECRET\tJOB\tDESCRIPTION")
+		fmt.Fprintln(w, "NAME\tORG\tSCOPE\tSECRET\tJOB\tDESCRIPTION")
 		for _, grant := range grants {
 			scope := "global"
 			if grant.ProjectID != nil && *grant.ProjectID != "" {
@@ -384,7 +407,7 @@ func printSecretGrants(format string, grants []models.SecretGrant) error {
 			if grant.JobNamePattern != "" {
 				job += ":" + grant.JobNamePattern
 			}
-			fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n", grant.Name, scope, secret, job, grant.Description)
+			fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\n", grant.Name, grant.UserID, scope, secret, job, grant.Description)
 		}
 		return w.Flush()
 	default:

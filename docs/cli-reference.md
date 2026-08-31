@@ -252,7 +252,7 @@ See [Secrets](./secrets.md).
 
 | Command | Purpose |
 | --- | --- |
-| `secret-grants list` | List grants. |
+| `secret-grants list` | List all grants that the token can manage. |
 | `secret-grants get <name-or-id>` | Show one grant. |
 | `secret-grants set <name>` | Create or change a grant. |
 | `secret-grants delete <name-or-id>` | Delete a grant. |
@@ -261,6 +261,10 @@ See [Secrets](./secrets.md).
 Use repeated `--execution-profile` and `--ci-origin` options with
 `secret-grants set` to limit a grant. Valid CI origins are `base` and `head`.
 Use `--clear-execution-profiles` or `--clear-ci-origins` to remove a limit.
+
+By default, `secret-grants list` includes all project and organization grants
+that the token can manage. Use `--project` to select one project. Use
+`--global-only` to list only organization-wide grants.
 
 See [VCS Credentials and Secret Grants](./vcs-credentials-and-secret-grants.md).
 

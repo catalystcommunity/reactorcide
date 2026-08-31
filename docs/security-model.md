@@ -165,10 +165,15 @@ A worker receives work only through a pool mapping for the job organization
 and worker class. Worker characteristics do not grant access to another pool.
 
 Pull-request CI policy comes only from the coordinator database. Repository
-content cannot create or change it. The coordinator puts an exact policy copy
-on the evaluation job and checks the result against that copy. Head files are
-data until one complete policy rule permits a workflow security ID and all of
-its executable CI paths. A violation does not stop safe base workflows.
+content cannot create or change it. The coordinator puts an exact policy
+snapshot and revision on each evaluation job. Runnerlib does not evaluate the
+snapshot. The job also receives an active approval snapshot. Triggered jobs
+inherit both snapshots. Runnerlib returns inactive base and head candidates.
+The coordinator verifies the policy snapshot and loads current approvals. It
+selects the allowed candidate and sets its
+authority. Head files are data until one complete policy rule permits a
+workflow security ID and all of its executable CI paths. A violation does not
+stop safe base workflows.
 
 An execution profile limits secrets, runtime capabilities, root use, worker
 classes, time, resources, caches, and artifacts. Child work must use the same
@@ -182,8 +187,8 @@ coordinator policy can give a node more authority than the workflow head-CI
 default. The trusted node and all of its executable CI content resolve from
 the exact base CI SHA, while the tested source stays at the head SHA. A
 pull-request head cannot add, change, rename, or replace a trusted node. The
-coordinator verifies each node authority claim against its policy copy,
-stores the effective authority on the node, and fails closed on any mismatch.
+coordinator sets node authority from its policy, stores the effective authority
+on the node, and fails closed on any mismatch.
 A retry replays the recorded node authority. An untrusted node never receives
 a resolved secret from a trusted node; only normal workflow variables cross
 the boundary. Treat a signed URL in a workflow variable as a temporary

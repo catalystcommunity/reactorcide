@@ -247,11 +247,15 @@ workflow that has only a generated compatibility ID.
 Store one CI policy for each project in the coordinator. Do not put this
 policy in the source repository. Reactorcide does not read
 `.reactorcide/policy.yaml` or `.reactorcide/policies/` during evaluation.
+It treats these legacy paths as ordinary CI content when they change.
 
 The coordinator validates the policy and calculates its revision. It puts an
-exact policy copy on each evaluation job. It then checks the evaluation result
-against the same copy. A policy update does not change a job that is already
-in progress.
+exact policy snapshot, revision, and active approval snapshot on each
+evaluation job. Triggered jobs inherit these values. Runnerlib does not
+evaluate the policy. It returns inactive base and head workflow candidates.
+The coordinator verifies the policy snapshot, loads current approvals,
+selects the allowed candidate, and applies the execution authority. A later
+policy update does not change this decision.
 
 Keep an operator copy, such as `ci-policy.yaml`, outside the source repository.
 Use the CLI to validate and store it:
@@ -417,19 +421,20 @@ in only one entry for a rule.
 
 The rules for a policy-controlled base node are:
 
-- The evaluator resolves the node and all of its executable CI content from
-  the exact base CI SHA. This includes the workflow definition, the job file,
-  plugins, scripts, and helper files.
+- Runnerlib resolves the node and all of its executable CI content from the
+  exact base CI SHA. This includes the workflow definition, the job file,
+  plugins, scripts, and helper files. It returns this content as an inactive
+  candidate.
 - The tested source stays at the pull-request head SHA.
 - The base specification wins. A head change to the node command, image,
   environment, `job_file`, dependencies, `for_each`, capabilities, or
   condition has no effect on the node that runs. A head node with the same
   name is ignored. A trusted node that head removed still runs.
-- Repository YAML cannot set or replace node authority. The evaluator rejects
-  a workflow job entry or job file that contains a reserved authority field.
-- The coordinator verifies each node authority claim against its own policy
-  copy. The node profile must be the same or weaker than the evaluation job
-  profile. The node worker class must be allowed by the node profile.
+- Repository YAML cannot set or replace node authority. Runnerlib rejects a
+  workflow job entry or job file that contains a reserved authority field.
+- The coordinator sets node authority from the policy snapshot. The node
+  profile must be the same or weaker than the evaluation job profile. The
+  node worker class must be allowed by the node profile.
 - The coordinator stores the effective CI origin, CI repository, CI SHA,
   profile, worker class, policy revision, rule, and approval on each node
   that differs from the workflow default.
@@ -511,9 +516,10 @@ approval subject.
 
 ## GitHub Status and Report
 
-Runnerlib returns workflow candidates and policy facts in one evaluation
-result. The coordinator makes the authoritative decision. It then writes a
-commit status on the exact head SHA:
+Runnerlib returns inactive base and head workflow candidates in one evaluation
+result. It does not return an authority decision. The coordinator verifies the
+policy snapshot, loads active approvals, makes the authoritative decision, and
+writes a commit status on the exact head SHA:
 
 ```text
 Context: Reactorcide CI Policy

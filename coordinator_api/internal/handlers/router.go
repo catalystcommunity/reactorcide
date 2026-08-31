@@ -402,6 +402,24 @@ func createAppMux() *http.ServeMux {
 			return
 		}
 
+		// Trigger processing creates independently durable workflow records and
+		// can publish their VCS status. Do not wrap all workflows in one request
+		// transaction: a later workflow refusal must not roll back an earlier
+		// workflow after its external status is visible.
+		if strings.HasSuffix(path, "/triggers") {
+			jobID := strings.TrimSuffix(path, "/triggers")
+			r = r.WithContext(setIDContext(r.Context(), "job_id", jobID))
+			handler := authMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.Method == http.MethodPost {
+					jobHandler.SubmitTriggers(w, r)
+					return
+				}
+				http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+			}))
+			handler.ServeHTTP(w, r)
+			return
+		}
+
 		handler := transactionMiddleware(authMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			// Handle the special case for job_id/cancel
 			if strings.HasSuffix(path, "/cancel") {
@@ -457,18 +475,6 @@ func createAppMux() *http.ServeMux {
 				r = r.WithContext(setIDContext(r.Context(), "job_id", jobID))
 				if r.Method == http.MethodGet {
 					jobHandler.GetJobMetrics(w, r)
-					return
-				}
-				http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-				return
-			}
-
-			// Handle the special case for job_id/triggers
-			if strings.HasSuffix(path, "/triggers") {
-				jobID := strings.TrimSuffix(path, "/triggers")
-				r = r.WithContext(setIDContext(r.Context(), "job_id", jobID))
-				if r.Method == http.MethodPost {
-					jobHandler.SubmitTriggers(w, r)
 					return
 				}
 				http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)

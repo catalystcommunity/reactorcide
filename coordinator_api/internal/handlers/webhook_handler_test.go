@@ -42,10 +42,31 @@ type WebhookMockStore struct {
 	GetProjectByRepoURLFunc func(ctx context.Context, repoURL string) (*models.Project, error)
 	GetUserByIDFunc         func(ctx context.Context, userID string) (*models.User, error)
 	GetCIPolicyFunc         func(ctx context.Context, projectID string) (*models.CIPolicy, error)
+	ActiveCIApprovals       []models.CIApproval
 
 	CreateJobCalls           []*models.Job
 	UpdateJobCalls           []*models.Job
 	GetProjectByRepoURLCalls []string
+}
+
+func (m *WebhookMockStore) ResolveVCSIdentityLink(context.Context, string, string) (*models.VCSIdentityLink, error) {
+	return nil, store.ErrNotFound
+}
+
+func (m *WebhookMockStore) ListGroupsForUser(context.Context, string) ([]models.Group, error) {
+	return nil, nil
+}
+
+func (m *WebhookMockStore) ListActiveCIApprovalsForTarget(context.Context, string, int, string, string, string, time.Time) ([]models.CIApproval, error) {
+	return append([]models.CIApproval(nil), m.ActiveCIApprovals...), nil
+}
+
+func (m *WebhookMockStore) InvalidateCIApprovalsForNewHead(context.Context, string, int, string) (int64, error) {
+	return 0, nil
+}
+
+func (m *WebhookMockStore) CreateCIApproval(context.Context, *models.CIApproval) error {
+	return nil
 }
 
 func (m *WebhookMockStore) GetCIPolicyByProject(ctx context.Context, projectID string) (*models.CIPolicy, error) {
@@ -333,6 +354,7 @@ func TestWebhookHandler_PREvent_SubmitsToCorndogs(t *testing.T) {
 	var policyDocument models.JSONB
 	require.NoError(t, json.Unmarshal(canonicalPolicy, &policyDocument))
 	mockStore := &WebhookMockStore{
+		ActiveCIApprovals: []models.CIApproval{{ApprovalID: "approval-1", ProjectID: project.ProjectID, PRNumber: 42, HeadSHA: "abc123"}},
 		GetProjectByRepoURLFunc: func(ctx context.Context, repoURL string) (*models.Project, error) {
 			return project, nil
 		},
@@ -398,6 +420,9 @@ func TestWebhookHandler_PREvent_SubmitsToCorndogs(t *testing.T) {
 	assert.Equal(t, `["vcs_user:github/junipuff"]`, createdJob.JobEnvVars["REACTORCIDE_ACTOR_SUBJECTS"])
 	assert.Equal(t, parsedPolicy.Revision, createdJob.JobEnvVars["REACTORCIDE_CI_POLICY_REVISION"])
 	assert.NotEmpty(t, createdJob.JobEnvVars["REACTORCIDE_CI_POLICY"])
+	approvalSnapshot, ok := createdJob.JobEnvVars["REACTORCIDE_CI_APPROVALS"].(string)
+	require.True(t, ok)
+	assert.Contains(t, approvalSnapshot, "approval-1")
 	// CI source should be set (same-repo mode since project has no DefaultCISourceURL)
 	require.NotNil(t, createdJob.CISourceURL)
 	assert.Equal(t, "https://github.com/test-org/test-repo.git", *createdJob.CISourceURL)

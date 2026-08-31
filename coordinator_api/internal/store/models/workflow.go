@@ -75,7 +75,7 @@ func (w *WorkflowInstance) BeforeCreate(_ *gorm.DB) error {
 // WorkflowInstance's Status is never set to "timeout" in the first place —
 // worker/workflow_runtime.go's computeWorkflowStatus folds a "timeout" node
 // status into the workflow's aggregate "failed" status (see
-// isWorkflowNodeFailure/computeWorkflowStatus's fail-fast branch), so
+// computeWorkflowStatus's fail-fast branch), so
 // "failed" already covers workflows containing a timed-out node. A workflow
 // that finished "success" or "skipped" has nothing to retry, and one still
 // "evaluating"/"running"/"cancelling" isn't in a terminal state yet.

@@ -19,11 +19,6 @@ type Client struct {
 	raw       *csilapi.ReactorcideWorkerClient
 }
 
-// New returns a Client wired to a CSILRPCTransport at baseURL.
-func New(baseURL string) *Client {
-	return NewWithTransport(&CSILRPCTransport{BaseURL: baseURL})
-}
-
 // NewWithTransport returns a Client wired to a caller-supplied
 // CSILRPCTransport, for tests or non-default HTTP client / header setups
 // (e.g. pointing BaseURL at an httptest.Server).

@@ -993,8 +993,9 @@ func (h *JobHandler) GetJobLogs(w http.ResponseWriter, r *http.Request) {
 
 // SubmitTriggersResponse represents the response for trigger submission
 type SubmitTriggersResponse struct {
-	CreatedJobIDs []string `json:"created_job_ids"`
-	Count         int      `json:"count"`
+	CreatedJobIDs []string                        `json:"created_job_ids"`
+	Count         int                             `json:"count"`
+	Workflows     []worker.TriggerWorkflowOutcome `json:"workflows,omitempty"`
 }
 
 // SubmitTriggers handles POST /api/v1/jobs/{job_id}/triggers
@@ -1041,19 +1042,25 @@ func (h *JobHandler) SubmitTriggers(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Process triggers via TriggerProcessor
-	createdJobIDs, err := h.triggerProcessor.ProcessTriggersFromData(r.Context(), body, "", parentJob)
+	result, err := h.triggerProcessor.ProcessTriggersFromDataWithOutcomes(r.Context(), body, "", parentJob)
 	if err != nil {
-		h.respondWithError(w, http.StatusBadRequest, store.ErrInvalidInput)
+		log.Printf("trigger processing failed for parent job %s: %v", parentJob.JobID, err)
+		if worker.IsInvalidTriggerError(err) {
+			h.respondWithError(w, http.StatusBadRequest, store.ErrInvalidInput)
+			return
+		}
+		h.respondWithError(w, http.StatusInternalServerError, fmt.Errorf("trigger processing failed"))
 		return
 	}
 
-	if createdJobIDs == nil {
-		createdJobIDs = []string{}
+	if result.CreatedJobIDs == nil {
+		result.CreatedJobIDs = []string{}
 	}
 
 	h.respondWithJSON(w, http.StatusCreated, SubmitTriggersResponse{
-		CreatedJobIDs: createdJobIDs,
-		Count:         len(createdJobIDs),
+		CreatedJobIDs: result.CreatedJobIDs,
+		Count:         len(result.CreatedJobIDs),
+		Workflows:     result.Workflows,
 	})
 }
 

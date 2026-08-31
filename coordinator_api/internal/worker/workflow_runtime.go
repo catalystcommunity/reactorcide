@@ -28,6 +28,46 @@ type workflowStatusUpdater interface {
 	UpdateWorkflowStatus(ctx context.Context, workflow *models.WorkflowInstance, nodes []models.WorkflowNode) error
 }
 
+type workflowTransactionStore interface {
+	InTransaction(ctx context.Context, fn func(context.Context) error) error
+}
+
+type deferWorkflowPublishContextKey struct{}
+
+type workflowAdmissionError struct {
+	cause error
+}
+
+type workflowSubmissionError struct {
+	cause error
+}
+
+func (e *workflowSubmissionError) Error() string { return e.cause.Error() }
+func (e *workflowSubmissionError) Unwrap() error { return e.cause }
+
+func (e *workflowAdmissionError) Error() string { return e.cause.Error() }
+func (e *workflowAdmissionError) Unwrap() error { return e.cause }
+
+func admissionError(err error) error {
+	if err == nil {
+		return nil
+	}
+	return &workflowAdmissionError{cause: err}
+}
+
+// recordedWorkflowFailure means the workflow and failed node are durable.
+// The trigger processor can report this workflow and continue its siblings.
+type recordedWorkflowFailure struct {
+	Disposition string
+	Reason      string
+	NodeID      string
+	NodeName    string
+	cause       error
+}
+
+func (e *recordedWorkflowFailure) Error() string { return e.Reason }
+func (e *recordedWorkflowFailure) Unwrap() error { return e.cause }
+
 type workflowStore interface {
 	CreateWorkflowInstance(ctx context.Context, wf *models.WorkflowInstance) error
 	GetWorkflowInstance(ctx context.Context, workflowID string) (*models.WorkflowInstance, error)
@@ -493,10 +533,25 @@ func (a *coordinatorWorkflowEngineAdapter) Start(ctx context.Context, decision w
 	}
 	jobID, err := a.tp.submitWorkflowNode(ctx, a.wf, node)
 	if err != nil {
+		disposition := ""
+		decisionPrefix := ""
+		var admission *workflowAdmissionError
+		if errors.As(err, &admission) {
+			disposition = "not_admitted"
+			decisionPrefix = "workflow not admitted"
+		}
+		var submission *workflowSubmissionError
+		if errors.As(err, &submission) {
+			disposition = "submission_failed"
+			decisionPrefix = "workflow submission failed"
+		}
+		if disposition == "" {
+			return err
+		}
 		now := time.Now().UTC()
 		node.Status = "failed"
 		node.CompletedAt = &now
-		node.DecisionReason = fmt.Sprintf("failed to submit workflow node: %v", err)
+		node.DecisionReason = fmt.Sprintf("%s: %v", decisionPrefix, err)
 		if updateErr := a.store.UpdateWorkflowNode(ctx, node); updateErr != nil {
 			return fmt.Errorf("%v; failed to record workflow node failure: %w", err, updateErr)
 		}
@@ -505,9 +560,12 @@ func (a *coordinatorWorkflowEngineAdapter) Start(ctx context.Context, decision w
 			return fmt.Errorf("%v; failed to record workflow failure: %w", err, updateErr)
 		}
 		a.tp.recordWorkflowEvent(ctx, a.wf.WorkflowID, &node.NodeID, node.JobID, "node_completed", node.DecisionReason, models.JSONB{
-			"status": "failed",
+			"status": "failed", "disposition": disposition,
 		})
-		return err
+		return &recordedWorkflowFailure{
+			Disposition: disposition, Reason: err.Error(), NodeID: node.NodeID,
+			NodeName: node.DisplayName, cause: err,
+		}
 	}
 	a.created = append(a.created, jobID)
 	return nil
@@ -542,7 +600,7 @@ func (tp *TriggerProcessor) submitWorkflowNode(ctx context.Context, wf *models.W
 	var spec triggerJobSpec
 	specBytes, _ := json.Marshal(node.JobSpec)
 	if err := json.Unmarshal(specBytes, &spec); err != nil {
-		return "", err
+		return "", admissionError(fmt.Errorf("workflow node %q has an invalid job specification: %w", node.DisplayName, err))
 	}
 	parentJob, err := tp.store.GetJobByID(ctx, derefString(wf.ParentJobID))
 	if err != nil {
@@ -562,10 +620,10 @@ func (tp *TriggerProcessor) submitWorkflowNode(ctx context.Context, wf *models.W
 		// Fail closed when the recorded node authority is incomplete or does
 		// not belong to the workflow's recorded policy decision.
 		if node.CIOrigin == "" || node.ExecutionProfile == "" || node.WorkerClass == "" || node.CIRepository == "" || node.CISHA == "" {
-			return "", fmt.Errorf("workflow node %q has an incomplete recorded authority", node.DisplayName)
+			return "", admissionError(fmt.Errorf("workflow node %q has an incomplete recorded authority", node.DisplayName))
 		}
 		if node.PolicyRevision != wf.PolicyRevision {
-			return "", fmt.Errorf("workflow node %q authority does not match the recorded policy revision", node.DisplayName)
+			return "", admissionError(fmt.Errorf("workflow node %q authority does not match the recorded policy revision", node.DisplayName))
 		}
 		effectiveWorkerClass = node.WorkerClass
 		effectiveProfileName = node.ExecutionProfile
@@ -587,11 +645,14 @@ func (tp *TriggerProcessor) submitWorkflowNode(ctx context.Context, wf *models.W
 	limitCapabilities := true
 	ps, hasProfileStore := tp.store.(triggerProfileStore)
 	if node.HasAuthorityOverride() && !hasProfileStore {
-		return "", fmt.Errorf("workflow node %q execution profile cannot be verified", node.DisplayName)
+		return "", admissionError(fmt.Errorf("workflow node %q execution profile cannot be verified", node.DisplayName))
 	}
 	if hasProfileStore && effectiveProfileName != "" {
 		executionProfile, err = ps.GetExecutionProfile(ctx, wf.OrgID, effectiveProfileName)
 		if err != nil {
+			if errors.Is(err, store.ErrNotFound) {
+				return "", admissionError(fmt.Errorf("workflow execution profile %q was not found", effectiveProfileName))
+			}
 			return "", fmt.Errorf("load workflow execution profile: %w", err)
 		}
 		limitCapabilities = executionProfile.RuntimeCapabilities != nil
@@ -605,7 +666,7 @@ func (tp *TriggerProcessor) submitWorkflowNode(ctx context.Context, wf *models.W
 	}
 	job, err := tp.buildJobFromTriggerWithCapabilityLimit(spec, &authorityParent, limitCapabilities)
 	if err != nil {
-		return "", err
+		return "", admissionError(err)
 	}
 	// The recorded authority decides the executable CI revision, not the
 	// stored spec. This keeps a trusted node on the exact recorded base SHA
@@ -618,13 +679,13 @@ func (tp *TriggerProcessor) submitWorkflowNode(ctx context.Context, wf *models.W
 	}
 	if executionProfile != nil {
 		if !executionProfile.MayRunAsRoot && (job.RunAsUser == "root" || job.RunAsUser == "0" || strings.HasPrefix(job.RunAsUser, "0:")) {
-			return "", fmt.Errorf("execution profile %q denies root", executionProfile.Name)
+			return "", admissionError(fmt.Errorf("execution profile %q denies root", executionProfile.Name))
 		}
 		if executionProfile.TimeoutCeilingSeconds != nil && job.TimeoutSeconds > *executionProfile.TimeoutCeilingSeconds {
-			return "", fmt.Errorf("job timeout exceeds execution profile %q ceiling", executionProfile.Name)
+			return "", admissionError(fmt.Errorf("job timeout exceeds execution profile %q ceiling", executionProfile.Name))
 		}
 		if err := enforceResourceCeilings(job, executionProfile.ResourceCeilings); err != nil {
-			return "", fmt.Errorf("execution profile %q: %w", executionProfile.Name, err)
+			return "", admissionError(fmt.Errorf("execution profile %q: %w", executionProfile.Name, err))
 		}
 	}
 	job.WorkflowID = &wf.WorkflowID
@@ -648,19 +709,12 @@ func (tp *TriggerProcessor) submitWorkflowNode(ctx context.Context, wf *models.W
 		taskPayload := tp.buildTaskPayload(job)
 		task, err := tp.corndogsClient.SubmitTaskToQueue(ctx, job.QueueName, taskPayload, int64(job.Priority))
 		if err != nil {
-			now := time.Now().UTC()
 			job.Status = "failed"
 			job.LastError = fmt.Sprintf("failed to submit to Corndogs: %v", err)
-			_ = tp.store.UpdateJob(ctx, job)
-			node.Status = "failed"
-			node.CompletedAt = &now
-			node.DecisionReason = job.LastError
-			_ = ws.UpdateWorkflowNode(ctx, node)
-			tp.recordWorkflowEvent(ctx, wf.WorkflowID, &node.NodeID, &job.JobID, "node_completed", node.DecisionReason, models.JSONB{
-				"status": job.Status,
-			})
-			_ = tp.refreshWorkflowStatus(ctx, wf)
-			return "", err
+			if updateErr := tp.store.UpdateJob(ctx, job); updateErr != nil {
+				return "", fmt.Errorf("failed to submit to Corndogs: %v; failed to record job failure: %w", err, updateErr)
+			}
+			return "", &workflowSubmissionError{cause: fmt.Errorf("failed to submit to Corndogs: %w", err)}
 		}
 		taskID := task.Uuid
 		job.CorndogsTaskID = &taskID
@@ -902,7 +956,8 @@ func (tp *TriggerProcessor) updateWorkflowAggregate(ctx context.Context, ws work
 		}
 		tp.recordWorkflowEvent(ctx, wf.WorkflowID, nil, nil, "workflow_status_changed", fmt.Sprintf("%s -> %s", old, wf.Status), nil)
 	}
-	if publish {
+	deferPublish, _ := ctx.Value(deferWorkflowPublishContextKey{}).(bool)
+	if publish && !deferPublish {
 		if updater, ok := tp.statusUpdater.(workflowStatusUpdater); ok {
 			if err := updater.UpdateWorkflowStatus(ctx, wf, nodes); err != nil {
 				logging.Log.WithError(err).WithField("workflow_id", wf.WorkflowID).Warn("Failed to update root workflow VCS status")
@@ -937,14 +992,6 @@ func (tp *TriggerProcessor) recordWorkflowEvent(ctx context.Context, workflowID 
 	}); err != nil {
 		logging.Log.WithError(err).WithField("workflow_id", workflowID).Warn("Failed to record workflow event")
 	}
-}
-
-func dependenciesReady(nodes []models.WorkflowNode, node *models.WorkflowNode) (bool, string) {
-	return workflowengine.DependenciesReady(workflowRuleNodes(nodes), workflowRuleNode(*node))
-}
-
-func evaluateWorkflowCondition(nodes []models.WorkflowNode, node *models.WorkflowNode) (bool, string) {
-	return workflowengine.EvaluateCondition(workflowRuleNodes(nodes), workflowRuleNode(*node))
 }
 
 // ComputeWorkflowStatus is the exported form of computeWorkflowStatus, used
@@ -992,10 +1039,6 @@ func workflowNodeStatusFromJob(status string) string {
 	}
 }
 
-func isWorkflowNodeTerminal(status string) bool {
-	return workflowengine.Terminal(status)
-}
-
 func workflowRuleNodes(nodes []models.WorkflowNode) []workflowengine.Node {
 	out := make([]workflowengine.Node, len(nodes))
 	for i := range nodes {
@@ -1015,20 +1058,6 @@ func workflowNodeByID(nodes []models.WorkflowNode, id string) *models.WorkflowNo
 		}
 	}
 	return nil
-}
-
-func isWorkflowNodeFailure(status string) bool {
-	return status == "failed" || status == "cancelled" || status == "timeout"
-}
-
-func nodesByName(nodes []models.WorkflowNode, name string) []models.WorkflowNode {
-	var result []models.WorkflowNode
-	for _, node := range nodes {
-		if node.Name == name {
-			result = append(result, node)
-		}
-	}
-	return result
 }
 
 func cloneStringMap(in map[string]string) map[string]string {

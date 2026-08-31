@@ -6,9 +6,12 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/corndogs"
+	pb "github.com/catalystcommunity/reactorcide/coordinator_api/internal/corndogs/v1alpha1"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store/models"
 )
@@ -26,6 +29,23 @@ type workflowRuntimeStore struct {
 type workflowRuntimeProfileStore struct {
 	*workflowRuntimeStore
 	profile *models.ExecutionProfile
+	audits  []models.AuditEvent
+}
+
+type transactionalWorkflowRuntimeProfileStore struct {
+	*workflowRuntimeProfileStore
+	inTransaction bool
+	commits       int
+}
+
+func (s *transactionalWorkflowRuntimeProfileStore) InTransaction(ctx context.Context, fn func(context.Context) error) error {
+	s.inTransaction = true
+	err := fn(ctx)
+	s.inTransaction = false
+	if err == nil {
+		s.commits++
+	}
+	return err
 }
 
 func (s *workflowRuntimeProfileStore) GetExecutionProfile(_ context.Context, orgID, name string) (*models.ExecutionProfile, error) {
@@ -34,6 +54,11 @@ func (s *workflowRuntimeProfileStore) GetExecutionProfile(_ context.Context, org
 	}
 	copy := *s.profile
 	return &copy, nil
+}
+
+func (s *workflowRuntimeProfileStore) AppendAuditEvent(_ context.Context, event *models.AuditEvent) error {
+	s.audits = append(s.audits, *event)
+	return nil
 }
 
 func newWorkflowRuntimeStore() *workflowRuntimeStore {
@@ -198,6 +223,7 @@ type workflowRuntimeStatusUpdater struct {
 	MockJobStatusUpdater
 	workflowCalls []models.WorkflowInstance
 	nodesCalls    [][]models.WorkflowNode
+	onUpdate      func()
 }
 
 func TestEncodeWorkflowVarsPreservesJSONTypes(t *testing.T) {
@@ -327,6 +353,9 @@ func TestRootWorkflowStatusIncludesChildNodes(t *testing.T) {
 }
 
 func (u *workflowRuntimeStatusUpdater) UpdateWorkflowStatus(ctx context.Context, wf *models.WorkflowInstance, nodes []models.WorkflowNode) error {
+	if u.onUpdate != nil {
+		u.onUpdate()
+	}
 	u.workflowCalls = append(u.workflowCalls, *wf)
 	nodesCopy := append([]models.WorkflowNode(nil), nodes...)
 	u.nodesCalls = append(u.nodesCalls, nodesCopy)
@@ -495,6 +524,207 @@ func TestEvaluateWorkflow_ProfileCapabilityLimit(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestProcessTriggersFromData_AdmissionRefusalDoesNotStopSiblingWorkflow(t *testing.T) {
+	baseStore := newWorkflowRuntimeStore()
+	profileStore := &workflowRuntimeProfileStore{
+		workflowRuntimeStore: baseStore,
+		profile: &models.ExecutionProfile{
+			OrgID: "org-1", Name: "standard", RuntimeCapabilities: []string{},
+		},
+	}
+	transactionalStore := &transactionalWorkflowRuntimeProfileStore{workflowRuntimeProfileStore: profileStore}
+	parent := &models.Job{
+		JobID: "eval-job", UserID: "user-1", OrgID: "org-1",
+		ExecutionProfile: "standard", WorkerClass: "default", QueueName: "queue-1",
+	}
+	baseStore.GetJobByIDFunc = func(_ context.Context, jobID string) (*models.Job, error) {
+		if jobID != parent.JobID {
+			return nil, store.ErrNotFound
+		}
+		copy := *parent
+		return &copy, nil
+	}
+	baseStore.CreateJobFunc = func(_ context.Context, job *models.Job) error {
+		job.JobID = "job-" + job.Name
+		return nil
+	}
+
+	payload := triggersFile{
+		Type: "trigger_job", TriggerType: "runnerlib", OperationID: "operation-1",
+		Workflows: []triggerWorkflowSpec{
+			{Name: "server image", ID: "server-image", Jobs: []triggerJobSpec{{JobName: "build-server", Capabilities: []string{"builder"}}}},
+			{Name: "core checks", ID: "core-checks", Jobs: []triggerJobSpec{{JobName: "test-core"}}},
+		},
+	}
+	data, err := json.Marshal(payload)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	publishedInTransaction := false
+	statusUpdater := &workflowRuntimeStatusUpdater{onUpdate: func() {
+		if transactionalStore.inTransaction {
+			publishedInTransaction = true
+		}
+	}}
+	tp := NewTriggerProcessor(transactionalStore, nil)
+	tp.SetStatusUpdater(statusUpdater)
+	result, err := tp.ProcessTriggersFromDataWithOutcomes(context.Background(), data, "", parent)
+	if err != nil {
+		t.Fatalf("trigger processing failed: %v", err)
+	}
+	if len(result.Workflows) != 2 {
+		t.Fatalf("workflow outcomes = %d, want 2", len(result.Workflows))
+	}
+	refused := result.Workflows[0]
+	if refused.Disposition != "not_admitted" || refused.Status != "failed" {
+		t.Fatalf("refused outcome = %#v", refused)
+	}
+	if !strings.Contains(refused.Reason, `cannot add runtime capability "builder"`) {
+		t.Fatalf("refusal reason = %q", refused.Reason)
+	}
+	accepted := result.Workflows[1]
+	if accepted.Disposition != "accepted" || accepted.Status != "running" {
+		t.Fatalf("accepted outcome = %#v", accepted)
+	}
+	if len(accepted.CreatedJobIDs) != 1 || accepted.CreatedJobIDs[0] != "job-test-core" {
+		t.Fatalf("accepted job IDs = %#v", accepted.CreatedJobIDs)
+	}
+	if len(result.CreatedJobIDs) != 1 || result.CreatedJobIDs[0] != "job-test-core" {
+		t.Fatalf("created job IDs = %#v", result.CreatedJobIDs)
+	}
+
+	refusedWorkflow := baseStore.workflows[refused.WorkflowID]
+	if refusedWorkflow == nil || refusedWorkflow.LastError == "" {
+		t.Fatal("refused workflow was not stored with its reason")
+	}
+	var refusalAuditFound bool
+	for i := range profileStore.audits {
+		if profileStore.audits[i].Action == "workflow.not_admitted" &&
+			profileStore.audits[i].SubjectID != nil && *profileStore.audits[i].SubjectID == refused.WorkflowID {
+			refusalAuditFound = true
+		}
+	}
+	if !refusalAuditFound {
+		t.Fatal("workflow admission refusal audit was not recorded")
+	}
+	if transactionalStore.commits != 2 {
+		t.Fatalf("workflow transaction commits = %d, want 2", transactionalStore.commits)
+	}
+	if publishedInTransaction {
+		t.Fatal("workflow VCS status was published before its transaction committed")
+	}
+	if len(statusUpdater.workflowCalls) != 2 {
+		t.Fatalf("workflow status publications = %d, want 2", len(statusUpdater.workflowCalls))
+	}
+}
+
+func TestProcessTriggersFromData_StorageFailureStopsAndRollsBackWorkflowUnit(t *testing.T) {
+	baseStore := newWorkflowRuntimeStore()
+	profileStore := &workflowRuntimeProfileStore{
+		workflowRuntimeStore: baseStore,
+		profile: &models.ExecutionProfile{
+			OrgID: "org-1", Name: "standard", RuntimeCapabilities: nil,
+		},
+	}
+	transactionalStore := &transactionalWorkflowRuntimeProfileStore{workflowRuntimeProfileStore: profileStore}
+	parent := &models.Job{
+		JobID: "eval-job", UserID: "user-1", OrgID: "org-1",
+		ExecutionProfile: "standard", WorkerClass: "default", QueueName: "queue-1",
+	}
+	baseStore.GetJobByIDFunc = func(_ context.Context, _ string) (*models.Job, error) {
+		copy := *parent
+		return &copy, nil
+	}
+	baseStore.CreateJobFunc = func(_ context.Context, _ *models.Job) error {
+		return fmt.Errorf("database write failed")
+	}
+	payload := triggersFile{
+		Type: "trigger_job", TriggerType: "runnerlib", OperationID: "operation-1",
+		Workflows: []triggerWorkflowSpec{
+			{Name: "first", ID: "first", Jobs: []triggerJobSpec{{JobName: "test-first"}}},
+			{Name: "second", ID: "second", Jobs: []triggerJobSpec{{JobName: "test-second"}}},
+		},
+	}
+	data, err := json.Marshal(payload)
+	if err != nil {
+		t.Fatal(err)
+	}
+	statusUpdater := &workflowRuntimeStatusUpdater{}
+	tp := NewTriggerProcessor(transactionalStore, nil)
+	tp.SetStatusUpdater(statusUpdater)
+
+	_, err = tp.ProcessTriggersFromDataWithOutcomes(context.Background(), data, "", parent)
+	if err == nil || !strings.Contains(err.Error(), "database write failed") {
+		t.Fatalf("error = %v, want storage failure", err)
+	}
+	if transactionalStore.commits != 0 {
+		t.Fatalf("workflow transaction commits = %d, want 0", transactionalStore.commits)
+	}
+	if len(statusUpdater.workflowCalls) != 0 {
+		t.Fatalf("workflow status publications = %d, want 0", len(statusUpdater.workflowCalls))
+	}
+	for _, wf := range baseStore.workflows {
+		if wf.Name == "second" {
+			t.Fatal("sibling workflow was processed after a fatal storage error")
+		}
+	}
+}
+
+func TestProcessTriggersFromData_CorndogsFailureIsDurableSubmissionOutcome(t *testing.T) {
+	baseStore := newWorkflowRuntimeStore()
+	profileStore := &workflowRuntimeProfileStore{
+		workflowRuntimeStore: baseStore,
+		profile: &models.ExecutionProfile{
+			OrgID: "org-1", Name: "standard", RuntimeCapabilities: nil,
+		},
+	}
+	transactionalStore := &transactionalWorkflowRuntimeProfileStore{workflowRuntimeProfileStore: profileStore}
+	parent := &models.Job{
+		JobID: "eval-job", UserID: "user-1", OrgID: "org-1",
+		ExecutionProfile: "standard", WorkerClass: "default", QueueName: "queue-1",
+	}
+	baseStore.GetJobByIDFunc = func(_ context.Context, _ string) (*models.Job, error) {
+		copy := *parent
+		return &copy, nil
+	}
+	baseStore.CreateJobFunc = func(_ context.Context, job *models.Job) error {
+		job.JobID = "job-1"
+		return nil
+	}
+	mockCorndogs := corndogs.NewMockClient()
+	mockCorndogs.SubmitTaskToQueueFunc = func(context.Context, string, *corndogs.TaskPayload, int64) (*pb.Task, error) {
+		return nil, fmt.Errorf("queue unavailable")
+	}
+	payload := triggersFile{
+		Type: "trigger_job", TriggerType: "runnerlib", OperationID: "operation-1",
+		Workflows: []triggerWorkflowSpec{{
+			Name: "build", ID: "build", Jobs: []triggerJobSpec{{JobName: "build"}},
+		}},
+	}
+	data, err := json.Marshal(payload)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tp := NewTriggerProcessor(transactionalStore, mockCorndogs)
+	result, err := tp.ProcessTriggersFromDataWithOutcomes(context.Background(), data, "", parent)
+	if err != nil {
+		t.Fatalf("trigger processing failed: %v", err)
+	}
+	if len(result.Workflows) != 1 || result.Workflows[0].Disposition != "submission_failed" {
+		t.Fatalf("workflow outcomes = %#v", result.Workflows)
+	}
+	if !strings.Contains(result.Workflows[0].Reason, "queue unavailable") {
+		t.Fatalf("submission reason = %q", result.Workflows[0].Reason)
+	}
+	if transactionalStore.commits != 1 {
+		t.Fatalf("workflow transaction commits = %d, want 1", transactionalStore.commits)
+	}
+	if len(baseStore.UpdateJobCalls) != 1 || baseStore.UpdateJobCalls[0].Status != "failed" {
+		t.Fatalf("job failure was not stored: %#v", baseStore.UpdateJobCalls)
 	}
 }
 

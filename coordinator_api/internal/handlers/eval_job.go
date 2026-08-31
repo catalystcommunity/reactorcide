@@ -62,6 +62,10 @@ func BuildEvalJob(project *models.Project, event *vcs.WebhookEvent) *models.Job 
 
 	if event.PullRequest != nil {
 		pr := event.PullRequest
+		headRepository := event.Repository.FullName
+		if pr.HeadRepository != nil && pr.HeadRepository.FullName != "" {
+			headRepository = pr.HeadRepository.FullName
+		}
 		sourceRef = pr.HeadSHA
 		if event.GenericEvent == vcs.EventPullRequestMerged && pr.MergeSHA != "" {
 			sourceRef = pr.MergeSHA
@@ -80,6 +84,7 @@ func BuildEvalJob(project *models.Project, event *vcs.WebhookEvent) *models.Job 
 		// (e.g. for `git log base..head`) without overloading SOURCE_URL.
 		envVars["REACTORCIDE_HEAD_URL"] = headURL
 		envVars["REACTORCIDE_HEAD_REF"] = pr.HeadRef
+		envVars["REACTORCIDE_HEAD_REPOSITORY"] = headRepository
 		envVars["REACTORCIDE_BASE_URL"] = upstreamURL
 		envVars["REACTORCIDE_BASE_REF"] = pr.BaseRef
 		if isForkPR {

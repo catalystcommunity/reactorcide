@@ -46,3 +46,23 @@ func TestRenderWorkflowCommentBodyIncludesStatusEmoji(t *testing.T) {
 		}
 	}
 }
+
+func TestWorkflowStatusDescriptionIdentifiesAdmissionRefusal(t *testing.T) {
+	updater := NewJobStatusUpdater()
+	reason := `triggered job "build-server" cannot add runtime capability "builder"`
+	description := updater.getWorkflowStatusDescription(
+		&models.WorkflowInstance{Status: "failed"},
+		[]models.WorkflowNode{{
+			Status: "failed", DecisionReason: "workflow not admitted: " + reason,
+		}},
+	)
+	if !strings.HasPrefix(description, "Workflow not admitted: ") {
+		t.Fatalf("description = %q", description)
+	}
+	if !strings.Contains(description, `runtime capability "builder"`) {
+		t.Fatalf("description does not contain the refusal reason: %q", description)
+	}
+	if len(description) > 140 {
+		t.Fatalf("description length = %d, want at most 140", len(description))
+	}
+}
