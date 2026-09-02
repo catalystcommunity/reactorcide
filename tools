@@ -199,10 +199,16 @@ test_web(){
 # a uuid comparison passed every unit test and raised SQLSTATE 22P02 against
 # PostgreSQL -- see visibilityArgs.
 test_web_integration(){
-    if ! container_cmd >/dev/null 2>&1; then
-        echo "⚠️  Skipping webapp integration tests: no container runtime found."
-        echo "   These start their own PostgreSQL via testcontainers; install docker"
-        echo "   or nerdctl to run them."
+    # testcontainers-go speaks the DOCKER API specifically. container_cmd is the
+    # wrong check here: it prefers nerdctl, so on a machine where nerdctl works
+    # and the Docker daemon does not, it reports a runtime and these tests then
+    # fail rather than skipping. Check what testcontainers actually needs.
+    if ! docker version >/dev/null 2>&1; then
+        echo "⚠️  Skipping webapp integration tests: no reachable Docker API."
+        echo "   These start their own PostgreSQL through testcontainers-go, which"
+        echo "   talks to the Docker API and does not use nerdctl."
+        echo "   Start Docker, or point DOCKER_HOST at a Docker-compatible endpoint"
+        echo "   (a rootless socket, or 'nerdctl' with a Docker-API shim)."
         return 0
     fi
     log_status "Running webapp integration tests"
