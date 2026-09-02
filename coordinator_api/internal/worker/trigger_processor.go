@@ -21,6 +21,7 @@ import (
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store/models"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/vcs"
+	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/workflowevents"
 	"gopkg.in/yaml.v3"
 )
 
@@ -1277,6 +1278,10 @@ func (tp *TriggerProcessor) createAndSubmitJob(ctx context.Context, spec trigger
 	if err := tp.store.CreateJob(ctx, job); err != nil {
 		return "", fmt.Errorf("failed to create job in database: %w", err)
 	}
+	// Announce the job now, not at its first status change. job_update fires
+	// on a TRANSITION, so without this a freshly submitted job stays invisible
+	// in an open list view until something else happens to it.
+	workflowevents.JobCreated(ctx, job)
 
 	// Register as a pending check on the commit immediately, before Corndogs
 	// submission, so branch protection sees every child as a required check

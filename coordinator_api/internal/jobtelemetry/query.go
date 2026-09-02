@@ -133,11 +133,20 @@ func QueryMetrics(ctx context.Context, store objects.ObjectStore, query Query) (
 			points = downsample(points, remaining)
 		}
 		totalPoints += len(points)
-		labels := append([]Label{}, acc.definition.Labels...)
+		// Rewrite stored labels into the current scheme before anything reads
+		// them. Telemetry written before the scope label was removed must
+		// still render (see views.go).
+		labels := append([]Label{}, normalizeSeriesLabels(acc.definition.Labels)...)
 		labels = append(labels, Label{Key: "attempt", Value: acc.leaseID})
 		sort.Slice(labels, func(i, j int) bool { return labels[i].Key < labels[j].Key })
 		response.Series = append(response.Series, Series{Name: name, Unit: unit, Labels: labels, Points: points})
 	}
+	// Components is computed over EVERY series, before the view filters any
+	// out, so the UI can tell that a component exists even while showing the
+	// job roll-up.
+	response.Components = AvailableComponents(response.Series)
+	response.Series = selectSeriesForView(response.Series, query.View, query.Component)
+
 	for _, item := range unavailable {
 		response.Unavailable = append(response.Unavailable, item)
 	}

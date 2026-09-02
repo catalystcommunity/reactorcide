@@ -6,6 +6,7 @@ package csilapi
 import (
 	"fmt"
 	"math"
+	"unicode/utf8"
 )
 
 // cborValue is a minimal canonical-CBOR value tree: a closed set of variants the
@@ -167,7 +168,7 @@ func cborEnc(v cborValue, out *[]byte) {
 // is not exactly one value is an error rather than a silently-truncated read.
 func cborDecode(b []byte) (cborValue, error) {
 	pos := 0
-	v, err := cborDec(b, &pos)
+	v, err := cborDec(b, &pos, 0)
 	if err != nil {
 		return nil, err
 	}
@@ -184,21 +185,21 @@ func cborReadArg(b []byte, pos *int, low byte) (uint64, error) {
 	}
 	switch low {
 	case 24:
-		if *pos+2 > len(b) {
+		if len(b)-*pos < 2 {
 			return 0, fmt.Errorf("csil cbor: truncated argument")
 		}
 		v := uint64(b[*pos+1])
 		*pos += 2
 		return v, nil
 	case 25:
-		if *pos+3 > len(b) {
+		if len(b)-*pos < 3 {
 			return 0, fmt.Errorf("csil cbor: truncated argument")
 		}
 		v := uint64(b[*pos+1])<<8 | uint64(b[*pos+2])
 		*pos += 3
 		return v, nil
 	case 26:
-		if *pos+5 > len(b) {
+		if len(b)-*pos < 5 {
 			return 0, fmt.Errorf("csil cbor: truncated argument")
 		}
 		var v uint64
@@ -208,7 +209,7 @@ func cborReadArg(b []byte, pos *int, low byte) (uint64, error) {
 		*pos += 5
 		return v, nil
 	case 27:
-		if *pos+9 > len(b) {
+		if len(b)-*pos < 9 {
 			return 0, fmt.Errorf("csil cbor: truncated argument")
 		}
 		var v uint64
@@ -222,7 +223,10 @@ func cborReadArg(b []byte, pos *int, low byte) (uint64, error) {
 	}
 }
 
-func cborDec(b []byte, pos *int) (cborValue, error) {
+func cborDec(b []byte, pos *int, depth int) (cborValue, error) {
+	if depth > 64 {
+		return nil, fmt.Errorf("csil cbor: nesting limit exceeded")
+	}
 	if *pos >= len(b) {
 		return nil, fmt.Errorf("csil cbor: unexpected end of input")
 	}
@@ -269,27 +273,33 @@ func cborDec(b []byte, pos *int) (cborValue, error) {
 		}
 		return cborInt(-1 - int64(arg)), nil
 	case 2:
-		n := int(arg)
-		if *pos+n > len(b) {
+		if arg > uint64(len(b)-*pos) {
 			return nil, fmt.Errorf("csil cbor: truncated byte string")
 		}
+		n := int(arg)
 		slice := make([]byte, n)
 		copy(slice, b[*pos:*pos+n])
 		*pos += n
 		return cborBytes(slice), nil
 	case 3:
-		n := int(arg)
-		if *pos+n > len(b) {
+		if arg > uint64(len(b)-*pos) {
 			return nil, fmt.Errorf("csil cbor: truncated text string")
+		}
+		n := int(arg)
+		if !utf8.Valid(b[*pos : *pos+n]) {
+			return nil, fmt.Errorf("csil cbor: invalid utf-8")
 		}
 		s := string(b[*pos : *pos+n])
 		*pos += n
 		return cborText(s), nil
 	case 4:
+		if arg > uint64(len(b)-*pos) {
+			return nil, fmt.Errorf("csil cbor: array length exceeds remaining input")
+		}
 		n := int(arg)
 		items := make(cborArray, 0, n)
 		for i := 0; i < n; i++ {
-			item, err := cborDec(b, pos)
+			item, err := cborDec(b, pos, depth+1)
 			if err != nil {
 				return nil, err
 			}
@@ -297,14 +307,17 @@ func cborDec(b []byte, pos *int) (cborValue, error) {
 		}
 		return items, nil
 	case 5:
+		if arg > uint64(len(b)-*pos) {
+			return nil, fmt.Errorf("csil cbor: map length exceeds remaining input")
+		}
 		n := int(arg)
 		entries := make(cborMap, 0, n)
 		for i := 0; i < n; i++ {
-			k, err := cborDec(b, pos)
+			k, err := cborDec(b, pos, depth+1)
 			if err != nil {
 				return nil, err
 			}
-			val, err := cborDec(b, pos)
+			val, err := cborDec(b, pos, depth+1)
 			if err != nil {
 				return nil, err
 			}
@@ -312,7 +325,7 @@ func cborDec(b []byte, pos *int) (cborValue, error) {
 		}
 		return entries, nil
 	case 6:
-		inner, err := cborDec(b, pos)
+		inner, err := cborDec(b, pos, depth+1)
 		if err != nil {
 			return nil, err
 		}
@@ -4104,10 +4117,416 @@ func DecodeDeleteProjectResponse(csilData []byte) (DeleteProjectResponse, error)
 	return csilDecDeleteProjectResponse(csilRoot)
 }
 
+// csilEncCiPolicySubjectMatch builds the canonical CBOR value tree for a CiPolicySubjectMatch.
+func csilEncCiPolicySubjectMatch(csilV CiPolicySubjectMatch) cborValue {
+	csilEntries := make(cborMap, 0, 1)
+	csilEntries = append(csilEntries, cborEntry{cborText("any"), cborEncArray(csilV.Any, func(csilElem string) cborValue { return cborText(csilElem) })})
+	return csilEntries
+}
+
+// csilDecCiPolicySubjectMatch reconstructs a CiPolicySubjectMatch from a decoded CBOR value tree.
+func csilDecCiPolicySubjectMatch(csilRoot cborValue) (CiPolicySubjectMatch, error) {
+	var csilOut CiPolicySubjectMatch
+	{
+		csilField, csilErr := cborRequire(csilRoot, "any")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (func(csilV cborValue) ([]string, error) { return cborDecArray(csilV, cborAsText) })(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Any = csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeCiPolicySubjectMatch encodes a CiPolicySubjectMatch to canonical CSIL CBOR bytes.
+func EncodeCiPolicySubjectMatch(csilV CiPolicySubjectMatch) []byte {
+	return cborEncode(csilEncCiPolicySubjectMatch(csilV))
+}
+
+// DecodeCiPolicySubjectMatch decodes canonical CSIL CBOR bytes into a CiPolicySubjectMatch.
+func DecodeCiPolicySubjectMatch(csilData []byte) (CiPolicySubjectMatch, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero CiPolicySubjectMatch
+		return csilZero, csilErr
+	}
+	return csilDecCiPolicySubjectMatch(csilRoot)
+}
+
+// csilEncCiPolicyNodeAuthority builds the canonical CBOR value tree for a CiPolicyNodeAuthority.
+func csilEncCiPolicyNodeAuthority(csilV CiPolicyNodeAuthority) cborValue {
+	csilEntries := make(cborMap, 0, 4)
+	csilEntries = append(csilEntries, cborEntry{cborText("nodes"), cborEncArray(csilV.Nodes, func(csilElem string) cborValue { return cborText(csilElem) })})
+	if csilV.Profile != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("profile"), cborText((*csilV.Profile))})
+	}
+	if csilV.Workers != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("workers"), cborText((*csilV.Workers))})
+	}
+	if csilV.CiSource != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("ci_source"), cborText((*csilV.CiSource))})
+	}
+	return csilEntries
+}
+
+// csilDecCiPolicyNodeAuthority reconstructs a CiPolicyNodeAuthority from a decoded CBOR value tree.
+func csilDecCiPolicyNodeAuthority(csilRoot cborValue) (CiPolicyNodeAuthority, error) {
+	var csilOut CiPolicyNodeAuthority
+	{
+		csilField, csilErr := cborRequire(csilRoot, "nodes")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (func(csilV cborValue) ([]string, error) { return cborDecArray(csilV, cborAsText) })(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Nodes = csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "ci_source"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.CiSource = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "profile"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Profile = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "workers"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Workers = &csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeCiPolicyNodeAuthority encodes a CiPolicyNodeAuthority to canonical CSIL CBOR bytes.
+func EncodeCiPolicyNodeAuthority(csilV CiPolicyNodeAuthority) []byte {
+	return cborEncode(csilEncCiPolicyNodeAuthority(csilV))
+}
+
+// DecodeCiPolicyNodeAuthority decodes canonical CSIL CBOR bytes into a CiPolicyNodeAuthority.
+func DecodeCiPolicyNodeAuthority(csilData []byte) (CiPolicyNodeAuthority, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero CiPolicyNodeAuthority
+		return csilZero, csilErr
+	}
+	return csilDecCiPolicyNodeAuthority(csilRoot)
+}
+
+// csilEncCiPolicyUse builds the canonical CBOR value tree for a CiPolicyUse.
+func csilEncCiPolicyUse(csilV CiPolicyUse) cborValue {
+	csilEntries := make(cborMap, 0, 4)
+	if csilV.Profile != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("profile"), cborText((*csilV.Profile))})
+	}
+	if csilV.Workers != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("workers"), cborText((*csilV.Workers))})
+	}
+	if csilV.CiSource != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("ci_source"), cborText((*csilV.CiSource))})
+	}
+	if csilV.BaseNodes != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("base_nodes"), cborEncArray(csilV.BaseNodes, func(csilElem CiPolicyNodeAuthority) cborValue { return csilEncCiPolicyNodeAuthority(csilElem) })})
+	}
+	return csilEntries
+}
+
+// csilDecCiPolicyUse reconstructs a CiPolicyUse from a decoded CBOR value tree.
+func csilDecCiPolicyUse(csilRoot cborValue) (CiPolicyUse, error) {
+	var csilOut CiPolicyUse
+	if csilField, csilOk := cborMapGet(csilRoot, "ci_source"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.CiSource = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "profile"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Profile = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "workers"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Workers = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "base_nodes"); csilOk {
+		csilVal, csilErr := (func(csilV cborValue) ([]CiPolicyNodeAuthority, error) {
+			return cborDecArray(csilV, csilDecCiPolicyNodeAuthority)
+		})(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.BaseNodes = csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeCiPolicyUse encodes a CiPolicyUse to canonical CSIL CBOR bytes.
+func EncodeCiPolicyUse(csilV CiPolicyUse) []byte {
+	return cborEncode(csilEncCiPolicyUse(csilV))
+}
+
+// DecodeCiPolicyUse decodes canonical CSIL CBOR bytes into a CiPolicyUse.
+func DecodeCiPolicyUse(csilData []byte) (CiPolicyUse, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero CiPolicyUse
+		return csilZero, csilErr
+	}
+	return csilDecCiPolicyUse(csilRoot)
+}
+
+// csilEncCiPolicyDefaults builds the canonical CBOR value tree for a CiPolicyDefaults.
+func csilEncCiPolicyDefaults(csilV CiPolicyDefaults) cborValue {
+	csilEntries := make(cborMap, 0, 2)
+	if csilV.Profile != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("profile"), cborText((*csilV.Profile))})
+	}
+	if csilV.CiSource != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("ci_source"), cborText((*csilV.CiSource))})
+	}
+	return csilEntries
+}
+
+// csilDecCiPolicyDefaults reconstructs a CiPolicyDefaults from a decoded CBOR value tree.
+func csilDecCiPolicyDefaults(csilRoot cborValue) (CiPolicyDefaults, error) {
+	var csilOut CiPolicyDefaults
+	if csilField, csilOk := cborMapGet(csilRoot, "ci_source"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.CiSource = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "profile"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Profile = &csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeCiPolicyDefaults encodes a CiPolicyDefaults to canonical CSIL CBOR bytes.
+func EncodeCiPolicyDefaults(csilV CiPolicyDefaults) []byte {
+	return cborEncode(csilEncCiPolicyDefaults(csilV))
+}
+
+// DecodeCiPolicyDefaults decodes canonical CSIL CBOR bytes into a CiPolicyDefaults.
+func DecodeCiPolicyDefaults(csilData []byte) (CiPolicyDefaults, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero CiPolicyDefaults
+		return csilZero, csilErr
+	}
+	return csilDecCiPolicyDefaults(csilRoot)
+}
+
+// csilEncCiPolicyRule builds the canonical CBOR value tree for a CiPolicyRule.
+func csilEncCiPolicyRule(csilV CiPolicyRule) cborValue {
+	csilEntries := make(cborMap, 0, 9)
+	csilEntries = append(csilEntries, cborEntry{cborText("id"), cborText(csilV.Id)})
+	csilEntries = append(csilEntries, cborEntry{cborText("use"), csilEncCiPolicyUse(csilV.Use)})
+	if csilV.Paths != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("paths"), cborEncArray(csilV.Paths, func(csilElem string) cborValue { return cborText(csilElem) })})
+	}
+	if csilV.Actors != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("actors"), csilEncCiPolicySubjectMatch((*csilV.Actors))})
+	}
+	if csilV.Events != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("events"), cborEncArray(csilV.Events, func(csilElem string) cborValue { return cborText(csilElem) })})
+	}
+	if csilV.Approval != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("approval"), csilEncCiPolicySubjectMatch((*csilV.Approval))})
+	}
+	if csilV.Workflows != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("workflows"), cborEncArray(csilV.Workflows, func(csilElem string) cborValue { return cborText(csilElem) })})
+	}
+	if csilV.BaseBranches != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("base_branches"), cborEncArray(csilV.BaseBranches, func(csilElem string) cborValue { return cborText(csilElem) })})
+	}
+	if csilV.HeadRepository != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("head_repository"), cborText((*csilV.HeadRepository))})
+	}
+	return csilEntries
+}
+
+// csilDecCiPolicyRule reconstructs a CiPolicyRule from a decoded CBOR value tree.
+func csilDecCiPolicyRule(csilRoot cborValue) (CiPolicyRule, error) {
+	var csilOut CiPolicyRule
+	{
+		csilField, csilErr := cborRequire(csilRoot, "id")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Id = csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "actors"); csilOk {
+		csilVal, csilErr := (csilDecCiPolicySubjectMatch)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Actors = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "workflows"); csilOk {
+		csilVal, csilErr := (func(csilV cborValue) ([]string, error) { return cborDecArray(csilV, cborAsText) })(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Workflows = csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "paths"); csilOk {
+		csilVal, csilErr := (func(csilV cborValue) ([]string, error) { return cborDecArray(csilV, cborAsText) })(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Paths = csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "events"); csilOk {
+		csilVal, csilErr := (func(csilV cborValue) ([]string, error) { return cborDecArray(csilV, cborAsText) })(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Events = csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "base_branches"); csilOk {
+		csilVal, csilErr := (func(csilV cborValue) ([]string, error) { return cborDecArray(csilV, cborAsText) })(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.BaseBranches = csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "head_repository"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.HeadRepository = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "approval"); csilOk {
+		csilVal, csilErr := (csilDecCiPolicySubjectMatch)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Approval = &csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "use")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (csilDecCiPolicyUse)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Use = csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeCiPolicyRule encodes a CiPolicyRule to canonical CSIL CBOR bytes.
+func EncodeCiPolicyRule(csilV CiPolicyRule) []byte {
+	return cborEncode(csilEncCiPolicyRule(csilV))
+}
+
+// DecodeCiPolicyRule decodes canonical CSIL CBOR bytes into a CiPolicyRule.
+func DecodeCiPolicyRule(csilData []byte) (CiPolicyRule, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero CiPolicyRule
+		return csilZero, csilErr
+	}
+	return csilDecCiPolicyRule(csilRoot)
+}
+
+// csilEncCiPolicyDocument builds the canonical CBOR value tree for a CiPolicyDocument.
+func csilEncCiPolicyDocument(csilV CiPolicyDocument) cborValue {
+	csilEntries := make(cborMap, 0, 3)
+	csilEntries = append(csilEntries, cborEntry{cborText("head_ci"), cborEncArray(csilV.HeadCi, func(csilElem CiPolicyRule) cborValue { return csilEncCiPolicyRule(csilElem) })})
+	csilEntries = append(csilEntries, cborEntry{cborText("version"), cborInt(csilV.Version)})
+	if csilV.Defaults != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("defaults"), csilEncCiPolicyDefaults((*csilV.Defaults))})
+	}
+	return csilEntries
+}
+
+// csilDecCiPolicyDocument reconstructs a CiPolicyDocument from a decoded CBOR value tree.
+func csilDecCiPolicyDocument(csilRoot cborValue) (CiPolicyDocument, error) {
+	var csilOut CiPolicyDocument
+	{
+		csilField, csilErr := cborRequire(csilRoot, "version")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsI64)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Version = csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "defaults"); csilOk {
+		csilVal, csilErr := (csilDecCiPolicyDefaults)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Defaults = &csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "head_ci")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (func(csilV cborValue) ([]CiPolicyRule, error) { return cborDecArray(csilV, csilDecCiPolicyRule) })(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.HeadCi = csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeCiPolicyDocument encodes a CiPolicyDocument to canonical CSIL CBOR bytes.
+func EncodeCiPolicyDocument(csilV CiPolicyDocument) []byte {
+	return cborEncode(csilEncCiPolicyDocument(csilV))
+}
+
+// DecodeCiPolicyDocument decodes canonical CSIL CBOR bytes into a CiPolicyDocument.
+func DecodeCiPolicyDocument(csilData []byte) (CiPolicyDocument, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero CiPolicyDocument
+		return csilZero, csilErr
+	}
+	return csilDecCiPolicyDocument(csilRoot)
+}
+
 // csilEncCiPolicyDetail builds the canonical CBOR value tree for a CiPolicyDetail.
 func csilEncCiPolicyDetail(csilV CiPolicyDetail) cborValue {
 	csilEntries := make(cborMap, 0, 7)
-	csilEntries = append(csilEntries, cborEntry{cborText("document"), cborText(csilV.Document)})
+	csilEntries = append(csilEntries, cborEntry{cborText("document"), csilEncCiPolicyDocument(csilV.Document)})
 	csilEntries = append(csilEntries, cborEntry{cborText("revision"), cborText(csilV.Revision)})
 	csilEntries = append(csilEntries, cborEntry{cborText("policy_id"), cborText(csilV.PolicyId)})
 	csilEntries = append(csilEntries, cborEntry{cborText("created_at"), cborText(csilV.CreatedAt)})
@@ -4160,7 +4579,7 @@ func csilDecCiPolicyDetail(csilRoot cborValue) (CiPolicyDetail, error) {
 		if csilErr != nil {
 			return csilOut, csilErr
 		}
-		csilVal, csilErr := (cborAsText)(csilField)
+		csilVal, csilErr := (csilDecCiPolicyDocument)(csilField)
 		if csilErr != nil {
 			return csilOut, csilErr
 		}
@@ -4294,7 +4713,7 @@ func DecodeGetCiPolicyResponse(csilData []byte) (GetCiPolicyResponse, error) {
 // csilEncPutCiPolicyRequest builds the canonical CBOR value tree for a PutCiPolicyRequest.
 func csilEncPutCiPolicyRequest(csilV PutCiPolicyRequest) cborValue {
 	csilEntries := make(cborMap, 0, 3)
-	csilEntries = append(csilEntries, cborEntry{cborText("document"), cborText(csilV.Document)})
+	csilEntries = append(csilEntries, cborEntry{cborText("document"), csilEncCiPolicyDocument(csilV.Document)})
 	csilEntries = append(csilEntries, cborEntry{cborText("project_id"), cborText(csilV.ProjectId)})
 	if csilV.ExpectedRevision != nil {
 		csilEntries = append(csilEntries, cborEntry{cborText("expected_revision"), cborText((*csilV.ExpectedRevision))})
@@ -4321,7 +4740,7 @@ func csilDecPutCiPolicyRequest(csilRoot cborValue) (PutCiPolicyRequest, error) {
 		if csilErr != nil {
 			return csilOut, csilErr
 		}
-		csilVal, csilErr := (cborAsText)(csilField)
+		csilVal, csilErr := (csilDecCiPolicyDocument)(csilField)
 		if csilErr != nil {
 			return csilOut, csilErr
 		}
@@ -10731,7 +11150,10 @@ func DecodeDeactivateEnrollmentTokenResponse(csilData []byte) (DeactivateEnrollm
 
 // csilEncGetJobMetricsRequest builds the canonical CBOR value tree for a GetJobMetricsRequest.
 func csilEncGetJobMetricsRequest(csilV GetJobMetricsRequest) cborValue {
-	csilEntries := make(cborMap, 0, 6)
+	csilEntries := make(cborMap, 0, 8)
+	if csilV.View != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("view"), cborText((*csilV.View))})
+	}
 	if csilV.Cursor != nil {
 		csilEntries = append(csilEntries, cborEntry{cborText("cursor"), cborText((*csilV.Cursor))})
 	}
@@ -10739,6 +11161,9 @@ func csilEncGetJobMetricsRequest(csilV GetJobMetricsRequest) cborValue {
 	csilEntries = append(csilEntries, cborEntry{cborText("metrics"), cborEncArray(csilV.Metrics, func(csilElem string) cborValue { return cborText(csilElem) })})
 	if csilV.ToTime != nil {
 		csilEntries = append(csilEntries, cborEntry{cborText("to_time"), cborText((*csilV.ToTime))})
+	}
+	if csilV.Component != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("component"), cborText((*csilV.Component))})
 	}
 	if csilV.FromTime != nil {
 		csilEntries = append(csilEntries, cborEntry{cborText("from_time"), cborText((*csilV.FromTime))})
@@ -10803,6 +11228,20 @@ func csilDecGetJobMetricsRequest(csilRoot cborValue) (GetJobMetricsRequest, erro
 			return csilOut, csilErr
 		}
 		csilOut.MaxPoints = csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "view"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.View = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "component"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Component = &csilVal
 	}
 	return csilOut, nil
 }
@@ -11072,9 +11511,10 @@ func DecodeJobMetricSeries(csilData []byte) (JobMetricSeries, error) {
 
 // csilEncGetJobMetricsResponse builds the canonical CBOR value tree for a GetJobMetricsResponse.
 func csilEncGetJobMetricsResponse(csilV GetJobMetricsResponse) cborValue {
-	csilEntries := make(cborMap, 0, 4)
+	csilEntries := make(cborMap, 0, 5)
 	csilEntries = append(csilEntries, cborEntry{cborText("series"), cborEncArray(csilV.Series, func(csilElem JobMetricSeries) cborValue { return csilEncJobMetricSeries(csilElem) })})
 	csilEntries = append(csilEntries, cborEntry{cborText("complete"), cborBool(csilV.Complete)})
+	csilEntries = append(csilEntries, cborEntry{cborText("components"), cborEncArray(csilV.Components, func(csilElem string) cborValue { return cborText(csilElem) })})
 	if csilV.NextCursor != nil {
 		csilEntries = append(csilEntries, cborEntry{cborText("next_cursor"), cborText((*csilV.NextCursor))})
 	}
@@ -11126,6 +11566,17 @@ func csilDecGetJobMetricsResponse(csilRoot cborValue) (GetJobMetricsResponse, er
 			return csilOut, csilErr
 		}
 		csilOut.NextCursor = &csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "components")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (func(csilV cborValue) ([]string, error) { return cborDecArray(csilV, cborAsText) })(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Components = csilVal
 	}
 	return csilOut, nil
 }
@@ -11358,6 +11809,1520 @@ func DecodeGetJobLogsResponse(csilData []byte) (GetJobLogsResponse, error) {
 		return csilZero, csilErr
 	}
 	return csilDecGetJobLogsResponse(csilRoot)
+}
+
+// csilEncJobSummary builds the canonical CBOR value tree for a JobSummary.
+func csilEncJobSummary(csilV JobSummary) cborValue {
+	csilEntries := make(cborMap, 0, 24)
+	csilEntries = append(csilEntries, cborEntry{cborText("name"), cborText(csilV.Name)})
+	csilEntries = append(csilEntries, cborEntry{cborText("job_id"), cborText(csilV.JobId)})
+	csilEntries = append(csilEntries, cborEntry{cborText("status"), cborText(csilV.Status)})
+	csilEntries = append(csilEntries, cborEntry{cborText("priority"), cborInt(csilV.Priority)})
+	csilEntries = append(csilEntries, cborEntry{cborText("ci_origin"), cborText(csilV.CiOrigin)})
+	if csilV.ExitCode != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("exit_code"), cborInt((*csilV.ExitCode))})
+	}
+	csilEntries = append(csilEntries, cborEntry{cborText("created_at"), cborText(csilV.CreatedAt)})
+	csilEntries = append(csilEntries, cborEntry{cborText("last_error"), cborText(csilV.LastError)})
+	if csilV.ProjectId != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("project_id"), cborText((*csilV.ProjectId))})
+	}
+	csilEntries = append(csilEntries, cborEntry{cborText("queue_name"), cborText(csilV.QueueName)})
+	csilEntries = append(csilEntries, cborEntry{cborText("source_ref"), cborText(csilV.SourceRef)})
+	csilEntries = append(csilEntries, cborEntry{cborText("source_url"), cborText(csilV.SourceUrl)})
+	if csilV.StartedAt != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("started_at"), cborText((*csilV.StartedAt))})
+	}
+	csilEntries = append(csilEntries, cborEntry{cborText("updated_at"), cborText(csilV.UpdatedAt)})
+	csilEntries = append(csilEntries, cborEntry{cborText("description"), cborText(csilV.Description)})
+	csilEntries = append(csilEntries, cborEntry{cborText("source_path"), cborText(csilV.SourcePath)})
+	csilEntries = append(csilEntries, cborEntry{cborText("source_type"), cborText(csilV.SourceType)})
+	if csilV.WorkflowId != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("workflow_id"), cborText((*csilV.WorkflowId))})
+	}
+	if csilV.CompletedAt != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("completed_at"), cborText((*csilV.CompletedAt))})
+	}
+	csilEntries = append(csilEntries, cborEntry{cborText("runner_image"), cborText(csilV.RunnerImage)})
+	csilEntries = append(csilEntries, cborEntry{cborText("worker_class"), cborText(csilV.WorkerClass)})
+	if csilV.ParentJobId != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("parent_job_id"), cborText((*csilV.ParentJobId))})
+	}
+	csilEntries = append(csilEntries, cborEntry{cborText("execution_profile"), cborText(csilV.ExecutionProfile)})
+	csilEntries = append(csilEntries, cborEntry{cborText("workflow_node_name"), cborText(csilV.WorkflowNodeName)})
+	return csilEntries
+}
+
+// csilDecJobSummary reconstructs a JobSummary from a decoded CBOR value tree.
+func csilDecJobSummary(csilRoot cborValue) (JobSummary, error) {
+	var csilOut JobSummary
+	{
+		csilField, csilErr := cborRequire(csilRoot, "job_id")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.JobId = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "name")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Name = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "description")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Description = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "status")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Status = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "last_error")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.LastError = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "created_at")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.CreatedAt = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "updated_at")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.UpdatedAt = csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "started_at"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.StartedAt = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "completed_at"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.CompletedAt = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "exit_code"); csilOk {
+		csilVal, csilErr := (cborAsI64)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.ExitCode = &csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "source_url")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.SourceUrl = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "source_ref")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.SourceRef = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "source_type")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.SourceType = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "source_path")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.SourcePath = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "runner_image")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.RunnerImage = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "queue_name")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.QueueName = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "priority")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsI64)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Priority = csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "parent_job_id"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.ParentJobId = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "project_id"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.ProjectId = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "workflow_id"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.WorkflowId = &csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "workflow_node_name")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.WorkflowNodeName = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "ci_origin")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.CiOrigin = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "execution_profile")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.ExecutionProfile = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "worker_class")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.WorkerClass = csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeJobSummary encodes a JobSummary to canonical CSIL CBOR bytes.
+func EncodeJobSummary(csilV JobSummary) []byte {
+	return cborEncode(csilEncJobSummary(csilV))
+}
+
+// DecodeJobSummary decodes canonical CSIL CBOR bytes into a JobSummary.
+func DecodeJobSummary(csilData []byte) (JobSummary, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero JobSummary
+		return csilZero, csilErr
+	}
+	return csilDecJobSummary(csilRoot)
+}
+
+// csilEncListJobsRequest builds the canonical CBOR value tree for a ListJobsRequest.
+func csilEncListJobsRequest(csilV ListJobsRequest) cborValue {
+	csilEntries := make(cborMap, 0, 6)
+	if csilV.Limit != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("limit"), cborInt((*csilV.Limit))})
+	}
+	if csilV.Offset != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("offset"), cborInt((*csilV.Offset))})
+	}
+	if csilV.Status != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("status"), cborText((*csilV.Status))})
+	}
+	if csilV.ProjectId != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("project_id"), cborText((*csilV.ProjectId))})
+	}
+	if csilV.QueueName != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("queue_name"), cborText((*csilV.QueueName))})
+	}
+	if csilV.WorkflowId != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("workflow_id"), cborText((*csilV.WorkflowId))})
+	}
+	return csilEntries
+}
+
+// csilDecListJobsRequest reconstructs a ListJobsRequest from a decoded CBOR value tree.
+func csilDecListJobsRequest(csilRoot cborValue) (ListJobsRequest, error) {
+	var csilOut ListJobsRequest
+	if csilField, csilOk := cborMapGet(csilRoot, "status"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Status = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "project_id"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.ProjectId = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "workflow_id"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.WorkflowId = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "queue_name"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.QueueName = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "limit"); csilOk {
+		csilVal, csilErr := (cborAsI64)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Limit = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "offset"); csilOk {
+		csilVal, csilErr := (cborAsI64)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Offset = &csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeListJobsRequest encodes a ListJobsRequest to canonical CSIL CBOR bytes.
+func EncodeListJobsRequest(csilV ListJobsRequest) []byte {
+	return cborEncode(csilEncListJobsRequest(csilV))
+}
+
+// DecodeListJobsRequest decodes canonical CSIL CBOR bytes into a ListJobsRequest.
+func DecodeListJobsRequest(csilData []byte) (ListJobsRequest, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero ListJobsRequest
+		return csilZero, csilErr
+	}
+	return csilDecListJobsRequest(csilRoot)
+}
+
+// csilEncListJobsResponse builds the canonical CBOR value tree for a ListJobsResponse.
+func csilEncListJobsResponse(csilV ListJobsResponse) cborValue {
+	csilEntries := make(cborMap, 0, 4)
+	csilEntries = append(csilEntries, cborEntry{cborText("jobs"), cborEncArray(csilV.Jobs, func(csilElem JobSummary) cborValue { return csilEncJobSummary(csilElem) })})
+	csilEntries = append(csilEntries, cborEntry{cborText("limit"), cborInt(csilV.Limit)})
+	csilEntries = append(csilEntries, cborEntry{cborText("total"), cborInt(csilV.Total)})
+	csilEntries = append(csilEntries, cborEntry{cborText("offset"), cborInt(csilV.Offset)})
+	return csilEntries
+}
+
+// csilDecListJobsResponse reconstructs a ListJobsResponse from a decoded CBOR value tree.
+func csilDecListJobsResponse(csilRoot cborValue) (ListJobsResponse, error) {
+	var csilOut ListJobsResponse
+	{
+		csilField, csilErr := cborRequire(csilRoot, "jobs")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (func(csilV cborValue) ([]JobSummary, error) { return cborDecArray(csilV, csilDecJobSummary) })(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Jobs = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "total")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsI64)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Total = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "limit")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsI64)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Limit = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "offset")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsI64)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Offset = csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeListJobsResponse encodes a ListJobsResponse to canonical CSIL CBOR bytes.
+func EncodeListJobsResponse(csilV ListJobsResponse) []byte {
+	return cborEncode(csilEncListJobsResponse(csilV))
+}
+
+// DecodeListJobsResponse decodes canonical CSIL CBOR bytes into a ListJobsResponse.
+func DecodeListJobsResponse(csilData []byte) (ListJobsResponse, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero ListJobsResponse
+		return csilZero, csilErr
+	}
+	return csilDecListJobsResponse(csilRoot)
+}
+
+// csilEncGetJobRequest builds the canonical CBOR value tree for a GetJobRequest.
+func csilEncGetJobRequest(csilV GetJobRequest) cborValue {
+	csilEntries := make(cborMap, 0, 1)
+	csilEntries = append(csilEntries, cborEntry{cborText("job_id"), cborText(csilV.JobId)})
+	return csilEntries
+}
+
+// csilDecGetJobRequest reconstructs a GetJobRequest from a decoded CBOR value tree.
+func csilDecGetJobRequest(csilRoot cborValue) (GetJobRequest, error) {
+	var csilOut GetJobRequest
+	{
+		csilField, csilErr := cborRequire(csilRoot, "job_id")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.JobId = csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeGetJobRequest encodes a GetJobRequest to canonical CSIL CBOR bytes.
+func EncodeGetJobRequest(csilV GetJobRequest) []byte {
+	return cborEncode(csilEncGetJobRequest(csilV))
+}
+
+// DecodeGetJobRequest decodes canonical CSIL CBOR bytes into a GetJobRequest.
+func DecodeGetJobRequest(csilData []byte) (GetJobRequest, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero GetJobRequest
+		return csilZero, csilErr
+	}
+	return csilDecGetJobRequest(csilRoot)
+}
+
+// csilEncGetJobResponse builds the canonical CBOR value tree for a GetJobResponse.
+func csilEncGetJobResponse(csilV GetJobResponse) cborValue {
+	csilEntries := make(cborMap, 0, 1)
+	csilEntries = append(csilEntries, cborEntry{cborText("job"), csilEncJobSummary(csilV.Job)})
+	return csilEntries
+}
+
+// csilDecGetJobResponse reconstructs a GetJobResponse from a decoded CBOR value tree.
+func csilDecGetJobResponse(csilRoot cborValue) (GetJobResponse, error) {
+	var csilOut GetJobResponse
+	{
+		csilField, csilErr := cborRequire(csilRoot, "job")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (csilDecJobSummary)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Job = csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeGetJobResponse encodes a GetJobResponse to canonical CSIL CBOR bytes.
+func EncodeGetJobResponse(csilV GetJobResponse) []byte {
+	return cborEncode(csilEncGetJobResponse(csilV))
+}
+
+// DecodeGetJobResponse decodes canonical CSIL CBOR bytes into a GetJobResponse.
+func DecodeGetJobResponse(csilData []byte) (GetJobResponse, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero GetJobResponse
+		return csilZero, csilErr
+	}
+	return csilDecGetJobResponse(csilRoot)
+}
+
+// csilEncWorkflowNodeSummary builds the canonical CBOR value tree for a WorkflowNodeSummary.
+func csilEncWorkflowNodeSummary(csilV WorkflowNodeSummary) cborValue {
+	csilEntries := make(cborMap, 0, 13)
+	csilEntries = append(csilEntries, cborEntry{cborText("name"), cborText(csilV.Name)})
+	if csilV.JobId != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("job_id"), cborText((*csilV.JobId))})
+	}
+	csilEntries = append(csilEntries, cborEntry{cborText("status"), cborText(csilV.Status)})
+	csilEntries = append(csilEntries, cborEntry{cborText("node_id"), cborText(csilV.NodeId)})
+	csilEntries = append(csilEntries, cborEntry{cborText("ci_origin"), cborText(csilV.CiOrigin)})
+	csilEntries = append(csilEntries, cborEntry{cborText("condition"), cborText(csilV.Condition)})
+	csilEntries = append(csilEntries, cborEntry{cborText("depends_on"), cborEncArray(csilV.DependsOn, func(csilElem string) cborValue { return cborText(csilElem) })})
+	if csilV.ItemIndex != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("item_index"), cborInt((*csilV.ItemIndex))})
+	}
+	if csilV.CompletedAt != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("completed_at"), cborText((*csilV.CompletedAt))})
+	}
+	csilEntries = append(csilEntries, cborEntry{cborText("display_name"), cborText(csilV.DisplayName)})
+	csilEntries = append(csilEntries, cborEntry{cborText("worker_class"), cborText(csilV.WorkerClass)})
+	csilEntries = append(csilEntries, cborEntry{cborText("decision_reason"), cborText(csilV.DecisionReason)})
+	csilEntries = append(csilEntries, cborEntry{cborText("execution_profile"), cborText(csilV.ExecutionProfile)})
+	return csilEntries
+}
+
+// csilDecWorkflowNodeSummary reconstructs a WorkflowNodeSummary from a decoded CBOR value tree.
+func csilDecWorkflowNodeSummary(csilRoot cborValue) (WorkflowNodeSummary, error) {
+	var csilOut WorkflowNodeSummary
+	{
+		csilField, csilErr := cborRequire(csilRoot, "node_id")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.NodeId = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "name")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Name = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "display_name")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.DisplayName = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "status")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Status = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "depends_on")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (func(csilV cborValue) ([]string, error) { return cborDecArray(csilV, cborAsText) })(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.DependsOn = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "condition")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Condition = csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "job_id"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.JobId = &csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "decision_reason")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.DecisionReason = csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "item_index"); csilOk {
+		csilVal, csilErr := (cborAsI64)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.ItemIndex = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "completed_at"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.CompletedAt = &csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "ci_origin")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.CiOrigin = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "execution_profile")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.ExecutionProfile = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "worker_class")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.WorkerClass = csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeWorkflowNodeSummary encodes a WorkflowNodeSummary to canonical CSIL CBOR bytes.
+func EncodeWorkflowNodeSummary(csilV WorkflowNodeSummary) []byte {
+	return cborEncode(csilEncWorkflowNodeSummary(csilV))
+}
+
+// DecodeWorkflowNodeSummary decodes canonical CSIL CBOR bytes into a WorkflowNodeSummary.
+func DecodeWorkflowNodeSummary(csilData []byte) (WorkflowNodeSummary, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero WorkflowNodeSummary
+		return csilZero, csilErr
+	}
+	return csilDecWorkflowNodeSummary(csilRoot)
+}
+
+// csilEncWorkflowSummaryDetail builds the canonical CBOR value tree for a WorkflowSummaryDetail.
+func csilEncWorkflowSummaryDetail(csilV WorkflowSummaryDetail) cborValue {
+	csilEntries := make(cborMap, 0, 29)
+	csilEntries = append(csilEntries, cborEntry{cborText("kind"), cborText(csilV.Kind)})
+	csilEntries = append(csilEntries, cborEntry{cborText("name"), cborText(csilV.Name)})
+	csilEntries = append(csilEntries, cborEntry{cborText("status"), cborText(csilV.Status)})
+	csilEntries = append(csilEntries, cborEntry{cborText("vcs_repo"), cborText(csilV.VcsRepo)})
+	csilEntries = append(csilEntries, cborEntry{cborText("ci_origin"), cborText(csilV.CiOrigin)})
+	csilEntries = append(csilEntries, cborEntry{cborText("job_count"), cborInt(csilV.JobCount)})
+	if csilV.PrNumber != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("pr_number"), cborInt((*csilV.PrNumber))})
+	}
+	csilEntries = append(csilEntries, cborEntry{cborText("commit_sha"), cborText(csilV.CommitSha)})
+	csilEntries = append(csilEntries, cborEntry{cborText("created_at"), cborText(csilV.CreatedAt)})
+	if csilV.ProjectId != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("project_id"), cborText((*csilV.ProjectId))})
+	}
+	csilEntries = append(csilEntries, cborEntry{cborText("queue_name"), cborText(csilV.QueueName)})
+	csilEntries = append(csilEntries, cborEntry{cborText("updated_at"), cborText(csilV.UpdatedAt)})
+	csilEntries = append(csilEntries, cborEntry{cborText("origin_type"), cborText(csilV.OriginType)})
+	csilEntries = append(csilEntries, cborEntry{cborText("workflow_id"), cborText(csilV.WorkflowId)})
+	if csilV.CompletedAt != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("completed_at"), cborText((*csilV.CompletedAt))})
+	}
+	csilEntries = append(csilEntries, cborEntry{cborText("failed_count"), cborInt(csilV.FailedCount)})
+	if csilV.LooseJobId != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("loose_job_id"), cborText((*csilV.LooseJobId))})
+	}
+	csilEntries = append(csilEntries, cborEntry{cborText("trigger_type"), cborText(csilV.TriggerType)})
+	csilEntries = append(csilEntries, cborEntry{cborText("worker_class"), cborText(csilV.WorkerClass)})
+	if csilV.OriginJobId != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("origin_job_id"), cborText((*csilV.OriginJobId))})
+	}
+	if csilV.ParentJobId != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("parent_job_id"), cborText((*csilV.ParentJobId))})
+	}
+	csilEntries = append(csilEntries, cborEntry{cborText("running_count"), cborInt(csilV.RunningCount)})
+	csilEntries = append(csilEntries, cborEntry{cborText("skipped_count"), cborInt(csilV.SkippedCount)})
+	if csilV.LooseJobExit != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("loose_job_exit"), cborInt((*csilV.LooseJobExit))})
+	}
+	csilEntries = append(csilEntries, cborEntry{cborText("completed_count"), cborInt(csilV.CompletedCount)})
+	csilEntries = append(csilEntries, cborEntry{cborText("decision_summary"), cborText(csilV.DecisionSummary)})
+	if csilV.RootWorkflowId != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("root_workflow_id"), cborText((*csilV.RootWorkflowId))})
+	}
+	csilEntries = append(csilEntries, cborEntry{cborText("execution_profile"), cborText(csilV.ExecutionProfile)})
+	if csilV.ParentWorkflowId != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("parent_workflow_id"), cborText((*csilV.ParentWorkflowId))})
+	}
+	return csilEntries
+}
+
+// csilDecWorkflowSummaryDetail reconstructs a WorkflowSummaryDetail from a decoded CBOR value tree.
+func csilDecWorkflowSummaryDetail(csilRoot cborValue) (WorkflowSummaryDetail, error) {
+	var csilOut WorkflowSummaryDetail
+	{
+		csilField, csilErr := cborRequire(csilRoot, "workflow_id")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.WorkflowId = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "kind")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Kind = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "name")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Name = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "status")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Status = csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "project_id"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.ProjectId = &csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "created_at")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.CreatedAt = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "updated_at")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.UpdatedAt = csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "completed_at"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.CompletedAt = &csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "queue_name")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.QueueName = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "vcs_repo")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.VcsRepo = csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "pr_number"); csilOk {
+		csilVal, csilErr := (cborAsI64)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.PrNumber = &csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "commit_sha")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.CommitSha = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "job_count")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsI64)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.JobCount = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "running_count")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsI64)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.RunningCount = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "completed_count")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsI64)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.CompletedCount = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "failed_count")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsI64)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.FailedCount = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "skipped_count")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsI64)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.SkippedCount = csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "loose_job_id"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.LooseJobId = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "loose_job_exit"); csilOk {
+		csilVal, csilErr := (cborAsI64)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.LooseJobExit = &csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "decision_summary")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.DecisionSummary = csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "parent_job_id"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.ParentJobId = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "root_workflow_id"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.RootWorkflowId = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "parent_workflow_id"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.ParentWorkflowId = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "origin_job_id"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.OriginJobId = &csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "origin_type")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.OriginType = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "trigger_type")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.TriggerType = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "ci_origin")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.CiOrigin = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "execution_profile")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.ExecutionProfile = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "worker_class")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.WorkerClass = csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeWorkflowSummaryDetail encodes a WorkflowSummaryDetail to canonical CSIL CBOR bytes.
+func EncodeWorkflowSummaryDetail(csilV WorkflowSummaryDetail) []byte {
+	return cborEncode(csilEncWorkflowSummaryDetail(csilV))
+}
+
+// DecodeWorkflowSummaryDetail decodes canonical CSIL CBOR bytes into a WorkflowSummaryDetail.
+func DecodeWorkflowSummaryDetail(csilData []byte) (WorkflowSummaryDetail, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero WorkflowSummaryDetail
+		return csilZero, csilErr
+	}
+	return csilDecWorkflowSummaryDetail(csilRoot)
+}
+
+// csilEncListWorkflowsRequest builds the canonical CBOR value tree for a ListWorkflowsRequest.
+func csilEncListWorkflowsRequest(csilV ListWorkflowsRequest) cborValue {
+	csilEntries := make(cborMap, 0, 4)
+	if csilV.Limit != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("limit"), cborInt((*csilV.Limit))})
+	}
+	if csilV.Offset != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("offset"), cborInt((*csilV.Offset))})
+	}
+	if csilV.Status != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("status"), cborText((*csilV.Status))})
+	}
+	if csilV.ProjectId != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("project_id"), cborText((*csilV.ProjectId))})
+	}
+	return csilEntries
+}
+
+// csilDecListWorkflowsRequest reconstructs a ListWorkflowsRequest from a decoded CBOR value tree.
+func csilDecListWorkflowsRequest(csilRoot cborValue) (ListWorkflowsRequest, error) {
+	var csilOut ListWorkflowsRequest
+	if csilField, csilOk := cborMapGet(csilRoot, "status"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Status = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "project_id"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.ProjectId = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "limit"); csilOk {
+		csilVal, csilErr := (cborAsI64)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Limit = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "offset"); csilOk {
+		csilVal, csilErr := (cborAsI64)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Offset = &csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeListWorkflowsRequest encodes a ListWorkflowsRequest to canonical CSIL CBOR bytes.
+func EncodeListWorkflowsRequest(csilV ListWorkflowsRequest) []byte {
+	return cborEncode(csilEncListWorkflowsRequest(csilV))
+}
+
+// DecodeListWorkflowsRequest decodes canonical CSIL CBOR bytes into a ListWorkflowsRequest.
+func DecodeListWorkflowsRequest(csilData []byte) (ListWorkflowsRequest, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero ListWorkflowsRequest
+		return csilZero, csilErr
+	}
+	return csilDecListWorkflowsRequest(csilRoot)
+}
+
+// csilEncListWorkflowsResponse builds the canonical CBOR value tree for a ListWorkflowsResponse.
+func csilEncListWorkflowsResponse(csilV ListWorkflowsResponse) cborValue {
+	csilEntries := make(cborMap, 0, 4)
+	csilEntries = append(csilEntries, cborEntry{cborText("limit"), cborInt(csilV.Limit)})
+	csilEntries = append(csilEntries, cborEntry{cborText("total"), cborInt(csilV.Total)})
+	csilEntries = append(csilEntries, cborEntry{cborText("offset"), cborInt(csilV.Offset)})
+	csilEntries = append(csilEntries, cborEntry{cborText("workflows"), cborEncArray(csilV.Workflows, func(csilElem WorkflowSummaryDetail) cborValue { return csilEncWorkflowSummaryDetail(csilElem) })})
+	return csilEntries
+}
+
+// csilDecListWorkflowsResponse reconstructs a ListWorkflowsResponse from a decoded CBOR value tree.
+func csilDecListWorkflowsResponse(csilRoot cborValue) (ListWorkflowsResponse, error) {
+	var csilOut ListWorkflowsResponse
+	{
+		csilField, csilErr := cborRequire(csilRoot, "workflows")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (func(csilV cborValue) ([]WorkflowSummaryDetail, error) {
+			return cborDecArray(csilV, csilDecWorkflowSummaryDetail)
+		})(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Workflows = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "total")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsI64)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Total = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "limit")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsI64)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Limit = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "offset")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsI64)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Offset = csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeListWorkflowsResponse encodes a ListWorkflowsResponse to canonical CSIL CBOR bytes.
+func EncodeListWorkflowsResponse(csilV ListWorkflowsResponse) []byte {
+	return cborEncode(csilEncListWorkflowsResponse(csilV))
+}
+
+// DecodeListWorkflowsResponse decodes canonical CSIL CBOR bytes into a ListWorkflowsResponse.
+func DecodeListWorkflowsResponse(csilData []byte) (ListWorkflowsResponse, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero ListWorkflowsResponse
+		return csilZero, csilErr
+	}
+	return csilDecListWorkflowsResponse(csilRoot)
+}
+
+// csilEncGetWorkflowRequest builds the canonical CBOR value tree for a GetWorkflowRequest.
+func csilEncGetWorkflowRequest(csilV GetWorkflowRequest) cborValue {
+	csilEntries := make(cborMap, 0, 1)
+	csilEntries = append(csilEntries, cborEntry{cborText("workflow_id"), cborText(csilV.WorkflowId)})
+	return csilEntries
+}
+
+// csilDecGetWorkflowRequest reconstructs a GetWorkflowRequest from a decoded CBOR value tree.
+func csilDecGetWorkflowRequest(csilRoot cborValue) (GetWorkflowRequest, error) {
+	var csilOut GetWorkflowRequest
+	{
+		csilField, csilErr := cborRequire(csilRoot, "workflow_id")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.WorkflowId = csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeGetWorkflowRequest encodes a GetWorkflowRequest to canonical CSIL CBOR bytes.
+func EncodeGetWorkflowRequest(csilV GetWorkflowRequest) []byte {
+	return cborEncode(csilEncGetWorkflowRequest(csilV))
+}
+
+// DecodeGetWorkflowRequest decodes canonical CSIL CBOR bytes into a GetWorkflowRequest.
+func DecodeGetWorkflowRequest(csilData []byte) (GetWorkflowRequest, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero GetWorkflowRequest
+		return csilZero, csilErr
+	}
+	return csilDecGetWorkflowRequest(csilRoot)
+}
+
+// csilEncGetWorkflowResponse builds the canonical CBOR value tree for a GetWorkflowResponse.
+func csilEncGetWorkflowResponse(csilV GetWorkflowResponse) cborValue {
+	csilEntries := make(cborMap, 0, 3)
+	csilEntries = append(csilEntries, cborEntry{cborText("jobs"), cborEncArray(csilV.Jobs, func(csilElem JobSummary) cborValue { return csilEncJobSummary(csilElem) })})
+	csilEntries = append(csilEntries, cborEntry{cborText("nodes"), cborEncArray(csilV.Nodes, func(csilElem WorkflowNodeSummary) cborValue { return csilEncWorkflowNodeSummary(csilElem) })})
+	csilEntries = append(csilEntries, cborEntry{cborText("workflow"), csilEncWorkflowSummaryDetail(csilV.Workflow)})
+	return csilEntries
+}
+
+// csilDecGetWorkflowResponse reconstructs a GetWorkflowResponse from a decoded CBOR value tree.
+func csilDecGetWorkflowResponse(csilRoot cborValue) (GetWorkflowResponse, error) {
+	var csilOut GetWorkflowResponse
+	{
+		csilField, csilErr := cborRequire(csilRoot, "workflow")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (csilDecWorkflowSummaryDetail)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Workflow = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "nodes")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (func(csilV cborValue) ([]WorkflowNodeSummary, error) {
+			return cborDecArray(csilV, csilDecWorkflowNodeSummary)
+		})(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Nodes = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "jobs")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (func(csilV cborValue) ([]JobSummary, error) { return cborDecArray(csilV, csilDecJobSummary) })(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Jobs = csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeGetWorkflowResponse encodes a GetWorkflowResponse to canonical CSIL CBOR bytes.
+func EncodeGetWorkflowResponse(csilV GetWorkflowResponse) []byte {
+	return cborEncode(csilEncGetWorkflowResponse(csilV))
+}
+
+// DecodeGetWorkflowResponse decodes canonical CSIL CBOR bytes into a GetWorkflowResponse.
+func DecodeGetWorkflowResponse(csilData []byte) (GetWorkflowResponse, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero GetWorkflowResponse
+		return csilZero, csilErr
+	}
+	return csilDecGetWorkflowResponse(csilRoot)
+}
+
+// csilEncEnumChoice builds the canonical CBOR value tree for a EnumChoice.
+func csilEncEnumChoice(csilV EnumChoice) cborValue {
+	csilEntries := make(cborMap, 0, 3)
+	csilEntries = append(csilEntries, cborEntry{cborText("label"), cborText(csilV.Label)})
+	csilEntries = append(csilEntries, cborEntry{cborText("value"), cborText(csilV.Value)})
+	csilEntries = append(csilEntries, cborEntry{cborText("description"), cborText(csilV.Description)})
+	return csilEntries
+}
+
+// csilDecEnumChoice reconstructs a EnumChoice from a decoded CBOR value tree.
+func csilDecEnumChoice(csilRoot cborValue) (EnumChoice, error) {
+	var csilOut EnumChoice
+	{
+		csilField, csilErr := cborRequire(csilRoot, "value")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Value = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "label")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Label = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "description")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Description = csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeEnumChoice encodes a EnumChoice to canonical CSIL CBOR bytes.
+func EncodeEnumChoice(csilV EnumChoice) []byte {
+	return cborEncode(csilEncEnumChoice(csilV))
+}
+
+// DecodeEnumChoice decodes canonical CSIL CBOR bytes into a EnumChoice.
+func DecodeEnumChoice(csilData []byte) (EnumChoice, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero EnumChoice
+		return csilZero, csilErr
+	}
+	return csilDecEnumChoice(csilRoot)
+}
+
+// csilEncDescribeFormMetadataRequest builds the canonical CBOR value tree for a DescribeFormMetadataRequest.
+func csilEncDescribeFormMetadataRequest(csilV DescribeFormMetadataRequest) cborValue {
+	csilEntries := make(cborMap, 0, 0)
+	return csilEntries
+}
+
+// csilDecDescribeFormMetadataRequest reconstructs a DescribeFormMetadataRequest from a decoded CBOR value tree.
+func csilDecDescribeFormMetadataRequest(csilRoot cborValue) (DescribeFormMetadataRequest, error) {
+	var csilOut DescribeFormMetadataRequest
+	return csilOut, nil
+}
+
+// EncodeDescribeFormMetadataRequest encodes a DescribeFormMetadataRequest to canonical CSIL CBOR bytes.
+func EncodeDescribeFormMetadataRequest(csilV DescribeFormMetadataRequest) []byte {
+	return cborEncode(csilEncDescribeFormMetadataRequest(csilV))
+}
+
+// DecodeDescribeFormMetadataRequest decodes canonical CSIL CBOR bytes into a DescribeFormMetadataRequest.
+func DecodeDescribeFormMetadataRequest(csilData []byte) (DescribeFormMetadataRequest, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero DescribeFormMetadataRequest
+		return csilZero, csilErr
+	}
+	return csilDecDescribeFormMetadataRequest(csilRoot)
+}
+
+// csilEncDescribeFormMetadataResponse builds the canonical CBOR value tree for a DescribeFormMetadataResponse.
+func csilEncDescribeFormMetadataResponse(csilV DescribeFormMetadataResponse) cborValue {
+	csilEntries := make(cborMap, 0, 6)
+	csilEntries = append(csilEntries, cborEntry{cborText("event_types"), cborEncArray(csilV.EventTypes, func(csilElem EnumChoice) cborValue { return csilEncEnumChoice(csilElem) })})
+	csilEntries = append(csilEntries, cborEntry{cborText("job_statuses"), cborEncArray(csilV.JobStatuses, func(csilElem EnumChoice) cborValue { return csilEncEnumChoice(csilElem) })})
+	csilEntries = append(csilEntries, cborEntry{cborText("checkout_modes"), cborEncArray(csilV.CheckoutModes, func(csilElem EnumChoice) cborValue { return csilEncEnumChoice(csilElem) })})
+	csilEntries = append(csilEntries, cborEntry{cborText("ci_source_types"), cborEncArray(csilV.CiSourceTypes, func(csilElem EnumChoice) cborValue { return csilEncEnumChoice(csilElem) })})
+	csilEntries = append(csilEntries, cborEntry{cborText("node_conditions"), cborEncArray(csilV.NodeConditions, func(csilElem EnumChoice) cborValue { return csilEncEnumChoice(csilElem) })})
+	csilEntries = append(csilEntries, cborEntry{cborText("workflow_statuses"), cborEncArray(csilV.WorkflowStatuses, func(csilElem EnumChoice) cborValue { return csilEncEnumChoice(csilElem) })})
+	return csilEntries
+}
+
+// csilDecDescribeFormMetadataResponse reconstructs a DescribeFormMetadataResponse from a decoded CBOR value tree.
+func csilDecDescribeFormMetadataResponse(csilRoot cborValue) (DescribeFormMetadataResponse, error) {
+	var csilOut DescribeFormMetadataResponse
+	{
+		csilField, csilErr := cborRequire(csilRoot, "event_types")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (func(csilV cborValue) ([]EnumChoice, error) { return cborDecArray(csilV, csilDecEnumChoice) })(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.EventTypes = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "checkout_modes")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (func(csilV cborValue) ([]EnumChoice, error) { return cborDecArray(csilV, csilDecEnumChoice) })(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.CheckoutModes = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "node_conditions")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (func(csilV cborValue) ([]EnumChoice, error) { return cborDecArray(csilV, csilDecEnumChoice) })(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.NodeConditions = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "job_statuses")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (func(csilV cborValue) ([]EnumChoice, error) { return cborDecArray(csilV, csilDecEnumChoice) })(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.JobStatuses = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "workflow_statuses")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (func(csilV cborValue) ([]EnumChoice, error) { return cborDecArray(csilV, csilDecEnumChoice) })(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.WorkflowStatuses = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "ci_source_types")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (func(csilV cborValue) ([]EnumChoice, error) { return cborDecArray(csilV, csilDecEnumChoice) })(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.CiSourceTypes = csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeDescribeFormMetadataResponse encodes a DescribeFormMetadataResponse to canonical CSIL CBOR bytes.
+func EncodeDescribeFormMetadataResponse(csilV DescribeFormMetadataResponse) []byte {
+	return cborEncode(csilEncDescribeFormMetadataResponse(csilV))
+}
+
+// DecodeDescribeFormMetadataResponse decodes canonical CSIL CBOR bytes into a DescribeFormMetadataResponse.
+func DecodeDescribeFormMetadataResponse(csilData []byte) (DescribeFormMetadataResponse, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero DescribeFormMetadataResponse
+		return csilZero, csilErr
+	}
+	return csilDecDescribeFormMetadataResponse(csilRoot)
 }
 
 // csilEncCharacteristicScalar encodes a CharacteristicScalar union as a tagged sum [variant_index, value].

@@ -353,6 +353,26 @@ func (StubUi) GetJobMetrics(ctx context.Context, req csilapi.GetJobMetricsReques
 	return csilapi.GetJobMetricsResponse{}, ErrUnimplemented("ReactorcideUi/get-job-metrics")
 }
 
+func (StubUi) ListJobs(ctx context.Context, req csilapi.ListJobsRequest) (csilapi.ListJobsResponse, error) {
+	return csilapi.ListJobsResponse{}, ErrUnimplemented("ReactorcideUi/list-jobs")
+}
+
+func (StubUi) GetJob(ctx context.Context, req csilapi.GetJobRequest) (csilapi.GetJobResponse, error) {
+	return csilapi.GetJobResponse{}, ErrUnimplemented("ReactorcideUi/get-job")
+}
+
+func (StubUi) ListWorkflows(ctx context.Context, req csilapi.ListWorkflowsRequest) (csilapi.ListWorkflowsResponse, error) {
+	return csilapi.ListWorkflowsResponse{}, ErrUnimplemented("ReactorcideUi/list-workflows")
+}
+
+func (StubUi) GetWorkflow(ctx context.Context, req csilapi.GetWorkflowRequest) (csilapi.GetWorkflowResponse, error) {
+	return csilapi.GetWorkflowResponse{}, ErrUnimplemented("ReactorcideUi/get-workflow")
+}
+
+func (StubUi) DescribeFormMetadata(ctx context.Context, req csilapi.DescribeFormMetadataRequest) (csilapi.DescribeFormMetadataResponse, error) {
+	return csilapi.DescribeFormMetadataResponse{}, ErrUnimplemented("ReactorcideUi/describe-form-metadata")
+}
+
 func (StubUi) GetJobLogs(ctx context.Context, req csilapi.GetJobLogsRequest) (csilapi.GetJobLogsResponse, error) {
 	return csilapi.GetJobLogsResponse{}, ErrUnimplemented("ReactorcideUi/get-job-logs")
 }

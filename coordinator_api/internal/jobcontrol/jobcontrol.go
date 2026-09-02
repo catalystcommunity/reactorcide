@@ -27,6 +27,7 @@ import (
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store/models"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/worker"
+	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/workflowevents"
 )
 
 // ErrNotCancellable is returned when the target job is already in a terminal
@@ -327,6 +328,7 @@ func CancelWorkflow(ctx context.Context, st store.Store, corndogsClient corndogs
 			if err := ws.UpdateWorkflowNode(ctx, node); err != nil {
 				return wf, err
 			}
+			workflowevents.NodeUpdated(ctx, wf, node)
 			recordCancelEvent(ctx, ws, wf.WorkflowID, &node.NodeID, nil, kill)
 			continue
 		}
@@ -373,6 +375,7 @@ func CancelWorkflow(ctx context.Context, st store.Store, corndogsClient corndogs
 	if err := ws.UpdateWorkflowInstance(ctx, wf); err != nil {
 		return wf, fmt.Errorf("failed to update workflow instance status: %w", err)
 	}
+	workflowevents.WorkflowUpdated(ctx, wf)
 	bumpWorkflowReportRevision(ctx, st, wf)
 	return wf, nil
 }

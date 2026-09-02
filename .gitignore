@@ -188,3 +188,15 @@ webapp/reactorcide-web
 
 # Demo config (contains user-specific values)
 demo/demo-config.yaml
+
+# Web UI
+webapp/ui/node_modules/
+webapp/ui/dist/
+# The SPA build output, compiled into the webapp binary by `./tools build-ui`.
+# NOTHING the build emits is committed: index.html references hashed asset
+# filenames that change every build, so a committed copy would point at files
+# that are not there. Only .gitkeep is tracked, so `go:embed all:dist` still has
+# a directory to embed on a fresh clone; embedui serves a built-in placeholder
+# page when index.html is absent.
+webapp/internal/embedui/dist/*
+!webapp/internal/embedui/dist/.gitkeep

@@ -536,6 +536,21 @@ func createAppMux() *http.ServeMux {
 	if singletonBus != nil {
 		wsHandler := NewWSHandler(singletonBus, store.AppStore)
 
+		// The SPA's single multiplexed event socket. Authenticated by the
+		// browser's own UI session (proxied through by the webapp), NOT by the
+		// webapp's service token, and authorized per frame. Deliberately
+		// OUTSIDE authMiddleware: that middleware rejects a request without an
+		// API token, and this endpoint must also serve an anonymous caller
+		// watching public data. It does its own identity resolution.
+		uiStreamHandler := NewUIStreamHandler(singletonBus, store.AppStore)
+		mux.HandleFunc(UIStreamPath, func(w http.ResponseWriter, r *http.Request) {
+			if r.Method != http.MethodGet {
+				http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+				return
+			}
+			uiStreamHandler.Stream(w, r)
+		})
+
 		mux.HandleFunc("/api/v1/jobs/stream", func(w http.ResponseWriter, r *http.Request) {
 			if r.Method != http.MethodGet {
 				http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)

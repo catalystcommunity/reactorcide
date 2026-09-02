@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" role="img" aria-label="Reactorcide">
+  <title>Reactorcide</title>
+  <defs>
+    <linearGradient id="rc-flame" x1="32" y1="4" x2="32" y2="54" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#ffd166"/>
+      <stop offset="0.45" stop-color="#f7842b"/>
+      <stop offset="1" stop-color="#e0322c"/>
+    </linearGradient>
+    <linearGradient id="rc-flame-inner" x1="32" y1="21" x2="32" y2="47" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#fff6d8"/>
+      <stop offset="1" stop-color="#ffb340"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Electron orbits. currentColor so the mark reads on light and dark. -->
+  <g fill="none" stroke="currentColor" stroke-width="2" opacity="0.55">
+    <ellipse cx="32" cy="32" rx="29" ry="10.5"/>
+    <ellipse cx="32" cy="32" rx="29" ry="10.5" transform="rotate(60 32 32)"/>
+    <ellipse cx="32" cy="32" rx="29" ry="10.5" transform="rotate(-60 32 32)"/>
+  </g>
+  <g fill="currentColor" opacity="0.85">
+    <circle cx="61" cy="32" r="2.6"/>
+    <circle cx="17.5" cy="6.9" r="2.6" transform="rotate(0 32 32)"/>
+    <circle cx="17.5" cy="57.1" r="2.6"/>
+  </g>
+
+  <!-- Flame nucleus, drawn over the orbits. -->
+  <path fill="url(#rc-flame)" d="M32 4c6.6 11.2 16 16.6 16 28.6C48 44 41 52.4 32 54c-9-1.6-16-10-16-21.4 0-7.4 3.6-11.4 7-15.6 1.1 5.9 3.6 8.9 5.7 10.3C26.4 17.6 28.4 10.2 32 4Z"/>
+  <path fill="url(#rc-flame-inner)" d="M32 21.5c3.4 5.9 8 8.7 8 15 0 5.6-3.4 9.9-8 10.8-4.6-.9-8-5.2-8-10.8 0-3.9 1.8-6 3.6-8.2.6 3.1 1.9 4.7 3 5.4-1.2-4.7-.2-8.6 1.4-12.2Z"/>
+</svg>

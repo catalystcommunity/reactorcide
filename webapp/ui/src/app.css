@@ -1,0 +1,112 @@
+.app-header {
+  position: sticky;
+  top: 0;
+  z-index: 50;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  backdrop-filter: blur(6px);
+}
+
+.app-header-inner {
+  max-width: var(--content-max);
+  margin: 0 auto;
+  padding: 0 var(--space-4);
+  height: var(--header-height);
+  display: flex;
+  align-items: center;
+  gap: var(--space-5);
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--text);
+  font-weight: 650;
+  letter-spacing: -0.015em;
+  flex-shrink: 0;
+}
+.brand:hover {
+  text-decoration: none;
+}
+.brand-mark {
+  flex-shrink: 0;
+}
+.brand-name {
+  font-size: var(--text-md);
+}
+
+.app-nav {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  flex: 1;
+  min-width: 0;
+  overflow-x: auto;
+}
+
+.app-nav-link {
+  padding: var(--space-1) var(--space-3);
+  border-radius: var(--radius);
+  color: var(--text-muted);
+  font-weight: 500;
+  white-space: nowrap;
+}
+.app-nav-link:hover {
+  color: var(--text);
+  background: var(--surface-sunken);
+  text-decoration: none;
+}
+.app-nav-link-active {
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.app-header-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-shrink: 0;
+}
+
+.app-user {
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+  max-width: 12rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Live-connection indicator */
+.conn {
+  display: inline-flex;
+  align-items: center;
+  padding: 0 var(--space-1);
+}
+.conn-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  display: block;
+}
+.conn-live .conn-dot {
+  background: var(--ok);
+  box-shadow: 0 0 0 3px var(--ok-soft);
+}
+.conn-down .conn-dot {
+  background: var(--warn);
+  box-shadow: 0 0 0 3px var(--warn-soft);
+}
+
+@media (max-width: 46rem) {
+  .brand-name {
+    display: none;
+  }
+  .app-user {
+    display: none;
+  }
+  .app-header-inner {
+    gap: var(--space-3);
+  }
+}

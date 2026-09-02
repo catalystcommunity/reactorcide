@@ -46,6 +46,8 @@ func (s *UiService) GetJobMetrics(ctx context.Context, req csilapi.GetJobMetrics
 	if req.Cursor != nil {
 		cursor = *req.Cursor
 	}
+	// ParseMetricView never returns the empty view, so omitting view gets the
+	// summary rather than the storage layer's unfiltered default.
 	result, err := jobtelemetry.QueryMetrics(ctx, s.deps.ObjectStore, jobtelemetry.Query{
 		JobID:     job.JobID,
 		From:      from,
@@ -53,6 +55,8 @@ func (s *UiService) GetJobMetrics(ctx context.Context, req csilapi.GetJobMetrics
 		Metrics:   req.Metrics,
 		MaxPoints: int(req.MaxPoints),
 		Cursor:    cursor,
+		View:      jobtelemetry.ParseMetricView(derefOr(req.View, "")),
+		Component: derefOr(req.Component, ""),
 	})
 	if err != nil {
 		if errors.Is(err, jobtelemetry.ErrInvalidCursor) {
@@ -61,7 +65,14 @@ func (s *UiService) GetJobMetrics(ctx context.Context, req csilapi.GetJobMetrics
 		return csilapi.GetJobMetricsResponse{}, NewServiceError("internal", "failed to read job metrics")
 	}
 	nextCursor := result.NextCursor
-	response := csilapi.GetJobMetricsResponse{Complete: result.Complete, NextCursor: &nextCursor}
+	response := csilapi.GetJobMetricsResponse{
+		Complete:   result.Complete,
+		NextCursor: &nextCursor,
+		Components: result.Components,
+	}
+	if response.Components == nil {
+		response.Components = []string{}
+	}
 	for _, series := range result.Series {
 		converted := csilapi.JobMetricSeries{Name: series.Name, Unit: series.Unit}
 		for _, label := range series.Labels {

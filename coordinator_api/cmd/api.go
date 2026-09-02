@@ -68,6 +68,10 @@ func Serve() error {
 		bus.SetJobTopicController(listener)
 		listener.Start(context.Background())
 		handlers.SetPubSubBus(bus)
+		// The workflow lifecycle publishes through this (see
+		// pubsub.SetDefaultPublisher's doc comment for why it is a singleton
+		// rather than an injected dependency).
+		pubsub.SetDefaultPublisher(pubsub.NewPublisher(pool))
 		logging.Log.Info("Pub/sub bus initialized; WebSocket streams enabled")
 	} else {
 		logging.Log.Warn("No pgx pool available; WebSocket streams disabled")

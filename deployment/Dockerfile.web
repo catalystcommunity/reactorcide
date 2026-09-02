@@ -12,7 +12,7 @@ COPY --from=certs /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
 COPY reactorcide-web /reactorcide-web
 
 # Expose web UI port
-EXPOSE 4080
+EXPOSE 5080
 
 # Run as non-root
 USER 1000:1000

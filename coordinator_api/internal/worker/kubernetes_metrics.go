@@ -86,7 +86,10 @@ func (kr *KubernetesRunner) SampleResources(ctx context.Context, jobName string,
 			var hasCPU, hasMemory bool
 			for _, containerMetric := range metrics.Containers {
 				component := kubernetesMetricComponent(containerMetric.Name)
-				labels := []jobtelemetry.Label{{Key: "scope", Value: "component"}, {Key: "component", Value: component}}
+				// Presence of the component label IS the "this is one container,
+				// not the job total" signal. The old scope label carried no
+				// information this does not.
+				labels := []jobtelemetry.Label{{Key: "component", Value: component}}
 				if value, parseErr := resource.ParseQuantity(containerMetric.Usage["cpu"]); parseErr == nil {
 					milli := value.MilliValue()
 					add("cpu.utilization", "millicores", "gauge", milli, labels...)
@@ -101,10 +104,10 @@ func (kr *KubernetesRunner) SampleResources(ctx context.Context, jobName string,
 				}
 			}
 			if hasCPU {
-				add("cpu.utilization", "millicores", "gauge", totalCPU, jobtelemetry.Label{Key: "scope", Value: "job"}, jobtelemetry.Label{Key: "cpu", Value: "total"})
+				add("cpu.utilization", "millicores", "gauge", totalCPU, jobtelemetry.Label{Key: "cpu", Value: "total"})
 			}
 			if hasMemory {
-				add("memory.usage", "bytes", "gauge", totalMemory, jobtelemetry.Label{Key: "scope", Value: "job"})
+				add("memory.usage", "bytes", "gauge", totalMemory)
 			}
 		}
 	} else {
@@ -137,7 +140,7 @@ func (kr *KubernetesRunner) SampleResources(ctx context.Context, jobName string,
 		// Kubelet charges this used value to the Pod. The capacity and available
 		// values describe the node filesystem, so they are not job metrics.
 		addSummaryFS(add, podSummary.EphemeralStorage, kubernetesStorageMetric{
-			scope: "job", volume: "total", kind: "ephemeral", includeCapacity: false,
+			volume: "total", kind: "ephemeral", includeCapacity: false,
 		})
 		volumes := kubernetesStorageVolumes(&pod)
 		for _, volume := range podSummary.VolumeStats {
@@ -152,8 +155,8 @@ func (kr *KubernetesRunner) SampleResources(ctx context.Context, jobName string,
 		}
 		for _, containerSummary := range podSummary.Containers {
 			addSummaryFS(add, containerSummary.Rootfs, kubernetesStorageMetric{
-				scope: "component", component: kubernetesMetricComponent(containerSummary.Name),
-				volume: "rootfs-" + containerSummary.Name, kind: "rootfs", includeCapacity: false,
+				component: kubernetesMetricComponent(containerSummary.Name),
+				volume:    "rootfs-" + containerSummary.Name, kind: "rootfs", includeCapacity: false,
 			})
 		}
 		break
@@ -188,7 +191,6 @@ func addKubernetesResourceSettings(add func(string, string, string, int64, ...jo
 	}
 	for _, container := range containers {
 		labels := []jobtelemetry.Label{
-			{Key: "scope", Value: "component"},
 			{Key: "component", Value: kubernetesMetricComponent(container.Name)},
 		}
 		if value, ok := container.Resources.Requests[corev1.ResourceCPU]; ok {
@@ -207,7 +209,7 @@ func addKubernetesResourceSettings(add func(string, string, string, int64, ...jo
 			totalMemoryLimit += bytes
 		}
 	}
-	jobLabels := []jobtelemetry.Label{{Key: "scope", Value: "job"}}
+	jobLabels := []jobtelemetry.Label{}
 	if totalCPURequest > 0 {
 		add("cpu.request", "millicores", "gauge", totalCPURequest, jobLabels...)
 	}
@@ -220,7 +222,6 @@ func addKubernetesResourceSettings(add func(string, string, string, int64, ...jo
 }
 
 type kubernetesStorageMetric struct {
-	scope           string
 	component       string
 	volume          string
 	kind            string
@@ -241,7 +242,7 @@ func kubernetesStorageVolumes(pod *corev1.Pod) map[string]kubernetesStorageMetri
 	}
 	result := make(map[string]kubernetesStorageMetric)
 	for _, volume := range pod.Spec.Volumes {
-		metric := kubernetesStorageMetric{scope: "job", volume: volume.Name, mount: mounts[volume.Name]}
+		metric := kubernetesStorageMetric{volume: volume.Name, mount: mounts[volume.Name]}
 		switch {
 		case volume.EmptyDir != nil:
 			metric.kind = "ephemeral"
@@ -262,7 +263,7 @@ func addSummaryFS(add func(string, string, string, int64, ...jobtelemetry.Label)
 	if fs == nil {
 		return
 	}
-	labels := []jobtelemetry.Label{{Key: "scope", Value: metric.scope}, {Key: "volume", Value: metric.volume}, {Key: "kind", Value: metric.kind}}
+	labels := []jobtelemetry.Label{{Key: "volume", Value: metric.volume}, {Key: "kind", Value: metric.kind}}
 	if metric.component != "" {
 		labels = append(labels, jobtelemetry.Label{Key: "component", Value: metric.component})
 	}

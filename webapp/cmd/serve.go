@@ -24,7 +24,7 @@ var flags = []cli.Flag{
 	&cli.IntFlag{
 		Name:        "port",
 		Aliases:     []string{"p"},
-		Value:       4080,
+		Value:       5080,
 		Usage:       "Port to serve the web UI on",
 		EnvVars:     []string{"REACTORCIDE_WEB_PORT", "PORT"},
 		Destination: &config.Port,
@@ -41,12 +41,6 @@ var flags = []cli.Flag{
 		Usage:       "Allow credentials and user sessions on a coordinator connection without TLS (development only)",
 		Destination: &config.AllowInsecureTransport,
 	},
-	&cli.StringFlag{
-		Name:        "api-token",
-		Usage:       "Bearer token for coordinator API authentication",
-		EnvVars:     []string{"REACTORCIDE_API_TOKEN"},
-		Destination: &config.APIToken,
-	},
 	&cli.BoolFlag{
 		Name:        "cookie-insecure",
 		Usage:       "Disable the Secure flag on the session cookie (local http dev only)",
@@ -58,9 +52,6 @@ var flags = []cli.Flag{
 func Serve() error {
 	if err := transportsecurity.ValidateURL(config.APIUrl, config.AllowInsecureTransport, "web coordinator connection"); err != nil {
 		return err
-	}
-	if config.APIToken == "" {
-		logrus.Warn("No API token configured - API requests will fail. Set REACTORCIDE_API_TOKEN.")
 	}
 
 	handler := handlers.NewRouter()

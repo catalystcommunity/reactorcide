@@ -65,14 +65,18 @@ portForward:
   - resourceType: service
     resourceName: reactorcideweb
     namespace: skaffoldreactorcide
-    port: 4080
-    localPort: 4080
+    port: 5080
+    localPort: 5080
   # pf for corndogs
+  #
+  # Corndogs' RPC port is also 5080, which is now the web UI's port too. The
+  # in-cluster port stays 5080 (that is corndogs' own default and not ours to
+  # change); only the LOCAL side moves, so both forwards can run at once.
   - resourceType: service
     resourceName: reactorcide-corndogs
     namespace: skaffoldreactorcide
     port: 5080
-    localPort: 5080
+    localPort: 5081
   # pf for corndogs postgresql
   - resourceType: service
     resourceName: reactorcide-corndogs-postgresql

@@ -290,7 +290,9 @@ func (a *vmRunnerAdapter) SampleResources(ctx context.Context, jobID string, opt
 		snapshot.Series = append(snapshot.Series, jobtelemetry.SeriesDefinition{SeriesID: id, Name: name, Unit: unit, Kind: kind, Labels: labels})
 		snapshot.Values = append(snapshot.Values, jobtelemetry.Value{SeriesID: id, Value: value})
 	}
-	jobLabels := []jobtelemetry.Label{{Key: "scope", Value: "job"}}
+	// A VM guest is one machine, so every series here is the job roll-up and
+	// carries no component label. See docker_metrics.go.
+	jobLabels := []jobtelemetry.Label{}
 	add("cpu.utilization", "millicores", "gauge", int64(sample.CPUPercent*10), jobLabels...)
 	if sample.CPUCount > 0 {
 		add("cpu.capacity", "millicores", "gauge", int64(sample.CPUCount)*1000, jobLabels...)
@@ -304,7 +306,7 @@ func (a *vmRunnerAdapter) SampleResources(ctx context.Context, jobID string, opt
 		add("memory.swap.usage", "bytes", "gauge", int64(sample.SwapUsedBytes), jobLabels...)
 	}
 	if options.IncludeStorage {
-		storageLabels := []jobtelemetry.Label{{Key: "scope", Value: "job"}, {Key: "volume", Value: "rootfs"}, {Key: "kind", Value: "rootfs"}}
+		storageLabels := []jobtelemetry.Label{{Key: "volume", Value: "rootfs"}, {Key: "kind", Value: "rootfs"}}
 		add("storage.used", "bytes", "gauge", int64(sample.StorageUsedBytes), storageLabels...)
 		add("storage.capacity", "bytes", "gauge", int64(sample.StorageTotalBytes), storageLabels...)
 	}

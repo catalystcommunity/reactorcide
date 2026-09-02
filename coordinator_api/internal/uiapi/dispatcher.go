@@ -178,6 +178,11 @@ func NewHandlerWithWorker(auth csilapi.ReactorcideAuth, ui csilapi.ReactorcideUi
 		"deactivate-enrollment-token":   wrapOp(csilapi.DecodeDeactivateEnrollmentTokenRequest, csilapi.EncodeDeactivateEnrollmentTokenResponse, "DeactivateEnrollmentTokenResponse", ui.DeactivateEnrollmentToken),
 		"get-job-metrics":               wrapOp(csilapi.DecodeGetJobMetricsRequest, csilapi.EncodeGetJobMetricsResponse, "GetJobMetricsResponse", ui.GetJobMetrics),
 		"get-job-logs":                  wrapOp(csilapi.DecodeGetJobLogsRequest, csilapi.EncodeGetJobLogsResponse, "GetJobLogsResponse", ui.GetJobLogs),
+		"list-jobs":                     wrapOp(csilapi.DecodeListJobsRequest, csilapi.EncodeListJobsResponse, "ListJobsResponse", ui.ListJobs),
+		"get-job":                       wrapOp(csilapi.DecodeGetJobRequest, csilapi.EncodeGetJobResponse, "GetJobResponse", ui.GetJob),
+		"list-workflows":                wrapOp(csilapi.DecodeListWorkflowsRequest, csilapi.EncodeListWorkflowsResponse, "ListWorkflowsResponse", ui.ListWorkflows),
+		"get-workflow":                  wrapOp(csilapi.DecodeGetWorkflowRequest, csilapi.EncodeGetWorkflowResponse, "GetWorkflowResponse", ui.GetWorkflow),
+		"describe-form-metadata":        wrapOp(csilapi.DecodeDescribeFormMetadataRequest, csilapi.EncodeDescribeFormMetadataResponse, "DescribeFormMetadataResponse", ui.DescribeFormMetadata),
 	}
 	if worker != nil {
 		h.ops["ReactorcideWorker"] = map[string]opFunc{

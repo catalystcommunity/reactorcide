@@ -89,7 +89,8 @@ production.
 - `coordinator_api/`: CLI, REST API, workflow state, VCS integration, secrets,
   and worker protocol
 - `runnerlib/`: Job-side Python library
-- `webapp/`: Optional management web application
+- `webapp/`: Management web application — a Go bridge plus a SolidJS SPA in
+  `webapp/ui/`, compiled into the binary with `./tools build-ui`
 - `helm_chart/`: Kubernetes deployment
 - `deployment/`: VM Compose deployment assets
 - `jobs/`: Build, test, and deployment jobs for Reactorcide

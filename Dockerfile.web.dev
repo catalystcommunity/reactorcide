@@ -1,9 +1,25 @@
+# The web UI is compiled INTO the Go binary (webapp/internal/embedui), so the
+# SPA must be built before the Go build. Two stages rather than one because the
+# node toolchain has no business in the final image -- which is FROM scratch and
+# contains exactly one static binary.
+
+FROM node:26-alpine AS ui
+WORKDIR /build/webapp/ui
+# Dependencies first, so a source-only change does not reinstall them.
+COPY webapp/ui/package.json webapp/ui/package-lock.json* ./
+RUN npm ci || npm install
+COPY webapp/ui/ ./
+RUN npm run build
+
 FROM golang:alpine AS builder
 
 RUN apk add --no-cache ca-certificates
 
 WORKDIR /build
 COPY webapp/ ./webapp/
+# The built SPA, overwriting the placeholder index.html committed for the
+# benefit of a Go build run without the UI toolchain.
+COPY --from=ui /build/webapp/internal/embedui/dist/ ./webapp/internal/embedui/dist/
 
 WORKDIR /build/webapp
 RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-w -s" -o /reactorcide-web .
@@ -13,7 +29,7 @@ FROM scratch
 COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
 COPY --from=builder /reactorcide-web /reactorcide-web
 
-EXPOSE 4080
+EXPOSE 5080
 
 USER 1000:1000
 

@@ -45,14 +45,20 @@ var PolicyCommand = &cli.Command{
 				if err != nil {
 					return err
 				}
-				if _, err := cipolicy.ParseDocument(document); err != nil {
+				// The wire type is structured, so the CLI parses the local
+				// file and sends the parsed value. YAML stays a valid
+				// AUTHORING format for operator files (~/.config/reactorcide/
+				// policies/*.yaml and apply-all.sh keep working); it is simply
+				// no longer what travels or what is stored.
+				wireDocument, err := policyFileToWireDocument(document)
+				if err != nil {
 					return err
 				}
 				client, projectID, err := policyClientAndProject(ctx)
 				if err != nil {
 					return err
 				}
-				resp, err := client.PutCiPolicy(ctx.Context, csilapi.PutCiPolicyRequest{ProjectId: projectID, Document: string(document), ExpectedRevision: optionalText(ctx.String("expected-revision"))})
+				resp, err := client.PutCiPolicy(ctx.Context, csilapi.PutCiPolicyRequest{ProjectId: projectID, Document: wireDocument, ExpectedRevision: optionalText(ctx.String("expected-revision"))})
 				if err != nil {
 					return err
 				}
@@ -147,6 +153,31 @@ func readPolicyInput(name string) ([]byte, error) {
 	return os.ReadFile(name)
 }
 
+// policyFileToWireDocument parses an authored policy file (YAML or JSON) and
+// converts it to the structured wire type.
+//
+// It round-trips through JSON on purpose: cipolicy.Policy and
+// csilapi.CiPolicyDocument carry identical `json:` tags, so this cannot drop a
+// field that both sides name, whereas a hand-written field copy is a third
+// place to forget one. cipolicy.ParseDocument still runs first, so an invalid
+// policy is rejected locally with its real parse error before any request is
+// made.
+func policyFileToWireDocument(document []byte) (csilapi.CiPolicyDocument, error) {
+	parsed, err := cipolicy.ParseDocument(document)
+	if err != nil {
+		return csilapi.CiPolicyDocument{}, err
+	}
+	canonical, err := cipolicy.CanonicalDocument(parsed)
+	if err != nil {
+		return csilapi.CiPolicyDocument{}, err
+	}
+	var wire csilapi.CiPolicyDocument
+	if err := json.Unmarshal(canonical, &wire); err != nil {
+		return csilapi.CiPolicyDocument{}, err
+	}
+	return wire, nil
+}
+
 func printPolicy(format string, policy csilapi.CiPolicyDetail) error {
 	if format == "json" {
 		return json.NewEncoder(os.Stdout).Encode(policy)
@@ -154,11 +185,7 @@ func printPolicy(format string, policy csilapi.CiPolicyDetail) error {
 	if format != "yaml" && format != "table" {
 		return fmt.Errorf("unsupported format %q", format)
 	}
-	var document interface{}
-	if err := json.Unmarshal([]byte(policy.Document), &document); err != nil {
-		return err
-	}
-	encoded, err := yaml.Marshal(document)
+	encoded, err := yaml.Marshal(policy.Document)
 	if err != nil {
 		return err
 	}

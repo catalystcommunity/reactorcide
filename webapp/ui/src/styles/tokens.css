@@ -1,0 +1,220 @@
+/*
+ * Design tokens.
+ *
+ * The palette is built around the atomic flame: an amber-to-ember accent ramp
+ * against a cool slate ground, so the mark and the interface belong to each
+ * other rather than the flame being a sticker on a grey app.
+ *
+ * THEME RULE, and it matters: every colour gets its value on bare `:root`
+ * first. The dark block redefines only what changes. A colour whose ONLY
+ * definition lives inside a media query or a [data-theme] block is a colour
+ * that disappears in the other theme, and the failure is invisible until
+ * somebody switches.
+ *
+ * Three states are supported, not two: an explicit light choice, an explicit
+ * dark choice, and "follow the system", which is the default and stamps no
+ * attribute at all. That is why the media query is guarded with
+ * :not([data-theme='light']) -- without the guard, a system-dark user who
+ * explicitly picked light would still get dark.
+ */
+
+:root {
+  color-scheme: light;
+
+  /* Ground and surfaces */
+  --bg: #f7f8fa;
+  --surface: #ffffff;
+  --surface-raised: #ffffff;
+  --surface-sunken: #eef0f4;
+  --overlay: rgba(15, 21, 31, 0.45);
+
+  /* Lines */
+  --border: #dbe0e8;
+  --border-strong: #c2c9d4;
+  --border-focus: var(--accent);
+
+  /* Text */
+  --text: #161d27;
+  --text-muted: #5b6675;
+  --text-subtle: #7a8494;
+  --text-inverted: #ffffff;
+
+  /* The flame ramp. --accent is the interactive colour throughout. */
+  --flame-1: #ffd166;
+  --flame-2: #f7842b;
+  --flame-3: #e0322c;
+  --accent: #d1531b;
+  --accent-hover: #b8460f;
+  --accent-soft: rgba(209, 83, 27, 0.1);
+  --accent-text: #ffffff;
+
+  /* Status. Each pairs a foreground with a soft background of the same hue. */
+  --ok: #17794c;
+  --ok-soft: rgba(23, 121, 76, 0.12);
+  --danger: #c8322a;
+  --danger-soft: rgba(200, 50, 42, 0.12);
+  --warn: #96650a;
+  --warn-soft: rgba(150, 101, 10, 0.14);
+  --info: #1f6bb8;
+  --info-soft: rgba(31, 107, 184, 0.12);
+  --neutral: #5b6675;
+  --neutral-soft: rgba(91, 102, 117, 0.12);
+
+  /* Chart series. Chosen to stay distinguishable for the common forms of
+   * colour-vision deficiency, and never used as the ONLY signal -- every
+   * series also carries a distinct dash pattern and marker. */
+  --series-1: #1f6bb8;
+  --series-2: #d1531b;
+  --series-3: #17794c;
+  --series-4: #8a4fbd;
+  --series-5: #b8860b;
+  --series-6: #0f8f96;
+
+  /* Type */
+  --font-sans:
+    ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  --font-mono: ui-monospace, 'SF Mono', 'JetBrains Mono', 'Fira Code', Menlo, Consolas, monospace;
+
+  --text-xs: 0.75rem;
+  --text-sm: 0.8125rem;
+  --text-base: 0.875rem;
+  --text-md: 1rem;
+  --text-lg: 1.125rem;
+  --text-xl: 1.375rem;
+  --text-2xl: 1.75rem;
+
+  /* Spacing, on a 4px rhythm */
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 0.75rem;
+  --space-4: 1rem;
+  --space-5: 1.5rem;
+  --space-6: 2rem;
+  --space-8: 3rem;
+
+  --radius-sm: 4px;
+  --radius: 7px;
+  --radius-lg: 11px;
+  --radius-pill: 999px;
+
+  --shadow-sm: 0 1px 2px rgba(15, 21, 31, 0.07);
+  --shadow: 0 2px 8px rgba(15, 21, 31, 0.09);
+  --shadow-lg: 0 12px 32px rgba(15, 21, 31, 0.18);
+
+  --header-height: 3.25rem;
+  --content-max: 84rem;
+}
+
+/*
+ * System-dark, unless the viewer explicitly chose light.
+ * Only the tokens that CHANGE are redefined here.
+ */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    color-scheme: dark;
+
+    --bg: #0e1218;
+    --surface: #151b24;
+    --surface-raised: #1b2330;
+    --surface-sunken: #0a0e13;
+    --overlay: rgba(4, 7, 11, 0.66);
+
+    --border: #28313e;
+    --border-strong: #3a4655;
+
+    --text: #e7ecf3;
+    --text-muted: #97a3b4;
+    --text-subtle: #717d8e;
+    --text-inverted: #0e1218;
+
+    /* The accent lifts in dark so it keeps contrast against a dark ground. */
+    --accent: #ff8f3c;
+    --accent-hover: #ffa863;
+    --accent-soft: rgba(255, 143, 60, 0.14);
+    --accent-text: #1a0f06;
+
+    --ok: #4cc38a;
+    --ok-soft: rgba(76, 195, 138, 0.15);
+    --danger: #ff6b60;
+    --danger-soft: rgba(255, 107, 96, 0.15);
+    --warn: #e0b341;
+    --warn-soft: rgba(224, 179, 65, 0.16);
+    --info: #64aaf0;
+    --info-soft: rgba(100, 170, 240, 0.15);
+    --neutral: #97a3b4;
+    --neutral-soft: rgba(151, 163, 180, 0.14);
+
+    --series-1: #64aaf0;
+    --series-2: #ff8f3c;
+    --series-3: #4cc38a;
+    --series-4: #bd93f9;
+    --series-5: #e0b341;
+    --series-6: #3fc7cf;
+
+    --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
+    --shadow: 0 2px 10px rgba(0, 0, 0, 0.45);
+    --shadow-lg: 0 14px 38px rgba(0, 0, 0, 0.6);
+  }
+}
+
+/*
+ * The explicit dark choice. Repeats the dark block so a manual toggle wins on a
+ * system-light machine. Kept as a separate block rather than a shared selector
+ * list because CSS cannot combine a media-guarded selector with an unguarded
+ * one, and duplicating the values is better than a toggle that only works in
+ * one direction.
+ */
+:root[data-theme='dark'] {
+  color-scheme: dark;
+
+  --bg: #0e1218;
+  --surface: #151b24;
+  --surface-raised: #1b2330;
+  --surface-sunken: #0a0e13;
+  --overlay: rgba(4, 7, 11, 0.66);
+
+  --border: #28313e;
+  --border-strong: #3a4655;
+
+  --text: #e7ecf3;
+  --text-muted: #97a3b4;
+  --text-subtle: #717d8e;
+  --text-inverted: #0e1218;
+
+  --accent: #ff8f3c;
+  --accent-hover: #ffa863;
+  --accent-soft: rgba(255, 143, 60, 0.14);
+  --accent-text: #1a0f06;
+
+  --ok: #4cc38a;
+  --ok-soft: rgba(76, 195, 138, 0.15);
+  --danger: #ff6b60;
+  --danger-soft: rgba(255, 107, 96, 0.15);
+  --warn: #e0b341;
+  --warn-soft: rgba(224, 179, 65, 0.16);
+  --info: #64aaf0;
+  --info-soft: rgba(100, 170, 240, 0.15);
+  --neutral: #97a3b4;
+  --neutral-soft: rgba(151, 163, 180, 0.14);
+
+  --series-1: #64aaf0;
+  --series-2: #ff8f3c;
+  --series-3: #4cc38a;
+  --series-4: #bd93f9;
+  --series-5: #e0b341;
+  --series-6: #3fc7cf;
+
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --shadow: 0 2px 10px rgba(0, 0, 0, 0.45);
+  --shadow-lg: 0 14px 38px rgba(0, 0, 0, 0.6);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

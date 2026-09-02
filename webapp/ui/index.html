@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Reactorcide</title>
+    <link rel="icon" type="image/svg+xml" href="/app/favicon.svg" />
+    <link rel="alternate icon" type="image/png" sizes="32x32" href="/app/favicon-32.png" />
+    <link rel="alternate icon" type="image/png" sizes="16x16" href="/app/favicon-16.png" />
+    <link rel="apple-touch-icon" href="/app/apple-touch-icon.png" />
+    <meta name="color-scheme" content="light dark" />
+    <script>
+      // Applied before first paint so a dark-theme user never sees a white
+      // flash. Deliberately inline and tiny; the module bundle loads later and
+      // would be far too late for this.
+      try {
+        var t = localStorage.getItem('reactorcide.theme')
+        if (t === 'light' || t === 'dark') document.documentElement.setAttribute('data-theme', t)
+      } catch (e) {}
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

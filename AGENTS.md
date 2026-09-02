@@ -45,12 +45,26 @@ If a secret-bearing command fails, summarize the failure without including secre
 ## Repo Orientation
 
 - `coordinator_api/` - Go CLI, REST API, workers, job specs, secrets, VCS integration, and Corndogs integration.
+- `webapp/` - the management UI. A thin bridge (Go) plus a SolidJS SPA in
+  `webapp/ui/`, compiled into the binary. It holds NO coordinator credential;
+  see the rule below.
 - `runnerlib/` - Python job execution library and runner utilities.
 - `jobs/` - Reactorcide jobs used to build, test, deploy, and dogfood the system.
 - `examples/` - example job definitions and API usage.
 - `helm_chart/`, `deployment/`, `docker-compose.yml`, `skaffold.yaml` - local and production deployment assets.
 
 ## Architecture Notes Agents Must Preserve
+
+- The webapp holds no coordinator API token. Every browser read and write is
+  authenticated by the browser's own session, forwarded through the CSIL-RPC
+  bridge (`webapp/internal/handlers/rpc_bridge.go`), which discards any
+  credential the client supplied. If the UI needs data it cannot reach, add a
+  CSIL operation that authorizes the caller — never a REST call from the webapp,
+  and never a service token.
+- The SPA is compiled into the webapp binary. Run `./tools build-ui` before
+  `go build` in `webapp/`, or the binary serves a placeholder page and a 503.
+- Metric series carry no `scope` label. A series with no `component` label is
+  the job roll-up; one with a `component` label belongs to that component.
 
 - Trusted CI definitions are separate from untrusted source code. For fork PRs, `SourceURL` can point at the fork, but `CISourceURL` must remain trusted upstream CI content.
 - `run-local` is the canonical local execution path. It mounts the current repository as source and trusted CI by default. Use `--source-dir` and `--ci-dir` for separate local trees, or clone requested code with `--code-url` and `--code-ref`.
@@ -88,6 +102,13 @@ Run the project test helper:
 
 ```bash
 ./tools test
+```
+
+Build the web UI into the webapp binary, and test it:
+
+```bash
+./tools build-ui
+./tools test-ui
 ```
 
 Run a local job with secrets supplied without disclosure:

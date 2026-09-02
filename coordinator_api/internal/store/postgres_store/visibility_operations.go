@@ -69,11 +69,14 @@ func visibilityJoins(entAlias, projAlias, projOwnerAlias, entOwnerAlias string) 
 //     or via group) — no project EXISTS clause, since projectID is nil in
 //     this branch.
 //
-// Global-admin and anonymous-caller handling are deliberately NOT part of
-// this predicate: callers short-circuit it entirely for a global admin (pass
-// isGlobalAdmin=true to the exported List*VisibleTo functions, which skip
-// calling this at all), and REST callers reaching these methods are always
-// authenticated (no anonymous viewerID reaches here).
+// Global-admin handling is deliberately NOT part of this predicate: callers
+// short-circuit it entirely for a global admin (pass isGlobalAdmin=true to the
+// exported List*VisibleTo functions, which skip calling this at all).
+//
+// An ANONYMOUS caller is handled by visibilityArgs binding NULL rather than a
+// viewer id. Every `= ?` below then evaluates to NULL, never true, so an
+// anonymous caller matches only the public branches -- which is exactly the
+// intended rule. See visibilityArgs for why an empty string cannot be used.
 func visibilityPredicateSQL(entAlias, projAlias, projOwnerAlias, entOwnerAlias string) string {
 	return fmt.Sprintf(`(
 		( %[1]s.project_id IS NOT NULL AND NOT (%[1]s.is_private OR COALESCE(%[2]s.is_private, false)) )
@@ -124,10 +127,32 @@ func visibilityPredicateSQL(entAlias, projAlias, projOwnerAlias, entOwnerAlias s
 
 // visibilityArgs returns the 8 identical viewerID bindings
 // visibilityPredicateSQL's 8 `?` placeholders need, in order.
+//
+// An EMPTY viewerID binds SQL NULL, not an empty string. Every column these
+// placeholders are compared against (jobs.user_id, projects.user_id,
+// role_assignments.principal_id, group_members.user_id) is typed `uuid`, and
+// PostgreSQL refuses to coerce ” to a uuid -- it raises
+//
+//	invalid input syntax for type uuid: "" (SQLSTATE 22P02)
+//
+// rather than evaluating the comparison as false. So an anonymous caller made
+// the whole query ERROR instead of returning the public rows.
+//
+// NULL gives the semantics the predicate wants for free: `col = NULL` is NULL,
+// which is not true, so an anonymous caller matches no owner and no role
+// assignment and is left with only the public branches.
+//
+// This became reachable when the UI's list operations started serving anonymous
+// callers (uiapi.UiService.viewerScope). Before that, every caller here was an
+// authenticated REST client and the empty case never arose.
 func visibilityArgs(viewerID string) []interface{} {
+	var binding interface{}
+	if viewerID != "" {
+		binding = viewerID
+	}
 	args := make([]interface{}, 8)
 	for i := range args {
-		args[i] = viewerID
+		args[i] = binding
 	}
 	return args
 }

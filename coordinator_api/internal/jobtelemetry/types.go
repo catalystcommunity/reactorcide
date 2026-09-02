@@ -94,6 +94,16 @@ type Query struct {
 	Metrics   []string
 	MaxPoints int
 	Cursor    string
+	// View selects the summary roll-up or every series. See views.go.
+	//
+	// The ZERO VALUE means no view filtering, i.e. every series -- this is a
+	// storage-layer mechanism, and "show the summary" is a product decision
+	// that belongs to the caller. Service callers pass ParseMetricView's
+	// result, which never returns empty, so the API default is the summary.
+	// Both views are authorized identically; this only controls noise.
+	View MetricView
+	// Component narrows to one container's series. Empty means no narrowing.
+	Component string
 }
 
 type QueryResponse struct {
@@ -101,6 +111,12 @@ type QueryResponse struct {
 	Unavailable []Unavailable `json:"unavailable,omitempty"`
 	Complete    bool          `json:"complete"`
 	NextCursor  string        `json:"next_cursor"`
+	// Components lists every component present in this job's telemetry, even
+	// when the current view filtered them out. The UI needs it to decide
+	// whether to show a component picker at all, and it must reflect the whole
+	// dataset rather than the current selection or the control would vanish
+	// the moment it was used.
+	Components []string `json:"components,omitempty"`
 }
 
 type LogResultEntry struct {
