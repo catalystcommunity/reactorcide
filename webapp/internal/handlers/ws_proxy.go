@@ -2,9 +2,7 @@ package handlers
 
 import (
 	"context"
-	"encoding/json"
 	"net/http"
-	"net/url"
 	"strings"
 	"sync"
 	"time"
@@ -40,38 +38,44 @@ func NewWSProxy() *WSProxy {
 	}
 }
 
-// AllJobsStream proxies /app/ws/jobs → coordinator /api/v1/jobs/stream.
-func (p *WSProxy) AllJobsStream(w http.ResponseWriter, r *http.Request) {
-	p.proxy(w, r, upstreamWSURL("/api/v1/jobs/stream"), nil)
+// UIStream proxies the SPA's single multiplexed event socket to the
+// coordinator's /api/v1/ui/stream.
+//
+// The credential forwarded upstream is the BROWSER'S OWN session token, read
+// from the HttpOnly cookie — not this process's service token. That is the
+// whole point: the coordinator resolves the real caller and filters every frame
+// against what that caller may see, so the webapp is a pipe rather than an
+// authorization decision.
+//
+// It replaces a proxy that forwarded the service token and then tried to drop
+// unauthorized frames on this side, by making one GetJobMetrics RPC PER EVENT.
+// That was a round trip per event per browser, and it covered only jobs.
+func (p *WSProxy) UIStream(w http.ResponseWriter, r *http.Request) {
+	p.proxy(w, r, upstreamWSURL(coordinatorUIStreamPath), sessionAuthHeader(r))
 }
 
-// AllJobsStreamAuthorized drops each event that the browser session cannot
-// view. The coordinator service token is transport authentication only.
-func (p *WSProxy) AllJobsStreamAuthorized(w http.ResponseWriter, r *http.Request, canView func(string) bool) {
-	p.proxy(w, r, upstreamWSURL("/api/v1/jobs/stream"), canView)
-}
+// coordinatorUIStreamPath mirrors coordinator handlers.UIStreamPath.
+const coordinatorUIStreamPath = "/api/v1/ui/stream"
 
-// JobStream proxies /app/ws/jobs/{id} → coordinator /api/v1/jobs/stream/{id}.
-func (p *WSProxy) JobStream(w http.ResponseWriter, r *http.Request) {
-	jobID := r.PathValue("id")
-	if jobID == "" {
-		http.Error(w, "missing job id", http.StatusBadRequest)
-		return
+// sessionAuthHeader builds the upstream handshake header carrying the browser's
+// own session token. A logged-out browser gets no Authorization header at all,
+// and the coordinator treats that as an anonymous caller who may watch public
+// data — not as an error.
+func sessionAuthHeader(r *http.Request) http.Header {
+	header := http.Header{}
+	if token, ok := sessionTokenFromRequest(r); ok {
+		header.Set("Authorization", "Bearer "+token)
 	}
-	p.proxy(w, r, upstreamWSURL("/api/v1/jobs/stream/"+url.PathEscape(jobID)), nil)
+	return header
 }
 
-// proxy accepts the browser upgrade, dials the coordinator with the
-// service token, and copies frames both directions until either side
-// closes. Terminates the matching half when its peer goes away.
-func (p *WSProxy) proxy(w http.ResponseWriter, r *http.Request, upstream string, canView func(string) bool) {
+// proxy accepts the browser upgrade, dials the coordinator with the supplied
+// handshake header, and copies frames both directions until either side closes.
+// Terminates the matching half when its peer goes away.
+func (p *WSProxy) proxy(w http.ResponseWriter, r *http.Request, upstream string, header http.Header) {
 	if err := transportsecurity.ValidateURL(config.APIUrl, config.AllowInsecureTransport, "web coordinator connection"); err != nil {
 		http.Error(w, "coordinator transport is not secure", http.StatusBadGateway)
 		return
-	}
-	header := http.Header{}
-	if config.APIToken != "" {
-		header.Set("Authorization", "Bearer "+config.APIToken)
 	}
 
 	upstreamConn, resp, err := p.dialer.DialContext(r.Context(), upstream, header)
@@ -98,36 +102,16 @@ func (p *WSProxy) proxy(w http.ResponseWriter, r *http.Request, upstream string,
 	ctx, cancel := context.WithCancel(r.Context())
 	defer cancel()
 
+	// Both directions are now plain copies. Frames arriving from the
+	// coordinator have ALREADY been filtered against the caller's identity
+	// upstream, so this side no longer inspects them — the previous
+	// per-frame filter here existed only because the upstream connection was
+	// authenticated as a service rather than as the user.
 	var wg sync.WaitGroup
 	wg.Add(2)
 	go proxyFrames(ctx, cancel, &wg, clientConn, upstreamConn)
-	go proxyFramesFiltered(ctx, cancel, &wg, upstreamConn, clientConn, canView)
+	go proxyFrames(ctx, cancel, &wg, upstreamConn, clientConn)
 	wg.Wait()
-}
-
-func proxyFramesFiltered(ctx context.Context, cancel context.CancelFunc, wg *sync.WaitGroup, src, dst *websocket.Conn, canView func(string) bool) {
-	defer wg.Done()
-	defer cancel()
-	for {
-		if ctx.Err() != nil {
-			return
-		}
-		msgType, msg, err := src.ReadMessage()
-		if err != nil {
-			return
-		}
-		if canView != nil {
-			var event struct {
-				JobID string `json:"job_id"`
-			}
-			if json.Unmarshal(msg, &event) != nil || event.JobID == "" || !canView(event.JobID) {
-				continue
-			}
-		}
-		if err := dst.WriteMessage(msgType, msg); err != nil {
-			return
-		}
-	}
 }
 
 // proxyFrames copies messages from src to dst. When src errors (close,

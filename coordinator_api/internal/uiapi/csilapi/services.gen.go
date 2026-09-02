@@ -96,4 +96,9 @@ type ReactorcideUi interface {
 	DeactivateEnrollmentToken(ctx context.Context, req DeactivateEnrollmentTokenRequest) (DeactivateEnrollmentTokenResponse, error)
 	GetJobMetrics(ctx context.Context, req GetJobMetricsRequest) (GetJobMetricsResponse, error)
 	GetJobLogs(ctx context.Context, req GetJobLogsRequest) (GetJobLogsResponse, error)
+	ListJobs(ctx context.Context, req ListJobsRequest) (ListJobsResponse, error)
+	GetJob(ctx context.Context, req GetJobRequest) (GetJobResponse, error)
+	ListWorkflows(ctx context.Context, req ListWorkflowsRequest) (ListWorkflowsResponse, error)
+	GetWorkflow(ctx context.Context, req GetWorkflowRequest) (GetWorkflowResponse, error)
+	DescribeFormMetadata(ctx context.Context, req DescribeFormMetadataRequest) (DescribeFormMetadataResponse, error)
 }

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/jackc/pgx/v4/pgxpool"
@@ -59,18 +60,120 @@ func NewPublisher(pool *pgxpool.Pool) *Publisher {
 	return &Publisher{pool: pool}
 }
 
+// JobRef carries the identity and ownership of a job an event is about.
+//
+// ProjectID and OwnerUserID are what let a stream decide whether a subscriber
+// may see the frame without a database lookup. Populate them: an event that
+// carries neither forces the consumer into a per-job query, and the UI stream
+// treats an event it cannot authorize as invisible rather than public.
+type JobRef struct {
+	JobID       string
+	Status      string
+	UpdatedAt   string
+	ProjectID   string
+	OwnerUserID string
+	WorkflowID  string
+}
+
+func (r JobRef) event(t EventType) Event {
+	return Event{
+		Type:        t,
+		JobID:       r.JobID,
+		Status:      r.Status,
+		UpdatedAt:   r.UpdatedAt,
+		ProjectID:   r.ProjectID,
+		OwnerUserID: r.OwnerUserID,
+		WorkflowID:  r.WorkflowID,
+	}
+}
+
 // PublishJobUpdate emits a job-status event. Errors are swallowed (logged
 // by the listener side on delivery failures) because a failed NOTIFY should
 // never block a job transition.
-func (p *Publisher) PublishJobUpdate(ctx context.Context, jobID, status, updatedAt string) {
+func (p *Publisher) PublishJobUpdate(ctx context.Context, ref JobRef) {
+	if p == nil || p.pool == nil {
+		return
+	}
+	_ = Publish(ctx, p.pool, ref.event(EventJobUpdate))
+}
+
+// PublishJobCreated emits a job-created event so a list view can insert a row
+// the moment it is submitted.
+//
+// This is separate from PublishJobUpdate because that one fires on a
+// TRANSITION. Without a created event, a freshly submitted job is invisible
+// until its status first changes, which is exactly the "workflows do not appear
+// until I reload" complaint.
+func (p *Publisher) PublishJobCreated(ctx context.Context, ref JobRef) {
+	if p == nil || p.pool == nil {
+		return
+	}
+	_ = Publish(ctx, p.pool, ref.event(EventJobCreated))
+}
+
+// WorkflowRef carries the identity and ownership of a workflow an event is
+// about. See JobRef for why the ownership fields matter.
+type WorkflowRef struct {
+	WorkflowID  string
+	Status      string
+	UpdatedAt   string
+	ProjectID   string
+	OwnerUserID string
+}
+
+func (r WorkflowRef) event(t EventType) Event {
+	return Event{
+		Type:        t,
+		WorkflowID:  r.WorkflowID,
+		Status:      r.Status,
+		UpdatedAt:   r.UpdatedAt,
+		ProjectID:   r.ProjectID,
+		OwnerUserID: r.OwnerUserID,
+	}
+}
+
+// PublishWorkflowCreated emits a workflow-created event.
+func (p *Publisher) PublishWorkflowCreated(ctx context.Context, ref WorkflowRef) {
+	if p == nil || p.pool == nil {
+		return
+	}
+	_ = Publish(ctx, p.pool, ref.event(EventWorkflowCreated))
+}
+
+// PublishWorkflowUpdate emits a workflow status transition.
+func (p *Publisher) PublishWorkflowUpdate(ctx context.Context, ref WorkflowRef) {
+	if p == nil || p.pool == nil {
+		return
+	}
+	_ = Publish(ctx, p.pool, ref.event(EventWorkflowUpdate))
+}
+
+// PublishWorkflowNodeUpdate emits a node transition. This is what animates a
+// DAG view while a workflow runs.
+func (p *Publisher) PublishWorkflowNodeUpdate(ctx context.Context, ref WorkflowRef, nodeID, nodeName, status string) {
+	if p == nil || p.pool == nil {
+		return
+	}
+	evt := ref.event(EventWorkflowNodeUpdate)
+	evt.NodeID = nodeID
+	evt.NodeName = nodeName
+	evt.Status = status
+	_ = Publish(ctx, p.pool, evt)
+}
+
+// PublishProjectUpdate emits a project settings change, visibility included.
+//
+// A stream that has cached "this caller may see project X" must drop that
+// answer when this arrives: the project may have just become private, and an
+// already-open socket would otherwise keep feeding it.
+func (p *Publisher) PublishProjectUpdate(ctx context.Context, projectID, ownerUserID string) {
 	if p == nil || p.pool == nil {
 		return
 	}
 	_ = Publish(ctx, p.pool, Event{
-		Type:      EventJobUpdate,
-		JobID:     jobID,
-		Status:    status,
-		UpdatedAt: updatedAt,
+		Type:        EventProjectUpdate,
+		ProjectID:   projectID,
+		OwnerUserID: ownerUserID,
 	})
 }
 
@@ -244,4 +347,33 @@ func (l *NotifyListener) runOnce(ctx context.Context) error {
 		}
 		l.bus.Publish(evt)
 	}
+}
+
+// defaultPublisher is the process-wide publisher the workflow lifecycle uses.
+//
+// Why a package-level value rather than an injected dependency: workflow
+// transitions happen in internal/jobcontrol and internal/worker, reached
+// through half a dozen consumer-defined narrow store interfaces. Threading a
+// Publisher to each transition point would widen every one of those interfaces
+// for a side effect none of them is about. This mirrors the existing
+// handlers.SetPubSubBus singleton, and it is safe by construction: Default
+// returns nil until wired, and every Publisher method is a no-op on a nil
+// receiver, so an unwired process silently publishes nothing rather than
+// panicking.
+//
+// Prefer an injected *Publisher where one is already threaded (workerapi has
+// one on its Deps). Use this only where injection would mean widening an
+// unrelated interface.
+var defaultPublisher atomic.Pointer[Publisher]
+
+// SetDefaultPublisher wires the process-wide publisher. Call once at startup,
+// alongside the bus.
+func SetDefaultPublisher(p *Publisher) {
+	defaultPublisher.Store(p)
+}
+
+// Default returns the process-wide publisher, or nil if none was wired. The
+// result is always safe to call methods on.
+func Default() *Publisher {
+	return defaultPublisher.Load()
 }

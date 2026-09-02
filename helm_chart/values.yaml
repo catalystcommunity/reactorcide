@@ -19,8 +19,8 @@ app:
   jobApiUrl: ""
   # Secret holding the API token the coordinator injects into job containers as
   # REACTORCIDE_API_TOKEN (defaults to the deploy-managed user secret / "token"
-  # key -- the same token the web app uses). The reference is optional so the
-  # coordinator starts even before the token has been created.
+  # key). The reference is optional so the coordinator starts even before the
+  # token has been created. The WEB deployment no longer uses a token at all.
   apiTokenSecret:
     name: ""  # default: defaults.apiTokenSecretName
     key: ""   # default: "token"
@@ -65,15 +65,15 @@ web:
     tag: "dev"
   service:
     type: ClusterIP
-    port: 4080
+    port: 5080
   apiUrl: "http://reactorcideapp:6080"
   # The default in-cluster API URL uses HTTP. Set this to false when apiUrl
   # uses HTTPS.
   allowInsecureTransport: true
-  # API token for authenticating with the coordinator API
-  apiTokenSecret:
-    name: "base-reactorcide-api-token"
-    key: "token"
+  # No API token: the web UI holds no coordinator credential. Every request it
+  # makes carries the browser's own session instead, so there is nothing here to
+  # over-privilege. Removing this from an existing values file is safe; leaving
+  # a stale entry is harmless but has no effect.
   # Disables the Secure flag on the session cookie (see docs/ui-auth.md).
   # Only set this true if the web pod is reached over plain HTTP with no TLS
   # terminator in front of it (e.g. some local/dev setups) — leave false for

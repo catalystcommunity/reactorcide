@@ -73,7 +73,7 @@ Run:
 
 The default endpoints are:
 
-- Web application: `http://localhost:4080`
+- Web application: `http://localhost:5080`
 - Coordinator API: `http://localhost:8080`
 
 Run tests with:

@@ -33,7 +33,8 @@ func (cr *ContainerdRunner) SampleResources(ctx context.Context, jobID string, o
 		return ResourceSnapshot{}, fmt.Errorf("decode nerdctl stats: %w", err)
 	}
 	snapshot := ResourceSnapshot{ObservedAt: time.Now().UTC()}
-	base := []jobtelemetry.Label{{Key: "scope", Value: "job"}, {Key: "component", Value: "main"}}
+	// No component label on the job roll-up -- see docker_metrics.go.
+	base := []jobtelemetry.Label{}
 	add := func(name, unit, kind string, value int64, labels ...jobtelemetry.Label) {
 		id := int64(len(snapshot.Series))
 		snapshot.Series = append(snapshot.Series, jobtelemetry.SeriesDefinition{SeriesID: id, Name: name, Unit: unit, Kind: kind, Labels: labels})
@@ -72,7 +73,6 @@ func (cr *ContainerdRunner) SampleResources(ctx context.Context, jobID string, o
 		).Output()
 		if inspectErr == nil && json.Unmarshal(inspectOutput, &inspectRows) == nil && len(inspectRows) > 0 && inspectRows[0].SizeRw != nil {
 			add("storage.used", "bytes", "gauge", *inspectRows[0].SizeRw,
-				jobtelemetry.Label{Key: "scope", Value: "job"},
 				jobtelemetry.Label{Key: "volume", Value: "rootfs"},
 				jobtelemetry.Label{Key: "kind", Value: "rootfs"},
 			)

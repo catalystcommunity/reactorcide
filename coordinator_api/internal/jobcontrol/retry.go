@@ -45,6 +45,7 @@ import (
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store/models"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/worker"
+	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/workflowevents"
 	"github.com/google/uuid"
 	"github.com/lib/pq"
 )
@@ -225,6 +226,7 @@ func RetryWorkflow(ctx context.Context, st store.Store, corndogsClient corndogs.
 	if err := ws.CreateWorkflowInstance(ctx, newWf); err != nil {
 		return nil, fmt.Errorf("failed to create retried workflow instance: %w", err)
 	}
+	workflowevents.WorkflowCreated(ctx, newWf)
 
 	for i := range oldNodes {
 		on := &oldNodes[i]
@@ -363,6 +365,8 @@ func rebindWorkflowNodeForRetry(ctx context.Context, st store.Store, oldJob, new
 	if err := ws.UpdateWorkflowInstance(ctx, wf); err != nil {
 		return fmt.Errorf("failed to refresh workflow instance status after retry: %w", err)
 	}
+	workflowevents.NodeUpdated(ctx, wf, node)
+	workflowevents.WorkflowUpdated(ctx, wf)
 	recordRetryEvent(ctx, ws, wf.WorkflowID, &node.NodeID, &newJob.JobID, "job retried")
 	return nil
 }

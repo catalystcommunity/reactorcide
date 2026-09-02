@@ -799,3 +799,48 @@ func (c *ReactorcideUiClient) GetJobLogs(ctx context.Context, req GetJobLogsRequ
 	}
 	return DecodeGetJobLogsResponse(csilResp)
 }
+
+func (c *ReactorcideUiClient) ListJobs(ctx context.Context, req ListJobsRequest) (ListJobsResponse, error) {
+	var csilZero ListJobsResponse
+	csilResp, csilErr := c.transport.Call(ctx, "ReactorcideUi", "list-jobs", EncodeListJobsRequest(req))
+	if csilErr != nil {
+		return csilZero, csilErr
+	}
+	return DecodeListJobsResponse(csilResp)
+}
+
+func (c *ReactorcideUiClient) GetJob(ctx context.Context, req GetJobRequest) (GetJobResponse, error) {
+	var csilZero GetJobResponse
+	csilResp, csilErr := c.transport.Call(ctx, "ReactorcideUi", "get-job", EncodeGetJobRequest(req))
+	if csilErr != nil {
+		return csilZero, csilErr
+	}
+	return DecodeGetJobResponse(csilResp)
+}
+
+func (c *ReactorcideUiClient) ListWorkflows(ctx context.Context, req ListWorkflowsRequest) (ListWorkflowsResponse, error) {
+	var csilZero ListWorkflowsResponse
+	csilResp, csilErr := c.transport.Call(ctx, "ReactorcideUi", "list-workflows", EncodeListWorkflowsRequest(req))
+	if csilErr != nil {
+		return csilZero, csilErr
+	}
+	return DecodeListWorkflowsResponse(csilResp)
+}
+
+func (c *ReactorcideUiClient) GetWorkflow(ctx context.Context, req GetWorkflowRequest) (GetWorkflowResponse, error) {
+	var csilZero GetWorkflowResponse
+	csilResp, csilErr := c.transport.Call(ctx, "ReactorcideUi", "get-workflow", EncodeGetWorkflowRequest(req))
+	if csilErr != nil {
+		return csilZero, csilErr
+	}
+	return DecodeGetWorkflowResponse(csilResp)
+}
+
+func (c *ReactorcideUiClient) DescribeFormMetadata(ctx context.Context, req DescribeFormMetadataRequest) (DescribeFormMetadataResponse, error) {
+	var csilZero DescribeFormMetadataResponse
+	csilResp, csilErr := c.transport.Call(ctx, "ReactorcideUi", "describe-form-metadata", EncodeDescribeFormMetadataRequest(req))
+	if csilErr != nil {
+		return csilZero, csilErr
+	}
+	return DecodeDescribeFormMetadataResponse(csilResp)
+}

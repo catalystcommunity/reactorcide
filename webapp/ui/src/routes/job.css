@@ -1,0 +1,32 @@
+.log-viewer {
+  max-height: 30rem;
+  overflow-y: auto;
+  padding: var(--space-3);
+  background: var(--surface-sunken);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  line-height: 1.55;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  margin: 0;
+}
+
+.log-line {
+  display: block;
+}
+
+.log-timestamp {
+  color: var(--text-subtle);
+  margin-right: var(--space-3);
+  user-select: none;
+}
+
+.log-stderr {
+  color: var(--danger);
+}
+
+.section-title {
+  margin-bottom: var(--space-3);
+}

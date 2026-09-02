@@ -24,13 +24,39 @@ func metricCapture(dst *[]capturedMetric) func(string, string, string, int64, ..
 	}
 }
 
-func findCapturedMetric(metrics []capturedMetric, name, scope, component string) (capturedMetric, bool) {
+// findCapturedMetric locates a series by name and component. An empty component
+// means the job roll-up: the scope label is gone, and the PRESENCE of a
+// component label is now what distinguishes one container's series from the
+// job total.
+func findCapturedMetric(metrics []capturedMetric, name, component string) (capturedMetric, bool) {
 	for _, metric := range metrics {
-		if metric.name == name && metric.labels["scope"] == scope && metric.labels["component"] == component {
+		if metric.name == name && metric.labels["component"] == component {
 			return metric, true
 		}
 	}
 	return capturedMetric{}, false
+}
+
+// TestKubernetesMetricsCarryNoScopeLabel pins the label unification. A scope
+// label reintroduced here would put the job roll-up and its parts side by side
+// in the UI again, which is the duplication this removed.
+func TestKubernetesMetricsCarryNoScopeLabel(t *testing.T) {
+	pod := &corev1.Pod{Spec: corev1.PodSpec{
+		Containers: []corev1.Container{{
+			Name: "job",
+			Resources: corev1.ResourceRequirements{
+				Requests: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("500m")},
+			},
+		}},
+	}}
+	var metrics []capturedMetric
+	addKubernetesResourceSettings(metricCapture(&metrics), pod)
+
+	for _, metric := range metrics {
+		if _, present := metric.labels["scope"]; present {
+			t.Errorf("%s still carries a scope label: %v", metric.name, metric.labels)
+		}
+	}
 }
 
 func TestAddKubernetesResourceSettings(t *testing.T) {
@@ -70,29 +96,30 @@ func TestAddKubernetesResourceSettings(t *testing.T) {
 	addKubernetesResourceSettings(metricCapture(&metrics), pod)
 
 	checks := []struct {
-		name, scope, component string
-		want                   int64
+		name, component string
+		want            int64
 	}{
-		{"cpu.request", "component", "main", 500},
-		{"cpu.limit", "component", "main", 2000},
-		{"memory.limit", "component", "main", 4 * 1024 * 1024 * 1024},
-		{"cpu.request", "component", "docker", 100},
-		{"cpu.limit", "component", "docker", 250},
-		{"memory.limit", "component", "docker", 256 * 1024 * 1024},
-		{"cpu.request", "job", "", 600},
-		{"cpu.limit", "job", "", 2250},
-		{"memory.limit", "job", "", 4352 * 1024 * 1024},
+		{"cpu.request", "main", 500},
+		{"cpu.limit", "main", 2000},
+		{"memory.limit", "main", 4 * 1024 * 1024 * 1024},
+		{"cpu.request", "docker", 100},
+		{"cpu.limit", "docker", 250},
+		{"memory.limit", "docker", 256 * 1024 * 1024},
+		// Empty component = the job roll-up.
+		{"cpu.request", "", 600},
+		{"cpu.limit", "", 2250},
+		{"memory.limit", "", 4352 * 1024 * 1024},
 	}
 	for _, check := range checks {
-		got, ok := findCapturedMetric(metrics, check.name, check.scope, check.component)
+		got, ok := findCapturedMetric(metrics, check.name, check.component)
 		if !ok || got.value != check.want {
-			t.Errorf("%s scope=%s component=%s = %d, present=%v; want %d", check.name, check.scope, check.component, got.value, ok, check.want)
+			t.Errorf("%s component=%q = %d, present=%v; want %d", check.name, check.component, got.value, ok, check.want)
 		}
 	}
-	if _, ok := findCapturedMetric(metrics, "cpu.limit", "component", "prepare-workspace"); ok {
+	if _, ok := findCapturedMetric(metrics, "cpu.limit", "prepare-workspace"); ok {
 		t.Error("one-time init container must not contribute to running job limits")
 	}
-	if _, ok := findCapturedMetric(metrics, "memory.request", "job", ""); ok {
+	if _, ok := findCapturedMetric(metrics, "memory.request", ""); ok {
 		t.Error("memory.request must not be emitted")
 	}
 }
@@ -102,7 +129,7 @@ func TestKubernetesStorageMetricsDoNotUseNodeCapacity(t *testing.T) {
 	fs := &summaryFS{UsedBytes: &used, CapacityBytes: &capacity, AvailableBytes: &available}
 	var metrics []capturedMetric
 	addSummaryFS(metricCapture(&metrics), fs, kubernetesStorageMetric{
-		scope: "job", volume: "total", kind: "ephemeral",
+		volume: "total", kind: "ephemeral",
 	})
 	if len(metrics) != 1 || metrics[0].name != "storage.used" || metrics[0].value != 12 {
 		t.Fatalf("Pod ephemeral metrics = %+v; want only job storage.used", metrics)
@@ -110,7 +137,7 @@ func TestKubernetesStorageMetricsDoNotUseNodeCapacity(t *testing.T) {
 
 	metrics = nil
 	addSummaryFS(metricCapture(&metrics), fs, kubernetesStorageMetric{
-		scope: "job", volume: "scratch", kind: "ephemeral-pvc", includeCapacity: true,
+		volume: "scratch", kind: "ephemeral-pvc", includeCapacity: true,
 	})
 	if len(metrics) != 3 {
 		t.Fatalf("dedicated ephemeral PVC metric count = %d; want used, capacity, and available", len(metrics))

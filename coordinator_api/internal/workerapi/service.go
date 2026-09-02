@@ -11,6 +11,7 @@ import (
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/characteristics"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/corndogs"
 	pb "github.com/catalystcommunity/reactorcide/coordinator_api/internal/corndogs/v1alpha1"
+	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/pubsub"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store/models"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/uiapi"
@@ -533,7 +534,26 @@ func (s *WorkerService) publishJobUpdate(ctx context.Context, job *models.Job, a
 	if s.deps.Publisher == nil || job == nil {
 		return
 	}
-	s.deps.Publisher.PublishJobUpdate(ctx, job.JobID, job.Status, at.Format(time.RFC3339Nano))
+	s.deps.Publisher.PublishJobUpdate(ctx, jobRef(job, at))
+}
+
+// jobRef builds the event reference for a job, carrying the ownership fields a
+// UI stream authorizes each frame from. OwnershipOrgID is the owning org
+// (user_id IS the org id everywhere here).
+func jobRef(job *models.Job, at time.Time) pubsub.JobRef {
+	ref := pubsub.JobRef{
+		JobID:       job.JobID,
+		Status:      job.Status,
+		UpdatedAt:   at.UTC().Format(time.RFC3339Nano),
+		OwnerUserID: job.OwnershipOrgID(),
+	}
+	if job.ProjectID != nil {
+		ref.ProjectID = *job.ProjectID
+	}
+	if job.WorkflowID != nil {
+		ref.WorkflowID = *job.WorkflowID
+	}
+	return ref
 }
 
 // --- pure helpers -----------------------------------------------------

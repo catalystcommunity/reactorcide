@@ -214,6 +214,9 @@ func (f *fakeStore) putUser(u models.User) models.User {
 }
 
 func (f *fakeStore) putProject(p models.Project) models.Project {
+	defer func() {
+		assertOptionalUUIDBindable("projects.user_id", p.UserID)
+	}()
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if p.ProjectID == "" {
@@ -233,6 +236,13 @@ func (f *fakeStore) putJob(j models.Job) models.Job {
 	if j.JobID == "" {
 		j.JobID = f.genID("job")
 	}
+	// Seeded fixtures are held to the schema's types too. A test that seeds an
+	// id the database could not store is testing a row that cannot exist, and
+	// any conclusion drawn from it is worth nothing. See fakes_sqltypes_test.go.
+	assertUUIDBindable("jobs.job_id", j.JobID)
+	assertUUIDBindable("jobs.user_id", j.UserID)
+	assertOptionalUUIDBindable("jobs.project_id", j.ProjectID)
+	assertOptionalUUIDBindable("jobs.workflow_id", j.WorkflowID)
 	f.jobs[j.JobID] = j
 	return j
 }

@@ -31,13 +31,18 @@ func (dr *DockerRunner) SampleResources(ctx context.Context, jobID string, optio
 		})
 		snapshot.Values = append(snapshot.Values, jobtelemetry.Value{SeriesID: id, Value: value})
 	}
-	base := []jobtelemetry.Label{{Key: "scope", Value: "job"}, {Key: "component", Value: "main"}}
+	// The job roll-up carries NO component label. Docker runs one container, so
+	// the roll-up and "main" are the same series; labelling it component=main
+	// made it look like one component among several and put the total next to
+	// nothing. A series with a component label belongs to that component; a
+	// series without one is the job total. See the scope-label removal note in
+	// jobtelemetry/query.go.
+	base := []jobtelemetry.Label{}
 	add("cpu.usage", "nanoseconds", "counter", int64(stats.CPUStats.CPUUsage.TotalUsage), append(base, jobtelemetry.Label{Key: "cpu", Value: "total"})...)
-	for index, usage := range stats.CPUStats.CPUUsage.PercpuUsage {
-		labels := append([]jobtelemetry.Label{}, base...)
-		labels = append(labels, jobtelemetry.Label{Key: "cpu", Value: fmt.Sprintf("cpu%d", index)})
-		add("cpu.usage", "nanoseconds", "counter", int64(usage), labels...)
-	}
+	// Per-core series (cpu.usage{cpu=cpuN}) are deliberately NOT emitted. They
+	// were one series per HOST core -- sixteen extra series per sample on an
+	// ordinary machine -- answering a question no view asks. The total above is
+	// what "how much CPU is this job using" needs.
 	if stats.CPUStats.OnlineCPUs > 0 {
 		add("cpu.capacity", "millicores", "gauge", int64(stats.CPUStats.OnlineCPUs)*1000, base...)
 	}
@@ -64,7 +69,6 @@ func (dr *DockerRunner) SampleResources(ctx context.Context, jobID string, optio
 		inspect, _, inspectErr := dr.client.ContainerInspectWithRaw(ctx, jobID, true)
 		if inspectErr == nil && inspect.SizeRw != nil && *inspect.SizeRw >= 0 {
 			add("storage.used", "bytes", "gauge", *inspect.SizeRw,
-				jobtelemetry.Label{Key: "scope", Value: "job"},
 				jobtelemetry.Label{Key: "volume", Value: "rootfs"},
 				jobtelemetry.Label{Key: "kind", Value: "rootfs"},
 			)

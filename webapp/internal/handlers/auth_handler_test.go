@@ -15,7 +15,7 @@ import (
 func newTestWebHandler(t *testing.T, fc *fakeCoordinator) *WebHandler {
 	t.Helper()
 	srv := newTestServer(t, fc)
-	return NewWebHandler(NewAPIClient(), uiclient.NewWithTransport(&uiclient.CSILRPCTransport{
+	return NewWebHandler(uiclient.NewWithTransport(&uiclient.CSILRPCTransport{
 		BaseURL: srv.URL, AllowInsecureTransport: true,
 	}))
 }
@@ -38,47 +38,6 @@ func withNoopCapabilities(fc *fakeCoordinator) {
 	fc.handle("ReactorcideUi", "get-capabilities", func(_ []byte, _ string, _ bool) ([]byte, string, bool) {
 		return csilapi.EncodeGetCapabilitiesResponse(csilapi.GetCapabilitiesResponse{}), "GetCapabilitiesResponse", false
 	})
-}
-
-func TestLoginPage_LoginDisabledInNoneMode(t *testing.T) {
-	fc := newFakeCoordinator()
-	withAuthMode(fc, "none", false, true)
-	withNoopCapabilities(fc)
-	h := newTestWebHandler(t, fc)
-
-	req := httptest.NewRequest(http.MethodGet, "/app/login", nil)
-	rec := httptest.NewRecorder()
-	h.withSession(h.LoginPage)(rec, req)
-
-	if rec.Code != http.StatusOK {
-		t.Fatalf("status = %d, want 200; body=%s", rec.Code, rec.Body.String())
-	}
-	body := rec.Body.String()
-	if !strings.Contains(body, "Login is disabled") {
-		t.Errorf("expected login-disabled notice, got: %s", body)
-	}
-	if strings.Contains(body, `action="/app/login"`) {
-		t.Errorf("login form should not render when auth mode is none, got: %s", body)
-	}
-	if strings.Contains(body, "Sign in</a>") {
-		t.Errorf("nav should not show Sign in link when auth mode is none")
-	}
-}
-
-func TestLoginPage_FormRendersWhenLoginEnabled(t *testing.T) {
-	fc := newFakeCoordinator()
-	withAuthMode(fc, "local-rp", false, true)
-	withNoopCapabilities(fc)
-	h := newTestWebHandler(t, fc)
-
-	req := httptest.NewRequest(http.MethodGet, "/app/login", nil)
-	rec := httptest.NewRecorder()
-	h.withSession(h.LoginPage)(rec, req)
-
-	body := rec.Body.String()
-	if !strings.Contains(body, `action="/app/login"`) {
-		t.Errorf("expected a login form, got: %s", body)
-	}
 }
 
 func TestLoginSubmit_BeginsLoginAndRedirects(t *testing.T) {
@@ -292,12 +251,18 @@ func TestAuthCallback_MissingParams(t *testing.T) {
 	rec := httptest.NewRecorder()
 	h.withSession(h.AuthCallback)(rec, req)
 
-	if rec.Code != http.StatusBadRequest {
-		t.Fatalf("status = %d, want 400", rec.Code)
+	// The IDP callback is a top-level navigation, so a failure has to answer
+	// with a redirect the browser can follow, not a JSON body nobody is
+	// listening for.
+	if rec.Code != http.StatusFound {
+		t.Fatalf("status = %d, want 302 back into the SPA", rec.Code)
+	}
+	if loc := rec.Header().Get("Location"); !strings.Contains(loc, "login_error=") {
+		t.Errorf("Location = %q, want the failure reason carried back to the sign-in route", loc)
 	}
 }
 
-func TestAuthCallback_ServiceErrorShowsFriendlyPageWithoutTokens(t *testing.T) {
+func TestAuthCallback_ServiceErrorRedirectsWithoutLeakingTokens(t *testing.T) {
 	fc := newFakeCoordinator()
 	withAuthMode(fc, "local-rp", false, true)
 	withNoopCapabilities(fc)
@@ -310,15 +275,17 @@ func TestAuthCallback_ServiceErrorShowsFriendlyPageWithoutTokens(t *testing.T) {
 	rec := httptest.NewRecorder()
 	h.withSession(h.AuthCallback)(rec, req)
 
-	if rec.Code != http.StatusUnauthorized {
-		t.Fatalf("status = %d, want 401; body=%s", rec.Code, rec.Body.String())
+	if rec.Code != http.StatusFound {
+		t.Fatalf("status = %d, want 302; body=%s", rec.Code, rec.Body.String())
 	}
-	body := rec.Body.String()
-	if !strings.Contains(body, "login attempt expired or already used") {
-		t.Errorf("expected the service error reason in the page, got: %s", body)
+	location := rec.Header().Get("Location")
+	if !strings.Contains(location, "login+attempt+expired") {
+		t.Errorf("expected the service error reason carried into the redirect, got: %s", location)
 	}
-	if strings.Contains(body, "enc-secret-value") {
-		t.Errorf("error page must not echo the encrypted token, got: %s", body)
+	// The redirect target lands in the address bar and in browser history, so
+	// an echoed token would persist far beyond this response.
+	if strings.Contains(location, "enc-secret-value") || strings.Contains(rec.Body.String(), "enc-secret-value") {
+		t.Errorf("the encrypted token must never be echoed back, got: %s", location)
 	}
 	for _, c := range rec.Result().Cookies() {
 		if c.Name == sessionCookieName && c.Value != "" {
@@ -402,21 +369,6 @@ func TestCookieInsecureFlag(t *testing.T) {
 	}
 }
 
-func TestBootstrapPage_UnavailableWhenNotOffered(t *testing.T) {
-	fc := newFakeCoordinator()
-	withAuthMode(fc, "local-rp", false, true) // bootstrap_admin_available=false
-	withNoopCapabilities(fc)
-	h := newTestWebHandler(t, fc)
-
-	req := httptest.NewRequest(http.MethodGet, "/app/bootstrap", nil)
-	rec := httptest.NewRecorder()
-	h.withSession(h.BootstrapPage)(rec, req)
-
-	if !strings.Contains(rec.Body.String(), "Bootstrap is not available") {
-		t.Errorf("expected unavailable notice, got: %s", rec.Body.String())
-	}
-}
-
 func TestBootstrapSubmit_HappyPathSetsCookie(t *testing.T) {
 	fc := newFakeCoordinator()
 	withAuthMode(fc, "local-rp", true, false)
@@ -471,12 +423,16 @@ func TestBootstrapSubmit_ErrorDoesNotSetCookie(t *testing.T) {
 	rec := httptest.NewRecorder()
 	h.withSession(h.BootstrapSubmit)(rec, req)
 
-	if rec.Code != http.StatusFound {
-		t.Fatalf("status = %d, want 302 back to the bootstrap form", rec.Code)
+	// Bootstrap is submitted by a fetch from the SPA, so a failure answers with
+	// JSON the client can render in place rather than a redirect.
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400 with a JSON reason", rec.Code)
 	}
-	loc := rec.Header().Get("Location")
-	if !strings.HasPrefix(loc, "/app/bootstrap?") || !strings.Contains(loc, "error=") {
-		t.Errorf("Location = %q, want a redirect back to /app/bootstrap with an error", loc)
+	if !strings.Contains(rec.Body.String(), "bootstrap token is invalid") {
+		t.Errorf("body = %s, want the service error reason", rec.Body.String())
+	}
+	if strings.Contains(rec.Body.String(), "wrong") {
+		t.Errorf("the submitted token must never be echoed back, got: %s", rec.Body.String())
 	}
 	for _, c := range rec.Result().Cookies() {
 		if c.Name == sessionCookieName && c.Value != "" {
@@ -539,7 +495,7 @@ func TestSessionInfo_LoggedInResolvesIdentity(t *testing.T) {
 }
 
 func TestSessionInfo_NilUIClientsIsAnonymousNoMode(t *testing.T) {
-	h := NewWebHandler(NewAPIClient(), nil)
+	h := NewWebHandler(nil)
 	req := httptest.NewRequest(http.MethodGet, "/app/", nil)
 	si := h.sessionInfo(req)
 

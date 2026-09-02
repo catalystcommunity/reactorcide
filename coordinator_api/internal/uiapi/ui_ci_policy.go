@@ -13,13 +13,13 @@ import (
 )
 
 func ciPolicyToDetail(policy *models.CIPolicy) (csilapi.CiPolicyDetail, error) {
-	document, err := json.Marshal(policy.Document)
+	document, err := storedDocumentToPolicyDocument(policy.Document)
 	if err != nil {
 		return csilapi.CiPolicyDetail{}, err
 	}
 	return csilapi.CiPolicyDetail{
 		PolicyId: policy.PolicyID, ProjectId: policy.ProjectID,
-		Revision: policy.Revision, Document: string(document),
+		Revision: policy.Revision, Document: document,
 		CreatedAt: formatTime(policy.CreatedAt), UpdatedAt: formatTime(policy.UpdatedAt),
 		UpdatedBy: policy.UpdatedBy,
 	}, nil
@@ -55,9 +55,6 @@ func (s *UiService) PutCiPolicy(ctx context.Context, req csilapi.PutCiPolicyRequ
 	if err := requireNonEmpty("project_id", req.ProjectId, 64); err != nil {
 		return csilapi.PutCiPolicyResponse{}, err
 	}
-	if err := requireNonEmpty("document", req.Document, 1024*1024); err != nil {
-		return csilapi.PutCiPolicyResponse{}, err
-	}
 	project, err := s.deps.Store.GetProjectByID(ctx, req.ProjectId)
 	if err != nil {
 		return csilapi.PutCiPolicyResponse{}, mapStoreErr(err, "project not found")
@@ -66,9 +63,9 @@ func (s *UiService) PutCiPolicy(ctx context.Context, req csilapi.PutCiPolicyRequ
 		return csilapi.PutCiPolicyResponse{}, mapPermissionErr(err)
 	}
 
-	parsed, err := cipolicy.ParseDocument([]byte(req.Document))
+	parsed, err := policyDocumentToPolicy(req.Document)
 	if err != nil {
-		return csilapi.PutCiPolicyResponse{}, NewServiceError("invalid_argument", err.Error())
+		return csilapi.PutCiPolicyResponse{}, err
 	}
 	canonical, err := cipolicy.CanonicalDocument(parsed)
 	if err != nil {
