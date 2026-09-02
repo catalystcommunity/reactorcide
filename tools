@@ -229,9 +229,32 @@ run_worker(){
     go run ./cmd/worker
 }
 
+# Node for the web UI.
+#
+# Locally that is whatever is on PATH -- catalyst-tools provides one (see the
+# repository CLAUDE.md). CI has no Node in the image and fetches a pinned one
+# with webi instead (see .reactorcide/plugins/plugin_ci_jobs.py). Both are fine;
+# what is not fine is a bare "npm: command not found" with no hint.
+require_npm(){
+    if command -v npm >/dev/null 2>&1; then
+        return 0
+    fi
+    echo "❌ npm is not on PATH, and the web UI needs it."
+    echo
+    echo "   Use the shared toolchain:"
+    echo "     source \"\${CATALYST_TOOLS:-\$HOME/.local/catalyst-tools}/env.sh\""
+    echo
+    echo "   Or fetch a pinned Node the way CI does:"
+    echo "     curl -sS https://webi.sh/webi | sh"
+    echo "     ~/.local/bin/webi node@22.23.2"
+    echo "     export PATH=\"\$HOME/.local/opt/node/bin:\$PATH\""
+    return 1
+}
+
 # The SPA is compiled INTO the webapp binary (webapp/internal/embedui), so it
 # has to be built before the Go build or the binary ships a placeholder page.
 build_ui(){
+    require_npm || exit 1
     log_status "Building web UI"
     cd "${PROJECT_ROOT_DIR}/webapp/ui"
     if [[ ! -d node_modules ]]; then
@@ -247,6 +270,7 @@ build_ui(){
 }
 
 test_ui(){
+    require_npm || exit 1
     log_status "Running web UI tests"
     cd "${PROJECT_ROOT_DIR}/webapp/ui"
     if [[ ! -d node_modules ]]; then

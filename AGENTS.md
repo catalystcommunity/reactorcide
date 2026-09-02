@@ -65,6 +65,11 @@ If a secret-bearing command fails, summarize the failure without including secre
   `go build` in `webapp/`, or the binary serves a placeholder page and a 503.
 - Metric series carry no `scope` label. A series with no `component` label is
   the job roll-up; one with a `component` label belongs to that component.
+- `runnerbase` carries webi (https://webinstall.dev). A job needing a toolchain
+  the image does not have installs it at a PINNED version rather than adding it
+  to the image: `webi node@22.23.2`. webi is per-user (`$HOME/.local`), so it is
+  installed as the runner user and both `~/.local/bin` and
+  `~/.local/opt/<name>/bin` are on the image PATH.
 
 - Trusted CI definitions are separate from untrusted source code. For fork PRs, `SourceURL` can point at the fork, but `CISourceURL` must remain trusted upstream CI content.
 - `run-local` is the canonical local execution path. It mounts the current repository as source and trusted CI by default. Use `--source-dir` and `--ci-dir` for separate local trees, or clone requested code with `--code-url` and `--code-ref`.

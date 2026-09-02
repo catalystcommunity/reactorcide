@@ -5,11 +5,15 @@ FROM python:3.14-slim-trixie
 ARG TARGETARCH
 ARG GO_VERSION=1.26.4
 
+# webi installs each package to ~/.local/opt/<name>/bin and writes the same
+# paths into ~/.config/envman/PATH.env. Both of the runner's directories are on
+# PATH here so an interactive-shell-free CI job finds `webi` itself, and finds
+# anything webi installed, without having to source that file.
 ENV GOPATH=/go \
     GOROOT=/usr/local/go \
     RUSTUP_HOME=/usr/local/rustup \
     CARGO_HOME=/usr/local/cargo \
-    PATH=/usr/local/go/bin:/go/bin:/usr/local/cargo/bin:$PATH
+    PATH=/usr/local/go/bin:/go/bin:/usr/local/cargo/bin:/home/runner/.local/bin:/home/runner/.local/opt/node/bin:$PATH
 
 # Install system dependencies
 # - Common tools needed for most CI/CD jobs
@@ -67,6 +71,32 @@ RUN mkdir -p /etc/containers && \
 # UID 1001 matches what the worker uses when running containers
 RUN useradd -m -u 1001 -s /bin/sh runner && \
     echo "runner ALL=(ALL) NOPASSWD: /usr/bin/apt-get, /usr/bin/apt" >> /etc/sudoers.d/runner
+
+# Install webi (https://webinstall.dev) so a job can pull a portable toolchain
+# at a PINNED version without baking every language into this image.
+#
+#     webi node@22.23.2      # a job needing Node
+#     webi node@lts          # or a moving target, if that is what you want
+#
+# The webi SCRIPT goes to /usr/local/bin, mode 755, so ANY uid can run it. What
+# it installs still goes to "$HOME/.local", because webi hardcodes
+# WEBI_HOME="${HOME}/.local" (see https://webi.sh/webi) and is per-user by
+# design. Those are different concerns and they need different homes:
+#
+#   - Worker jobs run as uid 1001 with HOME=/home/runner.
+#   - `run-local` runs as the HOST uid and bind-mounts an empty, host-uid-owned
+#     scratch directory OVER /home/runner (cmd/run_local.go), so anything this
+#     image put under /home/runner is hidden at runtime, not merely unreadable.
+#
+# Installing webi into /home/runner therefore works on a worker and vanishes
+# under run-local. A system path works for both, and since run-local keeps
+# HOME=/home/runner, the PATH entries at the top of this file stay correct in
+# both modes -- they just point at a directory webi populates at job time.
+RUN set -eux; \
+    curl -sS https://webi.sh/webi | sh; \
+    install -m 0755 /root/.local/bin/webi /usr/local/bin/webi; \
+    rm -rf /root/.local /root/.config/envman; \
+    test -x /usr/local/bin/webi
 
 # Install uv for fast Python package installation
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
