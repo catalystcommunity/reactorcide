@@ -560,3 +560,111 @@ func TestSubmitWorkflowNode_NoOverrideKeepsWorkflowAuthority(t *testing.T) {
 		t.Fatalf("job CI source = %+v", job.CISourceURL)
 	}
 }
+
+// derivedIDCandidates is mixedTrustCandidates with the workflow declaring NO
+// `id:` of its own: its identity came from the filename, so ExplicitID is
+// false. Everything else -- and every field the policy matches on -- is
+// identical.
+func derivedIDCandidates() *policyCandidateSet {
+	candidates := mixedTrustCandidates()
+	candidates.Base[0].ExplicitID = false
+	candidates.Head[0].ExplicitID = false
+	return candidates
+}
+
+// TestSelectPolicyCandidatesIgnoresWhetherTheWorkflowIDWasExplicit is the
+// coordinator-is-authoritative property.
+//
+// The head-CI branch used to additionally require head.ExplicitID, which let a
+// REPOSITORY veto by omission a grant the COORDINATOR had made: a stored policy
+// could name a workflow and simply never fire, with nothing to say why. That is
+// how the production reactorcide policy sat inert while looking correct.
+//
+// It was never the control it resembled, either: an actor who satisfies
+// `actors.any` writes their own pull request and can put any `id:` they like in
+// it, so requiring an explicit id never stopped one workflow claiming another's
+// identity. What actually gates the grant is the policy -- actors, workflows,
+// paths, events, base_branches, head_repository, approval -- and the companion
+// tests below cover those.
+func TestSelectPolicyCandidatesIgnoresWhetherTheWorkflowIDWasExplicit(t *testing.T) {
+	for _, explicit := range []bool{true, false} {
+		name := "declared id"
+		candidates := mixedTrustCandidates()
+		if !explicit {
+			name = "id derived from filename"
+			candidates = derivedIDCandidates()
+		}
+
+		t.Run(name, func(t *testing.T) {
+			parent, policy := mixedTrustEvalParent(t, []byte(mixedTrustPolicy))
+			projectID := "project"
+			parent.ProjectID = &projectID
+			if err := (&vcs.JobMetadata{
+				VCSProvider: "github", Repo: "org/repo", PRNumber: 7,
+				CommitSHA: *parent.SourceRef, IsEval: true,
+			}).ApplyToJob(parent); err != nil {
+				t.Fatal(err)
+			}
+			processorStore := &multiProfileStore{
+				workflowRuntimeStore: newWorkflowRuntimeStore(), profiles: mixedTrustProfiles(),
+			}
+			tp := NewTriggerProcessor(processorStore, nil)
+
+			selected, violations, err := tp.selectPolicyCandidates(
+				context.Background(), parent, candidates,
+				[]string{".reactorcide/workflows/pr.yaml"},
+			)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(violations) != 0 || len(selected) != 1 {
+				t.Fatalf("unexpected selection: workflows=%d violations=%+v", len(selected), violations)
+			}
+			if selected[0].CIOrigin != "head" {
+				t.Fatalf("ci_origin = %q, want head: the coordinator's policy allowed this, "+
+					"and whether the workflow declared its own id is not the policy's business",
+					selected[0].CIOrigin)
+			}
+			if selected[0].PolicyRuleID != "csilgen" || selected[0].PolicyRevision != policy.Revision {
+				t.Fatalf("policy attribution lost: %+v", selected[0])
+			}
+		})
+	}
+}
+
+// TestSelectPolicyCandidatesStillRefusesUnmatchedActor is the other half: with
+// the explicit-id gate gone, the policy's own conditions must still be the
+// thing that decides. An actor the policy does not name gets base CI, whether
+// or not the workflow declared an id.
+func TestSelectPolicyCandidatesStillRefusesUnmatchedActor(t *testing.T) {
+	parent, _ := mixedTrustEvalParent(t, []byte(mixedTrustPolicy))
+	projectID := "project"
+	parent.ProjectID = &projectID
+	// The policy names `repository_write`; this actor has none of it.
+	parent.JobEnvVars["REACTORCIDE_ACTOR_SUBJECTS"] = `["vcs_user:github/a-stranger"]`
+	if err := (&vcs.JobMetadata{
+		VCSProvider: "github", Repo: "org/repo", PRNumber: 7,
+		CommitSHA: *parent.SourceRef, IsEval: true,
+	}).ApplyToJob(parent); err != nil {
+		t.Fatal(err)
+	}
+	processorStore := &multiProfileStore{
+		workflowRuntimeStore: newWorkflowRuntimeStore(), profiles: mixedTrustProfiles(),
+	}
+	tp := NewTriggerProcessor(processorStore, nil)
+
+	selected, _, err := tp.selectPolicyCandidates(
+		context.Background(), parent, derivedIDCandidates(),
+		[]string{".reactorcide/workflows/pr.yaml"},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(selected) != 1 {
+		t.Fatalf("workflows=%d, want 1", len(selected))
+	}
+	if selected[0].CIOrigin == "head" {
+		t.Fatal("an actor the policy does not name must NOT receive head CI, " +
+			"derived id or otherwise")
+	}
+}
