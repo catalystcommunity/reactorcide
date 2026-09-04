@@ -380,6 +380,12 @@ func (tp *TriggerProcessor) processTriggersFromData(ctx context.Context, data []
 				"rule": batches[i].PolicyRuleID, "profile": batches[i].ExecutionProfile,
 				"worker_class": batches[i].WorkerClass, "policy_revision": batches[i].PolicyRevision,
 				"approval_id": batches[i].ApprovalID, "decision": "allowed",
+				// False means the workflow did not declare `id:` and its
+				// identity came from its filename, so a rename would move it to
+				// a different policy rule (or none). Not a refusal -- the policy
+				// already decided -- but an auditor reviewing why this workflow
+				// matched should be able to see it.
+				"workflow_id_explicit": batches[i].ExplicitID,
 			})
 		}
 	}
@@ -632,7 +638,29 @@ func (tp *TriggerProcessor) selectPolicyCandidates(ctx context.Context, parentJo
 		useHead := false
 		var decision cipolicy.Decision
 		var approvalID *string
-		if policy != nil && hasHead && head.EventMatched && head.ExplicitID {
+		// The coordinator's stored policy is the ONLY authority on whether head
+		// CI is granted. A workflow's declared identity is a fact the policy
+		// matches against, not a second gate the repository holds.
+		//
+		// This used to also require head.ExplicitID -- that the workflow
+		// declared its own `id:` rather than having one derived from its
+		// filename. That made a repository able to veto, by omission, a grant
+		// the coordinator had made: a policy could name a workflow and simply
+		// never fire, with nothing to explain why. It was also not the security
+		// control it looked like, because an actor who passes `actors.any` can
+		// write any `id:` they like in their own pull request, so an explicit id
+		// never prevented one workflow from claiming another's identity.
+		//
+		// What still gates every head-CI grant is the policy itself: actors,
+		// workflows, paths, events, base_branches, head_repository and any
+		// required approval. Removing this changes none of them.
+		//
+		// An implicit id is still worth KNOWING about, so it rides into the
+		// ci_policy.decision audit record instead (see recordPolicyDecision's
+		// "workflow_id_explicit"). Declaring `id:` remains the documented
+		// practice: it keeps a rename from silently changing a workflow's
+		// security identity.
+		if policy != nil && hasHead && head.EventMatched {
 			dependencies := uniqueNonEmpty(append(append([]string{}, head.DependencyPaths...), sharedPaths...))
 			if len(changedCIPaths) > 0 && intersects(changedCIPaths, dependencies) {
 				approvalMatchesTarget := func(approval models.CIApproval) bool {
