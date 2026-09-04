@@ -26,7 +26,7 @@ const testUserID = "550e8400-e29b-41d4-a716-446655440000"
 
 // testBootstrapAdminToken is a fixed, obviously-fake token for this test
 // binary's coordinator subprocess (REACTORCIDE_BOOTSTRAP_ADMIN_TOKEN) so
-// ui_auth_integration_test.go can exercise the /app/bootstrap flow against a
+// ui_auth_integration_test.go can exercise the /app/auth/bootstrap flow against a
 // real coordinator. It is never a real secret — it only ever guards a
 // throwaway, per-test-run Postgres container.
 const testBootstrapAdminToken = "webapp-test-bootstrap-token-not-a-secret"
@@ -181,7 +181,9 @@ func TestMain(m *testing.M) {
 
 	// Start webapp server
 	webConfig.APIUrl = apiBaseURL
-	webConfig.APIToken = testToken
+	// No webapp API token: the webapp holds no coordinator credential any more.
+	// Everything it forwards is authenticated by the browser's own session (see
+	// webapp/internal/config/config.go).
 	webConfig.AllowInsecureTransport = true
 	// This test suite runs the webapp over plain HTTP (no TLS terminator in
 	// front of it), so the session cookie must not carry the Secure flag or

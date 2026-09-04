@@ -1,13 +1,11 @@
 package test
 
-// UI-auth integration tests driving the real webapp server against the real
-// coordinator subprocess started by setup_test.go's TestMain
-// (REACTORCIDE_UI_AUTH_MODE unset -> "none",
-// REACTORCIDE_BOOTSTRAP_ADMIN_TOKEN=testBootstrapAdminToken). These are the
-// highest-value end-to-end flows; the unit fakes (internal/handlers's
-// fake_coordinator_test.go) cover template/handler breadth.
+// UI auth flows against the live coordinator started by setup_test.go's
+// TestMain. These cover the endpoints that own the session cookie -- the only
+// part of the UI that is not a CSIL call through the bridge.
 
 import (
+	"encoding/json"
 	"io"
 	"net/http"
 	"net/http/cookiejar"
@@ -16,111 +14,117 @@ import (
 	"testing"
 )
 
-// TestUIAuthModeNoneLoginDisabledAndAnonymousCancel covers: with
-// REACTORCIDE_UI_AUTH_MODE=none (the default), the login page says so, and
-// the job-detail cancel button's POST works with no session cookie at all.
-func TestUIAuthModeNoneLoginDisabledAndAnonymousCancel(t *testing.T) {
-	resp, err := http.Get(webBaseURL + "/app/login")
+// newBrowserClient keeps a cookie jar, like a browser, but does NOT follow
+// redirects.
+//
+// Following them silently breaks any assertion about the response: a successful
+// bootstrap answers 302 with the Set-Cookie header, and net/http then follows to
+// /app/ and hands back THAT response, whose headers contain no cookie at all.
+// The jar still holds it, so both are checked below.
+func newBrowserClient(t *testing.T) *http.Client {
+	t.Helper()
+	jar, err := cookiejar.New(nil)
 	if err != nil {
-		t.Fatalf("GET /app/login: %v", err)
+		t.Fatalf("cookie jar: %v", err)
 	}
-	defer resp.Body.Close()
-	body, _ := io.ReadAll(resp.Body)
-	if resp.StatusCode != http.StatusOK {
-		t.Fatalf("GET /app/login: expected 200, got %d", resp.StatusCode)
-	}
-	if !strings.Contains(string(body), "Login is disabled") {
-		t.Errorf("login page should say login is disabled in mode none, got: %s", body)
-	}
-
-	jobID := insertTestJob(t, "ui-auth-anon-cancel")
-
-	// No cookies at all: a plain, unauthenticated client.
-	client := &http.Client{
-		CheckRedirect: func(req *http.Request, via []*http.Request) error {
-			return http.ErrUseLastResponse
-		},
-	}
-	cancelResp, err := client.Post(webBaseURL+"/app/jobs/"+jobID+"/cancel", "application/x-www-form-urlencoded", nil)
-	if err != nil {
-		t.Fatalf("POST /app/jobs/%s/cancel: %v", jobID, err)
-	}
-	defer cancelResp.Body.Close()
-	if cancelResp.StatusCode != http.StatusFound {
-		b, _ := io.ReadAll(cancelResp.Body)
-		t.Fatalf("anonymous cancel: expected 302 redirect, got %d: %s", cancelResp.StatusCode, b)
-	}
-
-	var status string
-	if err := testDB.QueryRow(`SELECT status FROM jobs WHERE job_id = $1`, jobID).Scan(&status); err != nil {
-		t.Fatalf("querying job status: %v", err)
-	}
-	if status != "cancelled" {
-		t.Errorf("job status = %q, want %q after anonymous cancel", status, "cancelled")
+	return &http.Client{
+		Jar:           jar,
+		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
 	}
 }
 
-// TestUIAuthBootstrapLoginCreateProject covers: logging in via
-// /app/bootstrap with the configured bootstrap token, seeing the admin nav
-// link (proves the session resolves as global admin), and creating a
-// project through the real UI form, then seeing it in the project list.
-func TestUIAuthBootstrapLoginCreateProject(t *testing.T) {
-	jar, err := cookiejar.New(nil)
+// sessionCookieFrom returns the session cookie a response set, if any.
+func sessionCookieFrom(resp *http.Response) *http.Cookie {
+	for _, c := range resp.Cookies() {
+		if c.Name == "rc_session" {
+			return c
+		}
+	}
+	return nil
+}
+
+// TestBootstrapAdminMintsASession covers the one-time bootstrap: it must set the
+// session cookie, and that cookie must not be readable by page JavaScript.
+func TestBootstrapAdminMintsASession(t *testing.T) {
+	client := newBrowserClient(t)
+
+	resp, err := client.PostForm(webBaseURL+"/app/auth/bootstrap", url.Values{"token": {testBootstrapAdminToken}})
 	if err != nil {
-		t.Fatalf("cookiejar.New: %v", err)
+		t.Fatalf("POST /app/auth/bootstrap: %v", err)
 	}
-	client := &http.Client{Jar: jar}
+	defer resp.Body.Close()
 
-	form := url.Values{"token": {testBootstrapAdminToken}}
-	resp, err := client.PostForm(webBaseURL+"/app/bootstrap", form)
+	if resp.StatusCode != http.StatusFound && resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		t.Fatalf("bootstrap status = %d, want a successful session mint; body = %s", resp.StatusCode, body)
+	}
+
+	sessionCookie := sessionCookieFrom(resp)
+	if sessionCookie == nil || sessionCookie.Value == "" {
+		t.Fatal("bootstrap did not set a session cookie")
+	}
+	if !sessionCookie.HttpOnly {
+		t.Error("the session cookie must be HttpOnly; page JavaScript must never be able to read a session token")
+	}
+
+	// The session must now be visible to the SPA's own session endpoint. This
+	// travels via the jar, which is what proves the cookie is actually usable
+	// rather than merely present in one response.
+	sessionResp, err := client.Get(webBaseURL + "/app/auth/session")
 	if err != nil {
-		t.Fatalf("POST /app/bootstrap: %v", err)
+		t.Fatalf("GET /app/auth/session: %v", err)
 	}
-	body, _ := io.ReadAll(resp.Body)
-	resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		t.Fatalf("bootstrap+redirect-follow to /app/: expected 200, got %d: %s", resp.StatusCode, body)
-	}
+	defer sessionResp.Body.Close()
 
-	// The client followed the post-bootstrap redirect to /app/ with the
-	// session cookie attached (http.Client.Jar carries it across the
-	// redirect); the layout's nav only renders the Admin link for a global
-	// admin session (see internal/templates/layout.html).
-	if !strings.Contains(string(body), `href="/app/admin"`) {
-		t.Errorf("bootstrap-admin session should see the Admin nav link on /app/, got: %s", body)
+	var session struct {
+		LoggedIn      bool `json:"logged_in"`
+		IsGlobalAdmin bool `json:"is_global_admin"`
 	}
+	if err := json.NewDecoder(sessionResp.Body).Decode(&session); err != nil {
+		t.Fatalf("decode session: %v", err)
+	}
+	if !session.LoggedIn {
+		t.Error("the bootstrapped session should report logged_in")
+	}
+	if !session.IsGlobalAdmin {
+		t.Error("the bootstrap admin should report is_global_admin")
+	}
+}
 
-	var bootstrapUserID string
-	if err := testDB.QueryRow(`SELECT user_id FROM users WHERE username = 'bootstrap-admin'`).Scan(&bootstrapUserID); err != nil {
-		t.Fatalf("querying bootstrap-admin user: %v", err)
-	}
+// TestBootstrapRejectsWrongTokenWithoutSettingACookie is the negative half: a
+// failed bootstrap must leave the browser with no session at all.
+func TestBootstrapRejectsWrongTokenWithoutSettingACookie(t *testing.T) {
+	client := newBrowserClient(t)
 
-	const projectName = "ui-auth-bootstrap-project"
-	createForm := url.Values{
-		"org_id":   {testOrgID},
-		"name":     {projectName},
-		"repo_url": {"https://github.com/uiauth-test/bootstrap-project.git"},
-	}
-	createResp, err := client.PostForm(webBaseURL+"/app/projects", createForm)
+	resp, err := client.PostForm(webBaseURL+"/app/auth/bootstrap", url.Values{"token": {"definitely-not-the-token"}})
 	if err != nil {
-		t.Fatalf("POST /app/projects: %v", err)
+		t.Fatalf("POST /app/auth/bootstrap: %v", err)
 	}
-	createBody, _ := io.ReadAll(createResp.Body)
-	createResp.Body.Close()
-	if createResp.StatusCode != http.StatusOK {
-		t.Fatalf("create project + redirect-follow: expected 200, got %d: %s", createResp.StatusCode, createBody)
-	}
+	defer resp.Body.Close()
 
-	listResp, err := client.Get(webBaseURL + "/app/projects")
+	if resp.StatusCode == http.StatusFound || resp.StatusCode == http.StatusOK {
+		t.Fatalf("a wrong bootstrap token was accepted (status %d)", resp.StatusCode)
+	}
+	if cookie := sessionCookieFrom(resp); cookie != nil && cookie.Value != "" {
+		t.Error("a failed bootstrap must not set a session cookie")
+	}
+}
+
+// TestAuthCallbackWithoutParamsRedirectsIntoTheSPA covers the IDP return leg.
+// It is a top-level navigation, so a failure has to be a redirect the browser
+// can follow rather than a JSON body nothing is listening for.
+func TestAuthCallbackWithoutParamsRedirectsIntoTheSPA(t *testing.T) {
+	client := newBrowserClient(t)
+	resp, err := client.Get(webBaseURL + "/app/auth/callback")
 	if err != nil {
-		t.Fatalf("GET /app/projects: %v", err)
+		t.Fatalf("GET /app/auth/callback: %v", err)
 	}
-	defer listResp.Body.Close()
-	listBody, _ := io.ReadAll(listResp.Body)
-	if listResp.StatusCode != http.StatusOK {
-		t.Fatalf("GET /app/projects: expected 200, got %d", listResp.StatusCode)
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusFound {
+		t.Fatalf("status = %d, want 302", resp.StatusCode)
 	}
-	if !strings.Contains(string(listBody), projectName) {
-		t.Errorf("projects list should contain the newly created project %q, got: %s", projectName, listBody)
+	if location := resp.Header.Get("Location"); !strings.Contains(location, "login_error=") {
+		t.Errorf("Location = %q, want the failure reason carried back to the SPA", location)
 	}
 }

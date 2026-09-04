@@ -310,11 +310,59 @@ DeleteProjectResponse = {
     deleted: bool
 }
 
+;;; The CI policy document, as a type rather than an opaque blob. Mirrors
+;;; internal/cipolicy.Policy exactly. Storage has always been JSONB and
+;;; put-ci-policy has always canonicalized on save, so nothing about the
+;;; stored form changes here -- only that the wire carries the structure
+;;; instead of a JSON string a client would have to parse and validate itself.
+CiPolicySubjectMatch = {
+    any: [* text]
+}
+
+;;; Grants selected workflow nodes trusted base-CI authority inside a head-CI
+;;; workflow. Only coordinator policy can carry this grant.
+CiPolicyNodeAuthority = {
+    nodes: [* text],
+    ? ci_source: text,
+    ? profile: text,
+    ? workers: text
+}
+
+CiPolicyUse = {
+    ? ci_source: text,
+    ? profile: text,
+    ? workers: text,
+    ? base_nodes: [* CiPolicyNodeAuthority]
+}
+
+CiPolicyDefaults = {
+    ? ci_source: text,
+    ? profile: text
+}
+
+CiPolicyRule = {
+    id: text,
+    ? actors: CiPolicySubjectMatch,
+    ? workflows: [* text],
+    ? paths: [* text],
+    ? events: [* text],
+    ? base_branches: [* text],
+    ? head_repository: text,
+    ? approval: CiPolicySubjectMatch,
+    use: CiPolicyUse
+}
+
+CiPolicyDocument = {
+    version: int,
+    ? defaults: CiPolicyDefaults,
+    head_ci: [* CiPolicyRule]
+}
+
 CiPolicyDetail = {
     policy_id: text,
     project_id: text,
     revision: text,
-    document: text,
+    document: CiPolicyDocument,
     created_at: text,
     updated_at: text,
     ? updated_by: text
@@ -327,7 +375,7 @@ GetCiPolicyResponse = {
 }
 PutCiPolicyRequest = {
     project_id: text,
-    document: text,
+    document: CiPolicyDocument,
     ? expected_revision: text
 }
 PutCiPolicyResponse = {
@@ -966,7 +1014,14 @@ GetJobMetricsRequest = {
     ? to_time: text,
     ? cursor: text,
     metrics: [* text],
-    max_points: int
+    max_points: int,
+    ;; "summary" (default) returns the job roll-up only, restricted to the
+    ;; metrics a chart actually reads. "raw" returns every series, per
+    ;; component. An unknown value falls back to "summary" rather than failing.
+    ? view: text,
+    ;; Narrows to one container's series (e.g. "main", "builder", "docker").
+    ;; Empty means no narrowing.
+    ? component: text
 }
 
 JobMetricLabel = {
@@ -997,7 +1052,12 @@ GetJobMetricsResponse = {
     series: [* JobMetricSeries],
     unavailable: [* JobMetricUnavailable],
     complete: bool,
-    ? next_cursor: text
+    ? next_cursor: text,
+    ;; Every component present in this job's telemetry, computed BEFORE the
+    ;; view filtered anything out. The UI shows a component picker only when
+    ;; this has entries, so a single-container job grows no pointless control
+    ;; and a job whose sidecar starts late grows one at that moment.
+    components: [* text]
 }
 
 GetJobLogsRequest = {
@@ -1017,6 +1077,178 @@ GetJobLogsResponse = {
     ? next_cursor: text,
     ? has_more: bool,
     ? complete: bool
+}
+
+;; ---------------------------------------------------------------------------
+;; Job and workflow reads.
+;;
+;; These exist so the browser never needs the coordinator REST API. The webapp
+;; used to serve the job list, job detail, workflow list and workflow detail
+;; by calling /api/v1/* with its own SERVICE token; the coordinator's
+;; visibility filter then ran against that service identity and passed every
+;; row, and the webapp did not filter again. Every op below instead resolves
+;; the caller's own session and pushes the visibility predicate into SQL
+;; (postgres_store/visibility_operations.go), so LIMIT/OFFSET and the total
+;; count both operate on the already-filtered set.
+;; ---------------------------------------------------------------------------
+
+;;; One job as the UI lists and renders it. Field names match models.Job's
+;;; JSON so the existing REST consumers read the same shape.
+JobSummary = {
+    job_id: text,
+    name: text,
+    description: text,
+    status: text,
+    last_error: text,
+    created_at: text,
+    updated_at: text,
+    ? started_at: text,
+    ? completed_at: text,
+    ? exit_code: int,
+    source_url: text,
+    source_ref: text,
+    source_type: text,
+    source_path: text,
+    runner_image: text,
+    queue_name: text,
+    priority: int,
+    ? parent_job_id: text,
+    ? project_id: text,
+    ? workflow_id: text,
+    workflow_node_name: text,
+    ci_origin: text,
+    execution_profile: text,
+    worker_class: text
+}
+
+ListJobsRequest = {
+    ? status: text,
+    ? project_id: text,
+    ? workflow_id: text,
+    ? queue_name: text,
+    ? limit: int,
+    ? offset: int
+}
+ListJobsResponse = {
+    jobs: [* JobSummary],
+    total: int,
+    limit: int,
+    offset: int
+}
+
+GetJobRequest = {
+    job_id: text
+}
+GetJobResponse = {
+    job: JobSummary
+}
+
+;;; One node of a workflow's DAG. depends_on is what a graph view needs; it
+;;; has always existed on the row and was never exposed by any API.
+WorkflowNodeSummary = {
+    node_id: text,
+    name: text,
+    display_name: text,
+    status: text,
+    depends_on: [* text],
+    condition: text,
+    ? job_id: text,
+    decision_reason: text,
+    ? item_index: int,
+    ? completed_at: text,
+    ci_origin: text,
+    execution_profile: text,
+    worker_class: text
+}
+
+WorkflowSummaryDetail = {
+    workflow_id: text,
+    kind: text,
+    name: text,
+    status: text,
+    ? project_id: text,
+    created_at: text,
+    updated_at: text,
+    ? completed_at: text,
+    queue_name: text,
+    vcs_repo: text,
+    ? pr_number: int,
+    commit_sha: text,
+    job_count: int,
+    running_count: int,
+    completed_count: int,
+    failed_count: int,
+    skipped_count: int,
+    ? loose_job_id: text,
+    ? loose_job_exit: int,
+    decision_summary: text,
+    ? parent_job_id: text,
+    ? root_workflow_id: text,
+    ? parent_workflow_id: text,
+    ? origin_job_id: text,
+    origin_type: text,
+    trigger_type: text,
+    ci_origin: text,
+    execution_profile: text,
+    worker_class: text
+}
+
+ListWorkflowsRequest = {
+    ? status: text,
+    ? project_id: text,
+    ? limit: int,
+    ? offset: int
+}
+ListWorkflowsResponse = {
+    workflows: [* WorkflowSummaryDetail],
+    total: int,
+    limit: int,
+    offset: int
+}
+
+;;; get-workflow returns the nodes inline. A workflow, even a large one, is
+;;; small next to everything else the UI already transfers, so a second round
+;;; trip to fetch its DAG buys nothing.
+GetWorkflowRequest = {
+    workflow_id: text
+}
+GetWorkflowResponse = {
+    workflow: WorkflowSummaryDetail,
+    nodes: [* WorkflowNodeSummary],
+    jobs: [* JobSummary]
+}
+
+;; ---------------------------------------------------------------------------
+;; Form metadata.
+;;
+;; The enumerated values a form needs (event types, checkout modes, node
+;; conditions) live only in Go today -- internal/vcs/event_types.go and
+;; friends. A client that wants to offer them in a combobox has to copy the
+;; list, and a copied list drifts. Serve them instead.
+;; ---------------------------------------------------------------------------
+
+EnumChoice = {
+    value: text,
+    label: text,
+    description: text
+}
+
+;;; Each field is one enumerated set a form control can bind to directly.
+;;;
+;;; Every value here is a static vocabulary of the software itself, so this op
+;;; is open to anonymous callers. Deployment data -- worker classes, execution
+;;; profiles, queue names -- is deliberately NOT served here: those are
+;;; org-scoped and privileged, and list-worker-classes /
+;;; list-execution-profiles / list-queues already authorize them correctly. A
+;;; form that needs one of those calls the op that guards it.
+DescribeFormMetadataRequest = {}
+DescribeFormMetadataResponse = {
+    event_types: [* EnumChoice],
+    checkout_modes: [* EnumChoice],
+    node_conditions: [* EnumChoice],
+    job_statuses: [* EnumChoice],
+    workflow_statuses: [* EnumChoice],
+    ci_source_types: [* EnumChoice]
 }
 
 service ReactorcideUi {
@@ -1096,5 +1328,10 @@ service ReactorcideUi {
     list-enrollment-tokens: ListEnrollmentTokensRequest -> ListEnrollmentTokensResponse / ServiceError,
     deactivate-enrollment-token: DeactivateEnrollmentTokenRequest -> DeactivateEnrollmentTokenResponse / ServiceError,
     get-job-metrics: GetJobMetricsRequest -> GetJobMetricsResponse / ServiceError,
-    get-job-logs: GetJobLogsRequest -> GetJobLogsResponse / ServiceError
+    get-job-logs: GetJobLogsRequest -> GetJobLogsResponse / ServiceError,
+    list-jobs: ListJobsRequest -> ListJobsResponse / ServiceError,
+    get-job: GetJobRequest -> GetJobResponse / ServiceError,
+    list-workflows: ListWorkflowsRequest -> ListWorkflowsResponse / ServiceError,
+    get-workflow: GetWorkflowRequest -> GetWorkflowResponse / ServiceError,
+    describe-form-metadata: DescribeFormMetadataRequest -> DescribeFormMetadataResponse / ServiceError
 }

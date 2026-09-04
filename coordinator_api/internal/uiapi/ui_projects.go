@@ -7,6 +7,7 @@ import (
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/authz"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store/models"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/uiapi/csilapi"
+	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/workflowevents"
 )
 
 // listAllLimit bounds the "list everything, filter client-side" queries this
@@ -310,6 +311,11 @@ func (s *UiService) UpdateProject(ctx context.Context, req csilapi.UpdateProject
 	if err := s.deps.Store.UpdateProject(ctx, project); err != nil {
 		return csilapi.UpdateProjectResponse{}, NewServiceError("internal", "failed to update project")
 	}
+	// Settings changed, and is_private may be among them. An open event stream
+	// caches "this caller may see project X"; this is what makes it drop that
+	// answer, so a project turned private stops feeding a socket that was
+	// opened while it was public.
+	workflowevents.ProjectUpdated(ctx, project)
 	return csilapi.UpdateProjectResponse{Project: projectToDetail(project)}, nil
 }
 

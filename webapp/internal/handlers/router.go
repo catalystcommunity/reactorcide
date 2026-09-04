@@ -2,140 +2,110 @@ package handlers
 
 import (
 	"net/http"
+	"strings"
 
 	"github.com/catalystcommunity/reactorcide/webapp/internal/config"
+	"github.com/catalystcommunity/reactorcide/webapp/internal/embedui"
 	"github.com/catalystcommunity/reactorcide/webapp/internal/uiclient"
-	"github.com/catalystcommunity/reactorcide/webapp/internal/uiclient/csilapi"
 )
 
-// NewRouter creates the HTTP handler with all routes
+// NewRouter builds the webapp's HTTP surface.
+//
+// The webapp is a bridge, not an application. It owns exactly three things:
+//
+//  1. The SPA bundle, compiled into this binary (embedui).
+//  2. The CSIL-RPC bridge, which swaps the browser's HttpOnly session cookie
+//     for the envelope credential the coordinator authorizes against (see
+//     rpc_bridge.go).
+//  3. The session cookie itself: login, the IDP callback, logout and the
+//     one-time bootstrap. These stay server-side endpoints because a CSIL op
+//     returns a typed value and cannot set a Set-Cookie header, and because a
+//     session token must never be readable by page JavaScript.
+//
+// Everything else the UI does is a CSIL call through the bridge, authorized by
+// the coordinator against the real caller. There is no longer any route here
+// that reads application data, and this process no longer holds a coordinator
+// API token at all — see the note on config.APIToken's removal.
 func NewRouter() http.Handler {
 	mux := http.NewServeMux()
-	client := NewAPIClient()
 	uiClients := uiclient.NewWithTransport(&uiclient.CSILRPCTransport{
 		BaseURL:                config.APIUrl,
 		AllowInsecureTransport: config.AllowInsecureTransport,
 	})
-	webHandler := NewWebHandler(client, uiClients)
+	webHandler := NewWebHandler(uiClients)
 	wsProxy := NewWSProxy()
+	bridge := NewRPCBridge()
 
-	// Health check at root for k8s probes
+	// Health check at root for k8s probes.
 	mux.HandleFunc("GET /", webHandler.HealthCheck)
 
-	// Web UI routes under /app/. Every /app/ page route goes through
-	// withSession so SessionInfo (cookie -> coordinator authenticate ->
-	// capabilities) is resolved once per request and available both to the
-	// handler and to the shared "head"/"foot" layout templates (nav bar
-	// auth area).
-	mux.HandleFunc("GET /app/", webHandler.withSession(webHandler.JobsList))
-	mux.HandleFunc("GET /app/jobs", webHandler.withSession(webHandler.RedirectToAppRoot))
-	mux.HandleFunc("GET /app/jobs/", webHandler.withSession(webHandler.RedirectToAppRoot))
-	mux.HandleFunc("GET /app/workflows/{id}", webHandler.withSession(webHandler.WorkflowDetail))
-	mux.HandleFunc("POST /app/workflows/{id}/cancel", webHandler.withSession(webHandler.WorkflowCancel))
-	mux.HandleFunc("POST /app/workflows/{id}/retry", webHandler.withSession(webHandler.WorkflowRetry))
-	mux.HandleFunc("POST /app/workflows/{id}/retry-unsuccessful", webHandler.withSession(webHandler.WorkflowRetryUnsuccessful))
-	mux.HandleFunc("GET /app/jobs/{id}", webHandler.withSession(webHandler.JobDetail))
-	mux.HandleFunc("GET /app/jobs/{id}/logs", webHandler.withSession(webHandler.JobLogs))
-	mux.HandleFunc("GET /app/jobs/{id}/metrics", webHandler.withSession(webHandler.JobMetrics))
-	mux.HandleFunc("POST /app/jobs/{id}/cancel", webHandler.withSession(webHandler.JobCancel))
-	mux.HandleFunc("POST /app/jobs/{id}/kill", webHandler.withSession(webHandler.JobKill))
-	mux.HandleFunc("POST /app/jobs/{id}/retry", webHandler.withSession(webHandler.JobRetry))
+	// The CSIL-RPC bridge. Every read and every mutation the SPA performs goes
+	// through this one route.
+	//
+	// Registered with an explicit method: a methodless pattern matches every
+	// method, which Go's ServeMux then reports as conflicting with the "GET /"
+	// health check above. The bridge re-checks the method itself, so a request
+	// that somehow arrives another way is still refused rather than mishandled.
+	mux.Handle("POST "+RPCBridgePath, bridge)
 
-	// Project management. GET /app/projects/new must be
-	// registered alongside GET /app/projects/{id} — Go 1.22's ServeMux
-	// prefers the more specific literal segment ("new") over the wildcard
-	// ("{id}") for the same path shape, so this is unambiguous.
-	mux.HandleFunc("GET /app/projects", webHandler.withSession(webHandler.ProjectsList))
-	mux.HandleFunc("GET /app/projects/new", webHandler.withSession(webHandler.ProjectNewForm))
-	mux.HandleFunc("POST /app/projects", webHandler.withSession(webHandler.ProjectCreate))
-	mux.HandleFunc("GET /app/projects/{id}", webHandler.withSession(webHandler.ProjectDetail))
-	mux.HandleFunc("POST /app/projects/{id}/settings", webHandler.withSession(webHandler.ProjectSettingsUpdate))
-	mux.HandleFunc("POST /app/projects/{id}/delete", webHandler.withSession(webHandler.ProjectDelete))
-	mux.HandleFunc("POST /app/projects/{id}/webhook-secrets", webHandler.withSession(webHandler.WebhookSecretAdd))
-	mux.HandleFunc("POST /app/projects/{id}/webhook-secrets/{sid}/deactivate", webHandler.withSession(webHandler.WebhookSecretDeactivate))
-	mux.HandleFunc("POST /app/projects/{id}/webhook-secrets/{sid}/delete", webHandler.withSession(webHandler.WebhookSecretDelete))
-	mux.HandleFunc("POST /app/projects/{id}/vcs-credentials", webHandler.withSession(webHandler.VcsCredentialAdd))
-	mux.HandleFunc("POST /app/projects/{id}/vcs-credentials/{sid}/deactivate", webHandler.withSession(webHandler.VcsCredentialDeactivate))
-	mux.HandleFunc("POST /app/projects/{id}/vcs-credentials/{sid}/delete", webHandler.withSession(webHandler.VcsCredentialDelete))
+	// The SPA's single multiplexed event socket, proxied under the browser's
+	// own session.
+	mux.HandleFunc("GET /app/ws", wsProxy.UIStream)
 
-	// Groups & roles (org-scoped management).
-	mux.HandleFunc("GET /app/org/groups", webHandler.withSession(webHandler.OrgGroupsPage))
-	mux.HandleFunc("POST /app/org/groups", webHandler.withSession(webHandler.GroupCreate))
-	mux.HandleFunc("POST /app/org/groups/{id}/delete", webHandler.withSession(webHandler.GroupDelete))
-	mux.HandleFunc("POST /app/org/groups/{id}/members", webHandler.withSession(webHandler.GroupMemberAdd))
-	mux.HandleFunc("POST /app/org/groups/{id}/members/remove", webHandler.withSession(webHandler.GroupMemberRemove))
-	mux.HandleFunc("GET /app/org/roles", webHandler.withSession(webHandler.OrgRolesPage))
-	mux.HandleFunc("POST /app/org/roles", webHandler.withSession(webHandler.RoleAssign))
-	mux.HandleFunc("POST /app/org/roles/{id}/revoke", webHandler.withSession(webHandler.RoleRevoke))
+	// Auth endpoints. These own the session cookie, which is why they are not
+	// CSIL calls through the bridge.
+	mux.HandleFunc("GET /app/auth/config", webHandler.AuthConfig)
+	mux.HandleFunc("POST /app/auth/login", webHandler.LoginSubmit)
+	mux.HandleFunc("GET /app/auth/callback", webHandler.AuthCallback)
+	mux.HandleFunc("POST /app/auth/logout", webHandler.Logout)
+	mux.HandleFunc("POST /app/auth/bootstrap", webHandler.BootstrapSubmit)
+	// The SPA needs to know who it is rendering for before it can decide what
+	// to show. This is a hint only: the coordinator re-checks every operation.
+	mux.HandleFunc("GET /app/auth/session", webHandler.SessionInfoJSON)
 
-	// Secrets & grants (org-scoped, write-only through the UI).
-	mux.HandleFunc("GET /app/org/secrets", webHandler.withSession(webHandler.OrgSecretsPage))
-	mux.HandleFunc("POST /app/org/secrets", webHandler.withSession(webHandler.SecretSet))
-	mux.HandleFunc("POST /app/org/secrets/delete", webHandler.withSession(webHandler.SecretDelete))
-	mux.HandleFunc("POST /app/org/secrets/grants", webHandler.withSession(webHandler.SecretGrantCreate))
-	mux.HandleFunc("POST /app/org/secrets/grants/{id}", webHandler.withSession(webHandler.SecretGrantUpdate))
-	mux.HandleFunc("POST /app/org/secrets/grants/{id}/delete", webHandler.withSession(webHandler.SecretGrantDelete))
-
-	// Workers: pools + enrollment tokens, workers, and queues. Gated on the
-	// ManageWorkers capability; queues are global-admin only (see
-	// workers_admin_handler.go's file doc comment). Worker item routes live
-	// under the literal "worker/" segment (not "/app/workers/{id}/...") so
-	// they can't collide with "/app/workers/pools/{id}/..." — Go's ServeMux
-	// rejects two patterns that could both match the same concrete path (e.g.
-	// a pool id of "worker" or a worker id of "pools") when neither is
-	// strictly more specific than the other.
-	mux.HandleFunc("GET /app/workers", webHandler.withSession(webHandler.WorkersPage))
-	mux.HandleFunc("GET /app/workers/classes", webHandler.withSession(webHandler.WorkerClassesPage))
-	mux.HandleFunc("POST /app/workers/classes", webHandler.withSession(webHandler.WorkerClassPut))
-	mux.HandleFunc("POST /app/workers/classes/{name}/delete", webHandler.withSession(webHandler.WorkerClassDelete))
-	mux.HandleFunc("POST /app/workers/classes/{name}/pools", webHandler.withSession(webHandler.WorkerClassPoolSet))
-	mux.HandleFunc("POST /app/workers/pools", webHandler.withSession(webHandler.PoolCreate))
-	mux.HandleFunc("POST /app/workers/pools/{id}", webHandler.withSession(webHandler.PoolUpdate))
-	mux.HandleFunc("POST /app/workers/pools/{id}/delete", webHandler.withSession(webHandler.PoolDelete))
-	mux.HandleFunc("POST /app/workers/pools/{id}/tokens", webHandler.withSession(webHandler.EnrollmentTokenCreate))
-	mux.HandleFunc("POST /app/workers/tokens/{id}/deactivate", webHandler.withSession(webHandler.EnrollmentTokenDeactivate))
-	mux.HandleFunc("POST /app/workers/worker/{id}/status", webHandler.withSession(webHandler.WorkerStatusUpdate))
-	mux.HandleFunc("POST /app/workers/worker/{id}/drain", webHandler.withSession(webHandler.WorkerDrain))
-	mux.HandleFunc("GET /app/workers/queues", webHandler.withSession(webHandler.QueuesPage))
-	mux.HandleFunc("POST /app/workers/queues", webHandler.withSession(webHandler.QueueCreate))
-	mux.HandleFunc("POST /app/workers/queues/{id}/rename", webHandler.withSession(webHandler.QueueRename))
-	mux.HandleFunc("POST /app/workers/queues/{id}/delete", webHandler.withSession(webHandler.QueueDelete))
-
-	// Admin (global-admin only).
-	mux.HandleFunc("GET /app/admin", webHandler.withSession(webHandler.AdminPage))
-	mux.HandleFunc("POST /app/admin/global-settings", webHandler.withSession(webHandler.AdminGlobalSettingsUpdate))
-	mux.HandleFunc("POST /app/admin/trusted-identities", webHandler.withSession(webHandler.TrustedIdentityAdd))
-	mux.HandleFunc("POST /app/admin/trusted-identities/remove", webHandler.withSession(webHandler.TrustedIdentityRemove))
-	mux.HandleFunc("POST /app/admin/trusted-domain-patterns", webHandler.withSession(webHandler.TrustedDomainPatternAdd))
-	mux.HandleFunc("POST /app/admin/trusted-domain-patterns/{id}/remove", webHandler.withSession(webHandler.TrustedDomainPatternRemove))
-
-	// Auth routes: login (identity-selector form -> begin-login ->
-	// redirect), the LinkKeys/local-rp callback landing page
-	// (complete-login), logout, and the one-time bootstrap-admin flow.
-	mux.HandleFunc("GET /app/login", webHandler.withSession(webHandler.LoginPage))
-	mux.HandleFunc("POST /app/login", webHandler.withSession(webHandler.LoginSubmit))
-	mux.HandleFunc("GET /app/auth/callback", webHandler.withSession(webHandler.AuthCallback))
-	mux.HandleFunc("POST /app/logout", webHandler.withSession(webHandler.Logout))
-	mux.HandleFunc("GET /app/bootstrap", webHandler.withSession(webHandler.BootstrapPage))
-	mux.HandleFunc("POST /app/bootstrap", webHandler.withSession(webHandler.BootstrapSubmit))
-
-	// WebSocket streams. The browser connects here; we proxy to the
-	// coordinator's WS endpoints using the server-side service token so
-	// the token never reaches client JS.
-	mux.HandleFunc("GET /app/ws/jobs", webHandler.withSession(func(w http.ResponseWriter, r *http.Request) {
-		wsProxy.AllJobsStreamAuthorized(w, r, func(jobID string) bool {
-			if webHandler.uiClients == nil {
-				return false
-			}
-			_, err := webHandler.uiClients.Ui.GetJobMetrics(webHandler.authContext(r), csilapi.GetJobMetricsRequest{JobId: jobID, MaxPoints: 1})
-			return err == nil
-		})
-	}))
-	mux.HandleFunc("GET /app/ws/jobs/{id}", webHandler.withSession(func(w http.ResponseWriter, r *http.Request) {
-		if webHandler.authorizeJobView(w, r, r.PathValue("id")) {
-			wsProxy.JobStream(w, r)
+	// The SPA itself. Hashed assets are served from the embedded filesystem;
+	// every other /app/ path returns the shell so client-side routing survives
+	// a hard refresh or a pasted deep link.
+	assets := embedui.FileServer()
+	mux.HandleFunc("GET /app/", func(w http.ResponseWriter, r *http.Request) {
+		path := strings.TrimPrefix(r.URL.Path, "/app/")
+		if path != "" && assetExists(path) {
+			r2 := r.Clone(r.Context())
+			r2.URL.Path = "/" + path
+			assets.ServeHTTP(w, r2)
+			return
 		}
-	}))
+		serveAppShell(w)
+	})
 
 	return mux
+}
+
+// assetExists reports whether path names a real file in the embedded bundle.
+// Anything else is a client-side route.
+func assetExists(path string) bool {
+	f, err := embedui.Assets().Open(path)
+	if err != nil {
+		return false
+	}
+	defer f.Close()
+	info, err := f.Stat()
+	return err == nil && !info.IsDir()
+}
+
+// serveAppShell writes index.html.
+//
+// no-store rather than a short cache: a cached shell keeps referencing asset
+// filenames that no longer exist after a deploy, which presents to the user as
+// a blank page that reloading does not fix.
+func serveAppShell(w http.ResponseWriter) {
+	shell, built := embedui.IndexHTML()
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-store")
+	if !built {
+		// A binary shipped without a UI build is a build-pipeline failure. Say
+		// so with a 503 rather than serving a page that looks merely broken.
+		w.WriteHeader(http.StatusServiceUnavailable)
+	}
+	_, _ = w.Write(shell)
 }

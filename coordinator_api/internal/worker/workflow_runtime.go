@@ -16,6 +16,7 @@ import (
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store/models"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/vcs"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/workflowengine"
+	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/workflowevents"
 	"github.com/google/uuid"
 	"github.com/lib/pq"
 )
@@ -105,12 +106,16 @@ type workflowOutputFile struct {
 	Outputs map[string]interface{} `json:"outputs"`
 }
 
+// workflowStore returns the workflow store surface, wrapped so every workflow
+// and node write it performs also emits a lifecycle event. Every caller in this
+// package goes through here, which is what makes the event coverage complete
+// rather than per-site and forgettable — see publishingWorkflowStore.
 func (tp *TriggerProcessor) workflowStore() (workflowStore, error) {
 	ws, ok := tp.store.(workflowStore)
 	if !ok {
 		return nil, fmt.Errorf("store does not support workflows")
 	}
-	return ws, nil
+	return newPublishingWorkflowStore(ws), nil
 }
 
 // repoBasename returns the last path component of the parent job's CI/source
@@ -699,6 +704,7 @@ func (tp *TriggerProcessor) submitWorkflowNode(ctx context.Context, wf *models.W
 	if err := tp.store.CreateJob(ctx, job); err != nil {
 		return "", err
 	}
+	workflowevents.JobCreated(ctx, job)
 	node.JobID = &job.JobID
 	node.Status = "submitted"
 	node.DecisionReason = "dependencies satisfied and condition true"

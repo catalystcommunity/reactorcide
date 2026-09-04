@@ -226,6 +226,13 @@ func (h *WebHandler) getAuthConfig(ctx context.Context) (csilapi.GetAuthConfigRe
 // sessionToken reads the raw session token from the browser's cookie, if
 // any. Never log this value.
 func (h *WebHandler) sessionToken(r *http.Request) (string, bool) {
+	return sessionTokenFromRequest(r)
+}
+
+// sessionTokenFromRequest is sessionToken without a receiver, for handlers that
+// are not WebHandler methods (the CSIL-RPC bridge and the WebSocket proxy).
+// Never log this value.
+func sessionTokenFromRequest(r *http.Request) (string, bool) {
 	c, err := r.Cookie(sessionCookieName)
 	if err != nil || c.Value == "" {
 		return "", false

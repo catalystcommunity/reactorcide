@@ -38,6 +38,87 @@ def _run(
     )
 
 
+# The Node version the web UI is built and tested with, pinned exactly.
+#
+# webi resolves a bare major ("node@22") to the newest release in that line, so
+# the toolchain would drift under CI without anyone changing a file. An exact
+# pin makes a Node upgrade a visible commit, the same way GO_VERSION is pinned
+# in runnerlib/Dockerfile.runner.
+NODE_VERSION = "22.23.2"
+
+
+def _node_environment() -> Dict[str, str]:
+    """Return an environment with a webi-installed Node on PATH.
+
+    webi is per-user by design (it hardcodes WEBI_HOME="$HOME/.local"), and it
+    installs each package to ~/.local/opt/<name>/bin. runnerbase already puts
+    both that and ~/.local/bin on PATH, so this only has to make the same true
+    when HOME is somewhere other than /home/runner -- a job using `run_as`.
+    """
+    environment = os.environ.copy()
+    home = Path(environment.get("HOME", "/home/runner"))
+    for entry in (home / ".local" / "opt" / "node" / "bin", home / ".local" / "bin"):
+        if str(entry) not in environment.get("PATH", "").split(os.pathsep):
+            environment["PATH"] = f"{entry}{os.pathsep}{environment.get('PATH', '')}"
+    return environment
+
+
+def _install_node(environment: Dict[str, str]) -> None:
+    """Install the pinned Node toolchain through webi.
+
+    Fast enough to do per job -- about two seconds on a warm CDN, one when the
+    version is already present -- which is the whole reason the toolchain is
+    fetched at job time rather than baked into runnerbase. A job needing a
+    different version asks for a different version.
+    """
+    try:
+        _run(["webi", f"node@{NODE_VERSION}"], cwd=Path("/tmp"), env=environment)
+    except FileNotFoundError as error:
+        # The likely cause, and it is an ordering problem rather than a code
+        # one: this job is running on a runnerbase image published before webi
+        # was added to runnerlib/Dockerfile.runner. Say so, because
+        # "No such file or directory: 'webi'" does not.
+        raise RuntimeError(
+            "webi is not installed in this runner image, so the pinned Node "
+            "toolchain cannot be fetched. Publish a runnerbase built from a "
+            "Dockerfile that installs webi (see runnerlib/Dockerfile.runner) "
+            "and re-run."
+        ) from error
+
+
+def _require_writable_ui_dir(ui_dir: Path) -> None:
+    """Fail early, and legibly, when npm could not write into the UI directory.
+
+    `npm ci` creates (and first removes) node_modules INSIDE the package
+    directory, so it needs write access to webapp/ui itself.
+
+    In CI this always holds: the source is a fresh clone the job user made. It
+    does not hold under `run-local --as-runner`, where the container runs as uid
+    1001 while the bind-mounted source is still the developer's own tree with
+    their ownership -- npm then reports EACCES on either mkdir or rmdir
+    depending on whether node_modules happens to exist, neither of which names
+    the actual cause.
+
+    Nothing here can fix that: writing into a host-owned tree as a different uid
+    needs a chown that an unprivileged run-local cannot do. test-web.yaml
+    already declares `run_local: user: host` so the default local run never hits
+    it; `--as-runner` explicitly overrides that choice.
+
+    The Go half of this job is unaffected, which is why it only started
+    mattering when the UI build joined it: GOPATH and GOCACHE live under HOME
+    (see _go_environment), not in the source tree.
+    """
+    if os.access(ui_dir, os.W_OK | os.X_OK):
+        return
+    raise RuntimeError(
+        f"this user (uid {os.getuid()}) cannot write into {ui_dir}, and npm "
+        "must create node_modules there.\n"
+        "That is a uid mismatch against the bind-mounted source, not a code "
+        "problem. Run this job as the host user -- its own run_local block "
+        "already asks for that, so drop --as-runner."
+    )
+
+
 def _go_environment() -> Dict[str, str]:
     """Return Go cache paths that the configured job user can write."""
     environment = os.environ.copy()
@@ -186,7 +267,28 @@ def test_runnerlib(code_dir: Path) -> None:
 
 
 def test_web(code_dir: Path) -> None:
-    """Run web application unit tests."""
+    """Build and test the web application: the SolidJS SPA, then the Go bridge.
+
+    The SPA is built FIRST, on purpose. It compiles into the Go binary through
+    `go:embed`, so building it before the Go tests means those tests exercise
+    the real embedded bundle rather than the placeholder a bare checkout
+    carries -- which is what the asset-serving tests in
+    webapp/internal/handlers actually want to assert against.
+    """
+    ui_dir = code_dir / "webapp" / "ui"
+    _require_writable_ui_dir(ui_dir)
+
+    node_environment = _node_environment()
+    _install_node(node_environment)
+
+    # `npm ci` rather than `npm install`: it installs exactly what
+    # package-lock.json pins and fails if the lock file and package.json have
+    # drifted, which is the behaviour CI should have.
+    _run(["npm", "ci"], cwd=ui_dir, env=node_environment)
+    _run(["npm", "run", "typecheck"], cwd=ui_dir, env=node_environment)
+    _run(["npm", "run", "test"], cwd=ui_dir, env=node_environment)
+    _run(["npm", "run", "build"], cwd=ui_dir, env=node_environment)
+
     _run(
         ["go", "test", "./internal/...", "-count=1"],
         cwd=code_dir / "webapp",

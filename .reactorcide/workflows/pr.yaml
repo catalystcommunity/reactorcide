@@ -1,3 +1,13 @@
+# The workflow's stable SECURITY IDENTITY, distinct from the display `name`
+# below. The coordinator's stored CI policy names this id in its `workflows:`
+# matcher, and head-CI policy is evaluated ONLY for a workflow that declares an
+# explicit id (internal/worker/trigger_processor.go, `head.ExplicitID`).
+#
+# Without it the id is derived from the filename ("pr") and marked
+# non-explicit, so the policy never fires and every PR runs base CI regardless
+# of what the policy says. Changing this value silently detaches the policy
+# again: it must keep matching the stored policy's `workflows:` entry.
+id: reactorcide-pr
 name: Reactorcide PR
 description: "Validate commits, then run the Go, Python, and web test suites for pull requests."
 

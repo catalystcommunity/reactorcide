@@ -22,10 +22,13 @@ usage() {
     echo "  test               Run all tests (Python + Go + Web)"
     echo "  test-runnerlib     Run Python tests only"
     echo "  test-coordinator   Run Go tests only"
-    echo "  test-web           Run webapp Go tests only"
+    echo "  test-web           Run webapp Go tests, unit and integration"
+    echo "  test-web-integration  Run webapp integration tests only (needs a container runtime)"
+    echo "  test-ui            Run web UI (SolidJS) tests only"
     echo "  run-api            Start coordinator API locally"
     echo "  run-worker         Start worker locally"
-    echo "  build              Build Go binary"
+    echo "  build              Build Go binary (builds the UI first)"
+    echo "  build-ui           Build the web UI into the webapp binary's embed directory"
     echo "  docker-build       Build Docker images"
     echo "  clean              Clean generated files"
     echo "  dev                Start full local development stack"
@@ -160,6 +163,7 @@ test(){
     test_runnerlib
     test_coordinator
     test_web
+    test_ui
     echo "✅ All tests passed!"
 }
 
@@ -182,6 +186,35 @@ test_web(){
     cd "${PROJECT_ROOT_DIR}/webapp"
     go test -v -short ./internal/...
     cd "${PROJECT_ROOT_DIR}"
+    test_web_integration
+}
+
+# The webapp integration tests are SELF-CONTAINED: testcontainers starts its own
+# PostgreSQL, builds the coordinator, runs migrations, and boots both servers.
+# They need a container runtime and about five seconds, and nothing else.
+#
+# They run by default because they catch a class of bug the unit tests
+# structurally cannot. The in-memory fakes evaluate visibility in Go; only the
+# real database evaluates the SQL predicate. An anonymous caller binding "" into
+# a uuid comparison passed every unit test and raised SQLSTATE 22P02 against
+# PostgreSQL -- see visibilityArgs.
+test_web_integration(){
+    # testcontainers-go speaks the DOCKER API specifically. container_cmd is the
+    # wrong check here: it prefers nerdctl, so on a machine where nerdctl works
+    # and the Docker daemon does not, it reports a runtime and these tests then
+    # fail rather than skipping. Check what testcontainers actually needs.
+    if ! docker version >/dev/null 2>&1; then
+        echo "⚠️  Skipping webapp integration tests: no reachable Docker API."
+        echo "   These start their own PostgreSQL through testcontainers-go, which"
+        echo "   talks to the Docker API and does not use nerdctl."
+        echo "   Start Docker, or point DOCKER_HOST at a Docker-compatible endpoint"
+        echo "   (a rootless socket, or 'nerdctl' with a Docker-API shim)."
+        return 0
+    fi
+    log_status "Running webapp integration tests"
+    cd "${PROJECT_ROOT_DIR}/webapp"
+    go test ./test/
+    cd "${PROJECT_ROOT_DIR}"
 }
 
 run_api(){
@@ -196,7 +229,60 @@ run_worker(){
     go run ./cmd/worker
 }
 
+# Node for the web UI.
+#
+# Locally that is whatever is on PATH -- catalyst-tools provides one (see the
+# repository CLAUDE.md). CI has no Node in the image and fetches a pinned one
+# with webi instead (see .reactorcide/plugins/plugin_ci_jobs.py). Both are fine;
+# what is not fine is a bare "npm: command not found" with no hint.
+require_npm(){
+    if command -v npm >/dev/null 2>&1; then
+        return 0
+    fi
+    echo "❌ npm is not on PATH, and the web UI needs it."
+    echo
+    echo "   Use the shared toolchain:"
+    echo "     source \"\${CATALYST_TOOLS:-\$HOME/.local/catalyst-tools}/env.sh\""
+    echo
+    echo "   Or fetch a pinned Node the way CI does:"
+    echo "     curl -sS https://webi.sh/webi | sh"
+    echo "     ~/.local/bin/webi node@22.23.2"
+    echo "     export PATH=\"\$HOME/.local/opt/node/bin:\$PATH\""
+    return 1
+}
+
+# The SPA is compiled INTO the webapp binary (webapp/internal/embedui), so it
+# has to be built before the Go build or the binary ships a placeholder page.
+build_ui(){
+    require_npm || exit 1
+    log_status "Building web UI"
+    cd "${PROJECT_ROOT_DIR}/webapp/ui"
+    if [[ ! -d node_modules ]]; then
+        log_status "Installing web UI dependencies"
+        npm ci 2>/dev/null || npm install
+    fi
+    npm run build
+    cd "${PROJECT_ROOT_DIR}"
+    # vite empties the output directory, which takes .gitkeep with it. That file
+    # is what gives `go:embed all:dist` something to embed on a fresh clone.
+    touch "${PROJECT_ROOT_DIR}/webapp/internal/embedui/dist/.gitkeep"
+    echo "✅ Web UI built into webapp/internal/embedui/dist/"
+}
+
+test_ui(){
+    require_npm || exit 1
+    log_status "Running web UI tests"
+    cd "${PROJECT_ROOT_DIR}/webapp/ui"
+    if [[ ! -d node_modules ]]; then
+        npm ci 2>/dev/null || npm install
+    fi
+    npm run typecheck
+    npm run test
+    cd "${PROJECT_ROOT_DIR}"
+}
+
 build(){
+    build_ui
     log_status "Building Go binaries"
     cd "${PROJECT_ROOT_DIR}/coordinator_api"
     go build -o ../bin/coordinator-api ./cmd/api
@@ -235,7 +321,8 @@ docker_build(){
     # Cleanup coordinator/worker binary
     rm -f "${PROJECT_ROOT_DIR}/deployment/reactorcide"
 
-    # Build webapp binary
+    # Build webapp binary. The UI is embedded, so it must exist first.
+    build_ui
     log_status "Building webapp binary"
     cd "${PROJECT_ROOT_DIR}/webapp"
     CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-w -s" -o reactorcide-web .
@@ -344,6 +431,14 @@ case "$1" in
         shift
         test_web "$@"
         ;;
+    "test-web-integration")
+        shift
+        test_web_integration "$@"
+        ;;
+    "test-ui")
+        shift
+        test_ui "$@"
+        ;;
     "run-api")
         shift
         run_api "$@"
@@ -355,6 +450,10 @@ case "$1" in
     "build")
         shift
         build "$@"
+        ;;
+    "build-ui")
+        shift
+        build_ui "$@"
         ;;
     "docker-build")
         shift

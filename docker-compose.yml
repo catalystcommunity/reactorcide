@@ -63,11 +63,12 @@ services:
             # locally:
             # REACTORCIDE_UI_AUTH_MODE: local-rp
             # REACTORCIDE_LOCAL_RP_NAME: reactorcide-dev
-            # REACTORCIDE_UI_CALLBACK_URL: "http://localhost:4080"
+            # REACTORCIDE_UI_CALLBACK_URL: "http://localhost:5080"
             # REACTORCIDE_FIRST_ADMIN: "you@your-domain.example"
             # REACTORCIDE_TRUSTED_IDENTITIES: "your-domain.example"
             REACTORCIDE_UI_AUTH_MODE: none
-            # One-time bootstrap-admin session (visit http://localhost:4080/app/bootstrap)
+            # One-time bootstrap-admin session. Visit
+            # http://localhost:5080/app/signin, where the bootstrap form appears
             # while no global admin exists yet. Obviously-fake dev-only value;
             # never reuse this for a real deployment.
             REACTORCIDE_BOOTSTRAP_ADMIN_TOKEN: dev-bootstrap-token-change-me
@@ -144,15 +145,17 @@ services:
             - --allow-insecure-transport
         environment:
             REACTORCIDE_API_URL: "http://coordinator-api:8080"
-            REACTORCIDE_API_TOKEN: "" # Set after creating a token via: docker compose exec coordinator-api /reactorcide token create --name web-ui
-            PORT: "4080"
+            # The web UI needs no API token. It forwards the browser's own
+            # session to the coordinator instead of holding a service
+            # credential of its own.
+            PORT: "5080"
             # This dev stack serves plain HTTP with no TLS terminator in
             # front of it, so the session cookie must not require Secure or
             # no browser will ever send it back. Never set this for a real
             # deployment (see docs/ui-auth.md).
             REACTORCIDE_WEB_COOKIE_INSECURE: "true"
         ports:
-            - "4080:4080"
+            - "5080:5080"
         depends_on:
             coordinator-api:
                 condition: service_started

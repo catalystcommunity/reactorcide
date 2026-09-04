@@ -69,11 +69,15 @@ spec:
           env:
             - name: REACTORCIDE_API_URL
               value: {{ .Values.web.apiUrl | default "http://reactorcide-coordinator-api-service:6080" | quote }}
-            - name: REACTORCIDE_API_TOKEN
-              valueFrom:
-                secretKeyRef:
-                  name: {{ ((.Values.web).apiTokenSecret).name | default "base-reactorcide-api-token" }}
-                  key: {{ ((.Values.web).apiTokenSecret).key | default "token" }}
+            # No REACTORCIDE_API_TOKEN. The web UI holds NO coordinator
+            # credential: every read and write it performs is authenticated by
+            # the browser's own session, forwarded through the CSIL-RPC bridge
+            # (webapp/internal/handlers/rpc_bridge.go). It previously carried a
+            # service token, which made the coordinator's visibility filter pass
+            # every row regardless of who was looking.
+            #
+            # The coordinator and worker deployments still take a token; theirs
+            # is for a different purpose (eval jobs submitting child jobs).
             - name: PORT
               value: {{ .Values.web.service.port | quote }}
             {{- if .Values.web.webCookieInsecure }}

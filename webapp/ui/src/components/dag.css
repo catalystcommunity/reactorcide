@@ -1,0 +1,97 @@
+.dag-scroll {
+  padding: var(--space-2);
+  background: var(--surface-sunken);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.dag {
+  display: block;
+  color: var(--text-subtle);
+}
+
+.dag-edge {
+  fill: none;
+  stroke: var(--border-strong);
+  stroke-width: 1.5;
+}
+
+/* Only possible in a malformed graph; drawn distinctly so it is obvious. */
+.dag-edge-back {
+  stroke: var(--danger);
+  stroke-dasharray: 4 3;
+}
+
+.dag-node-box {
+  fill: var(--surface);
+  stroke: var(--border-strong);
+  stroke-width: 1.5;
+  transition: fill 120ms ease;
+}
+
+.dag-node-name {
+  fill: var(--text);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.dag-node-status {
+  fill: var(--text-muted);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.dag-node-glyph {
+  font-size: 14px;
+}
+
+/* Status tones mirror StatusBadge, so the graph and the list agree. */
+.dag-node-ok .dag-node-box {
+  stroke: var(--ok);
+}
+.dag-node-ok .dag-node-glyph {
+  fill: var(--ok);
+}
+.dag-node-danger .dag-node-box {
+  stroke: var(--danger);
+}
+.dag-node-danger .dag-node-glyph {
+  fill: var(--danger);
+}
+.dag-node-info .dag-node-box {
+  stroke: var(--info);
+}
+.dag-node-info .dag-node-glyph {
+  fill: var(--info);
+}
+.dag-node-warn .dag-node-box {
+  stroke: var(--warn);
+}
+.dag-node-warn .dag-node-glyph {
+  fill: var(--warn);
+}
+.dag-node-neutral .dag-node-glyph {
+  fill: var(--text-subtle);
+}
+
+.dag-node-link {
+  cursor: pointer;
+}
+.dag-node-link:hover .dag-node-box {
+  fill: var(--surface-raised);
+}
+.dag-node-link:focus-visible .dag-node-box {
+  stroke: var(--border-focus);
+  stroke-width: 3;
+}
+
+/* A running node pulses, matching the badge. */
+.dag-node-info .dag-node-glyph {
+  animation: pulse 1.6s ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .dag-node-info .dag-node-glyph {
+    animation: none;
+  }
+}

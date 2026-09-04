@@ -1,0 +1,387 @@
+/* Shared component styles. One file so the token vocabulary stays visible. */
+
+/* ---------- Button ---------- */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  padding: 0.4rem 0.85rem;
+  font: inherit;
+  font-weight: 500;
+  line-height: 1.4;
+  color: var(--text);
+  background: var(--surface-raised);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  cursor: pointer;
+  transition:
+    background 120ms ease,
+    border-color 120ms ease;
+  white-space: nowrap;
+}
+.btn:hover:not(:disabled) {
+  background: var(--surface-sunken);
+}
+.btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+.btn-primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-text);
+}
+.btn-primary:hover:not(:disabled) {
+  background: var(--accent-hover);
+  border-color: var(--accent-hover);
+}
+.btn-danger {
+  color: var(--danger);
+  border-color: var(--danger);
+  background: transparent;
+}
+.btn-danger:hover:not(:disabled) {
+  background: var(--danger-soft);
+}
+.btn-ghost {
+  background: transparent;
+  border-color: transparent;
+}
+.btn-ghost:hover:not(:disabled) {
+  background: var(--surface-sunken);
+}
+.btn-sm {
+  padding: 0.2rem 0.55rem;
+  font-size: var(--text-sm);
+}
+
+/* ---------- Card ---------- */
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: var(--space-5);
+  box-shadow: var(--shadow-sm);
+}
+.card + .card {
+  margin-top: var(--space-4);
+}
+.card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  margin-bottom: var(--space-4);
+  flex-wrap: wrap;
+}
+
+/* ---------- Status badge ---------- */
+/* Colour is never the only signal: each state also carries a glyph. */
+.status {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35em;
+  padding: 0.1rem 0.5rem;
+  border-radius: var(--radius-pill);
+  font-size: var(--text-xs);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  white-space: nowrap;
+}
+.status-glyph {
+  font-size: 0.9em;
+  line-height: 1;
+}
+.status-ok {
+  color: var(--ok);
+  background: var(--ok-soft);
+}
+.status-danger {
+  color: var(--danger);
+  background: var(--danger-soft);
+}
+.status-warn {
+  color: var(--warn);
+  background: var(--warn-soft);
+}
+.status-info {
+  color: var(--info);
+  background: var(--info-soft);
+}
+.status-neutral {
+  color: var(--neutral);
+  background: var(--neutral-soft);
+}
+
+/* A running state pulses, unless the viewer asked for reduced motion. */
+.status-running .status-glyph {
+  animation: pulse 1.6s ease-in-out infinite;
+}
+@keyframes pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
+
+/* ---------- Table ---------- */
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--text-base);
+}
+.table th,
+.table td {
+  text-align: left;
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 1px solid var(--border);
+  vertical-align: middle;
+}
+.table th {
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+}
+.table tbody tr:hover {
+  background: var(--surface-sunken);
+}
+.table td.numeric {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---------- Fields ---------- */
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  margin-bottom: var(--space-4);
+}
+.field-label {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-weight: 500;
+}
+.field-required {
+  color: var(--danger);
+  font-weight: 700;
+}
+.field-optional {
+  color: var(--text-subtle);
+  font-size: var(--text-xs);
+  font-weight: 400;
+}
+.field-hint {
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+}
+.field-error {
+  color: var(--danger);
+  font-size: var(--text-sm);
+  font-weight: 500;
+}
+.input,
+.select,
+.textarea {
+  width: 100%;
+  padding: 0.4rem 0.6rem;
+  font: inherit;
+  color: var(--text);
+  background: var(--surface-raised);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+}
+.input[aria-invalid='true'],
+.select[aria-invalid='true'],
+.textarea[aria-invalid='true'] {
+  border-color: var(--danger);
+}
+.textarea {
+  min-height: 8rem;
+  font-family: var(--font-mono);
+  resize: vertical;
+}
+.checkbox-row {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  margin-bottom: var(--space-4);
+}
+
+/* ---------- Tooltip ---------- */
+.tooltip-trigger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.1rem;
+  height: 1.1rem;
+  border-radius: 50%;
+  border: 1px solid var(--border-strong);
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 0.7rem;
+  font-weight: 700;
+  cursor: help;
+  padding: 0;
+}
+.tooltip-content {
+  max-width: 22rem;
+  padding: var(--space-2) var(--space-3);
+  background: var(--surface-raised);
+  color: var(--text);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-lg);
+  font-size: var(--text-sm);
+  z-index: 60;
+}
+
+/* ---------- Layout ---------- */
+.page {
+  max-width: var(--content-max);
+  margin: 0 auto;
+  padding: var(--space-5) var(--space-4) var(--space-8);
+}
+.page-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-4);
+  margin-bottom: var(--space-5);
+  flex-wrap: wrap;
+}
+.meta {
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+}
+.stack {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+.row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+.grid-dl {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(13rem, 1fr));
+  gap: var(--space-3) var(--space-4);
+  margin: 0;
+}
+.grid-dl dt {
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-bottom: 2px;
+}
+.grid-dl dd {
+  margin: 0;
+  word-break: break-word;
+}
+.truncate {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ---------- Empty / loading ---------- */
+.empty {
+  padding: var(--space-8) var(--space-4);
+  text-align: center;
+  color: var(--text-muted);
+}
+.empty-title {
+  color: var(--text);
+  font-weight: 600;
+  margin-bottom: var(--space-2);
+}
+.skeleton {
+  background: linear-gradient(90deg, var(--surface-sunken), var(--border), var(--surface-sunken));
+  background-size: 200% 100%;
+  animation: shimmer 1.4s linear infinite;
+  border-radius: var(--radius-sm);
+  height: 1rem;
+}
+@keyframes shimmer {
+  to {
+    background-position: -200% 0;
+  }
+}
+
+/* ---------- Alerts ---------- */
+.alert {
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius);
+  border: 1px solid;
+  margin-bottom: var(--space-4);
+}
+.alert-error {
+  color: var(--danger);
+  background: var(--danger-soft);
+  border-color: var(--danger);
+}
+.alert-info {
+  color: var(--info);
+  background: var(--info-soft);
+  border-color: var(--info);
+}
+
+/* ---------- Tabs ---------- */
+.tabs {
+  display: flex;
+  gap: var(--space-1);
+  border-bottom: 1px solid var(--border);
+  margin-bottom: var(--space-4);
+}
+.tab {
+  padding: var(--space-2) var(--space-3);
+  border: none;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  color: var(--text-muted);
+  font: inherit;
+  font-weight: 500;
+  cursor: pointer;
+}
+.tab[aria-selected='true'] {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+}
+
+/* Management pages: two fields side by side where they belong together. */
+.form-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
+  gap: 0 var(--space-4);
+}
+
+.one-time-secret {
+  padding: var(--space-2) var(--space-3);
+  background: var(--surface-sunken);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  font-family: var(--font-mono);
+  overflow-wrap: anywhere;
+  user-select: all;
+}
+
+.secret-key {
+  padding: 1px 6px;
+  background: var(--surface-sunken);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  font-size: var(--text-xs);
+}

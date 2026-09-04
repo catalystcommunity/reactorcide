@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"encoding/json"
 	"errors"
 	"net/http"
 	"net/url"
@@ -17,26 +18,6 @@ import (
 // coordinator's 30-day session expiry.
 const defaultSessionTTL = 30 * 24 * time.Hour
 
-// LoginPage renders GET /app/login: a login-disabled notice when the
-// coordinator's auth mode is "none", otherwise an identity-selector form
-// that posts to POST /app/login.
-func (h *WebHandler) LoginPage(w http.ResponseWriter, r *http.Request) {
-	si := h.sessionInfo(r)
-	if si.LoggedIn {
-		http.Redirect(w, r, "/app/", http.StatusFound)
-		return
-	}
-
-	data := map[string]interface{}{
-		"Title":         "Sign in",
-		"LoginDisabled": !si.LoginEnabled,
-		"AuthMode":      si.AuthMode,
-		"FormError":     r.URL.Query().Get("error"),
-		"Identity":      r.URL.Query().Get("identity"),
-	}
-	h.render(w, r, "login.html", data)
-}
-
 // LoginSubmit handles POST /app/login: validates the identity selector,
 // calls Auth.BeginLogin, and redirects the browser to the coordinator's
 // returned redirect_url (an external LinkKeys IDP page, or a local-rp
@@ -46,7 +27,7 @@ func (h *WebHandler) LoginPage(w http.ResponseWriter, r *http.Request) {
 // is derived or sent here beyond the identity hint.
 func (h *WebHandler) LoginSubmit(w http.ResponseWriter, r *http.Request) {
 	if err := r.ParseForm(); err != nil {
-		h.renderError(w, r, http.StatusBadRequest, "Invalid form submission", nil)
+		writeAuthError(w, http.StatusBadRequest, "Invalid form submission")
 		return
 	}
 
@@ -117,11 +98,11 @@ func (h *WebHandler) AuthCallback(w http.ResponseWriter, r *http.Request) {
 		// The attempt is single-use and may simply have expired mid-login;
 		// clear it so a retry starts from a clean slate.
 		h.clearLoginAttemptCookie(w)
-		h.renderError(w, r, http.StatusBadRequest, "Missing login callback parameters", nil)
+		h.redirectLoginFailure(w, r, "Missing login callback parameters")
 		return
 	}
 	if h.uiClients == nil {
-		h.renderError(w, r, http.StatusServiceUnavailable, "Login is not available", nil)
+		h.redirectLoginFailure(w, r, "Login is not available")
 		return
 	}
 
@@ -135,11 +116,11 @@ func (h *WebHandler) AuthCallback(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		var svcErr *uiclient.ServiceCallError
 		if errors.As(err, &svcErr) {
-			h.renderError(w, r, http.StatusUnauthorized, "Login failed: "+svcErr.Message, nil)
+			h.redirectLoginFailure(w, r, "Login failed: "+svcErr.Message)
 			return
 		}
 		logrus.WithError(err).Warn("uiclient: complete-login failed")
-		h.renderError(w, r, http.StatusBadGateway, "Login failed", nil)
+		h.redirectLoginFailure(w, r, "Login failed")
 		return
 	}
 
@@ -162,24 +143,11 @@ func (h *WebHandler) Logout(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/app/", http.StatusFound)
 }
 
-// BootstrapPage renders GET /app/bootstrap: a token form that only works
-// while the coordinator has no global admin yet (get-auth-config's
-// bootstrap_admin_available).
-func (h *WebHandler) BootstrapPage(w http.ResponseWriter, r *http.Request) {
-	si := h.sessionInfo(r)
-	data := map[string]interface{}{
-		"Title":       "Bootstrap admin",
-		"Unavailable": !si.BootstrapAvailable,
-		"FormError":   r.URL.Query().Get("error"),
-	}
-	h.render(w, r, "bootstrap.html", data)
-}
-
 // BootstrapSubmit handles POST /app/bootstrap. The token is form-only: never
 // logged, never echoed back into the re-rendered form on error.
 func (h *WebHandler) BootstrapSubmit(w http.ResponseWriter, r *http.Request) {
 	if err := r.ParseForm(); err != nil {
-		h.renderError(w, r, http.StatusBadRequest, "Invalid form submission", nil)
+		writeAuthError(w, http.StatusBadRequest, "Invalid form submission")
 		return
 	}
 
@@ -204,9 +172,28 @@ func (h *WebHandler) BootstrapSubmit(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *WebHandler) redirectBootstrapError(w http.ResponseWriter, r *http.Request, msg string) {
+	writeAuthError(w, http.StatusBadRequest, msg)
+}
+
+// redirectLoginFailure sends the browser back into the SPA with the reason in
+// the query string.
+//
+// The IDP callback is a top-level NAVIGATION, not a fetch, so this one path
+// must answer with a redirect rather than JSON: the browser is following a
+// redirect chain and there is no client-side code listening for a response
+// body. The SPA reads ?login_error= on its sign-in route and shows it.
+func (h *WebHandler) redirectLoginFailure(w http.ResponseWriter, r *http.Request, msg string) {
 	v := url.Values{}
-	v.Set("error", msg)
-	http.Redirect(w, r, "/app/bootstrap?"+v.Encode(), http.StatusFound)
+	v.Set("login_error", msg)
+	http.Redirect(w, r, "/app/signin?"+v.Encode(), http.StatusFound)
+}
+
+// writeAuthError answers a fetch from the SPA.
+func writeAuthError(w http.ResponseWriter, status int, msg string) {
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", "no-store")
+	w.WriteHeader(status)
+	_ = json.NewEncoder(w).Encode(map[string]string{"error": msg})
 }
 
 // serviceErrorMessage extracts a user-facing message from a uiclient call

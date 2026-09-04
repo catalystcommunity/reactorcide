@@ -188,3 +188,27 @@ webapp/reactorcide-web
 
 # Demo config (contains user-specific values)
 demo/demo-config.yaml
+
+# Web UI
+webapp/ui/node_modules/
+webapp/ui/dist/
+# The SPA build output, compiled into the webapp binary by `./tools build-ui`.
+#
+# NOTHING the build emits is committed: index.html names hashed asset files that
+# change every build, so a committed copy would point at files that are not
+# there. Only .gitkeep is tracked, because `go:embed all:dist` is a COMPILE
+# ERROR when nothing matches -- a fresh clone with no dist/ fails to build at
+# all, which is how this broke in CI once already.
+#
+# All three lines are required, in this order. The generic `dist/` rule near the
+# top of this file excludes every directory named dist, and git will not
+# re-include a file whose PARENT DIRECTORY is excluded -- so the negation on
+# .gitkeep is silently inert without first re-including the directory itself.
+# Verify any change here with:
+#
+#     git check-ignore -v webapp/internal/embedui/dist/.gitkeep
+#
+# which must print nothing.
+!webapp/internal/embedui/dist/
+webapp/internal/embedui/dist/*
+!webapp/internal/embedui/dist/.gitkeep
