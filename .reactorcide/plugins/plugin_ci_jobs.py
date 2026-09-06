@@ -38,13 +38,30 @@ def _run(
     )
 
 
-# The Node version the web UI is built and tested with, pinned exactly.
-#
-# webi resolves a bare major ("node@22") to the newest release in that line, so
-# the toolchain would drift under CI without anyone changing a file. An exact
-# pin makes a Node upgrade a visible commit, the same way GO_VERSION is pinned
-# in runnerlib/Dockerfile.runner.
-NODE_VERSION = "22.23.2"
+# Fallback only. The real version lives in webapp/ui/.node-version -- see
+# _node_version -- so this is what happens if that file is somehow missing.
+DEFAULT_NODE_VERSION = "22.23.2"
+
+
+def _node_version(code_dir: Path) -> str:
+    """Read the pinned Node version from webapp/ui/.node-version.
+
+    A FILE rather than a constant here, because plugin_release_jobs.py needs the
+    same value and the two plugins cannot import each other: runnerlib loads
+    each through spec_from_file_location without putting the directory on
+    sys.path. A constant in each file would be two constants, and they would
+    drift -- which is the exact failure an exact pin exists to prevent.
+
+    `.node-version` is also the conventional file that nodenv, fnm and friends
+    already read, so a developer's own tooling picks up the same version with no
+    extra step.
+    """
+    version_file = code_dir / "webapp" / "ui" / ".node-version"
+    try:
+        version = version_file.read_text(encoding="utf-8").strip()
+    except OSError:
+        return DEFAULT_NODE_VERSION
+    return version or DEFAULT_NODE_VERSION
 
 
 def _node_environment() -> Dict[str, str]:
@@ -63,7 +80,7 @@ def _node_environment() -> Dict[str, str]:
     return environment
 
 
-def _install_node(environment: Dict[str, str]) -> None:
+def _install_node(environment: Dict[str, str], version: str) -> None:
     """Install the pinned Node toolchain through webi.
 
     Fast enough to do per job -- about two seconds on a warm CDN, one when the
@@ -72,7 +89,7 @@ def _install_node(environment: Dict[str, str]) -> None:
     different version asks for a different version.
     """
     try:
-        _run(["webi", f"node@{NODE_VERSION}"], cwd=Path("/tmp"), env=environment)
+        _run(["webi", f"node@{version}"], cwd=Path("/tmp"), env=environment)
     except FileNotFoundError as error:
         # The likely cause, and it is an ordering problem rather than a code
         # one: this job is running on a runnerbase image published before webi
@@ -279,7 +296,7 @@ def test_web(code_dir: Path) -> None:
     _require_writable_ui_dir(ui_dir)
 
     node_environment = _node_environment()
-    _install_node(node_environment)
+    _install_node(node_environment, _node_version(code_dir))
 
     # `npm ci` rather than `npm install`: it installs exactly what
     # package-lock.json pins and fails if the lock file and package.json have

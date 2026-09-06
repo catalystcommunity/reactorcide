@@ -6,21 +6,40 @@ __pycache__/
 # C extensions
 *.so
 
-# Distribution / packaging
+# Distribution / packaging (Python)
+#
+# These come from GitHub's Python template, where they are meant to catch build
+# artifacts in a single-language repository. This repository is not one, and
+# UNANCHORED they match a directory of that name ANYWHERE -- which has already
+# cost two production incidents:
+#
+#   dist/  hid webapp/internal/embedui/dist/.gitkeep, so `go:embed all:dist`
+#          had nothing to match and the webapp would not compile.
+#   lib/   hid webapp/ui/src/lib/ entirely -- session.tsx, theme.ts, dag.ts and
+#          its tests -- so a fresh clone could not build the SPA.
+#
+# They are anchored to the repository root and to runnerlib/, the only Python
+# package here. Add a new path here only if it is genuinely a Python build
+# artifact, and anchor it.
 .Python
-build/
-develop-eggs/
-dist/
-downloads/
-eggs/
-.eggs/
-lib/
-lib64/
-parts/
-sdist/
-var/
-wheels/
-share/python-wheels/
+/build/
+/develop-eggs/
+/dist/
+/downloads/
+/eggs/
+/.eggs/
+/lib/
+/lib64/
+/parts/
+/sdist/
+/var/
+/wheels/
+/share/python-wheels/
+runnerlib/build/
+runnerlib/dist/
+runnerlib/lib/
+runnerlib/sdist/
+runnerlib/wheels/
 *.egg-info/
 .installed.cfg
 *.egg
