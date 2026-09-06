@@ -508,6 +508,58 @@ def _build_and_push(
     )
 
 
+# Fallback only; the pinned version lives in webapp/ui/.node-version.
+DEFAULT_NODE_VERSION = "22.23.2"
+
+
+def _node_version(code_dir: Path) -> str:
+    """Read the pinned Node version from webapp/ui/.node-version.
+
+    Deliberately the same FILE that plugin_ci_jobs.py reads. The two plugins
+    cannot import each other -- runnerlib loads each through
+    spec_from_file_location without putting the directory on sys.path -- so a
+    constant here would be a second copy of the version, and two copies drift.
+    The file is the single source of truth; this is just how to read it.
+    """
+    version_file = code_dir / "webapp" / "ui" / ".node-version"
+    try:
+        version = version_file.read_text(encoding="utf-8").strip()
+    except OSError:
+        return DEFAULT_NODE_VERSION
+    return version or DEFAULT_NODE_VERSION
+
+
+def _build_web_ui(code_dir: Path) -> None:
+    """Fetch Node and build the SolidJS SPA into the Go embed directory.
+
+    Mirrors what plugin_ci_jobs.py's test-web job does, minus the tests: this is
+    a release path, and the PR workflow already ran them.
+
+    webi comes from runnerbase (runnerlib/Dockerfile.runner). A runner image
+    published before webi was added fails here with FileNotFoundError, so that
+    is translated into something that names the cause.
+    """
+    ui_dir = code_dir / "webapp" / "ui"
+    environment = os.environ.copy()
+    home = Path(environment.get("HOME", "/home/runner"))
+    for entry in (home / ".local" / "opt" / "node" / "bin", home / ".local" / "bin"):
+        if str(entry) not in environment.get("PATH", "").split(os.pathsep):
+            environment["PATH"] = f"{entry}{os.pathsep}{environment.get('PATH', '')}"
+
+    try:
+        _run(["webi", f"node@{_node_version(code_dir)}"], cwd=Path("/tmp"), env=environment)
+    except FileNotFoundError as error:
+        raise RuntimeError(
+            "webi is not installed in this runner image, so the pinned Node "
+            "toolchain cannot be fetched to build the web UI. Publish a "
+            "runnerbase built from a Dockerfile that installs webi (see "
+            "runnerlib/Dockerfile.runner) and re-run."
+        ) from error
+
+    _run(["npm", "ci"], cwd=ui_dir, env=environment)
+    _run(["npm", "run", "build"], cwd=ui_dir, env=environment)
+
+
 def _go_environment(
     os_name: Optional[str] = None,
     arch: Optional[str] = None,
@@ -584,6 +636,13 @@ def build_release_images(code_dir: Path) -> None:
         return
 
     if target == "web":
+        # Build the SPA FIRST. It compiles into the binary through go:embed, so
+        # without this the release ships a binary that either fails to compile
+        # (`pattern all:dist: no matching files found`) or, worse, compiles
+        # against the committed placeholder and serves every page as a 503
+        # "the web UI has not been built" -- a green release with a dead UI.
+        _build_web_ui(code_dir)
+
         binary = Path("/tmp/reactorcide-web")
         _run(
             [
