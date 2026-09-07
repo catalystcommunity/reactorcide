@@ -1,7 +1,7 @@
 import { Show, createSignal, type JSX } from 'solid-js'
 import { useSearchParams } from '@solidjs/router'
 import { useSession } from '~/lib/session.tsx'
-import { beginLogin, bootstrapAdmin } from '~/api/auth.ts'
+import { bootstrapAdmin } from '~/api/auth.ts'
 import { Field } from '~/components/Field.tsx'
 
 /**
@@ -11,25 +11,33 @@ import { Field } from '~/components/Field.tsx'
  * a CSIL operation cannot do. `login_error` arrives in the query string because
  * the identity provider's callback is a top-level navigation, so a failure has
  * to survive a redirect rather than land in a fetch response.
+ *
+ * The sign-in form is a NATIVE form post, not a fetch. The webapp answers it
+ * with a 302 to the identity provider, and a fetch follows that redirect
+ * itself: the browser requests the provider's page cross-origin, gets no CORS
+ * headers back, and the fetch rejects. The first version did exactly that, so
+ * the button said "Redirecting…" forever and nothing else happened. Only a
+ * top-level navigation can leave the origin and come back.
  */
 export function SignIn(): JSX.Element {
   const { config } = useSession()
-  const [params] = useSearchParams<{ login_error?: string }>()
-  const [identity, setIdentity] = createSignal('')
+  const [params] = useSearchParams<{ login_error?: string; identity?: string }>()
+  // A failed attempt comes back with the identity that was typed, so nobody
+  // has to type it twice.
+  const [identity, setIdentity] = createSignal(params.identity ?? '')
   const [error, setError] = createSignal<string>()
   const [busy, setBusy] = createSignal(false)
 
-  const submit = async (event: Event) => {
-    event.preventDefault()
+  // Runs before the browser submits. It only blocks an empty field; a
+  // non-empty one lets the native post go ahead and navigate away.
+  const submit = (event: Event) => {
     if (!identity().trim()) {
+      event.preventDefault()
       setError('Enter your identity to continue.')
       return
     }
-    setBusy(true)
     setError(undefined)
-    const failure = await beginLogin(identity().trim())
-    setBusy(false)
-    if (failure) setError(failure)
+    setBusy(true)
   }
 
   return (
@@ -54,7 +62,7 @@ export function SignIn(): JSX.Element {
         }
       >
         <div class="card">
-          <form onSubmit={submit}>
+          <form method="post" action="/app/auth/login" onSubmit={submit}>
             <Show when={error()}>
               <div class="alert alert-error" role="alert">
                 {error()}
@@ -70,6 +78,7 @@ export function SignIn(): JSX.Element {
               {(ids) => (
                 <input
                   id={ids.id}
+                  name="identity"
                   class="input"
                   type="text"
                   autocomplete="username"

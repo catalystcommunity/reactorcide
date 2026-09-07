@@ -169,8 +169,8 @@ func TestLoginSubmit_EmptyIdentityRejectedServerSide(t *testing.T) {
 	if rec.Code != http.StatusFound {
 		t.Fatalf("status = %d, want 302 back to the login form; body=%s", rec.Code, rec.Body.String())
 	}
-	if loc := rec.Header().Get("Location"); !strings.HasPrefix(loc, "/app/login?") || !strings.Contains(loc, "error=") {
-		t.Errorf("Location = %q, want a redirect back to /app/login with an error", loc)
+	if loc := rec.Header().Get("Location"); !strings.HasPrefix(loc, "/app/signin?") || !strings.Contains(loc, "login_error=") {
+		t.Errorf("Location = %q, want a redirect back to /app/signin with login_error", loc)
 	}
 	if beginLoginCalled {
 		t.Errorf("begin-login should not be called for an empty identity")

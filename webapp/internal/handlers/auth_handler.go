@@ -18,7 +18,7 @@ import (
 // coordinator's 30-day session expiry.
 const defaultSessionTTL = 30 * 24 * time.Hour
 
-// LoginSubmit handles POST /app/login: validates the identity selector,
+// LoginSubmit handles POST /app/auth/login (a native form post from the SPA's sign-in page): validates the identity selector,
 // calls Auth.BeginLogin, and redirects the browser to the coordinator's
 // returned redirect_url (an external LinkKeys IDP page, or a local-rp
 // equivalent). The generated BeginLoginRequest carries no callback URL —
@@ -70,13 +70,17 @@ func (h *WebHandler) LoginSubmit(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, resp.RedirectUrl, http.StatusFound)
 }
 
+// redirectLoginError sends the browser back to the SPA's sign-in route with
+// the failure in `login_error`, the same parameter AuthCallback uses, and the
+// typed identity so the form can prefill it. The SPA has no /login route;
+// the earlier target of /app/login?error= landed on its not-found page.
 func (h *WebHandler) redirectLoginError(w http.ResponseWriter, r *http.Request, msg, identity string) {
 	v := url.Values{}
-	v.Set("error", msg)
+	v.Set("login_error", msg)
 	if identity != "" {
 		v.Set("identity", identity)
 	}
-	http.Redirect(w, r, "/app/login?"+v.Encode(), http.StatusFound)
+	http.Redirect(w, r, "/app/signin?"+v.Encode(), http.StatusFound)
 }
 
 // AuthCallback handles GET /app/auth/callback: the browser lands here after
