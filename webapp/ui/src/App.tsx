@@ -1,6 +1,6 @@
 import { Show, createSignal, onCleanup, onMount, type JSX } from 'solid-js'
 import { A, useLocation } from '@solidjs/router'
-import { SessionProvider, useSession } from '~/lib/session.tsx'
+import { SessionProvider, useSession, canManageSomeOrg } from '~/lib/session.tsx'
 import { theme, setTheme, nextTheme, themeGlyph, themeLabel, useThemeBootstrap } from '~/lib/theme.ts'
 import { logout } from '~/api/auth.ts'
 import { eventSocket } from '~/store/events.ts'
@@ -38,14 +38,31 @@ function Shell(props: { children?: JSX.Element }): JSX.Element {
             <NavLink href="/" label="Workflows" active={location.pathname === '/app' || location.pathname === '/app/'} />
             <NavLink href="/jobs" label="Jobs" />
             <NavLink href="/projects" label="Projects" />
-            <Show when={session()?.capabilities?.manageWorkers}>
-              <NavLink href="/workers" label="Workers" />
-            </Show>
-            <Show when={session()?.capabilities?.manageGroups}>
+            {/*
+              Management links show for anyone who administers SOME
+              organization. The session's capability set is the global scope,
+              which is all-false for an org admin, so it cannot drive these;
+              the roles on the identity can. Each page then picks the org.
+            */}
+            <Show when={canManageSomeOrg(session())}>
               <NavLink href="/org/roles" label="Access" />
-            </Show>
-            <Show when={session()?.capabilities?.manageSecrets}>
               <NavLink href="/org/secrets" label="Secrets" />
+            </Show>
+            {/*
+              Pools, workers and queues are instance-wide and the coordinator
+              requires a global admin for them, so an org admin would land on a
+              refusal. Worker classes are org-scoped and reachable from the
+              organization pages.
+            */}
+            <Show
+              when={session()?.is_global_admin}
+              fallback={
+                <Show when={canManageSomeOrg(session())}>
+                  <NavLink href="/workers/classes" label="Worker classes" />
+                </Show>
+              }
+            >
+              <NavLink href="/workers" label="Workers" />
             </Show>
             <Show when={session()?.is_global_admin}>
               <NavLink href="/admin" label="Admin" />

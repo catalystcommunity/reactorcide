@@ -215,6 +215,11 @@ func TestLoginServiceProvisionUserCreatesThenReuses(t *testing.T) {
 	}
 }
 
+// TestLoginServiceFirstAdminGrantedExactlyOnce pins the one-shot rule: the
+// configured identity is granted global admin only while NO global admin
+// exists. Once any admin exists, even one created some other way, the
+// variable is inert. A standing grant would let whoever edits the deployment
+// configuration take over an instance that already has administrators.
 func TestLoginServiceFirstAdminGrantedExactlyOnce(t *testing.T) {
 	ctx := context.Background()
 	fs := newFakeStore()
@@ -240,27 +245,98 @@ func TestLoginServiceFirstAdminGrantedExactlyOnce(t *testing.T) {
 		}
 		return user
 	}
+	globalAdmins := func() []string {
+		t.Helper()
+		assignments, err := fs.ListRoleAssignmentsByScope(ctx, models.ScopeTypeGlobal, nil)
+		if err != nil {
+			t.Fatalf("ListRoleAssignmentsByScope() error = %v", err)
+		}
+		var out []string
+		for _, a := range assignments {
+			if a.Role == models.RoleAdmin {
+				out = append(out, a.PrincipalID)
+			}
+		}
+		return out
+	}
 
 	firstUser := loginAs("first-subj", "first")
 	secondUser := loginAs("second-subj", "second")
+	loginAs("first-subj", "first") // a repeat login must not add a row either
 
-	globalAssignments, err := fs.ListRoleAssignmentsByScope(ctx, models.ScopeTypeGlobal, nil)
+	admins := globalAdmins()
+	if len(admins) != 1 || admins[0] != firstUser.UserID {
+		t.Fatalf("expected exactly one global admin grant, to the FIRST login %s, got %v (second user %s)", firstUser.UserID, admins, secondUser.UserID)
+	}
+
+	// An admin that exists before the configured identity ever logs in makes
+	// the variable inert: nothing is granted.
+	fs2 := newFakeStore()
+	trustDomain(t, fs2, "trusted.example.com")
+	if err := fs2.CreateRoleAssignment(ctx, &models.RoleAssignment{
+		PrincipalType: models.PrincipalTypeUser, PrincipalID: "pre-existing-admin",
+		ScopeType: models.ScopeTypeGlobal, Role: models.RoleAdmin,
+	}); err != nil {
+		t.Fatalf("seeding admin: %v", err)
+	}
+	ls2 := NewLoginService(fs2, backend)
+	backend.completeIdentity = &VerifiedIdentity{Subject: "late-subj", Domain: "trusted.example.com", Handle: "late"}
+	started, err := ls2.StartLogin(ctx, "late@trusted.example.com", "https://cb")
+	if err != nil {
+		t.Fatalf("StartLogin() error = %v", err)
+	}
+	if _, _, err := ls2.FinishLogin(ctx, started.AttemptToken, "https://cb?encrypted_token=abc"); err != nil {
+		t.Fatalf("FinishLogin() error = %v", err)
+	}
+	assignments, err := fs2.ListRoleAssignmentsByScope(ctx, models.ScopeTypeGlobal, nil)
 	if err != nil {
 		t.Fatalf("ListRoleAssignmentsByScope() error = %v", err)
 	}
-	adminCount := 0
-	var adminPrincipal string
-	for _, a := range globalAssignments {
-		if a.Role == models.RoleAdmin {
-			adminCount++
-			adminPrincipal = a.PrincipalID
-		}
+	if len(assignments) != 1 || assignments[0].PrincipalID != "pre-existing-admin" {
+		t.Fatalf("expected the configured identity to receive nothing once an admin exists, got %+v", assignments)
 	}
-	if adminCount != 1 {
-		t.Fatalf("expected exactly one global admin grant, got %d", adminCount)
+}
+
+// TestLoginServiceFirstAdminMatchesEmailClaim covers rp mode, where the
+// subject is a uuid and the handle claim is best effort: the operator writes
+// the login name they know, and that is the email claim. Still one-shot.
+func TestLoginServiceFirstAdminMatchesEmailClaim(t *testing.T) {
+	ctx := context.Background()
+	fs := newFakeStore()
+	trustDomain(t, fs, "trusted.example.com")
+
+	origFirstAdmin := config.FirstAdmin
+	config.FirstAdmin = "Tod@Trusted.Example.com"
+	defer func() { config.FirstAdmin = origFirstAdmin }()
+
+	backend := &fakeBackend{mode: ModeLocalRP, beginRedirect: "https://x", beginPending: []byte("p")}
+	ls := NewLoginService(fs, backend)
+	backend.completeIdentity = &VerifiedIdentity{
+		Subject: "0191e6c4-0000-7000-8000-000000000001",
+		Domain:  "trusted.example.com",
+		// No handle claim came back.
+		Claims: map[string]string{"email": "tod@trusted.example.com"},
 	}
-	if adminPrincipal != firstUser.UserID {
-		t.Fatalf("expected the FIRST login (%s) to receive the admin grant, got %s (second user %s)", firstUser.UserID, adminPrincipal, secondUser.UserID)
+	started, err := ls.StartLogin(ctx, "tod@trusted.example.com", "https://cb")
+	if err != nil {
+		t.Fatalf("StartLogin() error = %v", err)
+	}
+	_, user, err := ls.FinishLogin(ctx, started.AttemptToken, "https://cb?encrypted_token=abc")
+	if err != nil {
+		t.Fatalf("FinishLogin() error = %v", err)
+	}
+	assignments, err := fs.ListRoleAssignmentsByScope(ctx, models.ScopeTypeGlobal, nil)
+	if err != nil {
+		t.Fatalf("ListRoleAssignmentsByScope() error = %v", err)
+	}
+	if len(assignments) != 1 || assignments[0].PrincipalID != user.UserID || assignments[0].Role != models.RoleAdmin {
+		t.Fatalf("expected a global admin grant for %s via the email claim, got %+v", user.UserID, assignments)
+	}
+
+	// The email match is exact on the whole selector: a different local part
+	// at the same domain must not match through the email path.
+	if matchesFirstAdminSelector(&VerifiedIdentity{Domain: "trusted.example.com", Claims: map[string]string{"email": "lorna@trusted.example.com"}}, "tod", "trusted.example.com") {
+		t.Fatal("a different email at the same domain must not match a handle selector")
 	}
 }
 
@@ -370,4 +446,100 @@ func TestLoginServiceBootstrapAdminSession(t *testing.T) {
 			t.Fatal("expected the second bootstrap call to be inert now that an admin exists")
 		}
 	})
+}
+
+// TestMatchesFirstAdminSelectorCaseInsensitive pins the matching rule for
+// REACTORCIDE_FIRST_ADMIN: domains are DNS names and handles are not
+// case-distinct, so a selector an operator typed with different casing (or
+// stray whitespace) than the identity LinkKeys verifies must still match.
+// Production ran with no global admin because "tod@todandlorna.com" was
+// compared byte-for-byte against the verified identity.
+func TestMatchesFirstAdminSelectorCaseInsensitive(t *testing.T) {
+	verified := &VerifiedIdentity{Handle: "tod", Subject: "0f4c1c5e-uuid", Domain: "todandlorna.com"}
+
+	cases := []struct {
+		name     string
+		selector string
+		want     bool
+	}{
+		{"exact", "tod@todandlorna.com", true},
+		{"upper-case handle", "Tod@todandlorna.com", true},
+		{"upper-case domain", "tod@TodAndLorna.COM", true},
+		{"both upper-case", "TOD@TODANDLORNA.COM", true},
+		{"surrounding whitespace", "  tod@todandlorna.com  ", true},
+		{"subject instead of handle, mixed case", "0F4C1C5E-UUID@todandlorna.com", true},
+		{"bare domain, mixed case", "TodAndLorna.com", true},
+		{"different handle", "lorna@todandlorna.com", false},
+		{"different domain", "tod@example.com", false},
+		{"handle as a prefix only", "to@todandlorna.com", false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			handle, domain, err := ParseSelector(tc.selector)
+			if err != nil {
+				t.Fatalf("ParseSelector(%q) error = %v", tc.selector, err)
+			}
+			if got := matchesFirstAdminSelector(verified, handle, domain); got != tc.want {
+				t.Errorf("matchesFirstAdminSelector(%q) = %v, want %v", tc.selector, got, tc.want)
+			}
+		})
+	}
+
+	// The verified side is normalised too: an identity that arrives with
+	// upper-case parts still matches a lower-case selector.
+	upper := &VerifiedIdentity{Handle: "TOD", Subject: "S", Domain: "TODANDLORNA.COM"}
+	if !matchesFirstAdminSelector(upper, "tod", "todandlorna.com") {
+		t.Error("an upper-case verified identity must match a lower-case selector")
+	}
+
+	// matchesFirstAdmin (the config-reading wrapper) applies the same rule.
+	origFirstAdmin := config.FirstAdmin
+	config.FirstAdmin = "TOD@TodAndLorna.com"
+	defer func() { config.FirstAdmin = origFirstAdmin }()
+	if !matchesFirstAdmin(verified) {
+		t.Error("matchesFirstAdmin must be case-insensitive")
+	}
+	config.FirstAdmin = "not a selector with @@ empty domain@"
+	if matchesFirstAdmin(verified) {
+		t.Error("an unparseable selector must never match")
+	}
+}
+
+// TestLoginServiceFirstAdminGrantIsCaseInsensitive runs the full login flow
+// with a mixed-case REACTORCIDE_FIRST_ADMIN and asserts the grant lands.
+func TestLoginServiceFirstAdminGrantIsCaseInsensitive(t *testing.T) {
+	ctx := context.Background()
+	fs := newFakeStore()
+	trustDomain(t, fs, "trusted.example.com")
+
+	origFirstAdmin := config.FirstAdmin
+	config.FirstAdmin = "Alice@Trusted.Example.COM"
+	defer func() { config.FirstAdmin = origFirstAdmin }()
+
+	backend := &fakeBackend{mode: ModeLocalRP, beginRedirect: "https://x", beginPending: []byte("p")}
+	ls := NewLoginService(fs, backend)
+
+	backend.completeIdentity = &VerifiedIdentity{Subject: "alice-subj", Domain: "trusted.example.com", Handle: "alice"}
+	started, err := ls.StartLogin(ctx, "alice@trusted.example.com", "https://cb")
+	if err != nil {
+		t.Fatalf("StartLogin() error = %v", err)
+	}
+	_, user, err := ls.FinishLogin(ctx, started.AttemptToken, "https://cb?encrypted_token=abc")
+	if err != nil {
+		t.Fatalf("FinishLogin() error = %v", err)
+	}
+
+	globalAssignments, err := fs.ListRoleAssignmentsByScope(ctx, models.ScopeTypeGlobal, nil)
+	if err != nil {
+		t.Fatalf("ListRoleAssignmentsByScope() error = %v", err)
+	}
+	granted := false
+	for _, a := range globalAssignments {
+		if a.Role == models.RoleAdmin && a.PrincipalID == user.UserID {
+			granted = true
+		}
+	}
+	if !granted {
+		t.Fatalf("expected %s to receive the global admin grant for a mixed-case FIRST_ADMIN selector", user.UserID)
+	}
 }

@@ -535,6 +535,26 @@ export interface ListGroupMembersResponse {
   members: GroupMemberEntry[];
 }
 
+/**
+ * One user account, for pickers that grant roles or group membership.
+ */
+export interface UserSummary {
+  userId: string;
+  username: string;
+  displayName?: string;
+  subject?: string;
+  lastLoginAt?: string;
+}
+
+export interface ListUsersRequest {
+  orgId: string;
+  query?: string;
+}
+
+export interface ListUsersResponse {
+  users: UserSummary[];
+}
+
 export interface RoleAssignment {
   assignmentId: string;
   principalType: string;
@@ -1395,5 +1415,6 @@ export interface DescribeFormMetadataResponse {
   jobStatuses: EnumChoice[];
   workflowStatuses: EnumChoice[];
   ciSourceTypes: EnumChoice[];
+  vcsProviders: EnumChoice[];
 }
 

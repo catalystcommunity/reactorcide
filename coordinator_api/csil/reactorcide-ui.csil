@@ -457,6 +457,21 @@ ListGroupMembersRequest = {
 ListGroupMembersResponse = {
     members: [* GroupMemberEntry]
 }
+;;; One user account, for pickers that grant roles or group membership.
+UserSummary = {
+    user_id: text,
+    username: text,
+    ? display_name: text,
+    ? subject: text,      ;; LinkKeys subject of the primary login identity, e.g. handle@domain
+    ? last_login_at: text
+}
+ListUsersRequest = {
+    org_id: text,     ;; the org the caller administers; authorizes the call
+    ? query: text     ;; case-insensitive substring over username/display_name/subject
+}
+ListUsersResponse = {
+    users: [* UserSummary]
+}
 
 RoleAssignment = {
     assignment_id: text,
@@ -1248,7 +1263,8 @@ DescribeFormMetadataResponse = {
     node_conditions: [* EnumChoice],
     job_statuses: [* EnumChoice],
     workflow_statuses: [* EnumChoice],
-    ci_source_types: [* EnumChoice]
+    ci_source_types: [* EnumChoice],
+    vcs_providers: [* EnumChoice]
 }
 
 service ReactorcideUi {
@@ -1281,6 +1297,7 @@ service ReactorcideUi {
     add-group-member: AddGroupMemberRequest -> AddGroupMemberResponse / ServiceError,
     remove-group-member: RemoveGroupMemberRequest -> RemoveGroupMemberResponse / ServiceError,
     list-group-members: ListGroupMembersRequest -> ListGroupMembersResponse / ServiceError,
+    list-users: ListUsersRequest -> ListUsersResponse / ServiceError,
     list-role-assignments: ListRoleAssignmentsRequest -> ListRoleAssignmentsResponse / ServiceError,
     assign-role: AssignRoleRequest -> AssignRoleResponse / ServiceError,
     revoke-role: RevokeRoleRequest -> RevokeRoleResponse / ServiceError,

@@ -1,9 +1,9 @@
 import { For, Show, createResource, createSignal, type JSX } from 'solid-js'
 import { api } from '~/api/client.ts'
-import { useSession } from '~/lib/session.tsx'
 import { Field } from '~/components/Field.tsx'
 import { ChoiceSelect } from '~/components/ChoiceInput.tsx'
-import { ActionError, NotPermitted, useAction } from '~/components/ManagementPage.tsx'
+import { ActionError, useAction } from '~/components/ManagementPage.tsx'
+import { ManagedOrgPage, OrgHeaderPicker, type ManagedOrg } from './OrgRoles.tsx'
 
 /**
  * Secrets and the grants that let jobs read them.
@@ -15,25 +15,20 @@ import { ActionError, NotPermitted, useAction } from '~/components/ManagementPag
  *
  * A grant is what makes a secret reachable from a job. Without one, a secret
  * exists and no job can resolve it.
+ *
+ * Scoped to the organization chosen in the header (`?org=`). A secret belongs
+ * to the org that owns the projects whose jobs resolve it, so managing one in
+ * the caller's own user id (the old behaviour) stored values no job could
+ * ever reach.
  */
 export function OrgSecrets(): JSX.Element {
-  const { session } = useSession()
-  return (
-    <Show when={session()?.capabilities?.manageSecrets} fallback={<NotPermitted what="secrets" />}>
-      <SecretsPage orgId={session()!.user_id!} />
-    </Show>
-  )
+  return <ManagedOrgPage what="secrets">{(managed) => <SecretsPage managed={managed} />}</ManagedOrgPage>
 }
 
-function SecretsPage(props: { orgId: string }): JSX.Element {
-  const [paths, { refetch: refetchPaths }] = createResource(
-    () => props.orgId,
-    (orgId) => api.listSecretPaths({ orgId }),
-  )
-  const [grants, { refetch: refetchGrants }] = createResource(
-    () => props.orgId,
-    (orgId) => api.listSecretGrants({ orgId }),
-  )
+function SecretsPage(props: { managed: ManagedOrg }): JSX.Element {
+  const orgId = props.managed.orgId
+  const [paths, { refetch: refetchPaths }] = createResource(orgId, (id) => api.listSecretPaths({ orgId: id }))
+  const [grants, { refetch: refetchGrants }] = createResource(orgId, (id) => api.listSecretGrants({ orgId: id }))
 
   return (
     <div class="page">
@@ -45,9 +40,10 @@ function SecretsPage(props: { orgId: string }): JSX.Element {
             replaced, and deleted. Jobs reach a secret through a grant.
           </p>
         </div>
+        <OrgHeaderPicker managed={props.managed} />
       </div>
 
-      <SetSecretCard orgId={props.orgId} onSaved={() => void refetchPaths()} />
+      <SetSecretCard orgId={orgId()} onSaved={() => void refetchPaths()} />
 
       <div class="card">
         <h3 class="section-title">Stored secrets</h3>
@@ -81,7 +77,7 @@ function SecretsPage(props: { orgId: string }): JSX.Element {
                       </td>
                       <td>
                         <DeleteSecretControl
-                          orgId={props.orgId}
+                          orgId={orgId()}
                           path={entry.path}
                           keys={entry.keys}
                           onDeleted={() => void refetchPaths()}
@@ -96,7 +92,7 @@ function SecretsPage(props: { orgId: string }): JSX.Element {
         </Show>
       </div>
 
-      <CreateGrantCard orgId={props.orgId} onCreated={() => void refetchGrants()} />
+      <CreateGrantCard orgId={orgId()} onCreated={() => void refetchGrants()} />
 
       <div class="card">
         <h3 class="section-title">Grants</h3>

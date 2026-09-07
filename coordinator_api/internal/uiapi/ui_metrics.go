@@ -21,8 +21,12 @@ func (s *UiService) GetJobMetrics(ctx context.Context, req csilapi.GetJobMetrics
 	if err != nil {
 		return csilapi.GetJobMetricsResponse{}, NewServiceError("internal", "an internal error occurred")
 	}
+	// "not_found", not "forbidden": a forbidden on a by-id lookup confirms the
+	// job id exists, which makes this op an existence oracle for jobs in
+	// private projects. GetJob answers not_found for the same reason; an
+	// invisible job must be indistinguishable from a missing one here too.
 	if !visible {
-		return csilapi.GetJobMetricsResponse{}, NewServiceError("forbidden", "you do not have permission to view this job")
+		return csilapi.GetJobMetricsResponse{}, NewServiceError("not_found", "job not found")
 	}
 	var fromValue, toValue string
 	if req.FromTime != nil {

@@ -3,6 +3,8 @@ package uiapi
 import (
 	"context"
 	"fmt"
+	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -122,6 +124,20 @@ func (f *fakeStore) GetOrganizationByName(_ context.Context, name string) (*mode
 		return nil, store.ErrNotFound
 	}
 	return &organization, nil
+}
+
+// GetOrganizationByID satisfies authz's optional organizationLookup surface
+// (and postgres_store's real method), so the resolver built over this fake
+// exercises the organizations.is_private path the way production does.
+func (f *fakeStore) GetOrganizationByID(_ context.Context, orgID string) (*models.Organization, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for _, organization := range f.orgs {
+		if organization.OrgID == orgID {
+			return &organization, nil
+		}
+	}
+	return nil, store.ErrNotFound
 }
 
 func (f *fakeStore) ListOrganizations(_ context.Context, limit, offset int) ([]models.Organization, error) {
@@ -683,6 +699,43 @@ func (f *fakeStore) UpdateAuthIdentityLogin(_ context.Context, identityID string
 		}
 	}
 	return store.ErrNotFound
+}
+
+// ListUsers mirrors postgres_store.ListUsers: active users, case-insensitive
+// substring over username/email and the linked identity's
+// subject/handle/display_name, ordered by username, capped at limit.
+func (f *fakeStore) ListUsers(_ context.Context, query string, limit int) ([]models.User, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	q := strings.ToLower(strings.TrimSpace(query))
+	var out []models.User
+	for _, u := range f.users {
+		if !u.IsActive() {
+			continue
+		}
+		if q != "" {
+			haystack := []string{u.Username, u.Email}
+			if identity, ok := f.authIdentitiesByUser[u.UserID]; ok {
+				haystack = append(haystack, identity.Subject, identity.Handle, identity.DisplayName)
+			}
+			matched := false
+			for _, h := range haystack {
+				if strings.Contains(strings.ToLower(h), q) {
+					matched = true
+					break
+				}
+			}
+			if !matched {
+				continue
+			}
+		}
+		out = append(out, u)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Username < out[j].Username })
+	if limit > 0 && len(out) > limit {
+		out = out[:limit]
+	}
+	return out, nil
 }
 
 func (f *fakeStore) GetAuthIdentityByUserID(_ context.Context, userID string) (*models.AuthIdentity, error) {

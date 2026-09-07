@@ -1,9 +1,10 @@
 import { For, Show, createResource, createSignal, type JSX } from 'solid-js'
 import { A } from '@solidjs/router'
 import { api } from '~/api/client.ts'
-import { useSession } from '~/lib/session.tsx'
 import { Field } from '~/components/Field.tsx'
-import { ActionError, NotPermitted, useAction } from '~/components/ManagementPage.tsx'
+import { ActionError, useAction } from '~/components/ManagementPage.tsx'
+import type { WorkerPoolSummary } from '~/api/csilapi/types.gen.ts'
+import { ManagedOrgPage, OrgHeaderPicker, type ManagedOrg } from './OrgRoles.tsx'
 
 /**
  * Worker classes.
@@ -11,31 +12,40 @@ import { ActionError, NotPermitted, useAction } from '~/components/ManagementPag
  * A class names a set of pools a job may run on. A PROTECTED class is the point
  * of the feature: only coordinator policy can route a job to one, so untrusted
  * pull-request CI cannot reach the pools that hold deployment credentials.
+ *
+ * Scoped to the organization chosen in the header (`?org=`). The worker-class
+ * operations name their org by NAME (`organization`), not by id: the
+ * coordinator resolves it with a lookup by name. The previous version passed
+ * the caller's user id here, which matched no organization at all.
  */
 export function WorkerClasses(): JSX.Element {
-  const { session } = useSession()
   return (
-    <Show
-      when={session()?.capabilities?.manageWorkers}
-      fallback={<NotPermitted what="worker classes" />}
-    >
-      <WorkerClassesPage orgId={session()!.user_id!} />
-    </Show>
+    <ManagedOrgPage what="worker classes">
+      {(managed) => <WorkerClassesPage managed={managed} />}
+    </ManagedOrgPage>
   )
 }
 
-function WorkerClassesPage(props: { orgId: string }): JSX.Element {
-  const [classes, { refetch }] = createResource(
-    () => props.orgId,
-    (organization) => api.listWorkerClasses({ organization }),
+function WorkerClassesPage(props: { managed: ManagedOrg }): JSX.Element {
+  const orgName = () => props.managed.org()?.name ?? ''
+  const [classes, { refetch }] = createResource(orgName, (organization) =>
+    api.listWorkerClasses({ organization }),
   )
-  const [pools] = createResource(() => api.listPools({}))
+  // Pool names are decoration for the table. The org's own pools are what an
+  // org admin may list; a failure here shows ids rather than taking the page down.
+  const [pools] = createResource(props.managed.orgId, async (orgId) => {
+    try {
+      return (await api.listPools({ orgId })).pools
+    } catch {
+      return [] as WorkerPoolSummary[]
+    }
+  })
   const [name, setName] = createSignal('')
   const [isProtected, setIsProtected] = createSignal(false)
   const action = useAction()
 
   const poolName = (poolId: string) =>
-    pools()?.pools.find((pool) => pool.poolId === poolId)?.name ?? poolId
+    pools()?.find((pool) => pool.poolId === poolId)?.name ?? poolId
 
   return (
     <div class="page">
@@ -47,9 +57,12 @@ function WorkerClassesPage(props: { orgId: string }): JSX.Element {
             coordinator policy, which is what keeps untrusted CI away from privileged workers.
           </p>
         </div>
-        <A href="/workers" class="btn btn-sm">
-          Back to workers
-        </A>
+        <div class="row" style={{ 'align-items': 'center' }}>
+          <OrgHeaderPicker managed={props.managed} />
+          <A href="/workers" class="btn btn-sm">
+            Back to workers
+          </A>
+        </div>
       </div>
 
       <div class="card">
@@ -60,7 +73,7 @@ function WorkerClassesPage(props: { orgId: string }): JSX.Element {
             if (!name().trim()) return
             const ok = await action.run('The worker class could not be saved.', () =>
               api.putWorkerClass({
-                organization: props.orgId,
+                organization: orgName(),
                 workerClass: { name: name().trim(), protected: isProtected(), poolIds: [] },
               }),
             )
@@ -152,7 +165,7 @@ function WorkerClassesPage(props: { orgId: string }): JSX.Element {
                               return
                             await action.run('The class could not be deleted.', () =>
                               api.deleteWorkerClass({
-                                organization: props.orgId,
+                                organization: orgName(),
                                 name: workerClass.name,
                               }),
                             )

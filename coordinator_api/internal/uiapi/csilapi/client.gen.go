@@ -368,6 +368,15 @@ func (c *ReactorcideUiClient) ListGroupMembers(ctx context.Context, req ListGrou
 	return DecodeListGroupMembersResponse(csilResp)
 }
 
+func (c *ReactorcideUiClient) ListUsers(ctx context.Context, req ListUsersRequest) (ListUsersResponse, error) {
+	var csilZero ListUsersResponse
+	csilResp, csilErr := c.transport.Call(ctx, "ReactorcideUi", "list-users", EncodeListUsersRequest(req))
+	if csilErr != nil {
+		return csilZero, csilErr
+	}
+	return DecodeListUsersResponse(csilResp)
+}
+
 func (c *ReactorcideUiClient) ListRoleAssignments(ctx context.Context, req ListRoleAssignmentsRequest) (ListRoleAssignmentsResponse, error) {
 	var csilZero ListRoleAssignmentsResponse
 	csilResp, csilErr := c.transport.Call(ctx, "ReactorcideUi", "list-role-assignments", EncodeListRoleAssignmentsRequest(req))

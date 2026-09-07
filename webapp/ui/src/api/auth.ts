@@ -19,12 +19,26 @@ export interface AuthConfig {
   has_global_admin: boolean
 }
 
+/** One role the signed-in caller holds: `admin` on an org, `member` on a project, ... */
+export interface SessionRole {
+  scope_type: string
+  scope_id?: string
+  role: string
+}
+
 export interface SessionSummary {
   logged_in: boolean
   user_id?: string
   display_name?: string
   is_global_admin: boolean
+  /**
+   * The GLOBAL-scope capability set. It is all-false for everyone but a global
+   * admin (and, in auth mode `none`, carries the anonymous cancel/retry grant).
+   * Org- and project-level questions are answered by `roles` and by a scoped
+   * `get-capabilities` call (see `useCapabilities` in the store), not by this.
+   */
   capabilities: GetCapabilitiesResponse
+  roles: SessionRole[]
 }
 
 async function getJSON<T>(path: string): Promise<T> {
@@ -47,8 +61,50 @@ export function fetchAuthConfig(): Promise<AuthConfig> {
  * operation, so a client that lied to itself here would only draw the wrong
  * buttons — it could not do anything it is not allowed to do.
  */
-export function fetchSession(): Promise<SessionSummary> {
-  return getJSON<SessionSummary>('/app/auth/session')
+export async function fetchSession(): Promise<SessionSummary> {
+  return decodeSession(await getJSON<unknown>('/app/auth/session'))
+}
+
+/**
+ * Turns the webapp's session JSON into a SessionSummary.
+ *
+ * The capabilities object is the coordinator's Go client type, serialized with
+ * its snake_case json tags (`cancel_job`, `manage_groups`). The generated
+ * TypeScript type for the same shape is camelCase (`cancelJob`). For a while
+ * the SPA read the camelCase names off the snake_case object, so every
+ * capability check was undefined, every management button was hidden for
+ * everybody including global admins, and nothing failed loudly. The conversion
+ * lives here, in one place, with a test that feeds it the exact key set the Go
+ * side emits.
+ */
+export function decodeSession(raw: unknown): SessionSummary {
+  const body = (raw ?? {}) as Record<string, unknown>
+  const capabilities = camelizeKeys(body.capabilities) as unknown as GetCapabilitiesResponse
+  const roles = Array.isArray(body.roles)
+    ? (body.roles as Record<string, unknown>[]).map((role) => ({
+        scope_type: String(role.scope_type ?? ''),
+        scope_id: typeof role.scope_id === 'string' && role.scope_id !== '' ? role.scope_id : undefined,
+        role: String(role.role ?? ''),
+      }))
+    : []
+  return {
+    logged_in: body.logged_in === true,
+    user_id: typeof body.user_id === 'string' ? body.user_id : undefined,
+    display_name: typeof body.display_name === 'string' ? body.display_name : undefined,
+    is_global_admin: body.is_global_admin === true,
+    capabilities,
+    roles,
+  }
+}
+
+/** `manage_webhook_secrets` -> `manageWebhookSecrets`. Non-objects become `{}`. */
+export function camelizeKeys(value: unknown): Record<string, unknown> {
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) return {}
+  const out: Record<string, unknown> = {}
+  for (const [key, entry] of Object.entries(value as Record<string, unknown>)) {
+    out[key.replace(/_([a-z0-9])/g, (_, ch: string) => ch.toUpperCase())] = entry
+  }
+  return out
 }
 
 async function postForm(path: string, fields: Record<string, string>): Promise<Response> {

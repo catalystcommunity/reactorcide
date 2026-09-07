@@ -1,6 +1,7 @@
 package uiapi
 
 import (
+	"context"
 	"testing"
 
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/config"
@@ -296,4 +297,50 @@ func TestRetryUnsuccessfulJobs_NotFound(t *testing.T) {
 	ui := NewUiService(deps)
 	_, err := ui.RetryUnsuccessfulJobs(anonCtx(), csilapi.RetryUnsuccessfulJobsRequest{WorkflowInstanceId: "does-not-exist"})
 	requireCode(t, err, "not_found")
+}
+
+// TestRetryWorkflow_OrgAdminOfProjectOrg_NoWorkflowUser is the workflow
+// counterpart of TestJobControl_OrgAdminOfProjectOrg_ServiceTokenJob: a
+// workflow with no user_id/org_id of its own, in a project org-1 owns, must be
+// retryable (both whole-instance and unsuccessful-jobs) by org-1's admin.
+func TestRetryWorkflow_OrgAdminOfProjectOrg_NoWorkflowUser(t *testing.T) {
+	setup := func(t *testing.T) (*Deps, models.WorkflowInstance, context.Context) {
+		t.Helper()
+		withAuthMode(t, config.UIAuthModeLocalRP)
+		deps, st := newTestDeps(t)
+		st.putUser(models.User{UserID: "org-1"})
+		proj := st.putProject(models.Project{OrgID: "org-1", UserID: strPtr("org-1"), Name: "svc-project"})
+		wf := st.putWorkflow(models.WorkflowInstance{UserID: "", OrgID: "", ProjectID: &proj.ProjectID, Name: "wf", Status: "failed"})
+		admin := st.putUser(models.User{UserID: "admin-1"})
+		seedOrgAdmin(st, admin.UserID, "org-1")
+		return deps, wf, mintSessionCtx(t, deps, admin.UserID)
+	}
+
+	t.Run("retry-workflow", func(t *testing.T) {
+		deps, wf, ctx := setup(t)
+		ui := NewUiService(deps)
+		resp, err := ui.RetryWorkflow(ctx, csilapi.RetryWorkflowRequest{WorkflowInstanceId: wf.WorkflowID})
+		requireOK(t, err)
+		if resp.WorkflowInstanceId == wf.WorkflowID {
+			t.Errorf("WorkflowInstanceId = %q, want a distinct new workflow id", resp.WorkflowInstanceId)
+		}
+	})
+
+	t.Run("retry-unsuccessful-jobs", func(t *testing.T) {
+		deps, wf, ctx := setup(t)
+		ui := NewUiService(deps)
+		_, err := ui.RetryUnsuccessfulJobs(ctx, csilapi.RetryUnsuccessfulJobsRequest{WorkflowInstanceId: wf.WorkflowID})
+		requireOK(t, err)
+	})
+
+	t.Run("cancel-workflow", func(t *testing.T) {
+		deps, wf, ctx := setup(t)
+		ui := NewUiService(deps)
+		_, err := ui.CancelWorkflow(ctx, csilapi.CancelWorkflowRequest{WorkflowInstanceId: wf.WorkflowID})
+		// A failed workflow is not cancellable; what matters here is that the
+		// authz gate passed (a denied caller would get forbidden first).
+		if err != nil {
+			requireCode(t, err, "conflict")
+		}
+	})
 }

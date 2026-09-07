@@ -58,9 +58,20 @@ type SessionInfo struct {
 	// checks; Caps.IsGlobalAdmin carries the same bit (kept for symmetry
 	// with the other Is* capability flags).
 	IsGlobalAdmin bool
+	// Roles mirrors AuthenticatedIdentity.Roles: every explicit role grant
+	// the caller holds, as (scope_type, scope_id, role) triples. The SPA
+	// derives org- and project-level nav gating from these (e.g. "show the
+	// management links when the caller holds admin on any org"), because
+	// Caps below is the GLOBAL-scope set and says nothing about org
+	// membership. Empty (never nil after resolveSession) for anonymous
+	// callers.
+	Roles []csilapi.RoleSummary
 
-	// Caps is the coordinator's capability computation for this session
-	// (anonymous sessions get anonymous capabilities). Every field is a
+	// Caps is the coordinator's UNSCOPED capability computation for this
+	// session, i.e. the global-scope set: its Manage*/Create*/Delete* bits
+	// are true only for a global admin (anonymous sessions get anonymous
+	// capabilities). Org- and project-level bits are deliberately NOT
+	// folded in here; see capabilitiesRequestForNav. Every field is a
 	// display-only hint: the backend re-checks on every mutating op.
 	Caps csilapi.GetCapabilitiesResponse
 
@@ -124,7 +135,7 @@ func (h *WebHandler) sessionInfo(r *http.Request) SessionInfo {
 // that don't wire up a fake coordinator) short-circuits to an anonymous,
 // auth-mode-"none" SessionInfo without making any calls.
 func (h *WebHandler) resolveSession(r *http.Request) SessionInfo {
-	si := SessionInfo{}
+	si := SessionInfo{Roles: []csilapi.RoleSummary{}}
 	if h.uiClients == nil {
 		si.AuthMode = "none"
 		return si
@@ -149,6 +160,9 @@ func (h *WebHandler) resolveSession(r *http.Request) SessionInfo {
 			si.UserID = resp.Identity.UserId
 			si.DisplayName = displayNameFor(*resp.Identity)
 			si.IsGlobalAdmin = resp.Identity.IsGlobalAdmin
+			if resp.Identity.Roles != nil {
+				si.Roles = resp.Identity.Roles
+			}
 		}
 	}
 
@@ -161,30 +175,33 @@ func (h *WebHandler) resolveSession(r *http.Request) SessionInfo {
 	return si
 }
 
-// capabilitiesRequestForNav scopes the request-wide GetCapabilities call
-// resolveSession makes (whose result becomes SessionInfo.Caps, used for nav
-// bar links and other page-independent capability hints e.g. "show the New
-// project button") to the caller's own org when there is one.
+// capabilitiesRequestForNav builds the request-wide GetCapabilities call
+// resolveSession makes (whose result becomes SessionInfo.Caps and the
+// session JSON's "capabilities"). It is always UNSCOPED: no org_id, no
+// project_id. The coordinator answers an unscoped request with the
+// GLOBAL-scope capability set, whose Manage*/Create*/Delete* bits are true
+// only for a global admin (see coordinator_api/internal/authz/capabilities.go).
 //
-// This matters because authz.Resolver.Capabilities only special-cases a
-// global admin independent of scope; a plain org admin only gets their
-// org-admin capabilities back when the request's org_id matches their org (or
-// the request is project-scoped to one of their projects) — see
-// coordinator_api/internal/authz/capabilities.go's "orgID != nil && (*orgID
-// == id.UserID ||...)" branch. An unscoped call (org_id and project_id both
-// omitted) therefore reports an org admin's own
-// ManageGroups/ManageSecrets/CreateProject/etc. as false, which would hide
-// every nav link and management-page entry point for that org admin even
-// though they can use it once inside the org-scoped page. Recall "user_id IS
-// the org id everywhere" — a logged-in caller's own org id is simply their
-// own user id, so scoping to it here is exact, not a guess. Global admins and
-// anonymous/logged-out callers get an unscoped request (global admin
-// capabilities are scope-independent; anonymous has no org).
-func capabilitiesRequestForNav(si SessionInfo) csilapi.GetCapabilitiesRequest {
-	if si.LoggedIn && !si.IsGlobalAdmin && si.UserID != "" {
-		orgID := si.UserID
-		return csilapi.GetCapabilitiesRequest{OrgId: &orgID}
-	}
+// Org- and project-level decisions are NOT made from this set. The SPA
+// derives them from SessionInfo.Roles (the caller's explicit role grants,
+// e.g. "admin on org X" => show the management nav links and offer org X in
+// the org picker) and from project-scoped get-capabilities calls it makes
+// itself for detail pages (get-capabilities {project_id}).
+//
+// History, so nobody reintroduces the old behaviour: this used to scope a
+// logged-in non-global-admin's request to org_id = their own user_id, on the
+// premise "user_id IS the org id everywhere". That premise does not hold for
+// how projects are actually stored. Projects live in real organizations rows
+// (REST-created projects land in the default org), while a login-provisioned
+// user's user_id has no organizations row at all, so the "own org" was a
+// phantom. Worse, at that scope the coordinator treats the caller as the
+// org's owner and grants the full org-admin capability set, so EVERY
+// logged-in user looked like an org admin and saw every management link,
+// with the org pages then managing the phantom org. Scoping the nav call to
+// anything but global is therefore wrong; the SessionInfo argument is kept
+// only so call sites read naturally and future per-session tweaks have a
+// home.
+func capabilitiesRequestForNav(_ SessionInfo) csilapi.GetCapabilitiesRequest {
 	return csilapi.GetCapabilitiesRequest{}
 }
 

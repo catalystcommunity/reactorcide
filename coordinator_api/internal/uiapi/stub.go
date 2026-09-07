@@ -165,6 +165,10 @@ func (StubUi) ListGroupMembers(ctx context.Context, req csilapi.ListGroupMembers
 	return csilapi.ListGroupMembersResponse{}, ErrUnimplemented("ReactorcideUi/list-group-members")
 }
 
+func (StubUi) ListUsers(ctx context.Context, req csilapi.ListUsersRequest) (csilapi.ListUsersResponse, error) {
+	return csilapi.ListUsersResponse{}, ErrUnimplemented("ReactorcideUi/list-users")
+}
+
 func (StubUi) ListRoleAssignments(ctx context.Context, req csilapi.ListRoleAssignmentsRequest) (csilapi.ListRoleAssignmentsResponse, error) {
 	return csilapi.ListRoleAssignmentsResponse{}, ErrUnimplemented("ReactorcideUi/list-role-assignments")
 }

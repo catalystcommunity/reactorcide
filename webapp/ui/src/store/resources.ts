@@ -1,9 +1,11 @@
 import { api } from '~/api/client.ts'
 import type {
+  GetCapabilitiesResponse,
   GetWorkflowResponse,
   JobSummary,
   ListJobsResponse,
   ListWorkflowsResponse,
+  OrgSummary,
   ProjectDetail,
   ProjectSummary,
   DescribeFormMetadataResponse,
@@ -176,5 +178,58 @@ export function useFormMetadata() {
   return useResource<DescribeFormMetadataResponse>({
     key: 'form-metadata',
     fetcher: () => api.describeFormMetadata({}),
+  })
+}
+
+/** Where a capability question is asked. Both empty means the global scope. */
+export interface CapabilityScope {
+  projectId?: string
+  orgId?: string
+}
+
+/**
+ * What the caller may do at ONE scope.
+ *
+ * The session carries only the global-scope set, which is all-false for
+ * everyone but a global admin. A project owner may cancel and retry that
+ * project's jobs, and an org admin may manage that org's projects, and neither
+ * shows up globally. So a detail page asks about its own project, and the
+ * coordinator answers from the project's owning organization and the caller's
+ * roles there. The answer is cached per scope for the session; roles change
+ * rarely, and a login reloads the page.
+ *
+ * `undefined` from the builder means "not known yet" (the job has not loaded)
+ * and yields an all-false answer rather than a global-scope one, so a button
+ * never renders off the wrong scope while data is in flight.
+ */
+export function useCapabilities(scope: Accessor<CapabilityScope | undefined>): {
+  state: Accessor<ResourceState<GetCapabilitiesResponse>>
+  refresh: () => Promise<void>
+} {
+  return useResource<GetCapabilitiesResponse>(() => {
+    const s = scope()
+    if (!s) {
+      return {
+        key: 'caps:pending',
+        fetcher: async () => ({}) as GetCapabilitiesResponse,
+      }
+    }
+    const key = s.projectId ? `caps:project:${s.projectId}` : s.orgId ? `caps:org:${s.orgId}` : 'caps:global'
+    return {
+      key,
+      fetcher: () => api.getCapabilities({ projectId: s.projectId, orgId: s.orgId }),
+    }
+  })
+}
+
+/**
+ * The organizations the caller can see: every one for a global admin, public
+ * ones plus those they hold a role in for anyone else. Management pages pick
+ * from this list rather than assuming the caller's own user id is an org.
+ */
+export function useOrgs() {
+  return useResource<{ orgs: OrgSummary[] }>({
+    key: 'orgs',
+    fetcher: () => api.listOrgs({}),
   })
 }

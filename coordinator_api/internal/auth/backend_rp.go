@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/sirupsen/logrus"
 	"net/url"
 	"strings"
 	"time"
@@ -194,11 +195,17 @@ func (b *RPBackend) CompleteLogin(ctx context.Context, pendingBlob []byte, arriv
 		if info.DisplayName != "" {
 			displayName = info.DisplayName
 		}
+	} else {
+		// Non-fatal: the identity is already verified above, and claims
+		// (handle, email, ...) are best effort. But a missing handle is not
+		// harmless downstream: REACTORCIDE_FIRST_ADMIN matches on it, and
+		// usernameFor falls back to the uuid subject. Say so, once per
+		// login, so an operator staring at "no admin" has the cause.
+		logrus.WithError(err).WithFields(logrus.Fields{
+			"domain":  pending.UserDomain,
+			"subject": assertion.UserId,
+		}).Warn("auth: rp userinfo-fetch failed; login continues without handle/email claims")
 	}
-	// userinfo-fetch failures are non-fatal to CompleteLogin: identity has
-	// already been verified above; claims (handle, email, ...) are best
-	// effort. A missing handle simply falls back to VerifiedIdentity.Subject
-	// for username purposes (see usernameFor in login_service.go).
 
 	return &VerifiedIdentity{
 		Subject:     assertion.UserId,

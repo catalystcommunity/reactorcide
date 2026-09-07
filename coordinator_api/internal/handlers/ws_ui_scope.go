@@ -2,12 +2,30 @@ package handlers
 
 import (
 	"context"
+	"errors"
 	"sync"
 
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/authz"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/pubsub"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store"
+	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store/models"
 )
+
+// scopeStore is the narrow store surface uiStreamScope resolves ownership
+// through. store.Store satisfies it; tests hand in a small fake.
+type scopeStore interface {
+	GetProjectByID(ctx context.Context, projectID string) (*models.Project, error)
+	GetJobByID(ctx context.Context, jobID string) (*models.Job, error)
+	GetUserByID(ctx context.Context, userID string) (*models.User, error)
+}
+
+// scopeOrganizationLookup is the OPTIONAL surface for reading an
+// organization's is_private flag. store.Store does not carry it, so it is
+// type-asserted from the scope's store (*postgres_store.PostgresDbStore has
+// it); a store without it falls back to the legacy users row.
+type scopeOrganizationLookup interface {
+	GetOrganizationByID(ctx context.Context, orgID string) (*models.Organization, error)
+}
 
 // uiStreamScope answers "may this caller see this event" for the life of one
 // WebSocket connection.
@@ -26,7 +44,7 @@ import (
 // (see canSee).
 type uiStreamScope struct {
 	resolver *authz.Resolver
-	store    store.Store
+	store    scopeStore
 	identity authz.Identity
 
 	// globalAdmin short-circuits everything, resolved once at connect.
@@ -58,7 +76,11 @@ func (h *UIStreamHandler) newScope(ctx context.Context, identity authz.Identity)
 		}
 		scope.globalAdmin = isGlobalAdmin
 	}
-	scope.store = h.store
+	// A nil store.Store must stay a nil scopeStore, or the `s.store == nil`
+	// guards below would see a non-nil interface wrapping nothing.
+	if h.store != nil {
+		scope.store = h.store
+	}
 	return scope, nil
 }
 
@@ -101,8 +123,9 @@ func (s *uiStreamScope) canSee(evt pubsub.Event) bool {
 		// visible bug rather than a silent disclosure.
 		return false
 	}
-	// The owner of a resource can always see it. user_id IS the org id
-	// everywhere in this system, so this also covers an org's own resources.
+	// The owner of a resource can always see it. OwnerUserID carries the
+	// resource's OwnershipOrgID(); for legacy users-as-orgs that is the user's
+	// own id, so this also covers an org's own resources.
 	if evt.OwnerUserID != "" && !s.identity.Anonymous && evt.OwnerUserID == s.identity.UserID {
 		return true
 	}
@@ -177,13 +200,15 @@ func (s *uiStreamScope) orgAllows(orgID string) bool {
 	}
 
 	// A project-less resource is visible when its owning org is not private,
-	// or when the caller is an admin of that org.
+	// or when the caller is an admin of that org. An org whose privacy cannot
+	// be resolved at all (no organizations row and no legacy users row) stays
+	// invisible: fail closed, as canSee does for unauthorizable events.
 	visible := false
 	if s.store == nil {
 		return false
 	}
-	if owner, err := s.store.GetUserByID(context.Background(), orgID); err == nil && owner != nil {
-		if !owner.IsPrivate {
+	if isPrivate, known := s.orgIsPrivate(orgID); known {
+		if !isPrivate {
 			visible = true
 		} else if !s.identity.Anonymous {
 			if isAdmin, err := s.resolver.IsOrgAdmin(context.Background(), s.identity, orgID); err == nil {
@@ -196,4 +221,30 @@ func (s *uiStreamScope) orgAllows(orgID string) bool {
 	s.orgVisible[orgID] = visible
 	s.mu.Unlock()
 	return visible
+}
+
+// orgIsPrivate resolves an owning org's privacy the way
+// authz.visibilityBatch.orgIsPrivate does: organizations.is_private when the
+// store can look organizations up by id and the row exists, else the legacy
+// users.is_private for the same id (backfilled orgs share the user's UUID).
+// known is false when neither row exists.
+func (s *uiStreamScope) orgIsPrivate(orgID string) (isPrivate, known bool) {
+	if orgID == "" || s.store == nil {
+		return false, false
+	}
+	ctx := context.Background()
+	if lookup, ok := s.store.(scopeOrganizationLookup); ok {
+		org, err := lookup.GetOrganizationByID(ctx, orgID)
+		if err == nil && org != nil {
+			return org.IsPrivate, true
+		}
+		if err != nil && !errors.Is(err, store.ErrNotFound) {
+			return false, false
+		}
+	}
+	owner, err := s.store.GetUserByID(ctx, orgID)
+	if err != nil || owner == nil {
+		return false, false
+	}
+	return owner.IsPrivate, true
 }

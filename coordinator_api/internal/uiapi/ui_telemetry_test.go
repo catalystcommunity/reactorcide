@@ -32,10 +32,13 @@ func TestJobTelemetryUsesProjectVisibilityForMetricsAndLogs(t *testing.T) {
 	}
 	service := NewUiService(deps)
 	outsiderCtx := mintSessionCtx(t, deps, outsider.UserID)
-	if _, err := service.GetJobMetrics(outsiderCtx, csilapi.GetJobMetricsRequest{JobId: job.JobID, MaxPoints: 10}); serviceErrCode(t, err) != "forbidden" {
+	// An invisible job answers not_found, not forbidden: forbidden would
+	// confirm the id exists (see GetJob and
+	// TestGetJobLogsAndMetricsReportNotFoundForInvisibleJob).
+	if _, err := service.GetJobMetrics(outsiderCtx, csilapi.GetJobMetricsRequest{JobId: job.JobID, MaxPoints: 10}); serviceErrCode(t, err) != "not_found" {
 		t.Fatalf("metrics error = %v", err)
 	}
-	if _, err := service.GetJobLogs(outsiderCtx, csilapi.GetJobLogsRequest{JobId: job.JobID, Stream: "combined"}); serviceErrCode(t, err) != "forbidden" {
+	if _, err := service.GetJobLogs(outsiderCtx, csilapi.GetJobLogsRequest{JobId: job.JobID, Stream: "combined"}); serviceErrCode(t, err) != "not_found" {
 		t.Fatalf("logs error = %v", err)
 	}
 	ownerCtx := mintSessionCtx(t, deps, "org-1")

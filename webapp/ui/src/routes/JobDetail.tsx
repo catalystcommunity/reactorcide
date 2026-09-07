@@ -1,13 +1,12 @@
 import { For, Show, createMemo, createSignal, onCleanup, type JSX } from 'solid-js'
 import { A, useParams } from '@solidjs/router'
-import { useJob } from '~/store/resources.ts'
+import { useJob, useCapabilities } from '~/store/resources.ts'
 import { api } from '~/api/client.ts'
 import { StatusBadge, isTerminal } from '~/components/StatusBadge.tsx'
 import { ResourceView, relativeTime, duration } from '~/components/States.tsx'
 import { MetricsPanel } from '~/components/MetricsPanel.tsx'
 import { appendBounded, BUFFER_CAPS } from '~/store/index.ts'
 import { eventSocket, topics } from '~/store/events.ts'
-import { useSession } from '~/lib/session.tsx'
 import './job.css'
 
 type Tab = 'logs' | 'metrics'
@@ -16,10 +15,16 @@ export function JobDetail(): JSX.Element {
   const params = useParams<{ id: string }>()
   const { state, refresh } = useJob(() => params.id)
   const [tab, setTab] = createSignal<Tab>('logs')
-  const { session } = useSession()
 
   const job = createMemo(() => state().data?.job)
   const live = createMemo(() => !isTerminal(job()?.status ?? ''))
+
+  // Asked of the job's own project, not the session. A project owner may
+  // cancel and retry here and has nothing in the global set; an org admin the
+  // same. Until the job has loaded there is no scope to ask about, and no
+  // button shows.
+  const caps = useCapabilities(() => (job() ? { projectId: job()!.projectId } : undefined))
+  const can = (capability: 'cancelJob' | 'killJob' | 'retryJob') => Boolean(caps.state().data?.[capability])
 
   return (
     <div class="page">
@@ -47,7 +52,7 @@ export function JobDetail(): JSX.Element {
               </div>
 
               <div class="row">
-                <Show when={session()?.capabilities?.cancelJob && live()}>
+                <Show when={can('cancelJob') && live()}>
                   <button
                     type="button"
                     class="btn btn-sm"
@@ -59,7 +64,7 @@ export function JobDetail(): JSX.Element {
                     Cancel
                   </button>
                 </Show>
-                <Show when={session()?.capabilities?.killJob && live()}>
+                <Show when={can('killJob') && live()}>
                   <button
                     type="button"
                     class="btn btn-sm btn-danger"
@@ -74,7 +79,7 @@ export function JobDetail(): JSX.Element {
                     Kill
                   </button>
                 </Show>
-                <Show when={session()?.capabilities?.retryJob && isTerminal(data().job.status)}>
+                <Show when={can('retryJob') && isTerminal(data().job.status)}>
                   <button
                     type="button"
                     class="btn btn-sm"

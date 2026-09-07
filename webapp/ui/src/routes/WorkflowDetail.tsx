@@ -1,11 +1,10 @@
 import { For, Show, createMemo, createSignal, type JSX } from 'solid-js'
 import { A, useParams } from '@solidjs/router'
-import { useWorkflow } from '~/store/resources.ts'
+import { useWorkflow, useCapabilities } from '~/store/resources.ts'
 import { StatusBadge, isTerminal } from '~/components/StatusBadge.tsx'
 import { ResourceView, relativeTime, duration } from '~/components/States.tsx'
 import { DagView } from '~/components/DagView.tsx'
 import { api } from '~/api/client.ts'
-import { useSession } from '~/lib/session.tsx'
 
 type Tab = 'jobs' | 'graph'
 
@@ -20,11 +19,15 @@ export function WorkflowDetail(): JSX.Element {
   const params = useParams<{ id: string }>()
   const { state, refresh } = useWorkflow(() => params.id)
   const [tab, setTab] = createSignal<Tab>('jobs')
-  const { session } = useSession()
 
   const workflow = createMemo(() => state().data?.workflow)
-  const canCancel = () =>
-    Boolean(session()?.capabilities?.cancelJob) && !isTerminal(workflow()?.status ?? '')
+
+  // Scoped to the workflow's project (see JobDetail). A workflow has no
+  // capability of its own: cancelling one cancels its jobs, so the job
+  // capabilities are the right question.
+  const caps = useCapabilities(() => (workflow() ? { projectId: workflow()!.projectId } : undefined))
+  const canCancel = () => Boolean(caps.state().data?.cancelJob) && !isTerminal(workflow()?.status ?? '')
+  const canRetry = () => Boolean(caps.state().data?.retryJob)
 
   return (
     <div class="page">
@@ -62,7 +65,7 @@ export function WorkflowDetail(): JSX.Element {
                     Cancel workflow
                   </button>
                 </Show>
-                <Show when={session()?.capabilities?.retryJob && isTerminal(data().workflow.status)}>
+                <Show when={canRetry() && isTerminal(data().workflow.status)}>
                   <button
                     type="button"
                     class="btn btn-sm"

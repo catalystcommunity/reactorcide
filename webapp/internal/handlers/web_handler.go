@@ -76,17 +76,49 @@ type sessionJSON struct {
 	DisplayName   string `json:"display_name,omitempty"`
 	IsGlobalAdmin bool   `json:"is_global_admin"`
 
+	// Roles is every explicit role grant the caller holds (scope_type,
+	// scope_id, role). The SPA derives org-level nav gating from these:
+	// Capabilities below is the GLOBAL-scope set (see
+	// capabilitiesRequestForNav) and does not say whether the caller
+	// administers some org. Always an array, never null, so the SPA can
+	// iterate without a nil guard; anonymous callers get [].
+	Roles []sessionRoleJSON `json:"roles"`
+
+	// Capabilities is the coordinator's unscoped (global-scope) capability
+	// set. It is encoded with the coordinator client type's own json tags,
+	// which are snake_case (`cancel_job`, `manage_groups`, ...), NOT the
+	// camelCase the generated TS client uses for the same CSIL type. The
+	// SPA's api/auth.ts decodes these snake_case keys by hand;
+	// TestSessionInfoJSON_EmitsRolesAndSnakeCaseCapabilities pins the key set
+	// on this side and webapp/ui/src/api/auth.test.ts pins it on the SPA side.
 	Capabilities csilapi.GetCapabilitiesResponse `json:"capabilities"`
+}
+
+// sessionRoleJSON is one entry of sessionJSON.Roles. scope_id is omitted for
+// global-scope roles, where the coordinator sends none.
+type sessionRoleJSON struct {
+	ScopeType string `json:"scope_type"`
+	ScopeID   string `json:"scope_id,omitempty"`
+	Role      string `json:"role"`
 }
 
 // SessionInfoJSON serves the current session summary.
 func (h *WebHandler) SessionInfoJSON(w http.ResponseWriter, r *http.Request) {
 	si := h.resolveSession(r)
+	roles := make([]sessionRoleJSON, 0, len(si.Roles))
+	for _, role := range si.Roles {
+		entry := sessionRoleJSON{ScopeType: role.ScopeType, Role: role.Role}
+		if role.ScopeId != nil {
+			entry.ScopeID = *role.ScopeId
+		}
+		roles = append(roles, entry)
+	}
 	writeJSON(w, sessionJSON{
 		LoggedIn:      si.LoggedIn,
 		UserID:        si.UserID,
 		DisplayName:   si.DisplayName,
 		IsGlobalAdmin: si.IsGlobalAdmin,
+		Roles:         roles,
 		Capabilities:  si.Caps,
 	})
 }

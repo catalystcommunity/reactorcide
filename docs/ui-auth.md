@@ -43,7 +43,7 @@ job YAML, env files checked into a repo, or command output.
 | `REACTORCIDE_LINKKEYS_RP_ADDR` | `mode=rp` | `host:port` TCP CSIL-RPC address of your LinkKeys RP server. **The coordinator dials this address itself, so it must be reachable from the coordinator, not only from a browser.** In Kubernetes, a public hostname often resolves to a load-balancer IP that pods cannot reach; use the in-cluster service address (for example `linkkeys.linkkeys-ns.svc.cluster.local:4987`) instead. The TLS pin below, not the hostname, is the trust anchor, so an internal address is just as safe. |
 | `REACTORCIDE_LINKKEYS_RP_FINGERPRINTS` | `mode=rp` | Comma-separated pinned SPKI SHA-256 fingerprints for the RP server's TLS certificate (mirrors the RP's own `_linkkeys` DNS TXT record). |
 | `REACTORCIDE_LINKKEYS_RP_API_KEY` | `mode=rp`, first boot only | The RP server's API key. Presented once on first boot; the coordinator persists it encrypted (Fernet, under the active master key) in `auth_credentials` (`name='rp_api_key'`) and you can drop the env var afterward — same env-or-DB convention as `REACTORCIDE_MASTER_KEYS`. |
-| `REACTORCIDE_FIRST_ADMIN` | optional | An identity selector (`handle@domain` or `uuid@domain`, or a bare `domain` to match any handle at it) that is granted global admin the *first time* it completes a real login, as long as no global admin exists yet. Safe to leave set permanently — it's a no-op once an admin exists. |
+| `REACTORCIDE_FIRST_ADMIN` | optional | An identity selector (`handle@domain`, `uuid@domain`, `email@domain`, or a bare `domain` to match any identity at it) that is granted global admin the *first time* it completes a real login, as long as no global admin exists yet. Safe to leave set permanently — it's a no-op once any admin exists. This gate is deliberate: a standing grant would let whoever edits the deployment configuration take over an instance that already has administrators. |
 | `REACTORCIDE_BOOTSTRAP_ADMIN_TOKEN` | optional | Enables a one-time bootstrap-admin session (see below) while zero global admins exist. Unset (default) disables the feature entirely. |
 | `REACTORCIDE_TRUSTED_IDENTITIES` | `local-rp`/`rp` modes | Comma-separated `[handle@]domain` selectors seeded into the admission list at startup as `source=config` rows. A bare domain admits any handle at that domain. Global admins can add more from the UI (`source=admin`); config-seeded rows are re-applied on every restart. |
 | `REACTORCIDE_UI_CALLBACK_URL` | `local-rp`/`rp` modes | **The web UI's public base URL** (the origin browsers reach the webapp on, e.g. `https://ci.example.com`) — *not* the coordinator's own URL. The LinkKeys login callback is built as `REACTORCIDE_UI_CALLBACK_URL + "/app/auth/callback"`. This is fixed, coordinator-side config; the CSIL `begin-login` op has no per-request callback-url field, so a malicious caller can't redirect a login token elsewhere. |
@@ -83,10 +83,22 @@ You need *some* way to get your first global admin, since global admin is what g
 every other management capability (creating projects, managing secrets, assigning roles,
 editing trusted identities...).
 
-**First admin** (`REACTORCIDE_FIRST_ADMIN`): set this to the identity selector of whoever
+**First admin** (`REACTORCIDE_FIRST_ADMIN`): set this to the login identity of whoever
 should become the first admin, then have them log in normally through LinkKeys. The instant
 their login completes — and only if no global admin exists yet — they're granted the
-`global/admin` role. This is the normal path for `local-rp`/`rp` deployments.
+`global/admin` role. That person then grants further admins from the Roles page. Once any
+global admin exists the variable is inert, by design: administrators are managed inside the
+system by the administrators it has, not by the deployment configuration. This is the
+normal path for `local-rp`/`rp` deployments.
+
+The selector is matched against the verified identity's handle, its subject and its domain,
+and a `local@domain` selector also matches the identity's `email` claim exactly. Every
+comparison ignores case. The email form matters in `rp` mode: the subject there is a uuid,
+and the handle comes from a best-effort userinfo fetch that can fail, in which case the
+coordinator now logs a warning. On every completed login while the selector is set, one
+Info log line says what happened: did not match (with the handle, domain, subject and email
+that arrived), already an admin, or granted. If `/app/auth/config` reports
+`has_global_admin: false` after the intended person has signed in, read those two lines.
 
 **Bootstrap admin** (`REACTORCIDE_BOOTSTRAP_ADMIN_TOKEN`): for initial setup *before* login
 is fully wired up (or in `mode=none` deployments that still want one admin session to do
@@ -176,6 +188,20 @@ A few notes that trip people up:
 - The coordinator enforces every row of this table; the webapp only *mirrors* it (via
   `get-capabilities`) to decide what to render. Don't rely on hidden buttons for security —
   they're a UX affordance.
+- **Capabilities are scoped, and the UI asks at the right scope.** `GET /app/auth/session`
+  carries the GLOBAL-scope set, which is all-false for anyone but a global admin, plus the
+  caller's `roles`. Job, workflow and project pages call `get-capabilities` with
+  `project_id`; the coordinator resolves the project's owning organization and answers for
+  the caller's roles there. Nav links for Workers, Access and Secrets show when the caller
+  is a global admin or holds `admin` on some organization; each of those pages then has an
+  organization picker. A user's own id is not an organization.
+- **Finding a user id.** `list-users` (org admin of the named `org_id`, or global admin)
+  returns the accounts the coordinator knows, with username, display name and the sign-in
+  subject. An account appears after its first login. The role and group forms in the UI use
+  it as a picker, so nobody has to read a UUID out of the database.
+- **Cancel, kill and retry answer `not_found` for a job or workflow the caller cannot see**,
+  the same as `get-job`. This includes the anonymous `mode=none` grant: it reaches public
+  jobs only. `get-job-logs` and `get-job-metrics` behave the same way.
 
 ## Public/private visibility
 
@@ -192,6 +218,9 @@ A few notes that trip people up:
   `update-global-settings` op) — it doesn't retroactively change any existing project.
 - List/get/logs endpoints — both the legacy REST API and the CSIL UI service — apply this
   filtering consistently for the caller's resolved identity (including anonymous).
+- The UI's project page has an **Access** card for a project's own role assignments
+  (`member`, `owner`, `admin` at project scope) and the org pages manage org-scoped roles.
+  Both are visible to org admins of the owning organization and to global admins.
 
 ## Credential rotation: webhook secrets and VCS credentials
 
