@@ -5,11 +5,14 @@ from __future__ import annotations
 import base64
 import json
 import os
+import platform
 import re
 import shlex
 import shutil
 import subprocess
+import sys
 import tarfile
+import tempfile
 import time
 import urllib.error
 import urllib.parse
@@ -560,6 +563,184 @@ def _build_web_ui(code_dir: Path) -> None:
     _run(["npm", "run", "build"], cwd=ui_dir, env=environment)
 
 
+def _release_version(tag: str) -> str:
+    """Return the version to link into the binaries for this release tag.
+
+    The tag is re-validated here even though prepare_release already checked
+    it, because this value is spliced into a linker flag. _run never uses a
+    shell, so there is no shell injection to worry about, but a tag containing
+    a space would still split into extra -ldflags tokens and hand the linker
+    arguments nobody wrote.
+    """
+    if not RELEASE_TAG_PATTERN.fullmatch(tag):
+        raise RuntimeError(f"Not a release tag: {tag}")
+    return tag.removeprefix("v")
+
+
+def _version_ldflags(version: str) -> str:
+    """Return the -ldflags argument for a release build.
+
+    -X main.Version stamps the version the binary reports; -w -s drop the DWARF
+    tables and the symbol table, which the web image build already did and the
+    others now do too, so every released binary is built the same way.
+    """
+    return f"-ldflags=-X main.Version={version} -w -s"
+
+
+def _host_platform() -> tuple[str, str]:
+    """Return the runner's own GOOS/GOARCH, for deciding what can be executed."""
+    machine = platform.machine().lower()
+    arch = {
+        "x86_64": "amd64",
+        "amd64": "amd64",
+        "aarch64": "arm64",
+        "arm64": "arm64",
+    }.get(machine, machine)
+    return ("windows" if os.name == "nt" else sys.platform), arch
+
+
+def _linked_version_assignments(go_version_output: str) -> Optional[List[str]]:
+    """Return the -X assignments recorded in a binary, or None if it records none.
+
+    `go version -m` reads a binary's build settings whatever GOOS/GOARCH it was
+    built for, and prints the linker flags as one tab-separated field with the
+    whole value quoted:
+
+        build\t-ldflags="-X main.Version=1.2.3 -w -s"
+
+    The quotes have to come off before the value is split, or the entire flag
+    string comes back as one token and every comparison against it fails. The
+    -X forms the Go linker accepts are then normalised to their assignment, so
+    a caller can compare one for exact equality rather than by substring.
+
+    Returns None -- NOT an error -- when the binary records no linker flags.
+    Go omits -ldflags (and -gcflags, and -asmflags) from build settings
+    whenever -trimpath is set, because those flags can contain local paths, and
+    the CLI asset builds use -trimpath.
+    """
+    for line in go_version_output.splitlines():
+        fields = line.strip().split("\t")
+        if len(fields) != 2 or fields[0] != "build":
+            continue
+        setting = fields[1]
+        if not setting.startswith("-ldflags="):
+            continue
+        value = setting[len("-ldflags="):]
+        if len(value) >= 2 and value[0] == '"' and value[-1] == '"':
+            value = value[1:-1]
+        tokens = shlex.split(value)
+        assignments: List[str] = []
+        index = 0
+        while index < len(tokens):
+            token = tokens[index]
+            if token == "-X" and index + 1 < len(tokens):
+                assignments.append(tokens[index + 1])
+                index += 2
+                continue
+            if token.startswith("-X="):
+                assignments.append(token[len("-X="):])
+            elif token.startswith("-X") and len(token) > 2:
+                assignments.append(token[len("-X"):])
+            index += 1
+        return assignments
+    return None
+
+
+def _run_version_command(
+    binary: Path,
+    version: str,
+    command_name: str,
+) -> None:
+    """Execute a binary and require --version to print exactly what is expected."""
+    expected_output = f"{command_name} {version}"
+    result = _run([str(binary), "--version"], cwd=binary.parent, capture_output=True)
+    actual_output = result.stdout.strip()
+    if actual_output != expected_output:
+        raise RuntimeError(
+            f"{binary.name} --version printed {actual_output!r}, "
+            f"expected {expected_output!r}"
+        )
+
+
+def _verify_binary_version(
+    binary: Path,
+    version: str,
+    os_name: str,
+    arch: str,
+    *,
+    module_dir: Path,
+    build_args: tuple = (),
+    command_name: str = "reactorcide",
+) -> None:
+    """Confirm a release build reports the version being released.
+
+    This exists because getting it wrong is SILENT. A dropped -X flag, a
+    renamed main.Version, a version read from the wrong place: every one of
+    those still produces a binary that builds, installs, and runs, and only
+    admits to being "dev" when somebody finally asks it -- long after the
+    release is published.
+
+    Two checks run, and between them every release job verifies by EXECUTION:
+
+      * The artifact's own linker flags, when it records them. Go omits
+        -ldflags from build settings whenever -trimpath is set, so this covers
+        the image builds but not the CLI assets.
+
+      * A binary that runs on THIS runner, built from the same source with the
+        same flags, is executed and its --version compared exactly. When the
+        target is the runner's own platform that binary is the artifact itself,
+        which proves the whole chain end to end. Otherwise a host-platform twin
+        is built from the same arguments and run instead: that proves the flags
+        this job computed produce the right version, which is the failure worth
+        catching, since one code path builds all six platforms.
+
+    An earlier version of this searched the cross-compiled binary for the
+    version string instead of building a twin. That check was removed because
+    it does not work: a binary built with -X main.Version=9.9.9 still contains
+    the bytes "1.2.3" somewhere -- a dependency pinned at that version is
+    enough -- so it reported success for an artifact stamped with the wrong
+    version. A check that passes when it should fail is worse than no check.
+    """
+    expected_assignment = f"main.Version={version}"
+    result = _run(
+        ["go", "version", "-m", str(binary)],
+        cwd=binary.parent,
+        capture_output=True,
+    )
+    assignments = _linked_version_assignments(result.stdout)
+    if assignments is not None and expected_assignment not in assignments:
+        # Exact equality, not a substring test: main.Version=1.2.3 is a prefix
+        # of main.Version=1.2.30, and a check that accepts the wrong version is
+        # worse than no check.
+        raise RuntimeError(
+            f"{binary.name} was not linked with -X {expected_assignment}; "
+            f"go version -m reports {assignments or 'no -X assignments'}"
+        )
+
+    if (os_name, arch) == _host_platform():
+        _run_version_command(binary, version, command_name)
+        log_stdout(
+            f"Verified {binary.name} --version reports {command_name} {version}"
+        )
+        return
+
+    twin_dir = Path(tempfile.mkdtemp(prefix="reactorcide-version-check-"))
+    try:
+        twin = twin_dir / f"{binary.stem}-hostcheck"
+        _run(
+            ["go", "build", *build_args, _version_ldflags(version), "-o", str(twin), "."],
+            cwd=module_dir,
+            env=_go_environment(),
+        )
+        _run_version_command(twin, version, command_name)
+    finally:
+        shutil.rmtree(twin_dir, ignore_errors=True)
+    log_stdout(
+        f"Verified the {os_name}/{arch} build flags produce "
+        f"{command_name} {version} (the artifact itself cannot be run here)"
+    )
+
+
 def _go_environment(
     os_name: Optional[str] = None,
     arch: Optional[str] = None,
@@ -587,6 +768,7 @@ def build_release_images(code_dir: Path) -> None:
 
     target = _required_environment("REACTORCIDE_RELEASE_IMAGE")
     tag = str(release["tag_name"])
+    version = _release_version(tag)
     registry = _required_environment("REGISTRY_INTERNAL")
     environment = _registry_environment()
     buildctl = _install_buildctl()
@@ -611,12 +793,23 @@ def build_release_images(code_dir: Path) -> None:
                 "go",
                 "build",
                 "-buildvcs=false",
+                _version_ldflags(version),
                 "-o",
                 str(binary),
                 ".",
             ],
             cwd=code_dir / "coordinator_api",
             env=_go_environment("linux", "amd64"),
+        )
+        # This one binary is both the coordinator and the worker image, so
+        # `serve` and `worker` report whatever it says here.
+        _verify_binary_version(
+            binary,
+            version,
+            "linux",
+            "amd64",
+            module_dir=code_dir / "coordinator_api",
+            build_args=("-buildvcs=false",),
         )
         deployment_binary = code_dir / "deployment" / "reactorcide"
         shutil.copy2(binary, deployment_binary)
@@ -649,13 +842,22 @@ def build_release_images(code_dir: Path) -> None:
                 "go",
                 "build",
                 "-buildvcs=false",
-                "-ldflags=-w -s",
+                _version_ldflags(version),
                 "-o",
                 str(binary),
                 ".",
             ],
             cwd=code_dir / "webapp",
             env=_go_environment("linux", "amd64"),
+        )
+        _verify_binary_version(
+            binary,
+            version,
+            "linux",
+            "amd64",
+            module_dir=code_dir / "webapp",
+            build_args=("-buildvcs=false",),
+            command_name="reactorcide-web",
         )
         deployment_binary = code_dir / "deployment" / "reactorcide-web"
         shutil.copy2(binary, deployment_binary)
@@ -695,12 +897,23 @@ def _release_asset_path(code_dir: Path, version: str, os_name: str, arch: str) -
             "build",
             "-buildvcs=false",
             "-trimpath",
+            _version_ldflags(version),
             "-o",
             str(binary_path),
             ".",
         ],
         cwd=code_dir / "coordinator_api",
         env=environment,
+    )
+    # Before the binary is archived and uploaded: an asset that reports the
+    # wrong version is not recallable once it is attached to a release.
+    _verify_binary_version(
+        binary_path,
+        version,
+        os_name,
+        arch,
+        module_dir=code_dir / "coordinator_api",
+        build_args=("-buildvcs=false", "-trimpath"),
     )
 
     archive_stem = f"reactorcide-{version}-{os_name}-{arch}"
@@ -758,8 +971,7 @@ def build_release_cli(code_dir: Path) -> None:
         return
 
     os_name, arch = _platform()
-    tag = str(release["tag_name"])
-    version = tag.removeprefix("v")
+    version = _release_version(str(release["tag_name"]))
     asset_path = _release_asset_path(
         code_dir,
         version,

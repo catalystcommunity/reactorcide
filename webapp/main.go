@@ -9,9 +9,13 @@ import (
 )
 
 func main() {
+	useVersionLine()
 	app := &cli.App{
 		Name:  "reactorcide-web",
 		Usage: "Reactorcide Web UI",
+		// Setting Version is what registers --version/-v: urfave hides the
+		// flag when this is empty.
+		Version: Version,
 		Commands: []*cli.Command{
 			cmd.ServeCommand,
 		},

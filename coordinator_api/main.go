@@ -31,9 +31,13 @@ func main() {
 }
 
 func newApp() *cli.App {
+	useVersionLine()
 	return &cli.App{
 		Name:  "reactorcide",
 		Usage: "Reactorcide CI/CD system",
+		// Setting Version is what makes urfave register --version/-v at all:
+		// it forces HideVersion true when empty.
+		Version: Version,
 		Commands: []*cli.Command{
 			cmd.ServeCommand,
 			cmd.MigrateCommand,
