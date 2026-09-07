@@ -117,24 +117,11 @@ async function postForm(path: string, fields: Record<string, string>): Promise<R
   })
 }
 
-/**
- * Starts a login. The server answers with a redirect to the identity provider,
- * so this navigates rather than returning: a login is a top-level journey out
- * of the application and back, not a fetch.
- */
-export async function beginLogin(identity: string): Promise<string | null> {
-  const response = await postForm('/app/auth/login', { identity })
-  if (response.redirected) {
-    window.location.assign(response.url)
-    return null
-  }
-  if (response.ok) {
-    window.location.assign('/app/')
-    return null
-  }
-  const body = await response.json().catch(() => ({ error: 'Sign-in failed.' }))
-  return (body as { error?: string }).error ?? 'Sign-in failed.'
-}
+// There is deliberately no beginLogin here. The sign-in form in
+// routes/SignIn.tsx posts natively to /app/auth/login, because the answer is a
+// 302 to the identity provider and only a top-level navigation can follow it
+// off this origin. A fetch would follow the redirect itself, hit the
+// provider's page without CORS headers, and reject.
 
 export async function logout(): Promise<void> {
   await postForm('/app/auth/logout', {})
