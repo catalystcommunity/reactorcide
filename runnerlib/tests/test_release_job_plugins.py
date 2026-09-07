@@ -461,3 +461,308 @@ def test_release_workflows_match_only_merge_and_release_tag_events():
         "not-a-release",
     ) == []
     assert evaluate_workflows(workflows, "push", "main") == []
+
+
+# --- Release version stamping ------------------------------------------------
+#
+# A binary that reports the wrong version, or no version, still builds and runs.
+# Nothing notices until somebody asks a shipped binary what it is, which is why
+# the release job asserts on it rather than trusting the build.
+
+
+@pytest.mark.parametrize(
+    ("tag", "expected"),
+    [
+        ("v1.2.3", "1.2.3"),
+        ("v0.0.1", "0.0.1"),
+        ("v1.2.3-rc.1", "1.2.3-rc.1"),
+        ("v10.20.30", "10.20.30"),
+    ],
+)
+def test_release_version_strips_the_tag_prefix(tag, expected):
+    plugin = _load_release_plugin()
+
+    assert plugin._release_version(tag) == expected
+
+
+@pytest.mark.parametrize(
+    "tag",
+    [
+        "latest",
+        "1.2.3",
+        # The version is spliced into a linker flag. _run never uses a shell,
+        # so there is no shell injection here, but whitespace would still split
+        # into extra -ldflags tokens and hand the linker arguments nobody wrote.
+        "v1.2.3 -X main.Version=evil",
+        "v1.2.3\t-s",
+    ],
+)
+def test_release_version_rejects_anything_that_is_not_a_release_tag(tag):
+    plugin = _load_release_plugin()
+
+    with pytest.raises(RuntimeError, match="Not a release tag"):
+        plugin._release_version(tag)
+
+
+def test_version_ldflags_stamps_the_version_and_keeps_the_strip_flags():
+    plugin = _load_release_plugin()
+
+    assert plugin._version_ldflags("1.2.3") == "-ldflags=-X main.Version=1.2.3 -w -s"
+
+
+@pytest.mark.parametrize(
+    ("setting", "expected"),
+    [
+        # go version -m quotes the whole value. Without unwrapping it, shlex
+        # returns the entire flag string as one token and every comparison
+        # against it fails -- on correct builds.
+        ('build\t-ldflags="-X main.Version=1.2.3 -w -s"', ["main.Version=1.2.3"]),
+        ('build\t-ldflags="-X=main.Version=1.2.3"', ["main.Version=1.2.3"]),
+        ('build\t-ldflags="-Xmain.Version=1.2.3"', ["main.Version=1.2.3"]),
+        ('build\t-ldflags="-w -s"', []),
+        # -trimpath makes Go omit -ldflags from the build settings entirely,
+        # because linker flags can contain local paths. That is absence of
+        # evidence, not a failure, so it is reported as None.
+        ("build\t-trimpath=true", None),
+        ("", None),
+    ],
+)
+def test_linked_version_assignments_reads_every_x_form(setting, expected):
+    plugin = _load_release_plugin()
+
+    assert plugin._linked_version_assignments(f"\t{setting}\n") == expected
+
+
+def _stub_go_version(plugin, monkeypatch, *, stdout, on_execute=None):
+    """Replace _run so the version check sees a chosen `go version -m` result.
+
+    Executing the binary returns on_execute, defaulting to the correct output.
+    """
+
+    def fake_run(command, *, cwd, env=None, capture_output=False):
+        if command[:3] == ["go", "version", "-m"]:
+            return subprocess.CompletedProcess(command, 0, stdout=stdout, stderr="")
+        if command[0] == "go" and command[1] == "build":
+            return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
+        return subprocess.CompletedProcess(
+            command,
+            0,
+            stdout=on_execute if on_execute is not None else "reactorcide 1.2.3\n",
+            stderr="",
+        )
+
+    monkeypatch.setattr(plugin, "_run", fake_run)
+
+
+def test_verify_executes_a_native_binary_and_compares_exactly(
+    monkeypatch,
+    tmp_path,
+):
+    plugin = _load_release_plugin()
+    monkeypatch.setattr(plugin, "_host_platform", lambda: ("linux", "amd64"))
+    _stub_go_version(plugin, monkeypatch, stdout="\tbuild\t-trimpath=true\n")
+    binary = tmp_path / "reactorcide"
+    binary.write_bytes(b"")
+
+    plugin._verify_binary_version(
+        binary,
+        "1.2.3",
+        "linux",
+        "amd64",
+        module_dir=tmp_path,
+        build_args=("-buildvcs=false", "-trimpath"),
+    )
+
+
+@pytest.mark.parametrize(
+    "printed",
+    [
+        # The ldflag never reached the build.
+        "reactorcide dev\n",
+        # 1.2.30 must not satisfy 1.2.3: the comparison is exact, not a prefix.
+        "reactorcide 1.2.30\n",
+        # The right version from the wrong binary.
+        "reactorcide-web 1.2.3\n",
+        # urfave's default printer, which this CLI deliberately replaces.
+        "reactorcide version 1.2.3\n",
+    ],
+)
+def test_verify_rejects_a_native_binary_that_reports_something_else(
+    monkeypatch,
+    tmp_path,
+    printed,
+):
+    plugin = _load_release_plugin()
+    monkeypatch.setattr(plugin, "_host_platform", lambda: ("linux", "amd64"))
+    _stub_go_version(
+        plugin,
+        monkeypatch,
+        stdout="\tbuild\t-trimpath=true\n",
+        on_execute=printed,
+    )
+    binary = tmp_path / "reactorcide"
+    binary.write_bytes(b"")
+
+    with pytest.raises(RuntimeError, match="--version printed"):
+        plugin._verify_binary_version(
+            binary,
+            "1.2.3",
+            "linux",
+            "amd64",
+            module_dir=tmp_path,
+            build_args=("-buildvcs=false", "-trimpath"),
+        )
+
+
+@pytest.mark.parametrize(
+    "recorded",
+    [
+        '\tbuild\t-ldflags="-X main.Version=9.9.9 -w -s"\n',
+        '\tbuild\t-ldflags="-X main.Version=1.2.30 -w -s"\n',
+        '\tbuild\t-ldflags="-w -s"\n',
+    ],
+)
+def test_verify_rejects_an_artifact_whose_recorded_ldflags_are_wrong(
+    monkeypatch,
+    tmp_path,
+    recorded,
+):
+    plugin = _load_release_plugin()
+    monkeypatch.setattr(plugin, "_host_platform", lambda: ("linux", "amd64"))
+    _stub_go_version(plugin, monkeypatch, stdout=recorded)
+    binary = tmp_path / "reactorcide"
+    binary.write_bytes(b"")
+
+    with pytest.raises(RuntimeError, match="was not linked with"):
+        plugin._verify_binary_version(
+            binary,
+            "1.2.3",
+            "linux",
+            "amd64",
+            module_dir=tmp_path,
+            build_args=("-buildvcs=false",),
+        )
+
+
+def test_verify_builds_a_host_twin_for_a_target_it_cannot_run(
+    monkeypatch,
+    tmp_path,
+):
+    """A cross-compiled artifact cannot be executed, so its flags are.
+
+    An earlier version searched the binary for the version string instead. That
+    check does not work: a binary stamped 9.9.9 still contains the bytes of
+    1.2.3 somewhere -- one dependency pinned at that version is enough -- so it
+    reported success for an artifact carrying the wrong version.
+    """
+    plugin = _load_release_plugin()
+    monkeypatch.setattr(plugin, "_host_platform", lambda: ("linux", "amd64"))
+    commands = []
+
+    def fake_run(command, *, cwd, env=None, capture_output=False):
+        commands.append((list(command), Path(cwd), dict(env or {})))
+        if command[:3] == ["go", "version", "-m"]:
+            return subprocess.CompletedProcess(
+                command, 0, stdout="\tbuild\t-trimpath=true\n", stderr=""
+            )
+        return subprocess.CompletedProcess(
+            command, 0, stdout="reactorcide 1.2.3\n", stderr=""
+        )
+
+    monkeypatch.setattr(plugin, "_run", fake_run)
+    binary = tmp_path / "reactorcide.exe"
+    binary.write_bytes(b"")
+
+    plugin._verify_binary_version(
+        binary,
+        "1.2.3",
+        "windows",
+        "arm64",
+        module_dir=tmp_path / "coordinator_api",
+        build_args=("-buildvcs=false", "-trimpath"),
+    )
+
+    build, _, build_env = next(
+        entry for entry in commands if entry[0][:2] == ["go", "build"]
+    )
+    assert "-ldflags=-X main.Version=1.2.3 -w -s" in build
+    assert "-trimpath" in build
+    # The twin has to run on THIS machine, so it must NOT inherit the
+    # artifact's GOOS/GOARCH -- a windows/arm64 twin could not be executed.
+    assert "GOOS" not in build_env
+    assert "GOARCH" not in build_env
+    twin = next(entry[0] for entry in commands if entry[0][0].endswith("-hostcheck"))
+    assert twin[1] == "--version"
+
+
+def test_cli_asset_build_stamps_and_verifies_the_version(monkeypatch, tmp_path):
+    plugin = _load_release_plugin()
+    commands = []
+
+    def fake_run(command, *, cwd, env=None, capture_output=False):
+        commands.append(list(command))
+        if command[:2] == ["go", "build"]:
+            Path(command[command.index("-o") + 1]).write_bytes(b"binary")
+        return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
+
+    monkeypatch.setattr(plugin, "_run", fake_run)
+    verify = Mock()
+    monkeypatch.setattr(plugin, "_verify_binary_version", verify)
+
+    plugin._release_asset_path(tmp_path, "1.2.3", "darwin", "arm64")
+
+    build = next(c for c in commands if c[:2] == ["go", "build"])
+    assert "-ldflags=-X main.Version=1.2.3 -w -s" in build
+    verify.assert_called_once()
+    assert verify.call_args.args[1:] == ("1.2.3", "darwin", "arm64")
+
+
+@pytest.mark.parametrize(
+    ("target", "module", "command_name"),
+    [
+        ("coordinator-worker", "coordinator_api", "reactorcide"),
+        ("web", "webapp", "reactorcide-web"),
+    ],
+)
+def test_image_builds_stamp_and_verify_the_version(
+    monkeypatch,
+    tmp_path,
+    target,
+    module,
+    command_name,
+):
+    plugin = _load_release_plugin()
+    monkeypatch.setenv("REACTORCIDE_RELEASE_IMAGE", target)
+    monkeypatch.setenv("REGISTRY_INTERNAL", "registry.example")
+    monkeypatch.setattr(
+        plugin,
+        "_release_for_source",
+        Mock(return_value={"id": 1, "tag_name": "v1.2.3"}),
+    )
+    monkeypatch.setattr(plugin, "_registry_environment", Mock(return_value={}))
+    monkeypatch.setattr(plugin, "_install_buildctl", Mock(return_value="buildctl"))
+    monkeypatch.setattr(plugin, "_wait_for_buildkit", Mock())
+    monkeypatch.setattr(plugin, "_build_and_push", Mock())
+    monkeypatch.setattr(plugin, "_build_web_ui", Mock())
+    verify = Mock()
+    monkeypatch.setattr(plugin, "_verify_binary_version", verify)
+    (tmp_path / "deployment").mkdir()
+    commands = []
+
+    def fake_run(command, *, cwd, env=None, capture_output=False):
+        commands.append((list(command), Path(cwd)))
+        if command[:2] == ["go", "build"]:
+            Path(command[command.index("-o") + 1]).write_bytes(b"binary")
+        return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
+
+    monkeypatch.setattr(plugin, "_run", fake_run)
+
+    plugin.build_release_images(tmp_path)
+
+    build, cwd = next((c, d) for c, d in commands if c[:2] == ["go", "build"])
+    assert "-ldflags=-X main.Version=1.2.3 -w -s" in build
+    assert cwd == tmp_path / module
+    verify.assert_called_once()
+    assert verify.call_args.args[1:] == ("1.2.3", "linux", "amd64")
+    assert verify.call_args.kwargs["module_dir"] == tmp_path / module
+    assert verify.call_args.kwargs.get("command_name", "reactorcide") == command_name
