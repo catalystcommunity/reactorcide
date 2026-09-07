@@ -30,6 +30,73 @@ func mapJobControlErr(err error) error {
 	return NewServiceError("internal", "an internal error occurred")
 }
 
+// jobControlScope is the authz.Scope every job-control op authorizes at.
+//
+// When the resource has a project, only ProjectID is set, so that
+// authz.Capabilities resolves the owning org from the project itself
+// (project.OwnershipOrgID(), the org the projects table actually records).
+// Capabilities skips that resolution whenever Scope.OrgID is non-nil, even
+// when it points at an empty string (see the `orgID == nil && scope.ProjectID
+// != nil` branch in authz/capabilities.go). The previous code passed
+// `OrgID: &job.UserID`; a service-token-created job has an empty user_id, so
+// the org resolved to "" and an org admin of the project's owning org was
+// denied cancel/retry/kill on it.
+//
+// A project-less resource falls back to its OwnershipOrgID (org_id, or the
+// legacy user_id column when org_id is empty). A resource with neither gets
+// the global scope, where only a global admin holds any capability.
+func jobControlScope(projectID *string, ownershipOrgID string) authz.Scope {
+	if projectID != nil && *projectID != "" {
+		return authz.Scope{ProjectID: projectID}
+	}
+	if ownershipOrgID != "" {
+		org := ownershipOrgID
+		return authz.Scope{OrgID: &org}
+	}
+	return authz.Scope{}
+}
+
+// jobScope is jobControlScope for a job.
+func jobScope(job *models.Job) authz.Scope {
+	return jobControlScope(job.ProjectID, job.OwnershipOrgID())
+}
+
+// workflowScope is jobControlScope for a workflow instance.
+func workflowScope(wf *models.WorkflowInstance) authz.Scope {
+	return jobControlScope(wf.ProjectID, wf.OwnershipOrgID())
+}
+
+// requireJobVisible answers "not found" for a job the caller cannot view.
+// Every job-control op runs this BEFORE its capability check: a "forbidden"
+// on a by-id op confirms the id exists, which turns the op into an existence
+// oracle for jobs in private projects. This matches GetJob (ui_jobs.go).
+// It also closes the mode-none hole where an anonymous caller (who may
+// cancel/retry by design) could act on a job in a private project it could
+// not even list.
+func (s *UiService) requireJobVisible(ctx context.Context, id authz.Identity, job *models.Job) error {
+	visible, err := s.deps.Resolver.CanViewJob(ctx, id, job)
+	if err != nil {
+		return NewServiceError("internal", "an internal error occurred")
+	}
+	if !visible {
+		return NewServiceError("not_found", "job not found")
+	}
+	return nil
+}
+
+// requireWorkflowVisible is requireJobVisible for a workflow instance; see
+// GetWorkflow (ui_workflows.go) for the matching read-side rule.
+func (s *UiService) requireWorkflowVisible(ctx context.Context, id authz.Identity, wf *models.WorkflowInstance) error {
+	visible, err := s.deps.Resolver.CanViewWorkflowInstance(ctx, id, wf)
+	if err != nil {
+		return NewServiceError("internal", "an internal error occurred")
+	}
+	if !visible {
+		return NewServiceError("not_found", "workflow not found")
+	}
+	return nil
+}
+
 // CancelJob requests a graceful cancel (cleanup hooks run).CurrentMode);
 // everywhere else the caller needs at least project owner (of the job's
 // project) or org admin (of the job's org) — exactly what
@@ -45,7 +112,10 @@ func (s *UiService) CancelJob(ctx context.Context, req csilapi.CancelJobRequest)
 	}
 
 	id, _ := s.deps.resolveIdentity(ctx)
-	caps, err := s.deps.Resolver.Capabilities(ctx, id, authz.Scope{OrgID: &job.UserID, ProjectID: job.ProjectID})
+	if err := s.requireJobVisible(ctx, id, job); err != nil {
+		return csilapi.CancelJobResponse{}, err
+	}
+	caps, err := s.deps.Resolver.Capabilities(ctx, id, jobScope(job))
 	if err != nil {
 		return csilapi.CancelJobResponse{}, NewServiceError("internal", "an internal error occurred")
 	}
@@ -61,9 +131,13 @@ func (s *UiService) CancelJob(ctx context.Context, req csilapi.CancelJobRequest)
 }
 
 // KillJob requests an immediate forced kill (no cleanup guarantee). Always
-// requires org admin (of the job's org) or global admin — never available to
-// an anonymous caller, in any auth mode (authz.Resolver.RequireOrgAdmin
-// returns false for an anonymous identity unconditionally).
+// requires org admin (of the job's owning org) or global admin — never
+// available to an anonymous caller in any auth mode, and never to a project
+// owner: authz.Caps.Kill is granted only by orgAdminCaps() (see
+// authz/capabilities.go), which the anonymous mode-none row and the
+// project-owner row do not receive. Using Capabilities here, rather than
+// RequireOrgAdmin(job.UserID), lets the owning org be resolved from the
+// job's project (see jobControlScope).
 func (s *UiService) KillJob(ctx context.Context, req csilapi.KillJobRequest) (csilapi.KillJobResponse, error) {
 	if err := requireNonEmpty("job_id", req.JobId, 64); err != nil {
 		return csilapi.KillJobResponse{}, err
@@ -74,8 +148,15 @@ func (s *UiService) KillJob(ctx context.Context, req csilapi.KillJobRequest) (cs
 	}
 
 	id, _ := s.deps.resolveIdentity(ctx)
-	if err := s.deps.Resolver.RequireOrgAdmin(ctx, id, job.UserID); err != nil {
-		return csilapi.KillJobResponse{}, mapPermissionErr(err)
+	if err := s.requireJobVisible(ctx, id, job); err != nil {
+		return csilapi.KillJobResponse{}, err
+	}
+	caps, err := s.deps.Resolver.Capabilities(ctx, id, jobScope(job))
+	if err != nil {
+		return csilapi.KillJobResponse{}, NewServiceError("internal", "an internal error occurred")
+	}
+	if !caps.Kill {
+		return csilapi.KillJobResponse{}, NewServiceError("forbidden", "you do not have permission to kill this job")
 	}
 
 	updated, err := jobcontrol.KillJob(ctx, s.deps.Store, s.deps.CorndogsClient, job)
@@ -112,7 +193,10 @@ func (s *UiService) CancelWorkflow(ctx context.Context, req csilapi.CancelWorkfl
 	}
 
 	id, _ := s.deps.resolveIdentity(ctx)
-	caps, err := s.deps.Resolver.Capabilities(ctx, id, authz.Scope{OrgID: &wf.UserID, ProjectID: wf.ProjectID})
+	if err := s.requireWorkflowVisible(ctx, id, wf); err != nil {
+		return csilapi.CancelWorkflowResponse{}, err
+	}
+	caps, err := s.deps.Resolver.Capabilities(ctx, id, workflowScope(wf))
 	if err != nil {
 		return csilapi.CancelWorkflowResponse{}, NewServiceError("internal", "an internal error occurred")
 	}
@@ -143,7 +227,10 @@ func (s *UiService) RetryJob(ctx context.Context, req csilapi.RetryJobRequest) (
 	}
 
 	id, _ := s.deps.resolveIdentity(ctx)
-	caps, err := s.deps.Resolver.Capabilities(ctx, id, authz.Scope{OrgID: &job.UserID, ProjectID: job.ProjectID})
+	if err := s.requireJobVisible(ctx, id, job); err != nil {
+		return csilapi.RetryJobResponse{}, err
+	}
+	caps, err := s.deps.Resolver.Capabilities(ctx, id, jobScope(job))
 	if err != nil {
 		return csilapi.RetryJobResponse{}, NewServiceError("internal", "an internal error occurred")
 	}
@@ -177,7 +264,10 @@ func (s *UiService) RetryWorkflow(ctx context.Context, req csilapi.RetryWorkflow
 	}
 
 	id, _ := s.deps.resolveIdentity(ctx)
-	caps, err := s.deps.Resolver.Capabilities(ctx, id, authz.Scope{OrgID: &wf.UserID, ProjectID: wf.ProjectID})
+	if err := s.requireWorkflowVisible(ctx, id, wf); err != nil {
+		return csilapi.RetryWorkflowResponse{}, err
+	}
+	caps, err := s.deps.Resolver.Capabilities(ctx, id, workflowScope(wf))
 	if err != nil {
 		return csilapi.RetryWorkflowResponse{}, NewServiceError("internal", "an internal error occurred")
 	}
@@ -226,7 +316,10 @@ func (s *UiService) RetryUnsuccessfulJobs(ctx context.Context, req csilapi.Retry
 	}
 
 	id, _ := s.deps.resolveIdentity(ctx)
-	caps, err := s.deps.Resolver.Capabilities(ctx, id, authz.Scope{OrgID: &wf.UserID, ProjectID: wf.ProjectID})
+	if err := s.requireWorkflowVisible(ctx, id, wf); err != nil {
+		return csilapi.RetryUnsuccessfulJobsResponse{}, err
+	}
+	caps, err := s.deps.Resolver.Capabilities(ctx, id, workflowScope(wf))
 	if err != nil {
 		return csilapi.RetryUnsuccessfulJobsResponse{}, NewServiceError("internal", "an internal error occurred")
 	}

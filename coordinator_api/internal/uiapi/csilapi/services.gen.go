@@ -48,6 +48,7 @@ type ReactorcideUi interface {
 	AddGroupMember(ctx context.Context, req AddGroupMemberRequest) (AddGroupMemberResponse, error)
 	RemoveGroupMember(ctx context.Context, req RemoveGroupMemberRequest) (RemoveGroupMemberResponse, error)
 	ListGroupMembers(ctx context.Context, req ListGroupMembersRequest) (ListGroupMembersResponse, error)
+	ListUsers(ctx context.Context, req ListUsersRequest) (ListUsersResponse, error)
 	ListRoleAssignments(ctx context.Context, req ListRoleAssignmentsRequest) (ListRoleAssignmentsResponse, error)
 	AssignRole(ctx context.Context, req AssignRoleRequest) (AssignRoleResponse, error)
 	RevokeRole(ctx context.Context, req RevokeRoleRequest) (RevokeRoleResponse, error)

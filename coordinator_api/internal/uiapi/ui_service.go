@@ -50,7 +50,11 @@ func (s *UiService) GetCapabilities(ctx context.Context, req csilapi.GetCapabili
 	orgID := req.OrgId
 	if orgID == nil && req.ProjectId != nil {
 		if project, err := s.deps.Store.GetProjectByID(ctx, *req.ProjectId); err == nil {
-			orgID = project.UserID
+			// The owning org is projects.org_id (OwnershipOrgID), not the
+			// legacy user_id column, which is nil/empty for REST-created
+			// projects and is a different UUID from the org for the rest.
+			owningOrg := project.OwnershipOrgID()
+			orgID = &owningOrg
 		}
 	}
 	isOrgAdmin := false

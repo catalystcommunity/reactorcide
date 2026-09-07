@@ -34,6 +34,7 @@ func (s *UiService) DescribeFormMetadata(_ context.Context, _ csilapi.DescribeFo
 		JobStatuses:      jobStatusChoices(),
 		WorkflowStatuses: workflowStatusChoices(),
 		CiSourceTypes:    ciSourceTypeChoices(),
+		VcsProviders:     vcsProviderChoices(),
 	}, nil
 }
 
@@ -116,5 +117,17 @@ func ciSourceTypeChoices() []csilapi.EnumChoice {
 			Description: "Trusted CI content is cloned from a git URL."},
 		{Value: "inline", Label: "Inline",
 			Description: "Trusted CI content travels with the job specification."},
+	}
+}
+
+// vcsProviderChoices is derived from internal/vcs/interface.go. The webhook
+// secret and VCS credential forms bind their provider control to this list so
+// they cannot offer a provider the coordinator has no adapter for.
+func vcsProviderChoices() []csilapi.EnumChoice {
+	return []csilapi.EnumChoice{
+		{Value: string(vcs.GitHub), Label: "GitHub",
+			Description: "GitHub.com or GitHub Enterprise webhooks and API tokens."},
+		{Value: string(vcs.GitLab), Label: "GitLab",
+			Description: "GitLab.com or self-managed GitLab webhooks and API tokens."},
 	}
 }

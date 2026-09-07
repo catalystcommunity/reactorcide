@@ -1,10 +1,13 @@
-import { Show, createSignal, type JSX } from 'solid-js'
+import { Show, createEffect, createMemo, createSignal, type JSX } from 'solid-js'
 import { useNavigate } from '@solidjs/router'
 import { api, ServiceError } from '~/api/client.ts'
-import { useFormMetadata } from '~/store/resources.ts'
-import { useSession } from '~/lib/session.tsx'
+import type { OrgSummary } from '~/api/csilapi/types.gen.ts'
+import { useFormMetadata, useOrgs } from '~/store/resources.ts'
+import { adminOrgIds, canManageSomeOrg, useSession } from '~/lib/session.tsx'
 import { Field } from '~/components/Field.tsx'
 import { ChoiceSelect, ChoiceMultiSelect } from '~/components/ChoiceInput.tsx'
+import { OrgPicker, pickInitialOrg } from '~/components/OrgPicker.tsx'
+import { NotPermitted } from '~/components/ManagementPage.tsx'
 
 /**
  * The New Project form.
@@ -19,6 +22,12 @@ import { ChoiceSelect, ChoiceMultiSelect } from '~/components/ChoiceInput.tsx'
  * Everything offered below comes from `describe-form-metadata`, which derives
  * it from the same constants the coordinator validates against. The form cannot
  * suggest a value the server would reject.
+ *
+ * The organization is a real choice, not the caller's user id. Projects live
+ * in organization rows with their own ids; the caller's user id is not one of
+ * them, and a project created there would belong to an org nobody administers.
+ * The picker offers the orgs the caller administers (every org, for a global
+ * admin) and hides itself when there is only one.
  */
 
 interface Errors {
@@ -27,9 +36,32 @@ interface Errors {
 }
 
 export function ProjectNew(): JSX.Element {
+  const { session } = useSession()
+  return (
+    <Show when={canManageSomeOrg(session())} fallback={<NotPermitted what="projects" />}>
+      <ProjectNewForm />
+    </Show>
+  )
+}
+
+function ProjectNewForm(): JSX.Element {
   const navigate = useNavigate()
   const { session } = useSession()
   const metadata = useFormMetadata()
+  const orgs = useOrgs()
+
+  const allowedOrg = (org: OrgSummary): boolean => {
+    const current = session()
+    return Boolean(current?.is_global_admin) || adminOrgIds(current).includes(org.orgId)
+  }
+  const allowedOrgs = createMemo(() => (orgs.state().data?.orgs ?? []).filter(allowedOrg))
+
+  const [orgId, setOrgId] = createSignal('')
+  // The initial org is chosen once the list arrives, and only while nothing
+  // has been picked: a refresh must not move the form off a chosen org.
+  createEffect(() => {
+    if (!orgId() && allowedOrgs().length > 0) setOrgId(pickInitialOrg(allowedOrgs(), () => true))
+  })
 
   const [name, setName] = createSignal('')
   const [repoUrl, setRepoUrl] = createSignal('')
@@ -63,13 +95,13 @@ export function ProjectNew(): JSX.Element {
 
   const submit = async (event: Event) => {
     event.preventDefault()
-    if (!validate()) return
+    if (!validate() || !orgId()) return
 
     setBusy(true)
     setSubmitError(undefined)
     try {
       const response = await api.createProject({
-        orgId: session()?.user_id ?? '',
+        orgId: orgId(),
         name: name().trim(),
         repoUrl: repoUrl().trim(),
         description: description().trim() || undefined,
@@ -100,6 +132,20 @@ export function ProjectNew(): JSX.Element {
             <div class="alert alert-error" role="alert">
               {submitError()}
             </div>
+          </Show>
+
+          <Show when={allowedOrgs().length > 1}>
+            <Field label="Organization" required hint="The organization that will own this project.">
+              {(ids) => (
+                <OrgPicker
+                  id={ids.id}
+                  orgs={allowedOrgs()}
+                  value={orgId()}
+                  describedBy={ids.describedBy}
+                  onChange={setOrgId}
+                />
+              )}
+            </Field>
           </Show>
 
           <Field
@@ -228,7 +274,7 @@ export function ProjectNew(): JSX.Element {
           </div>
 
           <div class="row">
-            <button type="submit" class="btn btn-primary" disabled={busy()}>
+            <button type="submit" class="btn btn-primary" disabled={busy() || !orgId()}>
               {busy() ? 'Creating…' : 'Create project'}
             </button>
             <button type="button" class="btn" onClick={() => navigate('/projects')}>

@@ -26,27 +26,68 @@ import (
 // authz/resolver.go's doc comment). Callers resolve "is this viewer a global
 // admin" once via authz.Resolver.IsGlobalAdmin and pass the bool in.
 
+// visibilityAliases names the tables one visibility predicate references for
+// an "owned resource" row (a jobs or workflow_instances row, aliased ent —
+// both expose project_id, org_id and user_id):
+//
+//   - proj: the resource's projects row, if any
+//   - projOrg / projUser: that project's owning organizations row and the
+//     legacy users row for the same id (see visibilityJoins for why both)
+//   - entOrg / entUser: the same pair for the resource's own owning org
+type visibilityAliases struct {
+	ent, proj, projOrg, projUser, entOrg, entUser string
+}
+
+// ownerExprSQL is the SQL for a row's owning org id: org_id, falling back to
+// the legacy user_id. This is models.Project/Job/WorkflowInstance's
+// OwnershipOrgID() in SQL. projects.org_id is NOT NULL after migration 000025,
+// but jobs.org_id and workflow_instances.org_id are nullable, so the fallback
+// is real for those two tables (and harmless for projects).
+func ownerExprSQL(alias string) string {
+	return fmt.Sprintf("COALESCE(%[1]s.org_id, %[1]s.user_id)", alias)
+}
+
+// orgPrivateExprSQL is "is this org private" given the organizations and
+// legacy users rows joined for one owning org id: the organizations row's
+// flag when the row exists, else the users row's flag (orgs backfilled from
+// users share the user's UUID, and login-provisioned users may have no
+// organizations row), else false. Mirrors authz.visibilityBatch.orgIsPrivate.
+func orgPrivateExprSQL(orgAlias, userAlias string) string {
+	return fmt.Sprintf("COALESCE(%s.is_private, %s.is_private, false)", orgAlias, userAlias)
+}
+
 // visibilityJoins returns the LEFT JOIN clauses needed to evaluate
-// visibilityPredicateSQL for an "owned resource" row aliased entAlias (must
-// expose <entAlias>.project_id and <entAlias>.user_id — both jobs and
-// workflow_instances do). projAlias/projOwnerAlias/entOwnerAlias name the
-// three additionally-joined tables the predicate references: the resource's
-// project (if any), that project's owning org (user) row, and the resource's
-// own owning-org (user) row.
-func visibilityJoins(entAlias, projAlias, projOwnerAlias, entOwnerAlias string) []string {
+// visibilityPredicateSQL for an owned-resource row aliased a.ent. Each owning
+// org id (the project's and the resource's own, both via ownerExprSQL) is
+// joined to BOTH organizations and users: organizations.is_private is the
+// first-class flag, users.is_private the legacy one for orgs that have no
+// organizations row. orgPrivateExprSQL combines the two.
+func visibilityJoins(a visibilityAliases) []string {
+	projOwner := ownerExprSQL(a.proj)
+	entOwner := ownerExprSQL(a.ent)
 	return []string{
-		fmt.Sprintf("LEFT JOIN projects %s ON %s.project_id = %s.project_id", projAlias, projAlias, entAlias),
-		fmt.Sprintf("LEFT JOIN users %s ON %s.user_id = %s.user_id", projOwnerAlias, projOwnerAlias, projAlias),
-		fmt.Sprintf("LEFT JOIN users %s ON %s.user_id = %s.user_id", entOwnerAlias, entOwnerAlias, entAlias),
+		fmt.Sprintf("LEFT JOIN projects %s ON %s.project_id = %s.project_id", a.proj, a.proj, a.ent),
+		fmt.Sprintf("LEFT JOIN organizations %s ON %s.org_id = %s", a.projOrg, a.projOrg, projOwner),
+		fmt.Sprintf("LEFT JOIN users %s ON %s.user_id = %s", a.projUser, a.projUser, projOwner),
+		fmt.Sprintf("LEFT JOIN organizations %s ON %s.org_id = %s", a.entOrg, a.entOrg, entOwner),
+		fmt.Sprintf("LEFT JOIN users %s ON %s.user_id = %s", a.entUser, a.entUser, entOwner),
 	}
 }
 
 // visibilityPredicateSQL returns the boolean SQL expression mirroring
 // authz.visibilityBatch.canViewOwned (internal/authz/visibility.go) for an
-// owned-resource row exposed via entAlias/projAlias/projOwnerAlias/
-// entOwnerAlias (see visibilityJoins). The returned expression contains
-// exactly 8 `?` placeholders, ALL of which must be bound to the same viewer's
-// user ID, in order — see visibilityArgs.
+// owned-resource row exposed via the tables visibilityJoins joins. The
+// returned expression contains exactly 8 `?` placeholders, ALL of which must
+// be bound to the same viewer's user ID, in order — see visibilityArgs.
+//
+// "Owning org" throughout is ownerExprSQL — COALESCE(org_id, user_id), the
+// SQL form of OwnershipOrgID(). Role assignments for org admins are scoped by
+// organizations.org_id (role_assignments.scope_type='org', scope_id=org_id),
+// and a project created through the REST API has user_id NULL with org_id
+// set, so matching org/admin assignments on user_id (as this predicate once
+// did) denied the owning org's admins and ignored organizations.is_private.
+// Org privacy is orgPrivateExprSQL: organizations.is_private when the row
+// exists, else the legacy users.is_private, else false.
 //
 // Clause-by-clause mapping back to internal/authz/visibility.go:
 //
@@ -55,19 +96,20 @@ func visibilityJoins(entAlias, projAlias, projOwnerAlias, entOwnerAlias string) 
 //     and its owning org isn't private.
 //   - "public via org, no project": mirrors canViewOwned's no-project (or
 //     project-deleted) fallback early return `!orgIsPrivate`, using the
-//     resource's own owning-org row.
+//     resource's own owning org.
 //   - "private via project": mirrors canViewProject's private branch, which
-//     calls canViewPrivate(project.UserID, &project.ProjectID):
-//     project-owner self-match, an org/admin role_assignment on the
-//     project's owning org (direct or via group membership), or ANY
-//     project-scoped role_assignment (direct or via group) — Go's
-//     hasProjectRole(RoleOwner) check is a subset of hasAnyProjectRole, so
-//     the two collapse into a single EXISTS here.
-//   - "private via org, no project": mirrors canViewOwned's no-project
-//     fallback calling canViewPrivate(ownerUserID, nil): owner self-match,
-//     an org/admin role_assignment on the resource's own owning org (direct
-//     or via group) — no project EXISTS clause, since projectID is nil in
-//     this branch.
+//     calls canViewPrivate(project.OwnershipOrgID(), &project.ProjectID):
+//     owning-org self-match (a legacy user-as-org viewing its own org's
+//     project), an org/admin role_assignment on the project's owning org
+//     (direct or via group membership), or ANY project-scoped
+//     role_assignment (direct or via group) — Go's hasProjectRole(RoleOwner)
+//     check is a subset of hasAnyProjectRole, so the two collapse into a
+//     single EXISTS here.
+//   - "private via org, no project": mirrors canViewOwned's no-project (or
+//     project-deleted) fallback calling canViewPrivate(ownerOrgID, nil):
+//     owning-org self-match, an org/admin role_assignment on the resource's
+//     own owning org (direct or via group) — no project EXISTS clause, since
+//     projectID is nil in this branch.
 //
 // Global-admin handling is deliberately NOT part of this predicate: callers
 // short-circuit it entirely for a global admin (pass isGlobalAdmin=true to the
@@ -77,18 +119,22 @@ func visibilityJoins(entAlias, projAlias, projOwnerAlias, entOwnerAlias string) 
 // viewer id. Every `= ?` below then evaluates to NULL, never true, so an
 // anonymous caller matches only the public branches -- which is exactly the
 // intended rule. See visibilityArgs for why an empty string cannot be used.
-func visibilityPredicateSQL(entAlias, projAlias, projOwnerAlias, entOwnerAlias string) string {
+func visibilityPredicateSQL(a visibilityAliases) string {
+	projOwner := ownerExprSQL(a.proj)
+	projPrivate := orgPrivateExprSQL(a.projOrg, a.projUser)
+	entOwner := ownerExprSQL(a.ent)
+	entPrivate := orgPrivateExprSQL(a.entOrg, a.entUser)
 	return fmt.Sprintf(`(
-		( %[1]s.project_id IS NOT NULL AND NOT (%[1]s.is_private OR COALESCE(%[2]s.is_private, false)) )
-		OR ( %[1]s.project_id IS NULL AND NOT COALESCE(%[3]s.is_private, false) )
+		( %[1]s.project_id IS NOT NULL AND NOT (%[1]s.is_private OR %[3]s) )
+		OR ( %[1]s.project_id IS NULL AND NOT %[5]s )
 		OR (
 			%[1]s.project_id IS NOT NULL
-			AND (%[1]s.is_private OR COALESCE(%[2]s.is_private, false))
+			AND (%[1]s.is_private OR %[3]s)
 			AND (
-				(%[1]s.user_id IS NOT NULL AND %[1]s.user_id = ?)
-				OR (%[1]s.user_id IS NOT NULL AND EXISTS (
+				(%[2]s IS NOT NULL AND %[2]s = ?)
+				OR (%[2]s IS NOT NULL AND EXISTS (
 					SELECT 1 FROM role_assignments ra
-					WHERE ra.scope_type = 'org' AND ra.scope_id = %[1]s.user_id AND ra.role = 'admin'
+					WHERE ra.scope_type = 'org' AND ra.scope_id = %[2]s AND ra.role = 'admin'
 					AND (
 						(ra.principal_type = 'user' AND ra.principal_id = ?)
 						OR (ra.principal_type = 'group' AND ra.principal_id IN (
@@ -107,13 +153,13 @@ func visibilityPredicateSQL(entAlias, projAlias, projOwnerAlias, entOwnerAlias s
 			)
 		)
 		OR (
-			%[4]s.project_id IS NULL
-			AND COALESCE(%[3]s.is_private, false)
+			%[1]s.project_id IS NULL
+			AND %[5]s
 			AND (
-				%[4]s.user_id = ?
+				%[4]s = ?
 				OR EXISTS (
 					SELECT 1 FROM role_assignments ra
-					WHERE ra.scope_type = 'org' AND ra.scope_id = %[4]s.user_id AND ra.role = 'admin'
+					WHERE ra.scope_type = 'org' AND ra.scope_id = %[4]s AND ra.role = 'admin'
 					AND (
 						(ra.principal_type = 'user' AND ra.principal_id = ?)
 						OR (ra.principal_type = 'group' AND ra.principal_id IN (
@@ -122,14 +168,14 @@ func visibilityPredicateSQL(entAlias, projAlias, projOwnerAlias, entOwnerAlias s
 				)
 			)
 		)
-	)`, projAlias, projOwnerAlias, entOwnerAlias, entAlias)
+	)`, a.proj, projOwner, projPrivate, entOwner, entPrivate)
 }
 
 // visibilityArgs returns the 8 identical viewerID bindings
 // visibilityPredicateSQL's 8 `?` placeholders need, in order.
 //
 // An EMPTY viewerID binds SQL NULL, not an empty string. Every column these
-// placeholders are compared against (jobs.user_id, projects.user_id,
+// placeholders are compared against (jobs/projects org_id and user_id,
 // role_assignments.principal_id, group_members.user_id) is typed `uuid`, and
 // PostgreSQL refuses to coerce ” to a uuid -- it raises
 //
@@ -157,6 +203,15 @@ func visibilityArgs(viewerID string) []interface{} {
 	return args
 }
 
+// Alias sets for the three places the predicate is evaluated. The summary
+// CTE's joins are emitted from these same values (via visibilityJoins), so
+// the joins and the predicate cannot drift apart.
+var (
+	jobVisibilityAliases   = visibilityAliases{ent: "j", proj: "p", projOrg: "proj_org", projUser: "proj_owner", entOrg: "job_org", entUser: "job_owner"}
+	summaryWorkflowAliases = visibilityAliases{ent: "wi", proj: "wip", projOrg: "wipg", projUser: "wipo", entOrg: "wig", entUser: "wio"}
+	summaryLooseAliases    = visibilityAliases{ent: "j", proj: "ljp", projOrg: "ljpg", projUser: "ljpo", entOrg: "ljg", entUser: "ljo"}
+)
+
 // ListJobsVisibleTo lists jobs visible to viewerID (see authz.CanViewJob),
 // applying filters and SQL-side visibility together so pagination
 // (limit/offset) and the returned total count both operate on the
@@ -178,7 +233,7 @@ func (ps PostgresDbStore) ListJobsVisibleTo(ctx context.Context, viewerID string
 	// can never leak into the other.
 	build := func() *gorm.DB {
 		q := ps.getDB(ctx).Table("jobs j")
-		for _, join := range visibilityJoins("j", "p", "proj_owner", "job_owner") {
+		for _, join := range visibilityJoins(jobVisibilityAliases) {
 			q = q.Joins(join)
 		}
 		for key, value := range filters {
@@ -198,7 +253,7 @@ func (ps PostgresDbStore) ListJobsVisibleTo(ctx context.Context, viewerID string
 			}
 		}
 		if !isGlobalAdmin {
-			q = q.Where(visibilityPredicateSQL("j", "p", "proj_owner", "job_owner"), visibilityArgs(viewerID)...)
+			q = q.Where(visibilityPredicateSQL(jobVisibilityAliases), visibilityArgs(viewerID)...)
 		}
 		return q
 	}
@@ -273,9 +328,9 @@ func (ps PostgresDbStore) ListWorkflowSummariesVisibleTo(ctx context.Context, vi
 	}
 
 	if !isGlobalAdmin {
-		whereWorkflow = append(whereWorkflow, visibilityPredicateSQL("wi", "wip", "wipo", "wio"))
+		whereWorkflow = append(whereWorkflow, visibilityPredicateSQL(summaryWorkflowAliases))
 		workflowArgs = append(workflowArgs, visibilityArgs(viewerID)...)
-		whereLoose = append(whereLoose, visibilityPredicateSQL("j", "ljp", "ljpo", "ljo"))
+		whereLoose = append(whereLoose, visibilityPredicateSQL(summaryLooseAliases))
 		looseArgs = append(looseArgs, visibilityArgs(viewerID)...)
 	}
 
@@ -333,9 +388,7 @@ WITH workflow_rows AS (
 		COALESCE(wi.execution_profile, '') AS execution_profile,
 		COALESCE(wi.worker_class, '') AS worker_class
 	FROM workflow_instances wi
-	LEFT JOIN projects wip ON wip.project_id = wi.project_id
-	LEFT JOIN users wipo ON wipo.user_id = wip.user_id
-	LEFT JOIN users wio ON wio.user_id = wi.user_id
+	%s
 	LEFT JOIN workflow_nodes wn ON wn.workflow_id = wi.workflow_id
 	%s
 	GROUP BY wi.workflow_id
@@ -375,16 +428,16 @@ loose_rows AS (
 		COALESCE(j.execution_profile, '') AS execution_profile,
 		COALESCE(j.worker_class, '') AS worker_class
 	FROM jobs j
-	LEFT JOIN projects ljp ON ljp.project_id = j.project_id
-	LEFT JOIN users ljpo ON ljpo.user_id = ljp.user_id
-	LEFT JOIN users ljo ON ljo.user_id = j.user_id
+	%s
 	%s
 ),
 combined AS (
 	SELECT * FROM workflow_rows
 	UNION ALL
 	SELECT * FROM loose_rows
-)`, workflowClause, looseClause)
+)`,
+		strings.Join(visibilityJoins(summaryWorkflowAliases), "\n\t"), workflowClause,
+		strings.Join(visibilityJoins(summaryLooseAliases), "\n\t"), looseClause)
 
 	args := append(append([]interface{}{}, workflowArgs...), looseArgs...)
 

@@ -2,7 +2,7 @@
 // Source: <csil spec>
 // Target: typescript-codec
 
-import type { AddGroupMemberRequest, AddGroupMemberResponse, AddTrustedDomainPatternRequest, AddTrustedDomainPatternResponse, AddTrustedIdentityRequest, AddTrustedIdentityResponse, AddVcsCredentialRequest, AddVcsCredentialResponse, AddWebhookSecretRequest, AddWebhookSecretResponse, AssignRoleRequest, AssignRoleResponse, AuthenticateRequest, AuthenticateResponse, AuthenticatedIdentity, BeginLoginRequest, BeginLoginResponse, BootstrapAdminRequest, BootstrapAdminResponse, CancelJobRequest, CancelJobResponse, CancelWorkflowRequest, CancelWorkflowResponse, CharacteristicEntry, CharacteristicScalar, CiPolicyDefaults, CiPolicyDetail, CiPolicyDocument, CiPolicyNodeAuthority, CiPolicyRule, CiPolicySubjectMatch, CiPolicyUse, CompleteLoginRequest, CompleteLoginResponse, CreateCiApprovalRequest, CreateCiApprovalResponse, CreateEnrollmentTokenRequest, CreateEnrollmentTokenResponse, CreateGroupRequest, CreateGroupResponse, CreateOrgRequest, CreateOrgResponse, CreatePoolRequest, CreatePoolResponse, CreateProjectRequest, CreateProjectResponse, CreateQueueRequest, CreateQueueResponse, CreateSecretGrantRequest, CreateSecretGrantResponse, DeactivateEnrollmentTokenRequest, DeactivateEnrollmentTokenResponse, DeactivateVcsCredentialRequest, DeactivateVcsCredentialResponse, DeactivateWebhookSecretRequest, DeactivateWebhookSecretResponse, DeleteCiPolicyRequest, DeleteCiPolicyResponse, DeleteExecutionProfileRequest, DeleteExecutionProfileResponse, DeleteGroupRequest, DeleteGroupResponse, DeleteOrgRequest, DeleteOrgResponse, DeletePoolRequest, DeletePoolResponse, DeleteProjectRequest, DeleteProjectResponse, DeleteQueueRequest, DeleteQueueResponse, DeleteSecretGrantRequest, DeleteSecretGrantResponse, DeleteSecretRequest, DeleteSecretResponse, DeleteVcsCredentialRequest, DeleteVcsCredentialResponse, DeleteWebhookSecretRequest, DeleteWebhookSecretResponse, DeleteWorkerClassRequest, DeleteWorkerClassResponse, DescribeFormMetadataRequest, DescribeFormMetadataResponse, DrainWorkerRequest, DrainWorkerResponse, EnrollmentTokenSummary, EnumChoice, ExecutionProfileSummary, GetAuthConfigRequest, GetAuthConfigResponse, GetCapabilitiesRequest, GetCapabilitiesResponse, GetCiPolicyRequest, GetCiPolicyResponse, GetGlobalSettingsRequest, GetGlobalSettingsResponse, GetJobLogsRequest, GetJobLogsResponse, GetJobMetricsRequest, GetJobMetricsResponse, GetJobRequest, GetJobResponse, GetProjectRequest, GetProjectResponse, GetWorkflowRequest, GetWorkflowResponse, GlobalSettingEntry, GroupMemberEntry, GroupSummary, JobLogEntry, JobMetricLabel, JobMetricPoint, JobMetricSeries, JobMetricUnavailable, JobSummary, KillJobRequest, KillJobResponse, ListEnrollmentTokensRequest, ListEnrollmentTokensResponse, ListExecutionProfilesRequest, ListExecutionProfilesResponse, ListGroupMembersRequest, ListGroupMembersResponse, ListGroupsRequest, ListGroupsResponse, ListJobsRequest, ListJobsResponse, ListOrgsRequest, ListOrgsResponse, ListPoolsRequest, ListPoolsResponse, ListProjectsRequest, ListProjectsResponse, ListQueuesRequest, ListQueuesResponse, ListRoleAssignmentsRequest, ListRoleAssignmentsResponse, ListSecretGrantsRequest, ListSecretGrantsResponse, ListSecretPathsRequest, ListSecretPathsResponse, ListTrustedDomainPatternsRequest, ListTrustedDomainPatternsResponse, ListTrustedIdentitiesRequest, ListTrustedIdentitiesResponse, ListVcsCredentialsRequest, ListVcsCredentialsResponse, ListWebhookSecretsRequest, ListWebhookSecretsResponse, ListWorkerClassesRequest, ListWorkerClassesResponse, ListWorkersRequest, ListWorkersResponse, ListWorkflowsRequest, ListWorkflowsResponse, LogoutRequest, LogoutResponse, OrgSummary, ProjectDetail, ProjectSummary, PutCiPolicyRequest, PutCiPolicyResponse, PutExecutionProfileRequest, PutExecutionProfileResponse, PutWorkerClassRequest, PutWorkerClassResponse, QueueSummary, RemoveGroupMemberRequest, RemoveGroupMemberResponse, RemoveTrustedDomainPatternRequest, RemoveTrustedDomainPatternResponse, RemoveTrustedIdentityRequest, RemoveTrustedIdentityResponse, RenameQueueRequest, RenameQueueResponse, RetryJobRequest, RetryJobResponse, RetryUnsuccessfulJobsRequest, RetryUnsuccessfulJobsResponse, RetryWorkflowRequest, RetryWorkflowResponse, RevokeRoleRequest, RevokeRoleResponse, RoleAssignment, RoleSummary, SecretGrant, SecretPathEntry, ServiceError, SetDefaultOrgRequest, SetDefaultOrgResponse, SetSecretRequest, SetSecretResponse, SetWorkerClassPoolRequest, SetWorkerClassPoolResponse, SetWorkerStatusRequest, SetWorkerStatusResponse, TrustedDomainPattern, TrustedIdentity, UpdateGlobalSettingsRequest, UpdateGlobalSettingsResponse, UpdateGroupRequest, UpdateGroupResponse, UpdateOrgRequest, UpdateOrgResponse, UpdatePoolRequest, UpdatePoolResponse, UpdateProjectRequest, UpdateProjectResponse, UpdateSecretGrantRequest, UpdateSecretGrantResponse, VcsCredentialSummary, WebhookSecretSummary, WorkerCharacteristicEntry, WorkerCharacteristicValue, WorkerClassSummary, WorkerPoolSummary, WorkerSummary, WorkflowNodeSummary, WorkflowSummaryDetail } from "./types.gen.ts";
+import type { AddGroupMemberRequest, AddGroupMemberResponse, AddTrustedDomainPatternRequest, AddTrustedDomainPatternResponse, AddTrustedIdentityRequest, AddTrustedIdentityResponse, AddVcsCredentialRequest, AddVcsCredentialResponse, AddWebhookSecretRequest, AddWebhookSecretResponse, AssignRoleRequest, AssignRoleResponse, AuthenticateRequest, AuthenticateResponse, AuthenticatedIdentity, BeginLoginRequest, BeginLoginResponse, BootstrapAdminRequest, BootstrapAdminResponse, CancelJobRequest, CancelJobResponse, CancelWorkflowRequest, CancelWorkflowResponse, CharacteristicEntry, CharacteristicScalar, CiPolicyDefaults, CiPolicyDetail, CiPolicyDocument, CiPolicyNodeAuthority, CiPolicyRule, CiPolicySubjectMatch, CiPolicyUse, CompleteLoginRequest, CompleteLoginResponse, CreateCiApprovalRequest, CreateCiApprovalResponse, CreateEnrollmentTokenRequest, CreateEnrollmentTokenResponse, CreateGroupRequest, CreateGroupResponse, CreateOrgRequest, CreateOrgResponse, CreatePoolRequest, CreatePoolResponse, CreateProjectRequest, CreateProjectResponse, CreateQueueRequest, CreateQueueResponse, CreateSecretGrantRequest, CreateSecretGrantResponse, DeactivateEnrollmentTokenRequest, DeactivateEnrollmentTokenResponse, DeactivateVcsCredentialRequest, DeactivateVcsCredentialResponse, DeactivateWebhookSecretRequest, DeactivateWebhookSecretResponse, DeleteCiPolicyRequest, DeleteCiPolicyResponse, DeleteExecutionProfileRequest, DeleteExecutionProfileResponse, DeleteGroupRequest, DeleteGroupResponse, DeleteOrgRequest, DeleteOrgResponse, DeletePoolRequest, DeletePoolResponse, DeleteProjectRequest, DeleteProjectResponse, DeleteQueueRequest, DeleteQueueResponse, DeleteSecretGrantRequest, DeleteSecretGrantResponse, DeleteSecretRequest, DeleteSecretResponse, DeleteVcsCredentialRequest, DeleteVcsCredentialResponse, DeleteWebhookSecretRequest, DeleteWebhookSecretResponse, DeleteWorkerClassRequest, DeleteWorkerClassResponse, DescribeFormMetadataRequest, DescribeFormMetadataResponse, DrainWorkerRequest, DrainWorkerResponse, EnrollmentTokenSummary, EnumChoice, ExecutionProfileSummary, GetAuthConfigRequest, GetAuthConfigResponse, GetCapabilitiesRequest, GetCapabilitiesResponse, GetCiPolicyRequest, GetCiPolicyResponse, GetGlobalSettingsRequest, GetGlobalSettingsResponse, GetJobLogsRequest, GetJobLogsResponse, GetJobMetricsRequest, GetJobMetricsResponse, GetJobRequest, GetJobResponse, GetProjectRequest, GetProjectResponse, GetWorkflowRequest, GetWorkflowResponse, GlobalSettingEntry, GroupMemberEntry, GroupSummary, JobLogEntry, JobMetricLabel, JobMetricPoint, JobMetricSeries, JobMetricUnavailable, JobSummary, KillJobRequest, KillJobResponse, ListEnrollmentTokensRequest, ListEnrollmentTokensResponse, ListExecutionProfilesRequest, ListExecutionProfilesResponse, ListGroupMembersRequest, ListGroupMembersResponse, ListGroupsRequest, ListGroupsResponse, ListJobsRequest, ListJobsResponse, ListOrgsRequest, ListOrgsResponse, ListPoolsRequest, ListPoolsResponse, ListProjectsRequest, ListProjectsResponse, ListQueuesRequest, ListQueuesResponse, ListRoleAssignmentsRequest, ListRoleAssignmentsResponse, ListSecretGrantsRequest, ListSecretGrantsResponse, ListSecretPathsRequest, ListSecretPathsResponse, ListTrustedDomainPatternsRequest, ListTrustedDomainPatternsResponse, ListTrustedIdentitiesRequest, ListTrustedIdentitiesResponse, ListUsersRequest, ListUsersResponse, ListVcsCredentialsRequest, ListVcsCredentialsResponse, ListWebhookSecretsRequest, ListWebhookSecretsResponse, ListWorkerClassesRequest, ListWorkerClassesResponse, ListWorkersRequest, ListWorkersResponse, ListWorkflowsRequest, ListWorkflowsResponse, LogoutRequest, LogoutResponse, OrgSummary, ProjectDetail, ProjectSummary, PutCiPolicyRequest, PutCiPolicyResponse, PutExecutionProfileRequest, PutExecutionProfileResponse, PutWorkerClassRequest, PutWorkerClassResponse, QueueSummary, RemoveGroupMemberRequest, RemoveGroupMemberResponse, RemoveTrustedDomainPatternRequest, RemoveTrustedDomainPatternResponse, RemoveTrustedIdentityRequest, RemoveTrustedIdentityResponse, RenameQueueRequest, RenameQueueResponse, RetryJobRequest, RetryJobResponse, RetryUnsuccessfulJobsRequest, RetryUnsuccessfulJobsResponse, RetryWorkflowRequest, RetryWorkflowResponse, RevokeRoleRequest, RevokeRoleResponse, RoleAssignment, RoleSummary, SecretGrant, SecretPathEntry, ServiceError, SetDefaultOrgRequest, SetDefaultOrgResponse, SetSecretRequest, SetSecretResponse, SetWorkerClassPoolRequest, SetWorkerClassPoolResponse, SetWorkerStatusRequest, SetWorkerStatusResponse, TrustedDomainPattern, TrustedIdentity, UpdateGlobalSettingsRequest, UpdateGlobalSettingsResponse, UpdateGroupRequest, UpdateGroupResponse, UpdateOrgRequest, UpdateOrgResponse, UpdatePoolRequest, UpdatePoolResponse, UpdateProjectRequest, UpdateProjectResponse, UpdateSecretGrantRequest, UpdateSecretGrantResponse, UserSummary, VcsCredentialSummary, WebhookSecretSummary, WorkerCharacteristicEntry, WorkerCharacteristicValue, WorkerClassSummary, WorkerPoolSummary, WorkerSummary, WorkflowNodeSummary, WorkflowSummaryDetail } from "./types.gen.ts";
 
 /** A CBOR semantic tag wrapping an inner value (e.g. tag 0 timestamp, tag 4 decimal). */
 export type CborTag = { readonly tag: number; readonly value: CborValue };
@@ -2384,6 +2384,76 @@ export function toListGroupMembersResponseCbor(v: ListGroupMembersResponse): Uin
 
 export function fromListGroupMembersResponseCbor(bytes: Uint8Array): ListGroupMembersResponse {
   return fromListGroupMembersResponseCborValue(decode(bytes));
+}
+
+export function toUserSummaryCborValue(v: UserSummary): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  if (v.subject !== undefined) csilMap.set("subject", v.subject);
+  csilMap.set("user_id", v.userId);
+  csilMap.set("username", v.username);
+  if (v.displayName !== undefined) csilMap.set("display_name", v.displayName);
+  if (v.lastLoginAt !== undefined) csilMap.set("last_login_at", v.lastLoginAt);
+  return csilMap;
+}
+
+export function fromUserSummaryCborValue(value: CborValue): UserSummary {
+  return {
+    userId: asString(requireKey(value, "user_id")),
+    username: asString(requireKey(value, "username")),
+    displayName: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "display_name")),
+    subject: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "subject")),
+    lastLoginAt: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "last_login_at")),
+  };
+}
+
+export function toUserSummaryCbor(v: UserSummary): Uint8Array {
+  return encodeValue(toUserSummaryCborValue(v));
+}
+
+export function fromUserSummaryCbor(bytes: Uint8Array): UserSummary {
+  return fromUserSummaryCborValue(decode(bytes));
+}
+
+export function toListUsersRequestCborValue(v: ListUsersRequest): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  if (v.query !== undefined) csilMap.set("query", v.query);
+  csilMap.set("org_id", v.orgId);
+  return csilMap;
+}
+
+export function fromListUsersRequestCborValue(value: CborValue): ListUsersRequest {
+  return {
+    orgId: asString(requireKey(value, "org_id")),
+    query: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "query")),
+  };
+}
+
+export function toListUsersRequestCbor(v: ListUsersRequest): Uint8Array {
+  return encodeValue(toListUsersRequestCborValue(v));
+}
+
+export function fromListUsersRequestCbor(bytes: Uint8Array): ListUsersRequest {
+  return fromListUsersRequestCborValue(decode(bytes));
+}
+
+export function toListUsersResponseCborValue(v: ListUsersResponse): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  csilMap.set("users", v.users.map((csilE): CborValue => toUserSummaryCborValue(csilE)));
+  return csilMap;
+}
+
+export function fromListUsersResponseCborValue(value: CborValue): ListUsersResponse {
+  return {
+    users: asArray(requireKey(value, "users")).map((csilE) => fromUserSummaryCborValue(csilE)),
+  };
+}
+
+export function toListUsersResponseCbor(v: ListUsersResponse): Uint8Array {
+  return encodeValue(toListUsersResponseCborValue(v));
+}
+
+export function fromListUsersResponseCbor(bytes: Uint8Array): ListUsersResponse {
+  return fromListUsersResponseCborValue(decode(bytes));
 }
 
 export function toRoleAssignmentCborValue(v: RoleAssignment): CborValue {
@@ -5464,6 +5534,7 @@ export function toDescribeFormMetadataResponseCborValue(v: DescribeFormMetadataR
   const csilMap = new Map<CborValue, CborValue>();
   csilMap.set("event_types", v.eventTypes.map((csilE): CborValue => toEnumChoiceCborValue(csilE)));
   csilMap.set("job_statuses", v.jobStatuses.map((csilE): CborValue => toEnumChoiceCborValue(csilE)));
+  csilMap.set("vcs_providers", v.vcsProviders.map((csilE): CborValue => toEnumChoiceCborValue(csilE)));
   csilMap.set("checkout_modes", v.checkoutModes.map((csilE): CborValue => toEnumChoiceCborValue(csilE)));
   csilMap.set("ci_source_types", v.ciSourceTypes.map((csilE): CborValue => toEnumChoiceCborValue(csilE)));
   csilMap.set("node_conditions", v.nodeConditions.map((csilE): CborValue => toEnumChoiceCborValue(csilE)));
@@ -5479,6 +5550,7 @@ export function fromDescribeFormMetadataResponseCborValue(value: CborValue): Des
     jobStatuses: asArray(requireKey(value, "job_statuses")).map((csilE) => fromEnumChoiceCborValue(csilE)),
     workflowStatuses: asArray(requireKey(value, "workflow_statuses")).map((csilE) => fromEnumChoiceCborValue(csilE)),
     ciSourceTypes: asArray(requireKey(value, "ci_source_types")).map((csilE) => fromEnumChoiceCborValue(csilE)),
+    vcsProviders: asArray(requireKey(value, "vcs_providers")).map((csilE) => fromEnumChoiceCborValue(csilE)),
   };
 }
 

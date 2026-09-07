@@ -130,6 +130,7 @@ func NewHandlerWithWorker(auth csilapi.ReactorcideAuth, ui csilapi.ReactorcideUi
 		"add-group-member":              wrapOp(csilapi.DecodeAddGroupMemberRequest, csilapi.EncodeAddGroupMemberResponse, "AddGroupMemberResponse", ui.AddGroupMember),
 		"remove-group-member":           wrapOp(csilapi.DecodeRemoveGroupMemberRequest, csilapi.EncodeRemoveGroupMemberResponse, "RemoveGroupMemberResponse", ui.RemoveGroupMember),
 		"list-group-members":            wrapOp(csilapi.DecodeListGroupMembersRequest, csilapi.EncodeListGroupMembersResponse, "ListGroupMembersResponse", ui.ListGroupMembers),
+		"list-users":                    wrapOp(csilapi.DecodeListUsersRequest, csilapi.EncodeListUsersResponse, "ListUsersResponse", ui.ListUsers),
 		"list-role-assignments":         wrapOp(csilapi.DecodeListRoleAssignmentsRequest, csilapi.EncodeListRoleAssignmentsResponse, "ListRoleAssignmentsResponse", ui.ListRoleAssignments),
 		"assign-role":                   wrapOp(csilapi.DecodeAssignRoleRequest, csilapi.EncodeAssignRoleResponse, "AssignRoleResponse", ui.AssignRole),
 		"revoke-role":                   wrapOp(csilapi.DecodeRevokeRoleRequest, csilapi.EncodeRevokeRoleResponse, "RevokeRoleResponse", ui.RevokeRole),

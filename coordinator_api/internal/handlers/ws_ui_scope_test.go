@@ -1,11 +1,61 @@
 package handlers
 
 import (
+	"context"
 	"testing"
 
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/authz"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/pubsub"
+	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store"
+	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store/models"
 )
+
+// scopeFakeStore is the smallest store that satisfies scopeStore,
+// authz.RoleStore and the optional scopeOrganizationLookup, so the
+// cache-population path orgAllows can be driven against organizations rows.
+type scopeFakeStore struct {
+	users       map[string]*models.User
+	orgs        map[string]*models.Organization
+	assignments []models.RoleAssignment
+}
+
+func (f *scopeFakeStore) GetProjectByID(context.Context, string) (*models.Project, error) {
+	return nil, store.ErrNotFound
+}
+func (f *scopeFakeStore) GetJobByID(context.Context, string) (*models.Job, error) {
+	return nil, store.ErrNotFound
+}
+func (f *scopeFakeStore) GetUserByID(_ context.Context, userID string) (*models.User, error) {
+	if u, ok := f.users[userID]; ok {
+		return u, nil
+	}
+	return nil, store.ErrNotFound
+}
+func (f *scopeFakeStore) GetOrganizationByID(_ context.Context, orgID string) (*models.Organization, error) {
+	if o, ok := f.orgs[orgID]; ok {
+		return o, nil
+	}
+	return nil, store.ErrNotFound
+}
+func (f *scopeFakeStore) ListGroupsForUser(context.Context, string) ([]models.Group, error) {
+	return nil, nil
+}
+func (f *scopeFakeStore) ListRoleAssignmentsForPrincipal(_ context.Context, userID string, _ []string) ([]models.RoleAssignment, error) {
+	var out []models.RoleAssignment
+	for _, a := range f.assignments {
+		if a.PrincipalType == models.PrincipalTypeUser && a.PrincipalID == userID {
+			out = append(out, a)
+		}
+	}
+	return out, nil
+}
+
+func scopeWithStore(identity authz.Identity, fs *scopeFakeStore) *uiStreamScope {
+	scope := scopeFor(identity, false)
+	scope.store = fs
+	scope.resolver = authz.NewResolver(fs)
+	return scope
+}
 
 // scopeFor builds a scope with pre-seeded caches, so these tests exercise the
 // decision logic in canSee without needing a store. The cache-population paths
@@ -108,6 +158,63 @@ func TestScopeProjectUpdateInvalidatesCachedVisibility(t *testing.T) {
 
 	if _, cached := scope.projectVisible["proj-1"]; cached {
 		t.Error("a project_update must drop the cached visibility answer for that project")
+	}
+}
+
+// TestScopePrivateOrgEventFollowsOrganizationsRow drives orgAllows for a
+// project-less event whose OwnerUserID is a first-class org id: the org's
+// privacy comes from organizations.is_private (there is no users row for it),
+// and its admin — resolved by an org-scoped role assignment on that id — sees
+// the event while a stranger and an anonymous caller do not.
+func TestScopePrivateOrgEventFollowsOrganizationsRow(t *testing.T) {
+	orgID := "org-1"
+	fs := &scopeFakeStore{
+		users: map[string]*models.User{},
+		orgs:  map[string]*models.Organization{orgID: {OrgID: orgID, Name: "org-one", IsPrivate: true}},
+		assignments: []models.RoleAssignment{
+			{PrincipalType: models.PrincipalTypeUser, PrincipalID: "admin-1", ScopeType: models.ScopeTypeOrg, ScopeID: &orgID, Role: models.RoleAdmin},
+		},
+	}
+	evt := pubsub.Event{Type: pubsub.EventJobUpdate, JobID: "j1", OwnerUserID: orgID}
+
+	if scopeWithStore(authz.UserIdentity("stranger-1"), fs).canSee(evt) {
+		t.Error("a private org's event must NOT reach a stranger")
+	}
+	if scopeWithStore(authz.AnonymousIdentity(), fs).canSee(evt) {
+		t.Error("a private org's event must NOT reach an anonymous caller")
+	}
+	if !scopeWithStore(authz.UserIdentity("admin-1"), fs).canSee(evt) {
+		t.Error("a private org's event should reach that org's admin")
+	}
+
+	// Flip the organizations row public: everyone sees it, with no users row
+	// consulted at all.
+	fs.orgs[orgID].IsPrivate = false
+	if !scopeWithStore(authz.UserIdentity("stranger-1"), fs).canSee(evt) {
+		t.Error("a public org's event should reach a stranger")
+	}
+}
+
+// TestScopeOrgPrivacyFallsBackToLegacyUserRow keeps the pre-organizations
+// shape working: an owner id with no organizations row but a users row
+// (a login-provisioned user acting as its own org) still reads users.is_private.
+func TestScopeOrgPrivacyFallsBackToLegacyUserRow(t *testing.T) {
+	fs := &scopeFakeStore{
+		users: map[string]*models.User{"user-org": {UserID: "user-org", IsPrivate: true}},
+		orgs:  map[string]*models.Organization{},
+	}
+	evt := pubsub.Event{Type: pubsub.EventJobUpdate, JobID: "j1", OwnerUserID: "user-org"}
+
+	if scopeWithStore(authz.UserIdentity("stranger-1"), fs).canSee(evt) {
+		t.Error("a private legacy user-org's event must NOT reach a stranger")
+	}
+	if !scopeWithStore(authz.UserIdentity("user-org"), fs).canSee(evt) {
+		t.Error("the legacy user-org must see its own event")
+	}
+	// Unknown owner everywhere: fail closed.
+	unknown := pubsub.Event{Type: pubsub.EventJobUpdate, JobID: "j2", OwnerUserID: "nobody"}
+	if scopeWithStore(authz.UserIdentity("stranger-1"), fs).canSee(unknown) {
+		t.Error("an owner with neither an organizations nor a users row must not be visible")
 	}
 }
 

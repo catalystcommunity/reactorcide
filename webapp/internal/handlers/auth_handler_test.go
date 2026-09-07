@@ -1,8 +1,10 @@
 package handlers
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -546,5 +548,181 @@ func TestGetAuthConfig_CachedWithinTTL(t *testing.T) {
 
 	if n := fc.callCount("ReactorcideAuth", "get-auth-config"); n != 1 {
 		t.Errorf("get-auth-config called %d times within the cache TTL, want 1", n)
+	}
+}
+
+// withIdentity registers an authenticate fakeOp that returns the given
+// identity for the session token "valid-token" and Authenticated=false for
+// anything else.
+func withIdentity(fc *fakeCoordinator, id csilapi.AuthenticatedIdentity) {
+	fc.handle("ReactorcideAuth", "authenticate", func(_ []byte, auth string, hasAuth bool) ([]byte, string, bool) {
+		if !hasAuth || auth != "valid-token" {
+			resp := csilapi.AuthenticateResponse{Authenticated: false}
+			return csilapi.EncodeAuthenticateResponse(resp), "AuthenticateResponse", false
+		}
+		identity := id
+		resp := csilapi.AuthenticateResponse{Authenticated: true, Identity: &identity}
+		return csilapi.EncodeAuthenticateResponse(resp), "AuthenticateResponse", false
+	})
+}
+
+// getSessionJSON runs GET /app/auth/session (with a session cookie when
+// token is non-empty) and decodes the body into a generic map so tests can
+// inspect the exact wire shape, not just what Go would round-trip.
+func getSessionJSON(t *testing.T, h *WebHandler, token string) map[string]json.RawMessage {
+	t.Helper()
+	req := httptest.NewRequest(http.MethodGet, "/app/auth/session", nil)
+	if token != "" {
+		req.AddCookie(&http.Cookie{Name: sessionCookieName, Value: token})
+	}
+	rr := httptest.NewRecorder()
+	h.SessionInfoJSON(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("GET /app/auth/session status = %d, want 200; body: %s", rr.Code, rr.Body.String())
+	}
+	var body map[string]json.RawMessage
+	if err := json.Unmarshal(rr.Body.Bytes(), &body); err != nil {
+		t.Fatalf("session JSON did not decode: %v; body: %s", err, rr.Body.String())
+	}
+	return body
+}
+
+// capabilityJSONKeys derives the json key set of csilapi.GetCapabilitiesResponse
+// from its struct tags, so the expectation tracks client regeneration instead
+// of a hardcoded list going stale. webapp/ui/src/api/auth.test.ts pins the
+// same key set on the SPA side.
+func capabilityJSONKeys(t *testing.T) map[string]bool {
+	t.Helper()
+	keys := map[string]bool{}
+	rt := reflect.TypeOf(csilapi.GetCapabilitiesResponse{})
+	for i := 0; i < rt.NumField(); i++ {
+		tag := rt.Field(i).Tag.Get("json")
+		name := strings.Split(tag, ",")[0]
+		if name == "" || name == "-" {
+			t.Fatalf("GetCapabilitiesResponse field %s has no usable json tag %q", rt.Field(i).Name, tag)
+		}
+		keys[name] = true
+	}
+	return keys
+}
+
+func TestSessionInfoJSON_EmitsRolesAndSnakeCaseCapabilities(t *testing.T) {
+	fc := newFakeCoordinator()
+	withAuthMode(fc, "local-rp", false, true)
+	withNoopCapabilities(fc)
+	orgID, projectID := "org-1", "proj-9"
+	withIdentity(fc, csilapi.AuthenticatedIdentity{
+		UserId:      "u-42",
+		Subject:     "u-42@example.com",
+		DisplayName: "Jane Admin",
+		Roles: []csilapi.RoleSummary{
+			{ScopeType: "org", ScopeId: &orgID, Role: "admin"},
+			{ScopeType: "project", ScopeId: &projectID, Role: "member"},
+		},
+	})
+	h := newTestWebHandler(t, fc)
+
+	body := getSessionJSON(t, h, "valid-token")
+
+	if string(body["logged_in"]) != "true" {
+		t.Errorf("logged_in = %s, want true", body["logged_in"])
+	}
+
+	var roles []map[string]string
+	if err := json.Unmarshal(body["roles"], &roles); err != nil {
+		t.Fatalf("roles did not decode as an array of objects: %v; raw: %s", err, body["roles"])
+	}
+	wantRoles := []map[string]string{
+		{"scope_type": "org", "scope_id": "org-1", "role": "admin"},
+		{"scope_type": "project", "scope_id": "proj-9", "role": "member"},
+	}
+	if !reflect.DeepEqual(roles, wantRoles) {
+		t.Errorf("roles = %v, want %v", roles, wantRoles)
+	}
+
+	var caps map[string]json.RawMessage
+	if err := json.Unmarshal(body["capabilities"], &caps); err != nil {
+		t.Fatalf("capabilities did not decode as an object: %v; raw: %s", err, body["capabilities"])
+	}
+	want := capabilityJSONKeys(t)
+	// Sanity-check that the derived set really is the snake_case shape the SPA
+	// decodes; if regeneration ever flips the tags to camelCase this fails
+	// loudly here rather than as silently-false gates in the browser.
+	for _, mustHave := range []string{"view_private", "cancel_job", "is_global_admin", "manage_global_settings"} {
+		if !want[mustHave] {
+			t.Fatalf("GetCapabilitiesResponse json tags no longer include %q: %v", mustHave, want)
+		}
+	}
+	for k := range caps {
+		if !want[k] {
+			t.Errorf("capabilities has unexpected key %q", k)
+		}
+	}
+	for k := range want {
+		if _, ok := caps[k]; !ok {
+			t.Errorf("capabilities is missing key %q", k)
+		}
+	}
+}
+
+func TestSessionInfoJSON_AnonymousHasEmptyRolesArray(t *testing.T) {
+	fc := newFakeCoordinator()
+	withAuthMode(fc, "local-rp", false, true)
+	withNoopCapabilities(fc)
+	h := newTestWebHandler(t, fc)
+
+	body := getSessionJSON(t, h, "")
+
+	if string(body["logged_in"]) != "false" {
+		t.Errorf("logged_in = %s, want false", body["logged_in"])
+	}
+	raw, ok := body["roles"]
+	if !ok {
+		t.Fatalf("roles key missing from anonymous session JSON")
+	}
+	if got := strings.TrimSpace(string(raw)); got != "[]" {
+		t.Errorf("roles = %s, want [] (an empty array, never null)", got)
+	}
+}
+
+func TestResolveSession_CapabilitiesRequestIsUnscoped(t *testing.T) {
+	fc := newFakeCoordinator()
+	withAuthMode(fc, "local-rp", false, true)
+	orgID := "org-1"
+	withIdentity(fc, csilapi.AuthenticatedIdentity{
+		UserId:        "u-42",
+		Subject:       "u-42@example.com",
+		IsGlobalAdmin: false,
+		Roles:         []csilapi.RoleSummary{{ScopeType: "org", ScopeId: &orgID, Role: "admin"}},
+	})
+	calls := 0
+	fc.handle("ReactorcideUi", "get-capabilities", func(payload []byte, _ string, _ bool) ([]byte, string, bool) {
+		calls++
+		req, err := csilapi.DecodeGetCapabilitiesRequest(payload)
+		if err != nil {
+			t.Errorf("get-capabilities payload did not decode: %v", err)
+		}
+		if req.OrgId != nil {
+			t.Errorf("nav get-capabilities must be unscoped, got org_id=%q (own-org scoping targets a phantom org)", *req.OrgId)
+		}
+		if req.ProjectId != nil {
+			t.Errorf("nav get-capabilities must be unscoped, got project_id=%q", *req.ProjectId)
+		}
+		return csilapi.EncodeGetCapabilitiesResponse(csilapi.GetCapabilitiesResponse{}), "GetCapabilitiesResponse", false
+	})
+	h := newTestWebHandler(t, fc)
+
+	req := httptest.NewRequest(http.MethodGet, "/app/", nil)
+	req.AddCookie(&http.Cookie{Name: sessionCookieName, Value: "valid-token"})
+	si := h.resolveSession(req)
+
+	if !si.LoggedIn || si.IsGlobalAdmin {
+		t.Fatalf("test setup: expected a logged-in non-global-admin, got %+v", si)
+	}
+	if calls != 1 {
+		t.Errorf("get-capabilities called %d times, want 1", calls)
+	}
+	if len(si.Roles) != 1 || si.Roles[0].Role != "admin" {
+		t.Errorf("Roles not threaded from authenticate: %+v", si.Roles)
 	}
 }

@@ -11,6 +11,7 @@ import (
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/config"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store/models"
+	"github.com/sirupsen/logrus"
 )
 
 // LoginAttemptExpiry is how long a single-use pending login attempt
@@ -260,12 +261,40 @@ func (l *LoginService) provisionUser(ctx context.Context, v *VerifiedIdentity) (
 // maybeGrantFirstAdmin grants global admin to userID exactly once: only
 // when REACTORCIDE_FIRST_ADMIN is configured, v matches it, and no global
 // admin role assignment exists yet. Safe to call on every login (a no-op
-// once an admin exists).
+// once any admin exists).
+//
+// The "no admin exists yet" gate is deliberate and must stay. A standing
+// grant would let whoever can edit the deployment configuration seize an
+// instance that already has administrators; the variable exists only to
+// break the initial chicken-and-egg, after which admins are managed inside
+// the system by the admins it has.
+//
+// Every outcome while the selector is configured is logged at Info. An
+// operator who set REACTORCIDE_FIRST_ADMIN and still has no global admin
+// otherwise has nothing to go on. The verified handle, domain, subject and
+// email are the identity's public names, not secrets, so they are safe to
+// log.
 func (l *LoginService) maybeGrantFirstAdmin(ctx context.Context, v *VerifiedIdentity, userID string) error {
-	if strings.TrimSpace(config.FirstAdmin) == "" {
+	selector := strings.TrimSpace(config.FirstAdmin)
+	if selector == "" {
 		return nil
 	}
-	if !matchesFirstAdmin(v) {
+	handle, domain, err := ParseSelector(selector)
+	if err != nil {
+		logrus.WithError(err).WithField("first_admin", selector).
+			Info("REACTORCIDE_FIRST_ADMIN is not a valid [handle@]domain selector; no first-admin grant is possible")
+		return nil
+	}
+	fields := logrus.Fields{
+		"first_admin":      selector,
+		"verified_handle":  v.Handle,
+		"verified_domain":  v.Domain,
+		"verified_subject": v.Subject,
+		"verified_email":   v.Claims["email"],
+		"user_id":          userID,
+	}
+	if !matchesFirstAdminSelector(v, handle, domain) {
+		logrus.WithFields(fields).Info("login identity does not match REACTORCIDE_FIRST_ADMIN; no first-admin grant")
 		return nil
 	}
 	hasAdmin, err := l.hasGlobalAdmin(ctx)
@@ -273,32 +302,53 @@ func (l *LoginService) maybeGrantFirstAdmin(ctx context.Context, v *VerifiedIden
 		return err
 	}
 	if hasAdmin {
+		logrus.WithFields(fields).Info("login identity matches REACTORCIDE_FIRST_ADMIN but a global admin already exists; no first-admin grant")
 		return nil
 	}
 	if err := l.grantGlobalAdmin(ctx, userID); err != nil {
 		return fmt.Errorf("auth: granting first-admin role: %w", err)
 	}
+	logrus.WithFields(fields).Info("granted global admin to the REACTORCIDE_FIRST_ADMIN identity")
 	return nil
 }
 
 // matchesFirstAdmin reports whether v is the identity named by
-// REACTORCIDE_FIRST_ADMIN ("[handle@]domain" or "[uuid@]domain" — matched
-// against both v.Handle and v.Subject since either may be what an operator
-// wrote down). A bare-domain FIRST_ADMIN selector (no "@") matches any
-// identity at that domain, mirroring the trusted-identity bare-domain
-// wildcard semantics.
+// REACTORCIDE_FIRST_ADMIN. See matchesFirstAdminSelector for the rule.
 func matchesFirstAdmin(v *VerifiedIdentity) bool {
 	handle, domain, err := ParseSelector(config.FirstAdmin)
 	if err != nil {
 		return false
 	}
-	if domain != v.Domain {
+	return matchesFirstAdminSelector(v, handle, domain)
+}
+
+// matchesFirstAdminSelector is matchesFirstAdmin against an already-parsed
+// "[handle@]domain" selector. A bare domain matches any identity at that
+// domain, mirroring the trusted-identity wildcard. With a handle, the
+// selector matches when the handle equals the verified handle, equals the
+// verified subject (an operator may have written a uuid), or when the whole
+// selector equals the verified "email" claim. The email form matters in rp
+// mode, where the subject is a uuid and the handle claim is best effort: an
+// operator writes the login name they know, and that is usually the email.
+//
+// Domains are DNS names and LinkKeys handles are not case-distinct, so every
+// comparison is case-insensitive and ignores surrounding whitespace.
+func matchesFirstAdminSelector(v *VerifiedIdentity, handle, domain string) bool {
+	domain = strings.TrimSpace(domain)
+	handle = strings.TrimSpace(handle)
+	if email := strings.TrimSpace(v.Claims["email"]); handle != "" && email != "" {
+		if strings.EqualFold(handle+"@"+domain, email) {
+			return true
+		}
+	}
+	if !strings.EqualFold(domain, strings.TrimSpace(v.Domain)) {
 		return false
 	}
 	if handle == "" {
 		return true
 	}
-	return handle == v.Handle || handle == v.Subject
+	return strings.EqualFold(handle, strings.TrimSpace(v.Handle)) ||
+		strings.EqualFold(handle, strings.TrimSpace(v.Subject))
 }
 
 func (l *LoginService) hasGlobalAdmin(ctx context.Context) (bool, error) {

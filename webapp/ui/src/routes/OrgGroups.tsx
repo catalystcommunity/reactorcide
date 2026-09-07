@@ -1,10 +1,11 @@
 import { For, Show, createResource, createSignal, type JSX } from 'solid-js'
 import { A } from '@solidjs/router'
 import { api } from '~/api/client.ts'
-import { useSession } from '~/lib/session.tsx'
 import { Field } from '~/components/Field.tsx'
-import { ActionError, NotPermitted, useAction } from '~/components/ManagementPage.tsx'
+import { UserPicker } from '~/components/UserPicker.tsx'
+import { ActionError, useAction } from '~/components/ManagementPage.tsx'
 import type { GroupSummary } from '~/api/csilapi/types.gen.ts'
+import { ManagedOrgPage, OrgHeaderPicker, orgHref, type ManagedOrg } from './OrgRoles.tsx'
 
 /**
  * Groups and their members.
@@ -12,23 +13,17 @@ import type { GroupSummary } from '~/api/csilapi/types.gen.ts'
  * A group is how a role reaches more than one person: assign a role to a group
  * once, and membership does the rest. Roles themselves live on the Roles page.
  *
- * Scoped to the caller's own organization. `user_id` IS the org id throughout
- * this system, so a logged-in caller's own user id is exactly their org.
+ * Scoped to the organization chosen in the header (`?org=`), which is a real
+ * `organizations` row the caller administers. See `useManagedOrg` for why the
+ * caller's own user id was never the right thing to put here.
  */
 export function OrgGroups(): JSX.Element {
-  const { session } = useSession()
-  return (
-    <Show when={session()?.capabilities?.manageGroups} fallback={<NotPermitted what="groups" />}>
-      <GroupsPage orgId={session()!.user_id!} />
-    </Show>
-  )
+  return <ManagedOrgPage what="groups">{(managed) => <GroupsPage managed={managed} />}</ManagedOrgPage>
 }
 
-function GroupsPage(props: { orgId: string }): JSX.Element {
-  const [groups, { refetch }] = createResource(
-    () => props.orgId,
-    (orgId) => api.listGroups({ orgId }),
-  )
+function GroupsPage(props: { managed: ManagedOrg }): JSX.Element {
+  const orgId = props.managed.orgId
+  const [groups, { refetch }] = createResource(orgId, (id) => api.listGroups({ orgId: id }))
   const [expanded, setExpanded] = createSignal<string>()
 
   return (
@@ -41,12 +36,15 @@ function GroupsPage(props: { orgId: string }): JSX.Element {
             each person separately.
           </p>
         </div>
-        <A href="/org/roles" class="btn btn-sm">
-          Manage roles
-        </A>
+        <div class="row" style={{ 'align-items': 'center' }}>
+          <OrgHeaderPicker managed={props.managed} />
+          <A href={orgHref('/org/roles', orgId())} class="btn btn-sm">
+            Manage roles
+          </A>
+        </div>
       </div>
 
-      <CreateGroupCard orgId={props.orgId} onCreated={() => void refetch()} />
+      <CreateGroupCard orgId={orgId()} onCreated={() => void refetch()} />
 
       <div class="card">
         <h3 class="section-title">Groups</h3>
@@ -68,6 +66,7 @@ function GroupsPage(props: { orgId: string }): JSX.Element {
                   {(group) => (
                     <GroupRow
                       group={group}
+                      orgId={orgId()}
                       expanded={expanded() === group.groupId}
                       onToggle={() =>
                         setExpanded(expanded() === group.groupId ? undefined : group.groupId)
@@ -146,6 +145,7 @@ function CreateGroupCard(props: { orgId: string; onCreated: () => void }): JSX.E
 
 function GroupRow(props: {
   group: GroupSummary
+  orgId: string
   expanded: boolean
   onToggle: () => void
   onChanged: () => void
@@ -187,7 +187,7 @@ function GroupRow(props: {
       <Show when={props.expanded}>
         <tr>
           <td colspan="3">
-            <GroupMembers groupId={props.group.groupId} />
+            <GroupMembers groupId={props.group.groupId} orgId={props.orgId} />
           </td>
         </tr>
       </Show>
@@ -195,7 +195,7 @@ function GroupRow(props: {
   )
 }
 
-function GroupMembers(props: { groupId: string }): JSX.Element {
+function GroupMembers(props: { groupId: string; orgId: string }): JSX.Element {
   const [members, { refetch }] = createResource(
     () => props.groupId,
     (groupId) => api.listGroupMembers({ groupId }),
@@ -207,7 +207,7 @@ function GroupMembers(props: { groupId: string }): JSX.Element {
     <div class="stack">
       <ActionError error={action.error()} />
       <form
-        class="row"
+        class="stack"
         onSubmit={async (event) => {
           event.preventDefault()
           if (!userId().trim()) return
@@ -220,18 +220,24 @@ function GroupMembers(props: { groupId: string }): JSX.Element {
           }
         }}
       >
-        <input
-          class="input"
-          style={{ 'max-width': '22rem' }}
-          type="text"
-          placeholder="User ID"
-          aria-label="User ID to add"
-          value={userId()}
-          onInput={(event) => setUserId(event.currentTarget.value)}
-        />
-        <button type="submit" class="btn btn-sm btn-primary" disabled={action.busy()}>
-          Add member
-        </button>
+        <Field label="Add a member" hint="Search the accounts that have signed in, then pick one.">
+          {(ids) => (
+            <div style={{ 'max-width': '28rem' }}>
+              <UserPicker
+                id={ids.id}
+                orgId={props.orgId}
+                value={userId()}
+                describedBy={ids.describedBy}
+                onChange={setUserId}
+              />
+            </div>
+          )}
+        </Field>
+        <div class="row">
+          <button type="submit" class="btn btn-sm btn-primary" disabled={action.busy() || !userId()}>
+            Add member
+          </button>
+        </div>
       </form>
 
       <Show

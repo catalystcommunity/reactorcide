@@ -591,6 +591,26 @@ type ListGroupMembersResponse struct {
 	Members []GroupMemberEntry `json:"members" yaml:"members"`
 }
 
+// UserSummary represents a structured data type
+type UserSummary struct {
+	UserId      string  `json:"user_id" yaml:"user_id"`
+	Username    string  `json:"username" yaml:"username"`
+	DisplayName *string `json:"display_name,omitempty" yaml:"display_name,omitempty"`
+	Subject     *string `json:"subject,omitempty" yaml:"subject,omitempty"`
+	LastLoginAt *string `json:"last_login_at,omitempty" yaml:"last_login_at,omitempty"`
+}
+
+// ListUsersRequest represents a structured data type
+type ListUsersRequest struct {
+	OrgId string  `json:"org_id" yaml:"org_id"`
+	Query *string `json:"query,omitempty" yaml:"query,omitempty"`
+}
+
+// ListUsersResponse represents a structured data type
+type ListUsersResponse struct {
+	Users []UserSummary `json:"users" yaml:"users"`
+}
+
 // RoleAssignment represents a structured data type
 type RoleAssignment struct {
 	AssignmentId  string  `json:"assignment_id" yaml:"assignment_id"`
@@ -1472,4 +1492,5 @@ type DescribeFormMetadataResponse struct {
 	JobStatuses      []EnumChoice `json:"job_statuses" yaml:"job_statuses"`
 	WorkflowStatuses []EnumChoice `json:"workflow_statuses" yaml:"workflow_statuses"`
 	CiSourceTypes    []EnumChoice `json:"ci_source_types" yaml:"ci_source_types"`
+	VcsProviders     []EnumChoice `json:"vcs_providers" yaml:"vcs_providers"`
 }

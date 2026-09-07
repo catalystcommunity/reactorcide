@@ -2,7 +2,7 @@ import { For, Show, type JSX } from 'solid-js'
 import { A } from '@solidjs/router'
 import { useProjects } from '~/store/resources.ts'
 import { ResourceView, EmptyState } from '~/components/States.tsx'
-import { useSession } from '~/lib/session.tsx'
+import { canManageSomeOrg, useSession } from '~/lib/session.tsx'
 
 export function Projects(): JSX.Element {
   const { state } = useProjects()
@@ -15,7 +15,12 @@ export function Projects(): JSX.Element {
           <h1>Projects</h1>
           <p class="meta">Repositories Reactorcide builds.</p>
         </div>
-        <Show when={session()?.capabilities?.createProject}>
+        {/*
+          Anyone who administers an organization may create a project in it.
+          The session's capability set is the GLOBAL scope, so gating on
+          createProject there hid the link from every org admin.
+        */}
+        <Show when={canManageSomeOrg(session())}>
           <A href="/projects/new" class="btn btn-primary btn-sm">
             New project
           </A>

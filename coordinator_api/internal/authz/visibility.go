@@ -10,19 +10,34 @@ import (
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/tokencaps"
 )
 
-// visibilityBatch amortizes role-assignment and owning-user lookups across
+// organizationLookup is the OPTIONAL store surface visibility uses to read
+// an organization's is_private flag. It is deliberately not part of RoleStore:
+// every existing RoleStore implementation (and every test fake) keeps
+// compiling, and a store that lacks it falls back to the legacy users-table
+// flag (see visibilityBatch.orgIsPrivate). *postgres_store.PostgresDbStore
+// satisfies it.
+type organizationLookup interface {
+	GetOrganizationByID(ctx context.Context, orgID string) (*models.Organization, error)
+}
+
+// visibilityBatch amortizes role-assignment and owning-org lookups across
 // many CanView*/FilterVisible* checks made for the same caller in one
 // request: the caller's principal (role assignments) is loaded once, and
-// owning-user / project lookups are cached as they're discovered. This is the
-// "avoid N+1: batch-load owning users" behavior FilterVisibleProjects (and
-// friends) need.
+// owning-org / owning-user / project lookups are cached as they're
+// discovered. This is the "avoid N+1: batch-load owning orgs" behavior
+// FilterVisibleProjects (and friends) need.
 type visibilityBatch struct {
 	resolver    *Resolver
 	id          Identity
 	principal   *principal // nil for anonymous/unresolvable identities
 	globalAdmin bool
 
+	// orgLookup is nil when the resolver's store cannot resolve organizations
+	// by id; orgIsPrivate then reads only the legacy users row.
+	orgLookup organizationLookup
+
 	userCache    map[string]*models.User
+	orgCache     map[string]*models.Organization
 	projectCache map[string]*models.Project
 }
 
@@ -31,7 +46,11 @@ func (r *Resolver) newVisibilityBatch(ctx context.Context, id Identity) (*visibi
 		resolver:     r,
 		id:           id,
 		userCache:    make(map[string]*models.User),
+		orgCache:     make(map[string]*models.Organization),
 		projectCache: make(map[string]*models.Project),
+	}
+	if lookup, ok := r.store.(organizationLookup); ok {
+		vb.orgLookup = lookup
 	}
 	if !id.Anonymous && id.UserID != "" {
 		p, err := r.loadPrincipal(ctx, id.UserID)
@@ -61,6 +80,54 @@ func (vb *visibilityBatch) getUser(ctx context.Context, userID string) (*models.
 	}
 	vb.userCache[userID] = u
 	return u, nil
+}
+
+// getOrganization resolves an organizations row by id through the optional
+// organizationLookup, caching misses as nil. A nil result means "no such
+// organization row" (or no lookup available), never an error.
+func (vb *visibilityBatch) getOrganization(ctx context.Context, orgID string) (*models.Organization, error) {
+	if orgID == "" || vb.orgLookup == nil {
+		return nil, nil
+	}
+	if o, ok := vb.orgCache[orgID]; ok {
+		return o, nil
+	}
+	o, err := vb.orgLookup.GetOrganizationByID(ctx, orgID)
+	if err != nil {
+		if errors.Is(err, store.ErrNotFound) {
+			vb.orgCache[orgID] = nil
+			return nil, nil
+		}
+		return nil, err
+	}
+	vb.orgCache[orgID] = o
+	return o, nil
+}
+
+// orgIsPrivate answers "is the org identified by orgID private": the
+// organizations row's is_private when one exists, else the legacy users
+// row's is_private for the same id (orgs backfilled from users share the
+// user's UUID, so login-provisioned users with no organizations row still
+// resolve), else false. An empty orgID is never private.
+func (vb *visibilityBatch) orgIsPrivate(ctx context.Context, orgID string) (bool, error) {
+	if orgID == "" {
+		return false, nil
+	}
+	org, err := vb.getOrganization(ctx, orgID)
+	if err != nil {
+		return false, err
+	}
+	if org != nil {
+		return org.IsPrivate, nil
+	}
+	owner, err := vb.getUser(ctx, orgID)
+	if err != nil {
+		return false, err
+	}
+	if owner != nil {
+		return owner.IsPrivate, nil
+	}
+	return false, nil
 }
 
 func (vb *visibilityBatch) getProject(ctx context.Context, projectID string) (*models.Project, error) {
@@ -120,24 +187,19 @@ func (vb *visibilityBatch) canViewPrivate(ctx context.Context, ownerUserID strin
 }
 
 // canViewProject applies Project.IsEffectivelyPrivate (project.is_private OR
-// the owning org's is_private) and, if private, canViewPrivate.
+// the owning org's is_private) and, if private, canViewPrivate. The owning
+// org is project.OwnershipOrgID() (org_id, falling back to the legacy
+// user_id), so a project created through the REST API with a service token
+// (user_id NULL, org_id set) is governed by its organization: that org's
+// admins can see it when private, and that org's is_private cascades to it.
 func (vb *visibilityBatch) canViewProject(ctx context.Context, project *models.Project) (bool, error) {
-	orgIsPrivate := false
-	if project.UserID != nil {
-		owner, err := vb.getUser(ctx, *project.UserID)
-		if err != nil {
-			return false, err
-		}
-		if owner != nil {
-			orgIsPrivate = owner.IsPrivate
-		}
+	ownerID := project.OwnershipOrgID()
+	orgIsPrivate, err := vb.orgIsPrivate(ctx, ownerID)
+	if err != nil {
+		return false, err
 	}
 	if !project.IsEffectivelyPrivate(orgIsPrivate) {
 		return true, nil
-	}
-	ownerID := ""
-	if project.UserID != nil {
-		ownerID = *project.UserID
 	}
 	return vb.canViewPrivate(ctx, ownerID, &project.ProjectID)
 }
@@ -146,9 +208,10 @@ func (vb *visibilityBatch) canViewProject(ctx context.Context, project *models.P
 // belong to a project inherit that project's visibility in full (including
 // project-member "if assigned" access); resources with no project (loose
 // jobs, or a workflow with no project) are treated as belonging directly to
-// their owning org (ownerUserID) and are visible if that org is not private,
-// else to the owner/org-admins/global-admins only).
-func (vb *visibilityBatch) canViewOwned(ctx context.Context, ownerUserID string, projectID *string) (bool, error) {
+// their owning org (ownerOrgID, the resource's OwnershipOrgID()) and are
+// visible if that org is not private, else to the owner/org-admins/
+// global-admins only).
+func (vb *visibilityBatch) canViewOwned(ctx context.Context, ownerOrgID string, projectID *string) (bool, error) {
 	if projectID != nil && *projectID != "" {
 		project, err := vb.getProject(ctx, *projectID)
 		if err != nil {
@@ -160,18 +223,14 @@ func (vb *visibilityBatch) canViewOwned(ctx context.Context, ownerUserID string,
 		// Project referenced but no longer resolvable (deleted): fall through
 		// to the org-only treatment below rather than fail open.
 	}
-	orgIsPrivate := false
-	owner, err := vb.getUser(ctx, ownerUserID)
+	orgIsPrivate, err := vb.orgIsPrivate(ctx, ownerOrgID)
 	if err != nil {
 		return false, err
-	}
-	if owner != nil {
-		orgIsPrivate = owner.IsPrivate
 	}
 	if !orgIsPrivate {
 		return true, nil
 	}
-	return vb.canViewPrivate(ctx, ownerUserID, nil)
+	return vb.canViewPrivate(ctx, ownerOrgID, nil)
 }
 
 // CanViewProject reports whether id may view project: public projects
@@ -188,8 +247,8 @@ func (r *Resolver) CanViewProject(ctx context.Context, id Identity, project *mod
 
 // FilterVisibleProjects returns the subset of projects visible to id,
 // preserving order. Batches the caller's role-assignment lookup and
-// owning-user lookups (see visibilityBatch) so this is O(1) principal loads +
-// O(distinct owners) user loads rather than O(len(projects)) of either.
+// owning-org lookups (see visibilityBatch) so this is O(1) principal loads +
+// O(distinct owning orgs) org/user loads rather than O(len(projects)) of either.
 func (r *Resolver) FilterVisibleProjects(ctx context.Context, id Identity, projects []models.Project) ([]models.Project, error) {
 	vb, err := r.newVisibilityBatch(ctx, id)
 	if err != nil {
@@ -215,7 +274,7 @@ func (r *Resolver) CanViewJob(ctx context.Context, id Identity, job *models.Job)
 	if err != nil {
 		return false, err
 	}
-	return vb.canViewOwned(ctx, job.UserID, job.ProjectID)
+	return vb.canViewOwned(ctx, job.OwnershipOrgID(), job.ProjectID)
 }
 
 // FilterVisibleJobs returns the subset of jobs visible to id, preserving
@@ -227,7 +286,7 @@ func (r *Resolver) FilterVisibleJobs(ctx context.Context, id Identity, jobs []mo
 	}
 	out := make([]models.Job, 0, len(jobs))
 	for i := range jobs {
-		ok, err := vb.canViewOwned(ctx, jobs[i].UserID, jobs[i].ProjectID)
+		ok, err := vb.canViewOwned(ctx, jobs[i].OwnershipOrgID(), jobs[i].ProjectID)
 		if err != nil {
 			return nil, err
 		}
@@ -246,7 +305,7 @@ func (r *Resolver) CanViewWorkflowInstance(ctx context.Context, id Identity, wf 
 	if err != nil {
 		return false, err
 	}
-	return vb.canViewOwned(ctx, wf.UserID, wf.ProjectID)
+	return vb.canViewOwned(ctx, wf.OwnershipOrgID(), wf.ProjectID)
 }
 
 // CanViewWorkflowSummary is CanViewWorkflowInstance's counterpart for the
@@ -257,7 +316,7 @@ func (r *Resolver) CanViewWorkflowSummary(ctx context.Context, id Identity, summ
 	if err != nil {
 		return false, err
 	}
-	return vb.canViewOwned(ctx, summary.UserID, summary.ProjectID)
+	return vb.canViewOwned(ctx, summary.OwnershipOrgID(), summary.ProjectID)
 }
 
 // FilterVisibleWorkflowSummaries returns the subset of summaries visible to
@@ -269,7 +328,7 @@ func (r *Resolver) FilterVisibleWorkflowSummaries(ctx context.Context, id Identi
 	}
 	out := make([]models.WorkflowSummary, 0, len(summaries))
 	for i := range summaries {
-		ok, err := vb.canViewOwned(ctx, summaries[i].UserID, summaries[i].ProjectID)
+		ok, err := vb.canViewOwned(ctx, summaries[i].OwnershipOrgID(), summaries[i].ProjectID)
 		if err != nil {
 			return nil, err
 		}

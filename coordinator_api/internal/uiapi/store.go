@@ -46,6 +46,14 @@ type DataStore interface {
 	// --- auth_identities (additive) ---
 	GetAuthIdentityByUserID(ctx context.Context, userID string) (*models.AuthIdentity, error)
 
+	// ListUsers is the additive lookup list-users needs (postgres_store/
+	// user_operations.go): active users, optionally filtered by a
+	// case-insensitive substring over username/email and the linked
+	// auth_identities subject/handle/display_name, ordered by username. No
+	// existing narrow interface lists users at all -- until this op the only
+	// way to learn a user_id was to already hold it.
+	ListUsers(ctx context.Context, query string, limit int) ([]models.User, error)
+
 	// --- groups / group_members ---
 	CreateGroup(ctx context.Context, group *models.Group) error
 	GetGroupByID(ctx context.Context, groupID string) (*models.Group, error)

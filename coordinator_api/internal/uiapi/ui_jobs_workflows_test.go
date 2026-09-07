@@ -32,6 +32,12 @@ func newVisibilityFixture(t *testing.T, st *fakeStore) visibilityFixture {
 	t.Helper()
 	owner := st.putUser(models.User{UserID: "owner-1"})
 	outsider := st.putUser(models.User{UserID: "outsider-1"})
+	// The projects below are owned by org-1 (OrgID), not by owner's own
+	// user id: visibility keys off OwnershipOrgID(), so "owner" here is the
+	// owning org's admin. The legacy UserID column is still set, as the
+	// coordinator sets it for user-submitted work, and must not be what
+	// grants access.
+	seedOrgAdmin(st, owner.UserID, "org-1")
 
 	publicProject := st.putProject(models.Project{
 		OrgID: "org-1", UserID: &owner.UserID, Name: "public-project", IsPrivate: false,
@@ -304,4 +310,97 @@ func TestDescribeFormMetadataServesEventTypesWithoutASession(t *testing.T) {
 	if len(resp.CheckoutModes) == 0 || len(resp.NodeConditions) == 0 || len(resp.JobStatuses) == 0 {
 		t.Error("every static vocabulary should be served")
 	}
+	// The webhook-secret and VCS-credential forms bind their provider control
+	// to vcs_providers; both adapters the coordinator ships must be offered.
+	providers := map[string]bool{}
+	for _, choice := range resp.VcsProviders {
+		if choice.Value == "" || choice.Label == "" || choice.Description == "" {
+			t.Errorf("vcs provider %+v: every field must be set", choice)
+		}
+		providers[choice.Value] = true
+	}
+	if !providers["github"] || !providers["gitlab"] {
+		t.Errorf("VcsProviders = %+v, want github and gitlab", resp.VcsProviders)
+	}
+}
+
+// TestGetJobLogsAndMetricsReportNotFoundForInvisibleJob extends the
+// GetJob existence-oracle rule to the two per-job read ops: a job the caller
+// cannot view must answer "not_found", never "forbidden", or the op confirms
+// the id is real. The public job is read through the same caller to show the
+// not_found is a visibility answer, not a missing object store.
+func TestGetJobLogsAndMetricsReportNotFoundForInvisibleJob(t *testing.T) {
+	deps, st := newTestDeps(t)
+	fixture := newVisibilityFixture(t, st)
+	ui := NewUiService(deps)
+
+	for name, ctx := range map[string]context.Context{
+		"anonymous":  context.Background(),
+		"non-member": mintSessionCtx(t, deps, fixture.outsider.UserID),
+	} {
+		t.Run(name+"/logs", func(t *testing.T) {
+			_, err := ui.GetJobLogs(ctx, csilapi.GetJobLogsRequest{JobId: fixture.privateJob.JobID, Stream: "combined"})
+			requireCode(t, err, "not_found")
+			// Same caller, public job: passes the visibility gate and fails
+			// only on the test deps' missing object store, which proves the
+			// not_found above was the visibility answer.
+			_, err = ui.GetJobLogs(ctx, csilapi.GetJobLogsRequest{JobId: fixture.publicJob.JobID, Stream: "combined"})
+			if err == nil {
+				return
+			}
+			if got := serviceErrCode(t, err); got == "not_found" || got == "forbidden" {
+				t.Errorf("public job logs: code = %q, want the visibility gate to pass", got)
+			}
+		})
+		t.Run(name+"/metrics", func(t *testing.T) {
+			_, err := ui.GetJobMetrics(ctx, csilapi.GetJobMetricsRequest{JobId: fixture.privateJob.JobID})
+			requireCode(t, err, "not_found")
+			_, err = ui.GetJobMetrics(ctx, csilapi.GetJobMetricsRequest{JobId: fixture.publicJob.JobID})
+			if err == nil {
+				return
+			}
+			if got := serviceErrCode(t, err); got == "not_found" || got == "forbidden" {
+				t.Errorf("public job metrics: code = %q, want the visibility gate to pass", got)
+			}
+		})
+	}
+}
+
+// TestProjectVisibilityFollowsOrgID pins visibility for a project created the
+// way the REST API creates them with a service token: user_id NULL, org_id set
+// to a real organizations row. The owning org's admin must see it when it is
+// private (via get-project AND list-projects); a stranger must not. Before
+// this, the predicate keyed org-admin access off user_id, so nobody but a
+// global admin could see such a project.
+func TestProjectVisibilityFollowsOrgID(t *testing.T) {
+	deps, st := newTestDeps(t)
+	requireOK(t, st.CreateOrganization(context.Background(), &models.Organization{OrgID: "org-1", Name: "org-one"}))
+	admin := st.putUser(models.User{UserID: "admin-1", Username: "admin-one"})
+	seedOrgAdmin(st, admin.UserID, "org-1")
+	stranger := st.putUser(models.User{UserID: "stranger-1", Username: "stranger-one"})
+	project := st.putProject(models.Project{OrgID: "org-1", UserID: nil, Name: "service-created", IsPrivate: true})
+	ui := NewUiService(deps)
+
+	adminCtx := mintSessionCtx(t, deps, admin.UserID)
+	got, err := ui.GetProject(adminCtx, csilapi.GetProjectRequest{ProjectId: project.ProjectID})
+	requireOK(t, err)
+	if got.Project.Name != "service-created" {
+		t.Fatalf("Name = %q, want service-created", got.Project.Name)
+	}
+	listed, err := ui.ListProjects(adminCtx, csilapi.ListProjectsRequest{})
+	requireOK(t, err)
+	if len(listed.Projects) != 1 || listed.Projects[0].ProjectId != project.ProjectID {
+		t.Fatalf("org admin ListProjects = %+v, want the private org_id-only project", listed.Projects)
+	}
+
+	strangerCtx := mintSessionCtx(t, deps, stranger.UserID)
+	_, err = ui.GetProject(strangerCtx, csilapi.GetProjectRequest{ProjectId: project.ProjectID})
+	requireCode(t, err, "not_found")
+	listed, err = ui.ListProjects(strangerCtx, csilapi.ListProjectsRequest{})
+	requireOK(t, err)
+	if len(listed.Projects) != 0 {
+		t.Fatalf("stranger ListProjects = %+v, want none", listed.Projects)
+	}
+	_, err = ui.GetProject(anonCtx(), csilapi.GetProjectRequest{ProjectId: project.ProjectID})
+	requireCode(t, err, "not_found")
 }

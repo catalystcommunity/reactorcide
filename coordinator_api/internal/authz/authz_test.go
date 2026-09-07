@@ -16,6 +16,7 @@ import (
 // full control over role-assignment/group shape.
 type fakeStore struct {
 	users        map[string]*models.User
+	orgs         map[string]*models.Organization
 	projects     map[string]*models.Project
 	groupsByUser map[string][]models.Group
 	assignments  []models.RoleAssignment
@@ -27,6 +28,7 @@ type fakeStore struct {
 func newFakeStore() *fakeStore {
 	return &fakeStore{
 		users:        map[string]*models.User{},
+		orgs:         map[string]*models.Organization{},
 		projects:     map[string]*models.Project{},
 		groupsByUser: map[string][]models.Group{},
 		settings:     map[string]*models.GlobalSetting{},
@@ -40,6 +42,17 @@ func (f *fakeStore) GetUserByID(ctx context.Context, userID string) (*models.Use
 		return nil, store.ErrNotFound
 	}
 	return u, nil
+}
+
+// GetOrganizationByID satisfies the optional organizationLookup surface, so
+// these tests exercise the organizations.is_private path and its ErrNotFound
+// fallback to the legacy users row.
+func (f *fakeStore) GetOrganizationByID(ctx context.Context, orgID string) (*models.Organization, error) {
+	o, ok := f.orgs[orgID]
+	if !ok {
+		return nil, store.ErrNotFound
+	}
+	return o, nil
 }
 
 func (f *fakeStore) GetProjectByID(ctx context.Context, projectID string) (*models.Project, error) {
@@ -489,6 +502,155 @@ func TestFilterVisibleProjects_BatchesOwnerLookups(t *testing.T) {
 	if fs.getUserCalls > 2 {
 		t.Fatalf("expected owner lookups to be batched (<=2 calls for 2 distinct owners), got %d", fs.getUserCalls)
 	}
+}
+
+// --- Visibility by first-class org_id ------------------------------------
+//
+// A project created through the REST API with a service token has user_id
+// NULL and org_id set to a real organizations row. Visibility must be decided
+// by OwnershipOrgID() (org_id), not the legacy user_id: the owning org's
+// admins see its private projects, and organizations.is_private cascades.
+
+func TestCanViewProject_PrivateProjectWithOnlyOrgID(t *testing.T) {
+	fs := newFakeStore()
+	fs.orgs["org-1"] = &models.Organization{OrgID: "org-1", Name: "org-one", IsPrivate: false}
+	project := &models.Project{ProjectID: "proj-1", UserID: nil, OrgID: "org-1", IsPrivate: true}
+	fs.projects["proj-1"] = project
+	fs.assignments = []models.RoleAssignment{
+		{PrincipalType: models.PrincipalTypeUser, PrincipalID: "org-admin", ScopeType: models.ScopeTypeOrg, ScopeID: strPtr("org-1"), Role: models.RoleAdmin},
+		{PrincipalType: models.PrincipalTypeUser, PrincipalID: "assigned-user", ScopeType: models.ScopeTypeProject, ScopeID: strPtr("proj-1"), Role: models.RoleMember},
+	}
+	r := NewResolver(fs)
+	ctx := context.Background()
+
+	if ok, err := r.CanViewProject(ctx, UserIdentity("org-admin"), project); err != nil || !ok {
+		t.Fatalf("an admin of the owning org (org_id) should see its private project: %v, %v", ok, err)
+	}
+	if ok, err := r.CanViewProject(ctx, UserIdentity("stranger"), project); err != nil || ok {
+		t.Fatalf("a stranger must not see the private project: %v, %v", ok, err)
+	}
+	if ok, err := r.CanViewProject(ctx, AnonymousIdentity(), project); err != nil || ok {
+		t.Fatalf("anonymous must not see the private project: %v, %v", ok, err)
+	}
+	if ok, err := r.CanViewProject(ctx, UserIdentity("assigned-user"), project); err != nil || !ok {
+		t.Fatalf("a member with a project role should see the private project: %v, %v", ok, err)
+	}
+
+	// FilterVisibleProjects takes the same path.
+	visible, err := r.FilterVisibleProjects(ctx, UserIdentity("org-admin"), []models.Project{*project})
+	if err != nil || len(visible) != 1 {
+		t.Fatalf("FilterVisibleProjects(org-admin) = %d projects, %v; want 1, nil", len(visible), err)
+	}
+	visible, err = r.FilterVisibleProjects(ctx, UserIdentity("stranger"), []models.Project{*project})
+	if err != nil || len(visible) != 0 {
+		t.Fatalf("FilterVisibleProjects(stranger) = %d projects, %v; want 0, nil", len(visible), err)
+	}
+}
+
+func TestCanViewProject_OrganizationIsPrivateCascade(t *testing.T) {
+	fs := newFakeStore()
+	// No users row for org-1 at all: privacy must come from organizations.
+	fs.orgs["org-1"] = &models.Organization{OrgID: "org-1", Name: "org-one", IsPrivate: true}
+	project := &models.Project{ProjectID: "proj-1", UserID: nil, OrgID: "org-1", IsPrivate: false}
+	fs.projects["proj-1"] = project
+	fs.assignments = []models.RoleAssignment{
+		{PrincipalType: models.PrincipalTypeUser, PrincipalID: "org-admin", ScopeType: models.ScopeTypeOrg, ScopeID: strPtr("org-1"), Role: models.RoleAdmin},
+	}
+	r := NewResolver(fs)
+	ctx := context.Background()
+
+	if ok, err := r.CanViewProject(ctx, AnonymousIdentity(), project); err != nil || ok {
+		t.Fatalf("organizations.is_private should hide a public project from anonymous: %v, %v", ok, err)
+	}
+	if ok, err := r.CanViewProject(ctx, UserIdentity("stranger"), project); err != nil || ok {
+		t.Fatalf("organizations.is_private should hide a public project from a stranger: %v, %v", ok, err)
+	}
+	if ok, err := r.CanViewProject(ctx, UserIdentity("org-admin"), project); err != nil || !ok {
+		t.Fatalf("organizations.is_private should not hide the project from the org's admin: %v, %v", ok, err)
+	}
+
+	// organizations wins over a stale legacy users flag for the same id.
+	fs.users["org-1"] = &models.User{UserID: "org-1", IsPrivate: false}
+	r2 := NewResolver(fs)
+	if ok, err := r2.CanViewProject(ctx, UserIdentity("stranger"), project); err != nil || ok {
+		t.Fatalf("organizations.is_private must take precedence over users.is_private: %v, %v", ok, err)
+	}
+}
+
+func TestCanViewJob_LooseJobWithOnlyOrgID(t *testing.T) {
+	fs := newFakeStore()
+	fs.orgs["org-1"] = &models.Organization{OrgID: "org-1", Name: "org-one", IsPrivate: true}
+	fs.assignments = []models.RoleAssignment{
+		{PrincipalType: models.PrincipalTypeUser, PrincipalID: "org-admin", ScopeType: models.ScopeTypeOrg, ScopeID: strPtr("org-1"), Role: models.RoleAdmin},
+	}
+	job := &models.Job{JobID: "job-1", UserID: "", OrgID: "org-1", ProjectID: nil}
+	r := NewResolver(fs)
+	ctx := context.Background()
+
+	if ok, err := r.CanViewJob(ctx, UserIdentity("org-admin"), job); err != nil || !ok {
+		t.Fatalf("loose job under a private org (org_id only) should be visible to the org admin: %v, %v", ok, err)
+	}
+	if ok, err := r.CanViewJob(ctx, UserIdentity("stranger"), job); err != nil || ok {
+		t.Fatalf("loose job under a private org (org_id only) must be hidden from a stranger: %v, %v", ok, err)
+	}
+	if ok, err := r.CanViewJob(ctx, AnonymousIdentity(), job); err != nil || ok {
+		t.Fatalf("loose job under a private org (org_id only) must be hidden from anonymous: %v, %v", ok, err)
+	}
+	filtered, err := r.FilterVisibleJobs(ctx, UserIdentity("stranger"), []models.Job{*job})
+	if err != nil || len(filtered) != 0 {
+		t.Fatalf("FilterVisibleJobs(stranger) = %d, %v; want 0, nil", len(filtered), err)
+	}
+
+	// The same rule applies to workflow instances and summaries.
+	wf := &models.WorkflowInstance{WorkflowID: "wf-1", UserID: "", OrgID: "org-1"}
+	if ok, err := r.CanViewWorkflowInstance(ctx, UserIdentity("org-admin"), wf); err != nil || !ok {
+		t.Fatalf("workflow under a private org (org_id only) should be visible to the org admin: %v, %v", ok, err)
+	}
+	if ok, err := r.CanViewWorkflowInstance(ctx, UserIdentity("stranger"), wf); err != nil || ok {
+		t.Fatalf("workflow under a private org (org_id only) must be hidden from a stranger: %v, %v", ok, err)
+	}
+	summary := &models.WorkflowSummary{WorkflowID: "wf-1", UserID: "", OrgID: "org-1"}
+	if ok, err := r.CanViewWorkflowSummary(ctx, UserIdentity("org-admin"), summary); err != nil || !ok {
+		t.Fatalf("summary under a private org (org_id only) should be visible to the org admin: %v, %v", ok, err)
+	}
+	if ok, err := r.CanViewWorkflowSummary(ctx, UserIdentity("stranger"), summary); err != nil || ok {
+		t.Fatalf("summary under a private org (org_id only) must be hidden from a stranger: %v, %v", ok, err)
+	}
+}
+
+// TestCanViewProject_StoreWithoutOrganizationLookup pins the optional-interface
+// contract: a RoleStore that cannot resolve organizations keeps working, using
+// the legacy users row for org privacy.
+func TestCanViewProject_StoreWithoutOrganizationLookup(t *testing.T) {
+	fs := newFakeStore()
+	fs.users["org-1"] = &models.User{UserID: "org-1", IsPrivate: true}
+	project := &models.Project{ProjectID: "proj-1", UserID: nil, OrgID: "org-1", IsPrivate: false}
+	r := NewResolver(roleStoreOnly{fs})
+	ctx := context.Background()
+
+	if ok, err := r.CanViewProject(ctx, UserIdentity("stranger"), project); err != nil || ok {
+		t.Fatalf("legacy users.is_private should still cascade without an organization lookup: %v, %v", ok, err)
+	}
+	if ok, err := r.CanViewProject(ctx, UserIdentity("org-1"), project); err != nil || !ok {
+		t.Fatalf("the legacy user-as-org should still see its own project: %v, %v", ok, err)
+	}
+}
+
+// roleStoreOnly hides fakeStore's GetOrganizationByID so the resolver sees a
+// store that satisfies exactly RoleStore and nothing more.
+type roleStoreOnly struct{ inner *fakeStore }
+
+func (r roleStoreOnly) GetUserByID(ctx context.Context, userID string) (*models.User, error) {
+	return r.inner.GetUserByID(ctx, userID)
+}
+func (r roleStoreOnly) GetProjectByID(ctx context.Context, projectID string) (*models.Project, error) {
+	return r.inner.GetProjectByID(ctx, projectID)
+}
+func (r roleStoreOnly) ListGroupsForUser(ctx context.Context, userID string) ([]models.Group, error) {
+	return r.inner.ListGroupsForUser(ctx, userID)
+}
+func (r roleStoreOnly) ListRoleAssignmentsForPrincipal(ctx context.Context, userID string, groupIDs []string) ([]models.RoleAssignment, error) {
+	return r.inner.ListRoleAssignmentsForPrincipal(ctx, userID, groupIDs)
 }
 
 // --- NewProjectIsPrivate -------------------------------------------------
