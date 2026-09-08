@@ -34,6 +34,12 @@ var allowedReasons = map[string]bool{
 	"guest_helper_not_installed": true,
 	"not_applicable":             true,
 	"buffer_gap":                 true,
+	// temporarily_unavailable: the source exists and the worker may read
+	// it, but no value was available for this sample (metrics-server has not
+	// sampled a new pod yet, a 503, a timeout). The query layer drops it
+	// once the same lease has a successful sample for the family, so it
+	// survives only for a job that ended before any sample arrived.
+	"temporarily_unavailable": true,
 }
 
 func ValidateMetricBatch(batch *MetricBatch, now time.Time) error {

@@ -147,22 +147,34 @@ export function MetricsPanel(props: { jobId: string; live: boolean }): JSX.Eleme
         <MetricLegend series={visible()} />
       </Show>
 
+      {/*
+        Only what the coordinator still considers unavailable for the range it
+        answered. A warning contradicted by a real sample in the same attempt
+        is dropped server-side, so a "not collected" line here means exactly
+        that: nothing arrived.
+      */}
       <Show when={(metrics()?.unavailable?.length ?? 0) > 0}>
         <div class="metrics-unavailable meta">
-          <For each={metrics()!.unavailable}>
-            {(item) => (
-              <div>
-                {item.metricPrefix}: not collected ({humanReason(item.reason)})
-              </div>
-            )}
-          </For>
+          <For each={metrics()!.unavailable}>{(item) => <div>{describeUnavailable(item)}</div>}</For>
         </div>
       </Show>
     </div>
   )
 }
 
-function humanReason(reason: string): string {
+/** One warning line: the family by its friendly name, then the reason. */
+export function describeUnavailable(item: { metricPrefix: string; reason: string }): string {
+  const name = FRIENDLY[item.metricPrefix] ?? item.metricPrefix
+  if (item.reason === 'temporarily_unavailable') {
+    return `${name}: no sample was available before the job ended`
+  }
+  if (item.reason === 'buffer_gap') {
+    return `${name}: some samples were lost to ${humanReason(item.reason)}`
+  }
+  return `${name}: not collected (${humanReason(item.reason)})`
+}
+
+export function humanReason(reason: string): string {
   switch (reason) {
     case 'runtime_not_supported':
       return 'the container runtime does not report it'
@@ -176,6 +188,8 @@ function humanReason(reason: string): string {
       return 'not applicable to this job'
     case 'buffer_gap':
       return 'a gap in the telemetry buffer'
+    case 'temporarily_unavailable':
+      return 'no sample was available yet'
     default:
       return reason
   }
@@ -309,6 +323,7 @@ function friendlyName(series: JobMetricSeries): string {
 
 const FRIENDLY: Record<string, string> = {
   'cpu.utilization': 'CPU used',
+  'telemetry.buffer': 'Telemetry',
   'cpu.request': 'CPU request',
   'cpu.limit': 'CPU limit',
   'cpu.capacity': 'CPU capacity',

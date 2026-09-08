@@ -3,13 +3,17 @@ package worker
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"time"
 
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/jobtelemetry"
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/rest"
 )
 
 type podMetricsResponse struct {
@@ -44,6 +48,139 @@ type summaryFS struct {
 	UsedBytes      *uint64 `json:"usedBytes"`
 }
 
+// Unavailable prefixes the Kubernetes collector reports. They name the series
+// the collector would have emitted: cpu.utilization, not cpu.usage. The
+// query layer treats the two as one family for telemetry stored before this
+// was corrected.
+const (
+	kubernetesCPUPrefix     = "cpu.utilization"
+	kubernetesMemoryPrefix  = "memory.usage"
+	kubernetesStoragePrefix = "storage.used"
+)
+
+// metricsAPIGroupVersion is the resource-metrics API served by metrics-server.
+const metricsAPIGroupVersion = "metrics.k8s.io/v1beta1"
+
+// errNoRESTClient is what the REST-backed source returns when the clientset
+// has no REST client at all (the fake clientset in tests).
+var errNoRESTClient = errors.New("kubernetes rest client is not available")
+
+// kubernetesMetricsSource is the narrow read surface SampleResources uses,
+// so tests can hand it Kubernetes status errors without a live API server.
+// The production implementation is restMetricsSource.
+type kubernetesMetricsSource interface {
+	// PodMetrics reads the metrics.k8s.io PodMetrics object for one pod.
+	PodMetrics(ctx context.Context, namespace, pod string) ([]byte, error)
+	// NodeSummary reads the kubelet stats summary through the node proxy.
+	NodeSummary(ctx context.Context, node string) ([]byte, error)
+	// MetricsAPIRegistered reports whether metrics.k8s.io/v1beta1 is served
+	// by this API server, using discovery. A 404 on one PodMetrics object
+	// cannot tell "no metrics-server" from "no sample for this pod yet";
+	// discovery can.
+	MetricsAPIRegistered(ctx context.Context) (bool, error)
+}
+
+type restMetricsSource struct {
+	clientset kubernetes.Interface
+}
+
+func (s restMetricsSource) restClient() (rest.Interface, error) {
+	client := s.clientset.CoreV1().RESTClient()
+	// The fake clientset returns a typed nil *rest.RESTClient, which is a
+	// non-nil interface value. Check the concrete pointer.
+	if typed, ok := client.(*rest.RESTClient); client == nil || (ok && typed == nil) {
+		return nil, errNoRESTClient
+	}
+	return client, nil
+}
+
+func (s restMetricsSource) PodMetrics(ctx context.Context, namespace, pod string) ([]byte, error) {
+	client, err := s.restClient()
+	if err != nil {
+		return nil, err
+	}
+	return client.Get().AbsPath("apis", "metrics.k8s.io", "v1beta1", "namespaces", namespace, "pods", pod).DoRaw(ctx)
+}
+
+func (s restMetricsSource) NodeSummary(ctx context.Context, node string) ([]byte, error) {
+	client, err := s.restClient()
+	if err != nil {
+		return nil, err
+	}
+	return client.Get().AbsPath("api", "v1", "nodes", node, "proxy", "stats", "summary").DoRaw(ctx)
+}
+
+func (s restMetricsSource) MetricsAPIRegistered(ctx context.Context) (bool, error) {
+	_, err := s.clientset.Discovery().ServerResourcesForGroupVersion(metricsAPIGroupVersion)
+	if err == nil {
+		return true, nil
+	}
+	if apierrors.IsNotFound(err) {
+		return false, nil
+	}
+	return false, err
+}
+
+// metricsSourceFor returns the injected source or the REST-backed default.
+func (kr *KubernetesRunner) metricsSourceFor() kubernetesMetricsSource {
+	if kr.metricsSource != nil {
+		return kr.metricsSource
+	}
+	return restMetricsSource{clientset: kr.clientset}
+}
+
+// classifyKubernetesError maps a failed read to a safe availability reason.
+//
+// Only an authorization failure is permission_denied. Everything else that
+// is not a proven "API group absent" is temporarily_unavailable: a 404 for a
+// pod metrics-server has not sampled yet, a 503 while metrics-server
+// restarts, a timeout, a network error. Before this, every metrics.k8s.io
+// error became metric_api_not_installed and every node summary error became
+// permission_denied, so a healthy cluster showed both warnings whenever the
+// first sample after pod start raced metrics-server.
+func classifyKubernetesError(err error) string {
+	switch {
+	case err == nil:
+		return ""
+	case errors.Is(err, errNoRESTClient):
+		return "runtime_not_supported"
+	case apierrors.IsForbidden(err) || apierrors.IsUnauthorized(err):
+		return "permission_denied"
+	default:
+		return "temporarily_unavailable"
+	}
+}
+
+// podMetricsReason decides the reason for a failed PodMetrics read. A
+// NotFound is ambiguous, so it asks discovery whether the API group exists.
+// A positive answer is cached for the life of the runner: an API group does
+// not disappear between samples, and the discovery call is not free.
+func (kr *KubernetesRunner) podMetricsReason(ctx context.Context, source kubernetesMetricsSource, err error) string {
+	reason := classifyKubernetesError(err)
+	if reason != "temporarily_unavailable" || !apierrors.IsNotFound(err) {
+		return reason
+	}
+	kr.metricsAPIMu.Lock()
+	known := kr.metricsAPIRegistered
+	kr.metricsAPIMu.Unlock()
+	if known {
+		return "temporarily_unavailable"
+	}
+	registered, discoveryErr := source.MetricsAPIRegistered(ctx)
+	if discoveryErr != nil {
+		// Discovery itself failed, so nothing is proven either way. Say
+		// "not yet" rather than "not installed": the next sample re-checks.
+		return "temporarily_unavailable"
+	}
+	if !registered {
+		return "metric_api_not_installed"
+	}
+	kr.metricsAPIMu.Lock()
+	kr.metricsAPIRegistered = true
+	kr.metricsAPIMu.Unlock()
+	return "temporarily_unavailable"
+}
+
 func (kr *KubernetesRunner) SampleResources(ctx context.Context, jobName string, options ResourceSampleOptions) (ResourceSnapshot, error) {
 	pods, err := kr.clientset.CoreV1().Pods(kr.namespace).List(ctx, metav1.ListOptions{
 		LabelSelector: fmt.Sprintf("reactorcide.io/job-name=%s", jobName),
@@ -62,23 +199,23 @@ func (kr *KubernetesRunner) SampleResources(ctx context.Context, jobName string,
 		snapshot.Values = append(snapshot.Values, jobtelemetry.Value{SeriesID: id, Value: value})
 	}
 	addKubernetesResourceSettings(add, &pod)
-	restClient := kr.clientset.CoreV1().RESTClient()
-	if restClient == nil {
+	source := kr.metricsSourceFor()
+
+	metricData, metricErr := source.PodMetrics(ctx, kr.namespace, pod.Name)
+	if metricErr != nil {
+		reason := kr.podMetricsReason(ctx, source, metricErr)
 		snapshot.Unavailable = append(snapshot.Unavailable,
-			jobtelemetry.Unavailable{MetricPrefix: "cpu.usage", Reason: "metric_api_not_installed"},
-			jobtelemetry.Unavailable{MetricPrefix: "memory.usage", Reason: "metric_api_not_installed"},
+			jobtelemetry.Unavailable{MetricPrefix: kubernetesCPUPrefix, Reason: reason},
+			jobtelemetry.Unavailable{MetricPrefix: kubernetesMemoryPrefix, Reason: reason},
 		)
-		if options.IncludeStorage {
-			snapshot.Unavailable = append(snapshot.Unavailable, jobtelemetry.Unavailable{MetricPrefix: "storage.used", Reason: "permission_denied"})
-		}
-		return snapshot, nil
-	}
-	metricData, metricErr := restClient.Get().AbsPath(
-		"apis", "metrics.k8s.io", "v1beta1", "namespaces", kr.namespace, "pods", pod.Name,
-	).DoRaw(ctx)
-	if metricErr == nil {
+	} else {
 		var metrics podMetricsResponse
-		if json.Unmarshal(metricData, &metrics) == nil {
+		if json.Unmarshal(metricData, &metrics) != nil {
+			snapshot.Unavailable = append(snapshot.Unavailable,
+				jobtelemetry.Unavailable{MetricPrefix: kubernetesCPUPrefix, Reason: "runtime_not_supported"},
+				jobtelemetry.Unavailable{MetricPrefix: kubernetesMemoryPrefix, Reason: "runtime_not_supported"},
+			)
+		} else {
 			if !metrics.Timestamp.IsZero() {
 				snapshot.ObservedAt = metrics.Timestamp.UTC()
 			}
@@ -109,34 +246,41 @@ func (kr *KubernetesRunner) SampleResources(ctx context.Context, jobName string,
 			if hasMemory {
 				add("memory.usage", "bytes", "gauge", totalMemory)
 			}
+			// metrics-server answered with an object that has no containers
+			// yet: the pod is known but not sampled. That is a "not yet".
+			if !hasCPU && !hasMemory {
+				snapshot.Unavailable = append(snapshot.Unavailable,
+					jobtelemetry.Unavailable{MetricPrefix: kubernetesCPUPrefix, Reason: "temporarily_unavailable"},
+					jobtelemetry.Unavailable{MetricPrefix: kubernetesMemoryPrefix, Reason: "temporarily_unavailable"},
+				)
+			}
 		}
-	} else {
-		snapshot.Unavailable = append(snapshot.Unavailable,
-			jobtelemetry.Unavailable{MetricPrefix: "cpu.usage", Reason: "metric_api_not_installed"},
-			jobtelemetry.Unavailable{MetricPrefix: "memory.usage", Reason: "metric_api_not_installed"},
-		)
 	}
 	if !options.IncludeStorage {
 		return snapshot, nil
 	}
 	if pod.Spec.NodeName == "" {
-		snapshot.Unavailable = append(snapshot.Unavailable, jobtelemetry.Unavailable{MetricPrefix: "storage.used", Reason: "not_applicable"})
+		// Not scheduled yet. There is no node to ask; the next storage
+		// sample will find one.
+		snapshot.Unavailable = append(snapshot.Unavailable, jobtelemetry.Unavailable{MetricPrefix: kubernetesStoragePrefix, Reason: "temporarily_unavailable"})
 		return snapshot, nil
 	}
-	summaryData, summaryErr := restClient.Get().AbsPath("api", "v1", "nodes", pod.Spec.NodeName, "proxy", "stats", "summary").DoRaw(ctx)
+	summaryData, summaryErr := source.NodeSummary(ctx, pod.Spec.NodeName)
 	if summaryErr != nil {
-		snapshot.Unavailable = append(snapshot.Unavailable, jobtelemetry.Unavailable{MetricPrefix: "storage.used", Reason: "permission_denied"})
+		snapshot.Unavailable = append(snapshot.Unavailable, jobtelemetry.Unavailable{MetricPrefix: kubernetesStoragePrefix, Reason: classifyKubernetesError(summaryErr)})
 		return snapshot, nil
 	}
 	var summary summaryResponse
 	if json.Unmarshal(summaryData, &summary) != nil {
-		snapshot.Unavailable = append(snapshot.Unavailable, jobtelemetry.Unavailable{MetricPrefix: "storage.used", Reason: "runtime_not_supported"})
+		snapshot.Unavailable = append(snapshot.Unavailable, jobtelemetry.Unavailable{MetricPrefix: kubernetesStoragePrefix, Reason: "runtime_not_supported"})
 		return snapshot, nil
 	}
+	found := false
 	for _, podSummary := range summary.Pods {
 		if podSummary.PodRef.Name != pod.Name || podSummary.PodRef.Namespace != kr.namespace {
 			continue
 		}
+		found = true
 		// Kubelet charges this used value to the Pod. The capacity and available
 		// values describe the node filesystem, so they are not job metrics.
 		addSummaryFS(add, podSummary.EphemeralStorage, kubernetesStorageMetric{
@@ -160,6 +304,10 @@ func (kr *KubernetesRunner) SampleResources(ctx context.Context, jobName string,
 			})
 		}
 		break
+	}
+	if !found {
+		// The kubelet summary lags pod creation by one stats interval.
+		snapshot.Unavailable = append(snapshot.Unavailable, jobtelemetry.Unavailable{MetricPrefix: kubernetesStoragePrefix, Reason: "temporarily_unavailable"})
 	}
 	return snapshot, nil
 }

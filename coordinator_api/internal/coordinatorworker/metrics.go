@@ -68,12 +68,18 @@ func pumpMetrics(ctx context.Context, c client, runner worker.JobRunner, leaseID
 	collect := func(sampleCtx context.Context, includeStorage bool) {
 		snapshot, err := runner.SampleResources(sampleCtx, runnerID, worker.ResourceSampleOptions{IncludeStorage: includeStorage})
 		if err != nil {
-			prefixes := []string{"cpu.usage", "memory.usage"}
+			// A failed snapshot is "no value this time", not a statement about
+			// the runtime. The first samples after SpawnJob race the pod (or
+			// container) becoming listable, and the final sample after the
+			// job ends races its removal. The query layer drops this reason
+			// once the lease has a real sample for the family, so it only
+			// reaches the UI for a job that never produced one.
+			prefixes := []string{"cpu.utilization", "memory.usage"}
 			if includeStorage {
 				prefixes = append(prefixes, "storage.used")
 			}
 			for _, prefix := range prefixes {
-				unavailable[prefix+"\x00runtime_not_supported"] = csilapi.MetricUnavailable{MetricPrefix: prefix, Reason: "runtime_not_supported"}
+				unavailable[prefix+"\x00temporarily_unavailable"] = csilapi.MetricUnavailable{MetricPrefix: prefix, Reason: "temporarily_unavailable"}
 			}
 			return
 		}
