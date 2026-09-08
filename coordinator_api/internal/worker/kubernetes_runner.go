@@ -55,6 +55,13 @@ type KubernetesRunner struct {
 	execInPod                  podCommandExecutor
 	workflowOutputMu           sync.Mutex
 	workflowOutputs            map[string]string
+	// metricsSource overrides the REST-backed resource-metrics reads; nil
+	// means the clientset's own REST client (see kubernetes_metrics.go).
+	metricsSource kubernetesMetricsSource
+	// metricsAPIRegistered caches a positive discovery answer for
+	// metrics.k8s.io, guarded by metricsAPIMu.
+	metricsAPIMu         sync.Mutex
+	metricsAPIRegistered bool
 }
 
 // KubernetesRunnerConfig holds configuration for the K8s runner

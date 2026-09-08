@@ -182,6 +182,9 @@ type fakeRunner struct {
 	StopCalls     []fakeStopCall
 	CleanupCalls  []string
 	SampleOptions []worker.ResourceSampleOptions
+	// SampleFunc, if set, answers SampleResources so a test can script a
+	// failing snapshot followed by a good one.
+	SampleFunc func(options worker.ResourceSampleOptions) (worker.ResourceSnapshot, error)
 }
 
 func (f *fakeRunner) TakeWorkflowOutput(string) (string, bool) {
@@ -254,7 +257,11 @@ func (f *fakeRunner) Cleanup(ctx context.Context, jobID string) error {
 func (f *fakeRunner) SampleResources(ctx context.Context, jobID string, options worker.ResourceSampleOptions) (worker.ResourceSnapshot, error) {
 	f.mu.Lock()
 	f.SampleOptions = append(f.SampleOptions, options)
+	sampleFunc := f.SampleFunc
 	f.mu.Unlock()
+	if sampleFunc != nil {
+		return sampleFunc(options)
+	}
 	return worker.ResourceSnapshot{}, nil
 }
 
