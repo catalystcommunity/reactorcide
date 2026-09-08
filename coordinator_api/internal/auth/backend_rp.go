@@ -74,6 +74,29 @@ func NewRPBackend(apiKey string, transport RPTransport) (*RPBackend, error) {
 
 func (b *RPBackend) Mode() Mode { return ModeRP }
 
+// rpRequestedClaims is what every rp-mode login asks the user to release,
+// mirroring the local-rp SDK's defaults (localrp.DefaultRequestedClaims and
+// DefaultRequiredClaims): the handle is required, display name and email
+// are optional.
+//
+// Omitting requested_claims leaves the choice to the RP server's own
+// RP_CLAIMS_CONFIG, and a server configured with none returns no claims at
+// all. That is what production did: every login verified with a uuid
+// subject and an EMPTY handle, so `handle@domain` selectors in
+// REACTORCIDE_FIRST_ADMIN and the trusted-identity list could never match a
+// handle, and users were provisioned with a uuid for a username. The
+// datatype is advisory metadata for the consent screen ("text" per the
+// LinkKeys CSIL); the protocol carries claim values as opaque bytes.
+func rpRequestedClaims() *api.ClaimRequest {
+	return &api.ClaimRequest{
+		Required: []api.RequestedClaim{{ClaimType: "handle", Datatype: "text"}},
+		Optional: []api.RequestedClaim{
+			{ClaimType: "display_name", Datatype: "text"},
+			{ClaimType: "email", Datatype: "text"},
+		},
+	}
+}
+
 // BeginLogin is steps 1-2 of example.md's flow: Rp/sign-request, then build
 // the browser-redirect URL to the user's chosen LinkKeys domain
 // (identitySelector's domain; its handle, if present, rides along as the
@@ -90,8 +113,9 @@ func (b *RPBackend) BeginLogin(ctx context.Context, identitySelector, callbackUR
 	}
 
 	signResp, err := b.transport.Call(ctx, "sign-request", api.EncodeRpSignRequest(api.RpSignRequest{
-		CallbackUrl: callbackURL,
-		Nonce:       nonce,
+		CallbackUrl:     callbackURL,
+		Nonce:           nonce,
+		RequestedClaims: rpRequestedClaims(),
 	}))
 	if err != nil {
 		return "", nil, fmt.Errorf("auth: rp sign-request: %w", err)
