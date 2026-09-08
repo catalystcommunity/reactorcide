@@ -21,14 +21,18 @@ type fakeRPTransport struct {
 	responses map[string][]byte
 	errs      map[string]error
 	calls     []string
+	// payloads keeps the last request body per op so a test can decode what
+	// was actually asked of the RP server.
+	payloads map[string][]byte
 }
 
 func newFakeRPTransport() *fakeRPTransport {
-	return &fakeRPTransport{responses: map[string][]byte{}, errs: map[string]error{}}
+	return &fakeRPTransport{responses: map[string][]byte{}, errs: map[string]error{}, payloads: map[string][]byte{}}
 }
 
-func (f *fakeRPTransport) Call(_ context.Context, op string, _ []byte) ([]byte, error) {
+func (f *fakeRPTransport) Call(_ context.Context, op string, payload []byte) ([]byte, error) {
 	f.calls = append(f.calls, op)
+	f.payloads[op] = append([]byte(nil), payload...)
 	if err, ok := f.errs[op]; ok {
 		return nil, err
 	}
@@ -323,5 +327,44 @@ func TestRPBackendCompleteLoginMissingEncryptedToken(t *testing.T) {
 
 	if _, err := backend.CompleteLogin(context.Background(), pendingBlob, "https://app.example.com/callback"); err == nil {
 		t.Fatal("CompleteLogin() succeeded despite a missing encrypted_token, want an error")
+	}
+}
+
+// TestRPBackendBeginLoginRequestsHandleClaim pins the requested claims on the
+// sign-request. Production ran with none requested: the RP server's default
+// released no claims, every login arrived with an empty handle, and a
+// handle@domain REACTORCIDE_FIRST_ADMIN could never match.
+func TestRPBackendBeginLoginRequestsHandleClaim(t *testing.T) {
+	transport := newFakeRPTransport()
+	transport.responses["sign-request"] = api.EncodeRpSignResponse(api.RpSignResponse{SignedRequest: "signed-request-blob"})
+	backend := newTestRPBackend(transport)
+
+	if _, _, err := backend.BeginLogin(context.Background(), "tod@example.com", "https://cb"); err != nil {
+		t.Fatalf("BeginLogin() error = %v", err)
+	}
+	req, err := api.DecodeRpSignRequest(transport.payloads["sign-request"])
+	if err != nil {
+		t.Fatalf("decode sign-request payload: %v", err)
+	}
+	if req.RequestedClaims == nil {
+		t.Fatal("sign-request must carry requested_claims; omitting it leaves the RP server's default, which can be nothing")
+	}
+	var required, optional []string
+	for _, c := range req.RequestedClaims.Required {
+		required = append(required, c.ClaimType)
+	}
+	for _, c := range req.RequestedClaims.Optional {
+		optional = append(optional, c.ClaimType)
+	}
+	if len(required) != 1 || required[0] != "handle" {
+		t.Errorf("required claims = %v, want [handle]", required)
+	}
+	if len(optional) != 2 || optional[0] != "display_name" || optional[1] != "email" {
+		t.Errorf("optional claims = %v, want [display_name email]", optional)
+	}
+	for _, c := range append(req.RequestedClaims.Required, req.RequestedClaims.Optional...) {
+		if c.Datatype != "text" {
+			t.Errorf("claim %s datatype = %q, want text", c.ClaimType, c.Datatype)
+		}
 	}
 }

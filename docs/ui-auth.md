@@ -93,12 +93,21 @@ normal path for `local-rp`/`rp` deployments.
 
 The selector is matched against the verified identity's handle, its subject and its domain,
 and a `local@domain` selector also matches the identity's `email` claim exactly. Every
-comparison ignores case. The email form matters in `rp` mode: the subject there is a uuid,
-and the handle comes from a best-effort userinfo fetch that can fail, in which case the
-coordinator now logs a warning. On every completed login while the selector is set, one
-Info log line says what happened: did not match (with the handle, domain, subject and email
-that arrived), already an admin, or granted. If `/app/auth/config` reports
-`has_global_admin: false` after the intended person has signed in, read those two lines.
+comparison ignores case. In `rp` mode the subject is a uuid, so a `handle@domain` selector
+depends on the handle claim arriving. The coordinator therefore asks for the `handle` claim
+(required) plus `display_name` and `email` (optional) on every `rp` sign-request, the same
+set the local-RP SDK requests by default. Before it did, the RP server's own default applied,
+which can be no claims at all; every login then verified with an empty handle and the
+selector could never match. The first login for the Reactorcide audience shows a consent
+screen for those claims; later logins are silent.
+
+On every completed login while the selector is set, one Info log line says what happened:
+did not match (with the handle, domain, subject and email that arrived), already an admin,
+or granted. A failed userinfo fetch is logged at Warn. If `/app/auth/config` reports
+`has_global_admin: false` after the intended person has signed in, read those lines.
+
+If the handle still does not arrive, the selector accepts `uuid@domain`: the uuid is the
+`verified_subject` in that log line.
 
 **Bootstrap admin** (`REACTORCIDE_BOOTSTRAP_ADMIN_TOKEN`): for initial setup *before* login
 is fully wired up (or in `mode=none` deployments that still want one admin session to do
