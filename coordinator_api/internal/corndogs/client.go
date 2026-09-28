@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	csil "github.com/catalystcommunity/reactorcide/coordinator_api/internal/corndogs/csilapi"
+	csil "github.com/CatalystCommunity/corndogs/clients/corndogs"
 	pb "github.com/catalystcommunity/reactorcide/coordinator_api/internal/corndogs/v1alpha1"
 )
 
@@ -48,29 +48,46 @@ func NewClient(config Config) (*Client, error) {
 	}, nil
 }
 
-// newCorndogsClient builds the generated CorndogsClient over the TCP
-// StreamCarrier transport. config.BaseURL is a corndogs CSIL-RPC address
-// (host:port), or a comma-separated list of seed addresses for a corndogs
-// cluster (leader-following). Any URL scheme (tcp://, http://) is tolerated and
-// stripped by the transport's dialAddr, so legacy "corndogs:5080" values keep
-// working — as a plain TCP address now, not HTTP.
+// newCorndogsClient builds the Corndogs Go client over its TCP stream
+// transport. config.BaseURL is a corndogs CSIL-RPC address (host:port), or a
+// comma-separated list of seed addresses for a corndogs cluster
+// (leader-following). A URL scheme (tcp://, http://) and a path are stripped
+// here, so "http://corndogs:5080" keeps working as a plain TCP address. The
+// upstream single-address StreamTransport dials its Addr as given and fails
+// with "too many colons in address" on a scheme.
 func newCorndogsClient(baseURL string) *csil.CorndogsClient {
 	seeds := splitSeeds(baseURL)
-	if len(seeds) <= 1 {
-		return csil.New(baseURL)
+	switch len(seeds) {
+	case 0:
+		return csil.New(dialAddr(strings.TrimSpace(baseURL)))
+	case 1:
+		return csil.New(seeds[0])
+	default:
+		return csil.NewCluster(seeds...)
 	}
-	return csil.NewCluster(seeds...)
 }
 
 func splitSeeds(baseURL string) []string {
 	parts := strings.Split(baseURL, ",")
 	seeds := make([]string, 0, len(parts))
 	for _, p := range parts {
-		if s := strings.TrimSpace(p); s != "" {
+		if s := dialAddr(strings.TrimSpace(p)); s != "" {
 			seeds = append(seeds, s)
 		}
 	}
 	return seeds
+}
+
+// dialAddr reduces a configured address to a dialable host:port. It removes a
+// URL scheme ("tcp://", "http://") and any path.
+func dialAddr(addr string) string {
+	if i := strings.Index(addr, "://"); i >= 0 {
+		addr = addr[i+len("://"):]
+	}
+	if i := strings.Index(addr, "/"); i >= 0 {
+		addr = addr[:i]
+	}
+	return addr
 }
 
 // Close is retained for the client interface; the TCP transport dials lazily
@@ -136,7 +153,7 @@ func (c *Client) GetNextTask(ctx context.Context, state string, timeout int64) (
 		return nil, fmt.Errorf("failed to get next task: %w", err)
 	}
 
-	return toPBTask(resp.Task), nil
+	return deliveryToPBTask(resp.Delivery), nil
 }
 
 // GetNextTaskGroup gets the next available task across a group of queues, honoring
@@ -160,17 +177,22 @@ func (c *Client) GetNextTaskGroup(ctx context.Context, queues []string, currentS
 		return nil, fmt.Errorf("failed to get next task group: %w", err)
 	}
 
-	return toPBTask(resp.Task), nil
+	return deliveryToPBTask(resp.Delivery), nil
 }
 
-// UpdateTask updates the state of a task
+// UpdateTask updates the state of a task. A nil payload keeps the stored
+// payload (corndogs >= 0.7.5 treats an absent payload as "keep"); a non-nil
+// payload replaces it. The priority is never sent, so the stored priority is
+// kept.
 func (c *Client) UpdateTask(ctx context.Context, taskID string, currentState string, newState string, payload []byte) (*pb.Task, error) {
 	req := csil.UpdateTaskRequest{
 		Uuid:         taskID,
 		Queue:        c.config.QueueName,
 		CurrentState: currentState,
 		NewState:     newState,
-		Payload:      payload,
+	}
+	if payload != nil {
+		req.Payload = &payload
 	}
 
 	resp, err := c.client.UpdateTask(ctx, req)
@@ -284,15 +306,16 @@ func (c *Client) GetTaskStateCounts(ctx context.Context) (int64, map[string]int6
 // SendHeartbeat sends a heartbeat for a task by extending its timeout
 // This prevents the task from timing out during long-running operations
 func (c *Client) SendHeartbeat(ctx context.Context, taskID string, currentState string, timeoutExtensionSeconds int64) (*pb.Task, error) {
-	// Use UpdateTask to extend the timeout
-	// We keep the same state and just update the timeout
+	// Use UpdateTask to extend the timeout. Keep the same state. Payload and
+	// Priority stay nil, so corndogs keeps the stored payload and priority. (A
+	// corndogs 0.7.0 server replaced the priority on every update, so each
+	// heartbeat reset the priority to 0.)
 	req := csil.UpdateTaskRequest{
 		Uuid:         taskID,
 		Queue:        c.config.QueueName,
 		CurrentState: currentState,
-		NewState:     currentState, // Keep same state
+		NewState:     currentState,
 		Timeout:      timeoutExtensionSeconds,
-		Payload:      nil, // Keep existing payload
 	}
 
 	resp, err := c.client.UpdateTask(ctx, req)
@@ -303,6 +326,21 @@ func (c *Client) SendHeartbeat(ctx context.Context, taskID string, currentState 
 	return toPBTask(resp.Task), nil
 }
 
+// deliveryToPBTask converts a claimed task. Since corndogs 0.7.1 the payload is
+// outside the Task record, in the delivery. It goes into the returned
+// pb.Task's Payload, so ParseTaskPayload keeps working. A nil delivery (nothing
+// to claim) returns nil.
+func deliveryToPBTask(delivery *csil.TaskDelivery) *pb.Task {
+	if delivery == nil {
+		return nil
+	}
+	task := toPBTask(&delivery.Task)
+	task.Payload = delivery.Payload
+	return task
+}
+
+// toPBTask converts a task record. Corndogs task records carry no payload, so
+// the returned Payload is nil.
 func toPBTask(task *csil.Task) *pb.Task {
 	if task == nil {
 		return nil
@@ -315,7 +353,6 @@ func toPBTask(task *csil.Task) *pb.Task {
 		SubmitTime:      task.SubmitTime,
 		UpdateTime:      task.UpdateTime,
 		Timeout:         task.Timeout,
-		Payload:         task.Payload,
 		Priority:        task.Priority,
 	}
 }

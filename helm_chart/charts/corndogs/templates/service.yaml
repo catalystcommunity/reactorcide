@@ -7,15 +7,16 @@ metadata:
 spec:
   type: {{ .Values.service.type }}
   ports:
+    # CSIL-RPC over TCP — what clients connect to.
     - port: {{ .Values.service.port }}
-      targetPort: corndogshttp
+      targetPort: corndogsrpc
       protocol: TCP
-      name: corndogshttp
-    # 0.7.0 ops HTTP (/healthz + /metrics). Always exposed: 5080 is raw TCP RPC
-    # in 0.7.0, so health checks and the helm test must use this port.
+      name: corndogsrpc
+    {{- if .Values.appconfig.prometheusEnabled }}
     - port: 8080
       targetPort: corndogsops
       protocol: TCP
       name: corndogsops
+    {{- end }}
   selector:
     {{- include "corndogs.selectorLabels" . | nindent 4 }}

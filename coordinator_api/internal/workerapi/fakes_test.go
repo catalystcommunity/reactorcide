@@ -605,6 +605,16 @@ func newFakeCorndogsClient() *corndogs.MockClient {
 		return t, nil
 	}
 
+	mc.GetTaskByIDFunc = func(ctx context.Context, taskID string) (*pb.Task, error) {
+		backend.mu.Lock()
+		defer backend.mu.Unlock()
+		t, ok := backend.tasks[taskID]
+		if !ok {
+			return nil, fmt.Errorf("task not found")
+		}
+		return &pb.Task{Uuid: t.Uuid, Queue: t.Queue, CurrentState: t.CurrentState, AutoTargetState: t.AutoTargetState, Payload: t.Payload, Priority: t.Priority}, nil
+	}
+
 	mc.SendHeartbeatFunc = func(ctx context.Context, taskID, currentState string, timeoutExtensionSeconds int64) (*pb.Task, error) {
 		backend.mu.Lock()
 		defer backend.mu.Unlock()

@@ -33,7 +33,7 @@ import (
 // -- not an error). Returns a non-nil error only for an actual resolution
 // failure (malformed secret ref, secrets not configured, a store error) --
 // RequestJob fails the claim on that path exactly like a denied job secret
-// (see finalizeSecretDenial in service.go), mirroring
+// (see rejectClaim in service.go), mirroring
 // prepareVCSCheckoutAuth's old error contract of failing the job outright.
 //
 // SECURITY: the returned token is a secret. It must only ever be placed in

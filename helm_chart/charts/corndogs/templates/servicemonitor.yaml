@@ -21,7 +21,7 @@ spec:
     matchLabels:
       {{- include "corndogs.selectorLabels" . | nindent 6 }}
   endpoints:
-    - port: corndogsmetrics
+    - port: corndogsops
       {{- with .Values.serviceMonitor.interval }}
       interval: {{ . }}
       {{- end }}

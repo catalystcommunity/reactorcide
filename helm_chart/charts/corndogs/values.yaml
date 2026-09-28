@@ -1,6 +1,4 @@
-# Default values for corndogs.
-# This is a YAML-formatted file.
-# Declare variables to be passed into your templates.
+# Default chart values.
 
 replicaCount: 1
 namespace: corndogs
@@ -58,10 +56,7 @@ ingress:
   #      - chart-example.local
 
 resources: {}
-  # We usually recommend not to specify default resources and to leave this as a conscious
-  # choice for the user. This also increases chances charts run on environments with little
-  # resources, such as Minikube. If you do want to specify resources, uncomment the following
-  # lines, adjust them as necessary, and remove the curly braces after 'resources:'.
+  # Add resource limits and requests for your environment.
   # limits:
   #   cpu: 100m
   #   memory: 128Mi
@@ -85,25 +80,64 @@ affinity: {}
 appconfig:
   loglevel: "error"
   prometheusEnabled: false
+  # Maximum payload size in bytes. Valid values are 1 through 1073741823.
+  maxPayloadBytes: "16777216"
 
-# timeoutCron optionally creates a cronjob to send CleanUpTimedOut requests using the cli
+livenessProbe:
+  # Delay liveness checks while Corndogs waits for its storage backend.
+  initialDelaySeconds: 120
+  periodSeconds: 10
+  timeoutSeconds: 1
+  successThreshold: 1
+  failureThreshold: 3
+
+readinessProbe:
+  # Start readiness checks immediately. The pod stays out of service until the
+  # storage backend is ready and the server starts.
+  initialDelaySeconds: 0
+  periodSeconds: 10
+  timeoutSeconds: 1
+  successThreshold: 1
+  failureThreshold: 3
+
+# Create a CronJob that sends CleanUpTimedOut requests.
 timeoutCron:
   enabled: false
-  # schedule uses the typical cronjob schedule syntax
+  # Set a standard Cron schedule.
   # schedule:
-  
-  # address is the address to the corndogs service. Defaults to corndogs.fullname
+
+  # Set the service host. The default is the chart full name.
   # address: corndogs
 
-  # port is the port for the corndogs service. Defualts to the service port.
+  # Set the service port. The default is service.port.
   # port: 5080
 
-  # queue is optional and sets the queue in the CleanUpTimedOut request to limit what it affects.
+  # Set a queue to process only that queue.
   # queue: example
 
-  # restartPolicy for the job created. Defaults to Never.
+  # Set the pod restart policy.
   # restartPolicy: Never
 
+
+# tls serves the CSIL-RPC port (5080) with TLS only. The ops port (8080:
+# /healthz, /metrics) stays plain HTTP.
+#   secretName     : a kubernetes.io/tls Secret with tls.crt and tls.key, for
+#                    example from cert-manager. The certificate must be valid
+#                    for each name that clients use (the Service DNS names).
+#   reloadInterval : how often Corndogs examines the files for a new
+#                    certificate. A Secret update needs no pod restart.
+#   caKey          : a key in the same Secret that holds the CA certificate
+#                    (cert-manager writes ca.crt). The timeout CronJob uses it
+#                    to verify the server. Empty: the system roots.
+#   serverName     : the name that the timeout CronJob verifies in the server
+#                    certificate. Empty: the CronJob address.
+tls:
+  enabled: false
+  secretName: ""
+  mountPath: /etc/corndogs/tls
+  reloadInterval: 10s
+  caKey: ""
+  serverName: ""
 
 # storage selects the backend:
 #   postgres (default) : the shared, horizontally-scalable backend.
@@ -156,6 +190,8 @@ database:
   host: "corndogs-postgresql"
   user: "postgres"
   password: "postgres"
+  # Time to wait for Postgres to accept connections before Corndogs exits.
+  startupTimeoutSeconds: "120"
   maxIdleConns: "10"
   maxOpenConns: "10"
   connMaxLifetimeSeconds: "3600"

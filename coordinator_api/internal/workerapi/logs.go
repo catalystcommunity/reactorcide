@@ -32,7 +32,10 @@ func (s *WorkerService) AppendLogs(ctx context.Context, req csilapi.AppendLogsRe
 	}
 
 	lease, err := s.deps.Store.GetWorkerLeaseByID(ctx, req.LeaseId)
-	if err != nil || lease.WorkerID != wkr.WorkerID {
+	if err != nil {
+		return csilapi.AppendLogsResponse{}, leaseLookupError(err, "lease not found for this worker")
+	}
+	if lease.WorkerID != wkr.WorkerID {
 		return csilapi.AppendLogsResponse{}, uiapi.NewServiceError("not_found", "lease not found for this worker")
 	}
 	if !lease.IsActive() {

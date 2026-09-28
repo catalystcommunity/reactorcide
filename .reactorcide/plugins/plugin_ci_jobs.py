@@ -2,10 +2,16 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
 import os
 import re
 import shlex
+import shutil
 import subprocess
+import tarfile
+import tempfile
+import urllib.request
 from pathlib import Path
 from typing import Callable, Dict, List, Optional
 
@@ -313,8 +319,163 @@ def test_web(code_dir: Path) -> None:
     )
 
 
+# The generation scripts that own the csilgen pin, and every path they write.
+# csil-gen-check reads CSILGEN_RELEASE from the scripts, so the pin has one
+# home. The scripts must agree with each other.
+CSIL_GENERATE_SCRIPTS = (
+    "scripts/generate-csil-worker.sh",
+    "scripts/generate-csil-ui.sh",
+)
+CSIL_GENERATED_PATHS = (
+    "coordinator_api/internal/workerapi/csilapi",
+    "coordinator_api/internal/workerclient/csilapi",
+    "coordinator_api/internal/uiapi/csilapi",
+    "webapp/internal/uiclient/csilapi",
+    "webapp/ui/src/api/csilapi",
+)
+CSILGEN_RELEASE_API = (
+    "https://api.github.com/repos/catalystcommunity/csilgen/releases/tags/"
+)
+
+
+def _csilgen_release(code_dir: Path) -> str:
+    """Return the one CSILGEN_RELEASE that every generation script sets."""
+    releases = set()
+    for script in CSIL_GENERATE_SCRIPTS:
+        text = (code_dir / script).read_text(encoding="utf-8")
+        match = re.search(r'^CSILGEN_RELEASE="([^"]+)"', text, re.MULTILINE)
+        if not match:
+            raise RuntimeError(f"{script} does not set CSILGEN_RELEASE")
+        releases.add(match.group(1))
+    if len(releases) != 1:
+        raise RuntimeError(
+            "the generation scripts set different CSILGEN_RELEASE values: "
+            + ", ".join(sorted(releases))
+        )
+    return releases.pop()
+
+
+def _download_verified(url: str, dest: Path, sha256: str) -> Path:
+    log_stdout(f"Download {url}")
+    with urllib.request.urlopen(url, timeout=120) as response, dest.open("wb") as out:
+        shutil.copyfileobj(response, out)
+    digest = hashlib.sha256(dest.read_bytes()).hexdigest()
+    if digest != sha256.lower():
+        dest.unlink()
+        raise RuntimeError(f"{url}: SHA-256 {digest} does not match {sha256}")
+    return dest
+
+
+def _install_csilgen(release: str, root: Path) -> Dict[str, str]:
+    """Install exactly the pinned csilgen release under root.
+
+    csilgen's own installer (tools.sh install-all) installs only the newest
+    release, so a new csilgen release would fail this check with no change
+    here. Download the assets of the pinned release and check each one against
+    the SHA-256 digest that GitHub records. The CLI goes to root/bin and the
+    generators to root/home/.csilgen/generators. Return an environment that
+    uses only these, so no shared ~/.csilgen/generators is read or written.
+    """
+    match = re.fullmatch(r"csilgen/v(\d+\.\d+\.\d+)", release)
+    if not match:
+        raise RuntimeError(f"CSILGEN_RELEASE {release!r} is not csilgen/vX.Y.Z")
+    version = match.group(1)
+    log_stdout(f"Install {release}")
+    api_url = CSILGEN_RELEASE_API + release.replace("/", "%2F")
+    with urllib.request.urlopen(api_url, timeout=60) as response:
+        info = json.loads(response.read().decode())
+    assets = {asset["name"]: asset for asset in info.get("assets", [])}
+
+    downloads = root / "downloads"
+    bin_dir = root / "bin"
+    home = root / "home"
+    generators = home / ".csilgen" / "generators"
+    for directory in (downloads, bin_dir, generators):
+        directory.mkdir(parents=True, exist_ok=True)
+
+    def fetch(name: str) -> Path:
+        asset = assets.get(name)
+        if asset is None:
+            raise RuntimeError(f"{release} has no asset {name}")
+        digest = str(asset.get("digest", ""))
+        if not digest.startswith("sha256:"):
+            raise RuntimeError(f"{release} asset {name} has no SHA-256 digest")
+        return _download_verified(
+            asset["browser_download_url"], downloads / name, digest.split(":", 1)[1]
+        )
+
+    cli_archive = fetch(f"csilgen-{version}-x86_64-unknown-linux-gnu.tar.gz")
+    with tarfile.open(cli_archive) as tar:
+        member = next(
+            (
+                info
+                for info in tar.getmembers()
+                if info.isfile() and info.name.removeprefix("./") == "csilgen"
+            ),
+            None,
+        )
+        if member is None:
+            raise RuntimeError(f"csilgen is not in {cli_archive.name}")
+        (bin_dir / "csilgen").write_bytes(tar.extractfile(member).read())
+    (bin_dir / "csilgen").chmod(0o755)
+
+    bundle = fetch(f"csilgen-generators-{version}.tar.gz")
+    with tarfile.open(bundle) as tar:
+        for member in tar.getmembers():
+            name = member.name.removeprefix("./")
+            if member.isfile() and name.endswith(".wasm") and "/" not in name:
+                (generators / name).write_bytes(tar.extractfile(member).read())
+    if not any(generators.glob("*.wasm")):
+        raise RuntimeError(f"{release} generator bundle has no .wasm files")
+
+    environment = os.environ.copy()
+    environment["HOME"] = str(home)
+    environment["PATH"] = f"{bin_dir}{os.pathsep}{environment.get('PATH', '')}"
+    reported = _run(
+        ["csilgen", "--version"], cwd=root, capture_output=True, env=environment
+    ).stdout.strip()
+    if reported != f"csilgen {version}":
+        raise RuntimeError(f"installed csilgen reports {reported!r}, not {version}")
+    log_stdout(f"Installed {reported}")
+    return environment
+
+
+def csil_gen_check(code_dir: Path) -> None:
+    """Regenerate every CSIL target and fail if the committed code differs.
+
+    Fails on changed files AND on new untracked files (git status
+    --porcelain), because csilgen can add a file, such as the
+    <spec>.csil-schema.cbor descriptor from 0.2.7.
+    """
+    release = _csilgen_release(code_dir)
+    with tempfile.TemporaryDirectory(prefix="csilgen-") as scratch:
+        environment = _install_csilgen(release, Path(scratch))
+        for script in CSIL_GENERATE_SCRIPTS:
+            _run(["bash", script], cwd=code_dir, env=environment)
+
+    status = _run(
+        ["git", "status", "--porcelain", "--", *CSIL_GENERATED_PATHS],
+        cwd=code_dir,
+        capture_output=True,
+    )
+    if status.stdout.strip():
+        log_stdout(status.stdout)
+        subprocess.run(
+            ["git", "diff", "--stat", "--", *CSIL_GENERATED_PATHS],
+            cwd=code_dir,
+            check=False,
+        )
+        raise RuntimeError(
+            f"the generated CSIL code is stale for {release}. Run "
+            "scripts/generate-csil-worker.sh and scripts/generate-csil-ui.sh "
+            "with that csilgen release and commit the result, including new files."
+        )
+    log_stdout(f"The generated CSIL code matches the contracts ({release})")
+
+
 CI_JOBS: Dict[str, Callable[[Path], None]] = {
     "conventional-commits": validate_conventional_commits,
+    "csil-gen-check": csil_gen_check,
     "test-go": test_coordinator,
     "test-python": test_runnerlib,
     "test-web": test_web,

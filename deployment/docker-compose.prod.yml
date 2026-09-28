@@ -25,7 +25,7 @@ services:
 
   # Corndogs Task Queue
   corndogs:
-    image: ${CORNDOGS_IMAGE:-containers.catalystsquad.com/public/catalystcommunity/corndogs:0.7.0}
+    image: ${CORNDOGS_IMAGE:-containers.catalystsquad.com/public/catalystcommunity/corndogs:0.7.6}
     container_name: reactorcide-corndogs
     user: "0:0"
     security_opt:

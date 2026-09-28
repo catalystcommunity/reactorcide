@@ -4,10 +4,11 @@
 // client's Transport interface (./csilapi/client.gen.go) with the
 // envelope-in-body HTTP profile (csilgen docs/csil-rpc-transport.md §2.1):
 // POST {baseURL}/csil/v1/rpc, application/cbor, envelope
-// {v, service, op, payload: tag24(cbor), ?auth}. This mirrors
-// coordinator_api/internal/corndogs/csilapi/transport.go's shape (encode
-// request, decode response, translate a "ServiceError" variant into a
-// structured client error) with one addition: the session token is supplied
+// {v, service, op, payload: tag24(cbor), ?auth}. This mirrors the shape of
+// the Corndogs Go client transport (github.com/CatalystCommunity/corndogs/
+// clients/corndogs, transport.go): encode request, decode response,
+// translate a "ServiceError" variant into a structured client error. It has
+// one addition: the session token is supplied
 // per call via context (WithAuthToken/AuthTokenFromContext in context.go),
 // not fixed at transport-construction time, so one CSILRPCTransport safely
 // serves concurrent requests for many different logged-in users (or none, in

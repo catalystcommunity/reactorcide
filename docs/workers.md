@@ -218,6 +218,57 @@ handed to the worker via its deployment's secret/env, never checked into a repo 
 + its assigned `worker_id` + a heartbeat interval → from then on the worker polls
 `RequestJob` with its full characteristics, runs whatever it's leased, and reports back.
 
+## Claims, results, and recovery
+
+A database outage must not leave a job at `running` with no worker. These rules apply.
+
+**Claim (`RequestJob`).**
+
+1. The coordinator resolves the job's secrets and its VCS checkout credential first. No
+   write occurs before this step.
+2. The coordinator then writes three rows in one transaction: the job goes to `running`,
+   the job token, and the `worker_leases` row. All three commit, or none commit.
+3. If the transaction fails, the job stays at `submitted` and the Corndogs task goes back to
+   `submitted`. The next `RequestJob` can lease the job.
+4. A denied secret or credential sets the job to `failed`. The coordinator fails the Corndogs
+   task only after that write. If the write fails, the task goes back to the queue.
+5. A store error during step 1 is not a denial. The job stays at `submitted` and the task
+   goes back to the queue.
+6. A task that is not the job's current Corndogs task is cancelled at claim. It does not
+   start the job.
+
+**Session and lease errors.** A worker call returns `unauthorized` only when the session is
+absent, unknown, expired, or revoked. A store error returns `unavailable`, which is
+retryable. A lease or job lookup returns `not_found` only when the row does not exist.
+
+**Result delivery (worker).** The worker retries `ReportResult` with backoff (1 s to 30 s)
+for up to 15 minutes. Before each retry it sends the telemetry spool again, so the last log
+and metric batches also get retries. On `unauthorized` the worker registers again before the
+next attempt. The worker stops on `not_found`, `invalid_argument`, `forbidden`, or
+`conflict`. The lease stays in the heartbeat list during the retries.
+
+**Lost-job reconciler (coordinator).** The lease reaper loop runs every 60 s. It also:
+
+- finds each job at `running` with no open lease for 2 minutes (after the job started, or
+  after its last lease was released). It cancels the old Corndogs task, sets the job to
+  `submitted`, increments `retry_count`, and submits a new task. After 2 requeues it sets
+  the job to `failed` with `last_error` "lost: no lease after coordinator error; retries
+  exhausted", and advances the workflow and the job's VCS check.
+- finds each terminal job whose workflow node is still `submitted` or `running`, and gives
+  the node its completion again.
+
+A result that arrives after a requeue does not change the job. The coordinator releases the
+old lease with outcome `superseded`.
+
+**Coordinator database pool.** Each coordinator replica has its own pool. Set these on the
+coordinator:
+
+| Env | Default | Meaning |
+|---|---|---|
+| `DB_MAX_OPEN_CONNS` | `25` | maximum open connections |
+| `DB_MAX_IDLE_CONNS` | `2` | idle connections kept |
+| `DB_CONN_MAX_IDLE_SECONDS` | `300` | close an idle connection after this time |
+
 ## Admin UI and CSIL ops
 
 Every worker/pool/queue admin action requires `authz.Caps.ManageWorkers` — the same
@@ -445,6 +496,14 @@ both deployments at yours. If `REACTORCIDE_WORKER_ENROLLMENT_TOKEN_SECRET` is
 unset, the chart's zero-touch default applies. You create the override Secret
 yourself (`kubectl create secret ...`); the deploy job never creates or reads a
 token value.
+
+**Postgres resources.** With `REACTORCIDE_PROVISION_POSTGRES=true`, the deploy writes the
+Zalando `postgresql` resource with pod resources. Without them the operator applies a 500Mi
+memory limit, and a burst of parallel jobs can OOM-kill Postgres. Defaults: request
+`100m`/`256Mi`, limit `1`/`1536Mi`. Override with `REACTORCIDE_POSTGRES_CPU_REQUEST`,
+`REACTORCIDE_POSTGRES_CPU_LIMIT`, `REACTORCIDE_POSTGRES_MEMORY_REQUEST`, and
+`REACTORCIDE_POSTGRES_MEMORY_LIMIT`. The production resource is in
+`deployment/k8s/reactorcide-postgres.yaml`.
 
 ## Worker environment reference
 

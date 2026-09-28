@@ -5,6 +5,8 @@ github.com/AdaLogics/go-fuzz-headers v0.0.0-20240806141605-e8a1dd7889d6/go.mod h
 github.com/Azure/go-ansiterm v0.0.0-20250102033503-faa5f7b0171c h1:udKWzYgxTojEKWjV8V+WSxDXJ4NFATAsZjh8iIbsQIg=
 github.com/Azure/go-ansiterm v0.0.0-20250102033503-faa5f7b0171c/go.mod h1:xomTg63KZ2rFqZQzSB4Vz2SUXa1BpHTVz9L5PTmPC4E=
 github.com/BurntSushi/toml v0.3.1/go.mod h1:xHWCNGjB5oqiDr8zfno3MHue2Ht5sIBksp03qcyfWMU=
+github.com/CatalystCommunity/corndogs/clients/corndogs v0.0.0-20260927235633-21d018211ec8 h1:VC+ddHLq7RWbXF9BJC+7TyzqFBHVI4TEP1bxRGO4Sq0=
+github.com/CatalystCommunity/corndogs/clients/corndogs v0.0.0-20260927235633-21d018211ec8/go.mod h1:rAPWej/OeWAb2Ov9mjRWDuJFrSReQux4tRTNNnqPus8=
 github.com/Code-Hex/go-infinity-channel v1.0.0 h1:M8BWlfDOxq9or9yvF9+YkceoTkDI1pFAqvnP87Zh0Nw=
 github.com/Code-Hex/go-infinity-channel v1.0.0/go.mod h1:5yUVg/Fqao9dAjcpzoQ33WwfdMWmISOrQloDRn3bsvY=
 github.com/Code-Hex/vz/v3 v3.7.1 h1:EN1yNiyrbPq+dl388nne2NySo8I94EnPppvqypA65XM=
@@ -62,8 +64,6 @@ github.com/catalystcommunity/app-utils-go v1.0.9 h1:0WgpT1XMloyu0BYEwmF3h21LjX0z
 github.com/catalystcommunity/app-utils-go v1.0.9/go.mod h1:6TUs51pXf4+24a5qPBAU/qlH738WrrQBa2JcVDSoot0=
 github.com/catalystcommunity/csilgen/transports/go v0.0.0-20260713013116-a661c8727022 h1:2Gr90Egbv1QOjg4k+MPwSOZj8xCVp/q8S0EYBvUYUIk=
 github.com/catalystcommunity/csilgen/transports/go v0.0.0-20260713013116-a661c8727022/go.mod h1:7CdM6CycSuRgLJ1Qt8A10qJZlIIlvSZG8PfkU8s0fCM=
-github.com/catalystcommunity/linkkeys/sdks/local-rp/go v0.0.0-20260717001953-57cebd1f53ff h1:v71ChY7dW4+YgOE243VNC2ZG4rdbWxTyvrkDFqFPvx4=
-github.com/catalystcommunity/linkkeys/sdks/local-rp/go v0.0.0-20260717001953-57cebd1f53ff/go.mod h1:wsRI1EVGMxokp2eWK/3BhRVEKvzETh3qPTUT5hoUCFM=
 github.com/catalystcommunity/linkkeys/sdks/local-rp/go v0.0.0-20260824061508-709f5386bed3 h1:bNK7zTaq9LeG5pbPgf2s5L27rpN0wpvL82HlgMh4dAw=
 github.com/catalystcommunity/linkkeys/sdks/local-rp/go v0.0.0-20260824061508-709f5386bed3/go.mod h1:wsRI1EVGMxokp2eWK/3BhRVEKvzETh3qPTUT5hoUCFM=
 github.com/cenkalti/backoff/v4 v4.3.0 h1:MyRJ/UdXutAwSAT+s3wNd7MfTIcy71VQueUuFK343L8=

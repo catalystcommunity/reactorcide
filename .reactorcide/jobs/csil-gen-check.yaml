@@ -1,0 +1,12 @@
+name: csil-gen-check
+description: "Regenerate the CSIL code with the pinned csilgen release and fail if the committed code differs"
+job:
+  image: containers.catalystsquad.com/public/reactorcide/runnerbase:latest
+  command: "runnerlib run --job-command true"
+  timeout: 900
+  priority: 10
+  working_dir: /job
+environment:
+  REACTORCIDE_CI_JOB: csil-gen-check
+run_local:
+  user: host

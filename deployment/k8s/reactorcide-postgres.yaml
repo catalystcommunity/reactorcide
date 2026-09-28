@@ -1,0 +1,44 @@
+# Production Postgres for the coordinator (Zalando postgres-operator).
+#
+# This is the live resource `reactorcide/reactorcide-postgres`. Change it
+# here, get the change reviewed, then apply it:
+#
+#   kubectl --context <production> apply -f deployment/k8s/reactorcide-postgres.yaml
+#
+# The operator restarts the pod to apply new resources. Plan a short
+# coordinator outage.
+#
+# jobs/scripts/deploy_k8s.py writes the same resource when
+# REACTORCIDE_PROVISION_POSTGRES=true. Keep the two the same.
+#
+# resources: without them the operator applies its default limit (500Mi
+# memory, 1 CPU). /dev/shm (shared buffers) is a memory-backed volume that
+# counts against the same limit. At idle the pod uses about 150-250Mi; a
+# burst of parallel jobs reached 500Mi twice (2026-09-26, 2026-09-27) and the
+# pod was OOM-killed. Measure with `kubectl top pod reactorcide-postgres-0`
+# during a busy CI period and adjust.
+apiVersion: acid.zalan.do/v1
+kind: postgresql
+metadata:
+  name: reactorcide-postgres
+  namespace: reactorcide
+spec:
+  teamId: reactorcide
+  numberOfInstances: 1
+  volume:
+    size: 5Gi
+  users:
+    reactorcide:
+      - superuser
+      - createdb
+  databases:
+    reactorcide: reactorcide
+  postgresql:
+    version: "17"
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: "1"
+      memory: 1536Mi

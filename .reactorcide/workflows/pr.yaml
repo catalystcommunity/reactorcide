@@ -9,7 +9,7 @@
 # again: it must keep matching the stored policy's `workflows:` entry.
 id: reactorcide-pr
 name: Reactorcide PR
-description: "Validate commits, then run the Go, Python, and web test suites for pull requests."
+description: "Validate commits, then run the Go, Python, and web test suites and the CSIL generation check for pull requests."
 
 # The workflow trigger. One event can match several workflows, so pipelines
 # can split per team, product, or org. Each workflow shows up as its own
@@ -22,8 +22,8 @@ on:
     - main
 
 # Each job references a reusable definition in .reactorcide/jobs/ and overlays
-# the workflow-specific DAG (depends_on). The three test jobs run only after
-# conventional-commits succeeds.
+# the workflow-specific DAG (depends_on). The test jobs and the CSIL
+# generation check run only after conventional-commits succeeds.
 jobs:
   conventional-commits:
     job_file: conventional-commits.yaml
@@ -40,5 +40,10 @@ jobs:
 
   test-web:
     job_file: test-web.yaml
+    depends_on:
+      - conventional-commits
+
+  csil-gen-check:
+    job_file: csil-gen-check.yaml
     depends_on:
       - conventional-commits
