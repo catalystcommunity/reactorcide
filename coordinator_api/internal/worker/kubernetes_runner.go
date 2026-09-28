@@ -62,7 +62,21 @@ type KubernetesRunner struct {
 	// metrics.k8s.io, guarded by metricsAPIMu.
 	metricsAPIMu         sync.Mutex
 	metricsAPIRegistered bool
+	// resourceScope selects where CPU and memory go: "pod" (spec.resources,
+	// shared by the job container and its buildkit/DinD sidecars),
+	// "container" (the job container only), or "auto"/"" (probe the API
+	// server once, see usePodLevelResources).
+	resourceScope     string
+	resourceScopeOnce sync.Once
+	podLevelResources bool
 }
+
+// Job resource scopes (REACTORCIDE_K8S_JOB_RESOURCE_SCOPE).
+const (
+	ResourceScopeAuto      = "auto"
+	ResourceScopePod       = "pod"
+	ResourceScopeContainer = "container"
+)
 
 // KubernetesRunnerConfig holds configuration for the K8s runner
 type KubernetesRunnerConfig struct {
@@ -75,6 +89,9 @@ type KubernetesRunnerConfig struct {
 	// image_pull_secrets in addition to ImagePullSecrets above.
 	AllowedJobImagePullSecrets []string
 	NodeName                   string // Node to schedule job pods on (for workspace sharing via HostPath)
+	// ResourceScope is ResourceScopeAuto (default), ResourceScopePod, or
+	// ResourceScopeContainer. See KubernetesRunner.resourceScope.
+	ResourceScope string
 }
 
 // NewKubernetesRunner creates a new Kubernetes-based job runner
@@ -84,6 +101,7 @@ func NewKubernetesRunner() (*KubernetesRunner, error) {
 		Namespace:      os.Getenv("REACTORCIDE_K8S_JOB_NAMESPACE"),
 		ServiceAccount: os.Getenv("REACTORCIDE_K8S_JOB_SERVICE_ACCOUNT"),
 		DindImage:      os.Getenv("REACTORCIDE_DIND_IMAGE"),
+		ResourceScope:  os.Getenv("REACTORCIDE_K8S_JOB_RESOURCE_SCOPE"),
 	}
 	cfg.ImagePullSecrets = splitSecretNameList(os.Getenv("REACTORCIDE_K8S_JOB_IMAGE_PULL_SECRETS"))
 	cfg.AllowedJobImagePullSecrets = splitSecretNameList(os.Getenv("REACTORCIDE_K8S_JOB_ALLOWED_IMAGE_PULL_SECRETS"))
@@ -136,7 +154,61 @@ func NewKubernetesRunnerWithConfig(cfg KubernetesRunnerConfig) (*KubernetesRunne
 		allowedJobImagePullSecrets: cfg.AllowedJobImagePullSecrets,
 		builder:                    LoadBuilderConfig(),
 		workflowOutputs:            make(map[string]string),
+		resourceScope:              strings.ToLower(strings.TrimSpace(cfg.ResourceScope)),
 	}, nil
+}
+
+// resourceProbeJobName names the server-side dry-run Job that
+// usePodLevelResources creates. A dry run persists nothing.
+const resourceProbeJobName = "reactorcide-pod-resources-probe"
+
+// usePodLevelResources reports whether job CPU and memory go in the pod's
+// spec.resources. Pod-level resources (KEP-2837, beta and on by default
+// since Kubernetes 1.34) give the job container and its buildkit/DinD
+// sidecars one shared budget. An API server with the PodLevelResources
+// feature gate off drops the field without an error, which would leave the
+// pod with no limits at all. In auto mode the runner therefore creates one
+// server-side dry-run Job with pod-level resources and checks that the
+// field survives. Any probe failure selects container-level resources.
+func (kr *KubernetesRunner) usePodLevelResources(ctx context.Context) bool {
+	switch kr.resourceScope {
+	case ResourceScopePod:
+		return true
+	case ResourceScopeContainer:
+		return false
+	}
+	kr.resourceScopeOnce.Do(func() {
+		kr.podLevelResources = kr.probePodLevelResources(ctx)
+		logging.Log.WithField("pod_level_resources", kr.podLevelResources).Info("Kubernetes job resource scope detected")
+	})
+	return kr.podLevelResources
+}
+
+func (kr *KubernetesRunner) probePodLevelResources(ctx context.Context) bool {
+	probeCPU := *resource.NewMilliQuantity(100, resource.DecimalSI)
+	probe := &batchv1.Job{
+		ObjectMeta: metav1.ObjectMeta{Name: resourceProbeJobName, Namespace: kr.namespace},
+		Spec: batchv1.JobSpec{
+			Template: corev1.PodTemplateSpec{
+				Spec: corev1.PodSpec{
+					RestartPolicy: corev1.RestartPolicyNever,
+					Resources: &corev1.ResourceRequirements{
+						Limits: corev1.ResourceList{corev1.ResourceCPU: probeCPU},
+					},
+					Containers: []corev1.Container{{Name: "probe", Image: "busybox:1.36"}},
+				},
+			},
+		},
+	}
+	created, err := kr.clientset.BatchV1().Jobs(kr.namespace).Create(ctx, probe, metav1.CreateOptions{DryRun: []string{metav1.DryRunAll}})
+	// A client that ignores DryRun (client-go's fake) really creates the
+	// probe. Remove it; against a real API server this is a harmless 404.
+	_ = kr.clientset.BatchV1().Jobs(kr.namespace).Delete(ctx, resourceProbeJobName, metav1.DeleteOptions{})
+	if err != nil {
+		logging.Log.WithError(err).Warn("Pod-level resources probe failed; using container-level job resources")
+		return false
+	}
+	return created.Spec.Template.Spec.Resources != nil && len(created.Spec.Template.Spec.Resources.Limits) > 0
 }
 
 // splitSecretNameList parses a comma-separated Secret name list from an
@@ -196,7 +268,10 @@ func (kr *KubernetesRunner) SpawnJob(ctx context.Context, config *JobConfig) (st
 	// to building a pod spec, not to string parsing. Memory is limit-only --
 	// no memory request is set, mirroring JobConfig/the Job model (a pure
 	// ceiling, not a reservation). CPU sets both a real request and limit,
-	// unlike the Docker runner where the request is only advisory.
+	// unlike the Docker runner where the request is only advisory. With
+	// pod-level resources (see usePodLevelResources) the same values go in
+	// spec.resources instead, so the job container and its sidecars share
+	// them.
 	resourceReqs := corev1.ResourceRequirements{}
 	if config.CPURequest != "" || config.CPULimit != "" || config.MemoryLimit != "" {
 		resourceReqs.Limits = corev1.ResourceList{}
@@ -258,6 +333,18 @@ func (kr *KubernetesRunner) SpawnJob(ctx context.Context, config *JobConfig) (st
 	}
 	logger.WithField("user", user).Info("Running container with configured user")
 
+	// CPU and memory go on the pod when the cluster supports it, else on the
+	// job container. The GPU limit below always goes on the job container:
+	// pod-level resources accept only cpu, memory, and hugepages.
+	var podResources *corev1.ResourceRequirements
+	containerResources := resourceReqs
+	if (len(resourceReqs.Limits) > 0 || len(resourceReqs.Requests) > 0) && kr.usePodLevelResources(ctx) {
+		podReqs := resourceReqs
+		podResources = &podReqs
+		containerResources = corev1.ResourceRequirements{}
+		logger.Info("Using pod-level resources shared by the job container and its sidecars")
+	}
+
 	// Build pod spec
 	prepareEnv := []corev1.EnvVar{
 		{Name: "REACTORCIDE_CODE_DIR", Value: defaultJobCodeDir(config.Env["REACTORCIDE_CODE_DIR"])},
@@ -294,6 +381,7 @@ func (kr *KubernetesRunner) SpawnJob(ctx context.Context, config *JobConfig) (st
 		SecurityContext: &corev1.PodSecurityContext{
 			RunAsNonRoot: &runAsNonRoot,
 		},
+		Resources:      podResources,
 		InitContainers: []corev1.Container{prepareWorkspace},
 		Containers: []corev1.Container{
 			{
@@ -303,7 +391,7 @@ func (kr *KubernetesRunner) SpawnJob(ctx context.Context, config *JobConfig) (st
 				Command:         config.Command,
 				WorkingDir:      config.WorkingDir,
 				Env:             envVars,
-				Resources:       resourceReqs,
+				Resources:       containerResources,
 				SecurityContext: &corev1.SecurityContext{
 					RunAsUser: runAsUser,
 				},

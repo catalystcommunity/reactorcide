@@ -124,6 +124,44 @@ func TestAddKubernetesResourceSettings(t *testing.T) {
 	}
 }
 
+// TestAddKubernetesResourceSettingsPodLevel: pod-level resources are one
+// budget shared by the job container and its sidecars, so they are the job
+// roll-up, not a sum of container settings.
+func TestAddKubernetesResourceSettingsPodLevel(t *testing.T) {
+	always := corev1.ContainerRestartPolicyAlways
+	pod := &corev1.Pod{Spec: corev1.PodSpec{
+		Resources: &corev1.ResourceRequirements{Limits: corev1.ResourceList{
+			corev1.ResourceCPU:    resource.MustParse("4"),
+			corev1.ResourceMemory: resource.MustParse("8Gi"),
+		}},
+		Containers:     []corev1.Container{{Name: "job"}},
+		InitContainers: []corev1.Container{{Name: "buildkitd", RestartPolicy: &always}},
+	}}
+
+	var metrics []capturedMetric
+	addKubernetesResourceSettings(metricCapture(&metrics), pod)
+
+	checks := []struct {
+		name string
+		want int64
+	}{
+		{"cpu.limit", 4000},
+		{"cpu.request", 4000}, // defaulted from the pod-level limit
+		{"memory.limit", 8 * 1024 * 1024 * 1024},
+	}
+	for _, check := range checks {
+		got, ok := findCapturedMetric(metrics, check.name, "")
+		if !ok || got.value != check.want {
+			t.Errorf("roll-up %s = %d, present=%v; want %d", check.name, got.value, ok, check.want)
+		}
+	}
+	for _, metric := range metrics {
+		if metric.labels["component"] != "" {
+			t.Errorf("containers without their own settings must emit no component series, got %s %v", metric.name, metric.labels)
+		}
+	}
+}
+
 func TestKubernetesStorageMetricsDoNotUseNodeCapacity(t *testing.T) {
 	used, capacity, available := uint64(12), uint64(1000), uint64(988)
 	fs := &summaryFS{UsedBytes: &used, CapacityBytes: &capacity, AvailableBytes: &available}

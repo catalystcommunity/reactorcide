@@ -175,6 +175,24 @@ quantities become millicores internally; memory quantities become bytes. The Doc
 containerd runners apply the parsed values directly (`--cpus`, `--memory`); the Kubernetes
 runner builds `resource.Quantity` values from the same parsed numbers for the pod spec.
 
+**Kubernetes: one budget for the job and its sidecars.** The Kubernetes runner puts CPU and
+memory in the pod's `spec.resources` (pod-level resources, beta and on by default since
+Kubernetes 1.34). The job container and its `builder` (buildkitd) or `docker` (DinD) sidecar
+share that budget. A build in the sidecar and the job container cannot use more than the
+job's `memory.limit` together. The sidecars have no limits of their own. The GPU limit stays
+on the job container, because pod-level resources accept only CPU, memory, and hugepages.
+
+`REACTORCIDE_K8S_JOB_RESOURCE_SCOPE` (Helm `worker.jobResourceScope`) selects the scope:
+
+| Value | Result |
+|---|---|
+| `auto` (default) | At the first job, the worker creates one server-side dry-run Job with pod-level resources. If the API server keeps the field, the worker uses `pod`; otherwise `container`. |
+| `pod` | Always pod-level. Use only when the `PodLevelResources` feature gate is on: a server with the gate off drops the field without an error, and the pod runs with no limits. |
+| `container` | CPU and memory on the job container only. The sidecars are not limited. |
+
+The job's resource metrics follow the scope. With pod-level resources, the job roll-up
+series (no `component` label) carry the pod values, and no per-container limit series exist.
+
 **Defaults when a job leaves a field unset:** `cpu.request = "1"`, `cpu.limit = "2"`,
 `memory.limit = "4Gi"`. Applied at submit time, so every job row always carries an explicit
 value even if the job spec never mentioned `resources` at all.

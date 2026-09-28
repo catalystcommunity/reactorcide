@@ -96,8 +96,13 @@ The Kubernetes runner creates Kubernetes Jobs and streams their logs. It honors 
 - `REACTORCIDE_K8S_JOB_IMAGE_PULL_SECRETS`
 - `REACTORCIDE_K8S_JOB_ALLOWED_IMAGE_PULL_SECRETS`
 - `REACTORCIDE_DIND_IMAGE`
+- `REACTORCIDE_K8S_JOB_RESOURCE_SCOPE` (`auto`, `pod`, or `container`)
 
 Helm values expose the same settings under the worker configuration.
+
+The runner puts job CPU and memory in the pod's `spec.resources` when the
+cluster supports pod-level resources. The job container and its buildkit or
+DinD sidecar then share one budget. See "Resources" in `docs/workers.md`.
 
 The runner puts image pull secret references at pod level, in
 `Job.spec.template.spec.imagePullSecrets`. They apply to the main container,

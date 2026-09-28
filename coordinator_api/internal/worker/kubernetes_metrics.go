@@ -357,6 +357,23 @@ func addKubernetesResourceSettings(add func(string, string, string, int64, ...jo
 			totalMemoryLimit += bytes
 		}
 	}
+	// Pod-level resources are one budget for every container, so they are
+	// the job roll-up; the per-container sum would miss that sidecars share
+	// the budget.
+	if podResources := pod.Spec.Resources; podResources != nil {
+		if value, ok := podResources.Requests[corev1.ResourceCPU]; ok {
+			totalCPURequest = value.MilliValue()
+		} else if value, ok := podResources.Limits[corev1.ResourceCPU]; ok {
+			// The API server defaults a pod-level request to its limit.
+			totalCPURequest = value.MilliValue()
+		}
+		if value, ok := podResources.Limits[corev1.ResourceCPU]; ok {
+			totalCPULimit = value.MilliValue()
+		}
+		if value, ok := podResources.Limits[corev1.ResourceMemory]; ok {
+			totalMemoryLimit = value.Value()
+		}
+	}
 	jobLabels := []jobtelemetry.Label{}
 	if totalCPURequest > 0 {
 		add("cpu.request", "millicores", "gauge", totalCPURequest, jobLabels...)

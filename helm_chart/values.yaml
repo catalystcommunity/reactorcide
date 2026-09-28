@@ -203,6 +203,10 @@ worker:
   # jobImagePullSecrets. With both lists empty, the worker rejects every
   # job-level image pull secret request.
   allowedJobImagePullSecrets: []
+  # Where job CPU and memory go: "auto" (probe the API server once), "pod"
+  # (spec.resources, shared by the job container and its buildkit/DinD
+  # sidecars), or "container" (the job container only). Empty means "auto".
+  jobResourceScope: ""
   autoscaling:
     enabled: false
     minReplicas: 1
