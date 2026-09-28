@@ -5,6 +5,9 @@ embedded bbolt data file is owned by a single process and cannot be shared
 across pods, so the file backend is single-replica only.
 */}}
 {{- define "corndogs.validateStorage" -}}
+{{- if and .Values.tls.enabled (not .Values.tls.secretName) -}}
+  {{- fail "\n\ncorndogs: tls.enabled=true needs tls.secretName.\nSet it to a kubernetes.io/tls Secret that holds tls.crt and tls.key.\n\nTo fix:\n  --set tls.secretName=<secret>\n" -}}
+{{- end -}}
 {{- if eq .Values.storage.backend "file" -}}
   {{- if gt (int .Values.replicaCount) 1 -}}
     {{- fail (printf "\n\ncorndogs: storage.backend=\"file\" cannot run with replicaCount=%d.\nThe embedded bbolt data file is owned by a single process and cannot be\nshared across replicas, so the file backend is single-replica only.\n\nTo fix, pick one:\n  • run a single replica: --set replicaCount=1\n  • use the shared backend: --set storage.backend=postgres\n" (int .Values.replicaCount)) -}}

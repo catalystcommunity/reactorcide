@@ -83,6 +83,51 @@ func (ps PostgresDbStore) ListStaleCancellingJobs(ctx context.Context, olderThan
 	return jobs, nil
 }
 
+// lostJobBatchSize bounds one reconciler pass, so a large backlog of lost
+// jobs cannot hold the reaper loop for long.
+const lostJobBatchSize = 100
+
+// ListLostRunningJobs returns jobs at "running" that no worker holds: no open
+// worker_leases row, and no lease released at or after cutoff. The job must
+// also have started before cutoff. A job in this state is executed by
+// nobody, and no claim can take it again (a claim accepts only
+// submitted/queued), so the lease reaper's lost-job reconciler must repair
+// it. The cutoff is a grace period: a claim commits the running transition
+// and its lease in one transaction, and a reported result releases the lease
+// in the same request that finalizes the job.
+func (ps PostgresDbStore) ListLostRunningJobs(ctx context.Context, cutoff time.Time) ([]models.Job, error) {
+	var jobs []models.Job
+	if err := ps.getDB(ctx).
+		Where("jobs.status = ?", "running").
+		Where("COALESCE(jobs.started_at, jobs.updated_at) < ?", cutoff).
+		Where(`NOT EXISTS (SELECT 1 FROM worker_leases wl WHERE wl.job_id = jobs.job_id AND (wl.released_at IS NULL OR wl.released_at >= ?))`, cutoff).
+		Order("jobs.started_at ASC").
+		Limit(lostJobBatchSize).
+		Find(&jobs).Error; err != nil {
+		return nil, fmt.Errorf("failed to list lost running jobs: %w", err)
+	}
+	return jobs, nil
+}
+
+// ListFinalJobsWithOpenWorkflowNode returns terminal jobs, completed before
+// cutoff, whose workflow node is still submitted or running. The node missed
+// its completion (for example, the workflow update failed while the store
+// was unavailable), so the workflow instance and its VCS check never finish.
+func (ps PostgresDbStore) ListFinalJobsWithOpenWorkflowNode(ctx context.Context, cutoff time.Time) ([]models.Job, error) {
+	var jobs []models.Job
+	if err := ps.getDB(ctx).
+		Joins("JOIN workflow_nodes wn ON wn.job_id = jobs.job_id").
+		Where("wn.status IN ?", []string{"submitted", "running"}).
+		Where("jobs.status IN ?", []string{"completed", "failed", "cancelled", "timeout"}).
+		Where("jobs.completed_at < ?", cutoff).
+		Order("jobs.completed_at ASC").
+		Limit(lostJobBatchSize).
+		Find(&jobs).Error; err != nil {
+		return nil, fmt.Errorf("failed to list final jobs with open workflow nodes: %w", err)
+	}
+	return jobs, nil
+}
+
 // statusInSet reports whether status appears in candidates.
 func statusInSet(status string, candidates []string) bool {
 	for _, c := range candidates {

@@ -103,6 +103,17 @@ func (s PostgresDbStore) Initialize() (func(), error) {
 		pgxPool.Close()
 		return nil, err
 	}
+	// Bound the gorm pool. database/sql has no open-connection limit by
+	// default, and every coordinator replica keeps its own pool, so a burst
+	// of claims can open more Postgres backends than its memory limit holds.
+	sqlDB, err := db.DB()
+	if err != nil {
+		pgxPool.Close()
+		return nil, err
+	}
+	sqlDB.SetMaxOpenConns(env.GetEnvAsIntOrDefault("DB_MAX_OPEN_CONNS", "25"))
+	sqlDB.SetMaxIdleConns(env.GetEnvAsIntOrDefault("DB_MAX_IDLE_CONNS", "2"))
+	sqlDB.SetConnMaxIdleTime(time.Duration(env.GetEnvAsIntOrDefault("DB_CONN_MAX_IDLE_SECONDS", "300")) * time.Second)
 	return func() {
 		pgxPool.Close()
 	}, nil

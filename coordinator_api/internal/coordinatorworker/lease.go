@@ -3,6 +3,7 @@ package coordinatorworker
 import (
 	"bufio"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -14,6 +15,7 @@ import (
 	"github.com/catalystcommunity/app-utils-go/logging"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/secrets"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/worker"
+	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/workerclient"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/workerclient/csilapi"
 )
 
@@ -155,14 +157,14 @@ func runLease(c client, runner worker.JobRunner, lease csilapi.Lease, tracker *l
 	if cfg.WorkspaceRoot != "" {
 		if err := os.MkdirAll(cfg.WorkspaceRoot, 0o755); err != nil {
 			logger.WithError(err).Error("failed to create lease workspace root")
-			reportResult(c, lease.LeaseId, 1, "failed", "failed to create workspace root: "+err.Error())
+			reportResult(c, cfg, lease.LeaseId, 1, "failed", "failed to create workspace root: "+err.Error())
 			return
 		}
 	}
 	workspaceDir, err := os.MkdirTemp(cfg.WorkspaceRoot, "reactorcide-worker-lease-*")
 	if err != nil {
 		logger.WithError(err).Error("failed to create lease workspace directory")
-		reportResult(c, lease.LeaseId, 1, "failed", "failed to create workspace: "+err.Error())
+		reportResult(c, cfg, lease.LeaseId, 1, "failed", "failed to create workspace: "+err.Error())
 		return
 	}
 	// workspaceDir (and any VCS auth credential material written under it
@@ -181,7 +183,7 @@ func runLease(c client, runner worker.JobRunner, lease csilapi.Lease, tracker *l
 	wsUID, wsGID := authFileOwner(lease.RunAsUser)
 	if err := makeWritableFor(workspaceDir, wsUID, wsGID); err != nil {
 		logger.WithError(err).Error("failed to make lease workspace accessible to job uid")
-		reportResult(c, lease.LeaseId, 1, "failed", "failed to prepare workspace permissions: "+err.Error())
+		reportResult(c, cfg, lease.LeaseId, 1, "failed", "failed to prepare workspace permissions: "+err.Error())
 		return
 	}
 
@@ -203,12 +205,12 @@ func runLease(c client, runner worker.JobRunner, lease csilapi.Lease, tracker *l
 		codeDir := filepath.Join(workspaceDir, rel)
 		if err := os.MkdirAll(codeDir, 0o755); err != nil {
 			logger.WithError(err).Error("failed to pre-create job code dir")
-			reportResult(c, lease.LeaseId, 1, "failed", "failed to prepare code dir: "+err.Error())
+			reportResult(c, cfg, lease.LeaseId, 1, "failed", "failed to prepare code dir: "+err.Error())
 			return
 		}
 		if err := makeWritableFor(codeDir, wsUID, wsGID); err != nil {
 			logger.WithError(err).Error("failed to make job code dir writable")
-			reportResult(c, lease.LeaseId, 1, "failed", "failed to prepare code dir: "+err.Error())
+			reportResult(c, cfg, lease.LeaseId, 1, "failed", "failed to prepare code dir: "+err.Error())
 			return
 		}
 	}
@@ -217,12 +219,12 @@ func runLease(c client, runner worker.JobRunner, lease csilapi.Lease, tracker *l
 		homeDir := filepath.Join(ctlDir, "home")
 		if err := os.MkdirAll(homeDir, 0o755); err != nil {
 			logger.WithError(err).Error("failed to create control home dir")
-			reportResult(c, lease.LeaseId, 1, "failed", "failed to prepare home dir: "+err.Error())
+			reportResult(c, cfg, lease.LeaseId, 1, "failed", "failed to prepare home dir: "+err.Error())
 			return
 		}
 		if err := makeWritableFor(homeDir, wsUID, wsGID); err != nil {
 			logger.WithError(err).Error("failed to make control home dir writable")
-			reportResult(c, lease.LeaseId, 1, "failed", "failed to prepare home dir: "+err.Error())
+			reportResult(c, cfg, lease.LeaseId, 1, "failed", "failed to prepare home dir: "+err.Error())
 			return
 		}
 		passwdFile := filepath.Join(ctlDir, "passwd")
@@ -235,12 +237,12 @@ func runLease(c client, runner worker.JobRunner, lease csilapi.Lease, tracker *l
 		group := fmt.Sprintf("root:x:0:\nreactorcide:x:1001:\nrunner:x:%d:\n", wsGID)
 		if err := os.WriteFile(passwdFile, []byte(passwd), 0o644); err != nil {
 			logger.WithError(err).Error("failed to write synthetic passwd")
-			reportResult(c, lease.LeaseId, 1, "failed", "failed to prepare passwd: "+err.Error())
+			reportResult(c, cfg, lease.LeaseId, 1, "failed", "failed to prepare passwd: "+err.Error())
 			return
 		}
 		if err := os.WriteFile(groupFile, []byte(group), 0o644); err != nil {
 			logger.WithError(err).Error("failed to write synthetic group")
-			reportResult(c, lease.LeaseId, 1, "failed", "failed to prepare group: "+err.Error())
+			reportResult(c, cfg, lease.LeaseId, 1, "failed", "failed to prepare group: "+err.Error())
 			return
 		}
 		extraMounts = append(extraMounts,
@@ -259,7 +261,7 @@ func runLease(c client, runner worker.JobRunner, lease csilapi.Lease, tracker *l
 	vcsAuth, err := prepareVCSAuth(lease.VcsAuth, workspaceDir, lease.RunAsUser, masker)
 	if err != nil {
 		logger.WithError(err).Error("failed to prepare VCS checkout auth")
-		reportResult(c, lease.LeaseId, 1, "failed", "failed to prepare VCS checkout auth: "+err.Error())
+		reportResult(c, cfg, lease.LeaseId, 1, "failed", "failed to prepare VCS checkout auth: "+err.Error())
 		return
 	}
 	if vcsAuth != nil {
@@ -298,7 +300,7 @@ func runLease(c client, runner worker.JobRunner, lease csilapi.Lease, tracker *l
 	runnerID, err := runner.SpawnJob(runCtx, jobConfig)
 	if err != nil {
 		logger.WithError(err).Error("failed to spawn leased job")
-		reportResult(c, lease.LeaseId, 1, "failed", masker.MaskString("failed to spawn job: "+err.Error()))
+		reportResult(c, cfg, lease.LeaseId, 1, "failed", masker.MaskString("failed to spawn job: "+err.Error()))
 		return
 	}
 
@@ -357,7 +359,7 @@ func runLease(c client, runner worker.JobRunner, lease csilapi.Lease, tracker *l
 			workflowOutput = output
 		}
 	}
-	reportResultWithOutput(c, lease.LeaseId, exitCode, status, errMsg, workflowOutput)
+	reportResultWithOutput(c, cfg, lease.LeaseId, exitCode, status, errMsg, workflowOutput)
 }
 
 func withRunnerlibInsecureTransport(command []string) []string {
@@ -401,21 +403,98 @@ func finalizeStatus(outcome string, exitCode int, waitErr error) (status, errMsg
 	return "completed", ""
 }
 
-// reportResult calls ReportResult on a context independent of the lease's own
-// execution context (which may already be torn down) so a result is still
-// delivered even after a directive-driven Stop/Cleanup. Best-effort: a
-// failure here is logged, not retried -- the coordinator's own lease/task
-// timeout reaper is the backstop for a worker that can no longer reach it.
-func reportResult(c client, leaseID string, exitCode int, status, errMsg string) {
-	if _, err := c.ReportResult(context.Background(), leaseID, exitCode, status, errMsg); err != nil {
-		logging.Log.WithError(err).WithField("lease_id", leaseID).Error("failed to report job result to coordinator")
+// resultRetryWindow bounds how long a worker keeps a result it could not
+// deliver. The lease stays in the tracker for the whole window, so
+// heartbeats keep it open on the coordinator. After the window the
+// coordinator's lost-job reconciler owns the job.
+var (
+	resultRetryWindow = 15 * time.Minute
+	resultRetryMin    = reconnectBackoffMin
+	resultRetryMax    = reconnectBackoffMax
+)
+
+// reportResult delivers a lease's result on a context independent of the
+// lease's own execution context (which may already be torn down), so a
+// result is still delivered after a directive-driven Stop/Cleanup. See
+// deliverResult for the retry rules.
+func reportResult(c client, cfg Config, leaseID string, exitCode int, status, errMsg string) {
+	deliverResult(c, cfg, leaseID, func(ctx context.Context) error {
+		_, err := c.ReportResult(ctx, leaseID, exitCode, status, errMsg)
+		return err
+	})
+}
+
+func reportResultWithOutput(c client, cfg Config, leaseID string, exitCode int, status, errMsg, workflowOutput string) {
+	deliverResult(c, cfg, leaseID, func(ctx context.Context) error {
+		_, err := c.ReportResultWithOutput(ctx, leaseID, exitCode, status, errMsg, workflowOutput)
+		return err
+	})
+}
+
+// deliverResult calls send until the coordinator accepts the result, the
+// coordinator says the lease is gone (a final error, see isRetryable), or
+// resultRetryWindow expires. Before each retry it replays the telemetry
+// spool, so the last log and metric batches get the same retries. An
+// "unauthorized" answer means this worker's session is gone: the worker
+// registers again before the next attempt. A lease goroutine holds its
+// concurrency slot while it retries, so the poll loop cannot do that for it.
+func deliverResult(c client, cfg Config, leaseID string, send func(context.Context) error) {
+	logger := logging.Log.WithField("lease_id", leaseID)
+	deadline := time.Now().Add(resultRetryWindow)
+	backoff := resultRetryMin
+	for attempt := 1; ; attempt++ {
+		if attempt > 1 {
+			replayTelemetrySpool(c, cfg.DataDir)
+		}
+		err := send(context.Background())
+		if err == nil {
+			if attempt > 1 {
+				logger.WithField("attempts", attempt).Info("reported job result to coordinator after retry")
+			}
+			return
+		}
+		if !isRetryable(err) {
+			logger.WithError(err).Error("failed to report job result to coordinator; coordinator rejected it")
+			return
+		}
+		if time.Now().Add(backoff).After(deadline) {
+			logger.WithError(err).WithField("attempts", attempt).Error("failed to report job result to coordinator; giving up after retry window")
+			return
+		}
+		logger.WithError(err).WithField("attempt", attempt).Warn("failed to report job result to coordinator; retrying")
+		time.Sleep(backoff)
+		backoff = nextBackoff(backoff, resultRetryMax)
+		if isUnauthorized(err) {
+			regCtx, cancel := context.WithDeadline(context.Background(), deadline)
+			if _, regErr := registerWithBackoff(regCtx, cfg, c); regErr != nil {
+				cancel()
+				logger.WithError(regErr).Error("failed to report job result to coordinator; could not open a new session")
+				return
+			}
+			cancel()
+		}
 	}
 }
 
-func reportResultWithOutput(c client, leaseID string, exitCode int, status, errMsg, workflowOutput string) {
-	if _, err := c.ReportResultWithOutput(context.Background(), leaseID, exitCode, status, errMsg, workflowOutput); err != nil {
-		logging.Log.WithError(err).WithField("lease_id", leaseID).Error("failed to report job result to coordinator")
+// isRetryable reports whether a failed coordinator call can succeed later.
+// A transport failure or a ServiceError such as "unavailable", "internal",
+// or "unauthorized" can. "not_found" (the lease is gone), "invalid_argument",
+// "forbidden", and "conflict" are final answers.
+func isRetryable(err error) bool {
+	var se *workerclient.ServiceCallError
+	if !errors.As(err, &se) {
+		return true
 	}
+	switch se.Code {
+	case "not_found", "invalid_argument", "forbidden", "conflict":
+		return false
+	}
+	return true
+}
+
+func isUnauthorized(err error) bool {
+	var se *workerclient.ServiceCallError
+	return errors.As(err, &se) && se.Code == "unauthorized"
 }
 
 const maxWorkflowOutputBytes = 1 << 20

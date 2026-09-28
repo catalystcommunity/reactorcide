@@ -137,8 +137,8 @@ func (s *WorkerService) Register(ctx context.Context, req csilapi.RegisterReques
 // the worker's characteristics satisfy, claims at most one task across that
 // queue group via corndogs.GetNextTaskGroup, transitions the underlying job
 // to running, resolves its secrets coordinator-side (see secrets.go), and
-// returns a Lease. See claimJob/finalizeSecretDenial for the claim and
-// grant-denial paths.
+// returns a Lease. See rejectClaim/abandonClaim for the denial and
+// store-failure paths.
 func (s *WorkerService) RequestJob(ctx context.Context, req csilapi.RequestJobRequest) (csilapi.RequestJobResponse, error) {
 	wkr, _, err := s.resolveSession(ctx)
 	if err != nil {
@@ -238,21 +238,93 @@ func (s *WorkerService) RequestJob(ctx context.Context, req csilapi.RequestJobRe
 		return csilapi.RequestJobResponse{HasLease: false}, nil
 	}
 
+	// A task that is not the job's current task is a leftover: the lost-job
+	// reconciler (reaper.go) submitted a replacement task and the old one came
+	// back from a corndogs timeout. Only the current task may drive the job.
+	if job.CorndogsTaskID != nil && *job.CorndogsTaskID != "" && *job.CorndogsTaskID != task.Uuid {
+		logging.Log.WithFields(map[string]any{"job_id": job.JobID, "task_id": task.Uuid, "current_task_id": *job.CorndogsTaskID}).Warn("Discarding superseded corndogs task")
+		if _, err := s.deps.CorndogsClient.CancelTask(ctx, task.Uuid, task.CurrentState); err != nil {
+			logging.Log.WithError(err).WithField("task_id", task.Uuid).Warn("Failed to cancel superseded corndogs task")
+		}
+		return csilapi.RequestJobResponse{HasLease: false}, nil
+	}
+
 	if job.IsCancelling() {
 		s.finalizeClaimedCancellingJob(ctx, job, task)
 		return csilapi.RequestJobResponse{HasLease: false}, nil
 	}
 
+	// Resolve everything that can deny the claim BEFORE any write. A denial
+	// or a store failure here leaves the job at submitted, so nothing needs
+	// to be undone (see rejectClaim).
+	env := worker.BuildJobEnv(job)
+	if job.WorkflowID != nil && *job.WorkflowID != "" {
+		if workflowVars, ok := s.deps.Store.(interface {
+			GetWorkflowVars(context.Context, string) (map[string]models.JSONB, error)
+		}); ok {
+			if values, varsErr := workflowVars.GetWorkflowVars(ctx, *job.WorkflowID); varsErr == nil {
+				if encoded, marshalErr := worker.EncodeWorkflowVars(values); marshalErr == nil {
+					env["RC_WF_VARS_JSON"] = string(encoded)
+				}
+			}
+		}
+	}
+	// A remote lease must never inherit the coordinator's static API token.
+	// The claim-specific job token below is the only API credential for it.
+	delete(env, "REACTORCIDE_API_TOKEN")
+	resolved, err := s.deps.resolveJobSecrets(ctx, job, env)
+	if err != nil {
+		s.rejectClaim(ctx, job, task, "secret resolution", err)
+		return csilapi.RequestJobResponse{HasLease: false}, nil
+	}
+
+	// Resolve a VCS checkout credential for the job's source repo, if any is
+	// configured -- coordinator-side, over this same authenticated claim
+	// (see vcs_auth.go). A resolution failure rejects the claim exactly like
+	// a denied job secret; "no credential configured" (public repo) is not
+	// an error and simply leaves vcsAuth nil.
+	vcsAuth, err := s.deps.resolveVCSAuth(ctx, job)
+	if err != nil {
+		s.rejectClaim(ctx, job, task, "VCS checkout credential", err)
+		return csilapi.RequestJobResponse{HasLease: false}, nil
+	}
+
+	// The running transition, the job token, and the lease commit together
+	// or not at all. A partial claim (job at running with no lease) is a job
+	// no worker executes and no claim can take again.
 	now := time.Now().UTC()
 	workerID := wkr.WorkerID
-	running, matched, err := s.deps.Store.UpdateJobStatusGuarded(ctx, job.JobID, []string{"submitted", "queued"}, func(j *models.Job) {
-		j.Status = "running"
-		j.StartedAt = &now
-		j.WorkerID = &workerID
+	queueUUID := task.Queue
+	var (
+		running  *models.Job
+		matched  bool
+		lease    *models.WorkerLease
+		jobToken string
+		step     string
+	)
+	err = s.inTransaction(ctx, func(txCtx context.Context) error {
+		var txErr error
+		step = "job status"
+		running, matched, txErr = s.deps.Store.UpdateJobStatusGuarded(txCtx, job.JobID, []string{"submitted", "queued"}, func(j *models.Job) {
+			j.Status = "running"
+			j.StartedAt = &now
+			j.WorkerID = &workerID
+		})
+		if txErr != nil || !matched {
+			return txErr
+		}
+		if tokenStore, ok := s.deps.Store.(jobTokenStore); ok {
+			step = "job token"
+			if jobToken, txErr = tokenStore.MintJobToken(txCtx, running); txErr != nil {
+				return txErr
+			}
+		}
+		step = "worker lease"
+		lease, txErr = s.deps.Store.CreateWorkerLease(txCtx, workerID, job.JobID, &queueUUID)
+		return txErr
 	})
 	if err != nil {
-		logging.Log.WithError(err).WithField("job_id", job.JobID).Error("Failed to transition job to running")
-		s.updateTaskFailed(ctx, task, "failed to update job status")
+		s.abandonClaim(ctx, job, task, step, err)
 		return csilapi.RequestJobResponse{HasLease: false}, nil
 	}
 	if !matched {
@@ -284,58 +356,12 @@ func (s *WorkerService) RequestJob(ctx context.Context, req csilapi.RequestJobRe
 		logging.Log.WithError(err).WithField("task_id", task.Uuid).Warn("Failed to update task state to processing")
 	}
 
-	// Resolve secrets coordinator-side, AFTER the job is already "running"
-	// (mirroring the local worker's own ~7ms running->failed grant-denial
-	// timing, just moved coordinator-side -- see secrets.go's doc comment).
-	env := worker.BuildJobEnv(job)
-	if job.WorkflowID != nil && *job.WorkflowID != "" {
-		if workflowVars, ok := s.deps.Store.(interface {
-			GetWorkflowVars(context.Context, string) (map[string]models.JSONB, error)
-		}); ok {
-			if values, varsErr := workflowVars.GetWorkflowVars(ctx, *job.WorkflowID); varsErr == nil {
-				if encoded, marshalErr := worker.EncodeWorkflowVars(values); marshalErr == nil {
-					env["RC_WF_VARS_JSON"] = string(encoded)
-				}
-			}
-		}
-	}
-	// A remote lease must never inherit the coordinator's static API token.
-	// The claim-specific job token below is the only API credential for it.
-	delete(env, "REACTORCIDE_API_TOKEN")
-	resolved, err := s.deps.resolveJobSecrets(ctx, job, env)
-	if err != nil {
-		s.finalizeSecretDenial(ctx, job, task, err)
-		return csilapi.RequestJobResponse{HasLease: false}, nil
-	}
-	if tokenStore, ok := s.deps.Store.(jobTokenStore); ok {
-		jobToken, tokenErr := tokenStore.MintJobToken(ctx, job)
-		if tokenErr != nil {
-			s.finalizeSecretDenial(ctx, job, task, tokenErr)
-			return csilapi.RequestJobResponse{HasLease: false}, nil
-		}
+	if jobToken != "" {
 		if resolved.Secrets == nil {
 			resolved.Secrets = map[string]string{}
 		}
 		resolved.Secrets["REACTORCIDE_API_TOKEN"] = jobToken
 		resolved.SecretValues = append(resolved.SecretValues, jobToken)
-	}
-
-	// Resolve a VCS checkout credential for the job's source repo, if any is
-	// configured -- coordinator-side, over this same authenticated claim
-	// (see vcs_auth.go). A resolution failure fails the claim exactly like a
-	// denied job secret; "no credential configured" (public repo) is not an
-	// error and simply leaves vcsAuth nil.
-	vcsAuth, err := s.deps.resolveVCSAuth(ctx, job)
-	if err != nil {
-		s.finalizeSecretDenial(ctx, job, task, err)
-		return csilapi.RequestJobResponse{HasLease: false}, nil
-	}
-
-	queueUUID := task.Queue
-	lease, err := s.deps.Store.CreateWorkerLease(ctx, wkr.WorkerID, job.JobID, &queueUUID)
-	if err != nil {
-		logging.Log.WithError(err).WithField("job_id", job.JobID).Error("Failed to create worker lease")
-		return csilapi.RequestJobResponse{}, uiapi.NewServiceError("internal", "failed to create worker lease")
 	}
 	secretValues := resolved.SecretValues
 	if vcsAuth != nil {
@@ -349,6 +375,50 @@ func (s *WorkerService) RequestJob(ctx context.Context, req csilapi.RequestJobRe
 		HasLease: true,
 		Lease:    buildLease(lease.LeaseID, job, resolved, vcsAuth),
 	}, nil
+}
+
+// inTransaction runs fn in one database transaction when the store supports
+// it (PostgresDbStore.InTransaction). Other stores run fn directly;
+// abandonClaim then undoes a partial claim by hand.
+func (s *WorkerService) inTransaction(ctx context.Context, fn func(context.Context) error) error {
+	if txStore, ok := s.deps.Store.(interface {
+		InTransaction(context.Context, func(context.Context) error) error
+	}); ok {
+		return txStore.InTransaction(ctx, fn)
+	}
+	return fn(ctx)
+}
+
+// abandonClaim handles a store failure while the claim commits. The job must
+// go back to submitted and the corndogs task must stay claimable: a store
+// error is never a reason to fail the job. With a transactional store the
+// failed transaction already left the job at submitted and the revert below
+// matches nothing. Without one, the revert undoes the partial claim.
+func (s *WorkerService) abandonClaim(ctx context.Context, job *models.Job, task *pb.Task, step string, cause error) {
+	logging.Log.WithError(cause).WithFields(map[string]interface{}{
+		"job_id":            job.JobID,
+		"task_id":           task.Uuid,
+		"step":              step,
+		"store_unavailable": store.IsUnavailable(cause),
+	}).Warn("Claim failed to commit; returning job to the queue")
+
+	if _, _, err := s.deps.Store.UpdateJobStatusGuarded(ctx, job.JobID, []string{"running"}, func(j *models.Job) {
+		j.Status = "submitted"
+		j.StartedAt = nil
+		j.WorkerID = nil
+	}); err != nil {
+		// The job row state is unknown. Leave the corndogs task alone: its
+		// claim timeout returns it to the queue, and the lost-job reconciler
+		// repairs a job left at running with no lease.
+		logging.Log.WithError(err).WithField("job_id", job.JobID).Warn("Could not confirm job is back at submitted; leaving task to its claim timeout")
+		return
+	}
+	if tokenStore, ok := s.deps.Store.(jobTokenStore); ok {
+		if err := tokenStore.RevokeJobTokens(ctx, job.JobID); err != nil {
+			logging.Log.WithError(err).WithField("job_id", job.JobID).Warn("Failed to revoke job token of abandoned claim")
+		}
+	}
+	s.requeueTask(ctx, task)
 }
 
 // finalizeClaimedCancellingJob closes the claim-time cancel race. A job can
@@ -378,24 +448,45 @@ func (s *WorkerService) finalizeClaimedCancellingJob(ctx context.Context, job *m
 	s.advanceWorkflowAfterCoordinatorFinalization(ctx, finalized)
 }
 
-// finalizeSecretDenial fails a claimed job cleanly when coordinator-side
-// secret resolution/grant-authorization fails: guarded-transition
-// running->failed with a grant-error LastError, mark the corndogs task
-// failed, and -- critically -- never create a worker_leases row or return a
-// lease, so the secret value (already known not to be authorized) never
-// reaches any worker.
-func (s *WorkerService) finalizeSecretDenial(ctx context.Context, job *models.Job, task *pb.Task, cause error) {
-	logging.Log.WithError(cause).WithField("job_id", job.JobID).Warn("Secret resolution/authorization denied; failing claim without leasing")
-	now := time.Now().UTC()
-	finalized, matched, err := s.deps.Store.UpdateJobStatusGuarded(ctx, job.JobID, []string{"running"}, func(j *models.Job) {
-		j.Status = "failed"
-		j.LastError = "secret resolution denied: " + cause.Error()
-		j.CompletedAt = &now
-	})
-	s.updateTaskFailed(ctx, task, "secret resolution denied")
-	if err != nil || !matched {
+// rejectClaim handles a failed secret or VCS credential resolution. The job
+// is still at submitted: no write has happened yet.
+//
+// A store failure is not a denial. The job stays at submitted and the task
+// goes back to the queue for the next claim.
+//
+// A real denial fails the job (submitted->failed) and only then fails the
+// corndogs task. If the job row cannot be written, the task goes back to the
+// queue: a finished task with an unfinished job is a job nothing can drive
+// again. No worker_leases row is created and no lease is returned, so a
+// secret the job is not authorized for never reaches a worker.
+func (s *WorkerService) rejectClaim(ctx context.Context, job *models.Job, task *pb.Task, step string, cause error) {
+	fields := map[string]interface{}{"job_id": job.JobID, "task_id": task.Uuid, "step": step}
+	if store.IsUnavailable(cause) {
+		logging.Log.WithError(cause).WithFields(fields).Warn("Claim deferred: store unavailable; requeueing task")
+		s.requeueTask(ctx, task)
 		return
 	}
+	logging.Log.WithError(cause).WithFields(fields).Warn("Claim denied; failing job without leasing")
+	now := time.Now().UTC()
+	finalized, matched, err := s.deps.Store.UpdateJobStatusGuarded(ctx, job.JobID, []string{"submitted", "queued"}, func(j *models.Job) {
+		j.Status = "failed"
+		j.LastError = step + " denied: " + cause.Error()
+		j.CompletedAt = &now
+	})
+	if err != nil {
+		logging.Log.WithError(err).WithFields(fields).Warn("Could not record claim denial; requeueing task")
+		s.requeueTask(ctx, task)
+		return
+	}
+	if !matched {
+		if current, getErr := s.deps.Store.GetJobByID(ctx, job.JobID); getErr == nil && current.IsCancelling() {
+			s.finalizeClaimedCancellingJob(ctx, current, task)
+		} else {
+			s.updateTaskFailed(ctx, task, "job status changed concurrently")
+		}
+		return
+	}
+	s.updateTaskFailed(ctx, task, step+" denied")
 	s.publishJobUpdate(ctx, finalized, now)
 	s.advanceWorkflowAfterCoordinatorFinalization(ctx, finalized)
 }
@@ -472,10 +563,12 @@ func (s *WorkerService) Heartbeat(ctx context.Context, req csilapi.HeartbeatRequ
 
 // --- resolveSession -------------------------------------------------------
 
-// resolveSession resolves the CSIL-RPC envelope's auth field into a worker,
-// returning a ServiceError "unauthorized" (never a bare store/workerauth
-// error) on any failure -- an invalid, expired, or revoked session must not
-// leak anything more specific to an unauthenticated caller.
+// resolveSession resolves the CSIL-RPC envelope's auth field into a worker.
+// An absent, unknown, expired, or revoked session (store.ErrNotFound) is a
+// ServiceError "unauthorized" that says nothing more specific. Any other
+// failure is the store failing to answer, not an authorization decision: it
+// is a retryable ServiceError "unavailable" (see errUnavailable), so the
+// worker keeps its result and retries instead of dropping it.
 func (s *WorkerService) resolveSession(ctx context.Context) (*models.Worker, *models.WorkerSession, error) {
 	token, ok := uiapi.AuthTokenFromContext(ctx)
 	if !ok || token == "" {
@@ -483,9 +576,30 @@ func (s *WorkerService) resolveSession(ctx context.Context) (*models.Worker, *mo
 	}
 	wkr, session, err := s.deps.Sessions.Resolve(ctx, token)
 	if err != nil {
-		return nil, nil, uiapi.NewServiceError("unauthorized", "a valid worker session is required")
+		if errors.Is(err, store.ErrNotFound) {
+			return nil, nil, uiapi.NewServiceError("unauthorized", "a valid worker session is required")
+		}
+		logging.Log.WithError(err).Warn("Worker session lookup failed; store unavailable")
+		return nil, nil, errUnavailable()
 	}
 	return wkr, session, nil
+}
+
+// errUnavailable is the retryable ServiceError for a store that did not
+// answer. Workers retry an "unavailable" call with backoff (see
+// internal/coordinatorworker.isRetryable).
+func errUnavailable() error {
+	return uiapi.NewServiceError("unavailable", "coordinator store unavailable; retry")
+}
+
+// leaseLookupError maps a failed lease or job lookup: a missing row is
+// "not_found" (the worker stops retrying), anything else is "unavailable".
+func leaseLookupError(err error, message string) error {
+	if errors.Is(err, store.ErrNotFound) {
+		return uiapi.NewServiceError("not_found", message)
+	}
+	logging.Log.WithError(err).Warn("Lease lookup failed; store unavailable")
+	return errUnavailable()
 }
 
 // --- shared claim-path helpers --------------------------------------------

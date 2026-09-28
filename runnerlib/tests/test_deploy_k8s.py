@@ -210,3 +210,42 @@ def test_create_api_token_keeps_token_out_of_process_arguments(monkeypatch):
     assert token not in process_arguments
     assert base64.b64encode(token.encode()).decode() not in process_arguments
     assert not Path(calls[0][-1]).exists()
+
+
+def test_postgres_resources_default_when_job_env_is_empty(monkeypatch):
+    """An unset ${env:...} arrives as an empty string; defaults still apply."""
+    deploy = _load_deploy_module()
+    for name in ("CPU_REQUEST", "CPU_LIMIT", "MEMORY_REQUEST", "MEMORY_LIMIT"):
+        monkeypatch.setenv(f"REACTORCIDE_POSTGRES_{name}", "")
+
+    config = deploy.read_config()
+
+    assert config["postgres_cpu_request"] == "100m"
+    assert config["postgres_cpu_limit"] == "1"
+    assert config["postgres_memory_request"] == "256Mi"
+    assert config["postgres_memory_limit"] == "1536Mi"
+
+
+def test_provisioned_postgres_manifest_sets_resources(monkeypatch):
+    """Without spec.resources the operator applies a 500Mi memory limit."""
+    deploy = _load_deploy_module()
+    config = _deployment_config() | {
+        "provision_postgres": True,
+        "postgres_team": "reactorcide",
+        "postgres_version": "17",
+        "postgres_size": "5Gi",
+        "postgres_instances": "1",
+        "postgres_cpu_request": "100m",
+        "postgres_cpu_limit": "1",
+        "postgres_memory_request": "256Mi",
+        "postgres_memory_limit": "1536Mi",
+    }
+    logged = []
+    monkeypatch.setattr(deploy, "log", lambda message="": logged.append(message))
+
+    deploy.provision_postgres(config, dry_run=True)
+
+    manifest = next(message for message in logged if "kind: postgresql" in message)
+    assert 'memory: "1536Mi"' in manifest
+    assert 'memory: "256Mi"' in manifest
+    assert 'cpu: "1"' in manifest

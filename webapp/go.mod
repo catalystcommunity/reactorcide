@@ -3,7 +3,7 @@ module github.com/catalystcommunity/reactorcide/webapp
 go 1.26.4
 
 require (
-	github.com/catalystcommunity/csilgen/transports/go v0.0.0-20260713013116-a661c8727022
+	github.com/catalystcommunity/csilgen/transports/go v0.0.0-20260926220402-baec1dad191c
 	github.com/gorilla/websocket v1.5.3
 	github.com/lib/pq v1.10.9
 	github.com/sirupsen/logrus v1.9.4

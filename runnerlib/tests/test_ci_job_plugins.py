@@ -126,3 +126,36 @@ def test_k8s_tools_plugin_requires_explicit_request(monkeypatch):
     monkeypatch.setenv("REACTORCIDE_INSTALL_K8S_TOOLS", "true")
     plugin.execute(context)
     install_tools.assert_called_once_with()
+
+
+def _write_generate_scripts(code_dir, worker_release, ui_release):
+    scripts = code_dir / "scripts"
+    scripts.mkdir(parents=True)
+    (scripts / "generate-csil-worker.sh").write_text(
+        f'#!/usr/bin/env bash\nCSILGEN_RELEASE="{worker_release}"\n'
+    )
+    (scripts / "generate-csil-ui.sh").write_text(
+        f'#!/usr/bin/env bash\nCSILGEN_RELEASE="{ui_release}"\n'
+    )
+
+
+def test_csilgen_release_reads_the_shared_pin(tmp_path):
+    module = _load_repository_plugin("plugin_ci_jobs.py")
+    _write_generate_scripts(tmp_path, "csilgen/v0.2.9", "csilgen/v0.2.9")
+
+    assert module._csilgen_release(tmp_path) == "csilgen/v0.2.9"
+    assert module.CI_JOBS["csil-gen-check"] is module.csil_gen_check
+
+
+def test_csilgen_release_rejects_scripts_that_disagree(tmp_path):
+    module = _load_repository_plugin("plugin_ci_jobs.py")
+    _write_generate_scripts(tmp_path, "csilgen/v0.2.9", "csilgen/v0.2.8")
+
+    with pytest.raises(RuntimeError, match="different CSILGEN_RELEASE"):
+        module._csilgen_release(tmp_path)
+
+
+def test_repository_generate_scripts_share_one_pin():
+    module = _load_repository_plugin("plugin_ci_jobs.py")
+
+    assert module._csilgen_release(REPOSITORY_ROOT).startswith("csilgen/v")

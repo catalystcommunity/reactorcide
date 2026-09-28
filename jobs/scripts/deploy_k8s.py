@@ -100,6 +100,14 @@ def read_config() -> Dict[str, Any]:
         'postgres_version': os.environ.get('REACTORCIDE_POSTGRES_VERSION', '18'),
         'postgres_size': os.environ.get('REACTORCIDE_POSTGRES_SIZE', '5Gi'),
         'postgres_instances': os.environ.get('REACTORCIDE_POSTGRES_INSTANCES', '1'),
+        # Without spec.resources the Zalando operator applies its default
+        # 500Mi memory limit. /dev/shm (shared buffers) counts against that
+        # limit, and a burst of parallel jobs OOM-killed Postgres twice.
+        # `or`: the job YAML passes an unset ${env:...} as an empty string.
+        'postgres_cpu_request': os.environ.get('REACTORCIDE_POSTGRES_CPU_REQUEST') or '100m',
+        'postgres_cpu_limit': os.environ.get('REACTORCIDE_POSTGRES_CPU_LIMIT') or '1',
+        'postgres_memory_request': os.environ.get('REACTORCIDE_POSTGRES_MEMORY_REQUEST') or '256Mi',
+        'postgres_memory_limit': os.environ.get('REACTORCIDE_POSTGRES_MEMORY_LIMIT') or '1536Mi',
         'deploy_corndogs': os.environ.get('REACTORCIDE_DEPLOY_CORNDOGS', 'false').lower() == 'true',
         'corndogs_url': os.environ.get('REACTORCIDE_CORNDOGS_URL', ''),
         'object_store_type': os.environ.get('REACTORCIDE_OBJECT_STORE_TYPE', 's3'),
@@ -245,6 +253,13 @@ spec:
 {databases_spec}
   postgresql:
     version: "{config['postgres_version']}"
+  resources:
+    requests:
+      cpu: "{config['postgres_cpu_request']}"
+      memory: "{config['postgres_memory_request']}"
+    limits:
+      cpu: "{config['postgres_cpu_limit']}"
+      memory: "{config['postgres_memory_limit']}"
 """
 
     if dry_run:

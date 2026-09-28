@@ -25,6 +25,33 @@ spec:
             {{- if .Values.timeoutCron.queue }}
             - -q
             - {{ .Values.timeoutCron.queue | default .Values.service.queue | quote}}
-            {{- end}} 
+            {{- end}}
+            {{- if .Values.tls.enabled }}
+            {{- if .Values.tls.caKey }}
+            - --tls-ca-file
+            - {{ printf "/etc/corndogs/tls-ca/%s" .Values.tls.caKey | quote }}
+            {{- else }}
+            - --tls
+            {{- end }}
+            {{- if .Values.tls.serverName }}
+            - --tls-server-name
+            - {{ .Values.tls.serverName | quote }}
+            {{- end }}
+            {{- end }}
+            {{- if and .Values.tls.enabled .Values.tls.caKey }}
+            volumeMounts:
+            - name: tls-ca
+              mountPath: /etc/corndogs/tls-ca
+              readOnly: true
+            {{- end }}
+          {{- if and .Values.tls.enabled .Values.tls.caKey }}
+          volumes:
+          - name: tls-ca
+            secret:
+              secretName: {{ .Values.tls.secretName }}
+              items:
+              - key: {{ .Values.tls.caKey }}
+                path: {{ .Values.tls.caKey }}
+          {{- end }}
           restartPolicy:  {{ .Values.timeoutCron.restartPolicy | default "Never"}}
 {{- end}}

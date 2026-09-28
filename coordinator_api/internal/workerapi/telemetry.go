@@ -174,7 +174,10 @@ func (s *WorkerService) maybeCompactTelemetry(jobID string, sequence int64) {
 
 func (s *WorkerService) activeLeaseForWorker(ctx context.Context, leaseID, workerID string) (*models.WorkerLease, error) {
 	lease, err := s.deps.Store.GetWorkerLeaseByID(ctx, leaseID)
-	if err != nil || lease.WorkerID != workerID {
+	if err != nil {
+		return nil, leaseLookupError(err, "lease not found for this worker")
+	}
+	if lease.WorkerID != workerID {
 		return nil, uiapi.NewServiceError("not_found", "lease not found for this worker")
 	}
 	if !lease.IsActive() {

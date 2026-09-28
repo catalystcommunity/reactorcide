@@ -183,8 +183,10 @@ func TestSecretDenialAdvancesWorkflow(t *testing.T) {
 	if resp.HasLease || resp.Lease != nil {
 		t.Fatalf("secret denial must not return a lease; got %+v", resp)
 	}
-	if len(fin.started) != 1 || fin.started[0] != job.JobID {
-		t.Fatalf("expected workflow start for %q, got %v", job.JobID, fin.started)
+	// Secrets resolve before the running transition, so a denied job never
+	// starts its node.
+	if len(fin.started) != 0 {
+		t.Fatalf("denied job must not start its workflow node; got %v", fin.started)
 	}
 	if len(fin.completed) != 1 || fin.completed[0] != job.JobID {
 		t.Fatalf("expected workflow completion for %q after secret denial, got %v", job.JobID, fin.completed)

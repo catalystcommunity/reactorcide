@@ -6,6 +6,7 @@ import (
 
 	"github.com/catalystcommunity/app-utils-go/logging"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/jobtelemetry"
+	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store/models"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/uiapi"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/workerapi/csilapi"
@@ -28,13 +29,16 @@ func (s *WorkerService) ReportResult(ctx context.Context, req csilapi.ReportResu
 	}
 
 	lease, err := s.deps.Store.GetWorkerLeaseByID(ctx, req.LeaseId)
-	if err != nil || lease.WorkerID != wkr.WorkerID {
+	if err != nil {
+		return csilapi.ReportResultResponse{}, leaseLookupError(err, "lease not found for this worker")
+	}
+	if lease.WorkerID != wkr.WorkerID {
 		return csilapi.ReportResultResponse{}, uiapi.NewServiceError("not_found", "lease not found for this worker")
 	}
 
 	job, err := s.deps.Store.GetJobByID(ctx, lease.JobID)
 	if err != nil {
-		return csilapi.ReportResultResponse{}, uiapi.NewServiceError("not_found", "job not found for this lease")
+		return csilapi.ReportResultResponse{}, leaseLookupError(err, "job not found for this lease")
 	}
 
 	finalStatus := req.Status
@@ -70,11 +74,30 @@ func (s *WorkerService) ReportResult(ctx context.Context, req csilapi.ReportResu
 	})
 	if err != nil {
 		logging.Log.WithError(err).WithField("job_id", job.JobID).Error("Failed to finalize job status")
+		if store.IsUnavailable(err) {
+			return csilapi.ReportResultResponse{}, errUnavailable()
+		}
 		return csilapi.ReportResultResponse{}, uiapi.NewServiceError("internal", "failed to finalize job")
 	}
 	if matched {
 		job = finalized
 		s.publishJobUpdate(ctx, job, now)
+	} else if current, getErr := s.deps.Store.GetJobByID(ctx, job.JobID); getErr == nil && !terminalStatuses[current.Status] && current.Status != "timeout" {
+		// The job is not terminal and not ours to finish: the lost-job
+		// reconciler requeued it after this lease went stale, and a new
+		// claim now owns it (or will). Finishing the corndogs task or the
+		// workflow node here would finish the NEW attempt. Only close this
+		// lease.
+		logging.Log.WithFields(map[string]interface{}{
+			"job_id":     job.JobID,
+			"lease_id":   lease.LeaseID,
+			"job_status": current.Status,
+		}).Warn("Ignoring result for a superseded lease")
+		if err := s.deps.Store.ReleaseWorkerLease(ctx, lease.LeaseID, "superseded"); err != nil {
+			logging.Log.WithError(err).WithField("lease_id", lease.LeaseID).Warn("Failed to release superseded worker lease")
+		}
+		s.secrets.delete(lease.LeaseID)
+		return csilapi.ReportResultResponse{Ok: true}, nil
 	}
 
 	s.finalizeCorndogsTask(ctx, job, finalStatus)

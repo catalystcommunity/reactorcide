@@ -51,8 +51,18 @@ spec:
               value: {{ .Values.appconfig.loglevel }}
             - name: PROMETHEUS_ENABLED
               value: {{ .Values.appconfig.prometheusEnabled | quote }}
+            - name: CORNDOGS_MAX_PAYLOAD_BYTES
+              value: {{ .Values.appconfig.maxPayloadBytes | quote }}
             - name: STORAGE_BACKEND
               value: {{ .Values.storage.backend | quote }}
+            {{- if .Values.tls.enabled }}
+            - name: CORNDOGS_TLS_CERT_FILE
+              value: {{ printf "%s/tls.crt" .Values.tls.mountPath | quote }}
+            - name: CORNDOGS_TLS_KEY_FILE
+              value: {{ printf "%s/tls.key" .Values.tls.mountPath | quote }}
+            - name: CORNDOGS_TLS_RELOAD_INTERVAL
+              value: {{ .Values.tls.reloadInterval | quote }}
+            {{- end }}
             {{- if eq .Values.storage.backend "file" }}
             - name: CORNDOGS_FILESTORE_DIR
               value: {{ .Values.storage.file.dir | quote }}
@@ -99,6 +109,10 @@ spec:
             - name: DATABASE_CONN_MAX_LIFETIME_SECONDS
               value: {{ .Values.database.connMaxLifetimeSeconds | quote }}
             {{- end }}
+            {{- if .Values.database.startupTimeoutSeconds }}
+            - name: DATABASE_STARTUP_TIMEOUT_SECONDS
+              value: {{ .Values.database.startupTimeoutSeconds | quote }}
+            {{- end }}
             {{- if .Values.database.maxOpenConns }}
             - name: DATABASE_MAX_OPEN_CONNS
               value: {{ .Values.database.maxOpenConns | quote }}
@@ -121,37 +135,62 @@ spec:
             {{- end }}
             {{- end }}
           ports:
-            - name: corndogshttp
+            # CSIL-RPC over TCP (the client transport) — NOT HTTP.
+            - name: corndogsrpc
               containerPort: 5080
               protocol: TCP
-            # 0.7.0 serves /healthz + /metrics on the ops HTTP port :8080
-            # regardless of prometheus scraping, and 5080 is now raw TCP RPC
-            # (no HTTP), so the health probes MUST target 8080 -- always expose
-            # it (probing /healthz on 5080 would never succeed under 0.7.0).
+            # HTTP ops: /healthz always, /metrics when Prometheus is enabled.
             - name: corndogsops
               containerPort: 8080
               protocol: TCP
+          # Liveness: the RPC listener accepts TCP. Readiness: the HTTP health
+          # endpoint (on the ops port, never the RPC port).
           livenessProbe:
-            httpGet:
-              path: /healthz
-              port: 8080
+            tcpSocket:
+              port: corndogsrpc
+            initialDelaySeconds: {{ .Values.livenessProbe.initialDelaySeconds }}
+            periodSeconds: {{ .Values.livenessProbe.periodSeconds }}
+            timeoutSeconds: {{ .Values.livenessProbe.timeoutSeconds }}
+            successThreshold: {{ .Values.livenessProbe.successThreshold }}
+            failureThreshold: {{ .Values.livenessProbe.failureThreshold }}
           readinessProbe:
             httpGet:
               path: /healthz
-              port: 8080
+              port: corndogsops
+            initialDelaySeconds: {{ .Values.readinessProbe.initialDelaySeconds }}
+            periodSeconds: {{ .Values.readinessProbe.periodSeconds }}
+            timeoutSeconds: {{ .Values.readinessProbe.timeoutSeconds }}
+            successThreshold: {{ .Values.readinessProbe.successThreshold }}
+            failureThreshold: {{ .Values.readinessProbe.failureThreshold }}
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
-          {{- if eq .Values.storage.backend "file" }}
+          {{- if or (eq .Values.storage.backend "file") .Values.tls.enabled }}
           volumeMounts:
+            {{- if eq .Values.storage.backend "file" }}
             - name: data
               mountPath: {{ .Values.storage.file.dir }}
             {{- if .Values.storage.file.persistence.audit.enabled }}
             - name: audit
               mountPath: {{ .Values.storage.file.persistence.audit.mountPath }}
             {{- end }}
+            {{- end }}
+            {{- if .Values.tls.enabled }}
+            # Mount the whole Secret, not a subPath: the kubelet updates a
+            # subPath mount never, so a renewed certificate would not arrive.
+            - name: tls
+              mountPath: {{ .Values.tls.mountPath }}
+              readOnly: true
+            {{- end }}
           {{- end }}
-      {{- if eq .Values.storage.backend "file" }}
+      {{- if or (eq .Values.storage.backend "file") .Values.tls.enabled }}
       volumes:
+        {{- if .Values.tls.enabled }}
+        - name: tls
+          secret:
+            secretName: {{ .Values.tls.secretName }}
+        {{- end }}
+      {{- end }}
+      {{- if eq .Values.storage.backend "file" }}
         - name: data
           {{- if .Values.storage.file.persistence.enabled }}
           persistentVolumeClaim:

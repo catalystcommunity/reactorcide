@@ -24,7 +24,7 @@ services:
 
     # Corndogs Task Queue
     corndogs:
-        image: containers.catalystsquad.com/public/catalystcommunity/corndogs:0.7.0
+        image: containers.catalystsquad.com/public/catalystcommunity/corndogs:0.7.6
         container_name: reactorcide-corndogs-dev
         user: "0:0"
         environment:
