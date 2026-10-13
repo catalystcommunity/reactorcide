@@ -117,7 +117,9 @@ func (ps PostgresDbStore) ListFinalJobsWithOpenWorkflowNode(ctx context.Context,
 	var jobs []models.Job
 	if err := ps.getDB(ctx).
 		Joins("JOIN workflow_nodes wn ON wn.job_id = jobs.job_id").
-		Where("wn.status IN ?", []string{"submitted", "running"}).
+		// Keep these fixed statuses in SQL so generic prepared plans can use
+		// the partial workflow_nodes_open_job_idx index.
+		Where("wn.status IN ('submitted', 'running')").
 		Where("jobs.status IN ?", []string{"completed", "failed", "cancelled", "timeout"}).
 		Where("jobs.completed_at < ?", cutoff).
 		Order("jobs.completed_at ASC").

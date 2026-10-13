@@ -22,12 +22,14 @@ package test
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/authz"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store/models"
+	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store/postgres_store"
 )
 
 // jobsVisibleToStore mirrors internal/handlers/job_handler.go's narrow
@@ -36,11 +38,6 @@ import (
 // method directly rather than going through HTTP.
 type jobsVisibleToStore interface {
 	ListJobsVisibleTo(ctx context.Context, viewerID string, isGlobalAdmin bool, filters map[string]interface{}, limit, offset int) ([]models.Job, int64, error)
-}
-
-type workflowListStore interface {
-	CreateWorkflowInstance(ctx context.Context, workflow *models.WorkflowInstance) error
-	ListWorkflowSummariesVisibleTo(ctx context.Context, viewerID string, isGlobalAdmin bool, filters map[string]interface{}, limit, offset int) ([]models.WorkflowSummary, int64, error)
 }
 
 func requireJobsVisibleToStore(t *testing.T) jobsVisibleToStore {
@@ -232,35 +229,146 @@ func TestListJobsVisibleTo_PaginationReturnsFullPages(t *testing.T) {
 
 func TestListWorkflowSummaries_EvaluationJobCardinality(t *testing.T) {
 	ctx := context.Background()
-	ws, ok := store.AppStore.(workflowListStore)
-	require.True(t, ok)
+	ws := postgres_store.PostgresStore
 	owner := createTestUser(t)
+	stranger := createTestUser(t)
+	privateProject := createTestProject(t, owner.UserID, "github.com/list-test/"+uniqueName("private"), true)
 
-	noWorkflow := createTestJob(t, owner.UserID, "completed")
-	oneWorkflow := createTestJob(t, owner.UserID, "completed")
-	manyWorkflows := createTestJob(t, owner.UserID, "completed")
-
-	createWorkflow := func(parent *models.Job, name string) {
+	// Give every row a distinct timestamp so page boundaries are stable.
+	createdAt := time.Now().UTC().Add(-time.Hour)
+	nextTime := func() time.Time {
+		createdAt = createdAt.Add(time.Second)
+		return createdAt
+	}
+	newJob := func(projectID *string) *models.Job {
 		t.Helper()
-		parentID := parent.JobID
-		require.NoError(t, ws.CreateWorkflowInstance(ctx, &models.WorkflowInstance{
-			UserID: owner.UserID, ParentJobID: &parentID, Name: name,
-			Status: "success", QueueName: "reactorcide-jobs",
-		}))
+		job := createTestJob(t, owner.UserID, "completed")
+		require.NoError(t, testDB.Model(job).Updates(map[string]interface{}{
+			"created_at": nextTime(), "project_id": projectID,
+		}).Error)
+		return job
 	}
-	createWorkflow(oneWorkflow, "single")
-	createWorkflow(manyWorkflows, "first")
-	createWorkflow(manyWorkflows, "second")
-
-	summaries, _, err := ws.ListWorkflowSummariesVisibleTo(ctx, owner.UserID, true, map[string]interface{}{"user_id": owner.UserID}, 100, 0)
-	require.NoError(t, err)
-	loose := map[string]bool{}
-	for _, summary := range summaries {
-		if summary.Kind == "job" {
-			loose[summary.WorkflowID] = true
+	newWorkflow := func(parent *models.Job, parentWorkflow *models.WorkflowInstance, projectID *string, status string) *models.WorkflowInstance {
+		t.Helper()
+		wf := &models.WorkflowInstance{
+			UserID: owner.UserID, Name: uniqueName("workflow"), Status: status,
+			QueueName: "reactorcide-jobs", CreatedAt: nextTime(), ProjectID: projectID,
 		}
+		if parent != nil {
+			wf.ParentJobID = &parent.JobID
+		}
+		if parentWorkflow != nil {
+			wf.ParentWorkflowID = &parentWorkflow.WorkflowID
+			wf.RootWorkflowID = &parentWorkflow.WorkflowID
+		}
+		require.NoError(t, ws.CreateWorkflowInstance(ctx, wf))
+		return wf
 	}
-	require.True(t, loose[noWorkflow.JobID], "an evaluation with no workflow remains a separate job")
-	require.False(t, loose[oneWorkflow.JobID], "an evaluation with one workflow is part of that workflow")
-	require.True(t, loose[manyWorkflows.JobID], "an evaluation with many workflows remains a separate job")
+
+	noWorkflow := newJob(nil)
+	oneWorkflow := newJob(nil)
+	manyWorkflows := newJob(nil)
+	nestedOnly := newJob(nil)
+	rootAndChild := newJob(nil)
+	privateLoose := newJob(&privateProject.ProjectID)
+	privateEvaluation := newJob(&privateProject.ProjectID)
+
+	single := newWorkflow(oneWorkflow, nil, nil, "running")
+	first := newWorkflow(manyWorkflows, nil, nil, "success")
+	second := newWorkflow(manyWorkflows, nil, nil, "success")
+	newWorkflow(nestedOnly, single, nil, "success")
+	mixedRoot := newWorkflow(rootAndChild, nil, nil, "success")
+	child := newWorkflow(rootAndChild, mixedRoot, nil, "success")
+	// A root with no parent must not make NOT IN exclude every standalone job.
+	orphan := newWorkflow(nil, nil, nil, "success")
+	privateRoot := newWorkflow(privateEvaluation, nil, &privateProject.ProjectID, "success")
+
+	publicIDs := []string{noWorkflow.JobID, manyWorkflows.JobID, nestedOnly.JobID,
+		single.WorkflowID, first.WorkflowID, second.WorkflowID, mixedRoot.WorkflowID, orphan.WorkflowID}
+	allIDs := append(append([]string{}, publicIDs...), privateLoose.JobID, privateRoot.WorkflowID)
+	summaryIDs := func(rows []models.WorkflowSummary) []string {
+		ids := make([]string, len(rows))
+		for i, row := range rows {
+			ids[i] = row.WorkflowID
+		}
+		return ids
+	}
+
+	for _, viewer := range []struct {
+		name, id string
+		admin    bool
+		expected []string
+	}{
+		{"admin", stranger.UserID, true, allIDs},
+		{"owner", owner.UserID, false, allIDs},
+		{"stranger", stranger.UserID, false, publicIDs},
+		{"anonymous", "", false, publicIDs},
+	} {
+		t.Run(viewer.name, func(t *testing.T) {
+			filters := map[string]interface{}{"user_id": owner.UserID}
+			full, total, err := ws.ListWorkflowSummariesVisibleTo(ctx, viewer.id, viewer.admin, filters, 100, 0)
+			require.NoError(t, err)
+			require.Equal(t, int64(len(viewer.expected)), total)
+			require.ElementsMatch(t, viewer.expected, summaryIDs(full))
+
+			var paged []string
+			for offset := 0; offset <= len(viewer.expected); offset += 2 {
+				page, pageTotal, err := ws.ListWorkflowSummariesVisibleTo(ctx, viewer.id, viewer.admin, filters, 2, offset)
+				require.NoError(t, err)
+				require.Equal(t, total, pageTotal)
+				paged = append(paged, summaryIDs(page)...)
+			}
+			require.Equal(t, summaryIDs(full), paged)
+		})
+	}
+
+	filters := map[string]interface{}{"user_id": owner.UserID}
+	restRows, err := ws.ListWorkflowSummaries(ctx, filters, 100, 0)
+	require.NoError(t, err)
+	require.ElementsMatch(t, allIDs, summaryIDs(restRows))
+	var restPages []string
+	for offset := 0; offset <= len(allIDs); offset += 2 {
+		page, err := ws.ListWorkflowSummaries(ctx, filters, 2, offset)
+		require.NoError(t, err)
+		restPages = append(restPages, summaryIDs(page)...)
+	}
+	require.Equal(t, summaryIDs(restRows), restPages)
+
+	// Status and project filters must not change the count of roots per job.
+	for _, status := range []string{"success", "completed"} {
+		filters := map[string]interface{}{"user_id": owner.UserID, "status": status}
+		expected := append(append([]string{}, publicIDs[:3]...), publicIDs[4:]...)
+		expected = append(expected, privateLoose.JobID, privateRoot.WorkflowID)
+		visible, total, err := ws.ListWorkflowSummariesVisibleTo(ctx, owner.UserID, false, filters, 100, 0)
+		require.NoError(t, err)
+		require.Equal(t, int64(len(expected)), total)
+		require.ElementsMatch(t, expected, summaryIDs(visible))
+		rest, err := ws.ListWorkflowSummaries(ctx, filters, 100, 0)
+		require.NoError(t, err)
+		require.ElementsMatch(t, expected, summaryIDs(rest))
+	}
+	projectFilter := map[string]interface{}{"project_id": privateProject.ProjectID}
+	privateRows, total, err := ws.ListWorkflowSummariesVisibleTo(ctx, owner.UserID, false, projectFilter, 100, 0)
+	require.NoError(t, err)
+	require.EqualValues(t, 2, total)
+	require.ElementsMatch(t, []string{privateLoose.JobID, privateRoot.WorkflowID}, summaryIDs(privateRows))
+	hidden, total, err := ws.ListWorkflowSummariesVisibleTo(ctx, "", false, projectFilter, 100, 0)
+	require.NoError(t, err)
+	require.Zero(t, total)
+	require.Empty(t, hidden)
+	restPrivate, err := ws.ListWorkflowSummaries(ctx, projectFilter, 100, 0)
+	require.NoError(t, err)
+	require.ElementsMatch(t, summaryIDs(privateRows), summaryIDs(restPrivate))
+
+	// Direct lookup still returns a hidden evaluation row or a nested workflow.
+	for _, id := range []string{oneWorkflow.JobID, child.WorkflowID} {
+		filters := map[string]interface{}{"workflow_id": id}
+		visible, total, err := ws.ListWorkflowSummariesVisibleTo(ctx, owner.UserID, false, filters, 100, 0)
+		require.NoError(t, err)
+		require.EqualValues(t, 1, total)
+		require.Equal(t, []string{id}, summaryIDs(visible))
+		detail, err := ws.GetWorkflowSummary(ctx, id)
+		require.NoError(t, err)
+		require.Equal(t, id, detail.WorkflowID)
+	}
 }

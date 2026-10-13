@@ -273,6 +273,16 @@ func (ps PostgresDbStore) GetLastSuccessfulWorkflowNodeDuration(ctx context.Cont
 	return &duration.Int64, nil
 }
 
+// standaloneEvaluationPredicate excludes jobs that created exactly one root
+// workflow. Count roots once for the list, not once for each job. Exclude null
+// parent IDs so NOT IN cannot hide unrelated jobs.
+const standaloneEvaluationPredicate = `j.job_id NOT IN (
+	SELECT parent_job_id FROM workflow_instances
+	WHERE parent_workflow_id IS NULL AND parent_job_id IS NOT NULL
+	GROUP BY parent_job_id
+	HAVING COUNT(*) = 1
+)`
+
 func (ps PostgresDbStore) ListWorkflowSummaries(ctx context.Context, filters map[string]interface{}, limit, offset int) ([]models.WorkflowSummary, error) {
 	if limit <= 0 {
 		limit = 20
@@ -340,11 +350,7 @@ func (ps PostgresDbStore) ListWorkflowSummaries(ctx context.Context, filters map
 		// A loose evaluation job that creates one root workflow is the entry
 		// step of that workflow. Keep evaluations with zero or many workflows
 		// as separate rows because no single workflow can represent them.
-		looseClause += ` AND (
-			SELECT COUNT(*) FROM workflow_instances spawned
-			WHERE spawned.parent_job_id = j.job_id
-			  AND spawned.parent_workflow_id IS NULL
-		) <> 1`
+		looseClause += " AND " + standaloneEvaluationPredicate
 	}
 	if len(whereLoose) > 0 {
 		looseClause += " AND " + strings.Join(whereLoose, " AND ")
