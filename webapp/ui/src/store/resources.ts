@@ -90,9 +90,8 @@ export function useJobs(filters: Accessor<JobFilters>): {
       /**
        * A status change is applied in place rather than refetched.
        *
-       * The event carries everything a row needs, so a running job ticking
-       * through its states costs no requests at all. Anything the event cannot
-       * describe -- a new job, a changed count -- falls through to a refresh.
+       * A status transition requires a refresh because it can change runtime
+       * timestamps. An update within the same state can use the event fields.
        */
       applyEvent: (current, event) => {
         if (!current || event.type !== 'job_update' || !event.job_id || !event.status) {
@@ -100,6 +99,9 @@ export function useJobs(filters: Accessor<JobFilters>): {
         }
         const index = current.jobs.findIndex((job) => job.jobId === event.job_id)
         if (index === -1) return undefined
+        // Status transitions can also change start and finish timestamps.
+        // Read the complete row before computing runtime duration.
+        if (current.jobs[index].status !== event.status) return undefined
 
         const updated: JobSummary = {
           ...current.jobs[index],

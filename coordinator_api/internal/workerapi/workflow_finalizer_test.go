@@ -28,7 +28,7 @@ func (f *fakeWorkflowFinalizer) ProcessWorkflowCompletion(_ context.Context, _ s
 
 // claimWorkflowJob mirrors claimOneJob but binds the job to a workflow instance
 // so the started/completion hooks fire.
-func claimWorkflowJob(t *testing.T, h *testHarness, workflowID string) (job *models.Job, leaseID, sessionToken string) {
+func claimWorkflowJob(t *testing.T, h *testHarness, workflowID string, timing ...bool) (job *models.Job, leaseID, sessionToken string) {
 	t.Helper()
 	ctx := context.Background()
 
@@ -51,8 +51,10 @@ func claimWorkflowJob(t *testing.T, h *testHarness, workflowID string) (job *mod
 	}
 
 	sessionToken, _ = h.registerWorker(t, "wf-worker", "linux", "amd64", nil)
+	reportsTiming := len(timing) > 0 && timing[0]
 	resp, err := h.service.RequestJob(ctxWithAuth(sessionToken), csilapi.RequestJobRequest{
-		WorkerCharacteristics: csilapi.WorkerCharacteristics{Os: "linux", Arch: "amd64"},
+		WorkerCharacteristics:  csilapi.WorkerCharacteristics{Os: "linux", Arch: "amd64"},
+		ReportsExecutionTiming: &reportsTiming,
 	})
 	if err != nil {
 		t.Fatalf("RequestJob failed: %v", err)

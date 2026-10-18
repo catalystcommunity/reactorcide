@@ -104,13 +104,14 @@ type JobResponse struct {
 	SourcePath string `json:"source_path,omitempty"`
 
 	// Execution info
-	TimeoutSeconds int        `json:"timeout_seconds"`
-	Priority       int        `json:"priority"`
-	RunAsUser      string     `json:"run_as_user,omitempty"`
-	QueueName      string     `json:"queue_name"`
-	StartedAt      *time.Time `json:"started_at,omitempty"`
-	CompletedAt    *time.Time `json:"completed_at,omitempty"`
-	ExitCode       *int       `json:"exit_code,omitempty"`
+	TimeoutSeconds      int        `json:"timeout_seconds"`
+	Priority            int        `json:"priority"`
+	RunAsUser           string     `json:"run_as_user,omitempty"`
+	QueueName           string     `json:"queue_name"`
+	SchedulingStartedAt *time.Time `json:"scheduling_started_at,omitempty"`
+	StartedAt           *time.Time `json:"started_at,omitempty"`
+	CompletedAt         *time.Time `json:"completed_at,omitempty"`
+	ExitCode            *int       `json:"exit_code,omitempty"`
 }
 
 func submitAction(ctx *cli.Context) error {
@@ -214,7 +215,19 @@ func submitAction(ctx *cli.Context) error {
 		if finalResp.ExitCode != nil {
 			fmt.Printf("  Exit Code: %d\n", *finalResp.ExitCode)
 		}
-		fmt.Printf("  Duration:  %s\n", elapsed)
+		fmt.Printf("  Total wait: %s\n", elapsed)
+		if finalResp.StartedAt != nil && finalResp.CompletedAt != nil {
+			fmt.Printf("  Runtime:    %s\n", finalResp.CompletedAt.Sub(*finalResp.StartedAt).Round(time.Second))
+		}
+		if finalResp.SchedulingStartedAt != nil {
+			end := finalResp.StartedAt
+			if end == nil {
+				end = finalResp.CompletedAt
+			}
+			if end != nil {
+				fmt.Printf("  Scheduling: %s\n", end.Sub(*finalResp.SchedulingStartedAt).Round(time.Second))
+			}
+		}
 
 		// Return non-zero exit if job failed
 		if finalResp.Status != "completed" {

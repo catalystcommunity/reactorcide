@@ -69,6 +69,8 @@ type KubernetesRunner struct {
 	resourceScope     string
 	resourceScopeOnce sync.Once
 	podLevelResources bool
+	startupTimeout    time.Duration
+	autoscalingMode   string
 }
 
 // Job resource scopes (REACTORCIDE_K8S_JOB_RESOURCE_SCOPE).
@@ -92,16 +94,28 @@ type KubernetesRunnerConfig struct {
 	// ResourceScope is ResourceScopeAuto (default), ResourceScopePod, or
 	// ResourceScopeContainer. See KubernetesRunner.resourceScope.
 	ResourceScope string
+	// StartupTimeout limits the wait for the main container to start. Zero uses 30 minutes.
+	StartupTimeout time.Duration
+	// AutoscalingMode is "auto" (use autoscaler events) or "disabled".
+	AutoscalingMode string
 }
 
 // NewKubernetesRunner creates a new Kubernetes-based job runner
 // It automatically detects if running in-cluster and uses the appropriate config
 func NewKubernetesRunner() (*KubernetesRunner, error) {
 	cfg := KubernetesRunnerConfig{
-		Namespace:      os.Getenv("REACTORCIDE_K8S_JOB_NAMESPACE"),
-		ServiceAccount: os.Getenv("REACTORCIDE_K8S_JOB_SERVICE_ACCOUNT"),
-		DindImage:      os.Getenv("REACTORCIDE_DIND_IMAGE"),
-		ResourceScope:  os.Getenv("REACTORCIDE_K8S_JOB_RESOURCE_SCOPE"),
+		Namespace:       os.Getenv("REACTORCIDE_K8S_JOB_NAMESPACE"),
+		ServiceAccount:  os.Getenv("REACTORCIDE_K8S_JOB_SERVICE_ACCOUNT"),
+		DindImage:       os.Getenv("REACTORCIDE_DIND_IMAGE"),
+		ResourceScope:   os.Getenv("REACTORCIDE_K8S_JOB_RESOURCE_SCOPE"),
+		AutoscalingMode: os.Getenv("REACTORCIDE_K8S_JOB_AUTOSCALING"),
+	}
+	if raw := os.Getenv("REACTORCIDE_K8S_JOB_STARTUP_TIMEOUT"); raw != "" {
+		duration, err := time.ParseDuration(raw)
+		if err != nil || duration <= 0 {
+			return nil, fmt.Errorf("REACTORCIDE_K8S_JOB_STARTUP_TIMEOUT must be a positive duration")
+		}
+		cfg.StartupTimeout = duration
 	}
 	cfg.ImagePullSecrets = splitSecretNameList(os.Getenv("REACTORCIDE_K8S_JOB_IMAGE_PULL_SECRETS"))
 	cfg.AllowedJobImagePullSecrets = splitSecretNameList(os.Getenv("REACTORCIDE_K8S_JOB_ALLOWED_IMAGE_PULL_SECRETS"))
@@ -110,6 +124,12 @@ func NewKubernetesRunner() (*KubernetesRunner, error) {
 
 // NewKubernetesRunnerWithConfig creates a KubernetesRunner with custom configuration
 func NewKubernetesRunnerWithConfig(cfg KubernetesRunnerConfig) (*KubernetesRunner, error) {
+	if cfg.AutoscalingMode != "" && cfg.AutoscalingMode != "auto" && cfg.AutoscalingMode != "disabled" {
+		return nil, fmt.Errorf("Kubernetes job autoscaling mode must be auto or disabled")
+	}
+	if cfg.StartupTimeout < 0 {
+		return nil, fmt.Errorf("startup timeout must not be negative")
+	}
 	// Try in-cluster config first
 	config, err := rest.InClusterConfig()
 	if err != nil {
@@ -155,6 +175,8 @@ func NewKubernetesRunnerWithConfig(cfg KubernetesRunnerConfig) (*KubernetesRunne
 		builder:                    LoadBuilderConfig(),
 		workflowOutputs:            make(map[string]string),
 		resourceScope:              strings.ToLower(strings.TrimSpace(cfg.ResourceScope)),
+		startupTimeout:             cfg.StartupTimeout,
+		autoscalingMode:            cfg.AutoscalingMode,
 	}, nil
 }
 
@@ -902,9 +924,11 @@ func (kr *KubernetesRunner) WaitForCompletion(ctx context.Context, jobName strin
 		if err != nil {
 			return -1, fmt.Errorf("failed to list pods for job: %w", err)
 		}
+		started := false
 		for i := range pods.Items {
 			pod := &pods.Items[i]
-			if reason, message := kr.checkPodStartupFailure(pod); reason != "" {
+			started = started || mainContainerStarted(pod) || pod.Status.Phase == corev1.PodSucceeded || pod.Status.Phase == corev1.PodFailed
+			if reason, message := kr.checkPodStartupFailure(ctx, pod); reason != "" {
 				return -1, &PodStartupError{Reason: reason, Message: message}
 			}
 			if code, done := mainContainerExitCode(pod); done {
@@ -934,6 +958,13 @@ func (kr *KubernetesRunner) WaitForCompletion(ctx context.Context, jobName strin
 		if job, err := kr.clientset.BatchV1().Jobs(kr.namespace).Get(ctx, jobName, metav1.GetOptions{}); err == nil {
 			if code, done := kr.jobTerminal(ctx, job, jobName, logger); done {
 				return code, nil
+			}
+			if !started && kr.startupExpired(job.CreationTimestamp) {
+				var pod *corev1.Pod
+				if len(pods.Items) > 0 {
+					pod = &pods.Items[0]
+				}
+				return -1, &PodStartupError{Reason: "StartupTimeout", Message: kr.startupTimeoutMessage(pod)}
 			}
 		}
 	}
@@ -1189,23 +1220,25 @@ func (kr *KubernetesRunner) waitForPod(ctx context.Context, jobName string) (str
 	ticker := time.NewTicker(500 * time.Millisecond)
 	defer ticker.Stop()
 
-	timeout := time.After(5 * time.Minute)
+	timeout := time.NewTimer(kr.podStartupTimeout())
+	defer timeout.Stop()
 
 	for {
 		select {
 		case <-ctx.Done():
 			return "", ctx.Err()
-		case <-timeout:
+		case <-timeout.C:
 			// Before timing out, check if there's a pod with startup failure
 			pods, err := kr.clientset.CoreV1().Pods(kr.namespace).List(ctx, metav1.ListOptions{
 				LabelSelector: fmt.Sprintf("reactorcide.io/job-name=%s", jobName),
 			})
 			if err == nil && len(pods.Items) > 0 {
-				if reason, message := kr.checkPodStartupFailure(&pods.Items[0]); reason != "" {
+				if reason, message := kr.checkPodStartupFailure(ctx, &pods.Items[0]); reason != "" {
 					return "", &PodStartupError{Reason: reason, Message: message}
 				}
+				return "", &PodStartupError{Reason: "StartupTimeout", Message: kr.startupTimeoutMessage(&pods.Items[0])}
 			}
-			return "", fmt.Errorf("timeout waiting for pod to be created")
+			return "", &PodStartupError{Reason: "StartupTimeout", Message: kr.startupTimeoutMessage(nil)}
 		case <-ticker.C:
 			pods, err := kr.clientset.CoreV1().Pods(kr.namespace).List(ctx, metav1.ListOptions{
 				LabelSelector: fmt.Sprintf("reactorcide.io/job-name=%s", jobName),
@@ -1218,7 +1251,7 @@ func (kr *KubernetesRunner) waitForPod(ctx context.Context, jobName string) (str
 				pod := &pods.Items[0]
 
 				// Check for startup failures first (ImagePullBackOff, etc.)
-				if reason, message := kr.checkPodStartupFailure(pod); reason != "" {
+				if reason, message := kr.checkPodStartupFailure(ctx, pod); reason != "" {
 					logger.WithFields(map[string]interface{}{
 						"pod_name": pod.Name,
 						"reason":   reason,
@@ -1232,6 +1265,22 @@ func (kr *KubernetesRunner) waitForPod(ctx context.Context, jobName string) (str
 				if mainContainerStarted(pod) || pod.Status.Phase == corev1.PodSucceeded ||
 					pod.Status.Phase == corev1.PodFailed {
 					return pod.Name, nil
+				}
+			}
+			// A deadline or cancellation can finish the Job before a Pod starts.
+			// Use the Job creation time so repeated waits do not reset the limit.
+			if job, err := kr.clientset.BatchV1().Jobs(kr.namespace).Get(ctx, jobName, metav1.GetOptions{}); err == nil {
+				for _, condition := range job.Status.Conditions {
+					if condition.Type == batchv1.JobFailed && condition.Status == corev1.ConditionTrue {
+						return "", &PodStartupError{Reason: condition.Reason, Message: condition.Message}
+					}
+				}
+				if kr.startupExpired(job.CreationTimestamp) {
+					var pod *corev1.Pod
+					if len(pods.Items) > 0 {
+						pod = &pods.Items[0]
+					}
+					return "", &PodStartupError{Reason: "StartupTimeout", Message: kr.startupTimeoutMessage(pod)}
 				}
 			}
 		}
@@ -1249,7 +1298,7 @@ func mainContainerStarted(pod *corev1.Pod) bool {
 
 // checkPodStartupFailure checks if the pod has a startup failure condition
 // Returns the reason and message if a failure is detected, empty strings otherwise
-func (kr *KubernetesRunner) checkPodStartupFailure(pod *corev1.Pod) (reason, message string) {
+func (kr *KubernetesRunner) checkPodStartupFailure(ctx context.Context, pod *corev1.Pod) (reason, message string) {
 	// Check container statuses for waiting states that indicate failures
 	for _, status := range pod.Status.ContainerStatuses {
 		if status.State.Waiting != nil {
@@ -1293,15 +1342,12 @@ func (kr *KubernetesRunner) checkPodStartupFailure(pod *corev1.Pod) (reason, mes
 		}
 	}
 
-	// Check pod conditions for scheduling failures
-	for _, condition := range pod.Status.Conditions {
-		if condition.Type == corev1.PodScheduled && condition.Status == corev1.ConditionFalse {
-			// Pod can't be scheduled - check the reason
-			switch condition.Reason {
-			case "Unschedulable":
-				// Node affinity, resource constraints, etc.
-				return condition.Reason, condition.Message
-			}
+	if !mainContainerStarted(pod) && pod.Status.Phase != corev1.PodSucceeded && pod.Status.Phase != corev1.PodFailed {
+		if reason, message := kr.checkPodSchedulingFailure(ctx, pod); reason != "" {
+			return reason, message
+		}
+		if kr.startupExpired(pod.CreationTimestamp) {
+			return "StartupTimeout", kr.startupTimeoutMessage(pod)
 		}
 	}
 
@@ -1383,19 +1429,28 @@ func (kr *KubernetesRunner) GetJobStatus(ctx context.Context, jobName string) (s
 	}
 
 	if len(pods.Items) == 0 {
+		if kr.startupExpired(job.CreationTimestamp) {
+			return "failed", "StartupTimeout: " + kr.startupTimeoutMessage(nil), nil
+		}
 		return "pending", "", nil
 	}
 
 	pod := &pods.Items[0]
 
 	// Check for pod startup failures
-	if reason, message := kr.checkPodStartupFailure(pod); reason != "" {
+	if reason, message := kr.checkPodStartupFailure(ctx, pod); reason != "" {
 		return "failed", fmt.Sprintf("%s: %s", reason, message), nil
+	}
+	if !mainContainerStarted(pod) && pod.Status.Phase != corev1.PodSucceeded && pod.Status.Phase != corev1.PodFailed && kr.startupExpired(job.CreationTimestamp) {
+		return "failed", "StartupTimeout: " + kr.startupTimeoutMessage(pod), nil
 	}
 
 	// Check pod phase
 	switch pod.Status.Phase {
 	case corev1.PodRunning:
+		if !mainContainerStarted(pod) {
+			return "pending", "", nil
+		}
 		return "running", "", nil
 	case corev1.PodSucceeded:
 		return "succeeded", "", nil

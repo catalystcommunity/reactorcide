@@ -113,6 +113,10 @@ The target VM needs:
 - `curl`, `tar`, and OpenSSL
 - Network access to the configured image registry
 
+For a VM that runs jobs, we recommend `fs.inotify.max_user_instances = 8192`
+or higher. See [Linux worker node configuration](workers.md#linux-worker-node-configuration)
+for commands to apply and check this setting.
+
 The deploy job currently uses `~/reactorcide` on the VM. Do not set
 `REACTORCIDE_REMOTE_DIR` to a different path.
 

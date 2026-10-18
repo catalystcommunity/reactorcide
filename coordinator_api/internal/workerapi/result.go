@@ -41,6 +41,30 @@ func (s *WorkerService) ReportResult(ctx context.Context, req csilapi.ReportResu
 		return csilapi.ReportResultResponse{}, leaseLookupError(err, "job not found for this lease")
 	}
 
+	if !leaseOwnsJob(lease, job) {
+		if lease.IsActive() {
+			if err := s.deps.Store.ReleaseWorkerLease(ctx, lease.LeaseID, "superseded"); err != nil {
+				return csilapi.ReportResultResponse{}, errUnavailable()
+			}
+			s.secrets.delete(lease.LeaseID)
+		}
+		return csilapi.ReportResultResponse{Ok: true}, nil
+	}
+	started, err := executionTimestamp(req.StartedAt, lease)
+	if err != nil {
+		return csilapi.ReportResultResponse{}, err
+	}
+	finished, err := executionTimestamp(req.FinishedAt, lease)
+	if err != nil {
+		return csilapi.ReportResultResponse{}, err
+	}
+	if job.StartedAt != nil {
+		started = job.StartedAt
+	}
+	if finished != nil && (started == nil || finished.Before(*started)) {
+		return csilapi.ReportResultResponse{}, uiapi.NewServiceError("invalid_argument", "finish time must follow the execution start")
+	}
+
 	finalStatus := req.Status
 	if !terminalStatuses[finalStatus] {
 		if req.ExitCode == 0 {
@@ -66,10 +90,21 @@ func (s *WorkerService) ReportResult(ctx context.Context, req csilapi.ReportResu
 
 	now := time.Now().UTC()
 	exitCode := int(req.ExitCode)
-	finalized, matched, err := s.deps.Store.UpdateJobStatusGuarded(ctx, job.JobID, []string{"running", "cancelling"}, func(j *models.Job) {
+	ownsFinalization := false
+	finalized, matched, err := s.deps.Store.UpdateJobStatusGuarded(ctx, job.JobID, []string{"scheduling", "running", "cancelling"}, func(j *models.Job) {
+		if !leaseOwnsJob(lease, j) {
+			return
+		}
+		ownsFinalization = true
 		j.Status = finalStatus
 		j.LastError = lastError
 		j.CompletedAt = &now
+		if started != nil && j.StartedAt == nil {
+			j.StartedAt = started
+		}
+		if finished != nil {
+			j.CompletedAt = finished
+		}
 		j.ExitCode = &exitCode
 	})
 	if err != nil {
@@ -78,6 +113,9 @@ func (s *WorkerService) ReportResult(ctx context.Context, req csilapi.ReportResu
 			return csilapi.ReportResultResponse{}, errUnavailable()
 		}
 		return csilapi.ReportResultResponse{}, uiapi.NewServiceError("internal", "failed to finalize job")
+	}
+	if matched && !ownsFinalization {
+		return csilapi.ReportResultResponse{Ok: true}, nil
 	}
 	if matched {
 		job = finalized

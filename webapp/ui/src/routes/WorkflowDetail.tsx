@@ -181,7 +181,7 @@ function NodeTable(props: {
               <th>Node</th>
               <th>Status</th>
               <th>Depends on</th>
-              <th>Duration</th>
+              <th>Runtime</th>
               <th>Exit</th>
             </tr>
           </thead>

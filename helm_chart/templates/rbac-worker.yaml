@@ -13,6 +13,9 @@ rules:
     verbs: ["create", "get", "list", "watch", "delete"]
   # Permission to get pod logs and status for job execution
   - apiGroups: [""]
+    resources: ["events"]
+    verbs: ["list"]
+  - apiGroups: [""]
     resources: ["pods"]
     verbs: ["get", "list", "watch"]
   - apiGroups: [""]
@@ -56,6 +59,10 @@ metadata:
   labels:
     {{- include "worker.labels" . | nindent 4 }}
 rules:
+  # Read total node capacity before rejecting a job resource request.
+  - apiGroups: [""]
+    resources: ["nodes"]
+    verbs: ["list"]
   - apiGroups: [""]
     resources: ["nodes/proxy"]
     verbs: ["get"]

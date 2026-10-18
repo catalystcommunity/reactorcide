@@ -38,6 +38,8 @@ type trackedLease struct {
 	jobID        string
 	runnerID     string
 	graceSeconds int64
+	timing       worker.ExecutionTiming
+	cancelWait   context.CancelFunc
 	outcome      string // "", "cancel", "kill"
 }
 
@@ -292,7 +294,11 @@ func runLease(c client, runner worker.JobRunner, lease csilapi.Lease, tracker *l
 		jobConfig.Command = withRunnerlibInsecureTransport(jobConfig.Command)
 	}
 
-	runCtx := context.Background()
+	runCtx, cancelWait := context.WithCancel(context.Background())
+	defer cancelWait()
+	tl.mu.Lock()
+	tl.cancelWait = cancelWait
+	tl.mu.Unlock()
 
 	maskedCmd := masker.MaskCommandArgs(jobConfig.Command)
 	logger.WithFields(map[string]interface{}{"image": jobConfig.Image, "command": strings.Join(maskedCmd, " ")}).Info("spawning leased job")
@@ -306,6 +312,9 @@ func runLease(c client, runner worker.JobRunner, lease csilapi.Lease, tracker *l
 
 	tl.mu.Lock()
 	tl.runnerID = runnerID
+	if _, precise := runner.(worker.ExecutionTimingReader); !precise {
+		tl.timing.StartedAt = time.Now().UTC()
+	}
 	tl.mu.Unlock()
 
 	defer func() {
@@ -319,6 +328,9 @@ func runLease(c client, runner worker.JobRunner, lease csilapi.Lease, tracker *l
 	if err != nil {
 		logger.WithError(err).Warn("failed to stream logs from leased job; continuing to wait for completion")
 	}
+
+	captureExecutionTiming(runCtx, runner, tl)
+	heartbeatOnce(runCtx, c, runner, tracker)
 
 	var pumpWg sync.WaitGroup
 	metricsCtx, stopMetrics := context.WithCancel(context.Background())
@@ -343,6 +355,13 @@ func runLease(c client, runner worker.JobRunner, lease csilapi.Lease, tracker *l
 	}
 
 	exitCode, waitErr := runner.WaitForCompletion(runCtx, runnerID)
+	captureExecutionTiming(runCtx, runner, tl)
+	tl.mu.Lock()
+	if _, precise := runner.(worker.ExecutionTimingReader); !precise {
+		tl.timing.FinishedAt = time.Now().UTC()
+	}
+	timing := tl.timing
+	tl.mu.Unlock()
 	stopMetrics()
 	pumpWg.Wait()
 	// Give retained batches one final delivery attempt while the lease is
@@ -359,7 +378,7 @@ func runLease(c client, runner worker.JobRunner, lease csilapi.Lease, tracker *l
 			workflowOutput = output
 		}
 	}
-	reportResultWithOutput(c, cfg, lease.LeaseId, exitCode, status, errMsg, workflowOutput)
+	reportResultWithOutput(c, cfg, lease.LeaseId, exitCode, status, errMsg, workflowOutput, timing)
 }
 
 func withRunnerlibInsecureTransport(command []string) []string {
@@ -424,9 +443,20 @@ func reportResult(c client, cfg Config, leaseID string, exitCode int, status, er
 	})
 }
 
-func reportResultWithOutput(c client, cfg Config, leaseID string, exitCode int, status, errMsg, workflowOutput string) {
+func reportResultWithOutput(c client, cfg Config, leaseID string, exitCode int, status, errMsg, workflowOutput string, timings ...worker.ExecutionTiming) {
 	deliverResult(c, cfg, leaseID, func(ctx context.Context) error {
-		_, err := c.ReportResultWithOutput(ctx, leaseID, exitCode, status, errMsg, workflowOutput)
+		req := csilapi.ReportResultRequest{LeaseId: leaseID, ExitCode: int64(exitCode), Status: status}
+		if errMsg != "" {
+			req.Error = &errMsg
+		}
+		if workflowOutput != "" {
+			req.WorkflowOutput = &workflowOutput
+		}
+		if len(timings) > 0 {
+			req.StartedAt = timestampText(timings[0].StartedAt)
+			req.FinishedAt = timestampText(timings[0].FinishedAt)
+		}
+		_, err := c.ReportExecutionResult(ctx, req)
 		return err
 	})
 }

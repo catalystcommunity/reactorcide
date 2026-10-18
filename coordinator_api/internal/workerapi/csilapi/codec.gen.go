@@ -879,8 +879,11 @@ func DecodeWorkerCharacteristics(csilData []byte) (WorkerCharacteristics, error)
 
 // csilEncRequestJobRequest builds the canonical CBOR value tree for a RequestJobRequest.
 func csilEncRequestJobRequest(csilV RequestJobRequest) cborValue {
-	csilEntries := make(cborMap, 0, 1)
+	csilEntries := make(cborMap, 0, 2)
 	csilEntries = append(csilEntries, cborEntry{cborText("worker_characteristics"), csilEncWorkerCharacteristics(csilV.WorkerCharacteristics)})
+	if csilV.ReportsExecutionTiming != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("reports_execution_timing"), cborBool((*csilV.ReportsExecutionTiming))})
+	}
 	return csilEntries
 }
 
@@ -897,6 +900,13 @@ func csilDecRequestJobRequest(csilRoot cborValue) (RequestJobRequest, error) {
 			return csilOut, csilErr
 		}
 		csilOut.WorkerCharacteristics = csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "reports_execution_timing"); csilOk {
+		csilVal, csilErr := (cborAsBool)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.ReportsExecutionTiming = &csilVal
 	}
 	return csilOut, nil
 }
@@ -1349,8 +1359,11 @@ func DecodeRequestJobResponse(csilData []byte) (RequestJobResponse, error) {
 
 // csilEncRunningLease builds the canonical CBOR value tree for a RunningLease.
 func csilEncRunningLease(csilV RunningLease) cborValue {
-	csilEntries := make(cborMap, 0, 1)
+	csilEntries := make(cborMap, 0, 2)
 	csilEntries = append(csilEntries, cborEntry{cborText("lease_id"), cborText(csilV.LeaseId)})
+	if csilV.StartedAt != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("started_at"), cborText((*csilV.StartedAt))})
+	}
 	return csilEntries
 }
 
@@ -1367,6 +1380,13 @@ func csilDecRunningLease(csilRoot cborValue) (RunningLease, error) {
 			return csilOut, csilErr
 		}
 		csilOut.LeaseId = csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "started_at"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.StartedAt = &csilVal
 	}
 	return csilOut, nil
 }
@@ -2265,13 +2285,19 @@ func DecodeAppendMetricBatchResponse(csilData []byte) (AppendMetricBatchResponse
 
 // csilEncReportResultRequest builds the canonical CBOR value tree for a ReportResultRequest.
 func csilEncReportResultRequest(csilV ReportResultRequest) cborValue {
-	csilEntries := make(cborMap, 0, 5)
+	csilEntries := make(cborMap, 0, 7)
 	if csilV.Error != nil {
 		csilEntries = append(csilEntries, cborEntry{cborText("error"), cborText((*csilV.Error))})
 	}
 	csilEntries = append(csilEntries, cborEntry{cborText("status"), cborText(csilV.Status)})
 	csilEntries = append(csilEntries, cborEntry{cborText("lease_id"), cborText(csilV.LeaseId)})
 	csilEntries = append(csilEntries, cborEntry{cborText("exit_code"), cborInt(csilV.ExitCode)})
+	if csilV.StartedAt != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("started_at"), cborText((*csilV.StartedAt))})
+	}
+	if csilV.FinishedAt != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("finished_at"), cborText((*csilV.FinishedAt))})
+	}
 	if csilV.WorkflowOutput != nil {
 		csilEntries = append(csilEntries, cborEntry{cborText("workflow_output"), cborText((*csilV.WorkflowOutput))})
 	}
@@ -2327,6 +2353,20 @@ func csilDecReportResultRequest(csilRoot cborValue) (ReportResultRequest, error)
 			return csilOut, csilErr
 		}
 		csilOut.WorkflowOutput = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "started_at"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.StartedAt = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "finished_at"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.FinishedAt = &csilVal
 	}
 	return csilOut, nil
 }

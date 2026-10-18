@@ -40,6 +40,12 @@ func heartbeatOnce(ctx context.Context, c client, runner worker.JobRunner, track
 	running := make([]csilapi.RunningLease, len(ids))
 	for i, id := range ids {
 		running[i] = csilapi.RunningLease{LeaseId: id}
+		if tl, ok := tracker.get(id); ok {
+			captureExecutionTiming(ctx, runner, tl)
+			tl.mu.Lock()
+			running[i].StartedAt = timestampText(tl.timing.StartedAt)
+			tl.mu.Unlock()
+		}
 	}
 
 	resp, err := c.Heartbeat(ctx, status, running)
@@ -75,6 +81,8 @@ func applyDirective(runner worker.JobRunner, tracker *leaseTracker, d csilapi.Di
 	tl.mu.Lock()
 	runnerID := tl.runnerID
 	grace := tl.graceSeconds
+	cancelWait := tl.cancelWait
+	scheduling := tl.timing.StartedAt.IsZero()
 	tl.mu.Unlock()
 	if runnerID == "" {
 		// SpawnJob hasn't returned yet; nothing to Stop/Cleanup. The next
@@ -94,11 +102,17 @@ func applyDirective(runner worker.JobRunner, tracker *leaseTracker, d csilapi.Di
 			if err := runner.Stop(context.Background(), runnerID, time.Duration(grace)*time.Second); err != nil {
 				logger.WithError(err).Warn("failed to stop job for cancel directive")
 			}
+			if scheduling && cancelWait != nil {
+				cancelWait()
+			}
 		}()
 	case "kill":
 		go func() {
 			if err := runner.Cleanup(context.Background(), runnerID); err != nil {
 				logger.WithError(err).Warn("failed to clean up job for kill directive")
+			}
+			if cancelWait != nil {
+				cancelWait()
 			}
 		}()
 	default:

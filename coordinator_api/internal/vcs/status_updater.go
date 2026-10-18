@@ -275,7 +275,7 @@ func (u *JobStatusUpdater) UpdateJobStatus(ctx context.Context, job *models.Job)
 // mapJobStatusToVCSStatus maps job status to VCS commit status
 func (u *JobStatusUpdater) mapJobStatusToVCSStatus(jobStatus string) StatusState {
 	switch jobStatus {
-	case "submitted", "queued":
+	case "submitted", "queued", "scheduling":
 		return StatusPending
 	case "running":
 		return StatusRunning
@@ -299,6 +299,8 @@ func (u *JobStatusUpdater) getStatusDescription(job *models.Job) string {
 		return "CI build submitted"
 	case "queued":
 		return "CI build queued"
+	case "scheduling":
+		return "CI build waiting for container startup"
 	case "running":
 		return "CI build in progress"
 	case "completed":

@@ -90,6 +90,7 @@ func jobStatusChoices() []csilapi.EnumChoice {
 	return []csilapi.EnumChoice{
 		{Value: "submitted", Label: "Submitted", Description: "Accepted, not yet queued."},
 		{Value: "queued", Label: "Queued", Description: "Waiting for a worker."},
+		{Value: "scheduling", Label: "Scheduling", Description: "Waiting for the job container to start."},
 		{Value: "running", Label: "Running", Description: "Executing on a worker."},
 		{Value: "cancelling", Label: "Cancelling", Description: "A cancel was requested; the worker has not confirmed the container stopped."},
 		{Value: "completed", Label: "Completed", Description: "Finished with exit code 0."},

@@ -30,6 +30,10 @@ You need:
 - A default StorageClass if you enable persistent bundled services.
 - A Gateway API controller if you enable HTTPRoutes.
 
+We recommend `fs.inotify.max_user_instances = 8192` or higher on each Linux
+node that can run job Pods. See [Linux worker node configuration](../docs/workers.md#linux-worker-node-configuration)
+for commands to apply and check this setting.
+
 ## Important Defaults
 
 The default `values.yaml` is a configuration reference. These defaults do not

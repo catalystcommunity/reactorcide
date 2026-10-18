@@ -145,6 +145,10 @@ spec:
             - name: REACTORCIDE_K8S_JOB_RESOURCE_SCOPE
               value: {{ .Values.worker.jobResourceScope | quote }}
             {{- end }}
+            - name: REACTORCIDE_K8S_JOB_STARTUP_TIMEOUT
+              value: {{ default "30m" .Values.worker.jobStartupTimeout | quote }}
+            - name: REACTORCIDE_K8S_JOB_AUTOSCALING
+              value: {{ default "auto" .Values.worker.jobAutoscaling | quote }}
             {{- /* Builder sidecar config — applied to jobs with `capabilities: [builder]` */ -}}
             {{- if .Values.builder }}
             {{- if .Values.builder.image }}
