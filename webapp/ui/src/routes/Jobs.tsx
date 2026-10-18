@@ -52,7 +52,7 @@ export function Jobs(): JSX.Element {
                   <tr>
                     <th>Job</th>
                     <th>Status</th>
-                    <th>Duration</th>
+                    <th>Runtime</th>
                     <th>Queue</th>
                     <th>Updated</th>
                   </tr>

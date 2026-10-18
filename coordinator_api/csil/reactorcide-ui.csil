@@ -1117,6 +1117,7 @@ JobSummary = {
     last_error: text,
     created_at: text,
     updated_at: text,
+    ? scheduling_started_at: text,
     ? started_at: text,
     ? completed_at: text,
     ? exit_code: int,

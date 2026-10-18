@@ -50,7 +50,8 @@ type WorkerCharacteristics struct {
 
 // RequestJobRequest represents a structured data type
 type RequestJobRequest struct {
-	WorkerCharacteristics WorkerCharacteristics `json:"worker_characteristics" yaml:"worker_characteristics"`
+	WorkerCharacteristics  WorkerCharacteristics `json:"worker_characteristics" yaml:"worker_characteristics"`
+	ReportsExecutionTiming *bool                 `json:"reports_execution_timing,omitempty" yaml:"reports_execution_timing,omitempty"`
 }
 
 // EnvVar represents a structured data type
@@ -100,7 +101,8 @@ type RequestJobResponse struct {
 
 // RunningLease represents a structured data type
 type RunningLease struct {
-	LeaseId string `json:"lease_id" yaml:"lease_id"`
+	LeaseId   string  `json:"lease_id" yaml:"lease_id"`
+	StartedAt *string `json:"started_at,omitempty" yaml:"started_at,omitempty"`
 }
 
 // HeartbeatRequest represents a structured data type
@@ -209,6 +211,8 @@ type ReportResultRequest struct {
 	Status         string  `json:"status" yaml:"status"`
 	Error          *string `json:"error,omitempty" yaml:"error,omitempty"`
 	WorkflowOutput *string `json:"workflow_output,omitempty" yaml:"workflow_output,omitempty"`
+	StartedAt      *string `json:"started_at,omitempty" yaml:"started_at,omitempty"`
+	FinishedAt     *string `json:"finished_at,omitempty" yaml:"finished_at,omitempty"`
 }
 
 // ReportResultResponse represents a structured data type

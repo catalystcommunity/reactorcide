@@ -123,7 +123,7 @@ type Job struct {
 	// in the jobs.status CHECK constraint (owned by the schema/migration
 	// wave, see coredb/migrations) — this Go-level enum is documentation-only
 	// since models are hand-matched to SQL rather than AutoMigrated.
-	Status         string  `gorm:"type:text;not null;default:'submitted';check:status IN ('submitted', 'queued', 'running', 'cancelling', 'completed', 'failed', 'cancelled', 'timeout')" json:"status"`
+	Status         string  `gorm:"type:text;not null;default:'submitted';check:status IN ('submitted', 'queued', 'scheduling', 'running', 'cancelling', 'completed', 'failed', 'cancelled', 'timeout')" json:"status"`
 	CorndogsTaskID *string `gorm:"type:uuid" json:"corndogs_task_id"`
 
 	// CancelMode records which kind of cancel request drove the job into
@@ -138,13 +138,14 @@ type Job struct {
 	CancelMode string `gorm:"type:text;check:cancel_mode IN ('cancel', 'kill')" json:"cancel_mode,omitempty"`
 
 	// Execution metadata
-	StartedAt   *time.Time `json:"started_at"`
-	CompletedAt *time.Time `json:"completed_at"`
-	ExitCode    *int       `json:"exit_code"`
-	WorkerID    *string    `gorm:"type:text" json:"worker_id"`
-	Notes       string     `gorm:"type:text" json:"notes"`
-	RetryCount  int        `gorm:"default:0" json:"retry_count"`
-	LastError   string     `gorm:"type:text" json:"last_error"`
+	SchedulingStartedAt *time.Time `json:"scheduling_started_at"`
+	StartedAt           *time.Time `json:"started_at"`
+	CompletedAt         *time.Time `json:"completed_at"`
+	ExitCode            *int       `json:"exit_code"`
+	WorkerID            *string    `gorm:"type:text" json:"worker_id"`
+	Notes               string     `gorm:"type:text" json:"notes"`
+	RetryCount          int        `gorm:"default:0" json:"retry_count"`
+	LastError           string     `gorm:"type:text" json:"last_error"`
 
 	// Object store references
 	LogsObjectKey      string `gorm:"type:text" json:"logs_object_key"`
@@ -241,7 +242,7 @@ func (j *Job) IsCompleted() bool {
 // "cancelling" so the worker can drive a graceful stop. Jobs already
 // cancelling, or in any terminal state, cannot be cancelled again.
 func (j *Job) CanBeCancelled() bool {
-	return j.Status == "submitted" || j.Status == "queued" || j.Status == "running"
+	return j.Status == "submitted" || j.Status == "queued" || j.Status == "scheduling" || j.Status == "running"
 }
 
 // CanBeKilled returns true if the job can be moved into (or escalated

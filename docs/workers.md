@@ -27,6 +27,35 @@ is a small binary (`reactorcide worker`) that loops: `Register` → `RequestJob`
 instead of polling a queue directly. The same protocol supports container and
 native VM backends. The protocol does not depend on the execution backend.
 
+## Linux worker node configuration
+
+We recommend `fs.inotify.max_user_instances = 8192` on each Linux worker
+node. Keep a higher value if one is already configured. This setting limits
+the number of inotify instances per real user ID. Concurrent builds can
+reach a lower limit and fail to create file system watchers.
+
+For Kubernetes, apply this setting to each node that can run job Pods.
+Include the setting in node images or startup configuration so that new
+and replacement nodes have the same limit. The Helm chart does not set
+this host setting.
+
+Create `/etc/sysctl.d/99-reactorcide-inotify.conf` on each worker node with
+the following content. Use the existing value if it is higher than `8192`.
+
+```ini
+fs.inotify.max_user_instances = 8192
+```
+
+Apply the file and check the active value:
+
+```bash
+sudo sysctl --load=/etc/sysctl.d/99-reactorcide-inotify.conf
+sysctl fs.inotify.max_user_instances
+```
+
+Check the value again after a node restart. Other system configuration
+can override this file.
+
 ## Characteristics and matching
 
 A **characteristic** is a `key → value` pair. The key is always a string; the value is a
@@ -70,6 +99,72 @@ characteristics, `W` has that key and either `W[k] == v` or `W[k]` is a list con
 doesn't name — that's fine, and is exactly how a GPU worker with `{os: linux, arch: amd64,
 gpu: true}` ends up satisfying both the plain `{os: linux}` default queue *and* a `{os:
 linux, gpu: true}` queue.
+
+## Scheduling state and runtime
+
+A current worker claims a job in the `scheduling` state. The coordinator sets
+`scheduling_started_at` and leaves `started_at` empty. The job changes to
+`running` when the main container starts. A sidecar start does not start the
+job runtime. The worker keeps its lease during scheduling. Cancellation,
+kill requests, and lost-worker recovery also apply in this state.
+
+Kubernetes workers report the main container's start and finish timestamps.
+The result includes these timestamps even if the job finishes between
+heartbeats. Runtime is `completed_at - started_at`. A job that never starts
+has no runtime. Scheduling time ends at `started_at`, or at `completed_at`
+if startup fails. The UI and `submit --wait` show the two times separately.
+Other backends record the time after spawn and the time when execution ends.
+
+Apply database migration `000039` and update the coordinator before the
+workers. Older workers retain their claim-time `running` behavior. Existing
+job timestamps are unchanged. Coordinator, worker, and node clocks must be
+synchronized; the coordinator permits up to five minutes of clock difference.
+
+## Kubernetes scheduling decisions
+
+A Pod stays `Pending` when other jobs use the CPU or memory that it needs.
+The default startup timeout is 30 minutes. Set
+`REACTORCIDE_K8S_JOB_STARTUP_TIMEOUT` to a positive duration, such as `45m`,
+to change it. In Helm, set `worker.jobStartupTimeout`. The job deadline still
+includes startup and can expire first.
+
+Set `REACTORCIDE_K8S_JOB_AUTOSCALING` or Helm `worker.jobAutoscaling`:
+
+| Value | Early failure rule |
+| --- | --- |
+| `auto` (default) | Require a recent Cluster Autoscaler refusal that identifies a capacity or placement limit. An active scale-up prevents early failure. |
+| `disabled` | The operator confirms that no node autoscaler will add capacity. Node capacity and scheduler events can establish an early failure. |
+
+When scale-up is ruled out, the worker rejects a request that exceeds every
+matching current node's allocatable CPU or memory. It checks the admitted
+Pod requests, including init containers, native sidecars, pod-level requests,
+and Pod overhead. Resources used by other jobs do not reduce the capacity
+value. See the [Kubernetes resource rules](https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/).
+
+The worker also checks `FailedScheduling` events for placement constraints.
+After a 30-second startup grace period, it can return `SchedulingBlocked`
+for node selector or node affinity mismatch, volume node affinity conflict,
+or a custom taint that the Pod does not tolerate. Every reported node reason
+must be a recognized placement constraint. The current scheduling condition
+must agree with the event. In `auto` mode, the autoscaler refusal must be at
+least as recent as the scheduler event.
+
+Events must belong to the current Pod UID and the expected scheduler or
+Cluster Autoscaler. Failure evidence expires after two minutes. A
+`TriggeredScaleUp` event for the current Pod keeps the job waiting under the
+startup timeout. A `NotTriggerScaleUp` event alone is not sufficient: backoff,
+quota failures, unknown reasons, and readiness failures do not prove that
+placement cannot recover. See the [Cluster Autoscaler event definitions](https://github.com/kubernetes/autoscaler/blob/master/cluster-autoscaler/FAQ.md#what-events-are-emitted-by-ca).
+
+CPU or memory contention, mixed placement and capacity failures, and
+unavailable event data keep the job waiting. Other autoscalers use the
+timeout fallback unless they emit the supported Cluster Autoscaler events.
+Image and container configuration errors still fail at once. Errors include
+the scheduler diagnosis when available.
+
+The worker needs `list` permission on cluster-scoped `nodes` and on `events`
+in the job namespace. The Helm chart grants these permissions. Deploy the
+worker image and Helm changes together.
 
 ## Custom characteristics
 

@@ -5136,6 +5136,7 @@ export function toJobSummaryCborValue(v: JobSummary): CborValue {
   if (v.parentJobId !== undefined) csilMap.set("parent_job_id", v.parentJobId);
   csilMap.set("execution_profile", v.executionProfile);
   csilMap.set("workflow_node_name", v.workflowNodeName);
+  if (v.schedulingStartedAt !== undefined) csilMap.set("scheduling_started_at", v.schedulingStartedAt);
   return csilMap;
 }
 
@@ -5148,6 +5149,7 @@ export function fromJobSummaryCborValue(value: CborValue): JobSummary {
     lastError: asString(requireKey(value, "last_error")),
     createdAt: asString(requireKey(value, "created_at")),
     updatedAt: asString(requireKey(value, "updated_at")),
+    schedulingStartedAt: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "scheduling_started_at")),
     startedAt: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "started_at")),
     completedAt: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "completed_at")),
     exitCode: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asNumber(csilV))(mapGet(value, "exit_code")),

@@ -98,8 +98,8 @@ const lostJobBatchSize = 100
 func (ps PostgresDbStore) ListLostRunningJobs(ctx context.Context, cutoff time.Time) ([]models.Job, error) {
 	var jobs []models.Job
 	if err := ps.getDB(ctx).
-		Where("jobs.status = ?", "running").
-		Where("COALESCE(jobs.started_at, jobs.updated_at) < ?", cutoff).
+		Where("jobs.status IN ?", []string{"scheduling", "running"}).
+		Where("COALESCE(jobs.started_at, jobs.scheduling_started_at, jobs.updated_at) < ?", cutoff).
 		Where(`NOT EXISTS (SELECT 1 FROM worker_leases wl WHERE wl.job_id = jobs.job_id AND (wl.released_at IS NULL OR wl.released_at >= ?))`, cutoff).
 		Order("jobs.started_at ASC").
 		Limit(lostJobBatchSize).

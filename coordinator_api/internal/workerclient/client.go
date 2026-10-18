@@ -61,7 +61,8 @@ func (c *Client) Register(ctx context.Context, enrollmentToken string, info csil
 // resp.HasLease is false (with a nil resp.Lease) when nothing was available
 // within the coordinator's poll window -- not an error.
 func (c *Client) RequestJob(ctx context.Context, characteristics csilapi.WorkerCharacteristics) (csilapi.RequestJobResponse, error) {
-	return c.raw.RequestJob(ctx, csilapi.RequestJobRequest{WorkerCharacteristics: characteristics})
+	reportsTiming := true
+	return c.raw.RequestJob(ctx, csilapi.RequestJobRequest{WorkerCharacteristics: characteristics, ReportsExecutionTiming: &reportsTiming})
 }
 
 // Heartbeat reports the worker's status and the leases it currently holds,
@@ -108,5 +109,9 @@ func (c *Client) ReportResultWithOutput(ctx context.Context, leaseID string, exi
 	if workflowOutput != "" {
 		req.WorkflowOutput = &workflowOutput
 	}
+	return c.raw.ReportResult(ctx, req)
+}
+
+func (c *Client) ReportExecutionResult(ctx context.Context, req csilapi.ReportResultRequest) (csilapi.ReportResultResponse, error) {
 	return c.raw.ReportResult(ctx, req)
 }

@@ -308,6 +308,11 @@ func (s *WorkerService) RequestJob(ctx context.Context, req csilapi.RequestJobRe
 		running, matched, txErr = s.deps.Store.UpdateJobStatusGuarded(txCtx, job.JobID, []string{"submitted", "queued"}, func(j *models.Job) {
 			j.Status = "running"
 			j.StartedAt = &now
+			if req.ReportsExecutionTiming != nil && *req.ReportsExecutionTiming {
+				j.Status = "scheduling"
+				j.SchedulingStartedAt = &now
+				j.StartedAt = nil
+			}
 			j.WorkerID = &workerID
 		})
 		if txErr != nil || !matched {
@@ -321,6 +326,17 @@ func (s *WorkerService) RequestJob(ctx context.Context, req csilapi.RequestJobRe
 		}
 		step = "worker lease"
 		lease, txErr = s.deps.Store.CreateWorkerLease(txCtx, workerID, job.JobID, &queueUUID)
+		if txErr == nil && running.Status == "scheduling" {
+			// Use the lease timestamp as the attempt boundary. Both values then
+			// use the database clock and precision, including across coordinators.
+			step = "scheduling timestamp"
+			running, matched, txErr = s.deps.Store.UpdateJobStatusGuarded(txCtx, job.JobID, []string{"scheduling"}, func(j *models.Job) {
+				j.SchedulingStartedAt = &lease.AcquiredAt
+			})
+			if txErr == nil && !matched {
+				return errors.New("job state changed while recording scheduling time")
+			}
+		}
 		return txErr
 	})
 	if err != nil {
@@ -343,7 +359,7 @@ func (s *WorkerService) RequestJob(ctx context.Context, req csilapi.RequestJobRe
 	// Roll the job's workflow node to "running" (best-effort): keeps the
 	// workflow instance and its VCS check in sync while the job executes. Does
 	// nothing for non-workflow jobs.
-	if s.deps.WorkflowFinalizer != nil && job.WorkflowID != nil && *job.WorkflowID != "" {
+	if job.Status == "running" && s.deps.WorkflowFinalizer != nil && job.WorkflowID != nil && *job.WorkflowID != "" {
 		if err := s.deps.WorkflowFinalizer.ProcessWorkflowJobStarted(ctx, job); err != nil {
 			logging.Log.WithError(err).WithFields(map[string]interface{}{
 				"job_id":      job.JobID,
@@ -402,9 +418,10 @@ func (s *WorkerService) abandonClaim(ctx context.Context, job *models.Job, task 
 		"store_unavailable": store.IsUnavailable(cause),
 	}).Warn("Claim failed to commit; returning job to the queue")
 
-	if _, _, err := s.deps.Store.UpdateJobStatusGuarded(ctx, job.JobID, []string{"running"}, func(j *models.Job) {
+	if _, _, err := s.deps.Store.UpdateJobStatusGuarded(ctx, job.JobID, []string{"scheduling", "running"}, func(j *models.Job) {
 		j.Status = "submitted"
 		j.StartedAt = nil
+		j.SchedulingStartedAt = nil
 		j.WorkerID = nil
 	}); err != nil {
 		// The job row state is unknown. Leave the corndogs task alone: its
@@ -541,6 +558,12 @@ func (s *WorkerService) Heartbeat(ctx context.Context, req csilapi.HeartbeatRequ
 		job, err := s.deps.Store.GetJobByID(ctx, lease.JobID)
 		if err != nil {
 			continue
+		}
+
+		if rl.StartedAt != nil {
+			if err := s.recordExecutionStart(ctx, lease, job, rl.StartedAt); err != nil {
+				return csilapi.HeartbeatResponse{}, err
+			}
 		}
 
 		if job.CorndogsTaskID != nil && *job.CorndogsTaskID != "" && s.deps.CorndogsClient != nil {

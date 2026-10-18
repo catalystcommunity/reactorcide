@@ -159,7 +159,9 @@ conflict, and final-status rules.
 4. The worker creates a clean workspace.
 5. The worker gets approved secrets and VCS checkout credentials from the
    coordinator.
-6. The worker starts a container or a Kubernetes Job.
+6. The coordinator records `scheduling` while the worker prepares execution.
+   The worker starts a container or a Kubernetes Job. It reports `running`
+   with the main container start time. Runtime excludes scheduling time.
 7. The worker sends logs and state changes to the coordinator.
 8. The coordinator stores the result and evaluates dependent workflow nodes.
 9. The coordinator submits newly ready nodes.

@@ -24,11 +24,12 @@ type fakeClient struct {
 	AppendMetricBatchFunc func(ctx context.Context, req csilapi.AppendMetricBatchRequest) (csilapi.AppendMetricBatchResponse, error)
 	ReportResultFunc      func(ctx context.Context, leaseID string, exitCode int, status string, errMsg string) (csilapi.ReportResultResponse, error)
 
-	RegisterCalls     []csilapi.WorkerInfo
-	RequestJobCalls   []csilapi.WorkerCharacteristics
-	HeartbeatCalls    []heartbeatCall
-	AppendLogsCalls   []appendLogsCall
-	ReportResultCalls []reportResultCall
+	RegisterCalls        []csilapi.WorkerInfo
+	RequestJobCalls      []csilapi.WorkerCharacteristics
+	HeartbeatCalls       []heartbeatCall
+	AppendLogsCalls      []appendLogsCall
+	ReportResultCalls    []reportResultCall
+	ExecutionResultCalls []csilapi.ReportResultRequest
 }
 
 type heartbeatCall struct {
@@ -290,3 +291,17 @@ func (f *fakeRunner) snapshotCleanupCalls() []string {
 }
 
 var _ worker.JobRunner = (*fakeRunner)(nil)
+
+func (f *fakeClient) ReportExecutionResult(ctx context.Context, req csilapi.ReportResultRequest) (csilapi.ReportResultResponse, error) {
+	f.mu.Lock()
+	f.ExecutionResultCalls = append(f.ExecutionResultCalls, req)
+	f.mu.Unlock()
+	var message, output string
+	if req.Error != nil {
+		message = *req.Error
+	}
+	if req.WorkflowOutput != nil {
+		output = *req.WorkflowOutput
+	}
+	return f.ReportResultWithOutput(ctx, req.LeaseId, int(req.ExitCode), req.Status, message, output)
+}

@@ -14,6 +14,7 @@ import (
 // workerclient's HTTP carrier. *workerclient.Client satisfies this
 // interface structurally -- see run.go's Run, which wires the real one.
 type client interface {
+	ReportExecutionResult(ctx context.Context, req csilapi.ReportResultRequest) (csilapi.ReportResultResponse, error)
 	Register(ctx context.Context, enrollmentToken string, info csilapi.WorkerInfo) (csilapi.RegisterResponse, error)
 	RequestJob(ctx context.Context, characteristics csilapi.WorkerCharacteristics) (csilapi.RequestJobResponse, error)
 	Heartbeat(ctx context.Context, status string, runningLeases []csilapi.RunningLease) (csilapi.HeartbeatResponse, error)

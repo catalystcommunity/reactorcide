@@ -22,7 +22,11 @@ func (f *lostJobFake) ListLostRunningJobs(ctx context.Context, cutoff time.Time)
 	defer f.mu.Unlock()
 	var out []models.Job
 	for _, j := range f.jobs {
-		if j.Status != "running" || j.StartedAt == nil || !j.StartedAt.Before(cutoff) {
+		at := j.StartedAt
+		if at == nil {
+			at = j.SchedulingStartedAt
+		}
+		if (j.Status != "running" && j.Status != "scheduling") || at == nil || !at.Before(cutoff) {
 			continue
 		}
 		held := false

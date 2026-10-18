@@ -22,6 +22,7 @@ const PRESENTATION: Record<string, Presentation> = {
   completed: { tone: 'ok', glyph: '✓', label: 'completed' },
   failed: { tone: 'danger', glyph: '✕', label: 'failed' },
   timeout: { tone: 'danger', glyph: '⧗', label: 'timed out' },
+  scheduling: { tone: 'warn', glyph: '◷', label: 'scheduling' },
   running: { tone: 'info', glyph: '●', label: 'running' },
   queued: { tone: 'warn', glyph: '◔', label: 'queued' },
   submitted: { tone: 'warn', glyph: '◔', label: 'submitted' },

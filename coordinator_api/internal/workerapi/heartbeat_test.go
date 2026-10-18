@@ -17,6 +17,10 @@ import (
 // directly) so Heartbeat/ReportResult's corndogs plumbing has something to
 // extend/finalize.
 func claimOneJob(t *testing.T, h *testHarness) (job *models.Job, leaseID, sessionToken string) {
+	return claimOneJobWithTiming(t, h, false)
+}
+
+func claimOneJobWithTiming(t *testing.T, h *testHarness, reportsTiming bool) (job *models.Job, leaseID, sessionToken string) {
 	t.Helper()
 	ctx := context.Background()
 
@@ -39,7 +43,8 @@ func claimOneJob(t *testing.T, h *testHarness) (job *models.Job, leaseID, sessio
 
 	sessionToken, _ = h.registerWorker(t, "claim-worker", "linux", "amd64", nil)
 	resp, err := h.service.RequestJob(ctxWithAuth(sessionToken), csilapi.RequestJobRequest{
-		WorkerCharacteristics: csilapi.WorkerCharacteristics{Os: "linux", Arch: "amd64"},
+		WorkerCharacteristics:  csilapi.WorkerCharacteristics{Os: "linux", Arch: "amd64"},
+		ReportsExecutionTiming: &reportsTiming,
 	})
 	if err != nil {
 		t.Fatalf("RequestJob failed: %v", err)

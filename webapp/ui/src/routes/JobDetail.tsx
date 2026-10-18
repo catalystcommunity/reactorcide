@@ -101,8 +101,12 @@ export function JobDetail(): JSX.Element {
                   <dd class="mono truncate">{data().job.jobId}</dd>
                 </div>
                 <div>
-                  <dt>Duration</dt>
+                  <dt>Runtime</dt>
                   <dd>{duration(data().job.startedAt, data().job.completedAt)}</dd>
+                </div>
+                <div>
+                  <dt>Scheduling</dt>
+                  <dd>{duration(data().job.schedulingStartedAt, data().job.startedAt ?? data().job.completedAt)}</dd>
                 </div>
                 <div>
                   <dt>Updated</dt>

@@ -1265,6 +1265,7 @@ export interface JobSummary {
   lastError: string;
   createdAt: string;
   updatedAt: string;
+  schedulingStartedAt?: string;
   startedAt?: string;
   completedAt?: string;
   exitCode?: number;

@@ -207,6 +207,10 @@ worker:
   # (spec.resources, shared by the job container and its buildkit/DinD
   # sidecars), or "container" (the job container only). Empty means "auto".
   jobResourceScope: ""
+  # Maximum wait for a job's main container to start, including scheduling.
+  jobStartupTimeout: "30m"
+  # Use "disabled" only when no node autoscaler can add capacity.
+  jobAutoscaling: "auto"
   autoscaling:
     enabled: false
     minReplicas: 1

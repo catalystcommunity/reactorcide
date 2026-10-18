@@ -145,9 +145,10 @@ func (s *WorkerService) recoverLostJob(ctx context.Context, job *models.Job) {
 		return
 	}
 
-	requeued, matched, err := s.deps.Store.UpdateJobStatusGuarded(ctx, job.JobID, []string{"running"}, func(j *models.Job) {
+	requeued, matched, err := s.deps.Store.UpdateJobStatusGuarded(ctx, job.JobID, []string{"scheduling", "running"}, func(j *models.Job) {
 		j.Status = "submitted"
 		j.StartedAt = nil
+		j.SchedulingStartedAt = nil
 		j.WorkerID = nil
 		j.CorndogsTaskID = nil
 		j.RetryCount++
@@ -166,7 +167,9 @@ func (s *WorkerService) recoverLostJob(ctx context.Context, job *models.Job) {
 		// already counts this attempt.
 		logger.WithError(err).Warn("Failed to submit replacement corndogs task for lost job")
 		if _, _, revertErr := s.deps.Store.UpdateJobStatusGuarded(ctx, job.JobID, []string{"submitted"}, func(j *models.Job) {
-			j.Status = "running"
+			j.Status = job.Status
+			j.SchedulingStartedAt = job.SchedulingStartedAt
+			j.StartedAt = job.StartedAt
 			j.LastError = "lost: replacement task submission failed"
 		}); revertErr != nil {
 			logger.WithError(revertErr).Warn("Failed to return lost job to running after submission failure")
@@ -190,7 +193,7 @@ func (s *WorkerService) recoverLostJob(ctx context.Context, job *models.Job) {
 // job's own VCS check.
 func (s *WorkerService) failLostJob(ctx context.Context, job *models.Job, reason string) {
 	now := time.Now().UTC()
-	failed, matched, err := s.deps.Store.UpdateJobStatusGuarded(ctx, job.JobID, []string{"running"}, func(j *models.Job) {
+	failed, matched, err := s.deps.Store.UpdateJobStatusGuarded(ctx, job.JobID, []string{"scheduling", "running"}, func(j *models.Job) {
 		j.Status = "failed"
 		j.LastError = reason
 		j.CompletedAt = &now

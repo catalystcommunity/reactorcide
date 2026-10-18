@@ -144,9 +144,9 @@ func KillJob(ctx context.Context, st store.Store, corndogsClient corndogs.Client
 // "cancelling" itself, to allow escalating a stuck graceful cancel.
 func cancellableFromStatuses(kill bool) []string {
 	if kill {
-		return []string{"submitted", "queued", "running", "cancelling"}
+		return []string{"submitted", "queued", "scheduling", "running", "cancelling"}
 	}
-	return []string{"submitted", "queued", "running"}
+	return []string{"submitted", "queued", "scheduling", "running"}
 }
 
 // transitionJob drives a job into (or through) the cancel/kill flow. It
@@ -265,7 +265,7 @@ func transitionJobBestEffort(ctx context.Context, st store.Store, corndogsClient
 		} else {
 			job.LastError = "cancelled"
 		}
-	case "running", "cancelling":
+	case "scheduling", "running", "cancelling":
 		// Hand off to the worker: flip to "cancelling" (+ cancel_mode) and
 		// let job_processor.go's cancel-poll do the rest on its next
 		// heartbeat tick.

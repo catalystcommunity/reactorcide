@@ -63,6 +63,17 @@ type WorkflowOutputReader interface {
 	TakeWorkflowOutput(jobID string) (string, bool)
 }
 
+// ExecutionTimingReader returns timestamps from the runtime's main container.
+// Zero values mean that the container has not reached that state.
+type ExecutionTimingReader interface {
+	ExecutionTiming(ctx context.Context, jobID string) (ExecutionTiming, error)
+}
+
+type ExecutionTiming struct {
+	StartedAt  time.Time
+	FinishedAt time.Time
+}
+
 // ResourceSampleOptions selects the resource groups for one snapshot.
 type ResourceSampleOptions struct {
 	IncludeStorage bool

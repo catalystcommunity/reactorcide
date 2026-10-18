@@ -93,7 +93,8 @@ WorkerCharacteristics = {
 }
 
 RequestJobRequest = {
-    worker_characteristics: WorkerCharacteristics
+    worker_characteristics: WorkerCharacteristics,
+    ? reports_execution_timing: bool
 }
 
 ;;; EnvVar is a single environment variable key/value pair. Used both for
@@ -173,7 +174,8 @@ RequestJobResponse = {
 ;;; RunningLease identifies one lease a worker is currently executing, for
 ;;; Heartbeat to extend the matching corndogs task's timeout.
 RunningLease = {
-    lease_id: text
+    lease_id: text,
+    ? started_at: text
 }
 
 HeartbeatRequest = {
@@ -285,7 +287,9 @@ ReportResultRequest = {
     exit_code: int,
     status: text,
     ? error: text,
-    ? workflow_output: text
+    ? workflow_output: text,
+    ? started_at: text,
+    ? finished_at: text
 }
 ReportResultResponse = {
     ok: bool

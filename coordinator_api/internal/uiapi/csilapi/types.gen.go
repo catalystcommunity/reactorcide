@@ -1341,30 +1341,31 @@ type GetJobLogsResponse struct {
 
 // JobSummary represents a structured data type
 type JobSummary struct {
-	JobId            string  `json:"job_id" yaml:"job_id"`
-	Name             string  `json:"name" yaml:"name"`
-	Description      string  `json:"description" yaml:"description"`
-	Status           string  `json:"status" yaml:"status"`
-	LastError        string  `json:"last_error" yaml:"last_error"`
-	CreatedAt        string  `json:"created_at" yaml:"created_at"`
-	UpdatedAt        string  `json:"updated_at" yaml:"updated_at"`
-	StartedAt        *string `json:"started_at,omitempty" yaml:"started_at,omitempty"`
-	CompletedAt      *string `json:"completed_at,omitempty" yaml:"completed_at,omitempty"`
-	ExitCode         *int64  `json:"exit_code,omitempty" yaml:"exit_code,omitempty"`
-	SourceUrl        string  `json:"source_url" yaml:"source_url"`
-	SourceRef        string  `json:"source_ref" yaml:"source_ref"`
-	SourceType       string  `json:"source_type" yaml:"source_type"`
-	SourcePath       string  `json:"source_path" yaml:"source_path"`
-	RunnerImage      string  `json:"runner_image" yaml:"runner_image"`
-	QueueName        string  `json:"queue_name" yaml:"queue_name"`
-	Priority         int64   `json:"priority" yaml:"priority"`
-	ParentJobId      *string `json:"parent_job_id,omitempty" yaml:"parent_job_id,omitempty"`
-	ProjectId        *string `json:"project_id,omitempty" yaml:"project_id,omitempty"`
-	WorkflowId       *string `json:"workflow_id,omitempty" yaml:"workflow_id,omitempty"`
-	WorkflowNodeName string  `json:"workflow_node_name" yaml:"workflow_node_name"`
-	CiOrigin         string  `json:"ci_origin" yaml:"ci_origin"`
-	ExecutionProfile string  `json:"execution_profile" yaml:"execution_profile"`
-	WorkerClass      string  `json:"worker_class" yaml:"worker_class"`
+	JobId               string  `json:"job_id" yaml:"job_id"`
+	Name                string  `json:"name" yaml:"name"`
+	Description         string  `json:"description" yaml:"description"`
+	Status              string  `json:"status" yaml:"status"`
+	LastError           string  `json:"last_error" yaml:"last_error"`
+	CreatedAt           string  `json:"created_at" yaml:"created_at"`
+	UpdatedAt           string  `json:"updated_at" yaml:"updated_at"`
+	SchedulingStartedAt *string `json:"scheduling_started_at,omitempty" yaml:"scheduling_started_at,omitempty"`
+	StartedAt           *string `json:"started_at,omitempty" yaml:"started_at,omitempty"`
+	CompletedAt         *string `json:"completed_at,omitempty" yaml:"completed_at,omitempty"`
+	ExitCode            *int64  `json:"exit_code,omitempty" yaml:"exit_code,omitempty"`
+	SourceUrl           string  `json:"source_url" yaml:"source_url"`
+	SourceRef           string  `json:"source_ref" yaml:"source_ref"`
+	SourceType          string  `json:"source_type" yaml:"source_type"`
+	SourcePath          string  `json:"source_path" yaml:"source_path"`
+	RunnerImage         string  `json:"runner_image" yaml:"runner_image"`
+	QueueName           string  `json:"queue_name" yaml:"queue_name"`
+	Priority            int64   `json:"priority" yaml:"priority"`
+	ParentJobId         *string `json:"parent_job_id,omitempty" yaml:"parent_job_id,omitempty"`
+	ProjectId           *string `json:"project_id,omitempty" yaml:"project_id,omitempty"`
+	WorkflowId          *string `json:"workflow_id,omitempty" yaml:"workflow_id,omitempty"`
+	WorkflowNodeName    string  `json:"workflow_node_name" yaml:"workflow_node_name"`
+	CiOrigin            string  `json:"ci_origin" yaml:"ci_origin"`
+	ExecutionProfile    string  `json:"execution_profile" yaml:"execution_profile"`
+	WorkerClass         string  `json:"worker_class" yaml:"worker_class"`
 }
 
 // ListJobsRequest represents a structured data type

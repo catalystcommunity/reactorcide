@@ -187,12 +187,13 @@ type JobResponse struct {
 	ImagePullSecrets []string `json:"image_pull_secrets,omitempty"`
 
 	// Execution info
-	TimeoutSeconds int        `json:"timeout_seconds"`
-	Priority       int        `json:"priority"`
-	QueueName      string     `json:"queue_name"`
-	StartedAt      *time.Time `json:"started_at,omitempty"`
-	CompletedAt    *time.Time `json:"completed_at,omitempty"`
-	ExitCode       *int       `json:"exit_code,omitempty"`
+	TimeoutSeconds      int        `json:"timeout_seconds"`
+	Priority            int        `json:"priority"`
+	QueueName           string     `json:"queue_name"`
+	SchedulingStartedAt *time.Time `json:"scheduling_started_at,omitempty"`
+	StartedAt           *time.Time `json:"started_at,omitempty"`
+	CompletedAt         *time.Time `json:"completed_at,omitempty"`
+	ExitCode            *int       `json:"exit_code,omitempty"`
 
 	// Object store references
 	LogsObjectKey      string `json:"logs_object_key,omitempty"`
@@ -1430,9 +1431,10 @@ func (h *JobHandler) jobToResponse(job *models.Job) JobResponse {
 		Priority:         job.Priority,
 		QueueName:        job.QueueName,
 
-		StartedAt:   job.StartedAt,
-		CompletedAt: job.CompletedAt,
-		ExitCode:    job.ExitCode,
+		SchedulingStartedAt: job.SchedulingStartedAt,
+		StartedAt:           job.StartedAt,
+		CompletedAt:         job.CompletedAt,
+		ExitCode:            job.ExitCode,
 
 		LogsObjectKey:      job.LogsObjectKey,
 		ArtifactsObjectKey: job.ArtifactsObjectKey,
@@ -1571,7 +1573,7 @@ func (h *JobHandler) commonJobQueryFilters(r *http.Request) map[string]interface
 	filters := make(map[string]interface{})
 
 	if status := r.URL.Query().Get("status"); status != "" {
-		validStatuses := []string{"submitted", "queued", "running", "cancelling", "completed", "failed", "cancelled", "timeout"}
+		validStatuses := []string{"submitted", "queued", "scheduling", "running", "cancelling", "completed", "failed", "cancelled", "timeout"}
 		for _, validStatus := range validStatuses {
 			if status == validStatus {
 				filters["status"] = status

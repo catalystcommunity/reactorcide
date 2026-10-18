@@ -237,6 +237,8 @@ func renderStatus(job *models.Job) (emoji string, text string) {
 		return "⏳", "submitted"
 	case "queued":
 		return "⏳", "queued"
+	case "scheduling":
+		return "🟡", "scheduling"
 	case "running":
 		return "🟡", "running"
 	case "completed":

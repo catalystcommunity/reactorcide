@@ -300,7 +300,7 @@ func (ps PostgresDbStore) EnsureDefaultQueue(ctx context.Context) error {
 // models.Job.CanBeCancelled/IsCancelling/IsCompleted's status set rather than
 // redefining it, so this list can't silently drift from the cancel/kill state
 // machine those methods encode.
-var nonTerminalJobStatuses = []string{"submitted", "queued", "running", "cancelling"}
+var nonTerminalJobStatuses = []string{"submitted", "queued", "scheduling", "running", "cancelling"}
 
 // ListNonTerminalJobsByQueue lists every job routed to queueUUID (the
 // Corndogs queue name, i.e. models.Job.QueueName) that is not yet in a

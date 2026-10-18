@@ -11996,7 +11996,7 @@ func DecodeGetJobLogsResponse(csilData []byte) (GetJobLogsResponse, error) {
 
 // csilEncJobSummary builds the canonical CBOR value tree for a JobSummary.
 func csilEncJobSummary(csilV JobSummary) cborValue {
-	csilEntries := make(cborMap, 0, 24)
+	csilEntries := make(cborMap, 0, 25)
 	csilEntries = append(csilEntries, cborEntry{cborText("name"), cborText(csilV.Name)})
 	csilEntries = append(csilEntries, cborEntry{cborText("job_id"), cborText(csilV.JobId)})
 	csilEntries = append(csilEntries, cborEntry{cborText("status"), cborText(csilV.Status)})
@@ -12033,6 +12033,9 @@ func csilEncJobSummary(csilV JobSummary) cborValue {
 	}
 	csilEntries = append(csilEntries, cborEntry{cborText("execution_profile"), cborText(csilV.ExecutionProfile)})
 	csilEntries = append(csilEntries, cborEntry{cborText("workflow_node_name"), cborText(csilV.WorkflowNodeName)})
+	if csilV.SchedulingStartedAt != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("scheduling_started_at"), cborText((*csilV.SchedulingStartedAt))})
+	}
 	return csilEntries
 }
 
@@ -12115,6 +12118,13 @@ func csilDecJobSummary(csilRoot cborValue) (JobSummary, error) {
 			return csilOut, csilErr
 		}
 		csilOut.UpdatedAt = csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "scheduling_started_at"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.SchedulingStartedAt = &csilVal
 	}
 	if csilField, csilOk := cborMapGet(csilRoot, "started_at"); csilOk {
 		csilVal, csilErr := (cborAsText)(csilField)
