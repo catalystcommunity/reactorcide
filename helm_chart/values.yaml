@@ -389,6 +389,10 @@ uiAuth:
   # fingerprint pin, not the hostname, is the trust anchor.
   linkkeysRpAddr: ""
   linkkeysRpFingerprints: ""
+  # rp only, optional: the LinkKeys application_id sent on sign-request
+  # (1-128 of A-Z a-z 0-9 - _ .). Empty: the RP server uses the API-key
+  # account username. Users consent per application, so keep it stable.
+  linkkeysRpApplicationId: ""
   # rp only, first boot: the RP server's API key. Presented once — the
   # coordinator persists it encrypted in the DB and the env var can be
   # dropped afterward. IMPORTANT: set via existingSecret in production, not

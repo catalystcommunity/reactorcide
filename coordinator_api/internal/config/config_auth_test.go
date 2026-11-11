@@ -1,6 +1,9 @@
 package config
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 // withUIAuthConfig saves and restores every UI-auth config var a test
 // mutates, so tests can run in any order without leaking state (these are
@@ -12,7 +15,9 @@ func withUIAuthConfig(t *testing.T) func() {
 	origAddr := LinkKeysRPAddr
 	origFingerprints := LinkKeysRPFingerprints
 	origLocalName := LocalRPName
+	origAppID := LinkKeysRPApplicationID
 	return func() {
+		LinkKeysRPApplicationID = origAppID
 		UIAuthMode = origMode
 		LinkKeysRPAddr = origAddr
 		LinkKeysRPFingerprints = origFingerprints
@@ -88,5 +93,30 @@ func TestSplitTrustedFingerprints(t *testing.T) {
 	got := SplitTrustedFingerprints()
 	if len(got) != 2 || got[0] != "aa:bb" || got[1] != "cc:dd" {
 		t.Fatalf("SplitTrustedFingerprints() = %v", got)
+	}
+}
+
+func TestValidateUIAuthModeRPApplicationID(t *testing.T) {
+	defer withUIAuthConfig(t)()
+	UIAuthMode = UIAuthModeRP
+	LinkKeysRPAddr = "rp.example.com:4987"
+	LinkKeysRPFingerprints = "abc123"
+
+	for _, tc := range []struct {
+		id      string
+		wantErr bool
+	}{
+		{"", false},
+		{"reactorcide-ui", false},
+		{"Reactorcide_UI.v2", false},
+		{"has space", true},
+		{"slash/name", true},
+		{strings.Repeat("a", 128), false},
+		{strings.Repeat("a", 129), true},
+	} {
+		LinkKeysRPApplicationID = tc.id
+		if err := ValidateUIAuthMode(); (err != nil) != tc.wantErr {
+			t.Errorf("ValidateUIAuthMode() with application id %q: err = %v, wantErr %v", tc.id, err, tc.wantErr)
+		}
 	}
 }

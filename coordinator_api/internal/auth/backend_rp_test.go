@@ -11,6 +11,8 @@ import (
 
 	localrp "github.com/catalystcommunity/linkkeys/sdks/local-rp/go"
 	api "github.com/catalystcommunity/linkkeys/sdks/local-rp/go/generated"
+
+	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/config"
 )
 
 // fakeRPTransport is a hand-rolled RPTransport test double: canned
@@ -368,3 +370,42 @@ func TestRPBackendBeginLoginRequestsHandleClaim(t *testing.T) {
 		}
 	}
 }
+
+// TestRPBackendBeginLoginApplicationID pins application_id on sign-request
+// (LinkKeys 0.16.7 keys standing consent per application): absent when
+// unconfigured, so the RP server uses the account username, and sent
+// verbatim when REACTORCIDE_LINKKEYS_RP_APPLICATION_ID is set.
+func TestRPBackendBeginLoginApplicationID(t *testing.T) {
+	for _, tc := range []struct {
+		name, configured string
+		want             *string
+	}{
+		{name: "unset", configured: "", want: nil},
+		{name: "set", configured: " reactorcide-ui ", want: ptrString("reactorcide-ui")},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			old := config.LinkKeysRPApplicationID
+			config.LinkKeysRPApplicationID = tc.configured
+			t.Cleanup(func() { config.LinkKeysRPApplicationID = old })
+
+			transport := newFakeRPTransport()
+			transport.responses["sign-request"] = api.EncodeRpSignResponse(api.RpSignResponse{SignedRequest: "signed-request-blob"})
+			backend := newTestRPBackend(transport)
+			if _, _, err := backend.BeginLogin(context.Background(), "tod@example.com", "https://cb"); err != nil {
+				t.Fatalf("BeginLogin() error = %v", err)
+			}
+			req, err := api.DecodeRpSignRequest(transport.payloads["sign-request"])
+			if err != nil {
+				t.Fatalf("decode sign-request payload: %v", err)
+			}
+			switch {
+			case tc.want == nil && req.ApplicationId != nil:
+				t.Errorf("application_id = %q, want absent", *req.ApplicationId)
+			case tc.want != nil && (req.ApplicationId == nil || *req.ApplicationId != *tc.want):
+				t.Errorf("application_id = %v, want %q", req.ApplicationId, *tc.want)
+			}
+		})
+	}
+}
+
+func ptrString(s string) *string { return &s }
