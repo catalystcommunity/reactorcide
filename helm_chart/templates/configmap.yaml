@@ -74,6 +74,9 @@ data:
   {{- if eq .Values.uiAuth.mode "rp" }}
   REACTORCIDE_LINKKEYS_RP_ADDR: {{ .Values.uiAuth.linkkeysRpAddr | quote }}
   REACTORCIDE_LINKKEYS_RP_FINGERPRINTS: {{ .Values.uiAuth.linkkeysRpFingerprints | quote }}
+  {{- if .Values.uiAuth.linkkeysRpApplicationId }}
+  REACTORCIDE_LINKKEYS_RP_APPLICATION_ID: {{ .Values.uiAuth.linkkeysRpApplicationId | quote }}
+  {{- end }}
   {{- end }}
   {{- if .Values.uiAuth.firstAdmin }}
   REACTORCIDE_FIRST_ADMIN: {{ .Values.uiAuth.firstAdmin | quote }}

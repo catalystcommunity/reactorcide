@@ -97,6 +97,18 @@ func rpRequestedClaims() *api.ClaimRequest {
 	}
 }
 
+// rpApplicationID returns the configured LinkKeys application_id, or nil so
+// the RP server falls back to the API-key account username. Since LinkKeys
+// 0.16.7 standing consent is per application, so this value must stay stable:
+// changing it makes every user consent again.
+func rpApplicationID() *string {
+	id := strings.TrimSpace(config.LinkKeysRPApplicationID)
+	if id == "" {
+		return nil
+	}
+	return &id
+}
+
 // BeginLogin is steps 1-2 of example.md's flow: Rp/sign-request, then build
 // the browser-redirect URL to the user's chosen LinkKeys domain
 // (identitySelector's domain; its handle, if present, rides along as the
@@ -115,6 +127,7 @@ func (b *RPBackend) BeginLogin(ctx context.Context, identitySelector, callbackUR
 	signResp, err := b.transport.Call(ctx, "sign-request", api.EncodeRpSignRequest(api.RpSignRequest{
 		CallbackUrl:     callbackURL,
 		Nonce:           nonce,
+		ApplicationId:   rpApplicationID(),
 		RequestedClaims: rpRequestedClaims(),
 	}))
 	if err != nil {
