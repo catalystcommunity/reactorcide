@@ -1,4 +1,4 @@
-import { createSignal, onMount } from 'solid-js'
+import { cell } from '~/ui/store.ts'
 
 /**
  * Theme selection.
@@ -25,12 +25,16 @@ function readStored(): Theme {
   return 'system'
 }
 
-const [theme, setThemeSignal] = createSignal<Theme>(readStored())
+/** In the store's `ui` collection, so the header toggle renders on a change. */
+export const UI = 'ui'
+const themeCell = cell<Theme>(UI, 'theme', readStored())
 
-export { theme }
+export function theme(): Theme {
+  return themeCell.get()
+}
 
 export function setTheme(next: Theme): void {
-  setThemeSignal(next)
+  themeCell.set(next)
   applyTheme(next)
   try {
     localStorage.setItem(STORAGE_KEY, next)
@@ -49,9 +53,9 @@ export function applyTheme(next: Theme): void {
   }
 }
 
-/** Applies the stored theme as early as possible. */
-export function useThemeBootstrap(): void {
-  onMount(() => applyTheme(theme()))
+/** Applies the stored theme. index.html's inline script already did this before first paint. */
+export function bootstrapTheme(): void {
+  applyTheme(theme())
 }
 
 /** Cycles light -> dark -> system, which is the order a toggle button walks. */

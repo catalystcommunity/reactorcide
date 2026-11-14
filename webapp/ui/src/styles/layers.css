@@ -1,0 +1,10 @@
+/*
+ * Layer order. This file is imported FIRST (main.ts), because the first
+ * declaration of a layer fixes its place.
+ *
+ * `page` holds the element rules (h1, a, :focus-visible). It comes before
+ * `zest`, so the Zest control defaults win over a page rule for an element
+ * type -- otherwise a page `button` or `input` rule reaches inside every
+ * light DOM control. Class rules stay unlayered and win over both.
+ */
+@layer page, zest;

@@ -22,6 +22,9 @@ type Organization struct {
 	IsPrivate            bool       `gorm:"not null;default:false" json:"is_private"`
 	Status               string     `gorm:"type:text;not null;default:'active'" json:"status"`
 	SecretsInitializedAt *time.Time `json:"secrets_initialized_at,omitempty"`
+	// DuplicateEvents decides whether a second delivery of the same change
+	// (same repo, event type, ref, commit and PR) runs again: "run" or "skip".
+	DuplicateEvents string `gorm:"type:text;not null;default:'run'" json:"duplicate_events"`
 	CreatedAt            time.Time  `gorm:"autoCreateTime:false;default:timezone('utc', now())" json:"created_at"`
 	UpdatedAt            time.Time  `gorm:"autoUpdateTime:false;default:timezone('utc', now())" json:"updated_at"`
 }

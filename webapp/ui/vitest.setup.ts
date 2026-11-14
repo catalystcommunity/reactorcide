@@ -1,16 +1,23 @@
-import { cleanup } from '@solidjs/testing-library'
+import '@testing-library/jest-dom/vitest'
 import { afterEach, beforeEach } from 'vitest'
+import { defineZest } from './src/ui/zest.ts'
+import { syncRouteFromLocation } from './src/ui/router.ts'
 
-// Without this NOTHING is unmounted between tests: the previous render stays
-// in the document and every query then finds two of everything. The symptom
-// reads as a duplicate-element bug in the component under test. It is not.
-afterEach(cleanup)
+// The app defines the Zest tags at boot; tests do the same.
+defineZest()
 
-// @solidjs/router reads the real history, so a test that navigates leaves the
-// next test starting on whatever route it ended on. Only shows up once a
-// second test navigates, which is why it is reset here rather than per file.
+// The router reads the real history, so a test that navigates would leave the
+// next test starting on whatever route it ended on. Reset it for each test.
 beforeEach(() => {
   window.history.pushState({}, '', '/app/')
+  syncRouteFromLocation()
+})
+
+// Without this nothing is removed between tests: the previous element stays in
+// the document, keeps its subscriptions, and every query finds two of
+// everything. Removing it also runs each element's disconnect cleanup.
+afterEach(() => {
+  document.body.replaceChildren()
 })
 
 // No real WebSocket in tests.

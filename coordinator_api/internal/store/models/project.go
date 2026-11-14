@@ -73,6 +73,10 @@ type Project struct {
 	// IsPrivate marks the project as private. Effective visibility is
 	// IsPrivate OR the owning org's (user's) IsPrivate.
 	IsPrivate bool `gorm:"not null;default:false" json:"is_private"`
+
+	// DuplicateEvents overrides the organization setting: "inherit", "run" or
+	// "skip".
+	DuplicateEvents string `gorm:"type:text;not null;default:'inherit'" json:"duplicate_events,omitempty"`
 }
 
 // TableName specifies the table name for the model

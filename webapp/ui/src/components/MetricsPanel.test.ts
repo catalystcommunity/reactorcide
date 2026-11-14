@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { describeUnavailable, humanReason } from './MetricsPanel.tsx'
+import { describeUnavailable, humanReason } from './MetricsPanel.ts'
 
 /**
  * The unavailable lines say what the coordinator decided, in plain words.

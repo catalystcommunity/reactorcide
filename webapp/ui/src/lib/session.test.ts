@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { adminOrgIds, canManageSomeOrg } from './session.tsx'
+import { adminOrgIds, canManageSomeOrg } from './session.ts'
 import type { SessionSummary } from '~/api/auth.ts'
 
 function sessionWith(overrides: Partial<SessionSummary>): SessionSummary {

@@ -6,6 +6,7 @@ import (
 
 	"github.com/catalystcommunity/app-utils-go/logging"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/jobtelemetry"
+	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/resourcehistory"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store/models"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/uiapi"
@@ -196,6 +197,16 @@ func (s *WorkerService) ReportResult(ctx context.Context, req csilapi.ReportResu
 			logging.Log.WithError(err).WithField("job_id", job.JobID).Warn("Failed to compact terminal job telemetry")
 		}
 		cancel()
+		// The run's resource summary, for the job resource history. Best
+		// effort: a failure here leaves no row, and the history read computes
+		// it later. It never fails the result.
+		if summaries, ok := s.deps.Store.(store.ResourceSummaryStore); ok {
+			summaryCtx, cancelSummary := context.WithTimeout(context.Background(), 15*time.Second)
+			if _, err := resourcehistory.Refresh(summaryCtx, s.deps.ObjectStore, summaries, job.JobID); err != nil {
+				logging.Log.WithError(err).WithField("job_id", job.JobID).Warn("Failed to store job resource summary")
+			}
+			cancelSummary()
+		}
 	}
 
 	return csilapi.ReportResultResponse{Ok: true}, nil

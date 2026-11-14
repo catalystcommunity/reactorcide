@@ -33,6 +33,8 @@ import (
 // can run an authorization check against that scope.
 type DataStore interface {
 	store.Store
+	// Per-run resource summaries for get-job-resource-history.
+	store.ResourceSummaryStore
 	authz.RoleStore
 	auth.LoginServiceStore
 	auth.CredentialStore

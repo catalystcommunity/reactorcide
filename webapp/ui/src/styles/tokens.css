@@ -209,6 +209,33 @@
   --shadow-lg: 0 14px 38px rgba(0, 0, 0, 0.6);
 }
 
+/*
+ * The Zest tokens, mapped from the palette above. Declared on :root next to
+ * the palette, so a theme switch (which redefines the palette on :root)
+ * reaches the controls too. These are GLOBAL tokens only: a family or widget
+ * token set to var(...) on :root would resolve here and stop following a
+ * parent's change.
+ */
+:root {
+  --zest-color-window: var(--surface);
+  --zest-color-window-text: var(--text);
+  --zest-color-face: var(--surface-raised);
+  --zest-color-face-text: var(--text);
+  --zest-color-field: var(--surface-raised);
+  --zest-color-field-text: var(--text);
+  --zest-color-highlight: var(--accent);
+  --zest-color-highlight-text: var(--accent-text);
+  --zest-color-secondary-text: var(--text-muted);
+  /* text-muted, not text-subtle: disabled text still meets 4.5:1. */
+  --zest-color-disabled-text: var(--text-muted);
+  /* A control border needs 3:1 against its ground; --border-strong does not reach it. */
+  --zest-color-border: var(--text-subtle);
+  --zest-color-focus: var(--accent);
+  --zest-color-invalid: var(--danger);
+  --zest-font-family: var(--font-sans);
+  --zest-control-radius: var(--radius);
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,

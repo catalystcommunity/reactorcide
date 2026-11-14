@@ -1,5 +1,4 @@
 import { defineConfig, type Plugin } from 'vite'
-import solid from 'vite-plugin-solid'
 import { resolve } from 'node:path'
 import { writeFileSync } from 'node:fs'
 
@@ -30,7 +29,7 @@ function preserveEmbedGitkeep(): Plugin {
 }
 
 export default defineConfig({
-  plugins: [solid(), preserveEmbedGitkeep()],
+  plugins: [preserveEmbedGitkeep()],
   // The SPA is served from /app/ by the Go binary, so every asset URL it emits
   // must be absolute under that prefix. A relative base would break on deep
   // links like /app/workflows/01ABC, where the browser would resolve assets
@@ -42,6 +41,11 @@ export default defineConfig({
     outDir: EMBED_DIR,
     emptyOutDir: true,
     sourcemap: true,
+    target: 'es2022',
+    // Keep light-dark() in the Zest tokens. Vite's default CSS target rewrites
+    // it to a page-wide media query, and then color-scheme on one part of the
+    // page does nothing.
+    cssTarget: ['chrome123', 'firefox120', 'safari17.5'],
   },
   server: {
     // `npm run dev` proxies the API surface to a locally running webapp so the

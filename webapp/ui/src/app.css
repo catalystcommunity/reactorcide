@@ -110,3 +110,8 @@
     gap: var(--space-3);
   }
 }
+
+/* The theme glyph is the whole face of its button; at the small size it is unreadable. */
+push-button.theme-toggle {
+  font-size: var(--text-md);
+}

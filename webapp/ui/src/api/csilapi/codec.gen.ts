@@ -2,7 +2,7 @@
 // Source: <csil spec>
 // Target: typescript-codec
 
-import type { AddGroupMemberRequest, AddGroupMemberResponse, AddTrustedDomainPatternRequest, AddTrustedDomainPatternResponse, AddTrustedIdentityRequest, AddTrustedIdentityResponse, AddVcsCredentialRequest, AddVcsCredentialResponse, AddWebhookSecretRequest, AddWebhookSecretResponse, AssignRoleRequest, AssignRoleResponse, AuthenticateRequest, AuthenticateResponse, AuthenticatedIdentity, BeginLoginRequest, BeginLoginResponse, BootstrapAdminRequest, BootstrapAdminResponse, CancelJobRequest, CancelJobResponse, CancelWorkflowRequest, CancelWorkflowResponse, CharacteristicEntry, CharacteristicScalar, CiPolicyDefaults, CiPolicyDetail, CiPolicyDocument, CiPolicyNodeAuthority, CiPolicyRule, CiPolicySubjectMatch, CiPolicyUse, CompleteLoginRequest, CompleteLoginResponse, CreateCiApprovalRequest, CreateCiApprovalResponse, CreateEnrollmentTokenRequest, CreateEnrollmentTokenResponse, CreateGroupRequest, CreateGroupResponse, CreateOrgRequest, CreateOrgResponse, CreatePoolRequest, CreatePoolResponse, CreateProjectRequest, CreateProjectResponse, CreateQueueRequest, CreateQueueResponse, CreateSecretGrantRequest, CreateSecretGrantResponse, DeactivateEnrollmentTokenRequest, DeactivateEnrollmentTokenResponse, DeactivateVcsCredentialRequest, DeactivateVcsCredentialResponse, DeactivateWebhookSecretRequest, DeactivateWebhookSecretResponse, DeleteCiPolicyRequest, DeleteCiPolicyResponse, DeleteExecutionProfileRequest, DeleteExecutionProfileResponse, DeleteGroupRequest, DeleteGroupResponse, DeleteOrgRequest, DeleteOrgResponse, DeletePoolRequest, DeletePoolResponse, DeleteProjectRequest, DeleteProjectResponse, DeleteQueueRequest, DeleteQueueResponse, DeleteSecretGrantRequest, DeleteSecretGrantResponse, DeleteSecretRequest, DeleteSecretResponse, DeleteVcsCredentialRequest, DeleteVcsCredentialResponse, DeleteWebhookSecretRequest, DeleteWebhookSecretResponse, DeleteWorkerClassRequest, DeleteWorkerClassResponse, DescribeFormMetadataRequest, DescribeFormMetadataResponse, DrainWorkerRequest, DrainWorkerResponse, EnrollmentTokenSummary, EnumChoice, ExecutionProfileSummary, GetAuthConfigRequest, GetAuthConfigResponse, GetCapabilitiesRequest, GetCapabilitiesResponse, GetCiPolicyRequest, GetCiPolicyResponse, GetGlobalSettingsRequest, GetGlobalSettingsResponse, GetJobLogsRequest, GetJobLogsResponse, GetJobMetricsRequest, GetJobMetricsResponse, GetJobRequest, GetJobResponse, GetProjectRequest, GetProjectResponse, GetWorkflowRequest, GetWorkflowResponse, GlobalSettingEntry, GroupMemberEntry, GroupSummary, JobLogEntry, JobMetricLabel, JobMetricPoint, JobMetricSeries, JobMetricUnavailable, JobSummary, KillJobRequest, KillJobResponse, ListEnrollmentTokensRequest, ListEnrollmentTokensResponse, ListExecutionProfilesRequest, ListExecutionProfilesResponse, ListGroupMembersRequest, ListGroupMembersResponse, ListGroupsRequest, ListGroupsResponse, ListJobsRequest, ListJobsResponse, ListOrgsRequest, ListOrgsResponse, ListPoolsRequest, ListPoolsResponse, ListProjectsRequest, ListProjectsResponse, ListQueuesRequest, ListQueuesResponse, ListRoleAssignmentsRequest, ListRoleAssignmentsResponse, ListSecretGrantsRequest, ListSecretGrantsResponse, ListSecretPathsRequest, ListSecretPathsResponse, ListTrustedDomainPatternsRequest, ListTrustedDomainPatternsResponse, ListTrustedIdentitiesRequest, ListTrustedIdentitiesResponse, ListUsersRequest, ListUsersResponse, ListVcsCredentialsRequest, ListVcsCredentialsResponse, ListWebhookSecretsRequest, ListWebhookSecretsResponse, ListWorkerClassesRequest, ListWorkerClassesResponse, ListWorkersRequest, ListWorkersResponse, ListWorkflowsRequest, ListWorkflowsResponse, LogoutRequest, LogoutResponse, OrgSummary, ProjectDetail, ProjectSummary, PutCiPolicyRequest, PutCiPolicyResponse, PutExecutionProfileRequest, PutExecutionProfileResponse, PutWorkerClassRequest, PutWorkerClassResponse, QueueSummary, RemoveGroupMemberRequest, RemoveGroupMemberResponse, RemoveTrustedDomainPatternRequest, RemoveTrustedDomainPatternResponse, RemoveTrustedIdentityRequest, RemoveTrustedIdentityResponse, RenameQueueRequest, RenameQueueResponse, RetryJobRequest, RetryJobResponse, RetryUnsuccessfulJobsRequest, RetryUnsuccessfulJobsResponse, RetryWorkflowRequest, RetryWorkflowResponse, RevokeRoleRequest, RevokeRoleResponse, RoleAssignment, RoleSummary, SecretGrant, SecretPathEntry, ServiceError, SetDefaultOrgRequest, SetDefaultOrgResponse, SetSecretRequest, SetSecretResponse, SetWorkerClassPoolRequest, SetWorkerClassPoolResponse, SetWorkerStatusRequest, SetWorkerStatusResponse, TrustedDomainPattern, TrustedIdentity, UpdateGlobalSettingsRequest, UpdateGlobalSettingsResponse, UpdateGroupRequest, UpdateGroupResponse, UpdateOrgRequest, UpdateOrgResponse, UpdatePoolRequest, UpdatePoolResponse, UpdateProjectRequest, UpdateProjectResponse, UpdateSecretGrantRequest, UpdateSecretGrantResponse, UserSummary, VcsCredentialSummary, WebhookSecretSummary, WorkerCharacteristicEntry, WorkerCharacteristicValue, WorkerClassSummary, WorkerPoolSummary, WorkerSummary, WorkflowNodeSummary, WorkflowSummaryDetail } from "./types.gen.ts";
+import type { AddGroupMemberRequest, AddGroupMemberResponse, AddTrustedDomainPatternRequest, AddTrustedDomainPatternResponse, AddTrustedIdentityRequest, AddTrustedIdentityResponse, AddVcsCredentialRequest, AddVcsCredentialResponse, AddWebhookSecretRequest, AddWebhookSecretResponse, AssignRoleRequest, AssignRoleResponse, AuthenticateRequest, AuthenticateResponse, AuthenticatedIdentity, BeginLoginRequest, BeginLoginResponse, BootstrapAdminRequest, BootstrapAdminResponse, CancelJobRequest, CancelJobResponse, CancelWorkflowRequest, CancelWorkflowResponse, CharacteristicEntry, CharacteristicScalar, CiPolicyDefaults, CiPolicyDetail, CiPolicyDocument, CiPolicyNodeAuthority, CiPolicyRule, CiPolicySubjectMatch, CiPolicyUse, CompleteLoginRequest, CompleteLoginResponse, CreateCiApprovalRequest, CreateCiApprovalResponse, CreateEnrollmentTokenRequest, CreateEnrollmentTokenResponse, CreateGroupRequest, CreateGroupResponse, CreateOrgRequest, CreateOrgResponse, CreatePoolRequest, CreatePoolResponse, CreateProjectRequest, CreateProjectResponse, CreateQueueRequest, CreateQueueResponse, CreateScheduleRequest, CreateScheduleResponse, CreateSecretGrantRequest, CreateSecretGrantResponse, DeactivateEnrollmentTokenRequest, DeactivateEnrollmentTokenResponse, DeactivateVcsCredentialRequest, DeactivateVcsCredentialResponse, DeactivateWebhookSecretRequest, DeactivateWebhookSecretResponse, DeleteCiPolicyRequest, DeleteCiPolicyResponse, DeleteExecutionProfileRequest, DeleteExecutionProfileResponse, DeleteGroupRequest, DeleteGroupResponse, DeleteOrgRequest, DeleteOrgResponse, DeletePoolRequest, DeletePoolResponse, DeleteProjectRequest, DeleteProjectResponse, DeleteQueueRequest, DeleteQueueResponse, DeleteScheduleRequest, DeleteScheduleResponse, DeleteSecretGrantRequest, DeleteSecretGrantResponse, DeleteSecretRequest, DeleteSecretResponse, DeleteVcsCredentialRequest, DeleteVcsCredentialResponse, DeleteWebhookSecretRequest, DeleteWebhookSecretResponse, DeleteWorkerClassRequest, DeleteWorkerClassResponse, DescribeFormMetadataRequest, DescribeFormMetadataResponse, DrainWorkerRequest, DrainWorkerResponse, EnrollmentTokenSummary, EnumChoice, ExecutionProfileSummary, GetAuthConfigRequest, GetAuthConfigResponse, GetCapabilitiesRequest, GetCapabilitiesResponse, GetCiPolicyRequest, GetCiPolicyResponse, GetGlobalSettingsRequest, GetGlobalSettingsResponse, GetJobLogsRequest, GetJobLogsResponse, GetJobMetricsRequest, GetJobMetricsResponse, GetJobRequest, GetJobResourceHistoryRequest, GetJobResourceHistoryResponse, GetJobResponse, GetProjectRequest, GetProjectResponse, GetWorkflowRequest, GetWorkflowResponse, GlobalSettingEntry, GroupMemberEntry, GroupSummary, JobLogEntry, JobMetricLabel, JobMetricPoint, JobMetricSeries, JobMetricUnavailable, JobRunResourceSummary, JobSummary, KillJobRequest, KillJobResponse, ListEnrollmentTokensRequest, ListEnrollmentTokensResponse, ListExecutionProfilesRequest, ListExecutionProfilesResponse, ListGroupMembersRequest, ListGroupMembersResponse, ListGroupsRequest, ListGroupsResponse, ListJobsRequest, ListJobsResponse, ListOrgsRequest, ListOrgsResponse, ListPoolsRequest, ListPoolsResponse, ListProjectsRequest, ListProjectsResponse, ListQueuesRequest, ListQueuesResponse, ListRoleAssignmentsRequest, ListRoleAssignmentsResponse, ListScheduleFiresRequest, ListScheduleFiresResponse, ListSchedulesRequest, ListSchedulesResponse, ListSecretGrantsRequest, ListSecretGrantsResponse, ListSecretPathsRequest, ListSecretPathsResponse, ListTrustedDomainPatternsRequest, ListTrustedDomainPatternsResponse, ListTrustedIdentitiesRequest, ListTrustedIdentitiesResponse, ListUsersRequest, ListUsersResponse, ListVcsCredentialsRequest, ListVcsCredentialsResponse, ListWebhookSecretsRequest, ListWebhookSecretsResponse, ListWorkerClassesRequest, ListWorkerClassesResponse, ListWorkersRequest, ListWorkersResponse, ListWorkflowsRequest, ListWorkflowsResponse, LogoutRequest, LogoutResponse, OrgSummary, ProjectDetail, ProjectSummary, PutCiPolicyRequest, PutCiPolicyResponse, PutExecutionProfileRequest, PutExecutionProfileResponse, PutWorkerClassRequest, PutWorkerClassResponse, QueueSummary, RemoveGroupMemberRequest, RemoveGroupMemberResponse, RemoveTrustedDomainPatternRequest, RemoveTrustedDomainPatternResponse, RemoveTrustedIdentityRequest, RemoveTrustedIdentityResponse, RenameQueueRequest, RenameQueueResponse, RetryJobRequest, RetryJobResponse, RetryUnsuccessfulJobsRequest, RetryUnsuccessfulJobsResponse, RetryWorkflowRequest, RetryWorkflowResponse, RevokeRoleRequest, RevokeRoleResponse, RoleAssignment, RoleSummary, ScheduleFireSummary, ScheduleSummary, SecretGrant, SecretPathEntry, ServiceError, SetDefaultOrgRequest, SetDefaultOrgResponse, SetSecretRequest, SetSecretResponse, SetWorkerClassPoolRequest, SetWorkerClassPoolResponse, SetWorkerStatusRequest, SetWorkerStatusResponse, TrustedDomainPattern, TrustedIdentity, UpdateGlobalSettingsRequest, UpdateGlobalSettingsResponse, UpdateGroupRequest, UpdateGroupResponse, UpdateOrgRequest, UpdateOrgResponse, UpdatePoolRequest, UpdatePoolResponse, UpdateProjectRequest, UpdateProjectResponse, UpdateScheduleRequest, UpdateScheduleResponse, UpdateSecretGrantRequest, UpdateSecretGrantResponse, UserSummary, VcsCredentialSummary, WebhookSecretSummary, WorkerCharacteristicEntry, WorkerCharacteristicValue, WorkerClassSummary, WorkerPoolSummary, WorkerSummary, WorkflowNodeSummary, WorkflowSummaryDetail } from "./types.gen.ts";
 
 /** A CBOR semantic tag wrapping an inner value (e.g. tag 0 timestamp, tag 4 decimal). */
 export type CborTag = { readonly tag: number; readonly value: CborValue };
@@ -5030,6 +5030,422 @@ export function toGetJobMetricsResponseCbor(v: GetJobMetricsResponse): Uint8Arra
 
 export function fromGetJobMetricsResponseCbor(bytes: Uint8Array): GetJobMetricsResponse {
   return fromGetJobMetricsResponseCborValue(decode(bytes));
+}
+
+export function toScheduleSummaryCborValue(v: ScheduleSummary): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  csilMap.set("cron", v.cron);
+  csilMap.set("name", v.name);
+  csilMap.set("branch", v.branch);
+  csilMap.set("enabled", v.enabled);
+  csilMap.set("timezone", v.timezone);
+  csilMap.set("created_at", v.createdAt);
+  csilMap.set("last_error", v.lastError);
+  csilMap.set("project_id", v.projectId);
+  csilMap.set("updated_at", v.updatedAt);
+  csilMap.set("schedule_id", v.scheduleId);
+  if (v.lastFireAt !== undefined) csilMap.set("last_fire_at", v.lastFireAt);
+  if (v.nextFireAt !== undefined) csilMap.set("next_fire_at", v.nextFireAt);
+  csilMap.set("workflow_ref", v.workflowRef);
+  if (v.lastEventId !== undefined) csilMap.set("last_event_id", v.lastEventId);
+  return csilMap;
+}
+
+export function fromScheduleSummaryCborValue(value: CborValue): ScheduleSummary {
+  return {
+    scheduleId: asString(requireKey(value, "schedule_id")),
+    projectId: asString(requireKey(value, "project_id")),
+    name: asString(requireKey(value, "name")),
+    branch: asString(requireKey(value, "branch")),
+    workflowRef: asString(requireKey(value, "workflow_ref")),
+    cron: asString(requireKey(value, "cron")),
+    timezone: asString(requireKey(value, "timezone")),
+    enabled: asBool(requireKey(value, "enabled")),
+    nextFireAt: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "next_fire_at")),
+    lastFireAt: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "last_fire_at")),
+    lastEventId: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "last_event_id")),
+    lastError: asString(requireKey(value, "last_error")),
+    createdAt: asString(requireKey(value, "created_at")),
+    updatedAt: asString(requireKey(value, "updated_at")),
+  };
+}
+
+export function toScheduleSummaryCbor(v: ScheduleSummary): Uint8Array {
+  return encodeValue(toScheduleSummaryCborValue(v));
+}
+
+export function fromScheduleSummaryCbor(bytes: Uint8Array): ScheduleSummary {
+  return fromScheduleSummaryCborValue(decode(bytes));
+}
+
+export function toScheduleFireSummaryCborValue(v: ScheduleFireSummary): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  csilMap.set("error", v.error);
+  csilMap.set("status", v.status);
+  csilMap.set("fire_id", v.fireId);
+  if (v.eventId !== undefined) csilMap.set("event_id", v.eventId);
+  csilMap.set("fire_time", v.fireTime);
+  csilMap.set("schedule_id", v.scheduleId);
+  if (v.completedAt !== undefined) csilMap.set("completed_at", v.completedAt);
+  return csilMap;
+}
+
+export function fromScheduleFireSummaryCborValue(value: CborValue): ScheduleFireSummary {
+  return {
+    fireId: asString(requireKey(value, "fire_id")),
+    scheduleId: asString(requireKey(value, "schedule_id")),
+    fireTime: asString(requireKey(value, "fire_time")),
+    status: asString(requireKey(value, "status")),
+    eventId: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "event_id")),
+    error: asString(requireKey(value, "error")),
+    completedAt: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "completed_at")),
+  };
+}
+
+export function toScheduleFireSummaryCbor(v: ScheduleFireSummary): Uint8Array {
+  return encodeValue(toScheduleFireSummaryCborValue(v));
+}
+
+export function fromScheduleFireSummaryCbor(bytes: Uint8Array): ScheduleFireSummary {
+  return fromScheduleFireSummaryCborValue(decode(bytes));
+}
+
+export function toListSchedulesRequestCborValue(v: ListSchedulesRequest): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  csilMap.set("project_id", v.projectId);
+  return csilMap;
+}
+
+export function fromListSchedulesRequestCborValue(value: CborValue): ListSchedulesRequest {
+  return {
+    projectId: asString(requireKey(value, "project_id")),
+  };
+}
+
+export function toListSchedulesRequestCbor(v: ListSchedulesRequest): Uint8Array {
+  return encodeValue(toListSchedulesRequestCborValue(v));
+}
+
+export function fromListSchedulesRequestCbor(bytes: Uint8Array): ListSchedulesRequest {
+  return fromListSchedulesRequestCborValue(decode(bytes));
+}
+
+export function toListSchedulesResponseCborValue(v: ListSchedulesResponse): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  csilMap.set("schedules", v.schedules.map((csilE): CborValue => toScheduleSummaryCborValue(csilE)));
+  return csilMap;
+}
+
+export function fromListSchedulesResponseCborValue(value: CborValue): ListSchedulesResponse {
+  return {
+    schedules: asArray(requireKey(value, "schedules")).map((csilE) => fromScheduleSummaryCborValue(csilE)),
+  };
+}
+
+export function toListSchedulesResponseCbor(v: ListSchedulesResponse): Uint8Array {
+  return encodeValue(toListSchedulesResponseCborValue(v));
+}
+
+export function fromListSchedulesResponseCbor(bytes: Uint8Array): ListSchedulesResponse {
+  return fromListSchedulesResponseCborValue(decode(bytes));
+}
+
+export function toCreateScheduleRequestCborValue(v: CreateScheduleRequest): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  csilMap.set("cron", v.cron);
+  csilMap.set("name", v.name);
+  csilMap.set("branch", v.branch);
+  if (v.enabled !== undefined) csilMap.set("enabled", v.enabled);
+  if (v.timezone !== undefined) csilMap.set("timezone", v.timezone);
+  csilMap.set("project_id", v.projectId);
+  csilMap.set("workflow_ref", v.workflowRef);
+  return csilMap;
+}
+
+export function fromCreateScheduleRequestCborValue(value: CborValue): CreateScheduleRequest {
+  return {
+    projectId: asString(requireKey(value, "project_id")),
+    name: asString(requireKey(value, "name")),
+    branch: asString(requireKey(value, "branch")),
+    workflowRef: asString(requireKey(value, "workflow_ref")),
+    cron: asString(requireKey(value, "cron")),
+    timezone: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "timezone")),
+    enabled: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asBool(csilV))(mapGet(value, "enabled")),
+  };
+}
+
+export function toCreateScheduleRequestCbor(v: CreateScheduleRequest): Uint8Array {
+  return encodeValue(toCreateScheduleRequestCborValue(v));
+}
+
+export function fromCreateScheduleRequestCbor(bytes: Uint8Array): CreateScheduleRequest {
+  return fromCreateScheduleRequestCborValue(decode(bytes));
+}
+
+export function toCreateScheduleResponseCborValue(v: CreateScheduleResponse): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  csilMap.set("schedule", toScheduleSummaryCborValue(v.schedule));
+  return csilMap;
+}
+
+export function fromCreateScheduleResponseCborValue(value: CborValue): CreateScheduleResponse {
+  return {
+    schedule: fromScheduleSummaryCborValue(requireKey(value, "schedule")),
+  };
+}
+
+export function toCreateScheduleResponseCbor(v: CreateScheduleResponse): Uint8Array {
+  return encodeValue(toCreateScheduleResponseCborValue(v));
+}
+
+export function fromCreateScheduleResponseCbor(bytes: Uint8Array): CreateScheduleResponse {
+  return fromCreateScheduleResponseCborValue(decode(bytes));
+}
+
+export function toUpdateScheduleRequestCborValue(v: UpdateScheduleRequest): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  if (v.cron !== undefined) csilMap.set("cron", v.cron);
+  if (v.name !== undefined) csilMap.set("name", v.name);
+  if (v.branch !== undefined) csilMap.set("branch", v.branch);
+  if (v.enabled !== undefined) csilMap.set("enabled", v.enabled);
+  if (v.timezone !== undefined) csilMap.set("timezone", v.timezone);
+  csilMap.set("schedule_id", v.scheduleId);
+  if (v.workflowRef !== undefined) csilMap.set("workflow_ref", v.workflowRef);
+  return csilMap;
+}
+
+export function fromUpdateScheduleRequestCborValue(value: CborValue): UpdateScheduleRequest {
+  return {
+    scheduleId: asString(requireKey(value, "schedule_id")),
+    name: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "name")),
+    branch: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "branch")),
+    workflowRef: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "workflow_ref")),
+    cron: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "cron")),
+    timezone: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "timezone")),
+    enabled: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asBool(csilV))(mapGet(value, "enabled")),
+  };
+}
+
+export function toUpdateScheduleRequestCbor(v: UpdateScheduleRequest): Uint8Array {
+  return encodeValue(toUpdateScheduleRequestCborValue(v));
+}
+
+export function fromUpdateScheduleRequestCbor(bytes: Uint8Array): UpdateScheduleRequest {
+  return fromUpdateScheduleRequestCborValue(decode(bytes));
+}
+
+export function toUpdateScheduleResponseCborValue(v: UpdateScheduleResponse): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  csilMap.set("schedule", toScheduleSummaryCborValue(v.schedule));
+  return csilMap;
+}
+
+export function fromUpdateScheduleResponseCborValue(value: CborValue): UpdateScheduleResponse {
+  return {
+    schedule: fromScheduleSummaryCborValue(requireKey(value, "schedule")),
+  };
+}
+
+export function toUpdateScheduleResponseCbor(v: UpdateScheduleResponse): Uint8Array {
+  return encodeValue(toUpdateScheduleResponseCborValue(v));
+}
+
+export function fromUpdateScheduleResponseCbor(bytes: Uint8Array): UpdateScheduleResponse {
+  return fromUpdateScheduleResponseCborValue(decode(bytes));
+}
+
+export function toDeleteScheduleRequestCborValue(v: DeleteScheduleRequest): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  csilMap.set("schedule_id", v.scheduleId);
+  return csilMap;
+}
+
+export function fromDeleteScheduleRequestCborValue(value: CborValue): DeleteScheduleRequest {
+  return {
+    scheduleId: asString(requireKey(value, "schedule_id")),
+  };
+}
+
+export function toDeleteScheduleRequestCbor(v: DeleteScheduleRequest): Uint8Array {
+  return encodeValue(toDeleteScheduleRequestCborValue(v));
+}
+
+export function fromDeleteScheduleRequestCbor(bytes: Uint8Array): DeleteScheduleRequest {
+  return fromDeleteScheduleRequestCborValue(decode(bytes));
+}
+
+export function toDeleteScheduleResponseCborValue(v: DeleteScheduleResponse): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  csilMap.set("ok", v.ok);
+  return csilMap;
+}
+
+export function fromDeleteScheduleResponseCborValue(value: CborValue): DeleteScheduleResponse {
+  return {
+    ok: asBool(requireKey(value, "ok")),
+  };
+}
+
+export function toDeleteScheduleResponseCbor(v: DeleteScheduleResponse): Uint8Array {
+  return encodeValue(toDeleteScheduleResponseCborValue(v));
+}
+
+export function fromDeleteScheduleResponseCbor(bytes: Uint8Array): DeleteScheduleResponse {
+  return fromDeleteScheduleResponseCborValue(decode(bytes));
+}
+
+export function toListScheduleFiresRequestCborValue(v: ListScheduleFiresRequest): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  if (v.limit !== undefined) csilMap.set("limit", v.limit);
+  csilMap.set("schedule_id", v.scheduleId);
+  return csilMap;
+}
+
+export function fromListScheduleFiresRequestCborValue(value: CborValue): ListScheduleFiresRequest {
+  return {
+    scheduleId: asString(requireKey(value, "schedule_id")),
+    limit: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asNumber(csilV))(mapGet(value, "limit")),
+  };
+}
+
+export function toListScheduleFiresRequestCbor(v: ListScheduleFiresRequest): Uint8Array {
+  return encodeValue(toListScheduleFiresRequestCborValue(v));
+}
+
+export function fromListScheduleFiresRequestCbor(bytes: Uint8Array): ListScheduleFiresRequest {
+  return fromListScheduleFiresRequestCborValue(decode(bytes));
+}
+
+export function toListScheduleFiresResponseCborValue(v: ListScheduleFiresResponse): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  csilMap.set("fires", v.fires.map((csilE): CborValue => toScheduleFireSummaryCborValue(csilE)));
+  return csilMap;
+}
+
+export function fromListScheduleFiresResponseCborValue(value: CborValue): ListScheduleFiresResponse {
+  return {
+    fires: asArray(requireKey(value, "fires")).map((csilE) => fromScheduleFireSummaryCborValue(csilE)),
+  };
+}
+
+export function toListScheduleFiresResponseCbor(v: ListScheduleFiresResponse): Uint8Array {
+  return encodeValue(toListScheduleFiresResponseCborValue(v));
+}
+
+export function fromListScheduleFiresResponseCbor(bytes: Uint8Array): ListScheduleFiresResponse {
+  return fromListScheduleFiresResponseCborValue(decode(bytes));
+}
+
+export function toGetJobResourceHistoryRequestCborValue(v: GetJobResourceHistoryRequest): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  if (v.limit !== undefined) csilMap.set("limit", v.limit);
+  csilMap.set("job_id", v.jobId);
+  if (v.toTime !== undefined) csilMap.set("to_time", v.toTime);
+  if (v.fromTime !== undefined) csilMap.set("from_time", v.fromTime);
+  return csilMap;
+}
+
+export function fromGetJobResourceHistoryRequestCborValue(value: CborValue): GetJobResourceHistoryRequest {
+  return {
+    jobId: asString(requireKey(value, "job_id")),
+    fromTime: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "from_time")),
+    toTime: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "to_time")),
+    limit: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asNumber(csilV))(mapGet(value, "limit")),
+  };
+}
+
+export function toGetJobResourceHistoryRequestCbor(v: GetJobResourceHistoryRequest): Uint8Array {
+  return encodeValue(toGetJobResourceHistoryRequestCborValue(v));
+}
+
+export function fromGetJobResourceHistoryRequestCbor(bytes: Uint8Array): GetJobResourceHistoryRequest {
+  return fromGetJobResourceHistoryRequestCborValue(decode(bytes));
+}
+
+export function toJobRunResourceSummaryCborValue(v: JobRunResourceSummary): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  csilMap.set("job_id", v.jobId);
+  csilMap.set("status", v.status);
+  csilMap.set("created_at", v.createdAt);
+  if (v.sourceRef !== undefined) csilMap.set("source_ref", v.sourceRef);
+  if (v.startedAt !== undefined) csilMap.set("started_at", v.startedAt);
+  if (v.cpuPeakAt !== undefined) csilMap.set("cpu_peak_at", v.cpuPeakAt);
+  if (v.capabilities !== undefined) csilMap.set("capabilities", v.capabilities);
+  if (v.completedAt !== undefined) csilMap.set("completed_at", v.completedAt);
+  csilMap.set("sample_count", v.sampleCount);
+  if (v.memoryPeakAt !== undefined) csilMap.set("memory_peak_at", v.memoryPeakAt);
+  if (v.durationSeconds !== undefined) csilMap.set("duration_seconds", v.durationSeconds);
+  if (v.memoryAvgBytes !== undefined) csilMap.set("memory_avg_bytes", v.memoryAvgBytes);
+  if (v.memoryMaxBytes !== undefined) csilMap.set("memory_max_bytes", v.memoryMaxBytes);
+  if (v.memoryP95Bytes !== undefined) csilMap.set("memory_p95_bytes", v.memoryP95Bytes);
+  if (v.storageMaxBytes !== undefined) csilMap.set("storage_max_bytes", v.storageMaxBytes);
+  if (v.cpuAvgMillicores !== undefined) csilMap.set("cpu_avg_millicores", v.cpuAvgMillicores);
+  if (v.cpuMaxMillicores !== undefined) csilMap.set("cpu_max_millicores", v.cpuMaxMillicores);
+  if (v.cpuP95Millicores !== undefined) csilMap.set("cpu_p95_millicores", v.cpuP95Millicores);
+  if (v.memoryLimitBytes !== undefined) csilMap.set("memory_limit_bytes", v.memoryLimitBytes);
+  if (v.cpuLimitMillicores !== undefined) csilMap.set("cpu_limit_millicores", v.cpuLimitMillicores);
+  if (v.cpuRequestMillicores !== undefined) csilMap.set("cpu_request_millicores", v.cpuRequestMillicores);
+  return csilMap;
+}
+
+export function fromJobRunResourceSummaryCborValue(value: CborValue): JobRunResourceSummary {
+  return {
+    jobId: asString(requireKey(value, "job_id")),
+    status: asString(requireKey(value, "status")),
+    createdAt: asString(requireKey(value, "created_at")),
+    startedAt: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "started_at")),
+    completedAt: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "completed_at")),
+    durationSeconds: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asNumber(csilV))(mapGet(value, "duration_seconds")),
+    sourceRef: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "source_ref")),
+    capabilities: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asArray(csilV).map((csilE) => asString(csilE)))(mapGet(value, "capabilities")),
+    sampleCount: asNumber(requireKey(value, "sample_count")),
+    cpuAvgMillicores: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asNumber(csilV))(mapGet(value, "cpu_avg_millicores")),
+    cpuP95Millicores: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asNumber(csilV))(mapGet(value, "cpu_p95_millicores")),
+    cpuMaxMillicores: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asNumber(csilV))(mapGet(value, "cpu_max_millicores")),
+    cpuPeakAt: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "cpu_peak_at")),
+    cpuRequestMillicores: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asNumber(csilV))(mapGet(value, "cpu_request_millicores")),
+    cpuLimitMillicores: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asNumber(csilV))(mapGet(value, "cpu_limit_millicores")),
+    memoryAvgBytes: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asNumber(csilV))(mapGet(value, "memory_avg_bytes")),
+    memoryP95Bytes: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asNumber(csilV))(mapGet(value, "memory_p95_bytes")),
+    memoryMaxBytes: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asNumber(csilV))(mapGet(value, "memory_max_bytes")),
+    memoryPeakAt: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "memory_peak_at")),
+    memoryLimitBytes: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asNumber(csilV))(mapGet(value, "memory_limit_bytes")),
+    storageMaxBytes: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asNumber(csilV))(mapGet(value, "storage_max_bytes")),
+  };
+}
+
+export function toJobRunResourceSummaryCbor(v: JobRunResourceSummary): Uint8Array {
+  return encodeValue(toJobRunResourceSummaryCborValue(v));
+}
+
+export function fromJobRunResourceSummaryCbor(bytes: Uint8Array): JobRunResourceSummary {
+  return fromJobRunResourceSummaryCborValue(decode(bytes));
+}
+
+export function toGetJobResourceHistoryResponseCborValue(v: GetJobResourceHistoryResponse): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  csilMap.set("name", v.name);
+  csilMap.set("runs", v.runs.map((csilE): CborValue => toJobRunResourceSummaryCborValue(csilE)));
+  csilMap.set("pending", v.pending);
+  if (v.projectId !== undefined) csilMap.set("project_id", v.projectId);
+  return csilMap;
+}
+
+export function fromGetJobResourceHistoryResponseCborValue(value: CborValue): GetJobResourceHistoryResponse {
+  return {
+    projectId: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "project_id")),
+    name: asString(requireKey(value, "name")),
+    runs: asArray(requireKey(value, "runs")).map((csilE) => fromJobRunResourceSummaryCborValue(csilE)),
+    pending: asNumber(requireKey(value, "pending")),
+  };
+}
+
+export function toGetJobResourceHistoryResponseCbor(v: GetJobResourceHistoryResponse): Uint8Array {
+  return encodeValue(toGetJobResourceHistoryResponseCborValue(v));
+}
+
+export function fromGetJobResourceHistoryResponseCbor(bytes: Uint8Array): GetJobResourceHistoryResponse {
+  return fromGetJobResourceHistoryResponseCborValue(decode(bytes));
 }
 
 export function toGetJobLogsRequestCborValue(v: GetJobLogsRequest): CborValue {

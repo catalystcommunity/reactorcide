@@ -1,13 +1,16 @@
 import { describe, expect, it, beforeEach, afterEach, vi } from 'vitest'
-import { createRoot, createSignal } from 'solid-js'
-import { useResource, storeStats, resetStore, sweepNow, appendBounded, BUFFER_CAPS } from './index.ts'
+import { useResource, storeStats, resetStore, sweepNow, appendBounded, BUFFER_CAPS, type ResourceHandle } from './index.ts'
 import { eventSocket } from './events.ts'
+import { mount, settle, testHost, unmount, type TestHost } from '~/test/mount.ts'
 
 /**
  * These are the tests behind the claim that the UI can be left open for days.
  *
- * The failure they guard against is silent and slow: a component that acquires
- * a dataset and a live topic, then unmounts without releasing either. Nothing
+ * The failure they guard against is silent and slow: an element that acquires
+ * a dataset and a live topic, then leaves the page without releasing either.
+ *
+ * Each test connects a real element and removes it, so release goes through
+ * the same BaseComponent own()/disconnect path a route change takes. Nothing
  * breaks immediately; the tab just gets heavier every time somebody navigates,
  * and by the time anyone notices, the cause is forty routes back.
  */
@@ -20,20 +23,16 @@ afterEach(() => {
   resetStore()
 })
 
-/** Mounts a component-like scope and returns its disposer. */
-function mountScope(body: () => void): () => void {
-  let dispose!: () => void
-  createRoot((d) => {
-    dispose = d
-    body()
-  })
-  return dispose
+/** Connects an element whose connected() runs `body`, and returns its remover. */
+function mountScope(body: (host: TestHost) => void): () => void {
+  const host = mount(testHost(body))
+  return () => unmount(host)
 }
 
 describe('reference counting', () => {
   it('releases an entry when its only holder unmounts', async () => {
-    const dispose = mountScope(() => {
-      useResource({ key: 'jobs', fetcher: async () => ['a'] })
+    const dispose = mountScope((host) => {
+      useResource(host, { key: 'jobs', fetcher: async () => ['a'] })
     })
     expect(storeStats().holders).toBe(1)
 
@@ -51,11 +50,11 @@ describe('reference counting', () => {
   it('shares one entry between concurrent holders and keeps it while any remain', () => {
     const fetcher = vi.fn(async () => ['a'])
 
-    const disposeFirst = mountScope(() => {
-      useResource({ key: 'jobs', fetcher })
+    const disposeFirst = mountScope((host) => {
+      useResource(host, { key: 'jobs', fetcher })
     })
-    const disposeSecond = mountScope(() => {
-      useResource({ key: 'jobs', fetcher })
+    const disposeSecond = mountScope((host) => {
+      useResource(host, { key: 'jobs', fetcher })
     })
 
     expect(storeStats().entries).toBe(1)
@@ -82,14 +81,14 @@ describe('leak guard', () => {
     const baseline = storeStats()
 
     for (let i = 0; i < 50; i++) {
-      const dispose = mountScope(() => {
-        useResource({
+      const dispose = mountScope((host) => {
+        useResource(host, {
           key: 'jobs',
           fetcher: async () => [],
           topics: ['jobs'],
           shouldRefresh: () => false,
         })
-        useResource({
+        useResource(host, {
           key: `workflow:${i}`,
           fetcher: async () => ({}),
           topics: [`workflow:${i}`],
@@ -105,14 +104,15 @@ describe('leak guard', () => {
     expect(after.holders).toBe(baseline.holders)
     expect(after.topics).toBe(baseline.topics)
     expect(after.listeners).toBe(baseline.listeners)
+    expect(after.subscriptions).toBe(baseline.subscriptions)
   })
 
   it('does not accumulate topic subscriptions across visits to different workflows', () => {
     // Visiting forty workflow pages in a session must not leave forty
     // subscriptions live.
     for (let i = 0; i < 40; i++) {
-      const dispose = mountScope(() => {
-        useResource({
+      const dispose = mountScope((host) => {
+        useResource(host, {
           key: `workflow:${i}`,
           fetcher: async () => ({}),
           topics: [`workflow:${i}`],
@@ -179,13 +179,11 @@ describe('loading state', () => {
   it('keeps previous data visible when a refresh fails', async () => {
     let shouldFail = false
 
-    // The resource is captured out of a SYNCHRONOUS root body. createRoot does
-    // not await, so an async body would run its assertions after dispose had
-    // already torn the scope down -- and would pass or fail for reasons
-    // unrelated to what is being tested.
-    let resource!: ReturnType<typeof useResource<string[]>>
-    const dispose = mountScope(() => {
-      resource = useResource<string[]>({
+    // The resource is captured out of connected(), which runs synchronously
+    // when the element is appended.
+    let resource!: ResourceHandle<string[]>
+    const dispose = mountScope((host) => {
+      resource = useResource<string[]>(host, {
         key: 'jobs',
         fetcher: async () => {
           if (shouldFail) throw new Error('coordinator unreachable')
@@ -211,9 +209,9 @@ describe('loading state', () => {
   })
 
   it('reports the first load through loading and loaded', async () => {
-    let resource!: ReturnType<typeof useResource<string[]>>
-    const dispose = mountScope(() => {
-      resource = useResource<string[]>({ key: 'jobs', fetcher: async () => ['job-1'] })
+    let resource!: ResourceHandle<string[]>
+    const dispose = mountScope((host) => {
+      resource = useResource<string[]>(host, { key: 'jobs', fetcher: async () => ['job-1'] })
     })
 
     expect(resource.state().loading).toBe(true)
@@ -229,23 +227,24 @@ describe('loading state', () => {
 
 describe('reactive keys', () => {
   /**
-   * The router REUSES a route component when only a path param or a search
-   * param changes. A resource whose key was read once at setup therefore kept
+   * The shell KEEPS a page when only a search param changes (a filter). A resource whose key was read once at setup therefore kept
    * serving the entity or the filter the page was first opened with: /jobs/a
    * stayed on screen after navigating to /jobs/b, and the status dropdown
    * updated the URL without ever refetching.
    */
   it('swaps entries when the key changes, releasing the old one', () => {
-    const [id, setId] = createSignal('a')
+    let id = 'a'
+    let resource!: ResourceHandle<string>
 
-    const dispose = mountScope(() => {
-      useResource(() => ({ key: `job:${id()}`, fetcher: async () => id() }))
+    const dispose = mountScope((host) => {
+      resource = useResource(host, () => ({ key: `job:${id}`, fetcher: async () => id }))
     })
 
     expect(storeStats().entries).toBe(1)
     expect(storeStats().holders).toBe(1)
 
-    setId('b')
+    id = 'b'
+    resource.sync()
 
     // The new key is held, and the old one is unheld and evictable.
     expect(storeStats().holders).toBe(1)
@@ -256,5 +255,34 @@ describe('reactive keys', () => {
     sweepNow(0)
     expect(storeStats().entries).toBe(0)
     expect(storeStats().holders).toBe(0)
+  })
+})
+
+describe('rendering', () => {
+  it('renders the holding element again when its resource loads, and not after it leaves', async () => {
+    let resolve!: (value: string[]) => void
+    let resource!: ResourceHandle<string[]>
+    const host = mount(
+      testHost((h) => {
+        resource = useResource<string[]>(h, {
+          key: 'jobs',
+          fetcher: () => new Promise((r) => (resolve = r)),
+        })
+      }),
+    )
+    await settle()
+    const before = host.renders
+
+    resolve(['job-1'])
+    await settle()
+    expect(resource.state().data).toEqual(['job-1'])
+    expect(host.renders).toBeGreaterThan(before)
+
+    unmount(host)
+    const afterLeave = host.renders
+    await resource.refresh()
+    await settle()
+    expect(host.renders).toBe(afterLeave)
+    expect(storeStats().subscriptions).toBe(0)
   })
 })

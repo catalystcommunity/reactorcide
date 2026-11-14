@@ -45,8 +45,9 @@ If a secret-bearing command fails, summarize the failure without including secre
 ## Repo Orientation
 
 - `coordinator_api/` - Go CLI, REST API, workers, job specs, secrets, VCS integration, and Corndogs integration.
-- `webapp/` - the management UI. A thin bridge (Go) plus a SolidJS SPA in
-  `webapp/ui/`, compiled into the binary. It holds NO coordinator credential;
+- `webapp/` - the management UI. A thin bridge (Go) plus a Zest web-component SPA
+  in `webapp/ui/` (no application framework; see `webapp/ui/README.md`),
+  compiled into the binary. It holds NO coordinator credential;
   see the rule below.
 - `runnerlib/` - Python job execution library and runner utilities.
 - `jobs/` - Reactorcide jobs used to build, test, deploy, and dogfood the system.
@@ -61,6 +62,10 @@ If a secret-bearing command fails, summarize the failure without including secre
   credential the client supplied. If the UI needs data it cannot reach, add a
   CSIL operation that authorizes the caller — never a REST call from the webapp,
   and never a service token.
+- The SPA uses Zest web components and no application framework. Do not add
+  one. Elements build their DOM once and change it in place on each refresh;
+  never rebuild a control from data (an open list closes, typed text is lost).
+  Conventions are in `webapp/ui/README.md`.
 - The SPA is compiled into the webapp binary. Run `./tools build-ui` before
   `go build` in `webapp/`, or the binary serves a placeholder page and a 503.
 - Metric series carry no `scope` label. A series with no `component` label is

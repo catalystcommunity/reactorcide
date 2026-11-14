@@ -158,6 +158,9 @@ type Job struct {
 	WorkflowNodeID   *string `gorm:"type:uuid" json:"workflow_node_id"`
 	WorkflowRunID    *string `gorm:"type:uuid" json:"workflow_run_id"`
 	WorkflowNodeName string  `gorm:"type:text" json:"workflow_node_name"`
+	// EventID links the job to the CI event it serves: the eval job of the
+	// event, and every job of the workflows the event created.
+	EventID *string `gorm:"type:uuid" json:"event_id,omitempty"`
 
 	// Denormalized VCS metadata for fast lookup by (repo, pr, commit).
 	// Populated at job-creation time from Notes JSON; Notes remains authoritative.

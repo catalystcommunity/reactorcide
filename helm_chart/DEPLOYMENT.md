@@ -324,7 +324,8 @@ worker:
 
 The worker Role can create and delete Jobs and temporary checkout Secrets. It
 can read Pods, Pod logs, and Pod resource metrics in its namespace. A cluster
-role permits reads from `nodes/proxy` for volume statistics. Review
+role permits reads from `nodes/proxy` for volume statistics. The worker also
+reads CPU and memory there when metrics-server has no data for a job pod. Review
 `templates/rbac-worker.yaml` before you change its namespace or service
 account.
 

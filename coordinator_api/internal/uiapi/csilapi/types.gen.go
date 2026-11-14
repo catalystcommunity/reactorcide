@@ -1315,6 +1315,139 @@ type GetJobMetricsResponse struct {
 	Components  []string               `json:"components" yaml:"components"`
 }
 
+// ScheduleSummary represents a structured data type
+type ScheduleSummary struct {
+	ScheduleId  string  `json:"schedule_id" yaml:"schedule_id"`
+	ProjectId   string  `json:"project_id" yaml:"project_id"`
+	Name        string  `json:"name" yaml:"name"`
+	Branch      string  `json:"branch" yaml:"branch"`
+	WorkflowRef string  `json:"workflow_ref" yaml:"workflow_ref"`
+	Cron        string  `json:"cron" yaml:"cron"`
+	Timezone    string  `json:"timezone" yaml:"timezone"`
+	Enabled     bool    `json:"enabled" yaml:"enabled"`
+	NextFireAt  *string `json:"next_fire_at,omitempty" yaml:"next_fire_at,omitempty"`
+	LastFireAt  *string `json:"last_fire_at,omitempty" yaml:"last_fire_at,omitempty"`
+	LastEventId *string `json:"last_event_id,omitempty" yaml:"last_event_id,omitempty"`
+	LastError   string  `json:"last_error" yaml:"last_error"`
+	CreatedAt   string  `json:"created_at" yaml:"created_at"`
+	UpdatedAt   string  `json:"updated_at" yaml:"updated_at"`
+}
+
+// ScheduleFireSummary represents a structured data type
+type ScheduleFireSummary struct {
+	FireId      string  `json:"fire_id" yaml:"fire_id"`
+	ScheduleId  string  `json:"schedule_id" yaml:"schedule_id"`
+	FireTime    string  `json:"fire_time" yaml:"fire_time"`
+	Status      string  `json:"status" yaml:"status"`
+	EventId     *string `json:"event_id,omitempty" yaml:"event_id,omitempty"`
+	Error       string  `json:"error" yaml:"error"`
+	CompletedAt *string `json:"completed_at,omitempty" yaml:"completed_at,omitempty"`
+}
+
+// ListSchedulesRequest represents a structured data type
+type ListSchedulesRequest struct {
+	ProjectId string `json:"project_id" yaml:"project_id"`
+}
+
+// ListSchedulesResponse represents a structured data type
+type ListSchedulesResponse struct {
+	Schedules []ScheduleSummary `json:"schedules" yaml:"schedules"`
+}
+
+// CreateScheduleRequest represents a structured data type
+type CreateScheduleRequest struct {
+	ProjectId   string  `json:"project_id" yaml:"project_id"`
+	Name        string  `json:"name" yaml:"name"`
+	Branch      string  `json:"branch" yaml:"branch"`
+	WorkflowRef string  `json:"workflow_ref" yaml:"workflow_ref"`
+	Cron        string  `json:"cron" yaml:"cron"`
+	Timezone    *string `json:"timezone,omitempty" yaml:"timezone,omitempty"`
+	Enabled     *bool   `json:"enabled,omitempty" yaml:"enabled,omitempty"`
+}
+
+// CreateScheduleResponse represents a structured data type
+type CreateScheduleResponse struct {
+	Schedule ScheduleSummary `json:"schedule" yaml:"schedule"`
+}
+
+// UpdateScheduleRequest represents a structured data type
+type UpdateScheduleRequest struct {
+	ScheduleId  string  `json:"schedule_id" yaml:"schedule_id"`
+	Name        *string `json:"name,omitempty" yaml:"name,omitempty"`
+	Branch      *string `json:"branch,omitempty" yaml:"branch,omitempty"`
+	WorkflowRef *string `json:"workflow_ref,omitempty" yaml:"workflow_ref,omitempty"`
+	Cron        *string `json:"cron,omitempty" yaml:"cron,omitempty"`
+	Timezone    *string `json:"timezone,omitempty" yaml:"timezone,omitempty"`
+	Enabled     *bool   `json:"enabled,omitempty" yaml:"enabled,omitempty"`
+}
+
+// UpdateScheduleResponse represents a structured data type
+type UpdateScheduleResponse struct {
+	Schedule ScheduleSummary `json:"schedule" yaml:"schedule"`
+}
+
+// DeleteScheduleRequest represents a structured data type
+type DeleteScheduleRequest struct {
+	ScheduleId string `json:"schedule_id" yaml:"schedule_id"`
+}
+
+// DeleteScheduleResponse represents a structured data type
+type DeleteScheduleResponse struct {
+	Ok bool `json:"ok" yaml:"ok"`
+}
+
+// ListScheduleFiresRequest represents a structured data type
+type ListScheduleFiresRequest struct {
+	ScheduleId string `json:"schedule_id" yaml:"schedule_id"`
+	Limit      *int64 `json:"limit,omitempty" yaml:"limit,omitempty"`
+}
+
+// ListScheduleFiresResponse represents a structured data type
+type ListScheduleFiresResponse struct {
+	Fires []ScheduleFireSummary `json:"fires" yaml:"fires"`
+}
+
+// GetJobResourceHistoryRequest represents a structured data type
+type GetJobResourceHistoryRequest struct {
+	JobId    string  `json:"job_id" yaml:"job_id"`
+	FromTime *string `json:"from_time,omitempty" yaml:"from_time,omitempty"`
+	ToTime   *string `json:"to_time,omitempty" yaml:"to_time,omitempty"`
+	Limit    *int64  `json:"limit,omitempty" yaml:"limit,omitempty"`
+}
+
+// JobRunResourceSummary represents a structured data type
+type JobRunResourceSummary struct {
+	JobId                string   `json:"job_id" yaml:"job_id"`
+	Status               string   `json:"status" yaml:"status"`
+	CreatedAt            string   `json:"created_at" yaml:"created_at"`
+	StartedAt            *string  `json:"started_at,omitempty" yaml:"started_at,omitempty"`
+	CompletedAt          *string  `json:"completed_at,omitempty" yaml:"completed_at,omitempty"`
+	DurationSeconds      *int64   `json:"duration_seconds,omitempty" yaml:"duration_seconds,omitempty"`
+	SourceRef            *string  `json:"source_ref,omitempty" yaml:"source_ref,omitempty"`
+	Capabilities         []string `json:"capabilities,omitempty" yaml:"capabilities,omitempty"`
+	SampleCount          int64    `json:"sample_count" yaml:"sample_count"`
+	CpuAvgMillicores     *int64   `json:"cpu_avg_millicores,omitempty" yaml:"cpu_avg_millicores,omitempty"`
+	CpuP95Millicores     *int64   `json:"cpu_p95_millicores,omitempty" yaml:"cpu_p95_millicores,omitempty"`
+	CpuMaxMillicores     *int64   `json:"cpu_max_millicores,omitempty" yaml:"cpu_max_millicores,omitempty"`
+	CpuPeakAt            *string  `json:"cpu_peak_at,omitempty" yaml:"cpu_peak_at,omitempty"`
+	CpuRequestMillicores *int64   `json:"cpu_request_millicores,omitempty" yaml:"cpu_request_millicores,omitempty"`
+	CpuLimitMillicores   *int64   `json:"cpu_limit_millicores,omitempty" yaml:"cpu_limit_millicores,omitempty"`
+	MemoryAvgBytes       *int64   `json:"memory_avg_bytes,omitempty" yaml:"memory_avg_bytes,omitempty"`
+	MemoryP95Bytes       *int64   `json:"memory_p95_bytes,omitempty" yaml:"memory_p95_bytes,omitempty"`
+	MemoryMaxBytes       *int64   `json:"memory_max_bytes,omitempty" yaml:"memory_max_bytes,omitempty"`
+	MemoryPeakAt         *string  `json:"memory_peak_at,omitempty" yaml:"memory_peak_at,omitempty"`
+	MemoryLimitBytes     *int64   `json:"memory_limit_bytes,omitempty" yaml:"memory_limit_bytes,omitempty"`
+	StorageMaxBytes      *int64   `json:"storage_max_bytes,omitempty" yaml:"storage_max_bytes,omitempty"`
+}
+
+// GetJobResourceHistoryResponse represents a structured data type
+type GetJobResourceHistoryResponse struct {
+	ProjectId *string                 `json:"project_id,omitempty" yaml:"project_id,omitempty"`
+	Name      string                  `json:"name" yaml:"name"`
+	Runs      []JobRunResourceSummary `json:"runs" yaml:"runs"`
+	Pending   int64                   `json:"pending" yaml:"pending"`
+}
+
 // GetJobLogsRequest represents a structured data type
 type GetJobLogsRequest struct {
 	JobId      string  `json:"job_id" yaml:"job_id"`

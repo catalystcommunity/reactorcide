@@ -71,7 +71,7 @@ func BuildEvalJob(project *models.Project, event *vcs.WebhookEvent) *models.Job 
 			sourceRef = pr.MergeSHA
 		}
 		branch = pr.BaseRef
-		jobName = fmt.Sprintf("eval: PR #%d %s on %s", pr.Number, actionLabel(event.GenericEvent), event.Repository.FullName)
+		jobName = fmt.Sprintf("Eval event pull_request #%d %s on %s", pr.Number, actionLabel(event.GenericEvent), event.Repository.FullName)
 
 		envVars["REACTORCIDE_SHA"] = sourceRef
 		envVars["REACTORCIDE_BRANCH"] = pr.BaseRef
@@ -94,10 +94,18 @@ func BuildEvalJob(project *models.Project, event *vcs.WebhookEvent) *models.Job 
 		push := event.Push
 		sourceRef = push.After
 		branch = extractBranchOrTag(push.Ref)
-		jobName = fmt.Sprintf("eval: push to %s (%.7s) on %s", branch, push.After, event.Repository.FullName)
+		kind := "push"
+		if event.GenericEvent == vcs.EventTagCreated {
+			kind = "tag"
+		}
+		jobName = fmt.Sprintf("Eval event %s %s (%.7s) on %s", kind, branch, push.After, event.Repository.FullName)
 
 		envVars["REACTORCIDE_SHA"] = push.After
 		envVars["REACTORCIDE_BRANCH"] = branch
+		// The push's changed files are the commits between before and after.
+		if isRealCommit(push.Before) {
+			envVars["REACTORCIDE_DIFF_BASE"] = push.Before
+		}
 	}
 
 	// CI source: trusted repo with job definitions
@@ -120,7 +128,12 @@ func BuildEvalJob(project *models.Project, event *vcs.WebhookEvent) *models.Job 
 		// Same-repo mode uses the upstream repository for job definitions.
 		// Open and updated PRs use the base SHA, so untrusted PR content cannot
 		// change the CI definition. Merged PRs use the revision that is now on
-		// the target branch. Push events use the pushed SHA.
+		// the target branch.
+		//
+		// Push events go through CI policy like PRs: the trusted base is the
+		// push's `before` commit (a new branch or tag uses the default branch),
+		// and the pushed commit is head-CI candidate data that the coordinator
+		// policy must allow before it runs. See pushCIBaseRef.
 		st := models.SourceTypeGit
 		ciSourceType = &st
 		ciSourceURL = &upstreamURL
@@ -130,7 +143,14 @@ func BuildEvalJob(project *models.Project, event *vcs.WebhookEvent) *models.Job 
 		} else if event.PullRequest != nil {
 			ciRef = event.PullRequest.BaseSHA
 		} else {
-			ciRef = sourceRef
+			ciRef = pushCIBaseRef(event, sourceRef)
+			if ciRef != sourceRef {
+				// Runnerlib prepares the base and head CI checkouts separately,
+				// as it does for a PR, and reports head candidates for policy.
+				envVars["REACTORCIDE_EVAL_DUAL_CI"] = "true"
+				envVars["REACTORCIDE_HEAD_URL"] = upstreamURL
+				envVars["REACTORCIDE_HEAD_REPOSITORY"] = event.Repository.FullName
+			}
 		}
 		ciSourceRef = &ciRef
 		envVars["REACTORCIDE_CI_SOURCE_URL"] = upstreamURL
@@ -192,6 +212,31 @@ func BuildEvalJob(project *models.Project, event *vcs.WebhookEvent) *models.Job 
 	}
 
 	return job
+}
+
+// pushCIBaseRef returns the trusted CI revision for a push: the commit the
+// branch pointed at before the push. A new branch or a tag has no previous
+// commit, so it uses the repository's default branch. With neither, it
+// returns the pushed commit (the pre-policy behavior), because there is no
+// other revision to trust.
+func pushCIBaseRef(event *vcs.WebhookEvent, pushed string) string {
+	if event.Push == nil {
+		return pushed
+	}
+	if isRealCommit(event.Push.Before) {
+		return event.Push.Before
+	}
+	if branch := strings.TrimSpace(event.Repository.DefaultBranch); branch != "" {
+		return branch
+	}
+	return pushed
+}
+
+// isRealCommit reports whether a push's before/after value names a commit.
+// Providers send all zeros for "no commit" (a created or deleted ref).
+func isRealCommit(sha string) bool {
+	sha = strings.TrimSpace(sha)
+	return sha != "" && strings.Trim(sha, "0") != ""
 }
 
 // actionLabel returns a human-readable label for the generic event type.

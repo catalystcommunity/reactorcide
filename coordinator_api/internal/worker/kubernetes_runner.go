@@ -62,6 +62,9 @@ type KubernetesRunner struct {
 	// metrics.k8s.io, guarded by metricsAPIMu.
 	metricsAPIMu         sync.Mutex
 	metricsAPIRegistered bool
+	// summaryCache shares one kubelet stats summary per node between jobs
+	// and between the CPU fallback and the storage path (kubernetes_metrics.go).
+	summaryCache kubeletSummaryCache
 	// resourceScope selects where CPU and memory go: "pod" (spec.resources,
 	// shared by the job container and its buildkit/DinD sidecars),
 	// "container" (the job container only), or "auto"/"" (probe the API

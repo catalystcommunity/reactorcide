@@ -1,6 +1,10 @@
 /* Shared component styles. One file so the token vocabulary stays visible. */
 
 /* ---------- Button ---------- */
+/*
+ * Buttons are Zest push-buttons. `.btn` remains for a LINK that looks like a
+ * button ("New project", "Sign in"), so it matches the push-button look.
+ */
 .btn {
   display: inline-flex;
   align-items: center;
@@ -12,9 +16,10 @@
   line-height: 1.4;
   color: var(--text);
   background: var(--surface-raised);
-  border: 1px solid var(--border-strong);
+  border: 1px solid var(--zest-color-border);
   border-radius: var(--radius);
   cursor: pointer;
+  min-height: 2em;
   transition:
     background 120ms ease,
     border-color 120ms ease;
@@ -64,8 +69,15 @@
   padding: var(--space-5);
   box-shadow: var(--shadow-sm);
 }
-.card + .card {
-  margin-top: var(--space-4);
+/*
+ * Space below each card rather than `.card + .card`: built content sits in
+ * wrappers (a ResourceView, a page element), so two cards are seldom siblings.
+ */
+.card {
+  margin-bottom: var(--space-4);
+}
+.card:last-child {
+  margin-bottom: 0;
 }
 .card-header {
   display: flex;
@@ -189,26 +201,28 @@
   font-size: var(--text-sm);
   font-weight: 500;
 }
-.input,
-.select,
-.textarea {
+/* Zest controls fill a field. A field draws its own label above them. */
+.field > :is(text-field, text-area, combo-box, list-box),
+.field > .org-picker > combo-box {
+  display: block;
   width: 100%;
-  padding: 0.4rem 0.6rem;
-  font: inherit;
-  color: var(--text);
-  background: var(--surface-raised);
-  border: 1px solid var(--border-strong);
-  border-radius: var(--radius);
 }
-.input[aria-invalid='true'],
-.select[aria-invalid='true'],
-.textarea[aria-invalid='true'] {
-  border-color: var(--danger);
+.field > [data-invalid='true'] {
+  --zest-color-border: var(--danger);
 }
-.textarea {
-  min-height: 8rem;
+/* Monospace text for ids, URLs, paths and patterns. */
+.rc-mono :is(input, textarea) {
   font-family: var(--font-mono);
-  resize: vertical;
+}
+/* A smaller push-button, for tables, toolbars and the header. */
+push-button.rc-small {
+  --zest-control-height: 2em;
+  --zest-control-padding-inline: 0.65em;
+  --zest-control-padding-block: 0.15em;
+  font-size: var(--text-sm);
+}
+list-box {
+  --zest-list-box-max-height: 14rem;
 }
 .checkbox-row {
   display: flex;
@@ -233,18 +247,6 @@
   cursor: help;
   padding: 0;
 }
-.tooltip-content {
-  max-width: 22rem;
-  padding: var(--space-2) var(--space-3);
-  background: var(--surface-raised);
-  color: var(--text);
-  border: 1px solid var(--border-strong);
-  border-radius: var(--radius);
-  box-shadow: var(--shadow-lg);
-  font-size: var(--text-sm);
-  z-index: 60;
-}
-
 /* ---------- Layout ---------- */
 .page {
   max-width: var(--content-max);

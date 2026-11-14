@@ -89,7 +89,7 @@ production.
 - `coordinator_api/`: CLI, REST API, workflow state, VCS integration, secrets,
   and worker protocol
 - `runnerlib/`: Job-side Python library
-- `webapp/`: Management web application — a Go bridge plus a SolidJS SPA in
+- `webapp/`: Management web application — a Go bridge plus a Zest web-component SPA in
   `webapp/ui/`, compiled into the binary with `./tools build-ui`
 - `helm_chart/`: Kubernetes deployment
 - `deployment/`: VM Compose deployment assets
