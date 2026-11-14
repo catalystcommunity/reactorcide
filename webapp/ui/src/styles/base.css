@@ -1,4 +1,10 @@
-/* Reset and element defaults. Component styles live beside their components. */
+/*
+ * Reset and element defaults. Component styles live beside their components.
+ *
+ * In `@layer page` (see layers.css), so these element rules lose to the Zest
+ * control defaults and do not change the inside of a light DOM control.
+ */
+@layer page {
 
 *,
 *::before,
@@ -107,4 +113,26 @@ pre,
 .scroll-x {
   overflow-x: auto;
   max-width: 100%;
+}
+}
+
+/*
+ * A class rule that sets `display` beats the `hidden` attribute, and the UI
+ * hides and shows built elements with `hidden` rather than rebuilding them.
+ */
+[hidden] {
+  display: none !important;
+}
+
+/*
+ * Every Reactorcide element (RcElement sets data-rc) is a block. A custom
+ * element is inline by default, and a page or a card as an inline box breaks
+ * its border and padding. A component that needs another display sets it with
+ * a class rule, which comes later and wins (ui.css).
+ */
+[data-rc] {
+  display: block;
+}
+rc-info-tip {
+  display: inline-flex;
 }

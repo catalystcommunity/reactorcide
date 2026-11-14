@@ -9,7 +9,7 @@
 #     typed client, consumed by the hand-written HTTP carrier in
 #     webapp/internal/uiclient/)
 #   - webapp/ui/src/api/csilapi/               (--target typescript-client: types +
-#     codec + typed client, consumed by the SolidJS SPA through the browser
+#     codec + typed client, consumed by the web UI through the browser
 #     transport in webapp/ui/src/api/transport.ts)
 #
 # Only the *.gen.go files in those two directories are touched; the
@@ -21,7 +21,7 @@
 # release from its GitHub assets and reads the pin from this line.
 set -euo pipefail
 
-CSILGEN_RELEASE="csilgen/v0.2.9"
+CSILGEN_RELEASE="csilgen/v0.2.11"
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 CSIL_INPUT="${ROOT_DIR}/coordinator_api/csil/reactorcide-ui.csil"

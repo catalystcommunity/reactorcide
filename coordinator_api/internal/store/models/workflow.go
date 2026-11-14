@@ -42,6 +42,9 @@ type WorkflowInstance struct {
 	PolicyRevision     string     `gorm:"type:text;default:null" json:"policy_revision,omitempty"`
 	PolicyRuleID       string     `gorm:"type:text;default:null" json:"policy_rule_id,omitempty"`
 	ApprovalID         *string    `gorm:"type:uuid" json:"approval_id,omitempty"`
+	// EventID is the CI event that created the workflow. Child workflows
+	// inherit their root's event.
+	EventID *string `gorm:"type:uuid" json:"event_id,omitempty"`
 }
 
 // OwnershipOrgID returns the organization that owns the workflow. UserID is
@@ -186,6 +189,7 @@ type WorkflowSummary struct {
 	CIOrigin           string            `json:"ci_origin,omitempty"`
 	ExecutionProfile   string            `json:"execution_profile,omitempty"`
 	WorkerClass        string            `json:"worker_class,omitempty"`
+	EventID            *string           `json:"event_id,omitempty"`
 	Children           []WorkflowSummary `gorm:"-" json:"children,omitempty"`
 }
 

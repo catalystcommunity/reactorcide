@@ -1075,6 +1075,150 @@ GetJobMetricsResponse = {
     components: [* text]
 }
 
+;; ---------------------------------------------------------------------------
+;; Schedules.
+;;
+;; A schedule is coordinator state. It points at a workflow definition in the
+;; repository on a branch and fires it at cron times. The definition stays in
+;; the repository; a missing definition fails that fire and does not delete
+;; the schedule. Project owners and org or global admins manage schedules.
+;; Timestamps are RFC3339 UTC text.
+
+;;; workflow_ref is an explicit workflow ID, or a workflow file path directly
+;;; under .reactorcide/workflows/ (for example
+;;; ".reactorcide/workflows/nightly.yaml"). cron is five fields or a
+;;; descriptor such as "@daily", read in timezone (an IANA name, default UTC).
+ScheduleSummary = {
+    schedule_id: text,
+    project_id: text,
+    name: text,
+    branch: text,
+    workflow_ref: text,
+    cron: text,
+    timezone: text,
+    enabled: bool,
+    ;; Absent while the schedule is disabled.
+    ? next_fire_at: text,
+    ? last_fire_at: text,
+    ? last_event_id: text,
+    ;; The error of the last fire, or of the last plan. Empty when it worked.
+    last_error: text,
+    created_at: text,
+    updated_at: text
+}
+
+;;; status is "firing", "fired" or "failed".
+ScheduleFireSummary = {
+    fire_id: text,
+    schedule_id: text,
+    fire_time: text,
+    status: text,
+    ? event_id: text,
+    error: text,
+    ? completed_at: text
+}
+
+ListSchedulesRequest = {
+    project_id: text
+}
+ListSchedulesResponse = {
+    schedules: [* ScheduleSummary]
+}
+
+CreateScheduleRequest = {
+    project_id: text,
+    name: text,
+    branch: text,
+    workflow_ref: text,
+    cron: text,
+    ;; Default "UTC".
+    ? timezone: text,
+    ;; Default true.
+    ? enabled: bool
+}
+CreateScheduleResponse = {
+    schedule: ScheduleSummary
+}
+
+;;; Only the fields that are present change.
+UpdateScheduleRequest = {
+    schedule_id: text,
+    ? name: text,
+    ? branch: text,
+    ? workflow_ref: text,
+    ? cron: text,
+    ? timezone: text,
+    ? enabled: bool
+}
+UpdateScheduleResponse = {
+    schedule: ScheduleSummary
+}
+
+DeleteScheduleRequest = {
+    schedule_id: text
+}
+DeleteScheduleResponse = {
+    ok: bool
+}
+
+;;; Newest fires first. Default limit 20, maximum 200.
+ListScheduleFiresRequest = {
+    schedule_id: text,
+    ? limit: int
+}
+ListScheduleFiresResponse = {
+    fires: [* ScheduleFireSummary]
+}
+
+;;; Resource history across the runs of one job, for capacity planning.
+;;; A "job" here is every run with the same project and the same name as the
+;;; job_id given. Values are integer-scaled by unit: millicores and bytes.
+;;; Timestamps are RFC3339 UTC text.
+GetJobResourceHistoryRequest = {
+    job_id: text,
+    ? from_time: text,
+    ? to_time: text,
+    ;; The newest runs to return. Default 200, maximum 1000.
+    ? limit: int
+}
+
+;;; One finished run, summarized from its stored telemetry (the job roll-up,
+;;; not one component). An absent value was not measured for that run.
+JobRunResourceSummary = {
+    job_id: text,
+    status: text,
+    created_at: text,
+    ? started_at: text,
+    ? completed_at: text,
+    ? duration_seconds: int,
+    ? source_ref: text,
+    ? capabilities: [* text],
+    ;; Number of CPU or memory samples the summary was computed from.
+    sample_count: int,
+    ? cpu_avg_millicores: int,
+    ? cpu_p95_millicores: int,
+    ? cpu_max_millicores: int,
+    ? cpu_peak_at: text,
+    ? cpu_request_millicores: int,
+    ? cpu_limit_millicores: int,
+    ? memory_avg_bytes: int,
+    ? memory_p95_bytes: int,
+    ? memory_max_bytes: int,
+    ? memory_peak_at: text,
+    ? memory_limit_bytes: int,
+    ? storage_max_bytes: int
+}
+
+GetJobResourceHistoryResponse = {
+    ? project_id: text,
+    name: text,
+    ;; Oldest first.
+    runs: [* JobRunResourceSummary],
+    ;; Finished runs in range whose summary is not computed yet. The server
+    ;; computes a bounded number per request; ask again to get the rest.
+    pending: int
+}
+
 GetJobLogsRequest = {
     job_id: text,
     stream: text,
@@ -1347,6 +1491,12 @@ service ReactorcideUi {
     deactivate-enrollment-token: DeactivateEnrollmentTokenRequest -> DeactivateEnrollmentTokenResponse / ServiceError,
     get-job-metrics: GetJobMetricsRequest -> GetJobMetricsResponse / ServiceError,
     get-job-logs: GetJobLogsRequest -> GetJobLogsResponse / ServiceError,
+    get-job-resource-history: GetJobResourceHistoryRequest -> GetJobResourceHistoryResponse / ServiceError,
+    list-schedules: ListSchedulesRequest -> ListSchedulesResponse / ServiceError,
+    create-schedule: CreateScheduleRequest -> CreateScheduleResponse / ServiceError,
+    update-schedule: UpdateScheduleRequest -> UpdateScheduleResponse / ServiceError,
+    delete-schedule: DeleteScheduleRequest -> DeleteScheduleResponse / ServiceError,
+    list-schedule-fires: ListScheduleFiresRequest -> ListScheduleFiresResponse / ServiceError,
     list-jobs: ListJobsRequest -> ListJobsResponse / ServiceError,
     get-job: GetJobRequest -> GetJobResponse / ServiceError,
     list-workflows: ListWorkflowsRequest -> ListWorkflowsResponse / ServiceError,

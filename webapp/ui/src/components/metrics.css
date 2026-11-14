@@ -10,8 +10,7 @@
   gap: var(--space-3);
   flex-wrap: wrap;
 }
-.metrics-controls .select {
-  width: auto;
+.metrics-controls combo-box {
   min-width: 10rem;
 }
 

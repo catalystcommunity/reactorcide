@@ -10,9 +10,8 @@ import type {
   ProjectSummary,
   DescribeFormMetadataResponse,
 } from '~/api/csilapi/types.gen.ts'
-import { useResource, type ResourceState } from './index.ts'
+import { useResource, type ResourceHandle, type ResourceHost } from './index.ts'
 import { topics, type LiveEvent } from './events.ts'
-import type { Accessor } from 'solid-js'
 
 /**
  * The application's datasets.
@@ -23,9 +22,12 @@ import type { Accessor } from 'solid-js'
  * an event for every job transition across everything the caller can see.
  *
  * Every hook keyed on a route param or a filter passes useResource a BUILDER
- * rather than a fixed object. The router reuses a route component when only a
- * path param or a search param changes, so options read once at setup would pin
- * the page to whatever it was first opened with.
+ * rather than a fixed object, and the page calls `handle.sync()` in render().
+ * A page is kept when only its query changes (a filter), so options read once
+ * at connect would pin the page to whatever it was first opened with.
+ *
+ * Each takes the HOST element first: the handle's release goes to its own(),
+ * so call these from the host's connected().
  */
 
 export interface WorkflowFilters {
@@ -33,11 +35,8 @@ export interface WorkflowFilters {
   projectId?: string
 }
 
-export function useWorkflows(filters: Accessor<WorkflowFilters>): {
-  state: Accessor<ResourceState<ListWorkflowsResponse>>
-  refresh: () => Promise<void>
-} {
-  return useResource<ListWorkflowsResponse>(() => {
+export function useWorkflows(host: ResourceHost, filters: () => WorkflowFilters): ResourceHandle<ListWorkflowsResponse> {
+  return useResource<ListWorkflowsResponse>(host, () => {
     const f = filters()
     return {
       key: `workflows:${f.status ?? ''}:${f.projectId ?? ''}`,
@@ -70,11 +69,8 @@ export interface JobFilters {
   workflowId?: string
 }
 
-export function useJobs(filters: Accessor<JobFilters>): {
-  state: Accessor<ResourceState<ListJobsResponse>>
-  refresh: () => Promise<void>
-} {
-  return useResource<ListJobsResponse>(() => {
+export function useJobs(host: ResourceHost, filters: () => JobFilters): ResourceHandle<ListJobsResponse> {
+  return useResource<ListJobsResponse>(host, () => {
     const f = filters()
     return {
       key: `jobs:${f.status ?? ''}:${f.projectId ?? ''}:${f.workflowId ?? ''}`,
@@ -116,11 +112,8 @@ export function useJobs(filters: Accessor<JobFilters>): {
   })
 }
 
-export function useWorkflow(workflowId: Accessor<string>): {
-  state: Accessor<ResourceState<GetWorkflowResponse>>
-  refresh: () => Promise<void>
-} {
-  return useResource<GetWorkflowResponse>(() => {
+export function useWorkflow(host: ResourceHost, workflowId: () => string): ResourceHandle<GetWorkflowResponse> {
+  return useResource<GetWorkflowResponse>(host, () => {
     const id = workflowId()
     return {
       key: `workflow:${id}`,
@@ -133,8 +126,8 @@ export function useWorkflow(workflowId: Accessor<string>): {
   })
 }
 
-export function useJob(jobId: Accessor<string>) {
-  return useResource(() => {
+export function useJob(host: ResourceHost, jobId: () => string) {
+  return useResource(host, () => {
     const id = jobId()
     return {
       key: `job:${id}`,
@@ -145,8 +138,8 @@ export function useJob(jobId: Accessor<string>) {
   })
 }
 
-export function useProjects() {
-  return useResource<{ projects: ProjectSummary[] }>({
+export function useProjects(host: ResourceHost) {
+  return useResource<{ projects: ProjectSummary[] }>(host, {
     key: 'projects',
     fetcher: () => api.listProjects({}),
     // The PROJECTS collection topic, not the jobs one. "jobs" carries only job
@@ -157,8 +150,8 @@ export function useProjects() {
   })
 }
 
-export function useProject(projectId: Accessor<string>) {
-  return useResource<{ project: ProjectDetail }>(() => {
+export function useProject(host: ResourceHost, projectId: () => string) {
+  return useResource<{ project: ProjectDetail }>(host, () => {
     const id = projectId()
     return {
       key: `project:${id}`,
@@ -176,8 +169,8 @@ export function useProject(projectId: Accessor<string>) {
  * these are the software's own constants, not deployment state, so they change
  * only when the server is upgraded -- at which point the page reloads anyway.
  */
-export function useFormMetadata() {
-  return useResource<DescribeFormMetadataResponse>({
+export function useFormMetadata(host: ResourceHost) {
+  return useResource<DescribeFormMetadataResponse>(host, {
     key: 'form-metadata',
     fetcher: () => api.describeFormMetadata({}),
   })
@@ -204,11 +197,8 @@ export interface CapabilityScope {
  * and yields an all-false answer rather than a global-scope one, so a button
  * never renders off the wrong scope while data is in flight.
  */
-export function useCapabilities(scope: Accessor<CapabilityScope | undefined>): {
-  state: Accessor<ResourceState<GetCapabilitiesResponse>>
-  refresh: () => Promise<void>
-} {
-  return useResource<GetCapabilitiesResponse>(() => {
+export function useCapabilities(host: ResourceHost, scope: () => CapabilityScope | undefined): ResourceHandle<GetCapabilitiesResponse> {
+  return useResource<GetCapabilitiesResponse>(host, () => {
     const s = scope()
     if (!s) {
       return {
@@ -229,8 +219,8 @@ export function useCapabilities(scope: Accessor<CapabilityScope | undefined>): {
  * ones plus those they hold a role in for anyone else. Management pages pick
  * from this list rather than assuming the caller's own user id is an org.
  */
-export function useOrgs() {
-  return useResource<{ orgs: OrgSummary[] }>({
+export function useOrgs(host: ResourceHost) {
+  return useResource<{ orgs: OrgSummary[] }>(host, {
     key: 'orgs',
     fetcher: () => api.listOrgs({}),
   })

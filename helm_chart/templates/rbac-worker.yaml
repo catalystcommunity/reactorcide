@@ -50,7 +50,9 @@ subjects:
     name: {{ include "worker.serviceAccountName" . }}
     namespace: {{ .Release.Namespace }}
 ---
-# Kubelet summary data supplies per-volume and ephemeral-storage values.
+# Kubelet summary data supplies per-volume and ephemeral-storage values. It
+# also supplies CPU and memory when metrics-server has no PodMetrics for a
+# job pod (builder jobs).
 # nodes/proxy is cluster-scoped, so a namespace Role cannot grant it.
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole

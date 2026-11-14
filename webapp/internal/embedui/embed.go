@@ -1,4 +1,4 @@
-// Package embedui serves the SolidJS single-page application from the webapp
+// Package embedui serves the web UI single-page application from the webapp
 // binary.
 //
 // The built assets are compiled in rather than read from disk because the

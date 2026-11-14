@@ -809,6 +809,60 @@ func (c *ReactorcideUiClient) GetJobLogs(ctx context.Context, req GetJobLogsRequ
 	return DecodeGetJobLogsResponse(csilResp)
 }
 
+func (c *ReactorcideUiClient) GetJobResourceHistory(ctx context.Context, req GetJobResourceHistoryRequest) (GetJobResourceHistoryResponse, error) {
+	var csilZero GetJobResourceHistoryResponse
+	csilResp, csilErr := c.transport.Call(ctx, "ReactorcideUi", "get-job-resource-history", EncodeGetJobResourceHistoryRequest(req))
+	if csilErr != nil {
+		return csilZero, csilErr
+	}
+	return DecodeGetJobResourceHistoryResponse(csilResp)
+}
+
+func (c *ReactorcideUiClient) ListSchedules(ctx context.Context, req ListSchedulesRequest) (ListSchedulesResponse, error) {
+	var csilZero ListSchedulesResponse
+	csilResp, csilErr := c.transport.Call(ctx, "ReactorcideUi", "list-schedules", EncodeListSchedulesRequest(req))
+	if csilErr != nil {
+		return csilZero, csilErr
+	}
+	return DecodeListSchedulesResponse(csilResp)
+}
+
+func (c *ReactorcideUiClient) CreateSchedule(ctx context.Context, req CreateScheduleRequest) (CreateScheduleResponse, error) {
+	var csilZero CreateScheduleResponse
+	csilResp, csilErr := c.transport.Call(ctx, "ReactorcideUi", "create-schedule", EncodeCreateScheduleRequest(req))
+	if csilErr != nil {
+		return csilZero, csilErr
+	}
+	return DecodeCreateScheduleResponse(csilResp)
+}
+
+func (c *ReactorcideUiClient) UpdateSchedule(ctx context.Context, req UpdateScheduleRequest) (UpdateScheduleResponse, error) {
+	var csilZero UpdateScheduleResponse
+	csilResp, csilErr := c.transport.Call(ctx, "ReactorcideUi", "update-schedule", EncodeUpdateScheduleRequest(req))
+	if csilErr != nil {
+		return csilZero, csilErr
+	}
+	return DecodeUpdateScheduleResponse(csilResp)
+}
+
+func (c *ReactorcideUiClient) DeleteSchedule(ctx context.Context, req DeleteScheduleRequest) (DeleteScheduleResponse, error) {
+	var csilZero DeleteScheduleResponse
+	csilResp, csilErr := c.transport.Call(ctx, "ReactorcideUi", "delete-schedule", EncodeDeleteScheduleRequest(req))
+	if csilErr != nil {
+		return csilZero, csilErr
+	}
+	return DecodeDeleteScheduleResponse(csilResp)
+}
+
+func (c *ReactorcideUiClient) ListScheduleFires(ctx context.Context, req ListScheduleFiresRequest) (ListScheduleFiresResponse, error) {
+	var csilZero ListScheduleFiresResponse
+	csilResp, csilErr := c.transport.Call(ctx, "ReactorcideUi", "list-schedule-fires", EncodeListScheduleFiresRequest(req))
+	if csilErr != nil {
+		return csilZero, csilErr
+	}
+	return DecodeListScheduleFiresResponse(csilResp)
+}
+
 func (c *ReactorcideUiClient) ListJobs(ctx context.Context, req ListJobsRequest) (ListJobsResponse, error) {
 	var csilZero ListJobsResponse
 	csilResp, csilErr := c.transport.Call(ctx, "ReactorcideUi", "list-jobs", EncodeListJobsRequest(req))

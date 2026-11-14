@@ -1,0 +1,195 @@
+/*
+ * Resource history. Three series, validated with the dataviz palette checks
+ * (CVD and lightness) on the chart surface in each theme: blue = peak of each
+ * run, orange = 95th percentile, purple = average. Dark mode uses its own,
+ * slightly deeper steps of the same hues; the app's brighter dark series
+ * tokens fall outside the lightness band on --surface-sunken.
+ */
+.history {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+
+  --history-peak: var(--series-1);
+  --history-p95: var(--series-2);
+  --history-avg: var(--series-4);
+  --history-anomaly: var(--warn);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) .history {
+    --history-peak: #3f88d2;
+    --history-p95: #dd6e22;
+    --history-avg: #9473d6;
+  }
+}
+:root[data-theme='dark'] .history {
+  --history-peak: #3f88d2;
+  --history-p95: #dd6e22;
+  --history-avg: #9473d6;
+}
+
+.history-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  min-width: 0;
+  transition: opacity 120ms ease;
+}
+/* Refetch keeps the frame: the last chart stays, dimmed, while a new range loads. */
+.history-stale {
+  opacity: 0.55;
+}
+
+.history-chart-wrap {
+  position: relative;
+  width: 100%;
+  min-width: 0;
+}
+.history-chart {
+  display: block;
+  width: 100%;
+  height: auto;
+  background: var(--surface-sunken);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: visible;
+}
+
+.history-line {
+  fill: none;
+  stroke-width: 2;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+.history-line.history-p95 {
+  stroke: var(--history-p95);
+}
+.history-line.history-avg {
+  stroke: var(--history-avg);
+  stroke-dasharray: 6 4;
+}
+
+.history-point {
+  stroke: var(--surface-sunken);
+  stroke-width: 2;
+}
+.history-peak {
+  fill: var(--history-peak);
+}
+.history-point-anomaly {
+  fill: var(--history-anomaly);
+}
+.history-hit {
+  cursor: pointer;
+  outline: none;
+}
+.history-hit-area {
+  fill: transparent;
+}
+.history-hit:hover .history-hit-area,
+.history-hit:focus-visible .history-hit-area {
+  fill: var(--accent-soft);
+  stroke: var(--border-focus);
+  stroke-width: 2;
+}
+.history-current-ring {
+  fill: none;
+  stroke: var(--text);
+  stroke-width: 2;
+}
+.history-current-line {
+  stroke: var(--border-strong);
+  stroke-width: 1;
+}
+
+.history-ref {
+  stroke: var(--text-subtle);
+  stroke-width: 1;
+}
+.history-ref-limit {
+  stroke-dasharray: 4 3;
+}
+.history-ref-label {
+  fill: var(--text-muted);
+  font-size: 10px;
+  font-family: var(--font-mono);
+}
+
+.history-tooltip {
+  position: absolute;
+  z-index: 2;
+  min-width: 12rem;
+  max-width: min(18rem, 90vw);
+  padding: var(--space-2) var(--space-3);
+  background: var(--surface-raised);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  font-size: var(--text-sm);
+  pointer-events: none;
+  transform: translateX(-10%);
+}
+.history-tooltip-flip {
+  transform: translateX(-90%);
+}
+.history-tip-title {
+  font-weight: 600;
+}
+.history-tip-row {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+.history-tip-row > :first-child {
+  white-space: nowrap;
+}
+
+.history-key-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--history-peak);
+  flex-shrink: 0;
+}
+.history-key-line {
+  width: 14px;
+  height: 0;
+  border-top: 2px solid;
+  flex-shrink: 0;
+}
+.history-key-line.history-p95 {
+  border-top-color: var(--history-p95);
+}
+.history-key-line.history-avg {
+  border-top: 2px dashed var(--history-avg);
+}
+
+.history-stats dd {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+
+.history-subtitle {
+  margin: 0 0 var(--space-2);
+  font-size: var(--text-base);
+}
+.history-anomalies {
+  margin: 0;
+  padding-left: var(--space-4);
+}
+.history-anomalies li::marker {
+  content: '◆ ';
+  color: var(--history-anomaly);
+}
+
+.history-table summary {
+  cursor: pointer;
+  color: var(--text-muted);
+}
+.history-row-anomaly td:first-child::before {
+  content: '◆ ';
+  color: var(--history-anomaly);
+}
+.history-row-current {
+  font-weight: 600;
+}

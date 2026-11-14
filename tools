@@ -24,7 +24,7 @@ usage() {
     echo "  test-coordinator   Run Go tests only"
     echo "  test-web           Run webapp Go tests, unit and integration"
     echo "  test-web-integration  Run webapp integration tests only (needs a container runtime)"
-    echo "  test-ui            Run web UI (SolidJS) tests only"
+    echo "  test-ui            Run web UI (Zest SPA) tests only"
     echo "  run-api            Start coordinator API locally"
     echo "  run-worker         Start worker locally"
     echo "  build              Build Go binary (builds the UI first)"

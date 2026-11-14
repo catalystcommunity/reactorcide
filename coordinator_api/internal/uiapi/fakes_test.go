@@ -34,9 +34,11 @@ type fakeStore struct {
 	projects   map[string]models.Project
 	ciPolicies map[string]models.CIPolicy
 	jobs       map[string]models.Job
-	workflows  map[string]models.WorkflowInstance
-	nodes      map[string][]models.WorkflowNode
-	events     []models.WorkflowEvent
+	// resourceSummaries is lazily made; see fakes_resource_history_test.go.
+	resourceSummaries map[string]models.JobResourceSummary
+	workflows         map[string]models.WorkflowInstance
+	nodes             map[string][]models.WorkflowNode
+	events            []models.WorkflowEvent
 
 	groups       map[string]models.Group
 	groupMembers map[string]map[string]bool // groupID -> set of userID

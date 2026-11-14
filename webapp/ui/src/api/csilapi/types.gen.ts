@@ -1232,6 +1232,149 @@ export interface GetJobMetricsResponse {
   components: string[];
 }
 
+/**
+ * workflow_ref is an explicit workflow ID, or a workflow file path directly
+ * under .reactorcide/workflows/ (for example
+ * ".reactorcide/workflows/nightly.yaml"). cron is five fields or a
+ * descriptor such as "@daily", read in timezone (an IANA name, default UTC).
+ */
+export interface ScheduleSummary {
+  scheduleId: string;
+  projectId: string;
+  name: string;
+  branch: string;
+  workflowRef: string;
+  cron: string;
+  timezone: string;
+  enabled: boolean;
+  nextFireAt?: string;
+  lastFireAt?: string;
+  lastEventId?: string;
+  lastError: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/**
+ * status is "firing", "fired" or "failed".
+ */
+export interface ScheduleFireSummary {
+  fireId: string;
+  scheduleId: string;
+  fireTime: string;
+  status: string;
+  eventId?: string;
+  error: string;
+  completedAt?: string;
+}
+
+export interface ListSchedulesRequest {
+  projectId: string;
+}
+
+export interface ListSchedulesResponse {
+  schedules: ScheduleSummary[];
+}
+
+export interface CreateScheduleRequest {
+  projectId: string;
+  name: string;
+  branch: string;
+  workflowRef: string;
+  cron: string;
+  timezone?: string;
+  enabled?: boolean;
+}
+
+export interface CreateScheduleResponse {
+  schedule: ScheduleSummary;
+}
+
+/**
+ * Only the fields that are present change.
+ */
+export interface UpdateScheduleRequest {
+  scheduleId: string;
+  name?: string;
+  branch?: string;
+  workflowRef?: string;
+  cron?: string;
+  timezone?: string;
+  enabled?: boolean;
+}
+
+export interface UpdateScheduleResponse {
+  schedule: ScheduleSummary;
+}
+
+export interface DeleteScheduleRequest {
+  scheduleId: string;
+}
+
+export interface DeleteScheduleResponse {
+  ok: boolean;
+}
+
+/**
+ * Newest fires first. Default limit 20, maximum 200.
+ */
+export interface ListScheduleFiresRequest {
+  scheduleId: string;
+  limit?: number;
+}
+
+export interface ListScheduleFiresResponse {
+  fires: ScheduleFireSummary[];
+}
+
+/**
+ * Resource history across the runs of one job, for capacity planning.
+ * A "job" here is every run with the same project and the same name as the
+ * job_id given. Values are integer-scaled by unit: millicores and bytes.
+ * Timestamps are RFC3339 UTC text.
+ */
+export interface GetJobResourceHistoryRequest {
+  jobId: string;
+  fromTime?: string;
+  toTime?: string;
+  limit?: number;
+}
+
+/**
+ * One finished run, summarized from its stored telemetry (the job roll-up,
+ * not one component). An absent value was not measured for that run.
+ */
+export interface JobRunResourceSummary {
+  jobId: string;
+  status: string;
+  createdAt: string;
+  startedAt?: string;
+  completedAt?: string;
+  durationSeconds?: number;
+  sourceRef?: string;
+  capabilities?: string[];
+  sampleCount: number;
+  cpuAvgMillicores?: number;
+  cpuP95Millicores?: number;
+  cpuMaxMillicores?: number;
+  cpuPeakAt?: string;
+  cpuRequestMillicores?: number;
+  cpuLimitMillicores?: number;
+  memoryAvgBytes?: number;
+  memoryP95Bytes?: number;
+  memoryMaxBytes?: number;
+  memoryPeakAt?: string;
+  memoryLimitBytes?: number;
+  storageMaxBytes?: number;
+}
+
+export interface GetJobResourceHistoryResponse {
+  projectId?: string;
+  name: string;
+  runs: JobRunResourceSummary[];
+  pending: number;
+}
+
 export interface GetJobLogsRequest {
   jobId: string;
   stream: string;

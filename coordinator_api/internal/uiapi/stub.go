@@ -357,6 +357,10 @@ func (StubUi) GetJobMetrics(ctx context.Context, req csilapi.GetJobMetricsReques
 	return csilapi.GetJobMetricsResponse{}, ErrUnimplemented("ReactorcideUi/get-job-metrics")
 }
 
+func (StubUi) GetJobResourceHistory(ctx context.Context, req csilapi.GetJobResourceHistoryRequest) (csilapi.GetJobResourceHistoryResponse, error) {
+	return csilapi.GetJobResourceHistoryResponse{}, ErrUnimplemented("ReactorcideUi/get-job-resource-history")
+}
+
 func (StubUi) ListJobs(ctx context.Context, req csilapi.ListJobsRequest) (csilapi.ListJobsResponse, error) {
 	return csilapi.ListJobsResponse{}, ErrUnimplemented("ReactorcideUi/list-jobs")
 }
@@ -379,4 +383,24 @@ func (StubUi) DescribeFormMetadata(ctx context.Context, req csilapi.DescribeForm
 
 func (StubUi) GetJobLogs(ctx context.Context, req csilapi.GetJobLogsRequest) (csilapi.GetJobLogsResponse, error) {
 	return csilapi.GetJobLogsResponse{}, ErrUnimplemented("ReactorcideUi/get-job-logs")
+}
+
+func (StubUi) ListSchedules(ctx context.Context, req csilapi.ListSchedulesRequest) (csilapi.ListSchedulesResponse, error) {
+	return csilapi.ListSchedulesResponse{}, ErrUnimplemented("ReactorcideUi/list-schedules")
+}
+
+func (StubUi) CreateSchedule(ctx context.Context, req csilapi.CreateScheduleRequest) (csilapi.CreateScheduleResponse, error) {
+	return csilapi.CreateScheduleResponse{}, ErrUnimplemented("ReactorcideUi/create-schedule")
+}
+
+func (StubUi) UpdateSchedule(ctx context.Context, req csilapi.UpdateScheduleRequest) (csilapi.UpdateScheduleResponse, error) {
+	return csilapi.UpdateScheduleResponse{}, ErrUnimplemented("ReactorcideUi/update-schedule")
+}
+
+func (StubUi) DeleteSchedule(ctx context.Context, req csilapi.DeleteScheduleRequest) (csilapi.DeleteScheduleResponse, error) {
+	return csilapi.DeleteScheduleResponse{}, ErrUnimplemented("ReactorcideUi/delete-schedule")
+}
+
+func (StubUi) ListScheduleFires(ctx context.Context, req csilapi.ListScheduleFiresRequest) (csilapi.ListScheduleFiresResponse, error) {
+	return csilapi.ListScheduleFiresResponse{}, ErrUnimplemented("ReactorcideUi/list-schedule-fires")
 }

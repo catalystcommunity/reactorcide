@@ -1,5 +1,8 @@
-import { createMemo, createSignal, onCleanup, untrack, type Accessor } from 'solid-js'
+import { dataStore } from '~/ui/store.ts'
 import { eventSocket, type LiveEvent } from './events.ts'
+
+/** The store collection that holds each entry's ResourceState, keyed by entry key. */
+export const RESOURCES = 'resources'
 
 /**
  * The shared datastore.
@@ -9,8 +12,9 @@ import { eventSocket, type LiveEvent } from './events.ts'
  * together make that true:
  *
  *  1. REFERENCE COUNTING. An entry is only reachable through `useResource`,
- *     which registers its own release in onCleanup. A component cannot forget
- *     to release what it never explicitly acquired.
+ *     which hands its own release to the element's `own()`. The element's
+ *     disconnect releases it; a component cannot forget to release what it
+ *     never explicitly acquired.
  *
  *  2. TIMED EVICTION. Dropping to zero holders starts a grace period rather
  *     than deleting immediately, so back-navigation is instant. After the
@@ -21,8 +25,8 @@ import { eventSocket, type LiveEvent } from './events.ts'
  *     `appendBounded`.
  *
  *  4. A LEAK TEST. `storeStats()` reports what is held, and store.test.ts
- *     mounts and unmounts routes repeatedly and asserts the numbers return to
- *     baseline. A leak fails the build rather than waiting for somebody to
+ *     connects and disconnects elements repeatedly and asserts the numbers
+ *     return to baseline. A leak fails the build rather than waiting for somebody to
  *     notice a slow tab.
  */
 
@@ -44,8 +48,7 @@ interface Entry<T> {
   key: string
   holders: number
   releasedAt: number | null
-  read: Accessor<ResourceState<T>>
-  write: (next: ResourceState<T>) => void
+  state: ResourceState<T>
   fetcher: () => Promise<T>
   /** Releases every live topic this entry acquired. */
   releaseTopics: (() => void)[]
@@ -79,6 +82,7 @@ function disposeEntry(key: string, entry: Entry<unknown>): void {
   entry.removeListener?.()
   entry.removeListener = null
   entries.delete(key)
+  dataStore.remove(RESOURCES, key)
 }
 
 export interface ResourceOptions<T> {
@@ -102,66 +106,102 @@ export interface ResourceOptions<T> {
   applyEvent?: (current: T | undefined, event: LiveEvent) => T | undefined
 }
 
-/**
- * Acquires a shared resource for the lifetime of the calling component.
- *
- * The returned accessor is reactive. Release is automatic: this registers an
- * onCleanup, so a component that unmounts stops holding the entry and stops
- * holding its live topics, whether it unmounted normally or because a route
- * changed underneath it.
- */
-export function useResource<T>(
-  options: ResourceOptions<T> | (() => ResourceOptions<T>),
-): {
-  state: Accessor<ResourceState<T>>
-  refresh: () => Promise<void>
-} {
-  // The options may be a BUILDER, and for anything keyed on a route param or a
-  // filter they must be. The router reuses a route component when only a path
-  // param or a search param changes, so options snapshotted once at setup pin
-  // the page to whatever it was first opened with: /jobs/a stays on screen
-  // after navigating to /jobs/b, and changing the status filter updates the URL
-  // without ever refetching. Re-reading the builder inside a memo is what makes
-  // both follow.
-  const optionsOf = typeof options === 'function' ? options : () => options
+/** What an element must offer to hold a resource. RcElement has all three. */
+export interface ResourceHost {
+  own<R extends () => void>(remove: R): R
+  invalidate(): void
+  isActive(): boolean
+}
 
-  // Exactly one entry is held at a time. Releasing the previous one before
-  // acquiring the next keeps the holder count honest when the key changes
-  // underneath a component the router did not remount.
-  let held: Entry<T> | null = null
-  const release = (): void => {
+const INITIAL: ResourceState<never> = { data: undefined, error: undefined, loading: true, loaded: false }
+
+/** Live data-store subscriptions held by resource handles, for the leak test. */
+let subscriptions = 0
+
+/**
+ * One element's hold on one shared resource.
+ *
+ * `sync()` re-reads the options builder and, when the KEY changed, releases
+ * the old entry and acquires the new one. Call it from render(): a page whose
+ * route param or filter changed must follow it, and a page kept across a query
+ * change (a filter) is exactly the case where options read once would pin the
+ * page to whatever it was first opened with. An unchanged key does nothing, so
+ * calling it on every render is cheap.
+ */
+export class ResourceHandle<T> {
+  #entry: Entry<T> | null = null
+  #unsubscribe: (() => void) | null = null
+  readonly #host: ResourceHost
+  readonly #optionsOf: () => ResourceOptions<T>
+
+  constructor(host: ResourceHost, optionsOf: () => ResourceOptions<T>) {
+    this.#host = host
+    this.#optionsOf = optionsOf
+    this.sync()
+    host.own(() => this.release())
+  }
+
+  sync(): void {
+    const next = this.#optionsOf()
+    if (this.#entry && this.#entry.key === next.key) return
+    this.release()
+    const entry = acquire(next)
+    this.#entry = entry
+    // A write of THIS key renders the host again. The store indexes keyed
+    // subscriptions, so an event storm on other keys costs this host nothing.
+    this.#unsubscribe = dataStore.subscribe(() => this.#host.invalidate(), {
+      collection: RESOURCES,
+      keys: [entry.key],
+      isActive: () => this.#host.isActive(),
+    })
+    subscriptions += 1
+  }
+
+  state(): ResourceState<T> {
+    return (this.#entry?.state ?? INITIAL) as ResourceState<T>
+  }
+
+  /** Reloads the dataset that is on screen, with the entry's own fetcher. */
+  refresh(): Promise<void> {
+    const entry = this.#entry
+    return entry ? load(entry, entry.fetcher) : Promise.resolve()
+  }
+
+  /** Stops holding. Idempotent; the host's disconnect calls it. */
+  release(): void {
+    if (this.#unsubscribe) {
+      this.#unsubscribe()
+      this.#unsubscribe = null
+      subscriptions -= 1
+    }
+    const held = this.#entry
     if (!held) return
+    this.#entry = null
     held.holders -= 1
     if (held.holders <= 0) {
       held.holders = 0
       held.releasedAt = Date.now()
     }
-    held = null
   }
+}
 
-  const current = createMemo<Entry<T>>((previous) => {
-    // Only the BUILDER is tracked. acquire() starts a load, which reads and
-    // writes the entry's own state signal; tracking that would make this memo
-    // invalidate itself and re-acquire on every fetch, double-counting holders.
-    const next = optionsOf()
-    return untrack(() => {
-      // An unrelated reactive read must not churn the entry: only a changed
-      // key means a different dataset.
-      if (previous && previous.key === next.key) return previous
-      release()
-      held = acquire(next)
-      return held
-    })
-  })
+/**
+ * Acquires a shared resource for as long as `host` stays connected.
+ *
+ * Call it from the host's `connected()`. Release is automatic: the handle
+ * gives its release to `host.own()`, so an element that leaves the page stops
+ * holding the entry and its live topics, however it left.
+ */
+export function useResource<T>(
+  host: ResourceHost,
+  options: ResourceOptions<T> | (() => ResourceOptions<T>),
+): ResourceHandle<T> {
+  return new ResourceHandle<T>(host, typeof options === 'function' ? options : () => options)
+}
 
-  onCleanup(release)
-
-  return {
-    state: () => current().read() as ResourceState<T>,
-    // The entry's own fetcher, not the builder's: a refresh must reload the
-    // dataset that is on screen.
-    refresh: () => load(current(), current().fetcher),
-  }
+function write<T>(entry: Entry<T>, next: ResourceState<T>): void {
+  entry.state = next
+  dataStore.set(RESOURCES, entry.key, next)
 }
 
 function acquire<T>(options: ResourceOptions<T>): Entry<T> {
@@ -176,25 +216,18 @@ function acquire<T>(options: ResourceOptions<T>): Entry<T> {
     return existing
   }
 
-  const [read, write] = createSignal<ResourceState<T>>({
-    data: undefined,
-    error: undefined,
-    loading: true,
-    loaded: false,
-  })
-
   const entry: Entry<T> = {
     key,
     holders: 1,
     releasedAt: null,
-    read,
-    write,
+    state: { ...INITIAL },
     fetcher: options.fetcher,
     releaseTopics: [],
     removeListener: null,
     inFlight: null,
   }
   entries.set(key, entry as Entry<unknown>)
+  dataStore.set(RESOURCES, key, entry.state)
 
   const wanted = options.topics ?? []
   for (const topic of wanted) {
@@ -204,9 +237,9 @@ function acquire<T>(options: ResourceOptions<T>): Entry<T> {
   if (wanted.length) {
     entry.removeListener = eventSocket.addListener((event) => {
       if (options.applyEvent) {
-        const next = options.applyEvent(entry.read().data, event)
+        const next = options.applyEvent(entry.state.data, event)
         if (next !== undefined) {
-          entry.write({ ...entry.read(), data: next })
+          write(entry, { ...entry.state, data: next })
           return
         }
       }
@@ -231,19 +264,18 @@ function acquire<T>(options: ResourceOptions<T>): Entry<T> {
 function load<T>(entry: Entry<T>, fetcher: () => Promise<T>): Promise<void> {
   if (entry.inFlight) return entry.inFlight
 
-  const current = entry.read()
-  entry.write({ ...current, loading: true })
+  write(entry, { ...entry.state, loading: true })
 
   const run = fetcher()
     .then((data) => {
       // The entry may have been evicted while the request was in flight.
       if (!entries.has(entry.key)) return
-      entry.write({ data, error: undefined, loading: false, loaded: true })
+      write(entry, { data, error: undefined, loading: false, loaded: true })
     })
     .catch((error: unknown) => {
       if (!entries.has(entry.key)) return
-      entry.write({
-        ...entry.read(),
+      write(entry, {
+        ...entry.state,
         error: error instanceof Error ? error : new Error(String(error)),
         loading: false,
         // Keep `loaded` as it was: a failed refresh should leave the previous
@@ -283,7 +315,7 @@ export const BUFFER_CAPS = {
  * What the store is holding right now.
  *
  * Exported for the leak test, and useful from the browser console when
- * something feels slow. `window.__reactorcideStore` is wired in main.tsx for
+ * something feels slow. `window.__reactorcideStore` is wired in main.ts for
  * development builds only.
  */
 export function storeStats(): {
@@ -291,6 +323,7 @@ export function storeStats(): {
   holders: number
   topics: number
   listeners: number
+  subscriptions: number
 } {
   let holders = 0
   for (const entry of entries.values()) holders += entry.holders
@@ -300,6 +333,7 @@ export function storeStats(): {
     holders,
     topics: socket.topics,
     listeners: socket.listeners,
+    subscriptions,
   }
 }
 

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"sync"
 	"time"
 
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/jobtelemetry"
@@ -24,22 +25,43 @@ type podMetricsResponse struct {
 	} `json:"containers"`
 }
 
+// summaryResponse is the part of the kubelet /stats/summary document the
+// collector reads. Pod-level cpu and memory come from the pod cgroup, so they
+// include every container of the pod: the job container and its native
+// sidecars (buildkitd, dind).
 type summaryResponse struct {
-	Pods []struct {
-		PodRef struct {
-			Name      string `json:"name"`
-			Namespace string `json:"namespace"`
-		} `json:"podRef"`
-		EphemeralStorage *summaryFS `json:"ephemeral-storage"`
-		VolumeStats      []struct {
-			Name    string    `json:"name"`
-			FsStats summaryFS `json:"fsStats"`
-		} `json:"volume"`
-		Containers []struct {
-			Name   string     `json:"name"`
-			Rootfs *summaryFS `json:"rootfs"`
-		} `json:"containers"`
-	} `json:"pods"`
+	Pods []summaryPod `json:"pods"`
+}
+
+type summaryPod struct {
+	PodRef struct {
+		Name      string `json:"name"`
+		Namespace string `json:"namespace"`
+	} `json:"podRef"`
+	CPU              *summaryCPU    `json:"cpu"`
+	Memory           *summaryMemory `json:"memory"`
+	EphemeralStorage *summaryFS     `json:"ephemeral-storage"`
+	VolumeStats      []struct {
+		Name    string    `json:"name"`
+		FsStats summaryFS `json:"fsStats"`
+	} `json:"volume"`
+	Containers []struct {
+		Name   string         `json:"name"`
+		CPU    *summaryCPU    `json:"cpu"`
+		Memory *summaryMemory `json:"memory"`
+		Rootfs *summaryFS     `json:"rootfs"`
+	} `json:"containers"`
+}
+
+type summaryCPU struct {
+	Time           time.Time `json:"time"`
+	UsageNanoCores *uint64   `json:"usageNanoCores"`
+}
+
+type summaryMemory struct {
+	Time time.Time `json:"time"`
+	// WorkingSetBytes is the value metrics-server reports as memory usage.
+	WorkingSetBytes *uint64 `json:"workingSetBytes"`
 }
 
 type summaryFS struct {
@@ -201,59 +223,17 @@ func (kr *KubernetesRunner) SampleResources(ctx context.Context, jobName string,
 	addKubernetesResourceSettings(add, &pod)
 	source := kr.metricsSourceFor()
 
-	metricData, metricErr := source.PodMetrics(ctx, kr.namespace, pod.Name)
-	if metricErr != nil {
-		reason := kr.podMetricsReason(ctx, source, metricErr)
-		snapshot.Unavailable = append(snapshot.Unavailable,
-			jobtelemetry.Unavailable{MetricPrefix: kubernetesCPUPrefix, Reason: reason},
-			jobtelemetry.Unavailable{MetricPrefix: kubernetesMemoryPrefix, Reason: reason},
-		)
-	} else {
-		var metrics podMetricsResponse
-		if json.Unmarshal(metricData, &metrics) != nil {
+	if reason := addPodMetricsUsage(ctx, kr, source, add, &snapshot, &pod); reason != "" {
+		// metrics-server has no usable sample for this pod. That is the
+		// permanent state for builder pods: metrics-server serves no
+		// PodMetrics object for them at all. Read the same kubelet numbers
+		// from the node stats summary instead. Only when that also has
+		// nothing does the metrics-server reason reach the UI.
+		if !kr.addSummaryUsage(ctx, source, add, &snapshot, &pod) {
 			snapshot.Unavailable = append(snapshot.Unavailable,
-				jobtelemetry.Unavailable{MetricPrefix: kubernetesCPUPrefix, Reason: "runtime_not_supported"},
-				jobtelemetry.Unavailable{MetricPrefix: kubernetesMemoryPrefix, Reason: "runtime_not_supported"},
+				jobtelemetry.Unavailable{MetricPrefix: kubernetesCPUPrefix, Reason: reason},
+				jobtelemetry.Unavailable{MetricPrefix: kubernetesMemoryPrefix, Reason: reason},
 			)
-		} else {
-			if !metrics.Timestamp.IsZero() {
-				snapshot.ObservedAt = metrics.Timestamp.UTC()
-			}
-			var totalCPU, totalMemory int64
-			var hasCPU, hasMemory bool
-			for _, containerMetric := range metrics.Containers {
-				component := kubernetesMetricComponent(containerMetric.Name)
-				// Presence of the component label IS the "this is one container,
-				// not the job total" signal. The old scope label carried no
-				// information this does not.
-				labels := []jobtelemetry.Label{{Key: "component", Value: component}}
-				if value, parseErr := resource.ParseQuantity(containerMetric.Usage["cpu"]); parseErr == nil {
-					milli := value.MilliValue()
-					add("cpu.utilization", "millicores", "gauge", milli, labels...)
-					totalCPU += milli
-					hasCPU = true
-				}
-				if value, parseErr := resource.ParseQuantity(containerMetric.Usage["memory"]); parseErr == nil {
-					bytes := value.Value()
-					add("memory.usage", "bytes", "gauge", bytes, labels...)
-					totalMemory += bytes
-					hasMemory = true
-				}
-			}
-			if hasCPU {
-				add("cpu.utilization", "millicores", "gauge", totalCPU, jobtelemetry.Label{Key: "cpu", Value: "total"})
-			}
-			if hasMemory {
-				add("memory.usage", "bytes", "gauge", totalMemory)
-			}
-			// metrics-server answered with an object that has no containers
-			// yet: the pod is known but not sampled. That is a "not yet".
-			if !hasCPU && !hasMemory {
-				snapshot.Unavailable = append(snapshot.Unavailable,
-					jobtelemetry.Unavailable{MetricPrefix: kubernetesCPUPrefix, Reason: "temporarily_unavailable"},
-					jobtelemetry.Unavailable{MetricPrefix: kubernetesMemoryPrefix, Reason: "temporarily_unavailable"},
-				)
-			}
 		}
 	}
 	if !options.IncludeStorage {
@@ -265,51 +245,223 @@ func (kr *KubernetesRunner) SampleResources(ctx context.Context, jobName string,
 		snapshot.Unavailable = append(snapshot.Unavailable, jobtelemetry.Unavailable{MetricPrefix: kubernetesStoragePrefix, Reason: "temporarily_unavailable"})
 		return snapshot, nil
 	}
-	summaryData, summaryErr := source.NodeSummary(ctx, pod.Spec.NodeName)
-	if summaryErr != nil {
-		snapshot.Unavailable = append(snapshot.Unavailable, jobtelemetry.Unavailable{MetricPrefix: kubernetesStoragePrefix, Reason: classifyKubernetesError(summaryErr)})
-		return snapshot, nil
-	}
-	var summary summaryResponse
-	if json.Unmarshal(summaryData, &summary) != nil {
+	podSummary, summaryErr := kr.podSummary(ctx, source, &pod)
+	switch {
+	case errors.Is(summaryErr, errSummaryDecode):
 		snapshot.Unavailable = append(snapshot.Unavailable, jobtelemetry.Unavailable{MetricPrefix: kubernetesStoragePrefix, Reason: "runtime_not_supported"})
 		return snapshot, nil
-	}
-	found := false
-	for _, podSummary := range summary.Pods {
-		if podSummary.PodRef.Name != pod.Name || podSummary.PodRef.Namespace != kr.namespace {
-			continue
-		}
-		found = true
-		// Kubelet charges this used value to the Pod. The capacity and available
-		// values describe the node filesystem, so they are not job metrics.
-		addSummaryFS(add, podSummary.EphemeralStorage, kubernetesStorageMetric{
-			volume: "total", kind: "ephemeral", includeCapacity: false,
-		})
-		volumes := kubernetesStorageVolumes(&pod)
-		for _, volume := range podSummary.VolumeStats {
-			metric, ok := volumes[volume.Name]
-			if !ok {
-				// Do not report shared PVC usage as job usage. The kubelet value is
-				// for the complete claim and can include data from other jobs.
-				continue
-			}
-			fs := volume.FsStats
-			addSummaryFS(add, &fs, metric)
-		}
-		for _, containerSummary := range podSummary.Containers {
-			addSummaryFS(add, containerSummary.Rootfs, kubernetesStorageMetric{
-				component: kubernetesMetricComponent(containerSummary.Name),
-				volume:    "rootfs-" + containerSummary.Name, kind: "rootfs", includeCapacity: false,
-			})
-		}
-		break
-	}
-	if !found {
+	case summaryErr != nil:
+		snapshot.Unavailable = append(snapshot.Unavailable, jobtelemetry.Unavailable{MetricPrefix: kubernetesStoragePrefix, Reason: classifyKubernetesError(summaryErr)})
+		return snapshot, nil
+	case podSummary == nil:
 		// The kubelet summary lags pod creation by one stats interval.
 		snapshot.Unavailable = append(snapshot.Unavailable, jobtelemetry.Unavailable{MetricPrefix: kubernetesStoragePrefix, Reason: "temporarily_unavailable"})
+		return snapshot, nil
+	}
+	// Kubelet charges this used value to the Pod. The capacity and available
+	// values describe the node filesystem, so they are not job metrics.
+	addSummaryFS(add, podSummary.EphemeralStorage, kubernetesStorageMetric{
+		volume: "total", kind: "ephemeral", includeCapacity: false,
+	})
+	volumes := kubernetesStorageVolumes(&pod)
+	for _, volume := range podSummary.VolumeStats {
+		metric, ok := volumes[volume.Name]
+		if !ok {
+			// Do not report shared PVC usage as job usage. The kubelet value is
+			// for the complete claim and can include data from other jobs.
+			continue
+		}
+		fs := volume.FsStats
+		addSummaryFS(add, &fs, metric)
+	}
+	for _, containerSummary := range podSummary.Containers {
+		addSummaryFS(add, containerSummary.Rootfs, kubernetesStorageMetric{
+			component: kubernetesMetricComponent(containerSummary.Name),
+			volume:    "rootfs-" + containerSummary.Name, kind: "rootfs", includeCapacity: false,
+		})
 	}
 	return snapshot, nil
+}
+
+type addMetricFunc = func(string, string, string, int64, ...jobtelemetry.Label)
+
+// addPodMetricsUsage adds CPU and memory from the metrics.k8s.io PodMetrics
+// object. It returns "" when it added usage, else the availability reason.
+func addPodMetricsUsage(ctx context.Context, kr *KubernetesRunner, source kubernetesMetricsSource, add addMetricFunc, snapshot *ResourceSnapshot, pod *corev1.Pod) string {
+	metricData, metricErr := source.PodMetrics(ctx, kr.namespace, pod.Name)
+	if metricErr != nil {
+		return kr.podMetricsReason(ctx, source, metricErr)
+	}
+	var metrics podMetricsResponse
+	if json.Unmarshal(metricData, &metrics) != nil {
+		return "runtime_not_supported"
+	}
+	var totalCPU, totalMemory int64
+	var hasCPU, hasMemory bool
+	for _, containerMetric := range metrics.Containers {
+		component := kubernetesMetricComponent(containerMetric.Name)
+		// Presence of the component label IS the "this is one container,
+		// not the job total" signal. The old scope label carried no
+		// information this does not.
+		labels := []jobtelemetry.Label{{Key: "component", Value: component}}
+		if value, parseErr := resource.ParseQuantity(containerMetric.Usage["cpu"]); parseErr == nil {
+			milli := value.MilliValue()
+			add("cpu.utilization", "millicores", "gauge", milli, labels...)
+			totalCPU += milli
+			hasCPU = true
+		}
+		if value, parseErr := resource.ParseQuantity(containerMetric.Usage["memory"]); parseErr == nil {
+			bytes := value.Value()
+			add("memory.usage", "bytes", "gauge", bytes, labels...)
+			totalMemory += bytes
+			hasMemory = true
+		}
+	}
+	// metrics-server answered with an object that has no containers yet:
+	// the pod is known but not sampled. That is a "not yet".
+	if !hasCPU && !hasMemory {
+		return "temporarily_unavailable"
+	}
+	if !metrics.Timestamp.IsZero() {
+		snapshot.ObservedAt = metrics.Timestamp.UTC()
+	}
+	if hasCPU {
+		add("cpu.utilization", "millicores", "gauge", totalCPU, jobtelemetry.Label{Key: "cpu", Value: "total"})
+	}
+	if hasMemory {
+		add("memory.usage", "bytes", "gauge", totalMemory)
+	}
+	return ""
+}
+
+// addSummaryUsage adds CPU and memory from the kubelet stats summary, the
+// source metrics-server itself scrapes. The roll-up is the pod-level value
+// (the pod cgroup, so every sidecar is in it); a container without its own
+// numbers still counts there. It reports whether it added anything.
+func (kr *KubernetesRunner) addSummaryUsage(ctx context.Context, source kubernetesMetricsSource, add addMetricFunc, snapshot *ResourceSnapshot, pod *corev1.Pod) bool {
+	if pod.Spec.NodeName == "" {
+		return false
+	}
+	podSummary, err := kr.podSummary(ctx, source, pod)
+	if err != nil || podSummary == nil {
+		return false
+	}
+	added := false
+	var sumCPU, sumMemory int64
+	var containerCPU, containerMemory bool
+	for _, container := range podSummary.Containers {
+		labels := []jobtelemetry.Label{{Key: "component", Value: kubernetesMetricComponent(container.Name)}}
+		if container.CPU != nil && container.CPU.UsageNanoCores != nil {
+			milli := nanoCoresToMillicores(*container.CPU.UsageNanoCores)
+			add("cpu.utilization", "millicores", "gauge", milli, labels...)
+			sumCPU += milli
+			containerCPU = true
+			added = true
+		}
+		if container.Memory != nil && container.Memory.WorkingSetBytes != nil {
+			bytes := int64(*container.Memory.WorkingSetBytes)
+			add("memory.usage", "bytes", "gauge", bytes, labels...)
+			sumMemory += bytes
+			containerMemory = true
+			added = true
+		}
+	}
+	switch {
+	case podSummary.CPU != nil && podSummary.CPU.UsageNanoCores != nil:
+		add("cpu.utilization", "millicores", "gauge", nanoCoresToMillicores(*podSummary.CPU.UsageNanoCores), jobtelemetry.Label{Key: "cpu", Value: "total"})
+		added = true
+		if !podSummary.CPU.Time.IsZero() {
+			snapshot.ObservedAt = podSummary.CPU.Time.UTC()
+		}
+	case containerCPU:
+		add("cpu.utilization", "millicores", "gauge", sumCPU, jobtelemetry.Label{Key: "cpu", Value: "total"})
+	}
+	switch {
+	case podSummary.Memory != nil && podSummary.Memory.WorkingSetBytes != nil:
+		add("memory.usage", "bytes", "gauge", int64(*podSummary.Memory.WorkingSetBytes))
+		added = true
+	case containerMemory:
+		add("memory.usage", "bytes", "gauge", sumMemory)
+	}
+	return added
+}
+
+func nanoCoresToMillicores(nanoCores uint64) int64 {
+	return int64(nanoCores / 1_000_000)
+}
+
+// errSummaryDecode marks a node summary that answered but did not parse.
+var errSummaryDecode = errors.New("kubelet stats summary did not decode")
+
+// summaryCacheTTL bounds how long one node summary serves later samples.
+// The kubelet refreshes these numbers every ~10-15s, so a 2s sampler would
+// otherwise fetch the whole node document several times per new value.
+const summaryCacheTTL = 5 * time.Second
+
+// kubeletSummaryCache holds the newest parsed stats summary per node. The
+// zero value is ready to use.
+type kubeletSummaryCache struct {
+	mu      sync.Mutex
+	entries map[string]cachedSummary
+	// now is the clock; nil means time.Now. Tests set it.
+	now func() time.Time
+}
+
+type cachedSummary struct {
+	fetchedAt time.Time
+	summary   *summaryResponse
+}
+
+func (c *kubeletSummaryCache) clock() time.Time {
+	if c.now != nil {
+		return c.now()
+	}
+	return time.Now()
+}
+
+// podSummary returns the pod's entry in its node's stats summary, or nil when
+// the summary does not list the pod yet. A cached summary that does not list
+// the pod is fetched again: the kubelet lags pod creation, and a new pod must
+// not wait out the cache of an older one on the same node. Errors are not
+// cached.
+func (kr *KubernetesRunner) podSummary(ctx context.Context, source kubernetesMetricsSource, pod *corev1.Pod) (*summaryPod, error) {
+	node := pod.Spec.NodeName
+	cache := &kr.summaryCache
+	cache.mu.Lock()
+	entry, ok := cache.entries[node]
+	cache.mu.Unlock()
+	if ok && cache.clock().Sub(entry.fetchedAt) < summaryCacheTTL {
+		if found := findPodSummary(entry.summary, pod.Name, kr.namespace); found != nil {
+			return found, nil
+		}
+	}
+	data, err := source.NodeSummary(ctx, node)
+	if err != nil {
+		return nil, err
+	}
+	var summary summaryResponse
+	if json.Unmarshal(data, &summary) != nil {
+		return nil, errSummaryDecode
+	}
+	cache.mu.Lock()
+	if cache.entries == nil {
+		cache.entries = map[string]cachedSummary{}
+	}
+	cache.entries[node] = cachedSummary{fetchedAt: cache.clock(), summary: &summary}
+	cache.mu.Unlock()
+	return findPodSummary(&summary, pod.Name, kr.namespace), nil
+}
+
+func findPodSummary(summary *summaryResponse, name, namespace string) *summaryPod {
+	if summary == nil {
+		return nil
+	}
+	for i := range summary.Pods {
+		if summary.Pods[i].PodRef.Name == name && summary.Pods[i].PodRef.Namespace == namespace {
+			return &summary.Pods[i]
+		}
+	}
+	return nil
 }
 
 func kubernetesMetricComponent(name string) string {
@@ -329,7 +481,7 @@ func kubernetesMetricComponent(name string) string {
 	}
 }
 
-func addKubernetesResourceSettings(add func(string, string, string, int64, ...jobtelemetry.Label), pod *corev1.Pod) {
+func addKubernetesResourceSettings(add addMetricFunc, pod *corev1.Pod) {
 	var totalCPURequest, totalCPULimit, totalMemoryLimit int64
 	containers := append([]corev1.Container{}, pod.Spec.Containers...)
 	for _, container := range pod.Spec.InitContainers {

@@ -141,15 +141,15 @@ def _write_generate_scripts(code_dir, worker_release, ui_release):
 
 def test_csilgen_release_reads_the_shared_pin(tmp_path):
     module = _load_repository_plugin("plugin_ci_jobs.py")
-    _write_generate_scripts(tmp_path, "csilgen/v0.2.9", "csilgen/v0.2.9")
+    _write_generate_scripts(tmp_path, "csilgen/v0.2.11", "csilgen/v0.2.11")
 
-    assert module._csilgen_release(tmp_path) == "csilgen/v0.2.9"
+    assert module._csilgen_release(tmp_path) == "csilgen/v0.2.11"
     assert module.CI_JOBS["csil-gen-check"] is module.csil_gen_check
 
 
 def test_csilgen_release_rejects_scripts_that_disagree(tmp_path):
     module = _load_repository_plugin("plugin_ci_jobs.py")
-    _write_generate_scripts(tmp_path, "csilgen/v0.2.9", "csilgen/v0.2.8")
+    _write_generate_scripts(tmp_path, "csilgen/v0.2.11", "csilgen/v0.2.9")
 
     with pytest.raises(RuntimeError, match="different CSILGEN_RELEASE"):
         module._csilgen_release(tmp_path)

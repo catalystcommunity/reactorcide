@@ -461,11 +461,14 @@ func (h *WebhookHandler) handleWebhook(w http.ResponseWriter, r *http.Request, p
 		return
 	}
 
+	event.DeliveryID = webhookDeliveryID(r, provider)
+
 	// Log the received event
 	h.logger.WithFields(logrus.Fields{
 		"provider":   provider,
 		"event_type": event.EventType,
 		"repository": event.Repository.FullName,
+		"delivery_id": event.DeliveryID,
 	}).Info("Received webhook event")
 	if event.IssueComment != nil {
 		if err := h.processApprovalComment(r.Context(), event, client, project); err != nil {
@@ -655,8 +658,17 @@ func (h *WebhookHandler) processPullRequestEvent(event *vcs.WebhookEvent, client
 		return nil
 	}
 
+	ciEvent, proceed, err := h.recordCIEvent(context.Background(), project, event)
+	if err != nil {
+		return fmt.Errorf("recording CI event: %w", err)
+	}
+	if !proceed {
+		return nil
+	}
+
 	// Build eval job using the shared builder
 	job := BuildEvalJob(project, event)
+	applyCIEventToEvalJob(job, ciEvent)
 	statusClient := h.getStatusClient(context.Background(), project, event.Provider, client)
 	h.attachCIEvaluationFacts(context.Background(), job, project, event, statusClient)
 	if err := h.startVCSReportGeneration(context.Background(), job, project, event); err != nil {
@@ -684,6 +696,8 @@ func (h *WebhookHandler) processPullRequestEvent(event *vcs.WebhookEvent, client
 	if err := h.store.CreateJob(context.Background(), job); err != nil {
 		return fmt.Errorf("creating job: %w", err)
 	}
+
+	h.attachEvalJobToCIEvent(context.Background(), ciEvent, job)
 
 	// Submit job to Corndogs task queue
 	h.submitJobToCorndogs(job)
@@ -753,8 +767,21 @@ func (h *WebhookHandler) processPushEvent(event *vcs.WebhookEvent, client vcs.Cl
 		return nil
 	}
 
+	ciEvent, proceed, err := h.recordCIEvent(context.Background(), project, event)
+	if err != nil {
+		return fmt.Errorf("recording CI event: %w", err)
+	}
+	if !proceed {
+		return nil
+	}
+
 	// Build eval job using the shared builder
 	job := BuildEvalJob(project, event)
+	applyCIEventToEvalJob(job, ciEvent)
+	statusClient := h.getStatusClient(context.Background(), project, event.Provider, client)
+	// Push events go through CI policy like pull requests (owner decision
+	// D3), so the eval carries the same actor, approval and policy facts.
+	h.attachCIEvaluationFacts(context.Background(), job, project, event, statusClient)
 
 	// Store VCS metadata for status updates.
 	metadata := vcs.JobMetadata{
@@ -778,11 +805,12 @@ func (h *WebhookHandler) processPushEvent(event *vcs.WebhookEvent, client vcs.Cl
 		return fmt.Errorf("creating job: %w", err)
 	}
 
+	h.attachEvalJobToCIEvent(context.Background(), ciEvent, job)
+
 	// Submit job to Corndogs task queue
 	h.submitJobToCorndogs(job)
 
 	// Update commit status to pending (use per-project client if available)
-	statusClient := h.getStatusClient(context.Background(), project, event.Provider, client)
 	statusUpdate := vcs.StatusUpdate{
 		SHA:         push.After,
 		State:       vcs.StatusPending,

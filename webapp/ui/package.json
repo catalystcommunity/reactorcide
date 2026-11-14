@@ -6,21 +6,24 @@
     "dev": "vite",
     "build": "vite build",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run",
+    "test": "NODE_OPTIONS=--disable-warning=ExperimentalWarning vitest run",
     "test:watch": "vitest"
   },
   "devDependencies": {
-    "@solidjs/testing-library": "^0.8.10",
+    "@testing-library/dom": "10.4.1",
     "@testing-library/jest-dom": "^6.6.3",
-    "jsdom": "^25.0.1",
+    "happy-dom": "^21.0.4",
     "typescript": "^5.7.2",
     "vite": "^6.0.5",
-    "vite-plugin-solid": "^2.11.0",
     "vitest": "^2.1.8"
   },
   "dependencies": {
-    "@kobalte/core": "^0.13.7",
-    "@solidjs/router": "^0.15.2",
-    "solid-js": "^1.9.3"
+    "@catalystcommunity/base-components": "0.2.7",
+    "@catalystcommunity/basic-data-service": "0.2.7",
+    "@catalystcommunity/containers": "0.1.3",
+    "@catalystcommunity/controls": "0.1.2",
+    "@catalystcommunity/design-tokens": "0.1.2",
+    "@catalystcommunity/menus": "0.1.2",
+    "@catalystcommunity/simple-router": "0.3.2"
   }
 }

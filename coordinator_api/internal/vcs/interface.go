@@ -37,6 +37,9 @@ type WebhookEvent struct {
 	IssueComment *IssueCommentInfo
 	RawPayload   []byte
 	SenderLogin  string // actor that delivered the current head update
+	// DeliveryID is the provider's unique ID for this delivery
+	// (X-GitHub-Delivery, X-Gitlab-Event-UUID). A redelivery keeps it.
+	DeliveryID string
 }
 
 // IssueCommentInfo contains a comment that can carry a CI approval command.
