@@ -400,6 +400,10 @@ func optionalGlobContains(patterns []string, value string) bool {
 	return false
 }
 
+// GlobMatch reports whether a repository path matches a policy path pattern:
+// "*" and "?" stay inside one path segment, and "**" crosses segments.
+func GlobMatch(pattern, value string) bool { return globMatch(pattern, value) }
+
 func globMatch(pattern, value string) bool {
 	var expression strings.Builder
 	expression.WriteString("^")

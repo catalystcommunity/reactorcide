@@ -9,6 +9,15 @@ vi.mock('~/store/resources.ts', () => ({
   useEvent: () => ({ state: () => state, refresh: async () => {}, sync: () => {}, release: () => {} }),
 }))
 
+vi.mock('~/api/client.ts', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('~/api/client.ts')>()
+  return {
+    ...actual,
+    api: { getPrApprovals: vi.fn(async () => ({ headSha: 'feedface00112233', actions: [], reviews: [] })) },
+  }
+})
+
+import { api } from '~/api/client.ts'
 import { mount, settle } from '~/test/mount.ts'
 import { EventDetailPage, tag } from './EventDetail.ts'
 
@@ -114,5 +123,21 @@ describe('EventDetail', () => {
     expect(alert.hidden).toBe(false)
     expect(alert.textContent).toBe('event not found')
     expect(page.querySelector('.decision-item')).toBeNull()
+  })
+
+  it('shows the pull request approvals panel for a pull request event only', async () => {
+    state = { data: EVENT, error: undefined, loading: false, loaded: true }
+    let page = await renderEvent()
+    expect(page.querySelector('rc-pr-approvals-panel')).toBeNull()
+    page.remove()
+
+    state = { data: { ...EVENT, event: { ...EVENT.event, eventType: 'pull_request_updated', prNumber: 12 } }, error: undefined, loading: false, loaded: true }
+    page = await renderEvent()
+    const panel = page.querySelector<HTMLElement>('rc-pr-approvals-panel')!
+    expect(api.getPrApprovals).toHaveBeenCalledWith({ projectId: 'p1', prNumber: 12 })
+    await settle()
+    expect(panel.hidden).toBe(false)
+    expect(panel.querySelector('.pr-head')?.textContent).toBe('feedface0011')
+    page.remove()
   })
 })

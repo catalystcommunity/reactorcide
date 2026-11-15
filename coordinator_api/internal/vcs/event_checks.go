@@ -81,6 +81,10 @@ func ComputeEventChecks(in EventChecksInput) EventChecksResult {
 		result.State, result.Description = StatusFailure, "Eval failed"
 		return result
 	}
+	if in.EventStatus == models.CIEventStatusAwaitingApproval {
+		result.State, result.Description = StatusPending, "Waiting for a run approver: /reactorcide approve-ci"
+		return result
+	}
 
 	total := len(in.Workflows) + len(in.NotAdmitted)
 	var passed, skipped, running int
@@ -204,6 +208,18 @@ func (u *JobStatusUpdater) PublishEventChecks(ctx context.Context, eventID strin
 	checksStore, events, ok := u.eventChecksStores()
 	if !ok || eventID == "" {
 		return nil
+	}
+	// One commit has one "Reactorcide Checks" status. When a newer event of
+	// the same commit exists (a re-evaluation or a rerun), it owns the status.
+	// It can carry this event's workflows, so it is recomputed instead.
+	if newest, ok := u.store.(store.CIEventSupersedeStore); ok {
+		newestID, err := newest.NewestCIEventForCommit(ctx, eventID)
+		if err != nil {
+			return err
+		}
+		if newestID != "" && newestID != eventID {
+			eventID = newestID
+		}
 	}
 	return checksStore.WithCIEventChecksLock(ctx, eventID, func(ctx context.Context) error {
 		event, err := events.GetCIEvent(ctx, eventID)

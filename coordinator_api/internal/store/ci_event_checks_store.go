@@ -24,3 +24,11 @@ type CIEventChecksStore interface {
 	// coordinator policy refused for the event.
 	SetCIEventPolicyViolationCount(ctx context.Context, eventID string, count int) error
 }
+
+// CIEventSupersedeStore finds the newest event of a commit. Only that event
+// posts the commit's "Reactorcide Checks" status: an older event of the same
+// commit (for example the event a re-evaluation replaced) must not post over
+// it.
+type CIEventSupersedeStore interface {
+	NewestCIEventForCommit(ctx context.Context, eventID string) (string, error)
+}

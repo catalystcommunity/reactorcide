@@ -35,11 +35,25 @@ type WebhookEvent struct {
 	PullRequest  *PullRequestInfo
 	Push         *PushInfo
 	IssueComment *IssueCommentInfo
-	RawPayload   []byte
-	SenderLogin  string // actor that delivered the current head update
+	// PullRequestReview is set for a pull request review event.
+	PullRequestReview *PullRequestReviewInfo
+	RawPayload        []byte
+	SenderLogin       string // actor that delivered the current head update
 	// DeliveryID is the provider's unique ID for this delivery
 	// (X-GitHub-Delivery, X-Gitlab-Event-UUID). A redelivery keeps it.
 	DeliveryID string
+	// Coordinator is set only on an event the coordinator makes itself: a
+	// re-evaluation after an approval, or a rerun. Such an event is not a
+	// provider delivery.
+	Coordinator *CoordinatorEvent
+}
+
+// CoordinatorEvent says why the coordinator made an event.
+type CoordinatorEvent struct {
+	// Source is models.CIEventSourceApproval or models.CIEventSourceRerun.
+	Source string
+	// ID makes the event unique: the approval ID, or the comment object.
+	ID string
 }
 
 // IssueCommentInfo contains a comment that can carry a CI approval command.
@@ -48,6 +62,35 @@ type IssueCommentInfo struct {
 	IssueNumber   int
 	Body          string
 	IsPullRequest bool
+	// CommentID is the provider ID of the comment. A redelivery keeps it.
+	CommentID int64
+}
+
+// PullRequestReviewInfo is a submitted, edited, or dismissed pull request
+// review.
+type PullRequestReviewInfo struct {
+	// Action is submitted, edited, or dismissed.
+	Action   string
+	PRNumber int
+	ReviewID int64
+	// State is approved, changes_requested, commented, or dismissed.
+	State string
+	Body  string
+	// CommitSHA is the head the review is for.
+	CommitSHA     string
+	ReviewerLogin string
+}
+
+// PRFileLister lists the paths a pull request changes.
+type PRFileLister interface {
+	ListPRFiles(ctx context.Context, repo string, prNumber int) ([]string, error)
+}
+
+// PRCommitIdentityLister lists the provider accounts linked to the authors and
+// committers of the commits of a pull request. A commit identity with no
+// linked account is not listed.
+type PRCommitIdentityLister interface {
+	ListPRCommitLogins(ctx context.Context, repo string, prNumber int) ([]string, error)
 }
 
 // ActorFacts keeps the PR author, head-update actor, and repository relation
@@ -107,6 +150,10 @@ type PullRequestInfo struct {
 	HTMLURL     string
 	AuthorLogin string
 	AuthorEmail string
+	// AuthorAssociation is the provider relation of the author to the
+	// repository, for GitHub: OWNER, MEMBER, COLLABORATOR, CONTRIBUTOR,
+	// FIRST_TIME_CONTRIBUTOR, FIRST_TIMER, or NONE.
+	AuthorAssociation string
 
 	// HeadRepository is set only for cross-repository PRs (forks).
 	// When nil, the PR's head branch lives on the same repository as Repository

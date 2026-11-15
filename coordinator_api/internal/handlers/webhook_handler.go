@@ -10,10 +10,9 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
-	"time"
 
+	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/approvals"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/audit"
-	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/authz"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/cipolicy"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/config"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/corndogs"
@@ -137,9 +136,7 @@ type webhookSecretRotationStore interface {
 type ciEvaluationFactsStore interface {
 	ResolveVCSIdentityLink(ctx context.Context, provider, subject string) (*models.VCSIdentityLink, error)
 	ListGroupsForUser(ctx context.Context, userID string) ([]models.Group, error)
-	ListActiveCIApprovalsForTarget(ctx context.Context, projectID string, prNumber int, headRepository, headSHA, baseSHA string, now time.Time) ([]models.CIApproval, error)
-	InvalidateCIApprovalsForNewHead(ctx context.Context, projectID string, prNumber int, headSHA string) (int64, error)
-	CreateCIApproval(context.Context, *models.CIApproval) error
+	store.CIApprovalStore
 }
 
 type vcsReportGenerationStore interface {
@@ -203,24 +200,19 @@ func (h *WebhookHandler) attachCIEvaluationFacts(ctx context.Context, job *model
 		}
 		if event.PullRequest != nil {
 			pr := event.PullRequest
-			invalidated, err := factsStore.InvalidateCIApprovalsForNewHead(ctx, project.ProjectID, pr.Number, pr.HeadSHA)
+			// The approval actions of this head, for jobs that want to show or
+			// check them. Admission does not read this snapshot: it loads the
+			// current actions when it decides.
+			actions, err := factsStore.ListCIApprovalsForHead(ctx, project.ProjectID, pr.Number, pr.HeadSHA)
 			if err != nil {
-				h.logger.WithError(err).Warn("Could not invalidate old CI approvals")
-			} else if invalidated > 0 {
-				audit.Record(ctx, h.store, project.OwnershipOrgID(), "ci_approval.invalidate", "project", project.ProjectID,
-					models.JSONB{"pr_number": pr.Number, "new_head_sha": pr.HeadSHA, "count": invalidated})
-			}
-			headRepository := event.Repository.FullName
-			if pr.HeadRepository != nil && pr.HeadRepository.FullName != "" {
-				headRepository = pr.HeadRepository.FullName
-			}
-			approvals, err := factsStore.ListActiveCIApprovalsForTarget(
-				ctx, project.ProjectID, pr.Number, headRepository, pr.HeadSHA, pr.BaseSHA, time.Now().UTC(),
-			)
-			if err != nil {
-				h.logger.WithError(err).Warn("Could not load CI approval snapshot; coordinator checks will fail closed")
-			} else if encoded, marshalErr := json.Marshal(approvals); marshalErr == nil {
-				job.JobEnvVars["REACTORCIDE_CI_APPROVALS"] = string(encoded)
+				h.logger.WithError(err).Warn("Could not load CI approval snapshot")
+			} else {
+				if actions == nil {
+					actions = []models.CIApproval{}
+				}
+				if encoded, marshalErr := json.Marshal(actions); marshalErr == nil {
+					job.JobEnvVars["REACTORCIDE_CI_APPROVALS"] = string(encoded)
+				}
 			}
 		}
 	}
@@ -489,8 +481,18 @@ func (h *WebhookHandler) handleWebhook(w http.ResponseWriter, r *http.Request, p
 		"repository":  event.Repository.FullName,
 		"delivery_id": event.DeliveryID,
 	}).Info("Received webhook event")
+	if event.PullRequestReview != nil {
+		if err := h.processReview(r.Context(), event, project); err != nil {
+			h.logger.WithError(err).Warn("Could not process pull request review")
+			http.Error(w, "Could not process pull request review", http.StatusInternalServerError)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+		_ = json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
+		return
+	}
 	if event.IssueComment != nil {
-		if err := h.processApprovalComment(r.Context(), event, client, project); err != nil {
+		if err := h.processApprovalComment(r.Context(), event, project); err != nil {
 			h.logger.WithError(err).Warn("Could not process CI approval comment")
 			http.Error(w, "Could not process CI approval comment", http.StatusBadRequest)
 			return
@@ -535,106 +537,75 @@ func (h *WebhookHandler) handleWebhook(w http.ResponseWriter, r *http.Request, p
 	json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
 }
 
-type approvalCommentCommand struct {
-	Workflow, Profile, PolicyRevision string
-}
-
-func parseApprovalComment(body string) (approvalCommentCommand, bool) {
-	fields := strings.Fields(strings.TrimSpace(body))
-	if len(fields) != 5 || fields[0] != "/reactorcide" || fields[1] != "approve" {
-		return approvalCommentCommand{}, false
-	}
-	command := approvalCommentCommand{Workflow: fields[2], Profile: fields[3], PolicyRevision: fields[4]}
-	if command.Workflow == "" || command.Profile == "" || command.PolicyRevision == "" {
-		return approvalCommentCommand{}, false
-	}
-	return command, true
-}
-
-func (h *WebhookHandler) processApprovalComment(ctx context.Context, event *vcs.WebhookEvent, client vcs.Client, project *models.Project) error {
+// processApprovalComment runs a /reactorcide command from a pull request
+// comment through the one approval path. A comment that is not a command does
+// nothing. A command the commenter may not give is recorded in the audit log
+// and does nothing; it is not a delivery error.
+func (h *WebhookHandler) processApprovalComment(ctx context.Context, event *vcs.WebhookEvent, project *models.Project) error {
 	comment := event.IssueComment
 	if comment == nil || comment.Action != "created" || !comment.IsPullRequest {
 		return nil
 	}
-	command, ok := parseApprovalComment(comment.Body)
+	command, ok := approvals.ParseComment(comment.Body)
 	if !ok {
 		return nil
 	}
 	if project == nil {
 		return fmt.Errorf("project is not configured")
 	}
-	factsStore, ok := h.store.(ciEvaluationFactsStore)
-	if !ok {
-		return fmt.Errorf("CI approval store is unavailable")
+	request := approvals.Request{Project: project, PRNumber: comment.IssueNumber, Command: command,
+		Channel: models.CIApprovalChannelComment, Provider: string(event.Provider), Login: event.SenderLogin}
+	if comment.CommentID != 0 {
+		request.SourceObject = fmt.Sprintf("%s:comment:%d", event.Provider, comment.CommentID)
 	}
-	statusClient := h.getStatusClient(ctx, project, event.Provider, client)
-	pr, err := statusClient.GetPRInfo(ctx, event.Repository.FullName, comment.IssueNumber)
-	if err != nil {
-		return fmt.Errorf("loading pull request: %w", err)
-	}
-	subjects := []string{}
-	if subject := vcsUserSubject(event.Provider, event.SenderLogin); subject != "" {
-		subjects = append(subjects, subject)
-	}
-	if resolver, ok := statusClient.(vcs.ActorSubjectResolver); ok {
-		resolved, resolveErr := resolver.ResolveActorSubjects(ctx, event.Repository.FullName, event.SenderLogin)
-		err = resolveErr
-		if err != nil {
-			return fmt.Errorf("resolving approver facts: %w", err)
-		}
-		subjects = append(subjects, resolved...)
-	}
-	var approverUserID *string
-	if link, linkErr := factsStore.ResolveVCSIdentityLink(ctx, string(event.Provider), event.SenderLogin); linkErr == nil && link != nil && link.VerifiedBy != "" {
-		approverUserID = &link.UserID
-		groups, groupErr := factsStore.ListGroupsForUser(ctx, link.UserID)
-		if groupErr != nil {
-			return fmt.Errorf("resolving approver groups: %w", groupErr)
-		}
-		for _, group := range groups {
-			if group.OrgID == project.OwnershipOrgID() {
-				subjects = append(subjects, "reactorcide_group:"+group.Name)
-			}
-		}
-		if roleStore, ok := h.store.(authz.RoleStore); ok {
-			owner, ownerErr := authz.NewResolver(roleStore).IsProjectOwner(ctx, authz.UserIdentity(link.UserID), project.ProjectID)
-			if ownerErr != nil {
-				return fmt.Errorf("resolving project owner: %w", ownerErr)
-			}
-			if owner {
-				subjects = append(subjects, "project_owner")
-			}
-		}
-	}
-	subjects = uniqueStrings(subjects)
-	if len(subjects) == 0 {
-		return fmt.Errorf("comment author has no verified approval subject")
-	}
-	headRepository := event.Repository.FullName
-	if pr.HeadRepository != nil && pr.HeadRepository.FullName != "" {
-		headRepository = pr.HeadRepository.FullName
-	}
-	created := 0
-	for _, subject := range subjects {
-		approval := &models.CIApproval{OrgID: project.OwnershipOrgID(), ProjectID: project.ProjectID,
-			PRNumber: comment.IssueNumber, HeadRepository: headRepository, HeadSHA: pr.HeadSHA, BaseSHA: pr.BaseSHA,
-			PolicyRevision: command.PolicyRevision, WorkflowScope: command.Workflow, ExecutionProfile: command.Profile,
-			ApproverUserID: approverUserID, ApproverProvider: string(event.Provider), ApproverSubject: subject}
-		if createErr := factsStore.CreateCIApproval(ctx, approval); createErr != nil {
-			if createErr == store.ErrAlreadyExists {
-				continue
-			}
-			return fmt.Errorf("creating approval: %w", createErr)
-		}
-		created++
-		audit.Record(ctx, h.store, approval.OrgID, "ci_approval.create", "ci_approval", approval.ApprovalID,
-			models.JSONB{"project_id": approval.ProjectID, "pr_number": approval.PRNumber, "head_sha": approval.HeadSHA,
-				"base_sha": approval.BaseSHA, "policy_revision": approval.PolicyRevision, "workflow": approval.WorkflowScope,
-				"profile": approval.ExecutionProfile, "approver_subject": approval.ApproverSubject})
-	}
-	if created == 0 {
+	return h.executeProviderCommand(ctx, request)
+}
+
+// processReview turns a pull request review into an accept or a revoke. A
+// review never grants execution: approved is an accept, changes requested is
+// a revoke of the reviewer's accepts, and a dismissed review cancels only the
+// reviewer's own accept. A review body can name a label with an
+// "/reactorcide accept LABEL" line.
+func (h *WebhookHandler) processReview(ctx context.Context, event *vcs.WebhookEvent, project *models.Project) error {
+	review := event.PullRequestReview
+	if review == nil || project == nil {
 		return nil
 	}
+	request := approvals.Request{Project: project, PRNumber: review.PRNumber, HeadSHA: review.CommitSHA,
+		Channel: models.CIApprovalChannelReview, Provider: string(event.Provider), Login: review.ReviewerLogin}
+	switch {
+	case review.Action == "submitted" && review.State == "approved":
+		request.Command = approvals.Command{Name: approvals.CommandAccept, Label: approvals.ParseReviewLabel(review.Body)}
+	case review.Action == "submitted" && review.State == "changes_requested":
+		request.Command = approvals.Command{Name: approvals.CommandRevoke}
+		request.RevokeOnly = models.CIApprovalKindAccept
+	case review.Action == "dismissed":
+		request.Command = approvals.Command{Name: approvals.CommandRevoke}
+		request.RevokeOnly = models.CIApprovalKindAccept
+		request.PersonSubjectsOnly = true
+	default:
+		return nil
+	}
+	if request.Login == "" {
+		request.Login = event.SenderLogin
+	}
+	if review.ReviewID != 0 {
+		request.SourceObject = fmt.Sprintf("%s:review:%d:%s", event.Provider, review.ReviewID, review.Action)
+	}
+	return h.executeProviderCommand(ctx, request)
+}
+
+func (h *WebhookHandler) executeProviderCommand(ctx context.Context, request approvals.Request) error {
+	result, err := h.Execute(ctx, request)
+	fields := logrus.Fields{"pr_number": request.PRNumber, "command": request.Command.Name, "login": request.Login}
+	switch {
+	case errors.Is(err, approvals.ErrNotAllowed), errors.Is(err, approvals.ErrHeadChanged), errors.Is(err, approvals.ErrPullRequestClosed):
+		h.logger.WithFields(fields).WithError(err).Info("Pull request command refused")
+		return nil
+	case err != nil:
+		return err
+	}
+	h.logger.WithFields(fields).WithField("effect", result.Effect).Info("Pull request command done")
 	return nil
 }
 
@@ -692,11 +663,47 @@ func (h *WebhookHandler) processPullRequestEvent(event *vcs.WebhookEvent, client
 		}
 	}()
 
+	statusClient := h.getStatusClient(context.Background(), project, event.Provider, client)
+	// A new head cancels the approvals of the old heads before the run gate
+	// reads them.
+	if factsStore, ok := h.store.(ciEvaluationFactsStore); ok {
+		invalidated, invalidateErr := factsStore.InvalidateCIApprovalsForNewHead(context.Background(), project.ProjectID, pr.Number, pr.HeadSHA)
+		if invalidateErr != nil {
+			h.logger.WithError(invalidateErr).Warn("Could not invalidate old CI approvals")
+		} else if invalidated > 0 {
+			audit.Record(context.Background(), h.store, project.OwnershipOrgID(), "ci_approval.invalidate", "project", project.ProjectID,
+				models.JSONB{"pr_number": pr.Number, "new_head_sha": pr.HeadSHA, "count": invalidated})
+		}
+	}
+	reviewTarget := &prTarget{Provider: event.Provider, Repo: event.Repository.FullName, CloneURL: event.Repository.CloneURL,
+		Client: statusClient, PR: pr}
+	if event.Coordinator == nil && event.GenericEvent != vcs.EventPullRequestMerged && event.GenericEvent != vcs.EventPullRequestClosed {
+		// A new head needs its reviews again.
+		h.publishReviewsStatus(context.Background(), project, reviewTarget)
+	}
+	runAuthority, held, gateErr := h.runAuthorityFor(context.Background(), project, event, statusClient)
+	if gateErr != nil {
+		h.logger.WithError(gateErr).WithField("project", project.Name).Warn("Could not decide the run gate; holding the pull request")
+		held = true
+	}
+	if held {
+		// The event keeps its claim as "awaiting_approval": a redelivery does
+		// not evaluate it, and approve-ci starts a new evaluation.
+		evalJobLinked = true
+		h.holdForRunGate(context.Background(), ciEvent)
+		return nil
+	}
+
 	// Build eval job using the shared builder
 	job := BuildEvalJob(project, event)
 	applyCIEventToEvalJob(job, ciEvent)
-	statusClient := h.getStatusClient(context.Background(), project, event.Provider, client)
-	if h.attachCIEvaluationFacts(context.Background(), job, project, event, statusClient) == ciPolicyNone {
+	if encoded, encodeErr := runAuthority.Encode(); encodeErr != nil {
+		return fmt.Errorf("encoding run authority: %w", encodeErr)
+	} else if encoded != "" {
+		job.JobEnvVars[approvals.RunAuthorityEnv] = encoded
+	}
+	if h.attachCIEvaluationFacts(context.Background(), job, project, event, statusClient) == ciPolicyNone && !runAuthority.Gated {
+		// A gated run uses trusted base CI, also with no stored policy.
 		useEventCIWithoutPolicy(job, project, event)
 	}
 	if err := h.startVCSReportGeneration(context.Background(), job, project, event); err != nil {

@@ -101,8 +101,20 @@ func (StubUi) DeleteWorkerClass(ctx context.Context, req csilapi.DeleteWorkerCla
 func (StubUi) SetWorkerClassPool(ctx context.Context, req csilapi.SetWorkerClassPoolRequest) (csilapi.SetWorkerClassPoolResponse, error) {
 	return csilapi.SetWorkerClassPoolResponse{}, ErrUnimplemented("ReactorcideUi/set-worker-class-pool")
 }
-func (StubUi) CreateCiApproval(ctx context.Context, req csilapi.CreateCiApprovalRequest) (csilapi.CreateCiApprovalResponse, error) {
-	return csilapi.CreateCiApprovalResponse{}, ErrUnimplemented("ReactorcideUi/create-ci-approval")
+func (StubUi) PrCommand(ctx context.Context, req csilapi.PrCommandRequest) (csilapi.PrCommandResponse, error) {
+	return csilapi.PrCommandResponse{}, ErrUnimplemented("ReactorcideUi/pr-command")
+}
+
+func (StubUi) GetPrApprovals(ctx context.Context, req csilapi.GetPrApprovalsRequest) (csilapi.GetPrApprovalsResponse, error) {
+	return csilapi.GetPrApprovalsResponse{}, ErrUnimplemented("ReactorcideUi/get-pr-approvals")
+}
+
+func (StubUi) GetCiTrustSettings(ctx context.Context, req csilapi.GetCiTrustSettingsRequest) (csilapi.GetCiTrustSettingsResponse, error) {
+	return csilapi.GetCiTrustSettingsResponse{}, ErrUnimplemented("ReactorcideUi/get-ci-trust-settings")
+}
+
+func (StubUi) PutCiTrustSettings(ctx context.Context, req csilapi.PutCiTrustSettingsRequest) (csilapi.PutCiTrustSettingsResponse, error) {
+	return csilapi.PutCiTrustSettingsResponse{}, ErrUnimplemented("ReactorcideUi/put-ci-trust-settings")
 }
 
 func (StubUi) ListProjects(ctx context.Context, req csilapi.ListProjectsRequest) (csilapi.ListProjectsResponse, error) {

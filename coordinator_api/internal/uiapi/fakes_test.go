@@ -67,6 +67,11 @@ type fakeStore struct {
 	enrollmentTokens map[string]models.PoolEnrollmentToken
 	workers          map[string]models.Worker
 	leasesByWorker   map[string][]models.WorkerLease
+
+	// trustSettings is keyed by org ID, or org ID + "/" + project ID; see
+	// fakes_trust_test.go.
+	trustSettings map[string]models.CITrustSettings
+	approvals     []models.CIApproval
 }
 
 func newFakeStore() *fakeStore {

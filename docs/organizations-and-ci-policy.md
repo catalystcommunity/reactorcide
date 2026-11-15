@@ -11,8 +11,8 @@ You do not need a coordinator policy to run existing trusted-base CI.
 - Existing workflow definitions continue to run from the trusted base commit.
 - A pull request cannot run changed CI definitions without a coordinator
   policy rule.
-- A CI-file change without a policy produces a failed `Reactorcide CI Policy`
-  status. Safe trusted-base workflows continue.
+- With a stored policy, a refused CI-file change fails `Reactorcide Checks`.
+  Safe trusted-base workflows continue.
 - Bare `.reactorcide/jobs/*.yaml` definitions continue to use trusted-base CI.
   Head-CI policy applies to named workflow definitions.
 - The `standard` execution profile preserves the previous execution limits.
@@ -365,7 +365,7 @@ The remaining checks are:
 - The event and base branch, when configured.
 - Whether the head repository is the same repository or a fork.
 - The verified actor, when configured.
-- A valid approval, when configured.
+- An `override-ci` approval from a subject in `approval:`, when configured.
 - The selected profile and worker class.
 
 The supported actor and approval subjects are:
@@ -380,10 +380,46 @@ Use a lowercase provider and login in `vcs_user:`. For example, use
 `vcs_user:github/alice`. Reactorcide gets this identity from the signed VCS
 event. This subject does not need LinkKeys or a Reactorcide user record.
 
-`reactorcide_group:` needs a verified VCS identity link. An administrator can
-create and remove identity links with these REST paths:
+`reactorcide_group:` needs a verified VCS identity link. The link connects a
+VCS login to a Reactorcide user. The user then gets the subject
+`reactorcide_group:NAME` for each group of the project organization. Make one
+link for each VCS provider that the user approves from. The same group then
+applies from each provider.
+
+To make a group and add a member, use a token with `organizations:manage` for
+the organization (an org admin for a user token):
+
+```bash
+reactorcide groups create --org example linkkeys-trust-maintainers
+reactorcide groups add-member --org example linkkeys-trust-maintainers alice
+reactorcide groups members --org example linkkeys-trust-maintainers
+reactorcide groups remove-member --org example linkkeys-trust-maintainers alice
+```
+
+A group name is lowercase letters, digits, and hyphens, and starts with a
+letter or a digit. The UI also manages groups.
+
+To link a VCS login to the user, use a token with `organizations:manage`:
+
+```bash
+reactorcide identities link --org example --provider github --login alice --username alice
+```
+
+An admin link has `verified_by=admin`. The coordinator compares the provider
+and the login without regard to case. To list or remove links, use a token for
+all organizations:
+
+```bash
+reactorcide identities list
+reactorcide identities unlink LINK_ID
+```
+
+The REST paths are:
 
 ```text
+GET|POST  /api/v1/organizations/ORG/groups
+GET|POST  /api/v1/organizations/ORG/groups/GROUP/members
+DELETE    /api/v1/organizations/ORG/groups/GROUP/members/USERNAME
 GET|POST  /api/v1/vcs-identities
 DELETE    /api/v1/vcs-identities/LINK_ID
 ```
@@ -479,56 +515,266 @@ Supply verified actor and approval subjects when you reproduce a coordinator
 decision. Use `--expected-revision` with `set` or `delete` to prevent an update
 from replacing a newer policy.
 
-## Approvals
+## Run Gate, Approvals, and Required Reviews
 
-An approval binds to the organization, project, pull request, head repository,
-head SHA, base SHA, policy revision, workflow, execution profile, and approver
-subject. A new head SHA, base SHA, or policy revision makes the approval
-inapplicable.
+A person controls a pull request head with a command. Give the command as a
+comment on the pull request, with the CLI, with the REST API, or in the UI.
+Each channel uses the same rules and has the same effects.
 
-A verified GitHub user can add this exact command to a pull request:
+| Command | Effect |
+| --- | --- |
+| `/reactorcide approve-ci` | The run gate releases the head. The head runs on trusted base CI. The head's changes to CI do not run. |
+| `/reactorcide override-ci` | The head's own CI runs. |
+| `/reactorcide accept [LABEL]` | You accept shared responsibility for the change. This counts toward required reviews. It is not related to CI. |
+| `/reactorcide revoke` | You withdraw your approvals for the head (see [Revoke](#revoke)). |
+| `/reactorcide retry` | The failed and cancelled jobs of the head's workflows run again. |
+| `/reactorcide rerun` | Every workflow of the head runs again. A push of an empty commit does the same. |
 
-```text
-/reactorcide approve WORKFLOW PROFILE POLICY-REVISION
+The comment must contain only the command. You do not give a workflow, a
+profile, or a policy revision. The coordinator evaluates the current head with
+the current settings and the current policy.
+
+### Approvals bind to the head
+
+An approval binds to the organization, the project, the pull request, the head
+repository, and the head SHA. A new head SHA cancels every approval of the old
+heads. A new base SHA or a new policy revision does not cancel an approval. A
+policy change applies to the approvals that exist.
+
+Each command records one action. The coordinator never changes or deletes an
+action. It calculates the state from the actions. A redelivery of the same
+comment or review makes no new action.
+
+### Who can give a command
+
+The coordinator finds the approver subjects of the person:
+
+- `vcs_user:PROVIDER/LOGIN` for the VCS account.
+- `repository_write` and `vcs_team:OWNER/TEAM` from the VCS.
+- `reactorcide_group:NAME` and `project_owner` for a Reactorcide user. A VCS
+  account gets them through a verified identity link.
+
+A Reactorcide user in the UI or the CLI acts as their linked VCS account, if
+the user has a verified identity link for the provider. Then the user has the
+same subjects as in a comment.
+
+| Command | The person needs a subject from |
+| --- | --- |
+| `approve-ci`, `retry`, `rerun` | `run_approvers` |
+| `override-ci` | `override_approvers`, or the `approval:` list of a `head_ci` policy rule |
+| `accept`, `revoke` | any person; a required review decides which subjects count |
+
+The coordinator records a refused command in the audit log. A refused comment
+does nothing else.
+
+### Run gate
+
+The run gate holds a pull request until a run approver gives `approve-ci`. Set
+one or more conditions:
+
+- `forks`: the head is in a fork.
+- `first_time_contributors`: the provider does not know the author as an
+  owner, member, collaborator, or contributor of the repository.
+- `outside_contributors`: the author or the person who pushed has no
+  repository write permission.
+
+A held event has the status `awaiting_approval` and no eval job. "Reactorcide
+Checks" is pending with the text `Waiting for a run approver: /reactorcide
+approve-ci`. When a fact cannot be verified, the gate holds the pull request.
+
+An approved gated run uses trusted base CI only. A `head_ci` policy rule does
+not apply to it. Set `gated_run_authority` for the profile of the run:
+
+- `no_secrets` (default): every node uses the profile `pr-untrusted`. The run
+  gets no secrets.
+- `normal`: the run uses its normal profile, with its secrets.
+
+The default run gate has no condition. Thus a deploy does not change which pull
+requests run. Without a gate, a fork pull request runs trusted base CI with
+the normal profile. That run can get secrets, and it builds the fork's code.
+Use a gate when this is not acceptable.
+
+### Override
+
+`override-ci` lets the head's own CI run in its entirety. Each workflow whose CI
+files the head changed runs from the head, with `override_profile` (default
+`pr-untrusted`) and the default worker class. A workflow that the head did not
+change runs from the base. `override-ci` also releases the run gate.
+
+A `head_ci` policy rule that matches the change wins over an override. A rule
+can be narrower: it can have its own profile and trusted base nodes. A rule
+with `approval:` grants head CI when a person with a listed subject gives
+`override-ci`.
+
+### Required reviews
+
+A required review must be satisfied before the pull request can merge. The
+coordinator evaluates the reviews of the head and posts the commit status
+`Reactorcide Reviews`. To block a merge, require this status in the branch
+rules. A review is not related to CI, so "Reactorcide Checks" does not include
+it.
+
+```yaml
+required_reviews:
+  - id: trust-anchors
+    description: Trust anchors and their verifiers
+    paths: ["crates/liblinkkeys/src/crypto.rs", "crates/linkkeys/src/services/pins.rs"]
+    accept: [reactorcide_group:linkkeys-trust-maintainers]
+    count: 1
+  - id: compliance
+    accept: [non_author]
+    count: 1
 ```
 
-The coordinator reads the current SHAs from GitHub. The coordinator policy
-must permit the approver subject.
+- `paths` limits the review to a change that touches a pattern. With no
+  `paths`, the review applies to each pull request. When the coordinator cannot
+  list the changed files, every review applies.
+- `accept` lists the subjects that can satisfy the review. `non_author` is any
+  person who did not write the change and who has a role: repository write, a
+  team, a group, or project owner. The authors are the pull request author,
+  each person who pushed to the head, and each commit author and committer that
+  the provider links to an account. The person who made the current head
+  cannot accept as a non-author. When the coordinator cannot list the authors,
+  no accept counts through `non_author`.
+- `count` is the number of different people (default 1).
+- The review ID is also a label. `/reactorcide accept trust-anchors` counts only
+  for that review. `/reactorcide accept` with no label counts for every review
+  that you can satisfy.
 
-An operator can create the same record through the API:
+An approved pull request review is an accept. A line
+`/reactorcide accept LABEL` in the review body gives it a label. A review never
+grants execution: a "changes requested" review revokes only the reviewer's
+accepts, and a dismissed review cancels only that reviewer's accept.
+
+Configure the GitHub webhook to send the "Pull request reviews" event.
+
+### Revoke
+
+For each role (approver subject), the last action that names the role wins:
+
+- A revoke cancels the approval of each role that the revoker has. It also
+  cancels the approval of another person with the same role.
+- An approval through a role that the revoker does not have stays.
+- For `non_author`, the role is the person. A revoke cancels only the
+  revoker's own accept.
+
+A revoke of `approve-ci` or `override-ci` does not stop work that runs. It
+applies to the next evaluation of the head.
+
+### Re-evaluate, rerun, and retry
+
+- **Re-evaluate**: after `approve-ci` or `override-ci`, the coordinator
+  evaluates the head again. The new event has the source `approval`. A
+  workflow whose decision (CI origin and profile) did not change does not run
+  again: the event carries the workflow of the earlier event, and its result
+  counts. `approve-ci` re-evaluates only a head that the run gate held.
+  `accept` and `revoke` start no evaluation. They only update `Reactorcide
+  Reviews`.
+- **Rerun**: every workflow of the head runs again. The new event has the
+  source `rerun`.
+- **Retry**: the failed and cancelled jobs of the newest workflows of the head
+  run again.
+
+The re-evaluation and the rerun use the actor of the last webhook event for
+the head, not the approver. Thus actor policy sees the same facts as before.
+Only the newest event of a commit posts "Reactorcide Checks".
+
+### Settings
+
+The run gate, approver, override, and required-review settings are
+organization and project settings. They are not in the policy document.
+
+| Setting | Default |
+| --- | --- |
+| `run_gate` | empty (no gate) |
+| `gated_run_authority` | `no_secrets` |
+| `run_approvers` | `project_owner`, `repository_write` |
+| `override_approvers` | `project_owner`, `repository_write` |
+| `override_profile` | `pr-untrusted` |
+| `required_reviews` | none |
+
+A project setting that is absent inherits the organization value. An empty
+list is a value: `run_gate: []` removes the organization gate for the project.
+Organization required reviews apply to each project, and a project adds its
+own.
+
+A project owner can make a project more strict than the organization. Only an
+organization administrator can make it less strict. An API token with
+`policies:manage` can also change the settings.
 
 ```bash
-reactorcide approvals create \
-  --org example \
-  --project application \
-  --pr 42 \
-  --head-repository github.com/contributor/application \
-  --head-sha HEAD_SHA \
-  --base-sha BASE_SHA \
-  --policy-revision POLICY_REVISION \
-  --workflow integration-tests \
-  --profile integration-pr \
-  --subject project_owner
+reactorcide trust get --org example --project application
+reactorcide trust set --org example --file org-trust.yaml
+reactorcide trust set --org example --project application --file project-trust.yaml
 ```
 
-The token needs `policies:manage`. The authenticated user must hold the named
-approval subject.
+The UI has the same settings on the organization and project pages.
+
+### Commands through the CLI and the API
+
+```bash
+reactorcide approvals approve-ci --project application --pr 42
+reactorcide approvals accept --project application --pr 42 --label trust-anchors
+reactorcide approvals show --project application --pr 42
+```
+
+Add `--head-sha SHA` to refuse the command when the head changed. The CLI uses
+your session or your user API token: a command needs a person.
+
+The REST path is `POST /api/v1/approvals` with `organization`, `project`,
+`pr_number`, `command`, and optional `label` and `head_sha`. The token must
+belong to a user and have `workflows:control`.
+
+### Approval facts in jobs
+
+Each evaluation job, and each job it starts, gets `REACTORCIDE_CI_APPROVALS`:
+a JSON array of the approval actions of the head when the event arrived.
+Admission does not read it; it reads the current actions when it decides.
+
+`REACTORCIDE_RUN_AUTHORITY` carries the run gate and override decision of the
+eval job.
+
+Repository YAML cannot set or replace these values. See
+[Reserved event facts](#reserved-event-facts).
+
+### Reserved event facts
+
+The coordinator sets event facts in the job environment. Repository YAML
+(base or head) cannot set or replace them. Runnerlib refuses a workflow or job
+file whose `environment:` names one of them, and the coordinator ignores them
+in trigger output. The reserved names are:
+
+- `REACTORCIDE_ACTOR_SUBJECTS`, `REACTORCIDE_CI_APPROVALS`,
+  `REACTORCIDE_RUN_AUTHORITY`, `REACTORCIDE_CI_POLICY`,
+  `REACTORCIDE_CI_POLICY_REVISION`
+- `REACTORCIDE_SHA`, `REACTORCIDE_DIFF_BASE`, `REACTORCIDE_SOURCE_URL`,
+  `REACTORCIDE_BRANCH`, `REACTORCIDE_REPO`, `REACTORCIDE_PROVIDER`
+- `REACTORCIDE_EVENT_ID`, `REACTORCIDE_EVENT_TYPE`, `REACTORCIDE_IS_FORK_PR`,
+  `REACTORCIDE_JOB_KIND`, `REACTORCIDE_EVAL_DUAL_CI`,
+  `REACTORCIDE_REPORT_GENERATION`, `REACTORCIDE_REPORT_TARGET_ID`
+- each name that starts with `REACTORCIDE_HEAD_`, `REACTORCIDE_BASE_`, or
+  `REACTORCIDE_PR_`
+
+The names are not case-sensitive. Other names, for example
+`REACTORCIDE_CI_JOB`, are not reserved.
+
+A job that you submit through the API has no CI event. It posts no commit
+status. A trigger from such a job can give its child event context, for
+example `REACTORCIDE_EVENT_TYPE`, but not the first five names in the list.
 
 ## GitHub Status and Report
 
 Runnerlib returns inactive base and head workflow candidates in one evaluation
 result. It does not return an authority decision. The coordinator verifies the
-policy snapshot, loads active approvals, makes the authoritative decision, and
-writes a commit status on the exact head SHA:
+policy snapshot, loads the current approvals, and makes the authoritative
+decision.
 
-```text
-Context: Reactorcide CI Policy
-Success: no unauthorized CI changes
-Failure: one or more unauthorized CI changes
-```
-
-The status target URL points to the evaluator job. A failed policy status does
-not stop safe trusted-base workflows.
+A CI event posts one commit status on the exact head SHA, `Reactorcide
+Checks`. It includes the eval job, each workflow, each workflow that the
+coordinator did not admit, and each CI change that the policy refused. A
+refused CI change fails the status, but it does not stop safe trusted-base
+workflows. Required reviews post a second status, `Reactorcide Reviews` (see
+[Required reviews](#required-reviews)).
 
 The coordinator also stores structured workflow and policy report entries. A
 reconciler updates one shared Reactorcide pull-request comment. The database is

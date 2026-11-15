@@ -344,6 +344,48 @@ def test_reserved_authority_fields_are_rejected(temp_ci_dir, reserved):
         parse_workflow_definition(data, temp_ci_dir)
 
 
+@pytest.mark.parametrize("reserved", [
+    "REACTORCIDE_CI_APPROVALS", "REACTORCIDE_RUN_AUTHORITY", "REACTORCIDE_ACTOR_SUBJECTS",
+    "REACTORCIDE_SHA", "REACTORCIDE_DIFF_BASE", "REACTORCIDE_HEAD_ACTOR", "REACTORCIDE_BASE_REF",
+    "REACTORCIDE_PR_NUMBER", "reactorcide_ci_approvals",
+])
+def test_reserved_event_env_is_rejected(temp_ci_dir, reserved):
+    """Repository YAML must not set or replace coordinator event facts (R1)."""
+    data = {
+        "name": "wf",
+        "on": {"events": ["push"]},
+        "jobs": {"build": {"image": "x", "command": "echo a", "environment": {reserved: "[]"}}},
+    }
+    with pytest.raises(ValueError, match="reserved environment"):
+        parse_workflow_definition(data, temp_ci_dir)
+
+
+def test_reserved_event_env_in_job_file_is_rejected(temp_ci_dir):
+    _write(temp_ci_dir / ".reactorcide" / "jobs" / "guard.yaml", {
+        "name": "guard",
+        "job": {"image": "x", "command": "echo a"},
+        "environment": {"REACTORCIDE_CI_APPROVALS": "[]"},
+    })
+    data = {
+        "name": "wf",
+        "on": {"events": ["push"]},
+        "jobs": {"guard": {"job_file": "guard.yaml"}},
+    }
+    with pytest.raises(ValueError, match="reserved environment REACTORCIDE_CI_APPROVALS"):
+        parse_workflow_definition(data, temp_ci_dir)
+
+
+def test_unreserved_reactorcide_env_is_allowed(temp_ci_dir):
+    """Names such as REACTORCIDE_CI_JOB stay available to jobs."""
+    data = {
+        "name": "wf",
+        "on": {"events": ["push"]},
+        "jobs": {"guard": {"image": "x", "command": "echo a", "environment": {"REACTORCIDE_CI_JOB": "trust-guard"}}},
+    }
+    workflow = parse_workflow_definition(data, temp_ci_dir)
+    assert workflow.jobs[0].environment["REACTORCIDE_CI_JOB"] == "trust-guard"
+
+
 def test_reserved_authority_field_in_job_file_is_rejected(temp_ci_dir):
     _write(temp_ci_dir / ".reactorcide" / "jobs" / "build.yaml", {
         "name": "build",

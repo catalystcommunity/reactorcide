@@ -134,6 +134,15 @@ func SetEventChecksPublisher(fn func(ctx context.Context, eventID string) error)
 	eventChecksPublisher = fn
 }
 
+// PublishEventChecks recomputes and posts the "Reactorcide Checks" status of
+// one CI event. It does nothing when no publisher is wired.
+func PublishEventChecks(ctx context.Context, eventID string) error {
+	if eventChecksPublisher == nil || eventID == "" {
+		return nil
+	}
+	return eventChecksPublisher(ctx, eventID)
+}
+
 func publishJobEventChecks(ctx context.Context, st any, job *models.Job) {
 	// A queued eval cancelled straight to "cancelled" gets no worker result,
 	// so its CI event is closed here, before the status recompute reads it.

@@ -68,7 +68,8 @@ func nonEmptyStrings(values []string) []string {
 // is logged and never fails the trigger request, because the workflows are
 // already created.
 func (tp *TriggerProcessor) recordEvalDecisions(ctx context.Context, parentJob *models.Job, tf *triggersFile,
-	selected []triggerWorkflowSpec, notes map[string]models.DecisionReason, outcomes []TriggerWorkflowOutcome) {
+	selected []triggerWorkflowSpec, notes map[string]models.DecisionReason, outcomes []TriggerWorkflowOutcome,
+	carried map[string]carriedWorkflow) {
 	eventID := stringValue(parentJob.EventID)
 	if eventID == "" {
 		return
@@ -122,9 +123,20 @@ func (tp *TriggerProcessor) recordEvalDecisions(ctx context.Context, parentJob *
 			entry.Reasons = append(entry.Reasons, note)
 		}
 	}
+	for id, carry := range carried {
+		entry := put(models.CIEventWorkflowDecision{EventID: eventID, WorkflowSecurityID: id, WorkflowName: carry.Name})
+		workflowID := carry.WorkflowID
+		entry.Decision = models.WorkflowDecisionCarried
+		entry.WorkflowID = &workflowID
+		if note, ok := notes[id]; ok {
+			entry.Reasons = append(entry.Reasons, note)
+		}
+		entry.Reasons = append(entry.Reasons, carry.Reason)
+		selectedIDs[id] = true
+	}
 	for _, id := range order {
 		entry := byID[id]
-		if entry.Decision == models.WorkflowDecisionRun && !selectedIDs[id] && len(selected) > 0 {
+		if entry.Decision == models.WorkflowDecisionRun && !selectedIDs[id] && (len(selected) > 0 || len(carried) > 0) {
 			entry.Decision = models.WorkflowDecisionSkipped
 			entry.Reasons = append(entry.Reasons, models.DecisionReason{Kind: "admission", Detail: "not selected for this event"})
 		}

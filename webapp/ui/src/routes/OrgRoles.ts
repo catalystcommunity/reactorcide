@@ -76,6 +76,7 @@ export class OrgRolesPage extends ManagedOrgPage {
   #grant = new Action(() => this.invalidate())
 
   #groupsLink!: HTMLAnchorElement
+  #trustLink!: HTMLAnchorElement
   #grantError!: ActionError
   #principalTypeSelect!: ChoiceSelect
   #userField!: Field
@@ -95,6 +96,7 @@ export class OrgRolesPage extends ManagedOrgPage {
 
   protected buildBody(): HTMLElement {
     this.#groupsLink = h('a', { class: 'btn btn-sm' }, 'Manage groups')
+    this.#trustLink = h('a', { class: 'btn btn-sm' }, 'CI trust settings')
     const header = h(
       'div',
       { class: 'page-header' },
@@ -104,7 +106,7 @@ export class OrgRolesPage extends ManagedOrgPage {
         h('h1', null, 'Roles'),
         h('p', { class: 'meta' }, 'Who can do what, and where. A role granted to a group reaches everyone in it.'),
       ),
-      h('div', { class: 'row', style: { alignItems: 'center' } }, this.orgPicker(), this.#groupsLink),
+      h('div', { class: 'row', style: { alignItems: 'center' } }, this.orgPicker(), this.#groupsLink, this.#trustLink),
     )
 
     this.#tbody = h('tbody')
@@ -264,6 +266,7 @@ export class OrgRolesPage extends ManagedOrgPage {
     this.#groups.sync(orgId || undefined)
 
     setAttr(this.#groupsLink, 'href', href(orgHref('/org/groups', orgId)))
+    setAttr(this.#trustLink, 'href', href(orgHref('/org/ci-trust', orgId)))
 
     // The grant form.
     this.#grantError.set(this.#grant.error)

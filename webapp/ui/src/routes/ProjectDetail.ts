@@ -13,6 +13,7 @@ import { RcPage } from '~/app/page.ts'
 import { ChoiceMultiSelect, ChoiceSelect } from '~/components/ChoiceInput.ts'
 import { field, type Field } from '~/components/Field.ts'
 import { ProjectCard, makeCard } from '~/components/ProjectCard.ts'
+import { ProjectTabs } from '~/components/ProjectSubPage.ts'
 import { Action, ActionError, describeError } from '~/components/ManagementPage.ts'
 import { ResourceView, relativeTime } from '~/components/States.ts'
 import { setVisibility, visibilityBadge } from '~/components/StatusBadge.ts'
@@ -39,6 +40,7 @@ export class ProjectDetailPage extends RcPage {
   #project!: ResourceHandle<ProjectData>
   #caps!: ResourceHandle<GetCapabilitiesResponse>
   #view!: ResourceView<ProjectData>
+  #tabs!: ProjectTabs
 
   // The management cards. Each is made the first time its capability is
   // granted, and only hidden afterwards, so a card that holds a half-typed
@@ -58,11 +60,16 @@ export class ProjectDetailPage extends RcPage {
 
   protected build(): void {
     this.#view = new ResourceView<ProjectData>({ content: () => this.#content() })
+    // The CI trust and CI policy pages. Shown to the people who may manage
+    // them; the coordinator authorizes each call again.
+    this.#tabs = new ProjectTabs('')
+    show(this.#tabs.el, false)
     this.append(
       h(
         'div',
         { class: 'page' },
         h('div', { style: { marginBottom: 'var(--space-4)' } }, h('a', { href: href('/projects'), class: 'meta' }, '← All projects')),
+        this.#tabs.el,
         this.#view.el,
       ),
     )
@@ -88,6 +95,8 @@ export class ProjectDetailPage extends RcPage {
   render(): void {
     this.#project.sync()
     this.#caps.sync()
+    this.#tabs.update(this.#id())
+    show(this.#tabs.el, this.#can('manageProjectSettings') || this.#can('isProjectOwner') || this.#can('isOrgAdmin'))
     this.#view.update(this.#project.state())
   }
 

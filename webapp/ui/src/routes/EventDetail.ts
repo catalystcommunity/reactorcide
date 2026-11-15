@@ -1,5 +1,6 @@
 import type { CIEventWorkflowDecision, GetEventResponse } from '~/api/csilapi/types.gen.ts'
 import { RcPage } from '~/app/page.ts'
+import { prApprovalsPanel, type PrApprovalsPanel } from '~/components/PrApprovals.ts'
 import { ReasonList, decisionBadge, setDecision } from '~/components/Reasons.ts'
 import { ResourceView, emptyState, relativeTime } from '~/components/States.ts'
 import { setStatus, statusBadge } from '~/components/StatusBadge.ts'
@@ -88,6 +89,11 @@ export class EventDetailPage extends RcPage {
     const filesList = h('ul', { class: 'changed-files' })
     const filesCard = h('div', { class: 'card' }, h('h3', { class: 'section-title' }, 'Changed files'), filesCount, filesList)
 
+    // The approvals of the pull request, made the first time the event has
+    // one. It hides itself when the coordinator cannot serve approvals.
+    const approvalsAnchor = document.createComment('approvals')
+    let approvals: PrApprovalsPanel | null = null
+
     const node = h(
       'div',
       null,
@@ -116,6 +122,7 @@ export class EventDetailPage extends RcPage {
           fact('duplicate', 'Duplicate of', true),
         ),
       ),
+      approvalsAnchor,
       h(
         'div',
         { class: 'card' },
@@ -150,6 +157,15 @@ export class EventDetailPage extends RcPage {
         setFact('checks', event.checksState ? `${event.checksState}${event.checksDescription ? `: ${event.checksDescription}` : ''}` : undefined)
         setFact('eval', event.evalJobId, event.evalJobId ? href(`/jobs/${event.evalJobId}`) : undefined)
         setFact('duplicate', event.duplicateOfEventId, event.duplicateOfEventId ? href(`/events/${event.duplicateOfEventId}`) : undefined)
+
+        if (event.prNumber && event.projectId) {
+          if (!approvals) {
+            approvals = prApprovalsPanel(event.projectId, event.prNumber)
+            approvalsAnchor.before(approvals)
+          } else {
+            approvals.setPullRequest(event.projectId, event.prNumber)
+          }
+        }
 
         const runs = decisions.filter((d) => d.decision === 'run').length
         setText(decisionsCount, decisions.length ? `${runs} of ${decisions.length} run` : '')

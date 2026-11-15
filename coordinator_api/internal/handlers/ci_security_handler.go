@@ -3,11 +3,12 @@ package handlers
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strings"
 
+	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/approvals"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/audit"
-	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/authz"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/checkauth"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store/models"
@@ -20,7 +21,6 @@ type ciSecurityStore interface {
 	CreateVCSIdentityLink(context.Context, *models.VCSIdentityLink) error
 	ListVCSIdentityLinks(context.Context) ([]models.VCSIdentityLink, error)
 	DeleteVCSIdentityLink(context.Context, string) error
-	CreateCIApproval(context.Context, *models.CIApproval) error
 	GetProjectByOrgAndName(context.Context, string, string) (*models.Project, error)
 	ListGroupsForUser(context.Context, string) ([]models.Group, error)
 }
@@ -29,7 +29,12 @@ type CISecurityHandler struct {
 	BaseHandler
 	store    ciSecurityStore
 	appStore store.Store
+	// approvals is the one approval path (the webhook handler).
+	approvals approvals.Executor
 }
+
+// SetApprovals wires the approval path.
+func (h *CISecurityHandler) SetApprovals(executor approvals.Executor) { h.approvals = executor }
 
 func NewCISecurityHandler(appStore store.Store) *CISecurityHandler {
 	value, _ := appStore.(ciSecurityStore)
@@ -106,63 +111,50 @@ func (h *CISecurityHandler) Identities(w http.ResponseWriter, r *http.Request, l
 type approvalRequest struct {
 	Organization string `json:"organization"`
 	Project      string `json:"project"`
-	models.CIApproval
+	PRNumber     int    `json:"pr_number"`
+	// Command is approve-ci, override-ci, accept, revoke, retry, or rerun.
+	Command string `json:"command"`
+	Label   string `json:"label,omitempty"`
+	// HeadSHA, when set, must be the current head of the pull request.
+	HeadSHA string `json:"head_sha,omitempty"`
 }
 
+// Approve runs a pull request command for the token's user through the one
+// approval path. The command's own subject rules decide what it may do.
 func (h *CISecurityHandler) Approve(w http.ResponseWriter, r *http.Request) {
 	p := checkauth.GetPrincipalFromContext(r.Context())
-	if h.store == nil || p == nil || !p.HasCapability(tokencaps.PoliciesManage) {
-		h.respondWithError(w, 403, store.ErrForbidden)
+	if h.store == nil || h.approvals == nil || p == nil || p.UserID == "" || !p.HasCapability(tokencaps.WorkflowsControl) {
+		h.respondWithError(w, http.StatusForbidden, store.ErrForbidden)
 		return
 	}
 	var req approvalRequest
-	if json.NewDecoder(r.Body).Decode(&req) != nil {
-		h.respondWithError(w, 400, store.ErrInvalidInput)
+	if json.NewDecoder(r.Body).Decode(&req) != nil || req.PRNumber <= 0 || strings.TrimSpace(req.Command) == "" {
+		h.respondWithError(w, http.StatusBadRequest, store.ErrInvalidInput)
 		return
 	}
 	org, err := h.store.GetOrganizationByName(r.Context(), req.Organization)
-	if err != nil || !principalAllowsOrg(r.Context(), h.appStore, org.OrgID, tokencaps.PoliciesManage) {
-		h.respondWithError(w, 403, store.ErrForbidden)
+	if err != nil || !principalAllowsOrg(r.Context(), h.appStore, org.OrgID, tokencaps.WorkflowsControl) {
+		h.respondWithError(w, http.StatusForbidden, store.ErrForbidden)
 		return
 	}
 	project, err := h.store.GetProjectByOrgAndName(r.Context(), org.OrgID, req.Project)
 	if err != nil {
-		h.respondWithError(w, 400, err)
+		h.respondWithError(w, http.StatusNotFound, store.ErrNotFound)
 		return
 	}
-	req.ProjectID = project.ProjectID
-	if p.UserID == "" || req.ApproverSubject == "" {
-		h.respondWithError(w, 403, store.ErrForbidden)
+	result, err := h.approvals.Execute(r.Context(), approvals.Request{Project: project, PRNumber: req.PRNumber,
+		HeadSHA: strings.TrimSpace(req.HeadSHA), Command: approvals.Command{Name: strings.TrimSpace(req.Command), Label: strings.TrimSpace(req.Label)},
+		Channel: models.CIApprovalChannelAPI, UserID: p.UserID})
+	switch {
+	case errors.Is(err, approvals.ErrNotAllowed):
+		h.respondWithError(w, http.StatusForbidden, err)
+		return
+	case errors.Is(err, approvals.ErrHeadChanged):
+		h.respondWithError(w, http.StatusConflict, err)
+		return
+	case err != nil:
+		h.respondWithError(w, http.StatusBadRequest, err)
 		return
 	}
-	allowedSubject := false
-	if req.ApproverSubject == "project_owner" {
-		if roleStore, ok := h.appStore.(authz.RoleStore); ok {
-			allowedSubject, _ = authz.NewResolver(roleStore).IsProjectOwner(r.Context(), authz.IdentityFromPrincipal(p, checkauth.GetUserFromContext(r.Context())), project.ProjectID)
-		}
-	} else if strings.HasPrefix(req.ApproverSubject, "reactorcide_group:") {
-		groups, _ := h.store.ListGroupsForUser(r.Context(), p.UserID)
-		name := strings.TrimPrefix(req.ApproverSubject, "reactorcide_group:")
-		for _, group := range groups {
-			if group.OrgID == org.OrgID && group.Name == name {
-				allowedSubject = true
-			}
-		}
-	}
-	if !allowedSubject {
-		h.respondWithError(w, 403, store.ErrForbidden)
-		return
-	}
-	req.CIApproval.OrgID = org.OrgID
-	if p.UserID != "" {
-		req.ApproverUserID = &p.UserID
-	}
-	if err := h.store.CreateCIApproval(r.Context(), &req.CIApproval); err != nil {
-		h.respondWithError(w, 400, err)
-		return
-	}
-	audit.Record(r.Context(), h.appStore, org.OrgID, "ci_approval.create", "ci_approval", req.ApprovalID,
-		models.JSONB{"project_id": req.ProjectID, "pr_number": req.PRNumber, "head_sha": req.HeadSHA,
-			"base_sha": req.BaseSHA, "policy_revision": req.PolicyRevision, "workflow": req.WorkflowScope, "profile": req.ExecutionProfile})
-	h.respondWithJSON(w, 201, req.CIApproval)
+	h.respondWithJSON(w, http.StatusOK, result)
 }

@@ -195,6 +195,10 @@ func (c *GitHubClient) ParseWebhook(r *http.Request) (*WebhookEvent, error) {
 		if err := c.parseIssueCommentEvent(body, event); err != nil {
 			return nil, fmt.Errorf("parsing issue comment event: %w", err)
 		}
+	case "pull_request_review":
+		if err := c.parsePullRequestReviewEvent(body, event); err != nil {
+			return nil, fmt.Errorf("parsing pull request review event: %w", err)
+		}
 	case "ping":
 		// Ping event for webhook setup verification
 		c.logger.Info("Received GitHub ping event")
@@ -561,6 +565,8 @@ func (c *GitHubClient) parsePullRequestEvent(body []byte, event *WebhookEvent) e
 		HTMLURL:     payload.PullRequest.HTMLURL,
 		AuthorLogin: payload.PullRequest.User.Login,
 		AuthorEmail: "", // Not provided in webhook
+
+		AuthorAssociation: payload.PullRequest.AuthorAssociation,
 	}
 
 	// Cross-repo (fork) PR: the head branch lives on a different repository
@@ -590,8 +596,95 @@ func (c *GitHubClient) parseIssueCommentEvent(body []byte, event *WebhookEvent) 
 		SSHURL: payload.Repository.SSHURL, HTMLURL: payload.Repository.HTMLURL, DefaultBranch: payload.Repository.DefaultBranch}
 	event.SenderLogin = payload.Sender.Login
 	event.IssueComment = &IssueCommentInfo{Action: payload.Action, IssueNumber: payload.Issue.Number,
-		Body: payload.Comment.Body, IsPullRequest: payload.Issue.PullRequest.URL != ""}
+		Body: payload.Comment.Body, IsPullRequest: payload.Issue.PullRequest.URL != "", CommentID: payload.Comment.ID}
 	return nil
+}
+
+func (c *GitHubClient) parsePullRequestReviewEvent(body []byte, event *WebhookEvent) error {
+	var payload githubPullRequestReviewEvent
+	if err := json.Unmarshal(body, &payload); err != nil {
+		return err
+	}
+	event.Repository = RepositoryInfo{FullName: payload.Repository.FullName, CloneURL: payload.Repository.CloneURL,
+		SSHURL: payload.Repository.SSHURL, HTMLURL: payload.Repository.HTMLURL, DefaultBranch: payload.Repository.DefaultBranch}
+	event.SenderLogin = payload.Sender.Login
+	event.PullRequestReview = &PullRequestReviewInfo{Action: payload.Action, PRNumber: payload.PullRequest.Number,
+		ReviewID: payload.Review.ID, State: strings.ToLower(payload.Review.State), Body: payload.Review.Body,
+		CommitSHA: payload.Review.CommitID, ReviewerLogin: payload.Review.User.Login}
+	return nil
+}
+
+// ListPRFiles lists the paths the pull request changes, including the old
+// path of a renamed file. GitHub lists at most 3000 files; a longer list fails,
+// so a caller can fail closed.
+func (c *GitHubClient) ListPRFiles(ctx context.Context, repo string, prNumber int) ([]string, error) {
+	paths := []string{}
+	for page := 1; page <= 30; page++ {
+		var files []struct {
+			Filename         string `json:"filename"`
+			PreviousFilename string `json:"previous_filename"`
+		}
+		endpoint := fmt.Sprintf("%s/repos/%s/pulls/%d/files?per_page=100&page=%d", c.config.BaseURL, repo, prNumber, page)
+		status, err := c.getJSON(ctx, endpoint, &files)
+		if err != nil {
+			return nil, err
+		}
+		if status != http.StatusOK {
+			return nil, fmt.Errorf("listing pull request files: status %d", status)
+		}
+		for _, file := range files {
+			paths = append(paths, file.Filename)
+			if file.PreviousFilename != "" {
+				paths = append(paths, file.PreviousFilename)
+			}
+		}
+		if len(files) < 100 {
+			return paths, nil
+		}
+	}
+	return nil, fmt.Errorf("pull request changes too many files to list")
+}
+
+// ListPRCommitLogins lists the GitHub accounts of the authors and committers
+// of the pull request commits. GitHub links a commit to an account by its
+// email address, so a commit can name an account that did not write it. That
+// can only add a person to the authors; it cannot remove one.
+func (c *GitHubClient) ListPRCommitLogins(ctx context.Context, repo string, prNumber int) ([]string, error) {
+	seen := map[string]bool{}
+	logins := []string{}
+	for page := 1; page <= 10; page++ {
+		var commits []struct {
+			Author    *githubUser `json:"author"`
+			Committer *githubUser `json:"committer"`
+		}
+		endpoint := fmt.Sprintf("%s/repos/%s/pulls/%d/commits?per_page=100&page=%d", c.config.BaseURL, repo, prNumber, page)
+		status, err := c.getJSON(ctx, endpoint, &commits)
+		if err != nil {
+			return nil, err
+		}
+		if status != http.StatusOK {
+			return nil, fmt.Errorf("listing pull request commits: status %d", status)
+		}
+		for _, commit := range commits {
+			for _, user := range []*githubUser{commit.Author, commit.Committer} {
+				// web-flow is GitHub's committer for commits made in the web
+				// interface. It is not a person.
+				if user == nil || user.Login == "" || strings.EqualFold(user.Login, "web-flow") {
+					continue
+				}
+				key := strings.ToLower(user.Login)
+				if !seen[key] {
+					seen[key] = true
+					logins = append(logins, user.Login)
+				}
+			}
+		}
+		if len(commits) < 100 {
+			return logins, nil
+		}
+	}
+	// More than 1000 commits: fail closed, the author list is not complete.
+	return nil, fmt.Errorf("pull request has too many commits to list their authors")
 }
 
 // parsePushEvent parses a GitHub push event
@@ -671,6 +764,8 @@ func (c *GitHubClient) convertPRInfo(pr githubPullRequest) *PullRequestInfo {
 		BaseRef:     pr.Base.Ref,
 		HTMLURL:     pr.HTMLURL,
 		AuthorLogin: pr.User.Login,
+
+		AuthorAssociation: pr.AuthorAssociation,
 	}
 	if pr.Head.Repo.FullName != "" && pr.Head.Repo.FullName != pr.Base.Repo.FullName {
 		result.HeadRepository = &RepositoryInfo{FullName: pr.Head.Repo.FullName, CloneURL: pr.Head.Repo.CloneURL,
@@ -697,6 +792,7 @@ type githubIssueCommentEvent struct {
 		} `json:"pull_request"`
 	} `json:"issue"`
 	Comment struct {
+		ID   int64  `json:"id"`
 		Body string `json:"body"`
 	} `json:"comment"`
 	Repository githubRepository `json:"repository"`
@@ -714,6 +810,22 @@ type githubPullRequest struct {
 	Head           githubRef  `json:"head"`
 	Base           githubRef  `json:"base"`
 	User           githubUser `json:"user"`
+	// AuthorAssociation is the relation of the author to the repository.
+	AuthorAssociation string `json:"author_association"`
+}
+
+type githubPullRequestReviewEvent struct {
+	Action string `json:"action"`
+	Review struct {
+		ID       int64      `json:"id"`
+		State    string     `json:"state"`
+		Body     string     `json:"body"`
+		CommitID string     `json:"commit_id"`
+		User     githubUser `json:"user"`
+	} `json:"review"`
+	PullRequest githubPullRequest `json:"pull_request"`
+	Repository  githubRepository  `json:"repository"`
+	Sender      githubUser        `json:"sender"`
 }
 
 type githubRef struct {

@@ -288,24 +288,107 @@ type SetWorkerClassPoolResponse struct {
 	Ok bool `json:"ok" yaml:"ok"`
 }
 
-// CreateCiApprovalRequest represents a structured data type
-type CreateCiApprovalRequest struct {
-	Organization     string  `json:"organization" yaml:"organization"`
-	Project          string  `json:"project" yaml:"project"`
-	PrNumber         int64   `json:"pr_number" yaml:"pr_number"`
-	HeadRepository   string  `json:"head_repository" yaml:"head_repository"`
-	HeadSha          string  `json:"head_sha" yaml:"head_sha"`
-	BaseSha          string  `json:"base_sha" yaml:"base_sha"`
-	PolicyRevision   string  `json:"policy_revision" yaml:"policy_revision"`
-	WorkflowScope    string  `json:"workflow_scope" yaml:"workflow_scope"`
-	ExecutionProfile string  `json:"execution_profile" yaml:"execution_profile"`
-	ApproverSubject  string  `json:"approver_subject" yaml:"approver_subject"`
-	ExpiresAt        *string `json:"expires_at,omitempty" yaml:"expires_at,omitempty"`
+// PrCommandRequest represents a structured data type
+type PrCommandRequest struct {
+	ProjectId string  `json:"project_id" yaml:"project_id"`
+	PrNumber  int64   `json:"pr_number" yaml:"pr_number"`
+	Command   string  `json:"command" yaml:"command"`
+	Label     *string `json:"label,omitempty" yaml:"label,omitempty"`
+	HeadSha   *string `json:"head_sha,omitempty" yaml:"head_sha,omitempty"`
 }
 
-// CreateCiApprovalResponse represents a structured data type
-type CreateCiApprovalResponse struct {
-	ApprovalId string `json:"approval_id" yaml:"approval_id"`
+// CiApprovalAction represents a structured data type
+type CiApprovalAction struct {
+	ApprovalId string   `json:"approval_id" yaml:"approval_id"`
+	Kind       string   `json:"kind" yaml:"kind"`
+	Action     string   `json:"action" yaml:"action"`
+	Label      *string  `json:"label,omitempty" yaml:"label,omitempty"`
+	HeadSha    string   `json:"head_sha" yaml:"head_sha"`
+	Person     string   `json:"person" yaml:"person"`
+	Subjects   []string `json:"subjects" yaml:"subjects"`
+	Channel    string   `json:"channel" yaml:"channel"`
+	CreatedAt  string   `json:"created_at" yaml:"created_at"`
+}
+
+// PrCommandResponse represents a structured data type
+type PrCommandResponse struct {
+	Effect   *string            `json:"effect,omitempty" yaml:"effect,omitempty"`
+	Message  string             `json:"message" yaml:"message"`
+	Recorded []CiApprovalAction `json:"recorded" yaml:"recorded"`
+}
+
+// RequiredReviewState represents a structured data type
+type RequiredReviewState struct {
+	Id          string   `json:"id" yaml:"id"`
+	Description *string  `json:"description,omitempty" yaml:"description,omitempty"`
+	Scope       string   `json:"scope" yaml:"scope"`
+	Applies     bool     `json:"applies" yaml:"applies"`
+	Required    int64    `json:"required" yaml:"required"`
+	Accepted    []string `json:"accepted" yaml:"accepted"`
+	Satisfied   bool     `json:"satisfied" yaml:"satisfied"`
+	Accept      []string `json:"accept" yaml:"accept"`
+}
+
+// GetPrApprovalsRequest represents a structured data type
+type GetPrApprovalsRequest struct {
+	ProjectId string `json:"project_id" yaml:"project_id"`
+	PrNumber  int64  `json:"pr_number" yaml:"pr_number"`
+}
+
+// GetPrApprovalsResponse represents a structured data type
+type GetPrApprovalsResponse struct {
+	HeadSha        string                `json:"head_sha" yaml:"head_sha"`
+	Actions        []CiApprovalAction    `json:"actions" yaml:"actions"`
+	Reviews        []RequiredReviewState `json:"reviews" yaml:"reviews"`
+	ReviewsState   *string               `json:"reviews_state,omitempty" yaml:"reviews_state,omitempty"`
+	ReviewsSummary *string               `json:"reviews_summary,omitempty" yaml:"reviews_summary,omitempty"`
+}
+
+// RequiredReview represents a structured data type
+type RequiredReview struct {
+	Id          string   `json:"id" yaml:"id"`
+	Description *string  `json:"description,omitempty" yaml:"description,omitempty"`
+	Paths       []string `json:"paths,omitempty" yaml:"paths,omitempty"`
+	Accept      []string `json:"accept" yaml:"accept"`
+	Count       *int64   `json:"count,omitempty" yaml:"count,omitempty"`
+	Scope       *string  `json:"scope,omitempty" yaml:"scope,omitempty"`
+}
+
+// CiTrustSettings represents a structured data type
+type CiTrustSettings struct {
+	RunGate           []string         `json:"run_gate,omitempty" yaml:"run_gate,omitempty"`
+	GatedRunAuthority *string          `json:"gated_run_authority,omitempty" yaml:"gated_run_authority,omitempty"`
+	RunApprovers      []string         `json:"run_approvers,omitempty" yaml:"run_approvers,omitempty"`
+	OverrideApprovers []string         `json:"override_approvers,omitempty" yaml:"override_approvers,omitempty"`
+	OverrideProfile   *string          `json:"override_profile,omitempty" yaml:"override_profile,omitempty"`
+	RequiredReviews   []RequiredReview `json:"required_reviews,omitempty" yaml:"required_reviews,omitempty"`
+}
+
+// GetCiTrustSettingsRequest represents a structured data type
+type GetCiTrustSettingsRequest struct {
+	Organization string  `json:"organization" yaml:"organization"`
+	ProjectId    *string `json:"project_id,omitempty" yaml:"project_id,omitempty"`
+}
+
+// GetCiTrustSettingsResponse represents a structured data type
+type GetCiTrustSettingsResponse struct {
+	Settings              CiTrustSettings  `json:"settings" yaml:"settings"`
+	Effective             CiTrustSettings  `json:"effective" yaml:"effective"`
+	OrganizationEffective *CiTrustSettings `json:"organization_effective,omitempty" yaml:"organization_effective,omitempty"`
+	CanLoosen             bool             `json:"can_loosen" yaml:"can_loosen"`
+}
+
+// PutCiTrustSettingsRequest represents a structured data type
+type PutCiTrustSettingsRequest struct {
+	Organization string          `json:"organization" yaml:"organization"`
+	ProjectId    *string         `json:"project_id,omitempty" yaml:"project_id,omitempty"`
+	Settings     CiTrustSettings `json:"settings" yaml:"settings"`
+}
+
+// PutCiTrustSettingsResponse represents a structured data type
+type PutCiTrustSettingsResponse struct {
+	Settings  CiTrustSettings `json:"settings" yaml:"settings"`
+	Effective CiTrustSettings `json:"effective" yaml:"effective"`
 }
 
 // ProjectSummary represents a structured data type

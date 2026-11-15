@@ -260,22 +260,114 @@ export interface SetWorkerClassPoolResponse {
   ok: boolean;
 }
 
-export interface CreateCiApprovalRequest {
-  organization: string;
-  project: string;
+/**
+ * A pull request command. It is the same as a PR comment and has the same
+ * authorization and effects: approve-ci, override-ci, accept, revoke, retry,
+ * rerun. head_sha, when set, must be the current head.
+ */
+export interface PrCommandRequest {
+  projectId: string;
   prNumber: number;
-  headRepository: string;
-  headSha: string;
-  baseSha: string;
-  policyRevision: string;
-  workflowScope: string;
-  executionProfile: string;
-  approverSubject: string;
-  expiresAt?: string;
+  command: string;
+  label?: string;
+  headSha?: string;
 }
 
-export interface CreateCiApprovalResponse {
+/**
+ * One approval action. Actions are append-only; for each role the last
+ * action wins.
+ */
+export interface CiApprovalAction {
   approvalId: string;
+  kind: string;
+  action: string;
+  label?: string;
+  headSha: string;
+  person: string;
+  subjects: string[];
+  channel: string;
+  createdAt: string;
+}
+
+export interface PrCommandResponse {
+  effect?: string;
+  message: string;
+  recorded: CiApprovalAction[];
+}
+
+export interface RequiredReviewState {
+  id: string;
+  description?: string;
+  scope: string;
+  applies: boolean;
+  required: number;
+  accepted: string[];
+  satisfied: boolean;
+  accept: string[];
+}
+
+export interface GetPrApprovalsRequest {
+  projectId: string;
+  prNumber: number;
+}
+
+export interface GetPrApprovalsResponse {
+  headSha: string;
+  actions: CiApprovalAction[];
+  reviews: RequiredReviewState[];
+  reviewsState?: string;
+  reviewsSummary?: string;
+}
+
+/**
+ * A review a pull request needs before it can merge. The ID is also the
+ * label of an accept that is only for this review. accept can name
+ * non_author: any person who did not write the change.
+ */
+export interface RequiredReview {
+  id: string;
+  description?: string;
+  paths?: string[];
+  accept: string[];
+  count?: number;
+  scope?: string;
+}
+
+/**
+ * Run gate, override, and required-review settings. An absent field of a
+ * project inherits the organization value. Organization required reviews
+ * apply to every project; a project adds its own.
+ */
+export interface CiTrustSettings {
+  runGate?: string[];
+  gatedRunAuthority?: string;
+  runApprovers?: string[];
+  overrideApprovers?: string[];
+  overrideProfile?: string;
+  requiredReviews?: RequiredReview[];
+}
+
+export interface GetCiTrustSettingsRequest {
+  organization: string;
+  projectId?: string;
+}
+
+export interface GetCiTrustSettingsResponse {
+  settings: CiTrustSettings;
+  effective: CiTrustSettings;
+  organizationEffective?: CiTrustSettings;
+  canLoosen: boolean;
+}
+
+export interface PutCiTrustSettingsRequest {
+  organization: string;
+  projectId?: string;
+  settings: CiTrustSettings;
+}
+
+export interface PutCiTrustSettingsResponse {
+  settings: CiTrustSettings;
+  effective: CiTrustSettings;
 }
 
 export interface ProjectSummary {
