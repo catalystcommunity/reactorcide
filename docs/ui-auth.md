@@ -343,10 +343,10 @@ the worker starts or completes the retried work. The in-process reconciler
 checks dirty report targets every five seconds. It uses a database lock so two
 coordinators do not write the same comment at the same time.
 
-The `Reactorcide CI Policy` commit status is separate from the shared comment.
-It is successful when all changed CI files are authorized. It is failed when
-one or more CI files are not authorized. Safe trusted-base workflows continue
-after a policy failure.
+The `Reactorcide Checks` commit status is separate from the shared comment. A
+CI file that the policy refuses fails it. Safe trusted-base workflows continue
+after a policy refusal. Required reviews post their own status, `Reactorcide
+Reviews`.
 
 ## API Credential Subjects
 

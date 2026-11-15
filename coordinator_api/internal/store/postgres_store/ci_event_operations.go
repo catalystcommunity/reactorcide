@@ -209,11 +209,26 @@ func (ps PostgresDbStore) GetCIEventWorkflowDecisionByWorkflow(ctx context.Conte
 		return nil, store.ErrNotFound
 	}
 	var decision models.CIEventWorkflowDecision
-	if err := ps.getDB(ctx).Where("workflow_id = ?", workflowID).First(&decision).Error; err != nil {
+	if err := ps.getDB(ctx).Where("workflow_id = ? AND decision <> ?", workflowID, models.WorkflowDecisionCarried).First(&decision).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, store.ErrNotFound
 		}
 		return nil, fmt.Errorf("failed to get workflow decision: %w", err)
 	}
 	return &decision, nil
+}
+
+func (ps PostgresDbStore) LatestCIEventActorForPR(ctx context.Context, projectID string, prNumber int, headSHA string) (string, error) {
+	var event models.CIEvent
+	err := ps.getDB(ctx).
+		Where("project_id = ? AND pr_number = ? AND commit_sha = ? AND source = ? AND actor <> ''",
+			projectID, prNumber, headSHA, models.CIEventSourceWebhook).
+		Order("received_at DESC").First(&event).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return "", nil
+	}
+	if err != nil {
+		return "", err
+	}
+	return event.Actor, nil
 }

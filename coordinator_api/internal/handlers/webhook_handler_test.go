@@ -43,6 +43,9 @@ type WebhookMockStore struct {
 	GetUserByIDFunc         func(ctx context.Context, userID string) (*models.User, error)
 	GetCIPolicyFunc         func(ctx context.Context, projectID string) (*models.CIPolicy, error)
 	ActiveCIApprovals       []models.CIApproval
+	CreatedCIApprovals      []models.CIApproval
+	OrgTrust                *models.CITrustSettings
+	ProjectTrust            *models.CITrustSettings
 
 	CreateJobCalls           []*models.Job
 	UpdateJobCalls           []*models.Job
@@ -57,16 +60,67 @@ func (m *WebhookMockStore) ListGroupsForUser(context.Context, string) ([]models.
 	return nil, nil
 }
 
-func (m *WebhookMockStore) ListActiveCIApprovalsForTarget(context.Context, string, int, string, string, string, time.Time) ([]models.CIApproval, error) {
-	return append([]models.CIApproval(nil), m.ActiveCIApprovals...), nil
+func (m *WebhookMockStore) ListVCSIdentityLinks(context.Context) ([]models.VCSIdentityLink, error) {
+	return nil, nil
+}
+
+// ListCIApprovalsForHead returns the seeded and the created actions of the
+// head, oldest first.
+func (m *WebhookMockStore) ListCIApprovalsForHead(_ context.Context, _ string, prNumber int, headSHA string) ([]models.CIApproval, error) {
+	result := []models.CIApproval{}
+	for _, approval := range append(append([]models.CIApproval(nil), m.ActiveCIApprovals...), m.CreatedCIApprovals...) {
+		if approval.PRNumber == prNumber && approval.HeadSHA == headSHA && approval.InvalidatedAt == nil {
+			result = append(result, approval)
+		}
+	}
+	return result, nil
 }
 
 func (m *WebhookMockStore) InvalidateCIApprovalsForNewHead(context.Context, string, int, string) (int64, error) {
 	return 0, nil
 }
 
-func (m *WebhookMockStore) CreateCIApproval(context.Context, *models.CIApproval) error {
+// CreateCIApproval validates like the real store, so a test cannot pass with
+// an approval that production would refuse. A second action from the same
+// source object is refused, as in the real store.
+func (m *WebhookMockStore) CreateCIApproval(_ context.Context, approval *models.CIApproval) error {
+	if err := approval.Validate(); err != nil {
+		return fmt.Errorf("invalid CI approval: %w", err)
+	}
+	if approval.SourceObject != nil {
+		for _, existing := range m.CreatedCIApprovals {
+			if existing.SourceObject != nil && *existing.SourceObject == *approval.SourceObject {
+				return store.ErrAlreadyExists
+			}
+		}
+	}
+	approval.ApprovalID = fmt.Sprintf("approval-%02d", len(m.CreatedCIApprovals)+1)
+	approval.CreatedAt = time.Date(2026, 11, 15, 12, 0, len(m.CreatedCIApprovals)+1, 0, time.UTC)
+	m.CreatedCIApprovals = append(m.CreatedCIApprovals, *approval)
 	return nil
+}
+
+func (m *WebhookMockStore) GetCITrustSettings(_ context.Context, _ string, projectID *string) (*models.CITrustSettings, error) {
+	if projectID == nil && m.OrgTrust != nil {
+		return m.OrgTrust, nil
+	}
+	if projectID != nil && m.ProjectTrust != nil {
+		return m.ProjectTrust, nil
+	}
+	return nil, store.ErrNotFound
+}
+
+func (m *WebhookMockStore) PutCITrustSettings(_ context.Context, settings *models.CITrustSettings) error {
+	if settings.ProjectID == nil {
+		m.OrgTrust = settings
+	} else {
+		m.ProjectTrust = settings
+	}
+	return nil
+}
+
+func (m *WebhookMockStore) EffectiveCITrust(context.Context, string, string) (models.EffectiveTrustSettings, error) {
+	return models.EffectiveTrust(m.OrgTrust, m.ProjectTrust), nil
 }
 
 func (m *WebhookMockStore) GetCIPolicyByProject(ctx context.Context, projectID string) (*models.CIPolicy, error) {

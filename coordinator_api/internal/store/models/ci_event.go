@@ -12,6 +12,12 @@ const (
 	CIEventSourceSchedule = "schedule"
 	CIEventSourceManual   = "manual"
 	CIEventSourceRetry    = "retry"
+	// CIEventSourceApproval is a fresh evaluation of a pull request head that
+	// the coordinator starts when a new approval for that head is recorded.
+	CIEventSourceApproval = "approval"
+	// CIEventSourceRerun runs every workflow of a pull request head again
+	// (/reactorcide rerun).
+	CIEventSourceRerun = "rerun"
 )
 
 // CI event statuses.
@@ -21,6 +27,9 @@ const (
 	CIEventStatusEvaluated  = "evaluated"
 	CIEventStatusFailed     = "failed"
 	CIEventStatusDuplicate  = "duplicate"
+	// CIEventStatusAwaitingApproval: the run gate holds the pull request. The
+	// event has no eval job until a run approver comments approve-ci.
+	CIEventStatusAwaitingApproval = "awaiting_approval"
 )
 
 // Duplicate-event settings. A project value of "inherit" uses the
@@ -37,6 +46,10 @@ const (
 	WorkflowDecisionSkipped     = "skipped"
 	WorkflowDecisionInvalid     = "invalid"
 	WorkflowDecisionNotAdmitted = "not_admitted"
+	// WorkflowDecisionCarried: a re-evaluation after an approval did not
+	// change the decision, so the event keeps the workflow of the earlier
+	// event (WorkflowID) instead of running it again.
+	WorkflowDecisionCarried = "carried"
 )
 
 // CIEvent is one incoming event: a webhook delivery, a schedule fire, or a

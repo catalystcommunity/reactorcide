@@ -307,17 +307,34 @@ file. Use `reactorcide policy explain --file POLICY_FILE --workflow ID` with
 the event, path, actor, and approval flags to inspect a decision without
 starting a job. Add one `--changed-path` option for each changed CI file.
 
-Use `reactorcide approvals create` to create a SHA-bound approval through the
-API. A GitHub user can also add this exact command to a pull request:
+Use `reactorcide approvals COMMAND --project PROJECT --pr N` to control a
+pull request head. The commands are `approve-ci`, `override-ci`, `accept`
+(with an optional `--label`), `revoke`, `retry`, and `rerun`. Use
+`reactorcide approvals show` to see the approval actions and the required
+reviews of the current head. Add `--head-sha SHA` to refuse a command when the
+head changed. A command needs a person: use a session or a user API token.
+
+A pull request comment gives the same commands:
 
 ```text
-/reactorcide approve WORKFLOW PROFILE POLICY-REVISION
+/reactorcide approve-ci
+/reactorcide override-ci
+/reactorcide accept [LABEL]
+/reactorcide revoke
+/reactorcide retry
+/reactorcide rerun
 ```
 
-The coordinator gets the current head and base SHA from GitHub. It creates an
-approval only for subjects that GitHub or a verified identity link confirms.
-The coordinator policy must still allow the subject, workflow, profile, and
-revision.
+An approval binds to the head SHA. The settings decide who can give each
+command. Use `reactorcide trust get --org ORG [--project PROJECT]` and
+`reactorcide trust set --org ORG [--project PROJECT] --file FILE` to manage the
+run gate, the approvers, the override profile, and the required reviews. See
+[Run Gate, Approvals, and Required Reviews](./organizations-and-ci-policy.md#run-gate-approvals-and-required-reviews).
+
+Use `reactorcide groups create|list|members|add-member|remove-member --org ORG`
+to manage the groups behind `reactorcide_group:NAME`. Use
+`reactorcide identities link|list|unlink` to manage verified VCS identity
+links.
 
 Use `GET /api/v1/audit?org=NAME` to export organization audit events. The
 token needs `audit:read` for that organization. Set

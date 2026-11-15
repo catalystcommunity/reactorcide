@@ -232,7 +232,9 @@ In the GitHub repository:
 4. Select `application/json`.
 5. Copy the value from the webhook secret file into the secret field.
 6. Enable SSL verification.
-7. Select push and pull-request events.
+7. Select these events: pushes, pull requests, issue comments, and pull request
+   reviews. Issue comments carry the `/reactorcide` commands. Pull request
+   reviews count toward required reviews.
 8. Save the webhook.
 
 GitHub sends a ping. Reactorcide returns `200` with a `pong` response.
@@ -301,7 +303,8 @@ Confirm that the VCS token can write commit status and comments. Confirm that
 URL.
 
 Reactorcide posts one status per event, with the context
-`Reactorcide Checks`. Set branch protection to require this context. Do not
+`Reactorcide Checks`. Set branch protection to require this context. A project
+with required reviews also posts `Reactorcide Reviews`; require it too. Do not
 require `reactorcide/eval`, workflow names, or `Reactorcide CI Policy`. New
 events do not post these contexts. See
 [Events, Checks, and Schedules](./events-and-schedules.md).

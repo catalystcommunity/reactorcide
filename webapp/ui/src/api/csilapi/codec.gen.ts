@@ -2,7 +2,7 @@
 // Source: <csil spec>
 // Target: typescript-codec
 
-import type { AddGroupMemberRequest, AddGroupMemberResponse, AddTrustedDomainPatternRequest, AddTrustedDomainPatternResponse, AddTrustedIdentityRequest, AddTrustedIdentityResponse, AddVcsCredentialRequest, AddVcsCredentialResponse, AddWebhookSecretRequest, AddWebhookSecretResponse, AssignRoleRequest, AssignRoleResponse, AuthenticateRequest, AuthenticateResponse, AuthenticatedIdentity, BeginLoginRequest, BeginLoginResponse, BootstrapAdminRequest, BootstrapAdminResponse, CIDecisionReason, CIDependencyOutcome, CIEventDetail, CIEventWorkflowDecision, CancelJobRequest, CancelJobResponse, CancelWorkflowRequest, CancelWorkflowResponse, CharacteristicEntry, CharacteristicScalar, CiPolicyDefaults, CiPolicyDetail, CiPolicyDocument, CiPolicyNodeAuthority, CiPolicyRule, CiPolicySubjectMatch, CiPolicyUse, CompleteLoginRequest, CompleteLoginResponse, CreateCiApprovalRequest, CreateCiApprovalResponse, CreateEnrollmentTokenRequest, CreateEnrollmentTokenResponse, CreateGroupRequest, CreateGroupResponse, CreateOrgRequest, CreateOrgResponse, CreatePoolRequest, CreatePoolResponse, CreateProjectRequest, CreateProjectResponse, CreateQueueRequest, CreateQueueResponse, CreateScheduleRequest, CreateScheduleResponse, CreateSecretGrantRequest, CreateSecretGrantResponse, DeactivateEnrollmentTokenRequest, DeactivateEnrollmentTokenResponse, DeactivateVcsCredentialRequest, DeactivateVcsCredentialResponse, DeactivateWebhookSecretRequest, DeactivateWebhookSecretResponse, DeleteCiPolicyRequest, DeleteCiPolicyResponse, DeleteExecutionProfileRequest, DeleteExecutionProfileResponse, DeleteGroupRequest, DeleteGroupResponse, DeleteOrgRequest, DeleteOrgResponse, DeletePoolRequest, DeletePoolResponse, DeleteProjectRequest, DeleteProjectResponse, DeleteQueueRequest, DeleteQueueResponse, DeleteScheduleRequest, DeleteScheduleResponse, DeleteSecretGrantRequest, DeleteSecretGrantResponse, DeleteSecretRequest, DeleteSecretResponse, DeleteVcsCredentialRequest, DeleteVcsCredentialResponse, DeleteWebhookSecretRequest, DeleteWebhookSecretResponse, DeleteWorkerClassRequest, DeleteWorkerClassResponse, DescribeFormMetadataRequest, DescribeFormMetadataResponse, DrainWorkerRequest, DrainWorkerResponse, EnrollmentTokenSummary, EnumChoice, ExecutionProfileSummary, GetAuthConfigRequest, GetAuthConfigResponse, GetCapabilitiesRequest, GetCapabilitiesResponse, GetCiPolicyRequest, GetCiPolicyResponse, GetEventRequest, GetEventResponse, GetGlobalSettingsRequest, GetGlobalSettingsResponse, GetJobLogsRequest, GetJobLogsResponse, GetJobMetricsRequest, GetJobMetricsResponse, GetJobRequest, GetJobResourceHistoryRequest, GetJobResourceHistoryResponse, GetJobResponse, GetProjectRequest, GetProjectResponse, GetWorkflowRequest, GetWorkflowResponse, GlobalSettingEntry, GroupMemberEntry, GroupSummary, JobLogEntry, JobMetricLabel, JobMetricPoint, JobMetricSeries, JobMetricUnavailable, JobRunResourceSummary, JobSummary, KillJobRequest, KillJobResponse, ListEnrollmentTokensRequest, ListEnrollmentTokensResponse, ListExecutionProfilesRequest, ListExecutionProfilesResponse, ListGroupMembersRequest, ListGroupMembersResponse, ListGroupsRequest, ListGroupsResponse, ListJobsRequest, ListJobsResponse, ListOrgsRequest, ListOrgsResponse, ListPoolsRequest, ListPoolsResponse, ListProjectsRequest, ListProjectsResponse, ListQueuesRequest, ListQueuesResponse, ListRoleAssignmentsRequest, ListRoleAssignmentsResponse, ListScheduleFiresRequest, ListScheduleFiresResponse, ListSchedulesRequest, ListSchedulesResponse, ListSecretGrantsRequest, ListSecretGrantsResponse, ListSecretPathsRequest, ListSecretPathsResponse, ListTrustedDomainPatternsRequest, ListTrustedDomainPatternsResponse, ListTrustedIdentitiesRequest, ListTrustedIdentitiesResponse, ListUsersRequest, ListUsersResponse, ListVcsCredentialsRequest, ListVcsCredentialsResponse, ListWebhookSecretsRequest, ListWebhookSecretsResponse, ListWorkerClassesRequest, ListWorkerClassesResponse, ListWorkersRequest, ListWorkersResponse, ListWorkflowsRequest, ListWorkflowsResponse, LogoutRequest, LogoutResponse, OrgSummary, ProjectDetail, ProjectSummary, PutCiPolicyRequest, PutCiPolicyResponse, PutExecutionProfileRequest, PutExecutionProfileResponse, PutWorkerClassRequest, PutWorkerClassResponse, QueueSummary, RemoveGroupMemberRequest, RemoveGroupMemberResponse, RemoveTrustedDomainPatternRequest, RemoveTrustedDomainPatternResponse, RemoveTrustedIdentityRequest, RemoveTrustedIdentityResponse, RenameQueueRequest, RenameQueueResponse, RetryJobRequest, RetryJobResponse, RetryUnsuccessfulJobsRequest, RetryUnsuccessfulJobsResponse, RetryWorkflowRequest, RetryWorkflowResponse, RevokeRoleRequest, RevokeRoleResponse, RoleAssignment, RoleSummary, ScheduleFireSummary, ScheduleSummary, SecretGrant, SecretPathEntry, ServiceError, SetDefaultOrgRequest, SetDefaultOrgResponse, SetSecretRequest, SetSecretResponse, SetWorkerClassPoolRequest, SetWorkerClassPoolResponse, SetWorkerStatusRequest, SetWorkerStatusResponse, TrustedDomainPattern, TrustedIdentity, UpdateGlobalSettingsRequest, UpdateGlobalSettingsResponse, UpdateGroupRequest, UpdateGroupResponse, UpdateOrgRequest, UpdateOrgResponse, UpdatePoolRequest, UpdatePoolResponse, UpdateProjectRequest, UpdateProjectResponse, UpdateScheduleRequest, UpdateScheduleResponse, UpdateSecretGrantRequest, UpdateSecretGrantResponse, UserSummary, VcsCredentialSummary, WebhookSecretSummary, WorkerCharacteristicEntry, WorkerCharacteristicValue, WorkerClassSummary, WorkerPoolSummary, WorkerSummary, WorkflowEventSummary, WorkflowNodeSummary, WorkflowSummaryDetail } from "./types.gen.ts";
+import type { AddGroupMemberRequest, AddGroupMemberResponse, AddTrustedDomainPatternRequest, AddTrustedDomainPatternResponse, AddTrustedIdentityRequest, AddTrustedIdentityResponse, AddVcsCredentialRequest, AddVcsCredentialResponse, AddWebhookSecretRequest, AddWebhookSecretResponse, AssignRoleRequest, AssignRoleResponse, AuthenticateRequest, AuthenticateResponse, AuthenticatedIdentity, BeginLoginRequest, BeginLoginResponse, BootstrapAdminRequest, BootstrapAdminResponse, CIDecisionReason, CIDependencyOutcome, CIEventDetail, CIEventWorkflowDecision, CancelJobRequest, CancelJobResponse, CancelWorkflowRequest, CancelWorkflowResponse, CharacteristicEntry, CharacteristicScalar, CiApprovalAction, CiPolicyDefaults, CiPolicyDetail, CiPolicyDocument, CiPolicyNodeAuthority, CiPolicyRule, CiPolicySubjectMatch, CiPolicyUse, CiTrustSettings, CompleteLoginRequest, CompleteLoginResponse, CreateEnrollmentTokenRequest, CreateEnrollmentTokenResponse, CreateGroupRequest, CreateGroupResponse, CreateOrgRequest, CreateOrgResponse, CreatePoolRequest, CreatePoolResponse, CreateProjectRequest, CreateProjectResponse, CreateQueueRequest, CreateQueueResponse, CreateScheduleRequest, CreateScheduleResponse, CreateSecretGrantRequest, CreateSecretGrantResponse, DeactivateEnrollmentTokenRequest, DeactivateEnrollmentTokenResponse, DeactivateVcsCredentialRequest, DeactivateVcsCredentialResponse, DeactivateWebhookSecretRequest, DeactivateWebhookSecretResponse, DeleteCiPolicyRequest, DeleteCiPolicyResponse, DeleteExecutionProfileRequest, DeleteExecutionProfileResponse, DeleteGroupRequest, DeleteGroupResponse, DeleteOrgRequest, DeleteOrgResponse, DeletePoolRequest, DeletePoolResponse, DeleteProjectRequest, DeleteProjectResponse, DeleteQueueRequest, DeleteQueueResponse, DeleteScheduleRequest, DeleteScheduleResponse, DeleteSecretGrantRequest, DeleteSecretGrantResponse, DeleteSecretRequest, DeleteSecretResponse, DeleteVcsCredentialRequest, DeleteVcsCredentialResponse, DeleteWebhookSecretRequest, DeleteWebhookSecretResponse, DeleteWorkerClassRequest, DeleteWorkerClassResponse, DescribeFormMetadataRequest, DescribeFormMetadataResponse, DrainWorkerRequest, DrainWorkerResponse, EnrollmentTokenSummary, EnumChoice, ExecutionProfileSummary, GetAuthConfigRequest, GetAuthConfigResponse, GetCapabilitiesRequest, GetCapabilitiesResponse, GetCiPolicyRequest, GetCiPolicyResponse, GetCiTrustSettingsRequest, GetCiTrustSettingsResponse, GetEventRequest, GetEventResponse, GetGlobalSettingsRequest, GetGlobalSettingsResponse, GetJobLogsRequest, GetJobLogsResponse, GetJobMetricsRequest, GetJobMetricsResponse, GetJobRequest, GetJobResourceHistoryRequest, GetJobResourceHistoryResponse, GetJobResponse, GetPrApprovalsRequest, GetPrApprovalsResponse, GetProjectRequest, GetProjectResponse, GetWorkflowRequest, GetWorkflowResponse, GlobalSettingEntry, GroupMemberEntry, GroupSummary, JobLogEntry, JobMetricLabel, JobMetricPoint, JobMetricSeries, JobMetricUnavailable, JobRunResourceSummary, JobSummary, KillJobRequest, KillJobResponse, ListEnrollmentTokensRequest, ListEnrollmentTokensResponse, ListExecutionProfilesRequest, ListExecutionProfilesResponse, ListGroupMembersRequest, ListGroupMembersResponse, ListGroupsRequest, ListGroupsResponse, ListJobsRequest, ListJobsResponse, ListOrgsRequest, ListOrgsResponse, ListPoolsRequest, ListPoolsResponse, ListProjectsRequest, ListProjectsResponse, ListQueuesRequest, ListQueuesResponse, ListRoleAssignmentsRequest, ListRoleAssignmentsResponse, ListScheduleFiresRequest, ListScheduleFiresResponse, ListSchedulesRequest, ListSchedulesResponse, ListSecretGrantsRequest, ListSecretGrantsResponse, ListSecretPathsRequest, ListSecretPathsResponse, ListTrustedDomainPatternsRequest, ListTrustedDomainPatternsResponse, ListTrustedIdentitiesRequest, ListTrustedIdentitiesResponse, ListUsersRequest, ListUsersResponse, ListVcsCredentialsRequest, ListVcsCredentialsResponse, ListWebhookSecretsRequest, ListWebhookSecretsResponse, ListWorkerClassesRequest, ListWorkerClassesResponse, ListWorkersRequest, ListWorkersResponse, ListWorkflowsRequest, ListWorkflowsResponse, LogoutRequest, LogoutResponse, OrgSummary, PrCommandRequest, PrCommandResponse, ProjectDetail, ProjectSummary, PutCiPolicyRequest, PutCiPolicyResponse, PutCiTrustSettingsRequest, PutCiTrustSettingsResponse, PutExecutionProfileRequest, PutExecutionProfileResponse, PutWorkerClassRequest, PutWorkerClassResponse, QueueSummary, RemoveGroupMemberRequest, RemoveGroupMemberResponse, RemoveTrustedDomainPatternRequest, RemoveTrustedDomainPatternResponse, RemoveTrustedIdentityRequest, RemoveTrustedIdentityResponse, RenameQueueRequest, RenameQueueResponse, RequiredReview, RequiredReviewState, RetryJobRequest, RetryJobResponse, RetryUnsuccessfulJobsRequest, RetryUnsuccessfulJobsResponse, RetryWorkflowRequest, RetryWorkflowResponse, RevokeRoleRequest, RevokeRoleResponse, RoleAssignment, RoleSummary, ScheduleFireSummary, ScheduleSummary, SecretGrant, SecretPathEntry, ServiceError, SetDefaultOrgRequest, SetDefaultOrgResponse, SetSecretRequest, SetSecretResponse, SetWorkerClassPoolRequest, SetWorkerClassPoolResponse, SetWorkerStatusRequest, SetWorkerStatusResponse, TrustedDomainPattern, TrustedIdentity, UpdateGlobalSettingsRequest, UpdateGlobalSettingsResponse, UpdateGroupRequest, UpdateGroupResponse, UpdateOrgRequest, UpdateOrgResponse, UpdatePoolRequest, UpdatePoolResponse, UpdateProjectRequest, UpdateProjectResponse, UpdateScheduleRequest, UpdateScheduleResponse, UpdateSecretGrantRequest, UpdateSecretGrantResponse, UserSummary, VcsCredentialSummary, WebhookSecretSummary, WorkerCharacteristicEntry, WorkerCharacteristicValue, WorkerClassSummary, WorkerPoolSummary, WorkerSummary, WorkflowEventSummary, WorkflowNodeSummary, WorkflowSummaryDetail } from "./types.gen.ts";
 
 /** A CBOR semantic tag wrapping an inner value (e.g. tag 0 timestamp, tag 4 decimal). */
 export type CborTag = { readonly tag: number; readonly value: CborValue };
@@ -1350,64 +1350,330 @@ export function fromSetWorkerClassPoolResponseCbor(bytes: Uint8Array): SetWorker
   return fromSetWorkerClassPoolResponseCborValue(decode(bytes));
 }
 
-export function toCreateCiApprovalRequestCborValue(v: CreateCiApprovalRequest): CborValue {
+export function toPrCommandRequestCborValue(v: PrCommandRequest): CborValue {
   const csilMap = new Map<CborValue, CborValue>();
-  csilMap.set("project", v.project);
-  csilMap.set("base_sha", v.baseSha);
-  csilMap.set("head_sha", v.headSha);
+  if (v.label !== undefined) csilMap.set("label", v.label);
+  csilMap.set("command", v.command);
+  if (v.headSha !== undefined) csilMap.set("head_sha", v.headSha);
   csilMap.set("pr_number", v.prNumber);
-  if (v.expiresAt !== undefined) csilMap.set("expires_at", v.expiresAt);
-  csilMap.set("organization", v.organization);
-  csilMap.set("workflow_scope", v.workflowScope);
-  csilMap.set("head_repository", v.headRepository);
-  csilMap.set("policy_revision", v.policyRevision);
-  csilMap.set("approver_subject", v.approverSubject);
-  csilMap.set("execution_profile", v.executionProfile);
+  csilMap.set("project_id", v.projectId);
   return csilMap;
 }
 
-export function fromCreateCiApprovalRequestCborValue(value: CborValue): CreateCiApprovalRequest {
+export function fromPrCommandRequestCborValue(value: CborValue): PrCommandRequest {
   return {
-    organization: asString(requireKey(value, "organization")),
-    project: asString(requireKey(value, "project")),
+    projectId: asString(requireKey(value, "project_id")),
     prNumber: asNumber(requireKey(value, "pr_number")),
-    headRepository: asString(requireKey(value, "head_repository")),
-    headSha: asString(requireKey(value, "head_sha")),
-    baseSha: asString(requireKey(value, "base_sha")),
-    policyRevision: asString(requireKey(value, "policy_revision")),
-    workflowScope: asString(requireKey(value, "workflow_scope")),
-    executionProfile: asString(requireKey(value, "execution_profile")),
-    approverSubject: asString(requireKey(value, "approver_subject")),
-    expiresAt: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "expires_at")),
+    command: asString(requireKey(value, "command")),
+    label: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "label")),
+    headSha: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "head_sha")),
   };
 }
 
-export function toCreateCiApprovalRequestCbor(v: CreateCiApprovalRequest): Uint8Array {
-  return encodeValue(toCreateCiApprovalRequestCborValue(v));
+export function toPrCommandRequestCbor(v: PrCommandRequest): Uint8Array {
+  return encodeValue(toPrCommandRequestCborValue(v));
 }
 
-export function fromCreateCiApprovalRequestCbor(bytes: Uint8Array): CreateCiApprovalRequest {
-  return fromCreateCiApprovalRequestCborValue(decode(bytes));
+export function fromPrCommandRequestCbor(bytes: Uint8Array): PrCommandRequest {
+  return fromPrCommandRequestCborValue(decode(bytes));
 }
 
-export function toCreateCiApprovalResponseCborValue(v: CreateCiApprovalResponse): CborValue {
+export function toCiApprovalActionCborValue(v: CiApprovalAction): CborValue {
   const csilMap = new Map<CborValue, CborValue>();
+  csilMap.set("kind", v.kind);
+  if (v.label !== undefined) csilMap.set("label", v.label);
+  csilMap.set("action", v.action);
+  csilMap.set("person", v.person);
+  csilMap.set("channel", v.channel);
+  csilMap.set("head_sha", v.headSha);
+  csilMap.set("subjects", v.subjects);
+  csilMap.set("created_at", v.createdAt);
   csilMap.set("approval_id", v.approvalId);
   return csilMap;
 }
 
-export function fromCreateCiApprovalResponseCborValue(value: CborValue): CreateCiApprovalResponse {
+export function fromCiApprovalActionCborValue(value: CborValue): CiApprovalAction {
   return {
     approvalId: asString(requireKey(value, "approval_id")),
+    kind: asString(requireKey(value, "kind")),
+    action: asString(requireKey(value, "action")),
+    label: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "label")),
+    headSha: asString(requireKey(value, "head_sha")),
+    person: asString(requireKey(value, "person")),
+    subjects: asArray(requireKey(value, "subjects")).map((csilE) => asString(csilE)),
+    channel: asString(requireKey(value, "channel")),
+    createdAt: asString(requireKey(value, "created_at")),
   };
 }
 
-export function toCreateCiApprovalResponseCbor(v: CreateCiApprovalResponse): Uint8Array {
-  return encodeValue(toCreateCiApprovalResponseCborValue(v));
+export function toCiApprovalActionCbor(v: CiApprovalAction): Uint8Array {
+  return encodeValue(toCiApprovalActionCborValue(v));
 }
 
-export function fromCreateCiApprovalResponseCbor(bytes: Uint8Array): CreateCiApprovalResponse {
-  return fromCreateCiApprovalResponseCborValue(decode(bytes));
+export function fromCiApprovalActionCbor(bytes: Uint8Array): CiApprovalAction {
+  return fromCiApprovalActionCborValue(decode(bytes));
+}
+
+export function toPrCommandResponseCborValue(v: PrCommandResponse): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  if (v.effect !== undefined) csilMap.set("effect", v.effect);
+  csilMap.set("message", v.message);
+  csilMap.set("recorded", v.recorded.map((csilE): CborValue => toCiApprovalActionCborValue(csilE)));
+  return csilMap;
+}
+
+export function fromPrCommandResponseCborValue(value: CborValue): PrCommandResponse {
+  return {
+    effect: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "effect")),
+    message: asString(requireKey(value, "message")),
+    recorded: asArray(requireKey(value, "recorded")).map((csilE) => fromCiApprovalActionCborValue(csilE)),
+  };
+}
+
+export function toPrCommandResponseCbor(v: PrCommandResponse): Uint8Array {
+  return encodeValue(toPrCommandResponseCborValue(v));
+}
+
+export function fromPrCommandResponseCbor(bytes: Uint8Array): PrCommandResponse {
+  return fromPrCommandResponseCborValue(decode(bytes));
+}
+
+export function toRequiredReviewStateCborValue(v: RequiredReviewState): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  csilMap.set("id", v.id);
+  csilMap.set("scope", v.scope);
+  csilMap.set("accept", v.accept);
+  csilMap.set("applies", v.applies);
+  csilMap.set("accepted", v.accepted);
+  csilMap.set("required", v.required);
+  csilMap.set("satisfied", v.satisfied);
+  if (v.description !== undefined) csilMap.set("description", v.description);
+  return csilMap;
+}
+
+export function fromRequiredReviewStateCborValue(value: CborValue): RequiredReviewState {
+  return {
+    id: asString(requireKey(value, "id")),
+    description: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "description")),
+    scope: asString(requireKey(value, "scope")),
+    applies: asBool(requireKey(value, "applies")),
+    required: asNumber(requireKey(value, "required")),
+    accepted: asArray(requireKey(value, "accepted")).map((csilE) => asString(csilE)),
+    satisfied: asBool(requireKey(value, "satisfied")),
+    accept: asArray(requireKey(value, "accept")).map((csilE) => asString(csilE)),
+  };
+}
+
+export function toRequiredReviewStateCbor(v: RequiredReviewState): Uint8Array {
+  return encodeValue(toRequiredReviewStateCborValue(v));
+}
+
+export function fromRequiredReviewStateCbor(bytes: Uint8Array): RequiredReviewState {
+  return fromRequiredReviewStateCborValue(decode(bytes));
+}
+
+export function toGetPrApprovalsRequestCborValue(v: GetPrApprovalsRequest): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  csilMap.set("pr_number", v.prNumber);
+  csilMap.set("project_id", v.projectId);
+  return csilMap;
+}
+
+export function fromGetPrApprovalsRequestCborValue(value: CborValue): GetPrApprovalsRequest {
+  return {
+    projectId: asString(requireKey(value, "project_id")),
+    prNumber: asNumber(requireKey(value, "pr_number")),
+  };
+}
+
+export function toGetPrApprovalsRequestCbor(v: GetPrApprovalsRequest): Uint8Array {
+  return encodeValue(toGetPrApprovalsRequestCborValue(v));
+}
+
+export function fromGetPrApprovalsRequestCbor(bytes: Uint8Array): GetPrApprovalsRequest {
+  return fromGetPrApprovalsRequestCborValue(decode(bytes));
+}
+
+export function toGetPrApprovalsResponseCborValue(v: GetPrApprovalsResponse): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  csilMap.set("actions", v.actions.map((csilE): CborValue => toCiApprovalActionCborValue(csilE)));
+  csilMap.set("reviews", v.reviews.map((csilE): CborValue => toRequiredReviewStateCborValue(csilE)));
+  csilMap.set("head_sha", v.headSha);
+  if (v.reviewsState !== undefined) csilMap.set("reviews_state", v.reviewsState);
+  if (v.reviewsSummary !== undefined) csilMap.set("reviews_summary", v.reviewsSummary);
+  return csilMap;
+}
+
+export function fromGetPrApprovalsResponseCborValue(value: CborValue): GetPrApprovalsResponse {
+  return {
+    headSha: asString(requireKey(value, "head_sha")),
+    actions: asArray(requireKey(value, "actions")).map((csilE) => fromCiApprovalActionCborValue(csilE)),
+    reviews: asArray(requireKey(value, "reviews")).map((csilE) => fromRequiredReviewStateCborValue(csilE)),
+    reviewsState: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "reviews_state")),
+    reviewsSummary: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "reviews_summary")),
+  };
+}
+
+export function toGetPrApprovalsResponseCbor(v: GetPrApprovalsResponse): Uint8Array {
+  return encodeValue(toGetPrApprovalsResponseCborValue(v));
+}
+
+export function fromGetPrApprovalsResponseCbor(bytes: Uint8Array): GetPrApprovalsResponse {
+  return fromGetPrApprovalsResponseCborValue(decode(bytes));
+}
+
+export function toRequiredReviewCborValue(v: RequiredReview): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  csilMap.set("id", v.id);
+  if (v.count !== undefined) csilMap.set("count", v.count);
+  if (v.paths !== undefined) csilMap.set("paths", v.paths);
+  if (v.scope !== undefined) csilMap.set("scope", v.scope);
+  csilMap.set("accept", v.accept);
+  if (v.description !== undefined) csilMap.set("description", v.description);
+  return csilMap;
+}
+
+export function fromRequiredReviewCborValue(value: CborValue): RequiredReview {
+  return {
+    id: asString(requireKey(value, "id")),
+    description: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "description")),
+    paths: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asArray(csilV).map((csilE) => asString(csilE)))(mapGet(value, "paths")),
+    accept: asArray(requireKey(value, "accept")).map((csilE) => asString(csilE)),
+    count: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asNumber(csilV))(mapGet(value, "count")),
+    scope: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "scope")),
+  };
+}
+
+export function toRequiredReviewCbor(v: RequiredReview): Uint8Array {
+  return encodeValue(toRequiredReviewCborValue(v));
+}
+
+export function fromRequiredReviewCbor(bytes: Uint8Array): RequiredReview {
+  return fromRequiredReviewCborValue(decode(bytes));
+}
+
+export function toCiTrustSettingsCborValue(v: CiTrustSettings): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  if (v.runGate !== undefined) csilMap.set("run_gate", v.runGate);
+  if (v.runApprovers !== undefined) csilMap.set("run_approvers", v.runApprovers);
+  if (v.overrideProfile !== undefined) csilMap.set("override_profile", v.overrideProfile);
+  if (v.requiredReviews !== undefined) csilMap.set("required_reviews", v.requiredReviews.map((csilE): CborValue => toRequiredReviewCborValue(csilE)));
+  if (v.overrideApprovers !== undefined) csilMap.set("override_approvers", v.overrideApprovers);
+  if (v.gatedRunAuthority !== undefined) csilMap.set("gated_run_authority", v.gatedRunAuthority);
+  return csilMap;
+}
+
+export function fromCiTrustSettingsCborValue(value: CborValue): CiTrustSettings {
+  return {
+    runGate: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asArray(csilV).map((csilE) => asString(csilE)))(mapGet(value, "run_gate")),
+    gatedRunAuthority: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "gated_run_authority")),
+    runApprovers: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asArray(csilV).map((csilE) => asString(csilE)))(mapGet(value, "run_approvers")),
+    overrideApprovers: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asArray(csilV).map((csilE) => asString(csilE)))(mapGet(value, "override_approvers")),
+    overrideProfile: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "override_profile")),
+    requiredReviews: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asArray(csilV).map((csilE) => fromRequiredReviewCborValue(csilE)))(mapGet(value, "required_reviews")),
+  };
+}
+
+export function toCiTrustSettingsCbor(v: CiTrustSettings): Uint8Array {
+  return encodeValue(toCiTrustSettingsCborValue(v));
+}
+
+export function fromCiTrustSettingsCbor(bytes: Uint8Array): CiTrustSettings {
+  return fromCiTrustSettingsCborValue(decode(bytes));
+}
+
+export function toGetCiTrustSettingsRequestCborValue(v: GetCiTrustSettingsRequest): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  if (v.projectId !== undefined) csilMap.set("project_id", v.projectId);
+  csilMap.set("organization", v.organization);
+  return csilMap;
+}
+
+export function fromGetCiTrustSettingsRequestCborValue(value: CborValue): GetCiTrustSettingsRequest {
+  return {
+    organization: asString(requireKey(value, "organization")),
+    projectId: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "project_id")),
+  };
+}
+
+export function toGetCiTrustSettingsRequestCbor(v: GetCiTrustSettingsRequest): Uint8Array {
+  return encodeValue(toGetCiTrustSettingsRequestCborValue(v));
+}
+
+export function fromGetCiTrustSettingsRequestCbor(bytes: Uint8Array): GetCiTrustSettingsRequest {
+  return fromGetCiTrustSettingsRequestCborValue(decode(bytes));
+}
+
+export function toGetCiTrustSettingsResponseCborValue(v: GetCiTrustSettingsResponse): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  csilMap.set("settings", toCiTrustSettingsCborValue(v.settings));
+  csilMap.set("effective", toCiTrustSettingsCborValue(v.effective));
+  csilMap.set("can_loosen", v.canLoosen);
+  if (v.organizationEffective !== undefined) csilMap.set("organization_effective", toCiTrustSettingsCborValue(v.organizationEffective));
+  return csilMap;
+}
+
+export function fromGetCiTrustSettingsResponseCborValue(value: CborValue): GetCiTrustSettingsResponse {
+  return {
+    settings: fromCiTrustSettingsCborValue(requireKey(value, "settings")),
+    effective: fromCiTrustSettingsCborValue(requireKey(value, "effective")),
+    organizationEffective: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : fromCiTrustSettingsCborValue(csilV))(mapGet(value, "organization_effective")),
+    canLoosen: asBool(requireKey(value, "can_loosen")),
+  };
+}
+
+export function toGetCiTrustSettingsResponseCbor(v: GetCiTrustSettingsResponse): Uint8Array {
+  return encodeValue(toGetCiTrustSettingsResponseCborValue(v));
+}
+
+export function fromGetCiTrustSettingsResponseCbor(bytes: Uint8Array): GetCiTrustSettingsResponse {
+  return fromGetCiTrustSettingsResponseCborValue(decode(bytes));
+}
+
+export function toPutCiTrustSettingsRequestCborValue(v: PutCiTrustSettingsRequest): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  csilMap.set("settings", toCiTrustSettingsCborValue(v.settings));
+  if (v.projectId !== undefined) csilMap.set("project_id", v.projectId);
+  csilMap.set("organization", v.organization);
+  return csilMap;
+}
+
+export function fromPutCiTrustSettingsRequestCborValue(value: CborValue): PutCiTrustSettingsRequest {
+  return {
+    organization: asString(requireKey(value, "organization")),
+    projectId: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "project_id")),
+    settings: fromCiTrustSettingsCborValue(requireKey(value, "settings")),
+  };
+}
+
+export function toPutCiTrustSettingsRequestCbor(v: PutCiTrustSettingsRequest): Uint8Array {
+  return encodeValue(toPutCiTrustSettingsRequestCborValue(v));
+}
+
+export function fromPutCiTrustSettingsRequestCbor(bytes: Uint8Array): PutCiTrustSettingsRequest {
+  return fromPutCiTrustSettingsRequestCborValue(decode(bytes));
+}
+
+export function toPutCiTrustSettingsResponseCborValue(v: PutCiTrustSettingsResponse): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  csilMap.set("settings", toCiTrustSettingsCborValue(v.settings));
+  csilMap.set("effective", toCiTrustSettingsCborValue(v.effective));
+  return csilMap;
+}
+
+export function fromPutCiTrustSettingsResponseCborValue(value: CborValue): PutCiTrustSettingsResponse {
+  return {
+    settings: fromCiTrustSettingsCborValue(requireKey(value, "settings")),
+    effective: fromCiTrustSettingsCborValue(requireKey(value, "effective")),
+  };
+}
+
+export function toPutCiTrustSettingsResponseCbor(v: PutCiTrustSettingsResponse): Uint8Array {
+  return encodeValue(toPutCiTrustSettingsResponseCborValue(v));
+}
+
+export function fromPutCiTrustSettingsResponseCbor(bytes: Uint8Array): PutCiTrustSettingsResponse {
+  return fromPutCiTrustSettingsResponseCborValue(decode(bytes));
 }
 
 export function toProjectSummaryCborValue(v: ProjectSummary): CborValue {

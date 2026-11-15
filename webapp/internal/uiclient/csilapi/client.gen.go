@@ -224,13 +224,40 @@ func (c *ReactorcideUiClient) SetWorkerClassPool(ctx context.Context, req SetWor
 	return DecodeSetWorkerClassPoolResponse(csilResp)
 }
 
-func (c *ReactorcideUiClient) CreateCiApproval(ctx context.Context, req CreateCiApprovalRequest) (CreateCiApprovalResponse, error) {
-	var csilZero CreateCiApprovalResponse
-	csilResp, csilErr := c.transport.Call(ctx, "ReactorcideUi", "create-ci-approval", EncodeCreateCiApprovalRequest(req))
+func (c *ReactorcideUiClient) PrCommand(ctx context.Context, req PrCommandRequest) (PrCommandResponse, error) {
+	var csilZero PrCommandResponse
+	csilResp, csilErr := c.transport.Call(ctx, "ReactorcideUi", "pr-command", EncodePrCommandRequest(req))
 	if csilErr != nil {
 		return csilZero, csilErr
 	}
-	return DecodeCreateCiApprovalResponse(csilResp)
+	return DecodePrCommandResponse(csilResp)
+}
+
+func (c *ReactorcideUiClient) GetPrApprovals(ctx context.Context, req GetPrApprovalsRequest) (GetPrApprovalsResponse, error) {
+	var csilZero GetPrApprovalsResponse
+	csilResp, csilErr := c.transport.Call(ctx, "ReactorcideUi", "get-pr-approvals", EncodeGetPrApprovalsRequest(req))
+	if csilErr != nil {
+		return csilZero, csilErr
+	}
+	return DecodeGetPrApprovalsResponse(csilResp)
+}
+
+func (c *ReactorcideUiClient) GetCiTrustSettings(ctx context.Context, req GetCiTrustSettingsRequest) (GetCiTrustSettingsResponse, error) {
+	var csilZero GetCiTrustSettingsResponse
+	csilResp, csilErr := c.transport.Call(ctx, "ReactorcideUi", "get-ci-trust-settings", EncodeGetCiTrustSettingsRequest(req))
+	if csilErr != nil {
+		return csilZero, csilErr
+	}
+	return DecodeGetCiTrustSettingsResponse(csilResp)
+}
+
+func (c *ReactorcideUiClient) PutCiTrustSettings(ctx context.Context, req PutCiTrustSettingsRequest) (PutCiTrustSettingsResponse, error) {
+	var csilZero PutCiTrustSettingsResponse
+	csilResp, csilErr := c.transport.Call(ctx, "ReactorcideUi", "put-ci-trust-settings", EncodePutCiTrustSettingsRequest(req))
+	if csilErr != nil {
+		return csilZero, csilErr
+	}
+	return DecodePutCiTrustSettingsResponse(csilResp)
 }
 
 func (c *ReactorcideUiClient) ListProjects(ctx context.Context, req ListProjectsRequest) (ListProjectsResponse, error) {

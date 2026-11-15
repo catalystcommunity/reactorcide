@@ -121,6 +121,8 @@ func createAppMux() *http.ServeMux {
 	profileHandler := NewProfileHandler(store.AppStore)
 	auditHandler := NewAuditHandler(store.AppStore)
 	ciSecurityHandler := NewCISecurityHandler(store.AppStore)
+	ciSecurityHandler.SetApprovals(webhookHandler)
+	groupHandler := NewGroupHandler(store.AppStore)
 	workerClassHandler := NewWorkerClassHandler(store.AppStore)
 	workflowHandler := NewWorkflowHandlerWithCorndogs(store.AppStore, singletoncorndogsClient)
 
@@ -237,6 +239,17 @@ func createAppMux() *http.ServeMux {
 	})
 	mux.HandleFunc("/api/v1/organizations/", func(w http.ResponseWriter, r *http.Request) {
 		path := strings.TrimPrefix(r.URL.Path, "/api/v1/organizations/")
+		if parts := strings.SplitN(path, "/", 3); len(parts) >= 2 && parts[1] == "groups" {
+			rest := ""
+			if len(parts) == 3 {
+				rest = parts[2]
+			}
+			handler := transactionMiddleware(authMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				groupHandler.ServeGroups(w, r, parts[0], rest)
+			})))
+			handler.ServeHTTP(w, r)
+			return
+		}
 		if parts := strings.Split(path, "/"); len(parts) >= 2 && parts[1] == "profiles" {
 			profileName := ""
 			if len(parts) == 3 {
@@ -884,6 +897,7 @@ func createAppMux() *http.ServeMux {
 	var uiUiImpl csilapi.ReactorcideUi = uiapi.NewStubUi()
 	if uiStore, ok := store.AppStore.(uiapi.DataStore); ok {
 		if deps := buildUIAPIDeps(uiStore, singletonKeyManager, singletoncorndogsClient, singletonObjectStore); deps != nil {
+			deps.Approvals = webhookHandler
 			uiAuthImpl = uiapi.NewAuthService(deps)
 			uiUiImpl = uiapi.NewUiService(deps)
 		}

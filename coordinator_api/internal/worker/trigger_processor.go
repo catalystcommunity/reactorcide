@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/catalystcommunity/app-utils-go/logging"
+	approvalstate "github.com/catalystcommunity/reactorcide/coordinator_api/internal/approvals"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/audit"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/characteristics"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/cipolicy"
@@ -158,7 +159,7 @@ type triggerProfileStore interface {
 }
 
 type triggerApprovalListStore interface {
-	ListActiveCIApprovalsForTarget(ctx context.Context, projectID string, prNumber int, headRepository, headSHA, baseSHA string, now time.Time) ([]models.CIApproval, error)
+	ListCIApprovalsForHead(ctx context.Context, projectID string, prNumber int, headSHA string) ([]models.CIApproval, error)
 }
 
 type triggerReportGenerationStore interface {
@@ -359,6 +360,13 @@ func (tp *TriggerProcessor) processTriggersFromData(ctx context.Context, data []
 		if policy != nil {
 			defaultProfile = policy.Defaults.Profile
 		}
+		runAuthority, err := runAuthoritySnapshot(parentJob)
+		if err != nil {
+			return nil, err
+		}
+		if runAuthority.Profile != "" {
+			defaultProfile = runAuthority.Profile
+		}
 		for i := range batches {
 			if batches[i].CIOrigin == "head" || batches[i].PolicyRuleID != "" || batches[i].ApprovalID != nil {
 				return nil, fmt.Errorf("runnerlib evaluation output cannot select CI policy authority")
@@ -380,6 +388,10 @@ func (tp *TriggerProcessor) processTriggersFromData(ctx context.Context, data []
 			"head_sha": stringValue(parentJob.SourceRef), "changed_ci_paths": tf.ChangedCIPaths,
 			"actor": parentJob.JobEnvVars["REACTORCIDE_HEAD_ACTOR"], "actor_subjects": parentJob.JobEnvVars["REACTORCIDE_ACTOR_SUBJECTS"],
 		})
+	}
+	var carried map[string]carriedWorkflow
+	if isEvalResult {
+		batches, carried = tp.carryUnchangedWorkflows(ctx, parentJob, batches, policyNotes)
 	}
 	operationID := strings.TrimSpace(tf.OperationID)
 	if isEvalResult && stringValue(parentJob.EventID) != "" {
@@ -491,7 +503,7 @@ func (tp *TriggerProcessor) processTriggersFromData(ctx context.Context, data []
 			}
 		}
 		if isEvalResult {
-			tp.recordEvalDecisions(ctx, parentJob, &tf, batches, policyNotes, nil)
+			tp.recordEvalDecisions(ctx, parentJob, &tf, batches, policyNotes, nil, carried)
 			if err := tp.completeReportGeneration(ctx, parentJob); err != nil {
 				return createdJobIDs, err
 			}
@@ -543,7 +555,7 @@ func (tp *TriggerProcessor) processTriggersFromData(ctx context.Context, data []
 		}
 	}
 	if isEvalResult {
-		tp.recordEvalDecisions(ctx, parentJob, &tf, batches, policyNotes, outcomes)
+		tp.recordEvalDecisions(ctx, parentJob, &tf, batches, policyNotes, outcomes, carried)
 		if err := tp.completeReportGeneration(ctx, parentJob); err != nil {
 			return createdJobIDs, err
 		}
@@ -644,15 +656,44 @@ func (tp *TriggerProcessor) selectPolicyCandidates(ctx context.Context, parentJo
 		defaultProfile = policy.Defaults.Profile
 		revision = policy.Revision
 	}
+	runAuthority, err := runAuthoritySnapshot(parentJob)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	if runAuthority.Profile != "" {
+		defaultProfile = runAuthority.Profile
+	}
 
+	// Approvals bind to the head SHA only. The current actions are loaded at
+	// decision time; a revoke made after the event still takes effect.
 	approvals := []models.CIApproval(nil)
 	decisionTime := time.Now().UTC()
-	headRepository := envString(parentJob, "REACTORCIDE_HEAD_REPOSITORY")
+	headSHA := stringValue(parentJob.SourceRef)
 	if policy != nil && metadata.PRNumber > 0 {
 		if approvalStore, ok := tp.store.(triggerApprovalListStore); ok {
-			approvals, err = approvalStore.ListActiveCIApprovalsForTarget(ctx, *parentJob.ProjectID, metadata.PRNumber, headRepository, stringValue(parentJob.SourceRef), parentJob.CISHA, decisionTime)
-			if err != nil {
-				return nil, nil, nil, fmt.Errorf("load coordinator CI approvals: %w", err)
+			loaded, loadErr := approvalStore.ListCIApprovalsForHead(ctx, *parentJob.ProjectID, metadata.PRNumber, headSHA)
+			if loadErr != nil {
+				return nil, nil, nil, fmt.Errorf("load coordinator CI approvals: %w", loadErr)
+			}
+			// An approval binds to the exact head: the organization, project,
+			// pull request, head repository, and head SHA of this eval.
+			headRepository := envString(parentJob, "REACTORCIDE_HEAD_REPOSITORY")
+			for _, approval := range loaded {
+				if approval.OrgID == parentJob.OrgID && approval.ProjectID == *parentJob.ProjectID && approval.PRNumber == metadata.PRNumber &&
+					approval.HeadSHA == headSHA && (headRepository == "" || approval.HeadRepository == headRepository) {
+					approvals = append(approvals, approval)
+				}
+			}
+		}
+	}
+	approvedHeadCI := map[string]bool{}
+	for _, approval := range approvals {
+		if approval.Kind != models.CIApprovalKindHeadCI {
+			continue
+		}
+		for _, subject := range approval.Subjects {
+			if !approvedHeadCI[subject] && approvalstate.Granted(approvals, models.CIApprovalKindHeadCI, headSHA, []string{subject}, decisionTime) != nil {
+				approvedHeadCI[subject] = true
 			}
 		}
 	}
@@ -724,31 +765,23 @@ func (tp *TriggerProcessor) selectPolicyCandidates(ctx context.Context, parentJo
 			baseReasons = []string{"the head revision has no workflow with this ID"}
 		} else if !head.EventMatched {
 			baseReasons = []string{"the head definition does not match this event"}
-		} else if policy == nil {
+		} else if policy == nil && runAuthority.Override == nil {
 			baseReasons = []string{"no coordinator CI policy is stored for this project"}
 		}
-		if policy != nil && hasHead && head.EventMatched {
+		headChanged := false
+		if hasHead && head.EventMatched {
 			dependencies := uniqueNonEmpty(append(append([]string{}, head.DependencyPaths...), sharedPaths...))
-			if len(changedCIPaths) > 0 && intersects(changedCIPaths, dependencies) {
+			headChanged = len(changedCIPaths) > 0 && intersects(changedCIPaths, dependencies)
+		}
+		if runAuthority.Gated && runAuthority.Override == nil && headChanged {
+			// approve-ci runs trusted base CI. The head's CI changes need
+			// override-ci, also when a policy rule would grant them.
+			considered = true
+			baseReasons = []string{"the run gate holds this pull request; approve-ci runs trusted base CI, and the head's CI changes need override-ci"}
+		} else if policy != nil && headChanged {
+			dependencies := uniqueNonEmpty(append(append([]string{}, head.DependencyPaths...), sharedPaths...))
+			{
 				considered = true
-				approvalMatchesTarget := func(approval models.CIApproval) bool {
-					return approval.OrgID == parentJob.OrgID && approval.ProjectID == *parentJob.ProjectID &&
-						approval.PRNumber == metadata.PRNumber && approval.HeadRepository == headRepository &&
-						approval.HeadSHA == stringValue(parentJob.SourceRef) &&
-						approval.BaseSHA == parentJob.CISHA && approval.PolicyRevision == policy.Revision &&
-						(approval.WorkflowScope == id || approval.WorkflowScope == "*") &&
-						approval.IsValid(decisionTime, stringValue(parentJob.SourceRef), policy.Revision)
-				}
-				approvalFacts := map[string]map[string]bool{}
-				for _, approval := range approvals {
-					if !approvalMatchesTarget(approval) {
-						continue
-					}
-					if approvalFacts[approval.ExecutionProfile] == nil {
-						approvalFacts[approval.ExecutionProfile] = map[string]bool{}
-					}
-					approvalFacts[approval.ExecutionProfile][approval.ApproverSubject] = true
-				}
 				allPolicyPaths := uniqueNonEmpty(append(append([]string{}, changedCIPaths...), dependencies...))
 				baseBranch := envString(parentJob, "REACTORCIDE_BASE_REF")
 				if baseBranch == "" {
@@ -765,7 +798,7 @@ func (tp *TriggerProcessor) selectPolicyCandidates(ctx context.Context, parentJo
 					WorkflowID: id, ChangedCIPaths: allPolicyPaths,
 					Event: envString(parentJob, "REACTORCIDE_EVENT_TYPE"), BaseBranch: baseBranch,
 					HeadRepositoryRelation: relation, ActorSubjects: actorSubjects,
-					ApprovalSubjectsByProfile: approvalFacts,
+					ApprovalSubjects: approvedHeadCI,
 				})
 				if err != nil {
 					return nil, nil, nil, fmt.Errorf("workflow %q policy decision failed: %w", id, err)
@@ -776,19 +809,27 @@ func (tp *TriggerProcessor) selectPolicyCandidates(ctx context.Context, parentJo
 					if len(decision.ApprovalSubjects) > 0 {
 						useHead = false
 						baseReasons = []string{fmt.Sprintf("policy rule %s requires an approval from %s", decision.RuleID, strings.Join(decision.ApprovalSubjects, ", "))}
-						for i := range approvals {
-							approval := &approvals[i]
-							if approvalMatchesTarget(*approval) && approval.ExecutionProfile == decision.Profile &&
-								containsString(decision.ApprovalSubjects, approval.ApproverSubject) {
-								value := approval.ApprovalID
-								approvalID = &value
-								useHead = true
-								break
-							}
+						if granted := approvalstate.Granted(approvals, models.CIApprovalKindHeadCI, headSHA, decision.ApprovalSubjects, decisionTime); granted != nil {
+							value := granted.ApprovalID
+							approvalID = &value
+							useHead = true
 						}
 					}
 				}
 			}
+		}
+
+		if !useHead && headChanged && runAuthority.Override != nil {
+			// override-ci: the head's own CI runs in its entirety with the
+			// override profile. A matching policy rule above wins, because it
+			// can be narrower (base nodes, its own profile).
+			considered = true
+			decision = cipolicy.Decision{CISource: "head", Profile: runAuthority.Override.Profile,
+				WorkerClass: "default", RuleID: overrideRuleID, Allowed: true,
+				Reasons: []string{fmt.Sprintf("override-ci approved by %s", runAuthority.Override.Person)}}
+			value := runAuthority.Override.ApprovalID
+			approvalID = &value
+			useHead = true
 		}
 
 		if useHead && len(decision.BaseNodes) > 0 {
@@ -870,8 +911,9 @@ func (tp *TriggerProcessor) selectPolicyCandidates(ctx context.Context, parentJo
 	}
 
 	// Only a stored policy can refuse a CI change. Without one there is no
-	// violation to report.
-	if headAuthorized || policy == nil {
+	// violation to report. A gated run reports none either: the gate, not the
+	// policy, held the head's CI.
+	if headAuthorized || policy == nil || runAuthority.Gated {
 		return selected, nil, notes, nil
 	}
 	violations := make([]policyViolation, 0, len(changedCIPaths))
@@ -893,7 +935,7 @@ func (tp *TriggerProcessor) validateWorkflowAuthority(ctx context.Context, paren
 	expectedRepository, expectedSHA := parentJob.CIRepository, parentJob.CISHA
 	if spec.CIOrigin == "head" {
 		expectedRepository, expectedSHA = stringValue(parentJob.SourceURL), stringValue(parentJob.SourceRef)
-		if spec.PolicyRevision == "" || spec.PolicyRuleID == "" {
+		if spec.PolicyRuleID == "" || (spec.PolicyRevision == "" && spec.PolicyRuleID != overrideRuleID) {
 			return fmt.Errorf("head workflow %q lacks a policy decision", spec.ID)
 		}
 	}
@@ -903,7 +945,7 @@ func (tp *TriggerProcessor) validateWorkflowAuthority(ctx context.Context, paren
 	if spec.ExecutionProfile == "" || spec.WorkerClass == "" {
 		return fmt.Errorf("workflow %q must select an execution profile and worker class", spec.ID)
 	}
-	if spec.CIOrigin == "head" && (spec.PolicyRevision == "" || spec.PolicyRuleID == "") {
+	if spec.CIOrigin == "head" && (spec.PolicyRuleID == "" || (spec.PolicyRevision == "" && spec.PolicyRuleID != overrideRuleID)) {
 		return fmt.Errorf("head workflow %q lacks a coordinator policy decision", spec.ID)
 	}
 	if ps, ok := tp.store.(triggerProfileStore); ok {
@@ -1466,8 +1508,28 @@ func (tp *TriggerProcessor) buildJobFromTriggerWithCapabilityLimit(spec triggerJ
 			envVars[k] = v
 		}
 	}
+	// A trigger cannot replace a coordinator event fact: the parent's value
+	// is kept. A fact the parent does not have stays unset, except event
+	// context for a parent with no CI event (see triggerMaySupplyEventEnv).
+	ignoredFacts := []string{}
+	parentHasEvent := stringValue(parentJob.EventID) != ""
 	for k, v := range spec.Env {
+		if isReservedEventEnv(k) {
+			parentValue, inherited := envVars[k]
+			if !inherited && triggerMaySupplyEventEnv(k, parentHasEvent) {
+				envVars[k] = v
+			} else if !inherited || fmt.Sprint(parentValue) != v {
+				ignoredFacts = append(ignoredFacts, k)
+			}
+			continue
+		}
 		envVars[k] = v
+	}
+	if len(ignoredFacts) > 0 {
+		sort.Strings(ignoredFacts)
+		logging.Log.WithFields(map[string]interface{}{
+			"parent_job_id": parentJob.JobID, "job_name": spec.JobName, "ignored_env": ignoredFacts,
+		}).Warn("Ignored trigger environment that tries to set coordinator event facts")
 	}
 
 	job := &models.Job{

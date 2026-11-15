@@ -24,12 +24,15 @@ export type RouteName =
   | 'projects'
   | 'projectNew'
   | 'project'
+  | 'projectTrust'
+  | 'projectPolicy'
   | 'workers'
   | 'workerClasses'
   | 'queues'
   | 'orgGroups'
   | 'orgRoles'
   | 'orgSecrets'
+  | 'orgTrust'
   | 'admin'
   | 'signin'
   | 'notFound'
@@ -55,8 +58,14 @@ export const STATIC_ROUTES: Readonly<Record<string, RouteName>> = {
   '/org/groups': 'orgGroups',
   '/org/roles': 'orgRoles',
   '/org/secrets': 'orgSecrets',
+  '/org/ci-trust': 'orgTrust',
   '/admin': 'admin',
   '/signin': 'signin',
+}
+
+/** Sub-pages of a detail route: `<prefix>/:id/<suffix>`. */
+const SUB_ROUTES: Readonly<Record<string, Readonly<Record<string, RouteName>>>> = {
+  '/projects': { trust: 'projectTrust', policy: 'projectPolicy' },
 }
 
 const DETAIL_ROUTES: Readonly<Record<string, RouteName>> = {
@@ -89,6 +98,9 @@ export function resolveRoute(appPath: string): { name: RouteName; id?: string } 
   const id = path.slice(cut + 1)
   const detail = DETAIL_ROUTES[prefix]
   if (detail && id) return { name: detail, id: decodeURIComponent(id) }
+  const sub = /^(\/[^/]+)\/([^/]+)\/([^/]+)$/.exec(path)
+  const subName = sub ? SUB_ROUTES[sub[1]]?.[sub[3]] : undefined
+  if (sub && subName) return { name: subName, id: decodeURIComponent(sub[2]) }
   return { name: 'notFound' }
 }
 

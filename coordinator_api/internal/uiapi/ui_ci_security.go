@@ -3,7 +3,6 @@ package uiapi
 import (
 	"context"
 	"errors"
-	"time"
 
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store/models"
@@ -28,7 +27,6 @@ type uiCISecurityStore interface {
 	ListPoolsForWorkerClass(context.Context, string) ([]models.WorkerPool, error)
 	GetWorkerPoolByID(context.Context, string) (*models.WorkerPool, error)
 	GetProjectByOrgAndName(context.Context, string, string) (*models.Project, error)
-	CreateCIApproval(context.Context, *models.CIApproval) error
 	ListGroupsForUser(context.Context, string) ([]models.Group, error)
 }
 
@@ -244,52 +242,3 @@ func (s *UiService) SetWorkerClassPool(ctx context.Context, req csilapi.SetWorke
 	s.recordAudit(ctx, org.OrgID, action, "worker_class", class.ClassID, models.JSONB{"pool_id": pool.PoolID})
 	return csilapi.SetWorkerClassPoolResponse{Ok: true}, nil
 }
-
-func (s *UiService) CreateCiApproval(ctx context.Context, req csilapi.CreateCiApprovalRequest) (csilapi.CreateCiApprovalResponse, error) {
-	id, user, authErr := s.deps.requireUser(ctx)
-	if authErr != nil {
-		return csilapi.CreateCiApprovalResponse{}, authErr
-	}
-	value, org, err := s.requireCIOrgAdmin(ctx, req.Organization)
-	if err != nil {
-		return csilapi.CreateCiApprovalResponse{}, err
-	}
-	project, err := value.GetProjectByOrgAndName(ctx, org.OrgID, req.Project)
-	if err != nil {
-		return csilapi.CreateCiApprovalResponse{}, mapStoreErr(err, "project not found")
-	}
-	allowed := false
-	if req.ApproverSubject == "project_owner" {
-		allowed, _ = s.deps.Resolver.IsProjectOwner(ctx, id, project.ProjectID)
-	} else {
-		for _, group := range mustGroups(value.ListGroupsForUser(ctx, user.UserID)) {
-			if group.OrgID == org.OrgID && req.ApproverSubject == "reactorcide_group:"+group.Name {
-				allowed = true
-			}
-		}
-	}
-	if !allowed {
-		return csilapi.CreateCiApprovalResponse{}, NewServiceError("forbidden", "the caller does not hold the approver subject")
-	}
-	approval := &models.CIApproval{OrgID: org.OrgID, ProjectID: project.ProjectID, PRNumber: int(req.PrNumber),
-		HeadRepository: req.HeadRepository, HeadSHA: req.HeadSha, BaseSHA: req.BaseSha, PolicyRevision: req.PolicyRevision,
-		WorkflowScope: req.WorkflowScope, ExecutionProfile: req.ExecutionProfile, ApproverUserID: &user.UserID,
-		ApproverSubject: req.ApproverSubject}
-	if req.ExpiresAt != nil {
-		expires, parseErr := time.Parse(time.RFC3339, *req.ExpiresAt)
-		if parseErr != nil {
-			return csilapi.CreateCiApprovalResponse{}, NewServiceError("invalid_argument", "expires_at must use RFC3339")
-		}
-		approval.ExpiresAt = &expires
-	}
-	if err := value.CreateCIApproval(ctx, approval); err != nil {
-		return csilapi.CreateCiApprovalResponse{}, NewServiceError("invalid_argument", err.Error())
-	}
-	s.recordAudit(ctx, org.OrgID, "ci_approval.create", "ci_approval", approval.ApprovalID,
-		models.JSONB{"project_id": project.ProjectID, "pr_number": approval.PRNumber, "head_sha": approval.HeadSHA,
-			"base_sha": approval.BaseSHA, "policy_revision": approval.PolicyRevision, "workflow": approval.WorkflowScope,
-			"profile": approval.ExecutionProfile, "approver_subject": approval.ApproverSubject})
-	return csilapi.CreateCiApprovalResponse{ApprovalId: approval.ApprovalID}, nil
-}
-
-func mustGroups(groups []models.Group, _ error) []models.Group { return groups }

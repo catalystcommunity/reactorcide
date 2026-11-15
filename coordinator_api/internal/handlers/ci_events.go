@@ -69,6 +69,13 @@ func ciEventFromWebhook(project *models.Project, event *vcs.WebhookEvent) *model
 	}
 	ciEvent.SemanticKey = fmt.Sprintf("%s:%s:%s:%s:%s:%d", event.Provider, ciEvent.Repo,
 		ciEvent.EventType, ciEvent.Ref, ciEvent.CommitSHA, prNumber)
+	if event.Coordinator != nil && event.Coordinator.ID != "" {
+		// A re-evaluation after an approval, or a rerun, is a new decision for
+		// the same head. It must not be read as a duplicate of the event that
+		// ran CI first, also when duplicate_events is "skip".
+		ciEvent.Source = event.Coordinator.Source
+		ciEvent.SemanticKey += ":" + event.Coordinator.Source + ":" + event.Coordinator.ID
+	}
 	return ciEvent
 }
 

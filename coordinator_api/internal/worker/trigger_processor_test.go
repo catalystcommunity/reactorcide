@@ -414,7 +414,7 @@ func TestProcessTriggers_EnvVarOverride(t *testing.T) {
 		TimeoutSeconds: 3600,
 		JobEnvVars: models.JSONB{
 			"REACTORCIDE_CI":         "true",
-			"REACTORCIDE_EVENT_TYPE": "push", // This should be overridden by trigger
+			"REACTORCIDE_EVENT_TYPE": "push", // A trigger must not replace this fact
 		},
 	}
 
@@ -428,9 +428,10 @@ func TestProcessTriggers_EnvVarOverride(t *testing.T) {
 		t.Fatal("expected job to be created")
 	}
 
-	// Trigger env var should override parent
-	if createdJob.JobEnvVars["REACTORCIDE_EVENT_TYPE"] != "pull_request_opened" {
-		t.Errorf("expected trigger env var to override parent, got %v", createdJob.JobEnvVars["REACTORCIDE_EVENT_TYPE"])
+	// A trigger cannot replace a coordinator event fact: the parent's value
+	// is kept (linkkeys_trust_requests.md R1).
+	if createdJob.JobEnvVars["REACTORCIDE_EVENT_TYPE"] != "push" {
+		t.Errorf("expected the parent's event fact to be kept, got %v", createdJob.JobEnvVars["REACTORCIDE_EVENT_TYPE"])
 	}
 	// Parent env var should be inherited
 	if createdJob.JobEnvVars["REACTORCIDE_CI"] != "true" {

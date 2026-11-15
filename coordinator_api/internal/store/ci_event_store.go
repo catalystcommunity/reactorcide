@@ -44,3 +44,11 @@ type CIEventStore interface {
 	// workflow, or ErrNotFound.
 	GetCIEventWorkflowDecisionByWorkflow(ctx context.Context, workflowID string) (*models.CIEventWorkflowDecision, error)
 }
+
+// CIEventActorStore finds the actor of the most recent CI event of a pull
+// request head. A re-evaluation uses it so that the actor facts are the
+// facts of the event that ran CI for that head, not the approver's.
+type CIEventActorStore interface {
+	// LatestCIEventActorForPR returns "" and no error when no event matches.
+	LatestCIEventActorForPR(ctx context.Context, projectID string, prNumber int, headSHA string) (string, error)
+}

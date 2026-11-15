@@ -7,7 +7,6 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/cipolicy"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store"
@@ -31,7 +30,7 @@ func (s *multiProfileStore) GetExecutionProfile(_ context.Context, orgID, name s
 	return &copied, nil
 }
 
-func (s *multiProfileStore) ListActiveCIApprovalsForTarget(_ context.Context, _ string, _ int, _, _, _ string, _ time.Time) ([]models.CIApproval, error) {
+func (s *multiProfileStore) ListCIApprovalsForHead(_ context.Context, _ string, _ int, _ string) ([]models.CIApproval, error) {
 	return append([]models.CIApproval(nil), s.approvals...), nil
 }
 
@@ -188,11 +187,12 @@ func TestSelectPolicyCandidatesLoadsApprovalForExactTarget(t *testing.T) {
 	if err := (&vcs.JobMetadata{VCSProvider: "github", Repo: "org/repo", PRNumber: 7, CommitSHA: *parent.SourceRef, IsEval: true}).ApplyToJob(parent); err != nil {
 		t.Fatal(err)
 	}
+	_ = policy
 	approval := models.CIApproval{
-		ApprovalID: "approval", OrgID: "org", ProjectID: projectID, PRNumber: 7,
-		HeadRepository: "wrong/repo", HeadSHA: *parent.SourceRef, BaseSHA: parent.CISHA,
-		PolicyRevision: policy.Revision, WorkflowScope: "csilgen-pr",
-		ExecutionProfile: "pr-untrusted", ApproverSubject: "project_owner",
+		ApprovalID: "approval", Kind: models.CIApprovalKindHeadCI, Action: models.CIApprovalActionApproved,
+		OrgID: "org", ProjectID: projectID, PRNumber: 7,
+		HeadRepository: "wrong/repo", HeadSHA: *parent.SourceRef, Person: "github/owner",
+		Subjects: []string{"vcs_user:github/owner", "project_owner"}, Channel: models.CIApprovalChannelComment,
 	}
 	processorStore := &multiProfileStore{workflowRuntimeStore: newWorkflowRuntimeStore(), profiles: mixedTrustProfiles(), approvals: []models.CIApproval{approval}}
 	tp := NewTriggerProcessor(processorStore, nil)

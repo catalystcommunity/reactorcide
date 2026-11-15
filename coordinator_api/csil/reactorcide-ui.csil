@@ -220,20 +220,109 @@ DeleteWorkerClassResponse = { deleted: bool }
 SetWorkerClassPoolRequest = { organization: text, worker_class: text, pool_id: text, granted: bool }
 SetWorkerClassPoolResponse = { ok: bool }
 
-CreateCiApprovalRequest = {
-    organization: text,
-    project: text,
+;;; A pull request command. It is the same as a PR comment and has the same
+;;; authorization and effects: approve-ci, override-ci, accept, revoke, retry,
+;;; rerun. head_sha, when set, must be the current head.
+PrCommandRequest = {
+    project_id: text,
     pr_number: int,
-    head_repository: text,
-    head_sha: text,
-    base_sha: text,
-    policy_revision: text,
-    workflow_scope: text,
-    execution_profile: text,
-    approver_subject: text,
-    ? expires_at: text
+    command: text,
+    ? label: text,
+    ? head_sha: text
 }
-CreateCiApprovalResponse = { approval_id: text }
+;;; One approval action. Actions are append-only; for each role the last
+;;; action wins.
+CiApprovalAction = {
+    approval_id: text,
+    kind: text,
+    action: text,
+    ? label: text,
+    head_sha: text,
+    person: text,
+    subjects: [* text],
+    channel: text,
+    created_at: text
+}
+PrCommandResponse = {
+    ;; "re-evaluate", "rerun", "retry", "reviews", or empty.
+    ? effect: text,
+    message: text,
+    recorded: [* CiApprovalAction]
+}
+
+RequiredReviewState = {
+    id: text,
+    ? description: text,
+    scope: text,
+    applies: bool,
+    required: int,
+    accepted: [* text],
+    satisfied: bool,
+    accept: [* text]
+}
+GetPrApprovalsRequest = {
+    project_id: text,
+    pr_number: int
+}
+GetPrApprovalsResponse = {
+    head_sha: text,
+    actions: [* CiApprovalAction],
+    reviews: [* RequiredReviewState],
+    ;; The "Reactorcide Reviews" state: success or pending. Empty when the
+    ;; project needs no review.
+    ? reviews_state: text,
+    ? reviews_summary: text
+}
+
+;;; A review a pull request needs before it can merge. The ID is also the
+;;; label of an accept that is only for this review. accept can name
+;;; non_author: any person who did not write the change.
+RequiredReview = {
+    id: text,
+    ? description: text,
+    ? paths: [* text],
+    accept: [* text],
+    ? count: int,
+    ;; "org" or "project", on effective settings only.
+    ? scope: text
+}
+;;; Run gate, override, and required-review settings. An absent field of a
+;;; project inherits the organization value. Organization required reviews
+;;; apply to every project; a project adds its own.
+CiTrustSettings = {
+    ;; forks, first_time_contributors, outside_contributors.
+    ? run_gate: [* text],
+    ;; no_secrets (default) or normal.
+    ? gated_run_authority: text,
+    ? run_approvers: [* text],
+    ? override_approvers: [* text],
+    ? override_profile: text,
+    ? required_reviews: [* RequiredReview]
+}
+GetCiTrustSettingsRequest = {
+    organization: text,
+    ;; Absent for the organization settings.
+    ? project_id: text
+}
+GetCiTrustSettingsResponse = {
+    settings: CiTrustSettings,
+    effective: CiTrustSettings,
+    ;; The organization values a project setting is compared with.
+    ? organization_effective: CiTrustSettings,
+    ;; True when the caller can make the settings less strict than the
+    ;; organization (an org admin). A project owner can only make them
+    ;; more strict.
+    can_loosen: bool
+}
+PutCiTrustSettingsRequest = {
+    organization: text,
+    ? project_id: text,
+    settings: CiTrustSettings
+}
+PutCiTrustSettingsResponse = {
+    settings: CiTrustSettings,
+    effective: CiTrustSettings
+}
 
 ProjectSummary = {
     project_id: text,
@@ -1573,7 +1662,10 @@ service ReactorcideUi {
     put-worker-class: PutWorkerClassRequest -> PutWorkerClassResponse / ServiceError,
     delete-worker-class: DeleteWorkerClassRequest -> DeleteWorkerClassResponse / ServiceError,
     set-worker-class-pool: SetWorkerClassPoolRequest -> SetWorkerClassPoolResponse / ServiceError,
-    create-ci-approval: CreateCiApprovalRequest -> CreateCiApprovalResponse / ServiceError,
+    pr-command: PrCommandRequest -> PrCommandResponse / ServiceError,
+    get-pr-approvals: GetPrApprovalsRequest -> GetPrApprovalsResponse / ServiceError,
+    get-ci-trust-settings: GetCiTrustSettingsRequest -> GetCiTrustSettingsResponse / ServiceError,
+    put-ci-trust-settings: PutCiTrustSettingsRequest -> PutCiTrustSettingsResponse / ServiceError,
     list-projects: ListProjectsRequest -> ListProjectsResponse / ServiceError,
     get-project: GetProjectRequest -> GetProjectResponse / ServiceError,
     create-project: CreateProjectRequest -> CreateProjectResponse / ServiceError,

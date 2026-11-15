@@ -178,9 +178,9 @@ stop safe base workflows.
 An execution profile limits secrets, runtime capabilities, root use, worker
 classes, time, resources, caches, and artifacts. Child work must use the same
 or a weaker profile. Secret grants can restrict the project, profile, and CI
-origin. An approval binds to the project, pull request, head repository, head
-SHA, base SHA, policy revision, workflow, and profile. A new head SHA makes the
-approval invalid.
+origin. An approval binds to the project, pull request, head repository, and
+head SHA. A new head SHA makes the approval invalid. The profile of a run comes
+from the settings or a policy rule, never from the approval.
 
 A head-CI policy rule can name trusted base nodes with `base_nodes`. Only
 coordinator policy can give a node more authority than the workflow head-CI
@@ -194,10 +194,20 @@ a resolved secret from a trusted node; only normal workflow variables cross
 the boundary. Treat a signed URL in a workflow variable as a temporary
 credential and do not write it to a log or summary.
 
-A GitHub approval comment names the workflow, profile, and coordinator-policy
-revision. The coordinator gets the pull request SHAs from GitHub. It records
-only provider-verified or identity-linked approver subjects. The admission
-check requires an exact match before it uses the approval.
+A pull request command (`approve-ci`, `override-ci`, `accept`, `revoke`,
+`retry`, `rerun`) has the same rules in a comment, a review, the CLI, the API,
+and the UI. The coordinator gets the pull request head from the VCS. It records
+only provider-verified or identity-linked approver subjects, and the settings
+decide which subjects can give each command. A pull request review never
+grants execution.
+
+The run gate holds a pull request until a run approver gives `approve-ci`. An
+approved gated run uses trusted base CI only, and by default it gets the
+profile `pr-untrusted`, with no secrets. Without a gate, a fork pull request
+runs trusted base CI with the normal profile. Its job can get secrets while it
+builds the fork's code. Use a gate, or keep secrets out of jobs that build
+untrusted source. See
+[Run Gate, Approvals, and Required Reviews](./organizations-and-ci-policy.md#run-gate-approvals-and-required-reviews).
 
 Audit records contain identifiers and authorization facts. They do not
 contain raw tokens, secret values, or provider credentials. Use

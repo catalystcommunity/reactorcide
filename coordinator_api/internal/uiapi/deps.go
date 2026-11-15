@@ -3,6 +3,7 @@ package uiapi
 import (
 	"context"
 
+	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/approvals"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/auth"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/authz"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/checkauth"
@@ -36,6 +37,11 @@ type Deps struct {
 	// secrets.Provider fake here directly (no interface indirection needed)
 	// so rotation/secret-value ops are exercisable without a live Postgres.
 	SecretsProvider func(ctx context.Context, orgID string) (secrets.Provider, error)
+
+	// Approvals runs pull request commands through the one approval path
+	// (the webhook handler). Nil when the router does not wire it; the
+	// command operations then fail with "unavailable".
+	Approvals approvals.Executor
 }
 
 // NewDeps constructs a Deps. backend selects the login flow (NewNoneBackend

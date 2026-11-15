@@ -418,6 +418,51 @@ def _parse_environment(data: Any) -> Dict[str, str]:
     return {str(k): str(v) for k, v in data.items()}
 
 
+# Event facts are set by the coordinator from the webhook, the eval job, and
+# its own records. Guards and policy read them, so repository YAML must not be
+# able to set or replace them. The coordinator ignores them in trigger output
+# too. Keep this the same as reservedEventEnvNames in
+# coordinator_api/internal/worker/reserved_env.go.
+_RESERVED_EVENT_ENV = frozenset({
+    "REACTORCIDE_ACTOR_SUBJECTS",
+    "REACTORCIDE_CI_APPROVALS",
+    "REACTORCIDE_RUN_AUTHORITY",
+    "REACTORCIDE_CI_POLICY",
+    "REACTORCIDE_CI_POLICY_REVISION",
+    "REACTORCIDE_DIFF_BASE",
+    "REACTORCIDE_SHA",
+    "REACTORCIDE_SOURCE_URL",
+    "REACTORCIDE_EVENT_ID",
+    "REACTORCIDE_EVENT_TYPE",
+    "REACTORCIDE_BRANCH",
+    "REACTORCIDE_REPO",
+    "REACTORCIDE_PROVIDER",
+    "REACTORCIDE_IS_FORK_PR",
+    "REACTORCIDE_JOB_KIND",
+    "REACTORCIDE_EVAL_DUAL_CI",
+    "REACTORCIDE_REPORT_GENERATION",
+    "REACTORCIDE_REPORT_TARGET_ID",
+})
+_RESERVED_EVENT_ENV_PREFIXES = ("REACTORCIDE_HEAD_", "REACTORCIDE_BASE_", "REACTORCIDE_PR_")
+
+
+def is_reserved_event_env(name: str) -> bool:
+    """Return True when ``name`` is an environment name the coordinator owns."""
+    upper = str(name).strip().upper()
+    return upper in _RESERVED_EVENT_ENV or upper.startswith(_RESERVED_EVENT_ENV_PREFIXES)
+
+
+def _reject_reserved_event_env(name: str, environment: Any) -> None:
+    if not isinstance(environment, dict):
+        return
+    reserved = sorted(str(key) for key in environment if is_reserved_event_env(key))
+    if reserved:
+        raise ValueError(
+            f"job {name!r} sets reserved environment {', '.join(reserved)}; "
+            "event facts come only from the coordinator"
+        )
+
+
 def parse_job_definition(data: Dict[str, Any], source_file: Optional[str] = None) -> JobDefinition:
     """Parse a single job definition from a YAML dictionary.
 
@@ -434,6 +479,8 @@ def parse_job_definition(data: Dict[str, Any], source_file: Optional[str] = None
     name = data.get("name")
     if not name:
         raise ValueError(f"Job definition missing required 'name' field{f' in {source_file}' if source_file else ''}")
+
+    _reject_reserved_event_env(str(name), data.get("environment"))
 
     return JobDefinition(
         name=str(name),

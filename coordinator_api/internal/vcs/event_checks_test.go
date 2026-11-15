@@ -478,3 +478,10 @@ func TestUpdateCIPolicyStatusLegacyKeepsPolicyContext(t *testing.T) {
 		t.Fatalf("legacy contexts = %v", got)
 	}
 }
+
+func TestComputeEventChecks_AwaitingApprovalIsPending(t *testing.T) {
+	result := ComputeEventChecks(EventChecksInput{EventStatus: models.CIEventStatusAwaitingApproval})
+	if result.State != StatusPending || !strings.Contains(result.Description, "approve-ci") {
+		t.Fatalf("a held event must be pending and name approve-ci: %+v", result)
+	}
+}

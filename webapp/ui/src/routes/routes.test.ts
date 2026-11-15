@@ -20,7 +20,7 @@ describe('route table', () => {
   })
 
   it('resolves every path a page cross-links to', () => {
-    for (const linked of ['/workers/classes', '/workers/queues', '/org/groups', '/projects/new', '/signin']) {
+    for (const linked of ['/workers/classes', '/workers/queues', '/org/groups', '/org/ci-trust', '/projects/new', '/signin', '/projects/p-1/trust', '/projects/p-1/policy']) {
       expect(resolveRoute(linked).name, `a page links to ${linked}`).not.toBe('notFound')
     }
   })
@@ -34,17 +34,21 @@ describe('route table', () => {
     // "new" is a page, not a project id.
     expect(resolveRoute('/projects/new')).toEqual({ name: 'projectNew' })
     expect(resolveRoute('/projects/new/')).toEqual({ name: 'projectNew' })
+    // The CI trust and CI policy pages of a project.
+    expect(resolveRoute('/projects/p-1/trust')).toEqual({ name: 'projectTrust', id: 'p-1' })
+    expect(resolveRoute('/projects/p-1/policy')).toEqual({ name: 'projectPolicy', id: 'p-1' })
   })
 
   it('sends unknown paths to NotFound', () => {
     expect(resolveRoute('/nope').name).toBe('notFound')
     expect(resolveRoute('/jobs/a/b').name).toBe('notFound')
+    expect(resolveRoute('/projects/p-1/nope').name).toBe('notFound')
     expect(resolveRoute('/workflows').name).toBe('notFound')
     expect(resolveRoute('/events').name).toBe('notFound')
   })
 
   it('has a page module for every route name', () => {
-    const names = new Set([...Object.values(STATIC_ROUTES), 'workflow', 'event', 'job', 'project', 'notFound'])
+    const names = new Set([...Object.values(STATIC_ROUTES), 'workflow', 'event', 'job', 'project', 'projectTrust', 'projectPolicy', 'notFound'])
     for (const name of names) expect(PAGES, name).toHaveProperty(name)
   })
 
