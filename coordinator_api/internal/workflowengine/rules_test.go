@@ -2,6 +2,7 @@ package workflowengine
 
 import (
 	"context"
+	"reflect"
 	"testing"
 )
 
@@ -104,7 +105,7 @@ func TestEngineProducesSameDecisionsWithCoordinatorAndLocalLimits(t *testing.T) 
 		t.Fatalf("coordinator = %#v, local = %#v", coordinatorDecisions, localDecisions)
 	}
 	for i := range coordinatorDecisions {
-		if coordinatorDecisions[i] != localDecisions[i] {
+		if !reflect.DeepEqual(coordinatorDecisions[i], localDecisions[i]) {
 			t.Fatalf("decision %d: coordinator = %#v, local = %#v", i, coordinatorDecisions[i], localDecisions[i])
 		}
 	}

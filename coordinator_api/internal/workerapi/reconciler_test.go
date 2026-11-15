@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/corndogs"
+	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store/models"
 )
 
@@ -213,5 +214,43 @@ func TestSupersededTaskIsDiscarded(t *testing.T) {
 	saved, _ := h.store.GetJobByID(ctx, job.JobID)
 	if saved.Status != "running" {
 		t.Fatalf("job = %q, want running under the replacement task", saved.Status)
+	}
+}
+
+// lostEvalFake adds the CI event writes a lost eval needs.
+type lostEvalFake struct {
+	*lostJobFake
+	store.CIEventStore
+	eventStatuses []string
+}
+
+func (f *lostEvalFake) SetCIEventStatus(_ context.Context, _ string, status string) error {
+	f.eventStatuses = append(f.eventStatuses, status)
+	return nil
+}
+
+func (f *lostEvalFake) GetCIEvent(_ context.Context, eventID string) (*models.CIEvent, error) {
+	return &models.CIEvent{EventID: eventID}, nil
+}
+
+// An eval job that is lost and out of retries never sends a result, so the
+// reaper closes its CI event as failed.
+func TestReconcileLostEvalClosesItsEvent(t *testing.T) {
+	h, lf, _ := newReconcilerHarness()
+	ef := &lostEvalFake{lostJobFake: lf}
+	h.deps.Store = ef
+	job, _ := seedLostJob(t, h, "88888888-8888-8888-8888-888888888884", 3*time.Hour, maxLostJobRetries)
+	eventID := "event-lost"
+	job.EventID = &eventID
+	job.WorkflowID = nil
+	job.JobEnvVars = models.JSONB{"REACTORCIDE_JOB_KIND": "eval"}
+	if err := h.store.UpdateJob(context.Background(), job); err != nil {
+		t.Fatal(err)
+	}
+
+	h.service.reconcileLostJobs(context.Background())
+
+	if len(ef.eventStatuses) != 1 || ef.eventStatuses[0] != models.CIEventStatusFailed {
+		t.Fatalf("event statuses = %v, want [failed]", ef.eventStatuses)
 	}
 }

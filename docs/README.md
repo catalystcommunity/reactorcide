@@ -46,6 +46,9 @@ Use this page to select the correct guide.
 - [Writing Pipelines](./writing-pipelines.md): Create follow-up jobs.
 - [Workflow Design](./workflow-design.md): Understand coordinator workflow
   state and dependency rules.
+- [Events, Checks, and Schedules](./events-and-schedules.md): Understand
+  events, duplicate handling, `Reactorcide Checks`, conditional jobs, and
+  scheduled builds.
 - [Runnerlib Usage](../runnerlib/docs/usage.md): Use the job-side library.
 - [Plugin Development](../runnerlib/docs/plugin_development.md): Add runnerlib
   lifecycle hooks.

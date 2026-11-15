@@ -14,11 +14,14 @@ import (
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/checkauth"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/config"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/corndogs"
+	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/jobcontrol"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/jobtelemetry"
+	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/lease"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/metrics"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/middleware"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/objects"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/pubsub"
+	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/schedule"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/secrets"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store/models"
@@ -130,6 +133,7 @@ func createAppMux() *http.ServeMux {
 	}
 	jobHandler.SetStatusUpdater(vcsManager.GetStatusUpdater())
 	webhookHandler.SetStatusUpdater(vcsManager.GetStatusUpdater())
+	jobcontrol.SetEventChecksPublisher(vcsManager.GetStatusUpdater().PublishEventChecks)
 	if reportStore, ok := store.AppStore.(vcsreport.Store); ok {
 		reconciler := &vcsreport.Reconciler{Store: reportStore, Clients: vcs.NewReportClientResolver(vcsManager.GetStatusUpdater())}
 		startVCSReportReconcilerOnce(reconciler)
@@ -172,6 +176,9 @@ func createAppMux() *http.ServeMux {
 		secretsHandler = NewSecretsHandler(store.AppStore, singletonKeyManager)
 		wireWebhookTokenResolver(singletonKeyManager)
 	}
+	// After the VCS clients and per-project token resolution are wired: a
+	// fire resolves the branch head with the project's own credentials.
+	startSchedulerOnce(store.AppStore, webhookHandler.ScheduleFirer())
 
 	transactionMiddleware := middleware.TransactionMiddleware
 	authMiddleware := middleware.APITokenMiddleware(store.AppStore)
@@ -921,6 +928,27 @@ var workerLeaseReaperOnce sync.Once
 var telemetryRetentionOnce sync.Once
 var auditRetentionOnce sync.Once
 var vcsReportReconcilerOnce sync.Once
+var schedulerOnce sync.Once
+
+// startSchedulerOnce runs the schedule loop on the one replica that holds
+// the "scheduler" lease. Every replica runs the lease manager; only the
+// holder fires schedules, and another replica takes over within the lease
+// TTL when the holder stops. The firer records a `schedule` CI event and
+// submits its eval job.
+func startSchedulerOnce(appStore store.Store, firer schedule.Firer) {
+	leases, ok := appStore.(store.LeaseStore)
+	if !ok {
+		return
+	}
+	schedules, ok := appStore.(store.ScheduleStore)
+	if !ok {
+		return
+	}
+	schedulerOnce.Do(func() {
+		scheduler := &schedule.Scheduler{Store: schedules, Firer: firer}
+		go lease.NewManager(leases).Run(context.Background(), schedule.LeaseName, scheduler.Run)
+	})
+}
 
 func startVCSReportReconcilerOnce(reconciler *vcsreport.Reconciler) {
 	vcsReportReconcilerOnce.Do(func() { go reconciler.Run(context.Background(), 5*time.Second) })

@@ -189,6 +189,7 @@ func NewHandlerWithWorker(auth csilapi.ReactorcideAuth, ui csilapi.ReactorcideUi
 		"get-job":                       wrapOp(csilapi.DecodeGetJobRequest, csilapi.EncodeGetJobResponse, "GetJobResponse", ui.GetJob),
 		"list-workflows":                wrapOp(csilapi.DecodeListWorkflowsRequest, csilapi.EncodeListWorkflowsResponse, "ListWorkflowsResponse", ui.ListWorkflows),
 		"get-workflow":                  wrapOp(csilapi.DecodeGetWorkflowRequest, csilapi.EncodeGetWorkflowResponse, "GetWorkflowResponse", ui.GetWorkflow),
+		"get-event":                     wrapOp(csilapi.DecodeGetEventRequest, csilapi.EncodeGetEventResponse, "GetEventResponse", ui.GetEvent),
 		"describe-form-metadata":        wrapOp(csilapi.DecodeDescribeFormMetadataRequest, csilapi.EncodeDescribeFormMetadataResponse, "DescribeFormMetadataResponse", ui.DescribeFormMetadata),
 	}
 	if worker != nil {

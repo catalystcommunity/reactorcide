@@ -86,6 +86,11 @@ class JobTrigger:
     resources: Optional[Dict[str, Any]] = None
     disable_run_local: Optional[bool] = None
     run_local: Optional[Dict[str, Any]] = None
+    # Set by the eval from the job's `if:`: skip=True means the predicates are
+    # false for this event (the coordinator creates a skipped node);
+    # decision_reasons explains the verdict either way.
+    skip: Optional[bool] = None
+    decision_reasons: Optional[List[Dict[str, Any]]] = None
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary, excluding None values."""
@@ -107,6 +112,10 @@ class _SecureRedirectHandler(urllib.request.HTTPRedirectHandler):
         return super().redirect_request(req, fp, code, msg, headers, newurl)
 
 
+# The most changed files one eval result carries. The total stays exact.
+CHANGED_FILES_LIMIT = 10000
+
+
 class WorkflowContext:
     """
     Context for workflow execution, providing access to environment,
@@ -122,8 +131,16 @@ class WorkflowContext:
         self._api_token = os.getenv("REACTORCIDE_API_TOKEN")
         self._job_id = os.getenv("REACTORCIDE_JOB_ID")
         self._workflow_id = os.getenv("RC_WF_ID")
-        self._trigger_operation_id = str(uuid.uuid4())
+        # An eval of a CI event uses the event ID as its operation ID, so a
+        # retried eval of the same event is the same operation and reuses the
+        # workflows the first eval made. Other callers get a fresh ID.
+        self._trigger_operation_id = os.getenv("REACTORCIDE_EVENT_ID") or str(uuid.uuid4())
         self._allow_insecure_transport = allow_insecure_transport
+
+    @property
+    def api_configured(self) -> bool:
+        """Whether results can go to the coordinator API (not a local run)."""
+        return bool(self._coordinator_url and self._api_token and self._job_id)
 
     @property
     def job_id(self) -> Optional[str]:
@@ -311,6 +328,8 @@ class WorkflowContext:
         batches: List[Dict[str, Any]],
         changed_ci_paths: Optional[List[str]] = None,
         policy_candidates: Optional[Dict[str, List[Dict[str, Any]]]] = None,
+        decisions: Optional[List[Dict[str, Any]]] = None,
+        changed_files: Optional[List[str]] = None,
     ) -> None:
         """Write and submit triggers grouped into named workflows.
 
@@ -324,7 +343,7 @@ class WorkflowContext:
         API when credentials are available; on success the file is removed so
         the worker does not also create jobs from it.
         """
-        if not batches and not policy_candidates:
+        if not batches and not policy_candidates and not decisions:
             return
 
         self.triggers_file.parent.mkdir(parents=True, exist_ok=True)
@@ -340,6 +359,10 @@ class WorkflowContext:
                 "vars": batch.get("vars", {}),
                 "jobs": [t.to_dict() for t in batch["jobs"]],
             }
+            if batch.get("status_context"):
+                # Optional extra commit status (YAML status.context). Not an
+                # authority field: the coordinator validates it again.
+                item["status_context"] = batch["status_context"]
             if include_authority:
                 item.update({
                     "ci_origin": batch.get("ci_origin", "base"),
@@ -362,6 +385,13 @@ class WorkflowContext:
             "workflows": workflows_payload,
             "changed_ci_paths": changed_ci_paths or [],
         }
+        if decisions:
+            # One decision per workflow file, run or not, with structured
+            # reasons. The coordinator stores them on the CI event.
+            trigger_data["decisions"] = decisions
+        if changed_files is not None:
+            trigger_data["changed_files"] = list(changed_files)[:CHANGED_FILES_LIMIT]
+            trigger_data["changed_files_total"] = len(changed_files)
         if policy_candidates:
             trigger_data["policy_candidates"] = {
                 origin: [workflow_payload(batch, include_authority=False) for batch in candidates]

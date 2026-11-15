@@ -47,6 +47,7 @@ func newApp() *cli.App {
 			cmd.TokenCommand,
 			cmd.OrgsCommand,
 			cmd.PolicyCommand,
+			cmd.ScheduleCommand,
 			cmd.ProfilesCommand,
 			cmd.ApprovalsCommand,
 			cmd.SecretsCommand,

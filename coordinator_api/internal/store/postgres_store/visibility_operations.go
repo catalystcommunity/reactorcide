@@ -382,7 +382,8 @@ WITH workflow_rows AS (
 		COALESCE(wi.trigger_type, '') AS trigger_type,
 		COALESCE(wi.ci_origin, '') AS ci_origin,
 		COALESCE(wi.execution_profile, '') AS execution_profile,
-		COALESCE(wi.worker_class, '') AS worker_class
+		COALESCE(wi.worker_class, '') AS worker_class,
+		wi.event_id
 	FROM workflow_instances wi
 	%s
 	LEFT JOIN workflow_nodes wn ON wn.workflow_id = wi.workflow_id
@@ -422,7 +423,8 @@ loose_rows AS (
 		'' AS trigger_type,
 		COALESCE(j.ci_origin, '') AS ci_origin,
 		COALESCE(j.execution_profile, '') AS execution_profile,
-		COALESCE(j.worker_class, '') AS worker_class
+		COALESCE(j.worker_class, '') AS worker_class,
+		j.event_id
 	FROM jobs j
 	%s
 	%s

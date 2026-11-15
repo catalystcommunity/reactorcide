@@ -899,6 +899,15 @@ func (c *ReactorcideUiClient) GetWorkflow(ctx context.Context, req GetWorkflowRe
 	return DecodeGetWorkflowResponse(csilResp)
 }
 
+func (c *ReactorcideUiClient) GetEvent(ctx context.Context, req GetEventRequest) (GetEventResponse, error) {
+	var csilZero GetEventResponse
+	csilResp, csilErr := c.transport.Call(ctx, "ReactorcideUi", "get-event", EncodeGetEventRequest(req))
+	if csilErr != nil {
+		return csilZero, csilErr
+	}
+	return DecodeGetEventResponse(csilResp)
+}
+
 func (c *ReactorcideUiClient) DescribeFormMetadata(ctx context.Context, req DescribeFormMetadataRequest) (DescribeFormMetadataResponse, error) {
 	var csilZero DescribeFormMetadataResponse
 	csilResp, csilErr := c.transport.Call(ctx, "ReactorcideUi", "describe-form-metadata", EncodeDescribeFormMetadataRequest(req))

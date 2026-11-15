@@ -20,6 +20,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/evaloutcome"
 	"time"
 
 	"github.com/catalystcommunity/app-utils-go/logging"
@@ -117,8 +118,35 @@ func CancelJob(ctx context.Context, st store.Store, corndogsClient corndogs.Clie
 	updated, err := transitionJob(ctx, st, corndogsClient, job, false)
 	if err == nil {
 		bumpJobReportRevision(ctx, st, updated)
+		publishJobEventChecks(ctx, st, updated)
 	}
 	return updated, err
+}
+
+// eventChecksPublisher posts a CI event's "Reactorcide Checks" status. It is
+// set once at startup (SetEventChecksPublisher); nil means no publishing.
+var eventChecksPublisher func(ctx context.Context, eventID string) error
+
+// SetEventChecksPublisher wires the VCS status updater. A queued job that is
+// cancelled here goes straight to "cancelled" without a worker result, so
+// nothing else would recompute its event's status.
+func SetEventChecksPublisher(fn func(ctx context.Context, eventID string) error) {
+	eventChecksPublisher = fn
+}
+
+func publishJobEventChecks(ctx context.Context, st any, job *models.Job) {
+	// A queued eval cancelled straight to "cancelled" gets no worker result,
+	// so its CI event is closed here, before the status recompute reads it.
+	// A running eval only reaches "cancelling"; the worker result closes it.
+	if job != nil && job.Status == "cancelled" {
+		evaloutcome.Finish(ctx, st, job, job.Status)
+	}
+	if eventChecksPublisher == nil || job == nil || job.EventID == nil || *job.EventID == "" {
+		return
+	}
+	if err := eventChecksPublisher(ctx, *job.EventID); err != nil {
+		logging.Log.WithError(err).WithField("event_id", *job.EventID).Warn("Failed to update event checks status after cancel")
+	}
 }
 
 // KillJob is CancelJob's immediate-force sibling: submitted/queued jobs are
@@ -134,6 +162,7 @@ func KillJob(ctx context.Context, st store.Store, corndogsClient corndogs.Client
 	updated, err := transitionJob(ctx, st, corndogsClient, job, true)
 	if err == nil {
 		bumpJobReportRevision(ctx, st, updated)
+		publishJobEventChecks(ctx, st, updated)
 	}
 	return updated, err
 }

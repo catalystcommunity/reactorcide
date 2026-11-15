@@ -914,16 +914,31 @@ def eval_cmd(
     from src.eval import (
         load_job_definitions,
         load_workflow_definitions,
+        load_workflow_definitions_with_errors,
         evaluate_event,
         workflow_match_reason,
+        workflow_decision_reasons,
         generate_triggers,
+        apply_job_conditions,
         EventContext,
         VALID_EVENT_TYPES,
     )
     from src.workflow import WorkflowContext, changed_files
 
-    # Validate event type
-    if event_type not in VALID_EVENT_TYPES:
+    # Validate event type. A coordinator schedule fire is the `schedule`
+    # event, and it always names the one workflow it runs.
+    from src.schedule_eval import (
+        SCHEDULE_EVENT,
+        not_found_decision,
+        schedule_reason_from_env,
+        select_scheduled_workflow,
+        workflow_ref_from_env,
+    )
+    workflow_ref = workflow_ref_from_env()
+    if event_type == SCHEDULE_EVENT and not workflow_ref:
+        log_stderr("Event type 'schedule' needs REACTORCIDE_WORKFLOW_REF (the workflow the schedule runs)")
+        raise typer.Exit(1)
+    if event_type not in VALID_EVENT_TYPES and event_type != SCHEDULE_EVENT:
         log_stderr(f"Invalid event type: {event_type}")
         log_stderr(f"Valid types: {', '.join(sorted(VALID_EVENT_TYPES))}")
         raise typer.Exit(1)
@@ -934,8 +949,11 @@ def eval_cmd(
 
     # A pull request always evaluates trusted definitions from the exact base
     # checkout. The head checkout is separate and remains candidate data until
-    # the coordinator policy permits a workflow to use it.
-    dual_checkout = bool(pr_number and not (ci_root_path / ".reactorcide").is_dir())
+    # the coordinator policy permits a workflow to use it. A push does the
+    # same when the coordinator asks for it (REACTORCIDE_EVAL_DUAL_CI): the
+    # base is the commit before the push, the head is the pushed commit.
+    wants_dual = bool(pr_number) or os.getenv("REACTORCIDE_EVAL_DUAL_CI", "").lower() == "true"
+    dual_checkout = bool(wants_dual and not (ci_root_path / ".reactorcide").is_dir())
     if dual_checkout:
         ci_source_path = ci_root_path / "base"
 
@@ -1001,7 +1019,7 @@ def eval_cmd(
     # workflow names its pipeline and groups its jobs, and one event can match
     # several workflows (per team/product/etc). Fall back to bare job files
     # (.reactorcide/jobs/*.yaml) when no workflow files exist.
-    workflow_defs = load_workflow_definitions(ci_source_path)
+    workflow_defs, invalid_workflow_files = load_workflow_definitions_with_errors(ci_source_path)
 
     selected_workflow_path = None
     if workflow_file:
@@ -1017,10 +1035,28 @@ def eval_cmd(
             workflow for workflow in workflow_defs
             if Path(workflow.source_file).resolve() == selected_workflow_path
         ]
+        invalid_workflow_files = [
+            item for item in invalid_workflow_files
+            if Path(item.source_file).resolve() == selected_workflow_path
+        ]
         if not workflow_defs:
             raise ValueError(f"selected workflow file was not loaded: {workflow_file}")
 
-    if workflow_defs:
+    # A schedule names one workflow: evaluate only that one, without its
+    # on/paths filters. A ref that names nothing on the branch is reported as
+    # one invalid decision, and the eval still succeeds.
+    schedule_reason = None
+    if workflow_ref:
+        workflow_defs, invalid_workflow_files = select_scheduled_workflow(
+            workflow_ref, workflow_defs, invalid_workflow_files, ci_source_path)
+        schedule_reason = schedule_reason_from_env()
+        if not workflow_defs and not invalid_workflow_files:
+            log_stdout(f"Scheduled workflow '{workflow_ref}' was not found on this branch; nothing to run.")
+            if workflow_ctx.api_configured:
+                workflow_ctx.flush_workflow_batches([], [], None, [not_found_decision(workflow_ref)], changed)
+            raise typer.Exit(0)
+
+    if workflow_defs or invalid_workflow_files:
         log_stdout(
             f"Loaded {len(workflow_defs)} workflow definition(s) from "
             f"{ci_source_path / '.reactorcide' / 'workflows'}: "
@@ -1081,8 +1117,10 @@ def eval_cmd(
                 "event_matched": matched,
                 "explicit_id": wf.explicit_id,
                 "vars": wf.vars,
-                "jobs": generate_triggers(wf.jobs, ctx),
+                "jobs": apply_job_conditions(generate_triggers(wf.jobs, ctx), wf.jobs, event_type, branch, changed),
             }
+            if wf.status_context:
+                batch["status_context"] = wf.status_context
             if include_authority:
                 batch.update({
                     "ci_origin": "base",
@@ -1094,18 +1132,46 @@ def eval_cmd(
             return batch
 
         batches = []
+        # One decision per workflow file, run or not, so the coordinator can
+        # say why each workflow did or did not run for this event.
+        decisions = []
         selected_no_match = None
         for wf in workflow_defs:
             matched_wf, reason = workflow_match_reason(wf, event_type, branch, changed)
+            _, reasons = workflow_decision_reasons(wf, event_type, branch, changed)
+            if schedule_reason is not None:
+                # The schedule chose this workflow; its on/paths filters do
+                # not apply.
+                matched_wf, reason, reasons = True, "scheduled", [dict(schedule_reason)]
+            decision = {
+                "id": wf.workflow_id,
+                "name": wf.name,
+                "source_file": repo_relative(wf.source_file),
+                "decision": "run" if matched_wf else "skipped",
+                "reasons": reasons,
+            }
+            decisions.append(decision)
             if not matched_wf:
                 log_stdout(f"  – skipped workflow '{wf.name}': {reason}")
                 if selected_workflow_path is not None:
                     selected_no_match = wf
                 continue
             batch = batch_for(wf, True, True)
+            if not batch["jobs"]:
+                decision["decision"] = "skipped"
+                decision["reasons"].append({"kind": "jobs", "detail": "the workflow resolved to no jobs"})
             batches.append(batch)
             job_names = ", ".join(t.job_name for t in batch["jobs"]) or "(no jobs)"
             log_stdout(f"  ✓ matched workflow '{wf.name}' ({reason}): {len(batch['jobs'])} job(s): {job_names}")
+        for invalid in invalid_workflow_files:
+            log_stdout(f"  ✗ invalid workflow file '{repo_relative(invalid.source_file)}': {invalid.error}")
+            decisions.append({
+                "id": invalid.workflow_id,
+                "name": invalid.name or Path(invalid.source_file).name,
+                "source_file": repo_relative(invalid.source_file),
+                "decision": "invalid",
+                "reasons": [{"kind": "invalid", "detail": invalid.error}],
+            })
 
         policy_candidates = None
         if dual_checkout and changed_ci:
@@ -1144,9 +1210,13 @@ def eval_cmd(
                 f"Evaluated {len(workflow_defs)} workflow(s); nothing to run. "
                 f"This eval is successful."
             )
+            # The coordinator still records why nothing ran. A local run has
+            # no coordinator and keeps writing no trigger file.
+            if workflow_ctx.api_configured:
+                workflow_ctx.flush_workflow_batches([], changed_ci, None, decisions, changed)
             raise typer.Exit(0)
 
-        workflow_ctx.flush_workflow_batches(batches, changed_ci, policy_candidates)
+        workflow_ctx.flush_workflow_batches(batches, changed_ci, policy_candidates, decisions, changed)
         total = sum(len(b["jobs"]) for b in batches)
         log_stdout(f"Wrote {len(batches)} workflow(s) / {total} trigger(s) to {triggers_file}")
         raise typer.Exit(0)

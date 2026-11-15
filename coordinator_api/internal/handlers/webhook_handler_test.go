@@ -410,8 +410,8 @@ func TestWebhookHandler_PREvent_SubmitsToCorndogs(t *testing.T) {
 	assert.Equal(t, "pull_request_opened", createdJob.JobEnvVars["REACTORCIDE_EVENT_TYPE"])
 
 	// Verify eval job characteristics
-	assert.Contains(t, createdJob.Name, "eval:")
-	assert.Contains(t, createdJob.Name, "PR #42")
+	assert.Contains(t, createdJob.Name, "Eval event pull_request")
+	assert.Contains(t, createdJob.Name, "#42")
 	assert.Contains(t, createdJob.Description, "Eval job")
 	assert.Equal(t, "runnerlib eval --event-type $REACTORCIDE_EVENT_TYPE --branch $REACTORCIDE_BRANCH", createdJob.JobCommand)
 	assert.Equal(t, "abc123", createdJob.JobEnvVars["REACTORCIDE_SHA"])
@@ -499,8 +499,7 @@ func TestWebhookHandler_PushEvent_SubmitsToCorndogs(t *testing.T) {
 	assert.Equal(t, "push", createdJob.JobEnvVars["REACTORCIDE_EVENT_TYPE"])
 
 	// Verify eval job characteristics
-	assert.Contains(t, createdJob.Name, "eval:")
-	assert.Contains(t, createdJob.Name, "push to main")
+	assert.Contains(t, createdJob.Name, "Eval event push main")
 	assert.Contains(t, createdJob.Description, "Eval job")
 	assert.Equal(t, "runnerlib eval --event-type $REACTORCIDE_EVENT_TYPE --branch $REACTORCIDE_BRANCH", createdJob.JobCommand)
 	assert.Equal(t, "after-sha-1234", createdJob.JobEnvVars["REACTORCIDE_SHA"])

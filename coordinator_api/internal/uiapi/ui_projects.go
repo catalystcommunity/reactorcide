@@ -53,6 +53,8 @@ func projectToDetail(p *models.Project) csilapi.ProjectDetail {
 		CheckoutMode:          p.CheckoutMode,
 		CreatedAt:             formatTime(p.CreatedAt),
 		UpdatedAt:             formatTime(p.UpdatedAt),
+		DuplicateEvents:       optionalText(p.DuplicateEvents),
+		DynamicJobs:           optionalText(p.DynamicJobs),
 	}
 }
 
@@ -186,7 +188,7 @@ func (s *UiService) GetProject(ctx context.Context, req csilapi.GetProjectReques
 	if !visible {
 		return csilapi.GetProjectResponse{}, NewServiceError("not_found", "project not found")
 	}
-	return csilapi.GetProjectResponse{Project: projectToDetail(project)}, nil
+	return csilapi.GetProjectResponse{Project: s.projectDetail(ctx, project)}, nil
 }
 
 // CreateProject requires org admin (of org_id) or global admin. When the
@@ -243,7 +245,7 @@ func (s *UiService) CreateProject(ctx context.Context, req csilapi.CreateProject
 	if err := s.deps.Store.CreateProject(ctx, project); err != nil {
 		return csilapi.CreateProjectResponse{}, NewServiceError("internal", "failed to create project")
 	}
-	return csilapi.CreateProjectResponse{Project: projectToDetail(project)}, nil
+	return csilapi.CreateProjectResponse{Project: s.projectDetail(ctx, project)}, nil
 }
 
 // UpdateProject requires project-settings capability: project owner, org
@@ -307,16 +309,23 @@ func (s *UiService) UpdateProject(ctx context.Context, req csilapi.UpdateProject
 		}
 		project.CheckoutMode = *req.CheckoutMode
 	}
+	settingsChanged, err := applyProjectEventSettings(project, req.DuplicateEvents, req.DynamicJobs)
+	if err != nil {
+		return csilapi.UpdateProjectResponse{}, err
+	}
 
 	if err := s.deps.Store.UpdateProject(ctx, project); err != nil {
 		return csilapi.UpdateProjectResponse{}, NewServiceError("internal", "failed to update project")
+	}
+	if settingsChanged != nil {
+		s.recordAudit(ctx, project.OwnershipOrgID(), "project.event_settings", "project", project.ProjectID, settingsChanged)
 	}
 	// Settings changed, and is_private may be among them. An open event stream
 	// caches "this caller may see project X"; this is what makes it drop that
 	// answer, so a project turned private stops feeding a socket that was
 	// opened while it was public.
 	workflowevents.ProjectUpdated(ctx, project)
-	return csilapi.UpdateProjectResponse{Project: projectToDetail(project)}, nil
+	return csilapi.UpdateProjectResponse{Project: s.projectDetail(ctx, project)}, nil
 }
 
 // DeleteProject requires org admin (of the owning org) or global admin —

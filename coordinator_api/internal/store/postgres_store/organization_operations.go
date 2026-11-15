@@ -119,10 +119,19 @@ func (ps PostgresDbStore) UpdateOrganization(ctx context.Context, organization *
 	if err := models.ValidateOrganizationStatus(organization.Status); err != nil {
 		return err
 	}
-	result := ps.getDB(ctx).Model(&models.Organization{}).Where("org_id = ?", organization.OrgID).Updates(map[string]any{
+	values := map[string]any{
 		"display_name": organization.DisplayName, "is_private": organization.IsPrivate,
 		"status": organization.Status, "updated_at": gorm.Expr("timezone('utc', now())"),
-	})
+	}
+	// Event settings: an empty value comes from a struct that predates the
+	// setting and must not overwrite the stored one.
+	if organization.DuplicateEvents != "" {
+		values["duplicate_events"] = organization.DuplicateEvents
+	}
+	if organization.DynamicJobs != "" {
+		values["dynamic_jobs"] = organization.DynamicJobs
+	}
+	result := ps.getDB(ctx).Model(&models.Organization{}).Where("org_id = ?", organization.OrgID).Updates(values)
 	if result.Error != nil {
 		return fmt.Errorf("failed to update organization: %w", result.Error)
 	}

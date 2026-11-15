@@ -212,6 +212,9 @@ func (s *WorkerService) failLostJob(ctx context.Context, job *models.Job, reason
 	}
 	s.publishJobUpdate(ctx, failed, now)
 	s.advanceWorkflowAfterCoordinatorFinalization(ctx, failed)
+	// A lost eval closes its CI event here: no worker result will arrive.
+	// Before the status update, so "Reactorcide Checks" reads the failed event.
+	markEvalEventFinished(ctx, s.deps.Store, failed, failed.Status)
 	if s.deps.JobStatusReporter != nil && failed.WorkflowNodeID == nil {
 		if err := s.deps.JobStatusReporter.UpdateJobStatus(ctx, failed); err != nil {
 			logging.Log.WithError(err).WithField("job_id", job.JobID).Warn("Failed to update VCS status of lost job")

@@ -87,23 +87,28 @@ func (w *WorkflowInstance) IsRetryable() bool {
 }
 
 type WorkflowNode struct {
-	NodeID                   string         `gorm:"primaryKey;type:uuid;default:generate_ulid()" json:"node_id"`
-	CreatedAt                time.Time      `gorm:"autoCreateTime:false;default:timezone('utc', now())" json:"created_at"`
-	UpdatedAt                time.Time      `gorm:"autoUpdateTime:false;default:timezone('utc', now())" json:"updated_at"`
-	WorkflowID               string         `gorm:"type:uuid;not null" json:"workflow_id"`
-	Name                     string         `gorm:"type:text;not null" json:"name"`
-	DisplayName              string         `gorm:"type:text;not null" json:"display_name"`
-	Status                   string         `gorm:"type:text;not null;default:'pending'" json:"status"`
-	DependsOn                pq.StringArray `gorm:"type:text[]" json:"depends_on"`
-	Condition                string         `gorm:"type:text;not null;default:'all_success'" json:"condition"`
-	JobID                    *string        `gorm:"type:uuid" json:"job_id"`
-	JobSpec                  JSONB          `gorm:"type:jsonb" json:"job_spec"`
-	ItemIndex                *int           `gorm:"type:integer" json:"item_index"`
-	ItemValue                JSONB          `gorm:"type:jsonb" json:"item_value"`
-	ItemVar                  string         `gorm:"type:text" json:"item_var"`
-	DecisionReason           string         `gorm:"type:text" json:"decision_reason"`
-	CompletedAt              *time.Time     `json:"completed_at"`
-	LastSuccessfulDurationMs *int64         `gorm:"type:bigint" json:"last_successful_duration_ms"`
+	NodeID         string         `gorm:"primaryKey;type:uuid;default:generate_ulid()" json:"node_id"`
+	CreatedAt      time.Time      `gorm:"autoCreateTime:false;default:timezone('utc', now())" json:"created_at"`
+	UpdatedAt      time.Time      `gorm:"autoUpdateTime:false;default:timezone('utc', now())" json:"updated_at"`
+	WorkflowID     string         `gorm:"type:uuid;not null" json:"workflow_id"`
+	Name           string         `gorm:"type:text;not null" json:"name"`
+	DisplayName    string         `gorm:"type:text;not null" json:"display_name"`
+	Status         string         `gorm:"type:text;not null;default:'pending'" json:"status"`
+	DependsOn      pq.StringArray `gorm:"type:text[]" json:"depends_on"`
+	Condition      string         `gorm:"type:text;not null;default:'all_success'" json:"condition"`
+	JobID          *string        `gorm:"type:uuid" json:"job_id"`
+	JobSpec        JSONB          `gorm:"type:jsonb" json:"job_spec"`
+	ItemIndex      *int           `gorm:"type:integer" json:"item_index"`
+	ItemValue      JSONB          `gorm:"type:jsonb" json:"item_value"`
+	ItemVar        string         `gorm:"type:text" json:"item_var"`
+	DecisionReason string         `gorm:"type:text" json:"decision_reason"`
+	// DecisionReasons is the structured form of DecisionReason: why the node
+	// runs, waits or was skipped. DecisionReason is the human summary of the
+	// decision; job lifecycle updates (running, finished) change only the
+	// summary and keep these reasons.
+	DecisionReasons          []DecisionReason `gorm:"type:jsonb;serializer:json" json:"decision_reasons,omitempty"`
+	CompletedAt              *time.Time       `json:"completed_at"`
+	LastSuccessfulDurationMs *int64           `gorm:"type:bigint" json:"last_successful_duration_ms"`
 	// Per-node authority override. Empty values mean the node inherits the
 	// workflow-level authority. Only coordinator policy can set an override.
 	CIOrigin         string  `gorm:"type:text" json:"ci_origin"`

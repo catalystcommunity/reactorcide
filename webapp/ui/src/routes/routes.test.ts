@@ -29,6 +29,8 @@ describe('route table', () => {
     expect(resolveRoute('/jobs/01ABC')).toEqual({ name: 'job', id: '01ABC' })
     expect(resolveRoute('/workflows/w-1')).toEqual({ name: 'workflow', id: 'w-1' })
     expect(resolveRoute('/projects/p-1')).toEqual({ name: 'project', id: 'p-1' })
+    // The "Reactorcide Checks" status links here when an event has several workflows.
+    expect(resolveRoute('/events/e-1')).toEqual({ name: 'event', id: 'e-1' })
     // "new" is a page, not a project id.
     expect(resolveRoute('/projects/new')).toEqual({ name: 'projectNew' })
     expect(resolveRoute('/projects/new/')).toEqual({ name: 'projectNew' })
@@ -38,10 +40,11 @@ describe('route table', () => {
     expect(resolveRoute('/nope').name).toBe('notFound')
     expect(resolveRoute('/jobs/a/b').name).toBe('notFound')
     expect(resolveRoute('/workflows').name).toBe('notFound')
+    expect(resolveRoute('/events').name).toBe('notFound')
   })
 
   it('has a page module for every route name', () => {
-    const names = new Set([...Object.values(STATIC_ROUTES), 'workflow', 'job', 'project', 'notFound'])
+    const names = new Set([...Object.values(STATIC_ROUTES), 'workflow', 'event', 'job', 'project', 'notFound'])
     for (const name of names) expect(PAGES, name).toHaveProperty(name)
   })
 

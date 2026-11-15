@@ -1,0 +1,162 @@
+/* ---------- Decision reasons (Reasons.ts) ---------- */
+.reason-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: var(--space-1);
+  font-size: var(--text-sm);
+}
+.reason {
+  display: grid;
+  grid-template-columns: 1.1em minmax(0, 1fr);
+  column-gap: var(--space-2);
+  align-items: baseline;
+  overflow-wrap: anywhere;
+}
+.reason > :not(.reason-glyph) {
+  grid-column: 2;
+}
+.reason-glyph {
+  font-weight: 700;
+  text-align: center;
+}
+.reason-ok .reason-glyph {
+  color: var(--ok);
+}
+.reason-miss .reason-glyph,
+.reason-miss .reason-text {
+  color: var(--danger);
+}
+.reason-note .reason-glyph {
+  color: var(--text-subtle);
+}
+.reason-files,
+.reason-sub {
+  margin: var(--space-1) 0 0;
+  padding-left: var(--space-4);
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+.reason-files li,
+.reason-sub li {
+  overflow-wrap: anywhere;
+}
+.reason-more {
+  list-style: none;
+}
+.reason-link {
+  font-size: var(--text-xs);
+}
+
+/* ---------- Collapsible sections (native details/summary) ---------- */
+details.disclosure > summary {
+  cursor: pointer;
+  font-weight: 600;
+  list-style-position: outside;
+  margin-left: var(--space-4);
+}
+details.disclosure > summary:focus-visible {
+  outline: 2px solid var(--border-focus);
+  outline-offset: 2px;
+}
+details.disclosure[open] > summary {
+  margin-bottom: var(--space-3);
+}
+details.node-why > summary {
+  cursor: pointer;
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+  margin-top: var(--space-1);
+}
+details.node-why[open] > summary {
+  margin-bottom: var(--space-1);
+}
+
+/* ---------- Event page ---------- */
+.decision-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: var(--space-4);
+}
+.decision-item + .decision-item {
+  border-top: 1px solid var(--border);
+  padding-top: var(--space-4);
+}
+.decision-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  margin-bottom: var(--space-2);
+}
+.decision-name {
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.decision-file {
+  overflow-wrap: anywhere;
+  min-width: 0;
+}
+.changed-files {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  font-size: var(--text-sm);
+}
+.changed-files li {
+  overflow-wrap: anywhere;
+}
+
+/* ---------- Workflow event timeline ---------- */
+.timeline {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: var(--space-2);
+  font-size: var(--text-sm);
+}
+.timeline-item {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  column-gap: var(--space-3);
+}
+.timeline-time {
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+.timeline-body {
+  overflow-wrap: anywhere;
+}
+.timeline-type {
+  font-weight: 600;
+}
+@media (max-width: 480px) {
+  .timeline-item {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* ---------- Schedules ---------- */
+.schedule-error {
+  color: var(--danger);
+  font-size: var(--text-xs);
+  overflow-wrap: anywhere;
+}
+.schedule-form {
+  margin-top: var(--space-5);
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--border);
+}
+.schedule-fires {
+  margin-top: var(--space-4);
+}
+.schedule-actions {
+  display: flex;
+  flex-wrap: nowrap;
+  gap: var(--space-1);
+  white-space: nowrap;
+}

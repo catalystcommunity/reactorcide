@@ -26,19 +26,31 @@ func (u *JobStatusUpdater) UpdateWorkflowStatus(ctx context.Context, wf *models.
 		u.logger.WithField("provider", provider).Debug("No VCS client available for workflow")
 		return nil
 	}
+	// A root workflow of a CI event counts toward the event's "Reactorcide
+	// Checks" status. It posts a status of its own only when its definition
+	// declares one (status.context), which the trigger processor stores in
+	// StatusContext; otherwise StatusContext is empty for it.
+	eventScoped := u.eventScoped(wf.EventID)
 	contextName := wf.StatusContext
-	if contextName == "" {
+	if contextName == "" && !eventScoped {
 		contextName = "Reactorcide Jobs"
 	}
-	update := StatusUpdate{
-		SHA:         wf.CommitSHA,
-		State:       u.mapWorkflowStatusToVCSStatus(wf.Status),
-		TargetURL:   u.getWorkflowURL(wf.WorkflowID),
-		Description: u.getWorkflowStatusDescription(wf, nodes),
-		Context:     contextName,
+	if contextName != "" && contextName != models.CIEventChecksContext {
+		update := StatusUpdate{
+			SHA:         wf.CommitSHA,
+			State:       u.mapWorkflowStatusToVCSStatus(wf.Status),
+			TargetURL:   u.getWorkflowURL(wf.WorkflowID),
+			Description: u.getWorkflowStatusDescription(wf, nodes),
+			Context:     contextName,
+		}
+		if err := client.UpdateCommitStatus(ctx, wf.VCSRepo, update); err != nil {
+			return fmt.Errorf("updating workflow commit status: %w", err)
+		}
 	}
-	if err := client.UpdateCommitStatus(ctx, wf.VCSRepo, update); err != nil {
-		return fmt.Errorf("updating workflow commit status: %w", err)
+	if eventScoped {
+		if err := u.PublishEventChecks(ctx, *wf.EventID); err != nil {
+			u.logger.WithError(err).WithField("event_id", *wf.EventID).Warn("Failed to update event checks status")
+		}
 	}
 	if wf.PRNumber != nil && *wf.PRNumber > 0 {
 		if reports, ok := u.store.(workflowReportStore); ok {
@@ -95,7 +107,9 @@ func (u *JobStatusUpdater) mapWorkflowStatusToVCSStatus(status string) StatusSta
 		return StatusPending
 	case "success", "skipped":
 		return StatusSuccess
-	case "failed":
+	case "failed", "cancelled":
+		// A cancelled workflow did not pass. Before, it fell to pending and
+		// the status stayed pending for ever.
 		return StatusFailure
 	default:
 		return StatusPending
@@ -118,6 +132,8 @@ func (u *JobStatusUpdater) getWorkflowStatusDescription(wf *models.WorkflowInsta
 		return fmt.Sprintf("Workflow passed (%d jobs)", total)
 	case "skipped":
 		return "Workflow skipped"
+	case "cancelled":
+		return "Workflow cancelled"
 	case "failed":
 		if reason := workflowAdmissionReason(nodes); reason != "" {
 			return truncateWorkflowDescription("Workflow not admitted: "+reason, 140)

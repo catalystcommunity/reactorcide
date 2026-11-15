@@ -18,6 +18,7 @@ export const BASE = '/app'
 export type RouteName =
   | 'workflows'
   | 'workflow'
+  | 'event'
   | 'jobs'
   | 'job'
   | 'projects'
@@ -60,6 +61,7 @@ export const STATIC_ROUTES: Readonly<Record<string, RouteName>> = {
 
 const DETAIL_ROUTES: Readonly<Record<string, RouteName>> = {
   '/workflows': 'workflow',
+  '/events': 'event',
   '/jobs': 'job',
   '/projects': 'project',
 }

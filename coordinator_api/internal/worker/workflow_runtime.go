@@ -101,6 +101,13 @@ type workflowTriggerStore interface {
 	CreateWorkflowInstanceForTrigger(ctx context.Context, wf *models.WorkflowInstance) error
 }
 
+// workflowEventLookupStore finds the root workflow an event already created
+// for one workflow security ID. It is separate from workflowTriggerStore so
+// the existing fakes keep compiling; a store without it skips the lookup.
+type workflowEventLookupStore interface {
+	GetRootWorkflowInstanceByEvent(ctx context.Context, eventID, securityID string) (*models.WorkflowInstance, error)
+}
+
 type workflowOutputFile struct {
 	Vars    map[string]interface{} `json:"vars"`
 	Outputs map[string]interface{} `json:"outputs"`
@@ -167,6 +174,18 @@ func (tp *TriggerProcessor) ensureWorkflow(ctx context.Context, parentJob *model
 		securityID := strings.TrimSpace(spec.ID)
 		if securityID == "" {
 			securityID = name
+		}
+		// A root workflow of a CI event is unique per (event, security ID).
+		// A retried eval of the same event is a new job, so the parent-job key
+		// below cannot find what the first eval made; the event key can.
+		if eventID := stringValue(parentJob.EventID); eventID != "" && (parentJob.WorkflowID == nil || *parentJob.WorkflowID == "") {
+			if es, ok := tp.store.(workflowEventLookupStore); ok {
+				if existing, err := es.GetRootWorkflowInstanceByEvent(ctx, eventID, securityID); err == nil && existing != nil {
+					return existing, nil
+				} else if err != nil && !errors.Is(err, store.ErrNotFound) {
+					return nil, err
+				}
+			}
 		}
 		if ts, ok := tp.store.(workflowTriggerStore); ok {
 			if existing, err := ts.GetWorkflowInstanceByTriggerOperation(ctx, parentJob.JobID, spec.OperationID, securityID); err == nil && existing != nil {
@@ -250,9 +269,21 @@ func (tp *TriggerProcessor) ensureWorkflow(ctx context.Context, parentJob *model
 			wf.PRNumber = rootWorkflow.PRNumber
 			wf.CommitSHA = rootWorkflow.CommitSHA
 		}
+		wf.EventID = parentWorkflow.EventID
 	} else {
 		wf.OriginJobID = &parentJobID
 		wf.OriginType = string(workflowEventType(parentJob))
+		wf.EventID = parentJob.EventID
+	}
+
+	// A root workflow of a CI event posts no commit status of its own: the
+	// event's "Reactorcide Checks" status covers it. It posts an extra status
+	// only when its definition declares status.context.
+	if wf.ParentWorkflowID == nil && stringValue(wf.EventID) != "" {
+		wf.StatusContext = ""
+		if spec != nil {
+			wf.StatusContext = workflowStatusContext(spec.StatusContext)
+		}
 	}
 
 	if metadata, err := vcs.MetadataFromJob(parentJob); err == nil && metadata != nil {
@@ -295,6 +326,25 @@ func (tp *TriggerProcessor) ensureWorkflow(ctx context.Context, parentJob *model
 		"trigger_operation_id": wf.TriggerOperationID,
 	})
 	return wf, nil
+}
+
+// maxWorkflowStatusContext bounds a workflow's extra status context.
+const maxWorkflowStatusContext = 100
+
+// workflowStatusContext validates a declared extra status context. An
+// invalid value is dropped with a warning, so the workflow still runs and
+// still counts toward the event's checks; runnerlib rejects the same values
+// when it parses the definition.
+func workflowStatusContext(raw string) string {
+	value := strings.TrimSpace(raw)
+	if value == "" {
+		return ""
+	}
+	if len(value) > maxWorkflowStatusContext || value == models.CIEventChecksContext {
+		logging.Log.WithField("status_context", value).Warn("Ignoring invalid workflow status context")
+		return ""
+	}
+	return value
 }
 
 // workflowEventType returns the generic VCS event that spawned the workflow,
@@ -462,6 +512,24 @@ func (tp *TriggerProcessor) createWorkflowNode(ctx context.Context, wf *models.W
 			node.LastSuccessfulDurationMs = duration
 		}
 	}
+	if len(spec.DecisionReasons) > 0 {
+		node.DecisionReasons = append([]models.DecisionReason(nil), spec.DecisionReasons...)
+	}
+	if spec.Skip {
+		// The job's `if:` is false for this event: the node is skipped from
+		// the start, and its dependents follow the normal condition rules.
+		now := time.Now().UTC()
+		node.Status = "skipped"
+		node.CompletedAt = &now
+		node.DecisionReason = "skipped by if: " + models.SummarizeDecisionReasons(failedReasons(node.DecisionReasons))
+		if err := ws.CreateWorkflowNode(ctx, node); err != nil {
+			return err
+		}
+		tp.recordWorkflowEvent(ctx, wf.WorkflowID, &node.NodeID, nil, "node_skipped", node.DecisionReason, models.JSONB{
+			"name": node.DisplayName,
+		})
+		return nil
+	}
 	if err := ws.CreateWorkflowNode(ctx, node); err != nil {
 		return err
 	}
@@ -513,7 +581,8 @@ func (a *coordinatorWorkflowEngineAdapter) ApplyDecision(ctx context.Context, de
 	switch decision.Action {
 	case workflowengine.ActionWait:
 		node.Status = "waiting"
-		node.DecisionReason = decision.Reason
+		node.DecisionReasons = nodeDecisionReasons(node, decision.Dependency)
+		node.DecisionReason = models.SummarizeDecisionReasons(node.DecisionReasons)
 		if err := a.store.UpdateWorkflowNode(ctx, node); err != nil {
 			return err
 		}
@@ -521,7 +590,8 @@ func (a *coordinatorWorkflowEngineAdapter) ApplyDecision(ctx context.Context, de
 	case workflowengine.ActionSkip:
 		now := time.Now().UTC()
 		node.Status = "skipped"
-		node.DecisionReason = decision.Reason
+		node.DecisionReasons = nodeDecisionReasons(node, decision.Dependency)
+		node.DecisionReason = "skipped: " + models.SummarizeDecisionReasons(failedReasons(node.DecisionReasons))
 		node.CompletedAt = &now
 		if err := a.store.UpdateWorkflowNode(ctx, node); err != nil {
 			return err
@@ -536,6 +606,7 @@ func (a *coordinatorWorkflowEngineAdapter) Start(ctx context.Context, decision w
 	if node == nil {
 		return fmt.Errorf("workflow node %q was not found", decision.NodeID)
 	}
+	node.DecisionReasons = nodeDecisionReasons(node, decision.Dependency)
 	jobID, err := a.tp.submitWorkflowNode(ctx, a.wf, node)
 	if err != nil {
 		disposition := ""
@@ -557,6 +628,10 @@ func (a *coordinatorWorkflowEngineAdapter) Start(ctx context.Context, decision w
 		node.Status = "failed"
 		node.CompletedAt = &now
 		node.DecisionReason = fmt.Sprintf("%s: %v", decisionPrefix, err)
+		no := false
+		node.DecisionReasons = append(node.DecisionReasons, models.DecisionReason{
+			Kind: "admission", Matched: &no, Value: disposition, Detail: node.DecisionReason,
+		})
 		if updateErr := a.store.UpdateWorkflowNode(ctx, node); updateErr != nil {
 			return fmt.Errorf("%v; failed to record workflow node failure: %w", err, updateErr)
 		}
@@ -698,6 +773,8 @@ func (tp *TriggerProcessor) submitWorkflowNode(ctx context.Context, wf *models.W
 	runID := uuid.New().String()
 	job.WorkflowRunID = &runID
 	job.WorkflowNodeName = node.DisplayName
+	// Every job of an event's workflows carries the event.
+	job.EventID = wf.EventID
 	if err := tp.resolveJobQueue(ctx, job); err != nil {
 		return "", err
 	}
@@ -708,6 +785,9 @@ func (tp *TriggerProcessor) submitWorkflowNode(ctx context.Context, wf *models.W
 	node.JobID = &job.JobID
 	node.Status = "submitted"
 	node.DecisionReason = "dependencies satisfied and condition true"
+	if len(node.DecisionReasons) > 0 {
+		node.DecisionReason = "submitted: " + models.SummarizeDecisionReasons(node.DecisionReasons)
+	}
 	if err := ws.UpdateWorkflowNode(ctx, node); err != nil {
 		return "", err
 	}
@@ -1124,4 +1204,59 @@ func derefString(s *string) string {
 		return ""
 	}
 	return *s
+}
+
+// nodeDecisionReasons combines the job's `if:` reasons (recorded by the eval
+// in the node's job spec) with the dependency outcome of the current
+// decision. The `if:` reasons come first: they say why the job is part of
+// this run at all; the dependency reason says why it runs, waits or is
+// skipped now.
+func nodeDecisionReasons(node *models.WorkflowNode, dependency workflowengine.DependencyReason) []models.DecisionReason {
+	reasons := nodeIfReasons(node)
+	return append(reasons, dependencyDecisionReason(dependency))
+}
+
+// nodeIfReasons reads the eval's `if:` reasons from a node's job spec.
+func nodeIfReasons(node *models.WorkflowNode) []models.DecisionReason {
+	raw, ok := node.JobSpec["decision_reasons"]
+	if !ok || raw == nil {
+		return nil
+	}
+	data, err := json.Marshal(raw)
+	if err != nil {
+		return nil
+	}
+	var reasons []models.DecisionReason
+	if json.Unmarshal(data, &reasons) != nil {
+		return nil
+	}
+	return reasons
+}
+
+func dependencyDecisionReason(dependency workflowengine.DependencyReason) models.DecisionReason {
+	reason := models.DecisionReason{
+		Kind:      "dependency",
+		Matched:   dependency.Matched,
+		Condition: dependency.Condition,
+		Detail:    dependency.Detail,
+	}
+	for _, dep := range dependency.Deps {
+		reason.Deps = append(reason.Deps, models.DependencyOutcome{Name: dep.Name, Status: dep.Status})
+	}
+	return reason
+}
+
+// failedReasons keeps the reasons whose check failed, so a skip summary names
+// what made the node skip. With no failed reason it returns all of them.
+func failedReasons(reasons []models.DecisionReason) []models.DecisionReason {
+	var failed []models.DecisionReason
+	for _, reason := range reasons {
+		if reason.Matched != nil && !*reason.Matched {
+			failed = append(failed, reason)
+		}
+	}
+	if len(failed) == 0 {
+		return reasons
+	}
+	return failed
 }

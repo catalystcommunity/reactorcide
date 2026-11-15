@@ -214,6 +214,43 @@ func BuildEvalJob(project *models.Project, event *vcs.WebhookEvent) *models.Job 
 	return job
 }
 
+// useEventCIWithoutPolicy makes an eval of a project with NO stored CI policy
+// run CI without any gate: the project's configured CI source when one is
+// set (BuildEvalJob already chose it), else the event's own commit, so that
+// everyone can develop CI changes on a branch or in a pull request.
+//
+// A fork pull request still uses the trusted base: fork content is never the
+// CI source (AGENTS.md). A merged pull request already uses the merge commit.
+func useEventCIWithoutPolicy(job *models.Job, project *models.Project, event *vcs.WebhookEvent) {
+	if project.DefaultCISourceURL != "" {
+		return
+	}
+	var ref string
+	switch {
+	case event.GenericEvent == vcs.EventPullRequestMerged:
+		return
+	case event.PullRequest != nil:
+		if job.JobEnvVars["REACTORCIDE_IS_FORK_PR"] == "true" {
+			return
+		}
+		ref = event.PullRequest.HeadSHA
+	case event.Push != nil:
+		ref = event.Push.After
+		// No base/head comparison: there is no policy to decide between them.
+		delete(job.JobEnvVars, "REACTORCIDE_EVAL_DUAL_CI")
+		delete(job.JobEnvVars, "REACTORCIDE_HEAD_URL")
+		delete(job.JobEnvVars, "REACTORCIDE_HEAD_REPOSITORY")
+	default:
+		return
+	}
+	if ref == "" {
+		return
+	}
+	job.CISourceRef = &ref
+	job.CISHA = ref
+	job.JobEnvVars["REACTORCIDE_CI_SOURCE_REF"] = ref
+}
+
 // pushCIBaseRef returns the trusted CI revision for a push: the commit the
 // branch pointed at before the push. A new branch or a tag has no previous
 // commit, so it uses the repository's default branch. With neither, it

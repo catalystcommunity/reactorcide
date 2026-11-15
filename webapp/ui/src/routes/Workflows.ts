@@ -103,7 +103,10 @@ function createRow(): HTMLTableRowElement {
 
 function updateRow(row: HTMLTableRowElement, workflow: WorkflowRow): void {
   const link = row.querySelector<HTMLAnchorElement>('.wf-link')!
-  setAttr(link, 'href', href(`/workflows/${workflow.workflowId}`))
+  // An eval that made zero or several workflows is a loose job row. Its event
+  // page lists every workflow decision, which is what that row stands for.
+  const toEvent = workflow.kind === 'job' && workflow.eventId
+  setAttr(link, 'href', href(toEvent ? `/events/${workflow.eventId}` : `/workflows/${workflow.workflowId}`))
   setText(link, workflow.name)
   const commit = row.querySelector<HTMLElement>('.wf-commit')!
   show(commit, workflow.commitSha)

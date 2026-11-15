@@ -45,7 +45,15 @@ const (
 	// fireTimeout bounds one Fire call, so one stuck VCS call does not stop
 	// the loop.
 	fireTimeout = 2 * time.Minute
+	// StaleFireAfter is how long a fire may stay "firing" before the
+	// scheduler marks it failed. A fire takes at most fireTimeout, so a row
+	// this old belongs to a coordinator that stopped between claim and
+	// result. The fire is not retried: exactly-once wins over at-least-once.
+	StaleFireAfter = 10 * time.Minute
 )
+
+// StaleFireMessage is the error recorded on a fire the sweep fails.
+const StaleFireMessage = "coordinator stopped during fire"
 
 // Scheduler fires due schedules.
 type Scheduler struct {
@@ -86,6 +94,13 @@ func (s *Scheduler) RunOnce(ctx context.Context) (int, error) {
 	batch := s.Batch
 	if batch <= 0 {
 		batch = DefaultBatch
+	}
+	if maintenance, ok := s.Store.(store.ScheduleMaintenanceStore); ok {
+		if failed, err := maintenance.FailStaleScheduleFires(ctx, StaleFireAfter, StaleFireMessage); err != nil {
+			logging.Log.WithError(err).Warn("failed to sweep stale schedule fires")
+		} else if failed > 0 {
+			logging.Log.WithField("count", failed).Warn("marked stale schedule fires failed")
+		}
 	}
 	total := 0
 	for {

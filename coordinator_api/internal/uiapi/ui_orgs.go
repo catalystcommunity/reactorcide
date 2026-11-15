@@ -29,7 +29,8 @@ func (s *UiService) organizationStore() (uiOrganizationStore, error) {
 
 func orgSummary(org *models.Organization, defaultOrg *models.Organization) csilapi.OrgSummary {
 	return csilapi.OrgSummary{OrgId: org.OrgID, Name: org.Name, DisplayName: org.DisplayName, Status: org.Status,
-		IsDefault: defaultOrg != nil && defaultOrg.OrgID == org.OrgID, IsPrivate: org.IsPrivate}
+		IsDefault: defaultOrg != nil && defaultOrg.OrgID == org.OrgID, IsPrivate: org.IsPrivate,
+		DuplicateEvents: optionalText(org.DuplicateEvents), DynamicJobs: optionalText(org.DynamicJobs)}
 }
 
 func (s *UiService) CreateOrg(ctx context.Context, req csilapi.CreateOrgRequest) (csilapi.CreateOrgResponse, error) {
@@ -76,8 +77,15 @@ func (s *UiService) UpdateOrg(ctx context.Context, req csilapi.UpdateOrgRequest)
 	if req.Status != nil {
 		org.Status = *req.Status
 	}
+	settingsChanged, err := applyOrgEventSettings(org, req.DuplicateEvents, req.DynamicJobs)
+	if err != nil {
+		return csilapi.UpdateOrgResponse{}, err
+	}
 	if err := value.UpdateOrganization(ctx, org); err != nil {
 		return csilapi.UpdateOrgResponse{}, mapStoreErr(err, "organization could not be updated")
+	}
+	if settingsChanged != nil {
+		s.recordAudit(ctx, org.OrgID, "organization.event_settings", "organization", org.Name, settingsChanged)
 	}
 	s.recordAudit(ctx, org.OrgID, "organization.update", "organization", org.Name, models.JSONB{"status": org.Status})
 	defaultOrg, _ := value.GetDefaultOrganization(ctx)
