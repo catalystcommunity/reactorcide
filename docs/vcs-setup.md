@@ -300,6 +300,12 @@ Confirm that the VCS token can write commit status and comments. Confirm that
 `vcs.baseURL` or `REACTORCIDE_VCS_BASE_URL` contains the public Reactorcide
 URL.
 
+Reactorcide posts one status per event, with the context
+`Reactorcide Checks`. Set branch protection to require this context. Do not
+require `reactorcide/eval`, workflow names, or `Reactorcide CI Policy`. New
+events do not post these contexts. See
+[Events, Checks, and Schedules](./events-and-schedules.md).
+
 ## Add a VCS Provider
 
 New provider support requires a pull request. Implement it in

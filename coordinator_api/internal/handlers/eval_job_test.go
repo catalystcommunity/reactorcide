@@ -50,7 +50,7 @@ func TestBuildEvalJob_PROpened(t *testing.T) {
 
 	// Job metadata
 	assert.Equal(t, "proj-123", *job.ProjectID)
-	assert.Equal(t, "eval: PR #42 opened on org/repo", job.Name)
+	assert.Equal(t, "Eval event pull_request #42 opened on org/repo", job.Name)
 	assert.Contains(t, job.Description, "pull_request_opened")
 
 	// Source (untrusted code)
@@ -220,7 +220,7 @@ func TestBuildEvalJob_PRUpdated(t *testing.T) {
 
 	job := BuildEvalJob(project, event)
 
-	assert.Equal(t, "eval: PR #42 updated on org/repo", job.Name)
+	assert.Equal(t, "Eval event pull_request #42 updated on org/repo", job.Name)
 	assert.Equal(t, "pull_request_updated", job.JobEnvVars["REACTORCIDE_EVENT_TYPE"])
 	assert.Equal(t, "newsha999", *job.SourceRef)
 	assert.Equal(t, 10, job.Priority)
@@ -253,7 +253,7 @@ func TestBuildEvalJob_PRMerged(t *testing.T) {
 
 	job := BuildEvalJob(project, event)
 
-	assert.Equal(t, "eval: PR #10 merged on org/repo", job.Name)
+	assert.Equal(t, "Eval event pull_request #10 merged on org/repo", job.Name)
 	assert.Equal(t, "pull_request_merged", job.JobEnvVars["REACTORCIDE_EVENT_TYPE"])
 	assert.Equal(t, "target-merge-sha", *job.SourceRef)
 	assert.Equal(t, "target-merge-sha", *job.CISourceRef)
@@ -284,7 +284,7 @@ func TestBuildEvalJob_PRClosed(t *testing.T) {
 
 	job := BuildEvalJob(project, event)
 
-	assert.Equal(t, "eval: PR #10 closed on org/repo", job.Name)
+	assert.Equal(t, "Eval event pull_request #10 closed on org/repo", job.Name)
 	assert.Equal(t, "pull_request_closed", job.JobEnvVars["REACTORCIDE_EVENT_TYPE"])
 }
 
@@ -311,7 +311,7 @@ func TestBuildEvalJob_PushEvent(t *testing.T) {
 	job := BuildEvalJob(project, event)
 
 	// Job metadata
-	assert.Equal(t, "eval: push to main (after12) on org/repo", job.Name)
+	assert.Equal(t, "Eval event push main (after12) on org/repo", job.Name)
 	assert.Contains(t, job.Description, "push")
 
 	// Source
@@ -356,7 +356,7 @@ func TestBuildEvalJob_TagCreated(t *testing.T) {
 
 	job := BuildEvalJob(project, event)
 
-	assert.Equal(t, "eval: push to v1.0.0 (tagsha1) on org/repo", job.Name)
+	assert.Equal(t, "Eval event tag v1.0.0 (tagsha1) on org/repo", job.Name)
 	assert.Equal(t, "tag_created", job.JobEnvVars["REACTORCIDE_EVENT_TYPE"])
 	assert.Equal(t, "v1.0.0", job.JobEnvVars["REACTORCIDE_BRANCH"])
 	assert.Equal(t, "tagsha1234567890", job.JobEnvVars["REACTORCIDE_SHA"])

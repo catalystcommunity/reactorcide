@@ -25,8 +25,12 @@ type Organization struct {
 	// DuplicateEvents decides whether a second delivery of the same change
 	// (same repo, event type, ref, commit and PR) runs again: "run" or "skip".
 	DuplicateEvents string `gorm:"type:text;not null;default:'run'" json:"duplicate_events"`
-	CreatedAt            time.Time  `gorm:"autoCreateTime:false;default:timezone('utc', now())" json:"created_at"`
-	UpdatedAt            time.Time  `gorm:"autoUpdateTime:false;default:timezone('utc', now())" json:"updated_at"`
+	// DynamicJobs decides whether running jobs may create jobs at runtime
+	// (runnerlib trigger): "allow" or "deny". The eval result is not a
+	// dynamic job.
+	DynamicJobs string    `gorm:"type:text;not null;default:'allow'" json:"dynamic_jobs"`
+	CreatedAt   time.Time `gorm:"autoCreateTime:false;default:timezone('utc', now())" json:"created_at"`
+	UpdatedAt   time.Time `gorm:"autoUpdateTime:false;default:timezone('utc', now())" json:"updated_at"`
 }
 
 func (Organization) TableName() string { return "organizations" }

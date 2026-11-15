@@ -65,6 +65,23 @@ type CIEvent struct {
 	IdempotencyKey     *string        `gorm:"type:text" json:"-"`
 	SemanticKey        string         `gorm:"type:text;not null;default:''" json:"-"`
 	Summary            CIEventSummary `gorm:"type:jsonb;serializer:json;not null" json:"summary"`
+	// The last published "Reactorcide Checks" commit status of this event.
+	ChecksState          string     `gorm:"type:text;not null;default:''" json:"checks_state,omitempty"`
+	ChecksDescription    string     `gorm:"type:text;not null;default:''" json:"checks_description,omitempty"`
+	ChecksTargetURL      string     `gorm:"type:text;not null;default:''" json:"checks_target_url,omitempty"`
+	ChecksPublishedAt    *time.Time `json:"checks_published_at,omitempty"`
+	PolicyViolationCount int        `gorm:"not null;default:0" json:"policy_violation_count"`
+}
+
+// CIEventChecksContext is the commit status context of a CI event's aggregate
+// result. Branch protection requires this one name.
+const CIEventChecksContext = "Reactorcide Checks"
+
+// CIEventChecks is one computed or published state of an event's checks.
+type CIEventChecks struct {
+	State       string
+	Description string
+	TargetURL   string
 }
 
 func (CIEvent) TableName() string { return "ci_events" }
@@ -110,6 +127,23 @@ type DecisionReason struct {
 	WorkerClass    string   `json:"worker_class,omitempty"`
 	PolicyRevision string   `json:"policy_revision,omitempty"`
 	Reasons        []string `json:"reasons,omitempty"`
+	// Condition and Deps describe a node's dependency outcome (kind
+	// "dependency").
+	Condition string              `json:"condition,omitempty"`
+	Deps      []DependencyOutcome `json:"deps,omitempty"`
+	// Required is set for kind "schedule": true means only on schedule
+	// events, false means never on schedule events.
+	Required *bool `json:"required,omitempty"`
+	// ScheduleID and FireTime are set for kind "schedule" on a workflow that
+	// a schedule fired (Value is the cron expression).
+	ScheduleID string `json:"schedule_id,omitempty"`
+	FireTime   string `json:"fire_time,omitempty"`
+}
+
+// DependencyOutcome is the status of one dependency instance of a node.
+type DependencyOutcome struct {
+	Name   string `json:"name"`
+	Status string `json:"status"`
 }
 
 // CIEventWorkflowDecision is the eval's decision for one workflow definition.
@@ -146,6 +180,9 @@ func (p *Project) BeforeSave(*gorm.DB) error {
 	if p.DuplicateEvents == "" {
 		p.DuplicateEvents = DuplicateEventsInherit
 	}
+	if p.DynamicJobs == "" {
+		p.DynamicJobs = DynamicJobsInherit
+	}
 	return nil
 }
 
@@ -153,6 +190,9 @@ func (p *Project) BeforeSave(*gorm.DB) error {
 func (o *Organization) BeforeSave(*gorm.DB) error {
 	if o.DuplicateEvents == "" {
 		o.DuplicateEvents = DuplicateEventsRun
+	}
+	if o.DynamicJobs == "" {
+		o.DynamicJobs = DynamicJobsAllow
 	}
 	return nil
 }

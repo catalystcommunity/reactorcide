@@ -34,6 +34,11 @@ const PRESENTATION: Record<string, Presentation> = {
   success: { tone: 'ok', glyph: '✓', label: 'succeeded' },
   skipped: { tone: 'neutral', glyph: '⊝', label: 'skipped' },
 
+  // Events
+  received: { tone: 'warn', glyph: '◔', label: 'received' },
+  evaluated: { tone: 'ok', glyph: '✓', label: 'evaluated' },
+  duplicate: { tone: 'neutral', glyph: '⧉', label: 'duplicate' },
+
   // Nodes
   pending: { tone: 'neutral', glyph: '○', label: 'pending' },
   waiting: { tone: 'neutral', glyph: '○', label: 'waiting' },

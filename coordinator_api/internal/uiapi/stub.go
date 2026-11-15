@@ -404,3 +404,7 @@ func (StubUi) DeleteSchedule(ctx context.Context, req csilapi.DeleteScheduleRequ
 func (StubUi) ListScheduleFires(ctx context.Context, req csilapi.ListScheduleFiresRequest) (csilapi.ListScheduleFiresResponse, error) {
 	return csilapi.ListScheduleFiresResponse{}, ErrUnimplemented("ReactorcideUi/list-schedule-fires")
 }
+
+func (StubUi) GetEvent(ctx context.Context, req csilapi.GetEventRequest) (csilapi.GetEventResponse, error) {
+	return csilapi.GetEventResponse{}, ErrUnimplemented("ReactorcideUi/get-event")
+}

@@ -153,7 +153,7 @@ func TestSelectPolicyCandidatesAppliesCoordinatorAuthority(t *testing.T) {
 	}
 	tp := NewTriggerProcessor(processorStore, nil)
 	candidates := mixedTrustCandidates()
-	selected, violations, err := tp.selectPolicyCandidates(context.Background(), parent, candidates, []string{".reactorcide/workflows/pr.yaml"})
+	selected, violations, _, err := tp.selectPolicyCandidates(context.Background(), parent, candidates, []string{".reactorcide/workflows/pr.yaml"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -197,7 +197,7 @@ func TestSelectPolicyCandidatesLoadsApprovalForExactTarget(t *testing.T) {
 	processorStore := &multiProfileStore{workflowRuntimeStore: newWorkflowRuntimeStore(), profiles: mixedTrustProfiles(), approvals: []models.CIApproval{approval}}
 	tp := NewTriggerProcessor(processorStore, nil)
 
-	selected, violations, err := tp.selectPolicyCandidates(context.Background(), parent, mixedTrustCandidates(), []string{".reactorcide/workflows/pr.yaml"})
+	selected, violations, _, err := tp.selectPolicyCandidates(context.Background(), parent, mixedTrustCandidates(), []string{".reactorcide/workflows/pr.yaml"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -206,7 +206,7 @@ func TestSelectPolicyCandidatesLoadsApprovalForExactTarget(t *testing.T) {
 	}
 
 	processorStore.approvals[0].HeadRepository = "fork/repo"
-	selected, violations, err = tp.selectPolicyCandidates(context.Background(), parent, mixedTrustCandidates(), []string{".reactorcide/workflows/pr.yaml"})
+	selected, violations, _, err = tp.selectPolicyCandidates(context.Background(), parent, mixedTrustCandidates(), []string{".reactorcide/workflows/pr.yaml"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -224,7 +224,7 @@ func TestSelectPolicyCandidatesRejectsChangedPolicySnapshotRevision(t *testing.T
 		t.Fatal(err)
 	}
 
-	_, _, err := NewTriggerProcessor(newWorkflowRuntimeStore(), nil).selectPolicyCandidates(
+	_, _, _, err := NewTriggerProcessor(newWorkflowRuntimeStore(), nil).selectPolicyCandidates(
 		context.Background(), parent, &policyCandidateSet{}, []string{".reactorcide/workflows/pr.yaml"},
 	)
 	if err == nil || !strings.Contains(err.Error(), "snapshot failed integrity validation") {
@@ -610,7 +610,7 @@ func TestSelectPolicyCandidatesIgnoresWhetherTheWorkflowIDWasExplicit(t *testing
 			}
 			tp := NewTriggerProcessor(processorStore, nil)
 
-			selected, violations, err := tp.selectPolicyCandidates(
+			selected, violations, _, err := tp.selectPolicyCandidates(
 				context.Background(), parent, candidates,
 				[]string{".reactorcide/workflows/pr.yaml"},
 			)
@@ -653,7 +653,7 @@ func TestSelectPolicyCandidatesStillRefusesUnmatchedActor(t *testing.T) {
 	}
 	tp := NewTriggerProcessor(processorStore, nil)
 
-	selected, _, err := tp.selectPolicyCandidates(
+	selected, _, _, err := tp.selectPolicyCandidates(
 		context.Background(), parent, derivedIDCandidates(),
 		[]string{".reactorcide/workflows/pr.yaml"},
 	)

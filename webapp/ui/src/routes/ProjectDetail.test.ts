@@ -34,6 +34,7 @@ vi.mock('~/api/client.ts', async (importOriginal) => {
       deactivateVcsCredential: vi.fn(),
       deleteVcsCredential: vi.fn(),
       updateProject: vi.fn(),
+      listSchedules: vi.fn(async () => ({ schedules: [] })),
     },
   }
 })
@@ -133,7 +134,7 @@ function control<T extends Element>(card: HTMLElement, selector: string, label: 
   return match as T
 }
 
-const CARDS = ['Access', 'Webhook secrets', 'VCS credentials', 'Settings', 'Visibility']
+const CARDS = ['Access', 'Webhook secrets', 'VCS credentials', 'Settings', 'Visibility', 'Events', 'Schedules']
 
 describe('ProjectDetail management cards', () => {
   beforeEach(() => {

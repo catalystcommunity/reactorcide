@@ -77,6 +77,10 @@ type Project struct {
 	// DuplicateEvents overrides the organization setting: "inherit", "run" or
 	// "skip".
 	DuplicateEvents string `gorm:"type:text;not null;default:'inherit'" json:"duplicate_events,omitempty"`
+
+	// DynamicJobs overrides the organization setting: "inherit", "allow" or
+	// "deny".
+	DynamicJobs string `gorm:"type:text;not null;default:'inherit'" json:"dynamic_jobs,omitempty"`
 }
 
 // TableName specifies the table name for the model

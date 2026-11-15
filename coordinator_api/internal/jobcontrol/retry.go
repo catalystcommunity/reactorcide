@@ -135,6 +135,7 @@ func RetryJob(ctx context.Context, st store.Store, corndogsClient corndogs.Clien
 	if err := st.CreateJob(ctx, newJob); err != nil {
 		return nil, fmt.Errorf("failed to create retried job: %w", err)
 	}
+	relinkRetriedEvalEvent(ctx, st, job, newJob)
 
 	if corndogsClient != nil {
 		payload := worker.BuildTaskPayload(newJob)
@@ -409,8 +410,11 @@ func cloneJobForRetry(original *models.Job) *models.Job {
 
 		Name:        original.Name,
 		Description: original.Description,
-		JobFile:     original.JobFile,
-		Notes:       original.Notes,
+		// A retry serves the same CI event. A retried eval therefore uses the
+		// same trigger operation ID and reuses the event's workflows.
+		EventID: cloneStringPtr(original.EventID),
+		JobFile: original.JobFile,
+		Notes:   original.Notes,
 
 		SourceURL:  cloneStringPtr(original.SourceURL),
 		SourceRef:  cloneStringPtr(original.SourceRef),

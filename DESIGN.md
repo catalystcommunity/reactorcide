@@ -246,14 +246,21 @@ operation ID. A root workflow does not set `root_workflow_id`. Each child sets
 root row.
 
 The coordinator calculates the root status from all nodes in the workflow
-graph. Only the root workflow publishes the aggregate VCS status. The root
+graph. The event aggregates its root workflows into one VCS status,
+`Reactorcide Checks`. The root
 status stays pending while a node in the graph is not complete. A failed or
 timed-out node fails the root. The root can report success only after all
 required nodes in the graph complete successfully.
 
 Runnerlib adds an operation ID to each trigger request. The coordinator uses
 this ID with the parent job and workflow name to process a repeated request
-only one time.
+only one time. For an eval job, the operation ID is the event ID. Thus a
+retried eval cannot create a second copy of a workflow.
+
+A job can have an `if` block with declarative predicates. A job whose `if` is
+false becomes a skipped node. Each node stores structured decision reasons.
+Runtime triggers from a running job (dynamic jobs) are allowed unless the
+organization or project `dynamic_jobs` setting denies them.
 
 Supported dependency conditions are:
 
@@ -262,6 +269,21 @@ Supported dependency conditions are:
 - `always`
 
 See [Workflow Design](./docs/workflow-design.md).
+
+## Event Model
+
+The coordinator records each webhook delivery, schedule fire, and manual eval
+submit as an event (`ci_events`) before it starts work. The delivery ID makes a
+redelivery a no-op. The `duplicate_events` setting controls a new delivery of
+the same event. Each event starts one eval job named `Eval event ...`. The eval
+job reports a decision with structured reasons for each workflow file. The
+coordinator stores the decisions and creates the workflows that must run.
+
+Schedules are coordinator records that point to a workflow definition on a
+branch. One replica runs the scheduler under a database lease. A unique fire
+row makes each fire occur one time.
+
+See [Events, Checks, and Schedules](./docs/events-and-schedules.md).
 
 ## VCS Model
 
@@ -285,6 +307,7 @@ Supported generic events are:
 - `pull_request_merged`
 - `pull_request_closed`
 - `tag_created`
+- `schedule` (from a coordinator schedule, not from a provider)
 
 Projects select accepted events and target branches. A project can use
 provider-specific secret references for webhook validation and API access.
@@ -386,7 +409,12 @@ can submit triggers only for its parent job.
 
 ## CI Admission and Reports
 
-For a pull request, the evaluator prepares exact base and head views. The
+CI policy applies only when the project stores a policy. Without one, the
+eval runs the project's configured CI source, or the CI code of the event's
+own commit (a fork pull request still uses the base). With a stored policy,
+for a pull request or a push that changes `.reactorcide/`, the evaluator
+prepares exact base and head views. For a push, the base is the `before`
+commit. The
 coordinator gives it an exact policy snapshot, revision, and active approval
 snapshot. Triggered jobs inherit these values. Runnerlib does not evaluate
 this policy. The `isolated` checkout mode uses separate Git clones.
@@ -415,8 +443,8 @@ The coordinator processes each workflow from an evaluation result as an
 independent transaction. It publishes the workflow VCS status after the
 transaction commits. A profile refusal creates a durable `not_admitted`
 workflow outcome with the exact reason. It does not stop sibling workflows.
-The CI policy status can remain successful because policy selection and
-workflow admission are different decisions.
+The event status `Reactorcide Checks` fails for a refused workflow and for a
+refusal by a stored policy.
 
 ## Source of Truth
 

@@ -23,6 +23,19 @@ func (u *JobStatusUpdater) UpdateCIPolicyStatus(ctx context.Context, job *models
 	if err != nil || metadata == nil || metadata.CommitSHA == "" {
 		return err
 	}
+	if u.eventScoped(job.EventID) {
+		// The refusal count fails the event's "Reactorcide Checks" status;
+		// no separate policy context is posted.
+		if checks, _, ok := u.eventChecksStores(); ok {
+			if err := checks.SetCIEventPolicyViolationCount(ctx, *job.EventID, len(violations)); err != nil {
+				return err
+			}
+		}
+		if err := u.upsertCIPolicyReport(ctx, job, metadata, violations); err != nil {
+			return err
+		}
+		return u.PublishEventChecks(ctx, *job.EventID)
+	}
 	client := u.getClientForJob(ctx, job, Provider(metadata.VCSProvider))
 	if client == nil {
 		return nil
@@ -37,6 +50,12 @@ func (u *JobStatusUpdater) UpdateCIPolicyStatus(ctx context.Context, job *models
 		TargetURL: u.getJobURL(job.JobID), Description: description, Context: "Reactorcide CI Policy"}); err != nil {
 		return err
 	}
+	return u.upsertCIPolicyReport(ctx, job, metadata, violations)
+}
+
+// upsertCIPolicyReport adds or replaces the policy section of the PR report
+// comment. It does nothing outside a pull request.
+func (u *JobStatusUpdater) upsertCIPolicyReport(ctx context.Context, job *models.Job, metadata *JobMetadata, violations []CIPolicyViolation) error {
 	if metadata.PRNumber <= 0 || u.store == nil {
 		return nil
 	}
@@ -218,6 +237,23 @@ func (u *JobStatusUpdater) UpdateJobStatus(ctx context.Context, job *models.Job)
 	var metadata JobMetadata
 	if err := json.Unmarshal([]byte(job.Notes), &metadata); err != nil {
 		u.logger.WithError(err).Debug("Job has no VCS metadata, skipping status update")
+		return nil
+	}
+
+	// A job of a CI event has no status context of its own. The eval job's
+	// state feeds the event's "Reactorcide Checks" status, and a workflow
+	// node is covered by its workflow, which also feeds that status.
+	if u.eventScoped(job.EventID) {
+		if job.WorkflowNodeID != nil {
+			return nil
+		}
+		if metadata.IsEval {
+			return u.PublishEventChecks(ctx, *job.EventID)
+		}
+		// Any other job of an event (for example a dynamic job created
+		// outside a workflow) posts nothing: the event's "Reactorcide
+		// Checks" is the only status of an event. A per-job context here
+		// would be the legacy behavior the event model replaces.
 		return nil
 	}
 

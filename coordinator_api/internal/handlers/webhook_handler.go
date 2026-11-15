@@ -170,7 +170,9 @@ func (h *WebhookHandler) startVCSReportGeneration(ctx context.Context, job *mode
 	return nil
 }
 
-func (h *WebhookHandler) attachCIEvaluationFacts(ctx context.Context, job *models.Job, project *models.Project, event *vcs.WebhookEvent, client vcs.Client) {
+// attachCIEvaluationFacts attaches the actor, approval and policy facts and
+// reports what it found for the project's CI policy.
+func (h *WebhookHandler) attachCIEvaluationFacts(ctx context.Context, job *models.Job, project *models.Project, event *vcs.WebhookEvent, client vcs.Client) ciPolicyState {
 	if job.JobEnvVars == nil {
 		job.JobEnvVars = models.JSONB{}
 	}
@@ -225,33 +227,50 @@ func (h *WebhookHandler) attachCIEvaluationFacts(ctx context.Context, job *model
 	if encoded, err := json.Marshal(uniqueStrings(subjects)); err == nil {
 		job.JobEnvVars["REACTORCIDE_ACTOR_SUBJECTS"] = string(encoded)
 	}
-	h.attachCIPolicy(ctx, job, project)
+	return h.attachCIPolicy(ctx, job, project)
 }
 
-func (h *WebhookHandler) attachCIPolicy(ctx context.Context, job *models.Job, project *models.Project) {
+// ciPolicyState is what attachCIPolicy found.
+type ciPolicyState int
+
+const (
+	// ciPolicyNone: the project stores no CI policy. Nothing is gated; the
+	// eval runs the configured or the event's own CI code.
+	ciPolicyNone ciPolicyState = iota
+	// ciPolicyAttached: the policy snapshot is on the job.
+	ciPolicyAttached
+	// ciPolicyUnavailable: a policy may exist but could not be loaded or
+	// failed validation. The eval keeps the trusted base, so head CI fails
+	// closed.
+	ciPolicyUnavailable
+)
+
+func (h *WebhookHandler) attachCIPolicy(ctx context.Context, job *models.Job, project *models.Project) ciPolicyState {
 	policies, ok := h.store.(ciPolicyStore)
 	if !ok {
-		return
+		return ciPolicyNone
 	}
 	stored, err := policies.GetCIPolicyByProject(ctx, project.ProjectID)
 	if err != nil {
-		if !errors.Is(err, store.ErrNotFound) {
-			h.logger.WithError(err).WithField("project_id", project.ProjectID).Error("Could not load coordinator CI policy; head CI will fail closed")
+		if errors.Is(err, store.ErrNotFound) {
+			return ciPolicyNone
 		}
-		return
+		h.logger.WithError(err).WithField("project_id", project.ProjectID).Error("Could not load coordinator CI policy; head CI will fail closed")
+		return ciPolicyUnavailable
 	}
 	document, err := json.Marshal(stored.Document)
 	if err != nil {
 		h.logger.WithError(err).WithField("project_id", project.ProjectID).Error("Could not encode coordinator CI policy; head CI will fail closed")
-		return
+		return ciPolicyUnavailable
 	}
 	parsed, err := cipolicy.ParseDocument(document)
 	if err != nil || parsed.Revision != stored.Revision {
 		h.logger.WithError(err).WithField("project_id", project.ProjectID).Error("Coordinator CI policy failed integrity validation; head CI will fail closed")
-		return
+		return ciPolicyUnavailable
 	}
 	job.JobEnvVars["REACTORCIDE_CI_POLICY"] = string(document)
 	job.JobEnvVars["REACTORCIDE_CI_POLICY_REVISION"] = stored.Revision
+	return ciPolicyAttached
 }
 
 func uniqueStrings(values []string) []string {
@@ -465,9 +484,9 @@ func (h *WebhookHandler) handleWebhook(w http.ResponseWriter, r *http.Request, p
 
 	// Log the received event
 	h.logger.WithFields(logrus.Fields{
-		"provider":   provider,
-		"event_type": event.EventType,
-		"repository": event.Repository.FullName,
+		"provider":    provider,
+		"event_type":  event.EventType,
+		"repository":  event.Repository.FullName,
 		"delivery_id": event.DeliveryID,
 	}).Info("Received webhook event")
 	if event.IssueComment != nil {
@@ -665,12 +684,21 @@ func (h *WebhookHandler) processPullRequestEvent(event *vcs.WebhookEvent, client
 	if !proceed {
 		return nil
 	}
+	// Until the eval job is linked, a failure gives the event claim back.
+	evalJobLinked := false
+	defer func() {
+		if !evalJobLinked {
+			h.releaseCIEventClaim(context.Background(), ciEvent)
+		}
+	}()
 
 	// Build eval job using the shared builder
 	job := BuildEvalJob(project, event)
 	applyCIEventToEvalJob(job, ciEvent)
 	statusClient := h.getStatusClient(context.Background(), project, event.Provider, client)
-	h.attachCIEvaluationFacts(context.Background(), job, project, event, statusClient)
+	if h.attachCIEvaluationFacts(context.Background(), job, project, event, statusClient) == ciPolicyNone {
+		useEventCIWithoutPolicy(job, project, event)
+	}
 	if err := h.startVCSReportGeneration(context.Background(), job, project, event); err != nil {
 		return fmt.Errorf("starting VCS report generation: %w", err)
 	}
@@ -698,24 +726,14 @@ func (h *WebhookHandler) processPullRequestEvent(event *vcs.WebhookEvent, client
 	}
 
 	h.attachEvalJobToCIEvent(context.Background(), ciEvent, job)
+	evalJobLinked = true
 
 	// Submit job to Corndogs task queue
 	h.submitJobToCorndogs(job)
 
-	// Register the job as a pending check on the commit so branch protection
-	// sees it immediately — don't wait for the worker to pick it up.
-	statusUpdate := vcs.StatusUpdate{
-		SHA:         pr.HeadSHA,
-		State:       vcs.StatusPending,
-		TargetURL:   h.getJobURL(job.JobID),
-		Description: "CI build queued",
-		Context:     "reactorcide/eval",
-	}
-
-	if err := statusClient.UpdateCommitStatus(context.Background(), event.Repository.FullName, statusUpdate); err != nil {
-		h.logger.WithError(err).Warn("Failed to update commit status")
-		// Don't fail the whole operation if status update fails
-	}
+	// Register a pending check on the commit so branch protection sees it
+	// immediately — don't wait for the worker to pick it up.
+	h.postEvalPendingStatus(job, statusClient, event.Repository.FullName, pr.HeadSHA)
 
 	h.logger.WithFields(logrus.Fields{
 		"job_id":    job.JobID,
@@ -774,6 +792,13 @@ func (h *WebhookHandler) processPushEvent(event *vcs.WebhookEvent, client vcs.Cl
 	if !proceed {
 		return nil
 	}
+	// Until the eval job is linked, a failure gives the event claim back.
+	evalJobLinked := false
+	defer func() {
+		if !evalJobLinked {
+			h.releaseCIEventClaim(context.Background(), ciEvent)
+		}
+	}()
 
 	// Build eval job using the shared builder
 	job := BuildEvalJob(project, event)
@@ -781,7 +806,10 @@ func (h *WebhookHandler) processPushEvent(event *vcs.WebhookEvent, client vcs.Cl
 	statusClient := h.getStatusClient(context.Background(), project, event.Provider, client)
 	// Push events go through CI policy like pull requests (owner decision
 	// D3), so the eval carries the same actor, approval and policy facts.
-	h.attachCIEvaluationFacts(context.Background(), job, project, event, statusClient)
+	// Without a stored policy nothing is gated.
+	if h.attachCIEvaluationFacts(context.Background(), job, project, event, statusClient) == ciPolicyNone {
+		useEventCIWithoutPolicy(job, project, event)
+	}
 
 	// Store VCS metadata for status updates.
 	metadata := vcs.JobMetadata{
@@ -806,23 +834,13 @@ func (h *WebhookHandler) processPushEvent(event *vcs.WebhookEvent, client vcs.Cl
 	}
 
 	h.attachEvalJobToCIEvent(context.Background(), ciEvent, job)
+	evalJobLinked = true
 
 	// Submit job to Corndogs task queue
 	h.submitJobToCorndogs(job)
 
 	// Update commit status to pending (use per-project client if available)
-	statusUpdate := vcs.StatusUpdate{
-		SHA:         push.After,
-		State:       vcs.StatusPending,
-		TargetURL:   h.getJobURL(job.JobID),
-		Description: "CI build queued",
-		Context:     "reactorcide/eval",
-	}
-
-	if err := statusClient.UpdateCommitStatus(context.Background(), event.Repository.FullName, statusUpdate); err != nil {
-		h.logger.WithError(err).Warn("Failed to update commit status")
-		// Don't fail the whole operation if status update fails
-	}
+	h.postEvalPendingStatus(job, statusClient, event.Repository.FullName, push.After)
 
 	h.logger.WithFields(logrus.Fields{
 		"job_id":  job.JobID,
@@ -832,6 +850,41 @@ func (h *WebhookHandler) processPushEvent(event *vcs.WebhookEvent, client vcs.Cl
 	}).Info("Created eval job for push")
 
 	return nil
+}
+
+// eventChecksPublisher publishes a CI event's "Reactorcide Checks" status.
+type eventChecksPublisher interface {
+	SupportsEventChecks() bool
+	PublishEventChecks(ctx context.Context, eventID string) error
+}
+
+// postEvalPendingStatus posts the pending status of a new eval job. An eval
+// of a CI event feeds the event's "Reactorcide Checks" status; a job without
+// an event (or a store without events) keeps the legacy "reactorcide/eval"
+// context. A failure here never fails the webhook.
+func (h *WebhookHandler) postEvalPendingStatus(job *models.Job, statusClient vcs.Client, repo, sha string) {
+	ctx := context.Background()
+	if job.EventID != nil && *job.EventID != "" {
+		if publisher, ok := h.statusUpdater.(eventChecksPublisher); ok && publisher.SupportsEventChecks() {
+			if err := publisher.PublishEventChecks(ctx, *job.EventID); err != nil {
+				h.logger.WithError(err).WithField("event_id", *job.EventID).Warn("Failed to update event checks status")
+			}
+			return
+		}
+	}
+	if statusClient == nil {
+		return
+	}
+	statusUpdate := vcs.StatusUpdate{
+		SHA:         sha,
+		State:       vcs.StatusPending,
+		TargetURL:   h.getJobURL(job.JobID),
+		Description: "CI build queued",
+		Context:     "reactorcide/eval",
+	}
+	if err := statusClient.UpdateCommitStatus(ctx, repo, statusUpdate); err != nil {
+		h.logger.WithError(err).Warn("Failed to update commit status")
+	}
 }
 
 // handlePRMerged records the merge in pr_merged and nudges any still-in-flight
@@ -863,6 +916,13 @@ func (h *WebhookHandler) handlePRMerged(event *vcs.WebhookEvent) {
 	for i := range jobs {
 		job := &jobs[i]
 		if job.IsCompleted() {
+			continue
+		}
+		// A workflow node has no status of its own: its workflow's status
+		// covers it. Its Notes still carry the job name as a status context,
+		// so refreshing it here posted one stray status per in-flight node.
+		// A job of a CI event is covered by the event's aggregate status.
+		if job.WorkflowNodeID != nil || (job.EventID != nil && *job.EventID != "") {
 			continue
 		}
 		if err := h.statusUpdater.UpdateJobStatus(ctx, job); err != nil {

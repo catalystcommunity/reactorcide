@@ -127,6 +127,8 @@ func TestLeaseManagerSingleLeaderAndFailover(t *testing.T) {
 	<-doneB
 }
 
+// Test schedules use 2099 dates and an injected clock, so a scheduler loop the
+// router may start in this test process (real clock) never finds them due.
 func newTestSchedule(t *testing.T, project *models.Project, name string, next time.Time) *models.CISchedule {
 	t.Helper()
 	ss := store.AppStore.(store.ScheduleStore)
@@ -146,7 +148,7 @@ func TestScheduleStoreCRUD(t *testing.T) {
 	require.True(t, ok, "store.AppStore must implement store.ScheduleStore")
 	owner := createTestUser(t)
 	project := createTestProject(t, owner.UserID, "https://example.invalid/"+uniqueName("repo"), false)
-	next := time.Date(2026, 11, 15, 3, 0, 0, 0, time.UTC)
+	next := time.Date(2099, 11, 15, 3, 0, 0, 0, time.UTC)
 
 	sched := newTestSchedule(t, project, "nightly", next)
 	dup := &models.CISchedule{OrgID: project.OwnershipOrgID(), ProjectID: project.ProjectID, Name: "nightly", Branch: "main", WorkflowRef: "x", Cron: "@daily", Timezone: "UTC"}
@@ -190,7 +192,7 @@ func (f *recordingFirer) Fire(_ context.Context, sched models.CISchedule, at tim
 	if f.err != nil {
 		return "", f.err
 	}
-	return "01JC0000000000000000000000", nil
+	return "0193b0c4-0000-7000-8000-000000000001", nil
 }
 
 func TestSchedulerExactlyOnceAgainstPostgres(t *testing.T) {
@@ -198,10 +200,10 @@ func TestSchedulerExactlyOnceAgainstPostgres(t *testing.T) {
 	ss := store.AppStore.(store.ScheduleStore)
 	owner := createTestUser(t)
 	project := createTestProject(t, owner.UserID, "https://example.invalid/"+uniqueName("repo"), false)
-	due := time.Date(2026, 11, 10, 3, 0, 0, 0, time.UTC)
+	due := time.Date(2099, 11, 10, 3, 0, 0, 0, time.UTC)
 	sched := newTestSchedule(t, project, "nightly", due)
 	// Three days later: one fire for the newest missed time (Nov 13 03:00).
-	now := time.Date(2026, 11, 13, 9, 0, 0, 0, time.UTC)
+	now := time.Date(2099, 11, 13, 9, 0, 0, 0, time.UTC)
 
 	firer := &recordingFirer{calls: map[string]int{}}
 	var wg sync.WaitGroup
@@ -217,12 +219,12 @@ func TestSchedulerExactlyOnceAgainstPostgres(t *testing.T) {
 	require.Len(t, firer.calls, 1)
 	for key, n := range firer.calls {
 		require.Equal(t, 1, n, key)
-		require.Contains(t, key, "2026-11-13T03:00:00Z")
+		require.Contains(t, key, "2099-11-13T03:00:00Z")
 	}
 
 	got, err := ss.GetSchedule(ctx, sched.ScheduleID)
 	require.NoError(t, err)
-	require.True(t, got.NextFireAt.Equal(time.Date(2026, 11, 14, 3, 0, 0, 0, time.UTC)), "next = %v", got.NextFireAt)
+	require.True(t, got.NextFireAt.Equal(time.Date(2099, 11, 14, 3, 0, 0, 0, time.UTC)), "next = %v", got.NextFireAt)
 	require.NotNil(t, got.LastEventID)
 	require.Equal(t, "", got.LastError)
 
@@ -234,7 +236,7 @@ func TestSchedulerExactlyOnceAgainstPostgres(t *testing.T) {
 
 	// A pass that re-plans the same fire time (stale next_fire_at) inserts
 	// nothing new.
-	stale := time.Date(2026, 11, 13, 3, 0, 0, 0, time.UTC)
+	stale := time.Date(2099, 11, 13, 3, 0, 0, 0, time.UTC)
 	got.NextFireAt = &stale
 	require.NoError(t, ss.UpdateSchedule(ctx, got))
 	n, err := (&schedule.Scheduler{Store: ss, Firer: firer, Now: func() time.Time { return now }}).RunOnce(ctx)
@@ -247,7 +249,7 @@ func TestSchedulerFailedFireKeepsSchedule(t *testing.T) {
 	ss := store.AppStore.(store.ScheduleStore)
 	owner := createTestUser(t)
 	project := createTestProject(t, owner.UserID, "https://example.invalid/"+uniqueName("repo"), false)
-	due := time.Date(2026, 11, 10, 3, 0, 0, 0, time.UTC)
+	due := time.Date(2099, 11, 10, 3, 0, 0, 0, time.UTC)
 	sched := newTestSchedule(t, project, "nightly", due)
 
 	firer := &recordingFirer{calls: map[string]int{}, err: errors.New("workflow not found on branch main")}
@@ -269,7 +271,7 @@ func TestSchedulerBrokenCronRetriesLater(t *testing.T) {
 	ss := store.AppStore.(store.ScheduleStore)
 	owner := createTestUser(t)
 	project := createTestProject(t, owner.UserID, "https://example.invalid/"+uniqueName("repo"), false)
-	due := time.Date(2026, 11, 10, 3, 0, 0, 0, time.UTC)
+	due := time.Date(2099, 11, 10, 3, 0, 0, 0, time.UTC)
 	sched := newTestSchedule(t, project, "broken", due)
 	require.NoError(t, testDB.Exec("UPDATE ci_schedules SET timezone = 'Mars/Olympus' WHERE schedule_id = ?", sched.ScheduleID).Error)
 

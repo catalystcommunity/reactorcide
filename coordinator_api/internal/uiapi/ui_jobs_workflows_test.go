@@ -404,3 +404,50 @@ func TestProjectVisibilityFollowsOrgID(t *testing.T) {
 	_, err = ui.GetProject(anonCtx(), csilapi.GetProjectRequest{ProjectId: project.ProjectID})
 	requireCode(t, err, "not_found")
 }
+
+// TestGetWorkflowServesNodeReasonsAndEvents covers the structured node
+// reasons (the job's `if:` and the dependency outcome) and the workflow's
+// state changes from workflow_events.
+func TestGetWorkflowServesNodeReasonsAndEvents(t *testing.T) {
+	deps, st := newTestDeps(t)
+	fixture := newVisibilityFixture(t, st)
+	wfID := fixture.publicWF.WorkflowID
+	no := false
+	count := 0
+	st.putWorkflowNodes(wfID, []models.WorkflowNode{
+		{NodeID: "n-docs", WorkflowID: wfID, Name: "docs", DisplayName: "docs", Status: "skipped",
+			DecisionReason: "skipped by if: no changed file matches paths include [docs/**]",
+			DecisionReasons: []models.DecisionReason{
+				{Kind: "paths", Matched: &no, Include: []string{"docs/**"}, MatchedCount: &count},
+				{Kind: "dependency", Matched: &no, Condition: "all_success",
+					Deps: []models.DependencyOutcome{{Name: "build", Status: "failed"}}},
+			}},
+	})
+	nodeID := "n-docs"
+	if err := st.CreateWorkflowEvent(context.Background(), &models.WorkflowEvent{
+		WorkflowID: wfID, NodeID: &nodeID, EventType: "node_skipped", Reason: "skipped by if",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	ui := NewUiService(deps)
+	ctx := mintSessionCtx(t, deps, fixture.owner.UserID)
+
+	resp, err := ui.GetWorkflow(ctx, csilapi.GetWorkflowRequest{WorkflowId: wfID})
+	requireOK(t, err)
+
+	reasons := resp.Nodes[0].DecisionReasons
+	if len(reasons) != 2 {
+		t.Fatalf("decision_reasons = %#v, want 2", reasons)
+	}
+	if reasons[0].Kind != "paths" || len(reasons[0].PathsInclude) != 1 || reasons[0].MatchedCount == nil || *reasons[0].MatchedCount != 0 {
+		t.Errorf("paths reason = %#v", reasons[0])
+	}
+	dep := reasons[1]
+	if dep.Kind != "dependency" || dep.Condition == nil || *dep.Condition != "all_success" ||
+		len(dep.Deps) != 1 || dep.Deps[0].Name != "build" || dep.Deps[0].Status != "failed" {
+		t.Errorf("dependency reason = %#v", dep)
+	}
+	if len(resp.Events) != 1 || resp.Events[0].EventType != "node_skipped" || resp.Events[0].NodeId == nil || *resp.Events[0].NodeId != nodeID {
+		t.Fatalf("events = %#v", resp.Events)
+	}
+}

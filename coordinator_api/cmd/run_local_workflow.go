@@ -14,6 +14,7 @@ import (
 
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/resources"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/secrets"
+	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store/models"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/worker"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/workflowengine"
 	"github.com/google/uuid"
@@ -58,6 +59,9 @@ type localTriggerJob struct {
 	WorkerClass      string                 `json:"worker_class"`
 	DisableRunLocal  bool                   `json:"disable_run_local"`
 	RunLocal         *worker.RunLocalSpec   `json:"run_local"`
+	// Skip is set by the eval when the job's `if:` is false for the event.
+	Skip            bool                    `json:"skip,omitempty"`
+	DecisionReasons []models.DecisionReason `json:"decision_reasons,omitempty"`
 }
 
 type localWorkflowNode struct {
@@ -685,7 +689,14 @@ func expandLocalWorkflowNodes(specs []localTriggerJob) []localWorkflowNode {
 			copySpec.Env[expansion.ItemVar] = stringifyLocalWorkflowValue(expansion.ItemValue)
 			spec = copySpec
 		}
-		nodes = append(nodes, localWorkflowNode{ID: expansion.DisplayName, Spec: spec, Name: expansion.Name, DisplayName: expansion.DisplayName, Status: "pending", DependsOn: spec.DependsOn, Condition: condition})
+		node := localWorkflowNode{ID: expansion.DisplayName, Spec: spec, Name: expansion.Name, DisplayName: expansion.DisplayName, Status: "pending", DependsOn: spec.DependsOn, Condition: condition}
+		if spec.Skip {
+			// The job's `if:` is false for this event: never run it.
+			node.Status = "skipped"
+			node.Reason = "skipped by if: " + models.SummarizeDecisionReasons(spec.DecisionReasons)
+			fmt.Printf("[%s] %s\n", node.DisplayName, node.Reason)
+		}
+		nodes = append(nodes, node)
 	}
 	return nodes
 }

@@ -12,6 +12,7 @@ import type {
 import { RcPage } from '~/app/page.ts'
 import { ChoiceMultiSelect, ChoiceSelect } from '~/components/ChoiceInput.ts'
 import { field, type Field } from '~/components/Field.ts'
+import { ProjectCard, makeCard } from '~/components/ProjectCard.ts'
 import { Action, ActionError, describeError } from '~/components/ManagementPage.ts'
 import { ResourceView, relativeTime } from '~/components/States.ts'
 import { setVisibility, visibilityBadge } from '~/components/StatusBadge.ts'
@@ -20,9 +21,11 @@ import type { ResourceHandle } from '~/store/index.ts'
 import { useCapabilities, useFormMetadata, useProject } from '~/store/resources.ts'
 import { button, checkBox, clearField, confirmAction, setButtonText, textField } from '~/ui/controls.ts'
 import { h, setAttr, setText, show, syncKeyed, uid } from '~/ui/dom.ts'
-import { RcElement, define } from '~/ui/element.ts'
+import { define } from '~/ui/element.ts'
 import { href } from '~/ui/router.ts'
 import { Loader } from '~/ui/load.ts'
+import type { EventSettingsCard, SchedulesCard } from './ProjectEvents.ts'
+import './ProjectEvents.ts'
 
 type ProjectData = { project: ProjectDetail }
 type Capability = keyof GetCapabilitiesResponse
@@ -45,7 +48,9 @@ export class ProjectDetailPage extends RcPage {
   #access: AccessCard | null = null
   #webhooks: RotationCard | null = null
   #vcs: RotationCard | null = null
-  #anchors: Record<'visibility' | 'settings' | 'access' | 'webhooks' | 'vcs', Comment> | null = null
+  #events: EventSettingsCard | null = null
+  #schedules: SchedulesCard | null = null
+  #anchors: Record<'visibility' | 'settings' | 'events' | 'schedules' | 'access' | 'webhooks' | 'vcs', Comment> | null = null
 
   #id(): string {
     return this.route().id ?? ''
@@ -99,6 +104,8 @@ export class ProjectDetailPage extends RcPage {
     const anchors = {
       visibility: document.createComment('visibility'),
       settings: document.createComment('settings'),
+      events: document.createComment('events'),
+      schedules: document.createComment('schedules'),
       access: document.createComment('access'),
       webhooks: document.createComment('webhooks'),
       vcs: document.createComment('vcs'),
@@ -123,6 +130,8 @@ export class ProjectDetailPage extends RcPage {
         ),
       ),
       anchors.settings,
+      anchors.events,
+      anchors.schedules,
       anchors.access,
       anchors.webhooks,
       anchors.vcs,
@@ -159,6 +168,15 @@ export class ProjectDetailPage extends RcPage {
       // arriving mid-edit cannot throw away what somebody is typing.
       this.#settings = make<SettingsCard>('rc-project-settings-card', { initial: project, onSaved: refresh })
       anchors.settings.before(this.#settings)
+    }
+    if (canManage && !this.#events) {
+      // Seeded once, like the settings form, so a refresh keeps a draft.
+      this.#events = make<EventSettingsCard>('rc-project-event-settings-card', { initial: project, onSaved: refresh })
+      anchors.events.before(this.#events)
+    }
+    if (canManage && !this.#schedules) {
+      this.#schedules = make<SchedulesCard>('rc-project-schedules-card', {})
+      anchors.schedules.before(this.#schedules)
     }
     if (this.#can('manageGroups') && !this.#access) {
       this.#access = make<AccessCard>('rc-project-access-card', {})
@@ -200,6 +218,8 @@ export class ProjectDetailPage extends RcPage {
     const cards: [ProjectCard | null, boolean][] = [
       [this.#visibility, canManage],
       [this.#settings, canManage],
+      [this.#events, canManage],
+      [this.#schedules, canManage],
       [this.#access, this.#can('manageGroups')],
       [this.#webhooks, this.#can('manageWebhookSecrets')],
       [this.#vcs, this.#can('manageVcsCredentials')],
@@ -212,27 +232,7 @@ export class ProjectDetailPage extends RcPage {
   }
 }
 
-function make<T extends HTMLElement>(tag: string, props: Partial<T>): T {
-  const el = document.createElement(tag) as T
-  Object.assign(el, props)
-  return el
-}
-
-/** A card on the project page. The page hands it the current project on each refresh. */
-abstract class ProjectCard extends RcElement {
-  protected project: ProjectDetail | null = null
-
-  setProject(project: ProjectDetail): void {
-    if (this.project === project) return
-    this.project = project
-    this.invalidate()
-  }
-
-  connectedCallback(): void {
-    this.classList.add('card')
-    super.connectedCallback()
-  }
-}
+const make = makeCard
 
 /**
  * Changing a project between public and private.
