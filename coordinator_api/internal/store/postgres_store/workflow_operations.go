@@ -3,6 +3,7 @@ package postgres_store
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -20,6 +21,30 @@ func (ps PostgresDbStore) CreateWorkflowInstance(ctx context.Context, wf *models
 }
 
 func (ps PostgresDbStore) CreateWorkflowInstanceForTrigger(ctx context.Context, wf *models.WorkflowInstance) error {
+	if wf.EventID != nil && *wf.EventID != "" && wf.ParentWorkflowID == nil {
+		// A root workflow of a CI event: the (event, security ID) index is the
+		// identity, so two evals of one event (a retry racing the first) end up
+		// with one workflow.
+		result := ps.getDB(ctx).Clauses(clause.OnConflict{
+			Columns: []clause.Column{{Name: "event_id"}, {Name: "workflow_security_id"}},
+			TargetWhere: clause.Where{Exprs: []clause.Expression{
+				clause.Expr{SQL: "event_id IS NOT NULL AND parent_workflow_id IS NULL"},
+			}},
+			DoNothing: true,
+		}).Create(wf)
+		if result.Error != nil {
+			return fmt.Errorf("failed to create workflow instance for event: %w", result.Error)
+		}
+		if result.RowsAffected > 0 {
+			return nil
+		}
+		existing, err := ps.GetRootWorkflowInstanceByEvent(ctx, *wf.EventID, wf.WorkflowSecurityID)
+		if err != nil {
+			return err
+		}
+		*wf = *existing
+		return nil
+	}
 	result := ps.getDB(ctx).Clauses(clause.OnConflict{
 		Columns: []clause.Column{
 			{Name: "parent_job_id"},
@@ -391,6 +416,7 @@ WITH workflow_rows AS (
 		,COALESCE(wi.ci_origin, '') AS ci_origin
 		,COALESCE(wi.execution_profile, '') AS execution_profile
 		,COALESCE(wi.worker_class, '') AS worker_class
+		,wi.event_id
 	FROM workflow_instances wi
 	LEFT JOIN workflow_nodes wn ON wn.workflow_id = wi.workflow_id
 	%s
@@ -430,6 +456,7 @@ loose_rows AS (
 		,COALESCE(j.ci_origin, '') AS ci_origin
 		,COALESCE(j.execution_profile, '') AS execution_profile
 		,COALESCE(j.worker_class, '') AS worker_class
+		,j.event_id
 	FROM jobs j
 	%s
 )
@@ -492,4 +519,21 @@ func (ps PostgresDbStore) GetWorkflowSummary(ctx context.Context, workflowID str
 		}
 	}
 	return nil, store.ErrNotFound
+}
+
+// GetRootWorkflowInstanceByEvent returns the root workflow a CI event created
+// for one workflow security ID.
+func (ps PostgresDbStore) GetRootWorkflowInstanceByEvent(ctx context.Context, eventID, securityID string) (*models.WorkflowInstance, error) {
+	if !isValidUUID(eventID) {
+		return nil, store.ErrNotFound
+	}
+	var wf models.WorkflowInstance
+	err := ps.getDB(ctx).Where("event_id = ? AND workflow_security_id = ? AND parent_workflow_id IS NULL", eventID, securityID).First(&wf).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, store.ErrNotFound
+		}
+		return nil, fmt.Errorf("failed to get workflow for event: %w", err)
+	}
+	return &wf, nil
 }

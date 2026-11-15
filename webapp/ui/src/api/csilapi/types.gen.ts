@@ -125,6 +125,8 @@ export interface OrgSummary {
   status: string;
   isDefault: boolean;
   isPrivate: boolean;
+  duplicateEvents?: string;
+  dynamicJobs?: string;
 }
 
 export interface ListOrgsRequest {
@@ -149,6 +151,8 @@ export interface UpdateOrgRequest {
   displayName?: string;
   isPrivate?: boolean;
   status?: string;
+  duplicateEvents?: string;
+  dynamicJobs?: string;
 }
 
 export interface UpdateOrgResponse {
@@ -314,6 +318,10 @@ export interface ProjectDetail {
   checkoutMode: string;
   createdAt: string;
   updatedAt: string;
+  duplicateEvents?: string;
+  effectiveDuplicateEvents?: string;
+  dynamicJobs?: string;
+  effectiveDynamicJobs?: string;
 }
 
 export interface GetProjectRequest {
@@ -352,6 +360,8 @@ export interface UpdateProjectRequest {
   defaultTimeoutSeconds?: number;
   defaultQueueName?: string;
   checkoutMode?: string;
+  duplicateEvents?: string;
+  dynamicJobs?: string;
 }
 
 export interface UpdateProjectResponse {
@@ -1470,6 +1480,18 @@ export interface WorkflowNodeSummary {
   ciOrigin: string;
   executionProfile: string;
   workerClass: string;
+  decisionReasons?: CIDecisionReason[];
+}
+
+/**
+ * One workflow_events row: a node or workflow state change and its reason.
+ */
+export interface WorkflowEventSummary {
+  createdAt: string;
+  nodeId?: string;
+  jobId?: string;
+  eventType: string;
+  reason: string;
 }
 
 export interface WorkflowSummaryDetail {
@@ -1502,6 +1524,7 @@ export interface WorkflowSummaryDetail {
   ciOrigin: string;
   executionProfile: string;
   workerClass: string;
+  eventId?: string;
 }
 
 export interface ListWorkflowsRequest {
@@ -1531,6 +1554,96 @@ export interface GetWorkflowResponse {
   workflow: WorkflowSummaryDetail;
   nodes: WorkflowNodeSummary[];
   jobs: JobSummary[];
+  why?: CIEventWorkflowDecision;
+  events?: WorkflowEventSummary[];
+}
+
+/**
+ * One structured reason. `kind` selects which optional fields are set:
+ * event      matched, value (the event), patterns (configured events)
+ * branch     matched, value (the branch), patterns
+ * paths      matched, paths_include, paths_exclude, matched_files (capped),
+ * matched_count
+ * policy     ci_origin, profile, worker_class, rule_id, policy_revision, reasons
+ * admission  value (disposition), detail
+ * jobs       detail
+ * invalid    detail (the definition error)
+ * schedule   value (cron), detail
+ * manual     value (actor)
+ * Unknown kinds may appear later; show `detail` for them.
+ */
+export interface CIDecisionReason {
+  kind: string;
+  matched?: boolean;
+  value?: string;
+  patterns?: string[];
+  pathsInclude?: string[];
+  pathsExclude?: string[];
+  matchedFiles?: string[];
+  matchedCount?: number;
+  detail?: string;
+  ruleId?: string;
+  ciOrigin?: string;
+  profile?: string;
+  workerClass?: string;
+  policyRevision?: string;
+  reasons?: string[];
+  condition?: string;
+  deps?: CIDependencyOutcome[];
+  required?: boolean;
+  scheduleId?: string;
+  fireTime?: string;
+}
+
+export interface CIDependencyOutcome {
+  name: string;
+  status: string;
+}
+
+export interface CIEventWorkflowDecision {
+  workflowSecurityId: string;
+  workflowName: string;
+  sourceFile?: string;
+  decision: string;
+  reasons: CIDecisionReason[];
+  workflowId?: string;
+}
+
+export interface CIEventDetail {
+  eventId: string;
+  source: string;
+  provider: string;
+  eventType: string;
+  repo: string;
+  projectId?: string;
+  ref?: string;
+  branch?: string;
+  commitSha: string;
+  baseSha?: string;
+  prNumber?: number;
+  actor?: string;
+  action?: string;
+  scheduleId?: string;
+  receivedAt: string;
+  status: string;
+  evalJobId?: string;
+  duplicateOfEventId?: string;
+  changedFilesCount: number;
+  changedFilesPreview: string[];
+  deliveryId?: string;
+  checksState?: string;
+  checksDescription?: string;
+  checksPublishedAt?: string;
+}
+
+export interface GetEventRequest {
+  eventId: string;
+}
+
+export interface GetEventResponse {
+  event: CIEventDetail;
+  decisions: CIEventWorkflowDecision[];
+  workflowIds: string[];
 }
 
 export interface EnumChoice {

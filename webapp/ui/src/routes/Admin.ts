@@ -2,12 +2,14 @@ import type { CheckBox, PushButton, TextField } from '@catalystcommunity/control
 import { api } from '~/api/client.ts'
 import type {
   GetGlobalSettingsResponse,
+  OrgSummary,
   ListTrustedDomainPatternsResponse,
   ListTrustedIdentitiesResponse,
   TrustedDomainPattern,
   TrustedIdentity,
 } from '~/api/csilapi/types.gen.ts'
 import { RcPage } from '~/app/page.ts'
+import { ChoiceSelect } from '~/components/ChoiceInput.ts'
 import { field } from '~/components/Field.ts'
 import { Action, ActionError, notPermitted } from '~/components/ManagementPage.ts'
 import { relativeTime } from '~/components/States.ts'
@@ -17,6 +19,7 @@ import { h, setText, show, syncKeyed, uid } from '~/ui/dom.ts'
 import { define } from '~/ui/element.ts'
 import { Loader, type LoadHost } from '~/ui/load.ts'
 import { ROUTE, href } from '~/ui/router.ts'
+import { DUPLICATE_CHOICES, DYNAMIC_CHOICES } from './ProjectEvents.ts'
 
 /**
  * Instance administration: global settings, and who may sign in.
@@ -34,7 +37,7 @@ export class AdminPage extends RcPage {
 
   protected build(): void {
     this.#refused = notPermitted('this instance')
-    this.#cards = [new GlobalSettingsCard(this), new TrustedIdentitiesCard(this), new TrustedDomainsCard(this)]
+    this.#cards = [new GlobalSettingsCard(this), new OrgEventSettingsCard(this), new TrustedIdentitiesCard(this), new TrustedDomainsCard(this)]
     this.#body = h(
       'div',
       { class: 'page' },
@@ -111,6 +114,98 @@ class GlobalSettingsCard implements Card {
     if (settings && !this.#action.busy && this.#checkbox.checked !== settings.newProjectsPrivate) {
       this.#checkbox.checked = settings.newProjectsPrivate
     }
+  }
+}
+
+/**
+ * Per-organization event defaults: repeated deliveries and dynamic jobs. A
+ * project follows its organization unless it overrides the setting. A change
+ * here saves at once; the list then reloads, so the value shown is the stored
+ * one.
+ */
+class OrgEventSettingsCard implements Card {
+  readonly el: HTMLElement
+  readonly #orgs: Loader<string, OrgSummary[]>
+  readonly #action: Action
+  readonly #error = new ActionError()
+  readonly #loading: HTMLElement
+  readonly #table: HTMLElement
+  readonly #body: HTMLTableSectionElement
+  readonly #selects = new Map<string, { duplicate: ChoiceSelect; dynamic: ChoiceSelect }>()
+
+  constructor(host: LoadHost) {
+    this.#orgs = new Loader(host, async () => (await api.listOrgs({})).orgs)
+    this.#action = new Action(() => host.invalidate())
+    this.#loading = h('p', { class: 'meta' }, 'Loading…')
+    this.#body = h('tbody')
+    this.#table = h(
+      'div',
+      { class: 'scroll-x' },
+      h(
+        'table',
+        { class: 'table' },
+        h('thead', null, h('tr', null, h('th', null, 'Organization'), h('th', null, 'Repeated deliveries'), h('th', null, 'Dynamic jobs'))),
+        this.#body,
+      ),
+    )
+    this.el = h(
+      'div',
+      { class: 'card' },
+      h('h3', { class: 'section-title' }, 'Organization event defaults'),
+      h(
+        'p',
+        { class: 'meta' },
+        'Repeated deliveries: what a new delivery for a change already seen does. Dynamic jobs: whether running jobs may start more jobs. A project can override each one.',
+      ),
+      this.#error.el,
+      this.#loading,
+      this.#table,
+    )
+  }
+
+  async #save(org: OrgSummary, change: { duplicateEvents?: string; dynamicJobs?: string }): Promise<void> {
+    await this.#action.run('The organization setting could not be saved.', () => api.updateOrg({ name: org.name, ...change }))
+    void this.#orgs.reload()
+  }
+
+  render(): void {
+    this.#orgs.sync('all')
+    this.#error.set(this.#action.error ?? this.#orgs.state.error?.message)
+    const orgs = this.#orgs.state.data
+    show(this.#loading, !orgs && !this.#orgs.state.error)
+    show(this.#table, orgs?.length)
+    syncKeyed(
+      this.#body,
+      orgs ?? [],
+      (o) => o.orgId,
+      (o) => {
+        const current = (): OrgSummary => this.#orgs.state.data?.find((x) => x.orgId === o.orgId) ?? o
+        const duplicate = new ChoiceSelect({
+          ariaLabel: `Repeated deliveries for ${o.displayName || o.name}`,
+          choices: DUPLICATE_CHOICES,
+          value: o.duplicateEvents || 'run',
+          onChange: (value) => void this.#save(current(), { duplicateEvents: value }),
+        })
+        const dynamic = new ChoiceSelect({
+          ariaLabel: `Dynamic jobs for ${o.displayName || o.name}`,
+          choices: DYNAMIC_CHOICES,
+          value: o.dynamicJobs || 'allow',
+          onChange: (value) => void this.#save(current(), { dynamicJobs: value }),
+        })
+        this.#selects.set(o.orgId, { duplicate, dynamic })
+        return h('tr', null, h('td', { class: 'org-name' }), h('td', null, duplicate.el), h('td', null, dynamic.el))
+      },
+      (row, o) => {
+        setText(row.querySelector('.org-name')!, o.displayName || o.name)
+        const selects = this.#selects.get(o.orgId)!
+        selects.duplicate.el.disabled = this.#action.busy
+        selects.dynamic.el.disabled = this.#action.busy
+        if (!this.#action.busy) {
+          selects.duplicate.update(DUPLICATE_CHOICES, o.duplicateEvents || 'run')
+          selects.dynamic.update(DYNAMIC_CHOICES, o.dynamicJobs || 'allow')
+        }
+      },
+    )
   }
 }
 

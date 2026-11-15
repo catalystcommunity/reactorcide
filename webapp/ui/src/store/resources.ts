@@ -1,6 +1,7 @@
 import { api } from '~/api/client.ts'
 import type {
   GetCapabilitiesResponse,
+  GetEventResponse,
   GetWorkflowResponse,
   JobSummary,
   ListJobsResponse,
@@ -122,6 +123,36 @@ export function useWorkflow(host: ResourceHost, workflowId: () => string): Resou
       // needs a single subscription rather than one per node.
       topics: [topics.workflow(id)],
       shouldRefresh: (event) => event.workflow_id === id,
+    }
+  })
+}
+
+/**
+ * One CI event: its facts, its eval job and every workflow decision.
+ *
+ * An event changes while its eval runs (decisions arrive, workflows are
+ * created) and while those workflows run. It refreshes on a new workflow, on
+ * a change of one of ITS workflows, and on a change of its eval job. `known`
+ * reads the data on screen, so the filter knows which ids are its own.
+ */
+export function useEvent(
+  host: ResourceHost,
+  eventId: () => string,
+  known: () => GetEventResponse | undefined,
+): ResourceHandle<GetEventResponse> {
+  return useResource<GetEventResponse>(host, () => {
+    const id = eventId()
+    return {
+      key: `event:${id}`,
+      fetcher: () => api.getEvent({ eventId: id }),
+      topics: [topics.workflows, topics.jobs],
+      shouldRefresh: (event) => {
+        const data = known()
+        if (event.type === 'workflow_created') return true
+        if (event.type === 'workflow_update') return Boolean(event.workflow_id && data?.workflowIds.includes(event.workflow_id))
+        if (event.type === 'job_update') return Boolean(event.job_id && event.job_id === data?.event.evalJobId)
+        return false
+      },
     }
   })
 }

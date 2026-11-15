@@ -2,6 +2,7 @@ package workerapi
 
 import (
 	"context"
+	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/evaloutcome"
 	"time"
 
 	"github.com/catalystcommunity/app-utils-go/logging"
@@ -175,12 +176,16 @@ func (s *WorkerService) ReportResult(ctx context.Context, req csilapi.ReportResu
 		}
 	}
 
-	// Resolve the job's OWN VCS check on completion (e.g. the eval's
-	// "reactorcide/eval" check, posted pending at creation). Only for non-node
-	// jobs: workflow node jobs are covered by the aggregate workflow check
-	// (updated via the finalizer above), so reporting them individually would
-	// add redundant per-node checks. UpdateJobStatus is a no-op for jobs
-	// without VCS metadata, so standalone non-VCS jobs are unaffected.
+	// Close the eval's CI event first, so the status recompute below reads
+	// the final event state.
+	markEvalEventFinished(ctx, s.deps.Store, job, finalStatus)
+
+	// Resolve the job's VCS status on completion. An eval of a CI event
+	// recomputes the event's "Reactorcide Checks" status; a legacy eval
+	// resolves its "reactorcide/eval" status, posted pending at creation.
+	// Only for non-node jobs: workflow node jobs are covered by the aggregate
+	// workflow status (updated via the finalizer above). UpdateJobStatus is a
+	// no-op for jobs without VCS metadata, so standalone jobs are unaffected.
 	if s.deps.JobStatusReporter != nil && job.WorkflowNodeID == nil {
 		if err := s.deps.JobStatusReporter.UpdateJobStatus(ctx, job); err != nil {
 			logging.Log.WithError(err).WithField("job_id", job.JobID).Warn("Failed to update job VCS status on completion")
@@ -233,4 +238,12 @@ func (s *WorkerService) finalizeCorndogsTask(ctx context.Context, job *models.Jo
 	if err != nil {
 		logging.Log.WithError(err).WithFields(map[string]interface{}{"job_id": job.JobID, "status": finalStatus}).Warn("Failed to finalize corndogs task")
 	}
+}
+
+// markEvalEventFinished closes the CI event of an eval job. A successful eval
+// that posted triggers already marked the event evaluated; one that found
+// nothing to run did not, so success marks it here too. A failed eval marks
+// the event failed. Best effort: it never fails the result.
+func markEvalEventFinished(ctx context.Context, st any, job *models.Job, finalStatus string) {
+	evaloutcome.Finish(ctx, st, job, finalStatus)
 }

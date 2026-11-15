@@ -330,3 +330,20 @@ func TestLocalWorkflowEvalArgsUseEventAsTrigger(t *testing.T) {
 		}
 	}
 }
+
+// A job the eval marked skip (its `if:` is false) never runs locally; its
+// dependents follow the normal conditions.
+func TestLocalWorkflowSkipsJobsMarkedSkip(t *testing.T) {
+	executor := &fakeLocalWorkflowExecutor{fail: map[string]bool{}, outputs: map[string]localWorkflowOutput{}}
+	err := executeLocalWorkflowGraph(context.Background(), localWorkflowSpec{Name: "if", Jobs: []localTriggerJob{
+		{JobName: "docs", Skip: true},
+		{JobName: "publish", DependsOn: []string{"docs"}},
+		{JobName: "notify", DependsOn: []string{"docs"}, Condition: "always"},
+	}}, 2, executor)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(executor.runs) != 1 || executor.runs[0] != "notify" {
+		t.Fatalf("runs = %v, want only notify", executor.runs)
+	}
+}

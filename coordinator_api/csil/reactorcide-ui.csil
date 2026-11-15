@@ -141,7 +141,13 @@ OrgSummary = {
     display_name: text,
     status: text,
     is_default: bool,
-    is_private: bool
+    is_private: bool,
+    ;; "run" or "skip": whether a new delivery of a change already recorded
+    ;; (same repo, event type, commit and PR) runs again.
+    ? duplicate_events: text,
+    ;; "allow" or "deny": whether running jobs may create jobs at runtime
+    ;; (runnerlib trigger). The eval result is not affected.
+    ? dynamic_jobs: text
 }
 ListOrgsRequest = {}
 ListOrgsResponse = {
@@ -160,7 +166,11 @@ UpdateOrgRequest = {
     name: text,
     ? display_name: text,
     ? is_private: bool,
-    ? status: text
+    ? status: text,
+    ;; "run" or "skip".
+    ? duplicate_events: text,
+    ;; "allow" or "deny".
+    ? dynamic_jobs: text
 }
 UpdateOrgResponse = {
     org: OrgSummary
@@ -262,7 +272,14 @@ ProjectDetail = {
     default_queue_name: text,
     checkout_mode: text,
     created_at: text,
-    updated_at: text
+    updated_at: text,
+    ;; "inherit", "run" or "skip". effective_duplicate_events is the value
+    ;; in force after the organization setting is applied.
+    ? duplicate_events: text,
+    ? effective_duplicate_events: text,
+    ;; "inherit", "allow" or "deny", and the value in force.
+    ? dynamic_jobs: text,
+    ? effective_dynamic_jobs: text
 }
 GetProjectRequest = {
     project_id: text
@@ -297,7 +314,11 @@ UpdateProjectRequest = {
     ? default_job_command: text,
     ? default_timeout_seconds: int,
     ? default_queue_name: text,
-    ? checkout_mode: text
+    ? checkout_mode: text,
+    ;; "inherit", "run" or "skip".
+    ? duplicate_events: text,
+    ;; "inherit", "allow" or "deny".
+    ? dynamic_jobs: text
 }
 UpdateProjectResponse = {
     project: ProjectDetail
@@ -1318,7 +1339,19 @@ WorkflowNodeSummary = {
     ? completed_at: text,
     ci_origin: text,
     execution_profile: text,
-    worker_class: text
+    worker_class: text,
+    ;; Why the node runs, waits or was skipped: the job's `if:` predicates
+    ;; and the dependency outcome. Absent for nodes that predate it.
+    ? decision_reasons: [* CIDecisionReason]
+}
+
+;;; One workflow_events row: a node or workflow state change and its reason.
+WorkflowEventSummary = {
+    created_at: text,
+    ? node_id: text,
+    ? job_id: text,
+    event_type: text,
+    reason: text
 }
 
 WorkflowSummaryDetail = {
@@ -1350,7 +1383,10 @@ WorkflowSummaryDetail = {
     trigger_type: text,
     ci_origin: text,
     execution_profile: text,
-    worker_class: text
+    worker_class: text,
+    ;; The CI event that created this workflow (or loose job). Absent for
+    ;; rows that predate events and for directly submitted jobs.
+    ? event_id: text
 }
 
 ListWorkflowsRequest = {
@@ -1375,7 +1411,118 @@ GetWorkflowRequest = {
 GetWorkflowResponse = {
     workflow: WorkflowSummaryDetail,
     nodes: [* WorkflowNodeSummary],
-    jobs: [* JobSummary]
+    jobs: [* JobSummary],
+    ;; Why this workflow runs: the eval's decision for it, with reasons.
+    ;; Absent for a workflow no CI event created (or one that predates events).
+    ? why: CIEventWorkflowDecision,
+    ;; The workflow's state changes, oldest first (capped).
+    ? events: [* WorkflowEventSummary]
+}
+
+;; ---------------------------------------------------------------------------
+;; CI events.
+;;
+;; An event is one webhook delivery, schedule fire or manual submit. Its eval
+;; job decides what runs. Every workflow definition the eval considered has a
+;; decision (run, skipped, invalid, not_admitted) with structured reasons.
+
+;;; One structured reason. `kind` selects which optional fields are set:
+;;;   event      matched, value (the event), patterns (configured events)
+;;;   branch     matched, value (the branch), patterns
+;;;   paths      matched, paths_include, paths_exclude, matched_files (capped),
+;;;              matched_count
+;;;   policy     ci_origin, profile, worker_class, rule_id, policy_revision, reasons
+;;;   admission  value (disposition), detail
+;;;   jobs       detail
+;;;   invalid    detail (the definition error)
+;;;   schedule   value (cron), detail
+;;;   manual     value (actor)
+;;; Unknown kinds may appear later; show `detail` for them.
+CIDecisionReason = {
+    kind: text,
+    ? matched: bool,
+    ? value: text,
+    ? patterns: [* text],
+    ? paths_include: [* text],
+    ? paths_exclude: [* text],
+    ? matched_files: [* text],
+    ? matched_count: int,
+    ? detail: text,
+    ? rule_id: text,
+    ? ci_origin: text,
+    ? profile: text,
+    ? worker_class: text,
+    ? policy_revision: text,
+    ? reasons: [* text],
+    ;; kind "dependency": the node's condition (all_success, always,
+    ;; any_failed) and the status of each dependency instance.
+    ? condition: text,
+    ? deps: [* CIDependencyOutcome],
+    ;; kind "schedule": true means "only on schedule events", false means
+    ;; "never on schedule events".
+    ? required: bool,
+    ;; kind "schedule" on a workflow a schedule fired: the schedule and the
+    ;; fire time (RFC3339). value is the cron expression.
+    ? schedule_id: text,
+    ? fire_time: text
+}
+
+CIDependencyOutcome = {
+    name: text,
+    status: text
+}
+
+CIEventWorkflowDecision = {
+    workflow_security_id: text,
+    workflow_name: text,
+    ? source_file: text,
+    ;; run | skipped | invalid | not_admitted
+    decision: text,
+    reasons: [* CIDecisionReason],
+    ? workflow_id: text
+}
+
+CIEventDetail = {
+    event_id: text,
+    ;; webhook | schedule | manual | retry
+    source: text,
+    provider: text,
+    event_type: text,
+    repo: text,
+    ? project_id: text,
+    ? ref: text,
+    ? branch: text,
+    commit_sha: text,
+    ? base_sha: text,
+    ? pr_number: int,
+    ? actor: text,
+    ? action: text,
+    ? schedule_id: text,
+    received_at: text,
+    ;; received | evaluating | evaluated | failed | duplicate
+    status: text,
+    ? eval_job_id: text,
+    ? duplicate_of_event_id: text,
+    changed_files_count: int,
+    ;; At most 50 paths. changed_files_count is exact.
+    changed_files_preview: [* text],
+    ;; The provider's delivery ID (X-GitHub-Delivery), when the event has one.
+    ? delivery_id: text,
+    ;; The last "Reactorcide Checks" status posted for this event:
+    ;; pending | success | failure. Absent when none was posted.
+    ? checks_state: text,
+    ? checks_description: text,
+    ? checks_published_at: text
+}
+
+GetEventRequest = {
+    event_id: text
+}
+GetEventResponse = {
+    event: CIEventDetail,
+    decisions: [* CIEventWorkflowDecision],
+    ;; Root workflows the event created.
+    workflow_ids: [* text]
 }
 
 ;; ---------------------------------------------------------------------------
@@ -1501,5 +1648,6 @@ service ReactorcideUi {
     get-job: GetJobRequest -> GetJobResponse / ServiceError,
     list-workflows: ListWorkflowsRequest -> ListWorkflowsResponse / ServiceError,
     get-workflow: GetWorkflowRequest -> GetWorkflowResponse / ServiceError,
+    get-event: GetEventRequest -> GetEventResponse / ServiceError,
     describe-form-metadata: DescribeFormMetadataRequest -> DescribeFormMetadataResponse / ServiceError
 }

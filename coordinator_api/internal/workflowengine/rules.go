@@ -72,11 +72,73 @@ const (
 	ActionStart Action = "start"
 )
 
-// Decision describes one node transition selected by Decide.
+// Decision describes one node transition selected by Decide. Reason is the
+// human summary; Dependency is the structured dependency outcome behind it.
 type Decision struct {
-	NodeID string
-	Action Action
-	Reason string
+	NodeID     string
+	Action     Action
+	Reason     string
+	Dependency DependencyReason
+}
+
+// DependencyReason is the structured dependency outcome of one decision.
+// Matched is nil while the node waits, true when the condition holds, and
+// false when the condition is false (the node is skipped).
+type DependencyReason struct {
+	Condition string
+	Matched   *bool
+	Detail    string
+	Deps      []DependencyOutcome
+}
+
+// DependencyOutcome is the status of one dependency instance.
+type DependencyOutcome struct {
+	Name   string
+	Status string
+}
+
+// DependencyOutcomes lists every instance of every dependency of a node with
+// its status. A dependency with no registered node is reported as
+// "unregistered".
+func DependencyOutcomes(nodes []Node, node Node) []DependencyOutcome {
+	outcomes := make([]DependencyOutcome, 0, len(node.DependsOn))
+	for _, dependency := range node.DependsOn {
+		group := nodesByName(nodes, dependency)
+		if len(group) == 0 {
+			outcomes = append(outcomes, DependencyOutcome{Name: dependency, Status: "unregistered"})
+			continue
+		}
+		for _, candidate := range group {
+			name := candidate.DisplayName
+			if name == "" {
+				name = candidate.Name
+			}
+			outcomes = append(outcomes, DependencyOutcome{Name: name, Status: candidate.Status})
+		}
+	}
+	return outcomes
+}
+
+func normalizedCondition(condition string) string {
+	switch strings.TrimSpace(condition) {
+	case "", "all_success", "all_success(needs)":
+		return "all_success"
+	case "always", "always()":
+		return "always"
+	case "any_failed", "any_failed(needs)":
+		return "any_failed"
+	default:
+		return strings.TrimSpace(condition)
+	}
+}
+
+func dependencyReason(nodes []Node, node Node, matched *bool, detail string) DependencyReason {
+	return DependencyReason{
+		Condition: normalizedCondition(node.Condition),
+		Matched:   matched,
+		Detail:    detail,
+		Deps:      DependencyOutcomes(nodes, node),
+	}
 }
 
 // Decide applies dependency and condition rules to pending nodes. maxStarts
@@ -92,20 +154,25 @@ func Decide(nodes []Node, maxStarts int) []Decision {
 		}
 		ready, reason := DependenciesReady(working, *node)
 		if !ready {
-			decisions = append(decisions, Decision{NodeID: node.ID, Action: ActionWait, Reason: reason})
+			decisions = append(decisions, Decision{NodeID: node.ID, Action: ActionWait, Reason: reason,
+				Dependency: dependencyReason(working, *node, nil, reason)})
 			node.Status = "waiting"
 			continue
 		}
 		allowed, reason := EvaluateCondition(working, *node)
 		if !allowed {
-			decisions = append(decisions, Decision{NodeID: node.ID, Action: ActionSkip, Reason: reason})
+			no := false
+			decisions = append(decisions, Decision{NodeID: node.ID, Action: ActionSkip, Reason: reason,
+				Dependency: dependencyReason(working, *node, &no, reason)})
 			node.Status = "skipped"
 			continue
 		}
 		if maxStarts >= 0 && started >= maxStarts {
 			continue
 		}
-		decisions = append(decisions, Decision{NodeID: node.ID, Action: ActionStart, Reason: reason})
+		yes := true
+		decisions = append(decisions, Decision{NodeID: node.ID, Action: ActionStart, Reason: reason,
+			Dependency: dependencyReason(working, *node, &yes, reason)})
 		node.Status = "running"
 		started++
 	}

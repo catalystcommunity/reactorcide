@@ -1,21 +1,24 @@
 import type { PushButton } from '@catalystcommunity/controls'
 import { api } from '~/api/client.ts'
-import type { GetCapabilitiesResponse, GetWorkflowResponse } from '~/api/csilapi/types.gen.ts'
+import type { GetCapabilitiesResponse, GetEventResponse, GetWorkflowResponse } from '~/api/csilapi/types.gen.ts'
 import { RcPage } from '~/app/page.ts'
 import { DagView } from '~/components/DagView.ts'
 import { describeError } from '~/components/ManagementPage.ts'
+import { ReasonList, reasonSummary } from '~/components/Reasons.ts'
 import { ErrorNotice, ResourceView, duration, relativeTime } from '~/components/States.ts'
 import { isTerminal, setStatus, statusBadge } from '~/components/StatusBadge.ts'
 import type { ResourceHandle } from '~/store/index.ts'
 import { useCapabilities, useWorkflow } from '~/store/resources.ts'
 import { button } from '~/ui/controls.ts'
 import { h, setAttr, setText, show, syncKeyed } from '~/ui/dom.ts'
+import { Loader } from '~/ui/load.ts'
 import { define } from '~/ui/element.ts'
 import { href } from '~/ui/router.ts'
 
 type Tab = 'jobs' | 'graph'
 type WorkflowNode = GetWorkflowResponse['nodes'][number]
 type WorkflowJob = GetWorkflowResponse['jobs'][number]
+type WorkflowEvent = NonNullable<GetWorkflowResponse['events']>[number]
 
 /**
  * One workflow: its jobs, and optionally its graph.
@@ -30,6 +33,16 @@ export class WorkflowDetailPage extends RcPage {
   #view!: ResourceView<GetWorkflowResponse>
   #tab: Tab = 'jobs'
   #actionError = new ErrorNotice()
+  // The workflow's event, for the "Evaluate event" row. A failure (the event
+  // is older than its retention, or not visible) only hides that row.
+  #event = new Loader<string, GetEventResponse | null>(this, async (eventId) => {
+    try {
+      return await api.getEvent({ eventId })
+    } catch {
+      return null
+    }
+  })
+  #applyEvent: () => void = () => {}
 
   #id(): string {
     return this.route().id ?? ''
@@ -63,6 +76,8 @@ export class WorkflowDetailPage extends RcPage {
     this.#workflow.sync()
     this.#caps.sync()
     this.#view.update(this.#workflow.state())
+    this.#event.sync(this.#workflow.state().data?.workflow.eventId || undefined)
+    this.#applyEvent()
   }
 
   async #act(work: () => Promise<unknown>, fallback: string): Promise<void> {
@@ -104,6 +119,29 @@ export class WorkflowDetailPage extends RcPage {
     const graphTab = h('button', { type: 'button', class: 'tab', role: 'tab' }, 'Graph')
     const nodeTable = new NodeTable()
     const dag = new DagView()
+
+    // Why is this workflow running? Closed by default: most visits are about
+    // the jobs, and the answer is one click away when it is the question.
+    const whyReasons = new ReasonList()
+    const whyEventLink = h('a', null, 'View the event and every workflow it considered')
+    const whyLegacy = h(
+      'p',
+      { class: 'meta' },
+      'No reason was recorded for this workflow. It was created before Reactorcide recorded why workflows run, or not from an event.',
+    )
+    const why = h(
+      'details',
+      { class: 'card disclosure why' },
+      h('summary', null, 'Why is this workflow running?'),
+      whyLegacy,
+      whyReasons.el,
+      h('p', { style: { marginTop: 'var(--space-3)' } }, whyEventLink),
+    )
+
+    // What the coordinator decided, in order. Closed by default.
+    const eventsCount = h('span', { class: 'meta' })
+    const timeline = h('ol', { class: 'timeline' })
+    const events = h('details', { class: 'card disclosure workflow-events' }, h('summary', null, 'Events ', eventsCount), timeline)
     let latest: GetWorkflowResponse | undefined
 
     const applyTab = (): void => {
@@ -147,6 +185,7 @@ export class WorkflowDetailPage extends RcPage {
         ),
         decision,
       ),
+      why,
       h(
         'div',
         { class: 'card' },
@@ -154,7 +193,15 @@ export class WorkflowDetailPage extends RcPage {
         nodeTable.el,
         dag.el,
       ),
+      events,
     )
+
+    this.#applyEvent = () => {
+      const event = this.#event.state.data
+      // The eval belongs to the workflow only when it made this one workflow.
+      const fold = event && event.workflowIds.length === 1 && event.event.evalJobId ? event : undefined
+      nodeTable.setEval(fold)
+    }
 
     return {
       node,
@@ -178,6 +225,21 @@ export class WorkflowDetailPage extends RcPage {
         show(decision, wf.decisionSummary)
         setText(decision, wf.decisionSummary ?? '')
         nodeTable.update(data.nodes, data.jobs)
+        this.#applyEvent()
+
+        const reasons = data.why?.reasons ?? []
+        show(whyLegacy, reasons.length === 0)
+        show(whyReasons.el, reasons.length > 0)
+        whyReasons.update(reasons, { projectId: wf.projectId })
+        show(whyEventLink.parentElement!, wf.eventId)
+        setAttr(whyEventLink, 'href', wf.eventId ? href(`/events/${wf.eventId}`) : null)
+
+        const list = data.events ?? []
+        show(events, list.length > 0)
+        setText(eventsCount, `(${list.length})`)
+        const nodeNames = new Map(data.nodes.map((n) => [n.nodeId, n.displayName || n.name]))
+        // The list only grows, oldest first, so a position is a stable key.
+        syncKeyed(timeline, list.map((e, i) => ({ e, i })), (x) => String(x.i), createEvent, (el, x) => updateEvent(el, x.e, nodeNames))
         applyTab()
       },
     }
@@ -196,10 +258,32 @@ class NodeTable {
   readonly #empty: HTMLDivElement
   readonly #table: HTMLDivElement
   readonly #body: HTMLTableSectionElement
+  readonly #evalBody: HTMLTableSectionElement
+  readonly #evalLink: HTMLAnchorElement
+  readonly #evalStatus: HTMLSpanElement
+  readonly #evalReason: HTMLAnchorElement
 
   constructor() {
     this.#empty = h('div', { class: 'empty' }, 'No nodes yet.')
     this.#body = h('tbody')
+    // The eval that made this workflow, first. Its own tbody, because the
+    // node tbody holds only keyed rows.
+    this.#evalLink = h('a', null, 'Evaluate event')
+    this.#evalStatus = statusBadge()
+    this.#evalReason = h('a', { class: 'meta' }, 'Decided which workflows run for this event')
+    this.#evalBody = h(
+      'tbody',
+      { class: 'eval-row', hidden: true },
+      h(
+        'tr',
+        null,
+        h('td', null, this.#evalLink, h('div', null, this.#evalReason)),
+        h('td', null, this.#evalStatus),
+        h('td', { class: 'meta' }, '—'),
+        h('td', { class: 'meta' }, '—'),
+        h('td', { class: 'numeric mono' }, '—'),
+      ),
+    )
     this.#table = h(
       'div',
       { class: 'scroll-x' },
@@ -211,10 +295,20 @@ class NodeTable {
           null,
           h('tr', null, h('th', null, 'Node'), h('th', null, 'Status'), h('th', null, 'Depends on'), h('th', null, 'Runtime'), h('th', null, 'Exit')),
         ),
+        this.#evalBody,
         this.#body,
       ),
     )
     this.el = h('div', null, this.#empty, this.#table)
+  }
+
+  /** Shows the "Evaluate event" row for the event that made only this workflow; undefined hides it. */
+  setEval(event: GetEventResponse | undefined): void {
+    show(this.#evalBody, event)
+    if (!event) return
+    setAttr(this.#evalLink, 'href', href(`/jobs/${event.event.evalJobId}`))
+    setAttr(this.#evalReason, 'href', href(`/events/${event.event.eventId}`))
+    setStatus(this.#evalStatus, event.event.status)
   }
 
   update(nodes: WorkflowNode[], jobs: WorkflowJob[]): void {
@@ -225,16 +319,27 @@ class NodeTable {
       this.#body,
       nodes,
       (node) => node.nodeId,
-      () =>
-        h(
+      () => {
+        const reasons = new ReasonList()
+        const row = h(
           'tr',
           null,
-          h('td', null, h('a', { class: 'node-link' }), h('span', { class: 'node-name' }), h('div', { class: 'meta node-reason' })),
+          h(
+            'td',
+            null,
+            h('a', { class: 'node-link' }),
+            h('span', { class: 'node-name' }),
+            h('div', { class: 'meta node-reason' }),
+            h('details', { class: 'node-why' }, h('summary', null, 'Why'), reasons.el),
+          ),
           h('td', null, statusBadge()),
           h('td', { class: 'meta node-deps' }),
           h('td', { class: 'meta node-runtime' }),
           h('td', { class: 'numeric mono node-exit' }),
-        ),
+        ) as HTMLTableRowElement & { reasons: ReasonList }
+        row.reasons = reasons
+        return row
+      },
       (row, node) => {
         const label = node.displayName || node.name
         const job = node.jobId ? jobById.get(node.jobId) : undefined
@@ -245,9 +350,15 @@ class NodeTable {
         setAttr(link, 'href', node.jobId ? href(`/jobs/${node.jobId}`) : null)
         setText(link, label)
         setText(plain, label)
+        // The summary line is the server's sentence; the details list every
+        // check, including the ones that passed.
+        const summary = node.decisionReason || reasonSummary(node.decisionReasons)
         const reason = row.querySelector<HTMLElement>('.node-reason')!
-        show(reason, node.decisionReason)
-        setText(reason, node.decisionReason ?? '')
+        show(reason, summary)
+        setText(reason, summary)
+        const details = row.querySelector<HTMLDetailsElement>('.node-why')!
+        show(details, node.decisionReasons?.length)
+        row.reasons.update(node.decisionReasons)
         setStatus(row.querySelector('.status')!, node.status)
         setText(row.querySelector('.node-deps')!, node.dependsOn?.join(', ') || '—')
         setText(row.querySelector('.node-runtime')!, duration(job?.startedAt, job?.completedAt))
@@ -255,6 +366,27 @@ class NodeTable {
       },
     )
   }
+}
+
+function createEvent(): HTMLLIElement {
+  return h(
+    'li',
+    { class: 'timeline-item' },
+    h('time', { class: 'timeline-time' }),
+    h('div', { class: 'timeline-body' }, h('span', { class: 'timeline-type' }), h('span', { class: 'timeline-node meta' }), h('div', { class: 'timeline-reason' })),
+  )
+}
+
+function updateEvent(el: HTMLLIElement, e: WorkflowEvent, nodeNames: Map<string, string>): void {
+  const time = el.querySelector('time')!
+  setAttr(time, 'datetime', e.createdAt)
+  setText(time, e.createdAt ? new Date(e.createdAt).toLocaleTimeString() : '')
+  setText(el.querySelector('.timeline-type')!, e.eventType.replace(/_/g, ' '))
+  const node = e.nodeId ? nodeNames.get(e.nodeId) : undefined
+  setText(el.querySelector('.timeline-node')!, node ? ` · ${node}` : '')
+  const reason = el.querySelector<HTMLElement>('.timeline-reason')!
+  show(reason, e.reason)
+  setText(reason, e.reason)
 }
 
 export const tag = 'rc-workflow-detail-page'

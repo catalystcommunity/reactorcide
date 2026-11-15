@@ -94,10 +94,12 @@ func (h *WebhookHandler) recordCIEvent(ctx context.Context, project *models.Proj
 	case store.CIEventRedelivery:
 		// A delivery whose first attempt stored the event but failed before
 		// the eval job existed has nothing running. Evaluate it now instead of
-		// dropping it for good.
-		if recorded.EvalJobID == nil && recorded.Status == models.CIEventStatusReceived {
+		// dropping it for good; the claim below decides between concurrent
+		// redeliveries.
+		if recorded.EvalJobID == nil &&
+			(recorded.Status == models.CIEventStatusReceived || recorded.Status == models.CIEventStatusEvaluating) {
 			h.logger.WithFields(fields).Info("Redelivery of an event with no eval job; evaluating it")
-			return recorded, true, nil
+			break
 		}
 		h.logger.WithFields(fields).Info("Ignoring webhook redelivery")
 		return recorded, false, nil
@@ -106,7 +108,35 @@ func (h *WebhookHandler) recordCIEvent(ctx context.Context, project *models.Proj
 		h.logger.WithFields(fields).Info("Skipping duplicate event per duplicate_events setting")
 		return recorded, false, nil
 	}
+	// Only one delivery may create the eval job. Two concurrent redeliveries
+	// of an event whose first attempt failed would otherwise both get here.
+	if claimer, ok := h.store.(store.CIEventClaimStore); ok {
+		claimed, err := claimer.ClaimCIEventForEval(ctx, recorded.EventID)
+		if err != nil {
+			return nil, false, err
+		}
+		if !claimed {
+			h.logger.WithFields(fields).Info("Another delivery is evaluating this event")
+			return recorded, false, nil
+		}
+	}
 	return recorded, true, nil
+}
+
+// releaseCIEventClaim gives the claim back when the eval job could not be
+// created, so a redelivery can evaluate the event. It is a no-op once the
+// job is linked.
+func (h *WebhookHandler) releaseCIEventClaim(ctx context.Context, ciEvent *models.CIEvent) {
+	if ciEvent == nil {
+		return
+	}
+	claimer, ok := h.store.(store.CIEventClaimStore)
+	if !ok {
+		return
+	}
+	if err := claimer.ReleaseCIEventClaim(ctx, ciEvent.EventID); err != nil {
+		h.logger.WithError(err).WithField("event_id", ciEvent.EventID).Warn("Failed to release CI event claim")
+	}
 }
 
 // applyCIEventToEvalJob links an eval job to its event. The eval uses the

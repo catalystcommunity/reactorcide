@@ -187,6 +187,14 @@ ON CONFLICT (schedule_id, fire_time) DO NOTHING`, schedule.ScheduleID, fireTime,
 }
 
 func (ps PostgresDbStore) RecordScheduleFireResult(ctx context.Context, scheduleID string, fireTime time.Time, eventID *string, errMessage string) error {
+	// event_id is a UUID column. A malformed ID must not leave the fire row
+	// stuck in "firing": record the fire as failed instead.
+	if eventID != nil && !isValidUUID(*eventID) {
+		eventID = nil
+		if errMessage == "" {
+			errMessage = "the fire returned an invalid event ID"
+		}
+	}
 	status := models.ScheduleFireFired
 	if errMessage != "" {
 		status = models.ScheduleFireFailed

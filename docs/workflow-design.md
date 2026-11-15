@@ -9,7 +9,7 @@ This document describes the v1 workflow model. It builds on the existing `trigge
 - Make every run, wait, and skip decision explainable in the data model.
 - Allow jobs to publish workflow state for later jobs.
 - Support dynamic fan-out with literal `for_each` lists.
-- Expose one stable VCS status/check per workflow, not one per job.
+- Expose one VCS status per event, `Reactorcide Checks`, not one per job or workflow.
 - Render a rolling PR comment that explains workflows, jobs, waits, skips, and failures.
 
 ## Execution Model
@@ -87,7 +87,9 @@ One event can produce more than one workflow. Use the `workflows` array. Each en
 ```
 
 The parent evaluation job spawns each workflow. It is not a workflow member in
-the execution model. Each workflow gets its own name and status check.
+the execution model. Each workflow gets its own name. The event posts one
+status, `Reactorcide Checks`, for all its workflows. See
+[Events, Checks, and Schedules](./events-and-schedules.md).
 
 The coordinator processes each workflow in a separate database transaction.
 It publishes the workflow status after that transaction commits. A refusal in
@@ -118,6 +120,11 @@ V1 keeps conditions intentionally small:
 | `always` / `always()` | Run once dependencies are terminal, regardless of result |
 
 Skipped dependencies count as terminal but not successful. Named predicates such as `success("node")` and `failed("node")` are future extensions.
+
+A job can also have an `if` block with declarative predicates: `paths`,
+`branches`, `events`, and `schedule`. A job whose `if` is false becomes a
+`skipped` node with structured reasons. See
+[Conditional Jobs](./events-and-schedules.md#conditional-jobs).
 
 ## For Each
 
@@ -225,21 +232,23 @@ Workflow state uses dedicated workflow tables plus workflow foreign keys on `job
 
 ## VCS Status
 
-Individual workflow jobs do not publish their own commit statuses. V1 publishes one aggregate context named after the workflow, defaulting to:
+Individual workflow jobs do not publish their own commit statuses. Each event
+publishes one aggregate context:
 
 ```text
-Reactorcide Jobs
+Reactorcide Checks
 ```
 
-Status mapping:
+It includes the eval job, every workflow of the event, and policy refusals. A
+workflow can publish one more context of its own with `status: {context:
+<name>}`. See [Reactorcide Checks Status](./events-and-schedules.md#reactorcide-checks-status).
 
-| Workflow state | VCS state |
-|---|---|
-| evaluating, running | pending |
-| success, skipped | success |
-| failed | failure |
+Workflows that have no event (created before events existed) keep the old
+behavior: one context named after the workflow. For these, `cancelled` maps to
+failure.
 
-If a workflow evaluates and does not need to run, it should become `skipped` with a success status and an event log explaining why.
+A workflow that does not match the event gets a `skipped` decision with
+reasons. It does not get a workflow row.
 
 ## Shared Pull-Request Report
 
@@ -278,15 +287,14 @@ The UI should show workflows first and jobs underneath them:
   evaluation job as a separate loose job. A single workflow cannot represent
   these results.
 - Node detail linked to existing job logs.
-- Skip/reason panel sourced from `workflow_events`.
+- Skip/reason panel sourced from node decision reasons and `workflow_events`.
+- A closed "Why is this workflow running?" section with the event decision reasons.
 - Var history with source node/job and conflict events.
 
 Existing job pages remain useful, but workflow-triggered jobs should clearly show their parent workflow and node.
 
 ## Future Work
 
-- UI workflow views backed by `workflow_events`.
-- Static workflow definition files if they prove useful.
 - Expression-based `for_each`.
 - Named condition predicates such as `success("node")`.
 - Item-aware historical duration lookup for expanded `for_each` nodes.

@@ -33,6 +33,7 @@ export class RcPage extends RcElement {
 export const PAGES: Readonly<Record<RouteName, () => Promise<string>>> = {
   workflows: () => import('~/routes/Workflows.ts').then((m) => m.tag),
   workflow: () => import('~/routes/WorkflowDetail.ts').then((m) => m.tag),
+  event: () => import('~/routes/EventDetail.ts').then((m) => m.tag),
   jobs: () => import('~/routes/Jobs.ts').then((m) => m.tag),
   job: () => import('~/routes/JobDetail.ts').then((m) => m.tag),
   projects: () => import('~/routes/Projects.ts').then((m) => m.tag),

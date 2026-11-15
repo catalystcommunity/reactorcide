@@ -54,6 +54,7 @@ func workflowToSummary(wf *models.WorkflowSummary) csilapi.WorkflowSummaryDetail
 		CiOrigin:         wf.CIOrigin,
 		ExecutionProfile: wf.ExecutionProfile,
 		WorkerClass:      wf.WorkerClass,
+		EventId:          wf.EventID,
 	}
 	if wf.PRNumber != nil {
 		n := int64(*wf.PRNumber)
@@ -87,7 +88,30 @@ func workflowNodeToSummary(node *models.WorkflowNode) csilapi.WorkflowNodeSummar
 		n := int64(*node.ItemIndex)
 		summary.ItemIndex = &n
 	}
+	for _, reason := range node.DecisionReasons {
+		summary.DecisionReasons = append(summary.DecisionReasons, reasonToCSIL(reason))
+	}
 	return summary
+}
+
+// workflowEventsStore serves a workflow's state changes. Optional, so a
+// store without it still answers get-workflow (with no events).
+type workflowEventsStore interface {
+	ListWorkflowEvents(ctx context.Context, workflowID string, limit, offset int) ([]models.WorkflowEvent, error)
+}
+
+// maxWorkflowEvents caps the events one get-workflow returns. A large
+// fan-out workflow writes several events per node.
+const maxWorkflowEvents = 500
+
+func workflowEventToSummary(event *models.WorkflowEvent) csilapi.WorkflowEventSummary {
+	return csilapi.WorkflowEventSummary{
+		CreatedAt: formatTime(event.CreatedAt),
+		NodeId:    event.NodeID,
+		JobId:     event.JobID,
+		EventType: event.EventType,
+		Reason:    event.Reason,
+	}
 }
 
 // ListWorkflows returns the page of workflows visible to the caller, with an
@@ -163,6 +187,11 @@ func (s *UiService) GetWorkflow(ctx context.Context, req csilapi.GetWorkflowRequ
 		Workflow: workflowToSummary(workflow),
 		Nodes:    []csilapi.WorkflowNodeSummary{},
 		Jobs:     []csilapi.JobSummary{},
+		Why:      s.workflowWhy(ctx, req.WorkflowId),
+	}
+	if response.Why == nil && workflow.RootWorkflowID != nil && *workflow.RootWorkflowID != "" {
+		// A child workflow (from a dynamic trigger) runs because its root runs.
+		response.Why = s.workflowWhy(ctx, *workflow.RootWorkflowID)
 	}
 
 	nodes, err := detailStore.ListWorkflowNodes(ctx, req.WorkflowId)
@@ -174,6 +203,16 @@ func (s *UiService) GetWorkflow(ctx context.Context, req csilapi.GetWorkflowRequ
 	sort.SliceStable(nodes, func(i, j int) bool { return nodes[i].Name < nodes[j].Name })
 	for i := range nodes {
 		response.Nodes = append(response.Nodes, workflowNodeToSummary(&nodes[i]))
+	}
+	if eventStore, ok := s.deps.Store.(workflowEventsStore); ok {
+		events, eventErr := eventStore.ListWorkflowEvents(ctx, req.WorkflowId, maxWorkflowEvents, 0)
+		if eventErr != nil {
+			return csilapi.GetWorkflowResponse{}, NewServiceError("internal", "failed to read workflow events")
+		}
+		response.Events = []csilapi.WorkflowEventSummary{}
+		for i := range events {
+			response.Events = append(response.Events, workflowEventToSummary(&events[i]))
+		}
 	}
 
 	// The workflow's jobs come through the same visibility-filtered list path

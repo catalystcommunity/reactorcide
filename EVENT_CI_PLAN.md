@@ -1,12 +1,14 @@
 # Event-Driven CI Plan
 
-Status: approved, 2026-11-14. Owner decisions:
+Status: implemented (uncommitted), 2026-11-14. Reference: docs/events-and-schedules.md. Owner decisions:
 
 - D1: semantic duplicates (new delivery ID, same repo, event type, commit
   and PR) run again by default. An org or project setting can make them
   duplicates.
 - D2: dynamic jobs are allowed by default. Org and project can deny.
-- D3: push events go through CI policy.
+- D3: push events go through CI policy when a policy is stored. Revised
+  2026-11-14: with no stored policy nothing is gated; the eval runs the
+  configured CI source or the event's own commit (fork PRs keep the base).
 - D4: keep the Commit Status API.
 - D5: schedules live in the coordinator API and point to a workflow
   definition in the repo on a branch.

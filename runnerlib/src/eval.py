@@ -35,6 +35,10 @@ VALID_EVENT_TYPES = frozenset({
     "tag_created",
 })
 
+# The event type of a coordinator schedule fire. A job-level `if: schedule:`
+# predicate compares against it.
+SCHEDULE_EVENT_TYPE = "schedule"
+
 
 @dataclass
 class PathsConfig:
@@ -58,6 +62,31 @@ class TriggersConfig:
     """
     events: List[str] = field(default_factory=list)
     branches: List[str] = field(default_factory=list)
+
+
+@dataclass
+class JobIfConfig:
+    """Declarative predicates that decide whether one job of a workflow runs.
+
+    Every predicate that is set must hold. ``None`` means "not set". There is
+    no expression language: a job runs or is skipped only on these facts.
+
+    Attributes:
+        paths: Changed-file filter (include/exclude globs).
+        branches: Branch glob patterns.
+        events: Event types.
+        schedule: True means only on schedule events; False means never on
+            schedule events.
+    """
+    paths: Optional[PathsConfig] = None
+    branches: Optional[List[str]] = None
+    events: Optional[List[str]] = None
+    schedule: Optional[bool] = None
+
+
+# The keys a job-level ``if:`` accepts. Anything else makes the workflow
+# invalid, so a typo never silently runs (or skips) a job.
+JOB_IF_KEYS = ("paths", "branches", "events", "schedule")
 
 
 @dataclass
@@ -135,6 +164,7 @@ class JobDefinition:
     job: JobConfig = field(default_factory=JobConfig)
     environment: Dict[str, str] = field(default_factory=dict)
     source_file: Optional[str] = None
+    run_if: Optional[JobIfConfig] = None
 
 
 @dataclass
@@ -154,6 +184,10 @@ class WorkflowDefinition:
         paths: Optional path include/exclude configuration.
         jobs: Resolved job definitions that make up this workflow.
         source_file: Path to the workflow YAML this was loaded from.
+        status_context: Optional extra commit status context (from
+            ``status: {context: ...}``). Every workflow counts toward the
+            event's "Reactorcide Checks" status; a workflow with a context
+            also posts a status of its own under that name.
     """
     name: str
     workflow_id: str = ""
@@ -164,6 +198,34 @@ class WorkflowDefinition:
     vars: Dict[str, Any] = field(default_factory=dict)
     jobs: List[JobDefinition] = field(default_factory=list)
     source_file: Optional[str] = None
+    status_context: str = ""
+
+
+# The aggregate status every event posts. A workflow cannot claim it.
+EVENT_CHECKS_CONTEXT = "Reactorcide Checks"
+MAX_STATUS_CONTEXT_LENGTH = 100
+
+
+def _parse_status_context(raw: Any, name: str, where: str) -> str:
+    """Parse a workflow's optional ``status: {context: <name>}`` block."""
+    if raw is None:
+        return ""
+    if not isinstance(raw, dict):
+        raise ValueError(f"Workflow '{name}'{where} has a non-mapping 'status' field")
+    unknown = sorted(str(key) for key in raw if key != "context")
+    if unknown:
+        raise ValueError(f"Workflow '{name}'{where} 'status' has unknown field(s): {', '.join(unknown)}")
+    context = raw.get("context")
+    if not isinstance(context, str) or not context.strip():
+        raise ValueError(f"Workflow '{name}'{where} 'status.context' must be a non-empty string")
+    context = context.strip()
+    if len(context) > MAX_STATUS_CONTEXT_LENGTH:
+        raise ValueError(
+            f"Workflow '{name}'{where} 'status.context' is longer than {MAX_STATUS_CONTEXT_LENGTH} characters"
+        )
+    if context == EVENT_CHECKS_CONTEXT:
+        raise ValueError(f"Workflow '{name}'{where} 'status.context' cannot be {EVENT_CHECKS_CONTEXT!r}")
+    return context
 
 
 _SECURITY_ID_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,62}$")
@@ -245,6 +307,50 @@ def _parse_paths_config(data: Any) -> PathsConfig:
 _IMAGE_PULL_SECRET_NAME_RE = re.compile(
     r"^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)*$"
 )
+
+
+def _string_list(value: Any, where: str) -> List[str]:
+    if isinstance(value, str):
+        return [value]
+    if isinstance(value, list) and all(isinstance(item, str) for item in value):
+        return list(value)
+    raise ValueError(f"{where} must be a string or a list of strings")
+
+
+def _parse_job_if(data: Any, job_name: str) -> Optional[JobIfConfig]:
+    """Parse a job-level ``if:`` block. ``None`` when the job has none."""
+    if data is None:
+        return None
+    where = f"job {job_name!r} if"
+    if not isinstance(data, dict):
+        raise ValueError(f"{where} must be a mapping of predicates {list(JOB_IF_KEYS)}")
+    unknown = sorted(str(key) for key in data if key not in JOB_IF_KEYS)
+    if unknown:
+        raise ValueError(f"{where} has unknown keys {unknown}; allowed keys are {list(JOB_IF_KEYS)}")
+    cfg = JobIfConfig()
+    if "paths" in data:
+        paths = data["paths"]
+        if isinstance(paths, (list, str)):
+            cfg.paths = PathsConfig(include=_string_list(paths, f"{where}.paths"))
+        elif isinstance(paths, dict):
+            extra = sorted(str(key) for key in paths if key not in ("include", "exclude"))
+            if extra:
+                raise ValueError(f"{where}.paths has unknown keys {extra}; allowed keys are ['include', 'exclude']")
+            cfg.paths = PathsConfig(
+                include=_string_list(paths.get("include") or [], f"{where}.paths.include"),
+                exclude=_string_list(paths.get("exclude") or [], f"{where}.paths.exclude"),
+            )
+        else:
+            raise ValueError(f"{where}.paths must be a mapping with include/exclude or a list of globs")
+    if "branches" in data:
+        cfg.branches = _string_list(data["branches"], f"{where}.branches")
+    if "events" in data:
+        cfg.events = _string_list(data["events"], f"{where}.events")
+    if "schedule" in data:
+        if not isinstance(data["schedule"], bool):
+            raise ValueError(f"{where}.schedule must be true or false")
+        cfg.schedule = data["schedule"]
+    return cfg
 
 
 def _parse_image_pull_secrets(data: Any) -> List[str]:
@@ -337,6 +443,7 @@ def parse_job_definition(data: Dict[str, Any], source_file: Optional[str] = None
         job=_parse_job_config(data.get("job")),
         environment=_parse_environment(data.get("environment")),
         source_file=source_file,
+        run_if=_parse_job_if(data.get("if"), str(data.get("name") or "")),
     )
 
 
@@ -691,9 +798,26 @@ def _entry_to_job_dict(name: str, entry: Dict[str, Any]) -> Dict[str, Any]:
     if "environment" in entry:
         out["environment"] = entry.pop("environment")
 
-    # A workflow's triggers/paths live at the workflow level, not per job.
-    entry.pop("triggers", None)
-    entry.pop("paths", None)
+    # A job's own conditions go in ``if:``. The legacy per-job ``triggers``
+    # and ``paths`` keys map onto the same predicates; an explicit ``if:``
+    # key wins over the legacy one.
+    job_if = entry.pop("if", None)
+    legacy_triggers = entry.pop("triggers", None)
+    legacy_paths = entry.pop("paths", None)
+    if job_if is not None or legacy_triggers is not None or legacy_paths is not None:
+        if job_if is not None and not isinstance(job_if, dict):
+            raise ValueError(f"job {name!r} if must be a mapping of predicates {list(JOB_IF_KEYS)}")
+        merged_if: Dict[str, Any] = {}
+        if isinstance(legacy_triggers, dict):
+            for key in ("events", "branches"):
+                if legacy_triggers.get(key):
+                    merged_if[key] = legacy_triggers[key]
+        elif legacy_triggers is not None:
+            raise ValueError(f"job {name!r} triggers must be a mapping with events/branches")
+        if legacy_paths:
+            merged_if["paths"] = legacy_paths
+        merged_if.update(job_if or {})
+        out["if"] = merged_if
     entry.pop("job_file", None)
 
     job_cfg = dict(entry.pop("job", {}) or {})
@@ -765,8 +889,10 @@ def _parse_workflow_job(
 
     _reject_reserved_authority_keys(name, merged)
 
-    # The workflow entry key is the authoritative node name; a workflow never
-    # inherits per-job triggers/paths from a referenced job file.
+    # The workflow entry key is the authoritative node name. A workflow never
+    # inherits the legacy per-job triggers/paths of a referenced job file
+    # (those belong to the bare .reactorcide/jobs mode); a job file's `if:`
+    # is inherited unless the workflow entry sets its own.
     merged["name"] = name
     merged.pop("triggers", None)
     merged.pop("paths", None)
@@ -817,6 +943,7 @@ def parse_workflow_definition(
     workflow_vars = data.get("vars") or {}
     if not isinstance(workflow_vars, dict):
         raise ValueError(f"Workflow '{name}'{where} has a non-mapping 'vars' field")
+    status_context = _parse_status_context(data.get("status"), str(name), where)
 
     jobs_raw = data.get("jobs")
     job_defs: List[JobDefinition] = []
@@ -843,7 +970,17 @@ def parse_workflow_definition(
         vars=workflow_vars,
         jobs=job_defs,
         source_file=source_file,
+        status_context=status_context,
     )
+
+
+@dataclass
+class InvalidWorkflowFile:
+    """A workflow file that could not be loaded, and why."""
+    source_file: str
+    error: str
+    workflow_id: str = ""
+    name: str = ""
 
 
 def load_workflow_definitions(ci_source_path: Path) -> List[WorkflowDefinition]:
@@ -858,29 +995,125 @@ def load_workflow_definitions(ci_source_path: Path) -> List[WorkflowDefinition]:
         List of parsed WorkflowDefinition instances. Empty if the directory
         does not exist (the caller falls back to bare .reactorcide/jobs).
     """
+    definitions, _ = load_workflow_definitions_with_errors(ci_source_path)
+    return definitions
+
+
+def load_workflow_definitions_with_errors(ci_source_path: Path):
+    """Load workflow definitions and also report the files that failed.
+
+    Returns a (definitions, invalid) tuple. ``invalid`` lists one
+    InvalidWorkflowFile per file that could not be parsed, so the eval can
+    record an ``invalid`` decision instead of silently dropping it.
+    """
     wf_dir = ci_source_path / ".reactorcide" / "workflows"
     if not wf_dir.is_dir():
-        return []
+        return [], []
 
     definitions: List[WorkflowDefinition] = []
+    invalid: List[InvalidWorkflowFile] = []
     yaml_files = sorted(
         list(wf_dir.glob("*.yaml")) + list(wf_dir.glob("*.yml"))
     )
 
     for yaml_file in yaml_files:
+        data = None
         try:
             with open(yaml_file, "r") as f:
                 data = yaml.safe_load(f)
             if not isinstance(data, dict):
                 print(f"Skipping {yaml_file}: not a valid YAML mapping", file=sys.stderr)
+                invalid.append(InvalidWorkflowFile(str(yaml_file), "not a valid YAML mapping"))
                 continue
             definitions.append(parse_workflow_definition(data, ci_source_path, source_file=str(yaml_file)))
         except yaml.YAMLError as e:
             print(f"Error parsing {yaml_file}: {e}", file=sys.stderr)
-        except (ValueError, FileNotFoundError) as e:
+            invalid.append(InvalidWorkflowFile(str(yaml_file), f"YAML parse error: {e}"))
+        except (ValueError, FileNotFoundError, TypeError, AttributeError, KeyError) as e:
+            # A malformed file (for example `jobs:` as a list) must not stop
+            # the evaluation of the other workflows; it becomes an invalid
+            # decision instead.
             print(f"Invalid workflow definition in {yaml_file}: {e}", file=sys.stderr)
+            workflow_id = ""
+            name = ""
+            if isinstance(data, dict):
+                raw_id = data.get("id")
+                if isinstance(raw_id, str) and _SECURITY_ID_RE.fullmatch(raw_id):
+                    workflow_id = raw_id
+                raw_name = data.get("name")
+                if isinstance(raw_name, str):
+                    name = raw_name
+            invalid.append(InvalidWorkflowFile(str(yaml_file), str(e), workflow_id, name))
 
-    return definitions
+    return definitions, invalid
+
+
+# The most matched files one paths reason carries. The count stays exact.
+MATCHED_FILES_LIMIT = 50
+
+
+def matching_files(paths_config: PathsConfig, changed_files: List[str]) -> List[str]:
+    """Return the changed files that pass the include/exclude filters."""
+    matched = []
+    for file_path in changed_files or []:
+        if paths_config.include and not any(
+            _glob_match_path(pattern, file_path) for pattern in paths_config.include
+        ):
+            continue
+        if paths_config.exclude and any(
+            _glob_match_path(pattern, file_path) for pattern in paths_config.exclude
+        ):
+            continue
+        matched.append(file_path)
+    return matched
+
+
+def workflow_decision_reasons(
+    workflow: WorkflowDefinition,
+    event_type: str,
+    branch: str = "",
+    changed_files: Optional[List[str]] = None,
+) -> tuple:
+    """Explain, in structured form, whether a workflow matches the event.
+
+    Returns ``(matched, reasons)``. Each reason is a dict with a ``kind``
+    (event, branch, paths) and typed fields, in the order the checks run. The
+    first failing check ends the list, so the last reason says why a skipped
+    workflow did not run. ``workflow_match_reason`` gives the same verdict as
+    one log line.
+    """
+    t = workflow.triggers
+    reasons = []
+    event_matched = bool(t.events) and event_type in t.events
+    event_reason = {"kind": "event", "matched": event_matched, "value": event_type,
+                    "patterns": list(t.events)}
+    if not t.events:
+        event_reason["detail"] = "no events configured"
+    reasons.append(event_reason)
+    if not event_matched:
+        return False, reasons
+    if t.branches and branch:
+        branch_matched = any(branch_matches(pattern, branch) for pattern in t.branches)
+        reasons.append({"kind": "branch", "matched": branch_matched, "value": branch,
+                        "patterns": list(t.branches)})
+        if not branch_matched:
+            return False, reasons
+    if workflow.paths.include or workflow.paths.exclude:
+        paths_reason = {"kind": "paths", "include": list(workflow.paths.include),
+                        "exclude": list(workflow.paths.exclude)}
+        if changed_files is None:
+            paths_reason.update({"matched": True,
+                                 "detail": "changed files are unknown, so the path filter was not applied"})
+        else:
+            matched_files = matching_files(workflow.paths, changed_files)
+            paths_reason.update({"matched": bool(matched_files),
+                                 "matched_files": matched_files[:MATCHED_FILES_LIMIT],
+                                 "matched_count": len(matched_files)})
+            if not matched_files:
+                reasons.append(paths_reason)
+                return False, reasons
+        reasons.append(paths_reason)
+    return True, reasons
 
 
 def workflow_match_reason(
@@ -935,3 +1168,80 @@ def evaluate_workflows(
         wf for wf in workflow_defs
         if workflow_match_reason(wf, event_type, branch, changed_files)[0]
     ]
+
+
+def job_if_reasons(
+    job_if: Optional[JobIfConfig],
+    event_type: str,
+    branch: str = "",
+    changed_files: Optional[List[str]] = None,
+) -> tuple:
+    """Evaluate a job's ``if:`` predicates for one event.
+
+    Returns ``(matched, reasons)``. Every set predicate is checked and gets a
+    reason (same shapes as ``workflow_decision_reasons``), so the reasons say
+    both why a job runs and why it was skipped. A job without ``if:`` matches
+    with no reasons.
+    """
+    if job_if is None:
+        return True, []
+    reasons = []
+    matched_all = True
+    if job_if.events is not None:
+        ok = event_type in job_if.events
+        reasons.append({"kind": "event", "matched": ok, "value": event_type,
+                        "patterns": list(job_if.events)})
+        matched_all = matched_all and ok
+    if job_if.branches is not None:
+        if branch:
+            ok = any(branch_matches(pattern, branch) for pattern in job_if.branches)
+            reasons.append({"kind": "branch", "matched": ok, "value": branch,
+                            "patterns": list(job_if.branches)})
+        else:
+            ok = True
+            reasons.append({"kind": "branch", "matched": True, "patterns": list(job_if.branches),
+                            "detail": "the branch is unknown, so the branch filter was not applied"})
+        matched_all = matched_all and ok
+    if job_if.schedule is not None:
+        is_schedule = event_type == SCHEDULE_EVENT_TYPE
+        ok = is_schedule if job_if.schedule else not is_schedule
+        reasons.append({"kind": "schedule", "matched": ok, "value": event_type,
+                        "required": job_if.schedule})
+        matched_all = matched_all and ok
+    if job_if.paths is not None:
+        reason = {"kind": "paths", "include": list(job_if.paths.include),
+                  "exclude": list(job_if.paths.exclude)}
+        if changed_files is None:
+            reason.update({"matched": True,
+                           "detail": "changed files are unknown, so the path filter was not applied"})
+        else:
+            files = matching_files(job_if.paths, changed_files)
+            reason.update({"matched": bool(files),
+                           "matched_files": files[:MATCHED_FILES_LIMIT],
+                           "matched_count": len(files)})
+            matched_all = matched_all and bool(files)
+        reasons.append(reason)
+    return matched_all, reasons
+
+
+def apply_job_conditions(
+    triggers: List[JobTrigger],
+    jobs: List[JobDefinition],
+    event_type: str,
+    branch: str = "",
+    changed_files: Optional[List[str]] = None,
+) -> List[JobTrigger]:
+    """Mark the triggers of jobs whose ``if:`` is false as skipped.
+
+    ``triggers`` must come from ``generate_triggers(jobs, ...)`` (same order).
+    A skipped job is still sent, so the coordinator creates a skipped node
+    with the reasons; its dependents then follow the normal condition rules.
+    """
+    for trigger, job in zip(triggers, jobs):
+        if job.run_if is None:
+            continue
+        matched, reasons = job_if_reasons(job.run_if, event_type, branch, changed_files)
+        trigger.decision_reasons = reasons
+        if not matched:
+            trigger.skip = True
+    return triggers

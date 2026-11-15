@@ -113,6 +113,10 @@ pre,
 .scroll-x {
   overflow-x: auto;
   max-width: 100%;
+  /* A containing block, so a control that positions part of itself
+     absolutely (the check-box input) is clipped here too. Without it, a
+     check box in a wide table widened the whole page at 320px. */
+  position: relative;
 }
 }
 

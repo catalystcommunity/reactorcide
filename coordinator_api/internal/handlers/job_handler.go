@@ -76,11 +76,16 @@ func NewJobHandler(store store.Store, corndogsClient corndogs.ClientInterface) *
 // NewJobHandlerWithObjectStore creates a new job handler with object store
 // support
 func NewJobHandlerWithObjectStore(store store.Store, corndogsClient corndogs.ClientInterface, objectStore objects.ObjectStore) *JobHandler {
+	triggerProcessor := worker.NewTriggerProcessor(store, corndogsClient)
+	if objectStore != nil {
+		// An eval's full changed-file list is kept in object storage.
+		triggerProcessor.SetObjectStore(objectStore)
+	}
 	return &JobHandler{
 		store:            store,
 		corndogsClient:   corndogsClient,
 		objectStore:      objectStore,
-		triggerProcessor: worker.NewTriggerProcessor(store, corndogsClient),
+		triggerProcessor: triggerProcessor,
 		visibility:       roleStoreResolver(store, "JobHandler"),
 	}
 }
@@ -321,11 +326,37 @@ func (h *JobHandler) CreateJob(w http.ResponseWriter, r *http.Request) {
 		job.QueueName = queue.QueueUUID
 	}
 
+	// An eval submitted through the API is a `manual` CI event. An
+	// Idempotency-Key repeat returns the job the first request created.
+	manualEvent, existingJob, err := h.prepareManualEvent(r.Context(), r, job, creatorID)
+	switch {
+	case errors.Is(err, store.ErrInvalidInput):
+		h.respondWithError(w, http.StatusBadRequest, err)
+		return
+	case errors.Is(err, errIdempotencyInProgress):
+		h.respondWithJSON(w, http.StatusConflict, ErrorResponse{Error: "conflict", Message: err.Error()})
+		return
+	case err != nil:
+		h.respondWithError(w, http.StatusInternalServerError, err)
+		return
+	case existingJob != nil:
+		// The key is shared within the organization; only a caller who may
+		// read the first job gets it back.
+		if !h.canSubjectAccessJob(r.Context(), user, existingJob, tokencaps.JobsRead) {
+			h.respondWithJSON(w, http.StatusConflict, ErrorResponse{Error: "conflict", Message: "this Idempotency-Key was already used"})
+			return
+		}
+		h.respondWithJSON(w, http.StatusOK, h.jobToResponse(existingJob))
+		return
+	}
+
 	// Create job in database
 	if err := h.store.CreateJob(r.Context(), job); err != nil {
+		h.finishManualEvent(r.Context(), manualEvent, job, false)
 		h.respondWithError(w, http.StatusInternalServerError, err)
 		return
 	}
+	h.finishManualEvent(r.Context(), manualEvent, job, true)
 
 	// Record job submission metric
 	sourceTypeStr := ""
@@ -1028,6 +1059,11 @@ func (h *JobHandler) SubmitTriggers(w http.ResponseWriter, r *http.Request) {
 	}
 	if !allowed {
 		h.respondWithError(w, http.StatusForbidden, store.ErrForbidden)
+		return
+	}
+	// A job that is not an event's eval creates dynamic jobs; the
+	// organization or project may forbid that.
+	if h.refuseDynamicJobs(r.Context(), w, parentJob) {
 		return
 	}
 

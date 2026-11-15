@@ -16,6 +16,7 @@ import (
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/characteristics"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/cipolicy"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/corndogs"
+	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/objects"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/profiles"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/resources"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store"
@@ -31,6 +32,7 @@ type TriggerProcessor struct {
 	store          store.Store
 	corndogsClient corndogs.ClientInterface
 	statusUpdater  vcs.JobStatusUpdaterInterface
+	objectStore    objects.ObjectStore
 }
 
 // TriggerWorkflowOutcome reports the durable result for one workflow in a
@@ -102,6 +104,14 @@ type triggersFile struct {
 	Workflow       *triggerWorkflowSpec `json:"workflow,omitempty"`
 	Jobs           []triggerJobSpec     `json:"jobs"`
 	ChangedCIPaths []string             `json:"changed_ci_paths,omitempty"`
+	// Decisions is runnerlib's run / skipped / invalid decision for every
+	// workflow file it considered, with structured reasons. Optional: an older
+	// runnerlib sends none, and only the created workflows are recorded.
+	Decisions []evalWorkflowDecision `json:"decisions,omitempty"`
+	// ChangedFiles is the event's changed-file list (capped by runnerlib);
+	// ChangedFilesTotal is the exact count.
+	ChangedFiles      []string `json:"changed_files,omitempty"`
+	ChangedFilesTotal int      `json:"changed_files_total,omitempty"`
 }
 
 type policyCandidateSet struct {
@@ -133,6 +143,7 @@ type triggerWorkflowSpec struct {
 	DependencyPaths  []string               `json:"dependency_paths,omitempty"`
 	EventMatched     bool                   `json:"event_matched,omitempty"`
 	ExplicitID       bool                   `json:"explicit_id,omitempty"`
+	StatusContext    string                 `json:"status_context,omitempty"` // YAML status.context; see ensureWorkflow
 	Vars             map[string]interface{} `json:"vars"`
 	OperationID      string                 `json:"-"`
 	TriggerType      string                 `json:"-"`
@@ -220,6 +231,13 @@ type triggerJobSpec struct {
 	// buildJobFromTrigger.
 	Characteristics map[string]interface{} `json:"characteristics"`
 	Resources       map[string]interface{} `json:"resources"`
+
+	// Skip is set by the eval when the job's `if:` predicates are false for
+	// this event. The node is created as skipped and never runs.
+	// DecisionReasons explains the `if:` verdict either way (absent when the
+	// job has no `if:`).
+	Skip            bool                    `json:"skip,omitempty"`
+	DecisionReasons []models.DecisionReason `json:"decision_reasons,omitempty"`
 }
 
 // jobDefinitionFile represents a YAML job definition file (e.g., .reactorcide/jobs/*.yaml).
@@ -321,10 +339,14 @@ func (tp *TriggerProcessor) processTriggersFromData(ctx context.Context, data []
 		}
 		batches = []triggerWorkflowSpec{batch}
 	}
+	if len(tf.ChangedFiles) > maxChangedFilesAccepted {
+		return nil, invalidTrigger(fmt.Errorf("changed_files has more than %d entries", maxChangedFilesAccepted))
+	}
 	policyViolations := []policyViolation(nil)
+	policyNotes := map[string]models.DecisionReason{}
 	if isEvalResult && tf.PolicyCandidates != nil {
 		var err error
-		batches, policyViolations, err = tp.selectPolicyCandidates(ctx, parentJob, tf.PolicyCandidates, tf.ChangedCIPaths)
+		batches, policyViolations, policyNotes, err = tp.selectPolicyCandidates(ctx, parentJob, tf.PolicyCandidates, tf.ChangedCIPaths)
 		if err != nil {
 			return nil, err
 		}
@@ -342,9 +364,13 @@ func (tp *TriggerProcessor) processTriggersFromData(ctx context.Context, data []
 				return nil, fmt.Errorf("runnerlib evaluation output cannot select CI policy authority")
 			}
 			tp.applyBaseAuthority(parentJob, &batches[i], defaultProfile)
+			revision := ""
 			if policy != nil {
 				batches[i].PolicyRevision = policy.Revision
+				revision = policy.Revision
 			}
+			policyNotes[workflowSecurityIDOf(batches[i])] = policyNote("base", defaultProfile, batches[i].WorkerClass, "", revision,
+				"no CI definition this workflow uses changed, so the trusted base CI runs")
 		}
 	}
 	if isEvalResult {
@@ -355,8 +381,14 @@ func (tp *TriggerProcessor) processTriggersFromData(ctx context.Context, data []
 			"actor": parentJob.JobEnvVars["REACTORCIDE_HEAD_ACTOR"], "actor_subjects": parentJob.JobEnvVars["REACTORCIDE_ACTOR_SUBJECTS"],
 		})
 	}
+	operationID := strings.TrimSpace(tf.OperationID)
+	if isEvalResult && stringValue(parentJob.EventID) != "" {
+		// The event is the eval's identity. Whatever operation ID the client
+		// sent, an eval of one event (first run or retry) is one operation.
+		operationID = stringValue(parentJob.EventID)
+	}
 	for i := range batches {
-		batches[i].OperationID = strings.TrimSpace(tf.OperationID)
+		batches[i].OperationID = operationID
 		batches[i].TriggerType = strings.TrimSpace(tf.TriggerType)
 		if batches[i].TriggerType == "" {
 			batches[i].TriggerType = "runnerlib"
@@ -397,7 +429,11 @@ func (tp *TriggerProcessor) processTriggersFromData(ctx context.Context, data []
 				break
 			}
 		}
-		if headAuthorized {
+		// A violation means a stored policy refused a CI change. A project
+		// with no stored policy runs the event's own CI code and has nothing
+		// to refuse (Reactorcide CI Policy applies only when a policy exists).
+		storedPolicy, _ := policySnapshot(parentJob)
+		if headAuthorized || storedPolicy == nil {
 			policyViolations = nil
 		} else if policyViolations == nil {
 			policyViolations = make([]policyViolation, 0, len(tf.ChangedCIPaths))
@@ -455,6 +491,7 @@ func (tp *TriggerProcessor) processTriggersFromData(ctx context.Context, data []
 			}
 		}
 		if isEvalResult {
+			tp.recordEvalDecisions(ctx, parentJob, &tf, batches, policyNotes, nil)
 			if err := tp.completeReportGeneration(ctx, parentJob); err != nil {
 				return createdJobIDs, err
 			}
@@ -463,6 +500,7 @@ func (tp *TriggerProcessor) processTriggersFromData(ctx context.Context, data []
 	}
 
 	var createdJobIDs []string
+	var outcomes []TriggerWorkflowOutcome
 	for i := range batches {
 		ids, wf, err := tp.processWorkflowBatch(ctx, parentJob, &batches[i], workspaceDir)
 		if err != nil {
@@ -470,6 +508,7 @@ func (tp *TriggerProcessor) processTriggersFromData(ctx context.Context, data []
 			if wf != nil && errors.As(err, &recorded) {
 				createdJobIDs = append(createdJobIDs, ids...)
 				outcome := workflowOutcome(wf, ids, recorded.Disposition, recorded.Reason)
+				outcomes = append(outcomes, outcome)
 				if result != nil {
 					result.Workflows = append(result.Workflows, outcome)
 				}
@@ -495,11 +534,16 @@ func (tp *TriggerProcessor) processTriggersFromData(ctx context.Context, data []
 			return createdJobIDs, err
 		}
 		createdJobIDs = append(createdJobIDs, ids...)
-		if result != nil && wf != nil {
-			result.Workflows = append(result.Workflows, workflowOutcome(wf, ids, "accepted", ""))
+		if wf != nil {
+			outcome := workflowOutcome(wf, ids, "accepted", "")
+			outcomes = append(outcomes, outcome)
+			if result != nil {
+				result.Workflows = append(result.Workflows, outcome)
+			}
 		}
 	}
 	if isEvalResult {
+		tp.recordEvalDecisions(ctx, parentJob, &tf, batches, policyNotes, outcomes)
 		if err := tp.completeReportGeneration(ctx, parentJob); err != nil {
 			return createdJobIDs, err
 		}
@@ -566,27 +610,39 @@ func candidateMap(candidates []triggerWorkflowSpec) (map[string]triggerWorkflowS
 	return result, nil
 }
 
-func (tp *TriggerProcessor) selectPolicyCandidates(ctx context.Context, parentJob *models.Job, candidates *policyCandidateSet, changedCIPaths []string) ([]triggerWorkflowSpec, []policyViolation, error) {
+// selectPolicyCandidates decides, per workflow, whether the head or the base
+// CI definition runs. It also returns one structured policy reason per
+// selected workflow, keyed by workflow security ID, so the event can explain
+// the decision later.
+//
+// Policy applies only when the project stores one. Without a stored policy
+// the eval job already runs the event's own CI code (or the project's
+// configured CI source), so the evaluator sends no candidates; if a stale
+// evaluator sends some anyway, the base definitions run.
+func (tp *TriggerProcessor) selectPolicyCandidates(ctx context.Context, parentJob *models.Job, candidates *policyCandidateSet, changedCIPaths []string) ([]triggerWorkflowSpec, []policyViolation, map[string]models.DecisionReason, error) {
+	notes := map[string]models.DecisionReason{}
 	metadata, err := vcs.MetadataFromJob(parentJob)
 	if err != nil || metadata == nil || !metadata.IsEval || parentJob.ProjectID == nil {
-		return nil, nil, fmt.Errorf("CI policy candidates require a project evaluation job")
+		return nil, nil, nil, fmt.Errorf("CI policy candidates require a project evaluation job")
 	}
 	baseByID, err := candidateMap(candidates.Base)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	headByID, err := candidateMap(candidates.Head)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 
 	defaultProfile := "standard"
 	policy, err := policySnapshot(parentJob)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
+	revision := ""
 	if policy != nil {
 		defaultProfile = policy.Defaults.Profile
+		revision = policy.Revision
 	}
 
 	approvals := []models.CIApproval(nil)
@@ -596,7 +652,7 @@ func (tp *TriggerProcessor) selectPolicyCandidates(ctx context.Context, parentJo
 		if approvalStore, ok := tp.store.(triggerApprovalListStore); ok {
 			approvals, err = approvalStore.ListActiveCIApprovalsForTarget(ctx, *parentJob.ProjectID, metadata.PRNumber, headRepository, stringValue(parentJob.SourceRef), parentJob.CISHA, decisionTime)
 			if err != nil {
-				return nil, nil, fmt.Errorf("load coordinator CI approvals: %w", err)
+				return nil, nil, nil, fmt.Errorf("load coordinator CI approvals: %w", err)
 			}
 		}
 	}
@@ -638,6 +694,10 @@ func (tp *TriggerProcessor) selectPolicyCandidates(ctx context.Context, parentJo
 		useHead := false
 		var decision cipolicy.Decision
 		var approvalID *string
+		// considered is true when head CI was a real option for this workflow,
+		// so the reason can say why it was or was not granted.
+		considered := false
+		baseReasons := []string{"no changed CI path is used by this workflow"}
 		// The coordinator's stored policy is the ONLY authority on whether head
 		// CI is granted. A workflow's declared identity is a fact the policy
 		// matches against, not a second gate the repository holds.
@@ -660,9 +720,17 @@ func (tp *TriggerProcessor) selectPolicyCandidates(ctx context.Context, parentJo
 		// "workflow_id_explicit"). Declaring `id:` remains the documented
 		// practice: it keeps a rename from silently changing a workflow's
 		// security identity.
+		if !hasHead {
+			baseReasons = []string{"the head revision has no workflow with this ID"}
+		} else if !head.EventMatched {
+			baseReasons = []string{"the head definition does not match this event"}
+		} else if policy == nil {
+			baseReasons = []string{"no coordinator CI policy is stored for this project"}
+		}
 		if policy != nil && hasHead && head.EventMatched {
 			dependencies := uniqueNonEmpty(append(append([]string{}, head.DependencyPaths...), sharedPaths...))
 			if len(changedCIPaths) > 0 && intersects(changedCIPaths, dependencies) {
+				considered = true
 				approvalMatchesTarget := func(approval models.CIApproval) bool {
 					return approval.OrgID == parentJob.OrgID && approval.ProjectID == *parentJob.ProjectID &&
 						approval.PRNumber == metadata.PRNumber && approval.HeadRepository == headRepository &&
@@ -700,12 +768,14 @@ func (tp *TriggerProcessor) selectPolicyCandidates(ctx context.Context, parentJo
 					ApprovalSubjectsByProfile: approvalFacts,
 				})
 				if err != nil {
-					return nil, nil, fmt.Errorf("workflow %q policy decision failed: %w", id, err)
+					return nil, nil, nil, fmt.Errorf("workflow %q policy decision failed: %w", id, err)
 				}
+				baseReasons = decision.Reasons
 				if decision.Allowed {
 					useHead = true
 					if len(decision.ApprovalSubjects) > 0 {
 						useHead = false
+						baseReasons = []string{fmt.Sprintf("policy rule %s requires an approval from %s", decision.RuleID, strings.Join(decision.ApprovalSubjects, ", "))}
 						for i := range approvals {
 							approval := &approvals[i]
 							if approvalMatchesTarget(*approval) && approval.ExecutionProfile == decision.Profile &&
@@ -724,6 +794,7 @@ func (tp *TriggerProcessor) selectPolicyCandidates(ctx context.Context, parentJo
 		if useHead && len(decision.BaseNodes) > 0 {
 			if !hasBase {
 				useHead = false
+				baseReasons = []string{"policy rule grants base nodes, but the base revision has no such workflow"}
 			} else {
 				baseJobs := map[string]triggerJobSpec{}
 				for _, job := range base.Jobs {
@@ -732,6 +803,7 @@ func (tp *TriggerProcessor) selectPolicyCandidates(ctx context.Context, parentJo
 				for name := range decision.BaseNodes {
 					if _, ok := baseJobs[name]; !ok {
 						useHead = false
+						baseReasons = []string{fmt.Sprintf("policy rule grants base node %q, which the base workflow does not have", name)}
 						break
 					}
 				}
@@ -771,12 +843,17 @@ func (tp *TriggerProcessor) selectPolicyCandidates(ctx context.Context, parentJo
 			head.CISHA = stringValue(parentJob.SourceRef)
 			head.ExecutionProfile = decision.Profile
 			head.WorkerClass = decision.WorkerClass
-			head.PolicyRevision = policy.Revision
+			head.PolicyRevision = revision
 			head.PolicyRuleID = decision.RuleID
 			head.ApprovalID = approvalID
 			head.NodeAuthority = decision.BaseNodes
 			selected = append(selected, head)
 			headAuthorized = true
+			reasons := decision.Reasons
+			if len(reasons) == 0 {
+				reasons = []string{fmt.Sprintf("policy rule %s granted head CI", decision.RuleID)}
+			}
+			notes[id] = policyNote("head", decision.Profile, decision.WorkerClass, decision.RuleID, revision, reasons...)
 			continue
 		}
 		if hasBase && base.EventMatched {
@@ -785,18 +862,24 @@ func (tp *TriggerProcessor) selectPolicyCandidates(ctx context.Context, parentJo
 				base.PolicyRevision = policy.Revision
 			}
 			selected = append(selected, base)
+			if considered && len(baseReasons) > 0 {
+				baseReasons = append([]string{"head CI was not granted"}, baseReasons...)
+			}
+			notes[id] = policyNote("base", defaultProfile, base.WorkerClass, "", base.PolicyRevision, baseReasons...)
 		}
 	}
 
-	if headAuthorized {
-		return selected, nil, nil
+	// Only a stored policy can refuse a CI change. Without one there is no
+	// violation to report.
+	if headAuthorized || policy == nil {
+		return selected, nil, notes, nil
 	}
 	violations := make([]policyViolation, 0, len(changedCIPaths))
 	for _, pathValue := range uniqueNonEmpty(changedCIPaths) {
 		violations = append(violations, policyViolation{Path: pathValue,
 			Actor: envString(parentJob, "REACTORCIDE_HEAD_ACTOR"), BaseSHA: parentJob.CISHA, HeadSHA: stringValue(parentJob.SourceRef)})
 	}
-	return selected, violations, nil
+	return selected, violations, notes, nil
 }
 
 func (tp *TriggerProcessor) validateWorkflowAuthority(ctx context.Context, parentJob *models.Job, spec *triggerWorkflowSpec, _ []string) error {

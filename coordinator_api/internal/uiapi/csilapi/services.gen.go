@@ -107,5 +107,6 @@ type ReactorcideUi interface {
 	GetJob(ctx context.Context, req GetJobRequest) (GetJobResponse, error)
 	ListWorkflows(ctx context.Context, req ListWorkflowsRequest) (ListWorkflowsResponse, error)
 	GetWorkflow(ctx context.Context, req GetWorkflowRequest) (GetWorkflowResponse, error)
+	GetEvent(ctx context.Context, req GetEventRequest) (GetEventResponse, error)
 	DescribeFormMetadata(ctx context.Context, req DescribeFormMetadataRequest) (DescribeFormMetadataResponse, error)
 }
