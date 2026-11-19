@@ -1,6 +1,10 @@
 package models
 
-import "time"
+import (
+	"time"
+
+	"github.com/lib/pq"
+)
 
 type WorkerClass struct {
 	ClassID   string    `gorm:"column:class_id;primaryKey;type:uuid;default:generate_ulid()" json:"class_id"`
@@ -9,6 +13,10 @@ type WorkerClass struct {
 	Protected bool      `gorm:"not null;default:false" json:"protected"`
 	CreatedAt time.Time `gorm:"autoCreateTime:false;default:timezone('utc', now())" json:"created_at"`
 	UpdatedAt time.Time `gorm:"autoUpdateTime:false;default:timezone('utc', now())" json:"updated_at"`
+	// RefClassesAny, when not empty, admits a workflow or node to this
+	// worker class only when its ref classes have one of the listed classes
+	// (docs/ref-classes.md). Empty is no condition.
+	RefClassesAny pq.StringArray `gorm:"column:ref_classes_any;type:text[]" json:"ref_classes_any,omitempty"`
 }
 
 func (WorkerClass) TableName() string { return "worker_classes" }

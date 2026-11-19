@@ -139,6 +139,31 @@ tls:
   caKey: ""
   serverName: ""
 
+# resilience sets the admission policy of the resilience contract (server
+# 0.8.0 and later). See docs/resilience.md.
+#
+# Reactorcide: keep submissionKeyPolicy at "compatibility". Reactorcide
+# submits jobs without a submission key, so "required" refuses each job.
+#   submissionKeyPolicy : "compatibility" accepts legacy SubmitTask (no key).
+#                         "required" rejects it before it creates a task.
+#   taskGuardPolicy     : "compatibility" accepts legacy claims, updates,
+#                         completions, and cancellations of unguarded tasks.
+#                         "required" rejects them before they change data.
+#   receiptRetention    : how long submission and operation receipts stay
+#                         valid (Go duration, 1m or more). A retry after this
+#                         period is not deduplicated.
+#
+# Both policies default to "compatibility", so an upgraded server keeps serving
+# released clients. The chart always sets these values, so an upgrade keeps the
+# policy that you set. For a new installation where every client uses the
+# resilience operations, set both policies to "required".
+# The two settings are separate: "required" submission keys do not protect
+# tasks from stale workers. Only task guards do that.
+resilience:
+  submissionKeyPolicy: compatibility
+  taskGuardPolicy: compatibility
+  receiptRetention: 1h
+
 # storage selects the backend:
 #   postgres (default) : the shared, horizontally-scalable backend.
 #   file               : an embedded, single-process bbolt backend, with no

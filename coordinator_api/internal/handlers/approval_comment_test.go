@@ -37,3 +37,22 @@ func TestParseApprovalComment(t *testing.T) {
 		t.Errorf("review label = %q", label)
 	}
 }
+
+func TestParseRequiredSetComment(t *testing.T) {
+	got, ok := approvals.ParseComment("/reactorcide promote lint")
+	if !ok || got.Name != approvals.CommandPromote || got.Workflow != "lint" {
+		t.Fatalf("promote = %+v, %t", got, ok)
+	}
+	got, ok = approvals.ParseComment("/reactorcide demote lint")
+	if !ok || got.Name != approvals.CommandDemote || got.Workflow != "lint" {
+		t.Fatalf("demote = %+v, %t", got, ok)
+	}
+	for _, body := range []string{"/reactorcide promote", "/reactorcide promote a b", "/reactorcide demote"} {
+		if _, ok := approvals.ParseComment(body); ok {
+			t.Errorf("accepted invalid command %q", body)
+		}
+	}
+	if !approvals.IsCommandAttempt("/reactorcide frobnicate") || approvals.IsCommandAttempt("please /reactorcide x") {
+		t.Fatal("IsCommandAttempt is wrong")
+	}
+}

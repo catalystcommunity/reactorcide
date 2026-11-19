@@ -98,7 +98,9 @@ func (r *Reconciler) reconcileTarget(ctx context.Context, targetID string) (stri
 		for _, row := range rows {
 			title, _ := row.StructuredState["title"].(string)
 			body, _ := row.StructuredState["body"].(string)
-			entries = append(entries, Entry{Key: row.EntryKey, Title: title, Body: body, Status: row.Status, Generation: row.Generation})
+			persistent, _ := row.StructuredState["persistent"].(bool)
+			entries = append(entries, Entry{Key: row.EntryKey, Title: title, Body: body, Status: row.Status, Generation: row.Generation,
+				Persistent: persistent})
 		}
 		body, _ := Merge(existing, entries, current.CurrentGeneration, current.GenerationComplete)
 		commentID, err = client.WriteComment(lockCtx, current, commentID, body)

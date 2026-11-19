@@ -17,7 +17,11 @@ import (
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/characteristics"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/cipolicy"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/corndogs"
+	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/egress"
+	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/imagealias"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/objects"
+	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/owners"
+	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/priority"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/profiles"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/resources"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store"
@@ -130,24 +134,33 @@ type policyViolation struct {
 }
 
 type triggerWorkflowSpec struct {
-	ID               string                 `json:"id,omitempty"`
-	Name             string                 `json:"name"`
-	SourceFile       string                 `json:"source_file,omitempty"`
-	CIOrigin         string                 `json:"ci_origin,omitempty"`
-	CIRepository     string                 `json:"ci_repository,omitempty"`
-	CISHA            string                 `json:"ci_sha,omitempty"`
-	ExecutionProfile string                 `json:"execution_profile,omitempty"`
-	WorkerClass      string                 `json:"worker_class,omitempty"`
-	PolicyRevision   string                 `json:"policy_revision,omitempty"`
-	PolicyRuleID     string                 `json:"policy_rule_id,omitempty"`
-	ApprovalID       *string                `json:"approval_id,omitempty"`
-	DependencyPaths  []string               `json:"dependency_paths,omitempty"`
-	EventMatched     bool                   `json:"event_matched,omitempty"`
-	ExplicitID       bool                   `json:"explicit_id,omitempty"`
-	StatusContext    string                 `json:"status_context,omitempty"` // YAML status.context; see ensureWorkflow
-	Vars             map[string]interface{} `json:"vars"`
-	OperationID      string                 `json:"-"`
-	TriggerType      string                 `json:"-"`
+	ID               string   `json:"id,omitempty"`
+	Name             string   `json:"name"`
+	SourceFile       string   `json:"source_file,omitempty"`
+	CIOrigin         string   `json:"ci_origin,omitempty"`
+	CIRepository     string   `json:"ci_repository,omitempty"`
+	CISHA            string   `json:"ci_sha,omitempty"`
+	ExecutionProfile string   `json:"execution_profile,omitempty"`
+	WorkerClass      string   `json:"worker_class,omitempty"`
+	PolicyRevision   string   `json:"policy_revision,omitempty"`
+	PolicyRuleID     string   `json:"policy_rule_id,omitempty"`
+	ApprovalID       *string  `json:"approval_id,omitempty"`
+	DependencyPaths  []string `json:"dependency_paths,omitempty"`
+	EventMatched     bool     `json:"event_matched,omitempty"`
+	ExplicitID       bool     `json:"explicit_id,omitempty"`
+	StatusContext    string   `json:"status_context,omitempty"` // YAML status.context; see ensureWorkflow
+	// Owners and Contact are the YAML owners/contact blocks as the eval
+	// reports them. They are facts, not authority, and the coordinator uses
+	// them only from the TRUSTED definition (see assignTrustedOwnership).
+	Owners  *owners.Spec        `json:"owners,omitempty"`
+	Contact *owners.ContactSpec `json:"contact,omitempty"`
+	// Ownership is the trusted owner snapshot that the coordinator chose for
+	// this workflow. Nil means unknown. Never read from JSON.
+	Ownership       *models.WorkflowOwnership `json:"-"`
+	OwnershipSource string                    `json:"-"`
+	Vars            map[string]interface{}    `json:"vars"`
+	OperationID     string                    `json:"-"`
+	TriggerType     string                    `json:"-"`
 	// Jobs are this workflow's nodes (multi-workflow form). Empty in the legacy
 	// single-workflow form, where jobs live in triggersFile.Jobs instead.
 	Jobs          []triggerJobSpec                 `json:"jobs,omitempty"`
@@ -209,9 +222,11 @@ type triggerJobSpec struct {
 	JobDir         string            `json:"job_dir"`
 	WorkingDir     string            `json:"working_dir"`
 	RunAsUser      string            `json:"run_as_user"`
-	Priority       *int              `json:"priority"`
-	Timeout        *int              `json:"timeout"`
-	Capabilities   []string          `json:"capabilities"`
+	// RunAsAdministrator is run_as.administrator. nil means not set.
+	RunAsAdministrator *bool    `json:"run_as_administrator,omitempty"`
+	Priority           *int     `json:"priority"`
+	Timeout            *int     `json:"timeout"`
+	Capabilities       []string `json:"capabilities"`
 	// ImagePullSecrets holds Kubernetes Secret NAMES for pulling the job
 	// image — never credentials. The worker enforces its allowlist before
 	// Kubernetes Job creation.
@@ -239,6 +254,17 @@ type triggerJobSpec struct {
 	// job has no `if:`).
 	Skip            bool                    `json:"skip,omitempty"`
 	DecisionReasons []models.DecisionReason `json:"decision_reasons,omitempty"`
+
+	// QuarantinePolicy is the node option `quarantine_policy` (WP15,
+	// docs/artifacts-and-tests.md): "" or "report" keeps a failed job
+	// failed; "ignore_quarantined" makes the node a success when every
+	// failed test of the job reports is quarantined.
+	QuarantinePolicy string `json:"quarantine_policy,omitempty"`
+
+	// LoadError is set by resolveJobSpecs when the job_file of the node
+	// cannot be loaded. The node is still created, and its submit fails as
+	// not admitted with this error, so the run shows the failure.
+	LoadError string `json:"load_error,omitempty"`
 }
 
 // jobDefinitionFile represents a YAML job definition file (e.g., .reactorcide/jobs/*.yaml).
@@ -274,6 +300,14 @@ func runAsUserFromSpec(spec *RunAsSpec) string {
 		return ""
 	}
 	return spec.User
+}
+
+func runAsAdministratorFromSpec(spec *RunAsSpec) *bool {
+	if spec == nil || spec.Administrator == nil {
+		return nil
+	}
+	v := *spec.Administrator
+	return &v
 }
 
 // ProcessTriggers reads triggers.json from the workspace directory of a completed
@@ -358,7 +392,8 @@ func (tp *TriggerProcessor) processTriggersFromData(ctx context.Context, data []
 		}
 		defaultProfile := "standard"
 		if policy != nil {
-			defaultProfile = policy.Defaults.Profile
+			// defaults.by_ref_class can select the profile by ref class.
+			defaultProfile, _ = policy.DefaultProfileFor(parentJob.RefClasses)
 		}
 		runAuthority, err := runAuthoritySnapshot(parentJob)
 		if err != nil {
@@ -388,6 +423,16 @@ func (tp *TriggerProcessor) processTriggersFromData(ctx context.Context, data []
 			"head_sha": stringValue(parentJob.SourceRef), "changed_ci_paths": tf.ChangedCIPaths,
 			"actor": parentJob.JobEnvVars["REACTORCIDE_HEAD_ACTOR"], "actor_subjects": parentJob.JobEnvVars["REACTORCIDE_ACTOR_SUBJECTS"],
 		})
+	}
+	if isEvalResult {
+		tp.assignTrustedOwnership(ctx, parentJob, batches)
+	} else {
+		// Only the eval of the trusted CI definition can name an owner. A
+		// job's own trigger output never does: a child workflow gets the
+		// owner of its parent workflow (database trigger, migration 000053).
+		for i := range batches {
+			batches[i].Ownership, batches[i].OwnershipSource = nil, ""
+		}
 	}
 	var carried map[string]carriedWorkflow
 	if isEvalResult {
@@ -479,6 +524,17 @@ func (tp *TriggerProcessor) processTriggersFromData(ctx context.Context, data []
 				logging.Log.WithError(err).Warn("Could not publish CI policy status")
 			}
 		}
+	}
+
+	if isEvalResult {
+		// Owner acceptance of path dependencies (path_acceptance.go).
+		batches = tp.applyPathAcceptance(ctx, parentJob, &tf, batches, policyNotes)
+	}
+
+	if isEvalResult {
+		// Under a shed level that skips advisory workflows, only required
+		// workflows run (advisory_shed.go).
+		batches = tp.skipAdvisoryWhenShedding(ctx, parentJob, batches, policyNotes)
 	}
 
 	logger := logging.Log.WithField("parent_job_id", parentJob.JobID).WithField("workflow_count", len(batches))
@@ -653,7 +709,8 @@ func (tp *TriggerProcessor) selectPolicyCandidates(ctx context.Context, parentJo
 	}
 	revision := ""
 	if policy != nil {
-		defaultProfile = policy.Defaults.Profile
+		// defaults.by_ref_class can select the profile by ref class.
+		defaultProfile, _ = policy.DefaultProfileFor(parentJob.RefClasses)
 		revision = policy.Revision
 	}
 	runAuthority, err := runAuthoritySnapshot(parentJob)
@@ -669,7 +726,7 @@ func (tp *TriggerProcessor) selectPolicyCandidates(ctx context.Context, parentJo
 	approvals := []models.CIApproval(nil)
 	decisionTime := time.Now().UTC()
 	headSHA := stringValue(parentJob.SourceRef)
-	if policy != nil && metadata.PRNumber > 0 {
+	if (policy != nil || runAuthority.OwnerOverride != nil) && metadata.PRNumber > 0 {
 		if approvalStore, ok := tp.store.(triggerApprovalListStore); ok {
 			loaded, loadErr := approvalStore.ListCIApprovalsForHead(ctx, *parentJob.ProjectID, metadata.PRNumber, headSHA)
 			if loadErr != nil {
@@ -773,7 +830,21 @@ func (tp *TriggerProcessor) selectPolicyCandidates(ctx context.Context, parentJo
 			dependencies := uniqueNonEmpty(append(append([]string{}, head.DependencyPaths...), sharedPaths...))
 			headChanged = len(changedCIPaths) > 0 && intersects(changedCIPaths, dependencies)
 		}
-		if runAuthority.Gated && runAuthority.Override == nil && headChanged {
+		// The owner of the TRUSTED definition of this workflow (never the
+		// head's). It stands in for workflow_owner in approver lists.
+		ownerSubjects := []string(nil)
+		if hasBase {
+			if snapshot, ownerErr := owners.FromSpec(base.Owners, base.Contact, parentJob.CISHA); ownerErr == nil {
+				ownerSubjects = owners.Subjects(snapshot)
+			}
+		}
+		// override-ci by an owner of this workflow, when override_approvers
+		// names workflow_owner. It grants head CI for this workflow only.
+		var ownerOverride *models.CIApproval
+		if headChanged && runAuthority.Override == nil && runAuthority.OwnerOverride != nil && len(ownerSubjects) > 0 {
+			ownerOverride = approvalstate.Granted(approvals, models.CIApprovalKindHeadCI, headSHA, ownerSubjects, decisionTime)
+		}
+		if runAuthority.Gated && runAuthority.Override == nil && ownerOverride == nil && headChanged {
 			// approve-ci runs trusted base CI. The head's CI changes need
 			// override-ci, also when a policy rule would grant them.
 			considered = true
@@ -798,7 +869,9 @@ func (tp *TriggerProcessor) selectPolicyCandidates(ctx context.Context, parentJo
 					WorkflowID: id, ChangedCIPaths: allPolicyPaths,
 					Event: envString(parentJob, "REACTORCIDE_EVENT_TYPE"), BaseBranch: baseBranch,
 					HeadRepositoryRelation: relation, ActorSubjects: actorSubjects,
-					ApprovalSubjects: approvedHeadCI,
+					ApprovalSubjects:      approvedHeadCI,
+					RefClasses:            parentJob.RefClasses,
+					WorkflowOwnerSubjects: ownerSubjects,
 				})
 				if err != nil {
 					return nil, nil, nil, fmt.Errorf("workflow %q policy decision failed: %w", id, err)
@@ -828,6 +901,17 @@ func (tp *TriggerProcessor) selectPolicyCandidates(ctx context.Context, parentJo
 				WorkerClass: "default", RuleID: overrideRuleID, Allowed: true,
 				Reasons: []string{fmt.Sprintf("override-ci approved by %s", runAuthority.Override.Person)}}
 			value := runAuthority.Override.ApprovalID
+			approvalID = &value
+			useHead = true
+		}
+		if !useHead && headChanged && ownerOverride != nil {
+			// override-ci by an owner of the trusted definition of this
+			// workflow (A6). Only this workflow runs head CI.
+			considered = true
+			decision = cipolicy.Decision{CISource: "head", Profile: runAuthority.OwnerOverride.Profile,
+				WorkerClass: "default", RuleID: overrideRuleID, Allowed: true,
+				Reasons: []string{fmt.Sprintf("override-ci approved by %s, an owner of this workflow", ownerOverride.Person)}}
+			value := ownerOverride.ApprovalID
 			approvalID = &value
 			useHead = true
 		}
@@ -888,6 +972,14 @@ func (tp *TriggerProcessor) selectPolicyCandidates(ctx context.Context, parentJo
 			head.PolicyRuleID = decision.RuleID
 			head.ApprovalID = approvalID
 			head.NodeAuthority = decision.BaseNodes
+			// A pull request cannot change the owner of the workflow it runs:
+			// the owner comes from the trusted base definition, or is "none"
+			// for a workflow that only the head has.
+			if hasBase {
+				tp.setOwnershipFromSpec(parentJob, &head, base.Owners, base.Contact)
+			} else {
+				tp.setOwnershipFromSpec(parentJob, &head, nil, nil)
+			}
 			selected = append(selected, head)
 			headAuthorized = true
 			reasons := decision.Reasons
@@ -902,6 +994,7 @@ func (tp *TriggerProcessor) selectPolicyCandidates(ctx context.Context, parentJo
 			if policy != nil {
 				base.PolicyRevision = policy.Revision
 			}
+			tp.setOwnershipFromSpec(parentJob, &base, base.Owners, base.Contact)
 			selected = append(selected, base)
 			if considered && len(baseReasons) > 0 {
 				baseReasons = append([]string{"head CI was not granted"}, baseReasons...)
@@ -1103,6 +1196,8 @@ func enforceResourceCeilings(job *models.Job, ceilings models.JSONB) error {
 		{"cpu_request", job.ResourceCPURequest, resources.ParseCPU},
 		{"cpu_limit", job.ResourceCPULimit, resources.ParseCPU},
 		{"memory_limit", job.ResourceMemoryLimit, resources.ParseMemory},
+		{"storage_request", job.ResourceStorageRequest, resources.ParseMemory},
+		{"storage_limit", job.ResourceStorageLimit, resources.ParseMemory},
 	}
 	for _, check := range checks {
 		raw, ok := ceilings[check.key]
@@ -1137,6 +1232,14 @@ func (tp *TriggerProcessor) resolveJobSpecs(jobs []triggerJobSpec, workspaceDir 
 			baseSpec, err := tp.loadJobFile(workspaceDir, spec.JobFile)
 			if err != nil {
 				logging.Log.WithError(err).WithField("job_file", spec.JobFile).Error("Failed to load job file")
+				// Keep the node, so that its failure is recorded on the
+				// run (not admitted, with the load error). Do not drop it.
+				if spec.JobName == "" {
+					spec.JobName = spec.JobFile
+				}
+				// The error names the job_file, not the host workspace path.
+				spec.LoadError = strings.ReplaceAll(err.Error(), filepath.Join(workspaceDir, "src")+string(filepath.Separator), "")
+				specs = append(specs, spec)
 				continue
 			}
 			jobFile := spec.JobFile
@@ -1258,21 +1361,22 @@ func (tp *TriggerProcessor) loadJobFile(workspaceDir, jobFile string) (triggerJo
 	}
 
 	spec := triggerJobSpec{
-		JobName:          def.Name,
-		ContainerImage:   def.Job.Image,
-		JobCommand:       def.Job.Command,
-		CodeDir:          def.Job.CodeDir,
-		JobDir:           def.Job.JobDir,
-		WorkingDir:       def.Job.WorkingDir,
-		RunAsUser:        runAsUserFromSpec(def.Job.RunAs),
-		Timeout:          def.Job.Timeout,
-		Priority:         def.Job.Priority,
-		Capabilities:     def.Job.Capabilities,
-		ImagePullSecrets: def.Job.ImagePullSecrets,
-		WorkerClass:      def.Job.WorkerClass,
-		Env:              def.Environment,
-		Characteristics:  def.Job.Characteristics,
-		Resources:        def.Job.Resources,
+		JobName:            def.Name,
+		ContainerImage:     def.Job.Image,
+		JobCommand:         def.Job.Command,
+		CodeDir:            def.Job.CodeDir,
+		JobDir:             def.Job.JobDir,
+		WorkingDir:         def.Job.WorkingDir,
+		RunAsUser:          runAsUserFromSpec(def.Job.RunAs),
+		RunAsAdministrator: runAsAdministratorFromSpec(def.Job.RunAs),
+		Timeout:            def.Job.Timeout,
+		Priority:           def.Job.Priority,
+		Capabilities:       def.Job.Capabilities,
+		ImagePullSecrets:   def.Job.ImagePullSecrets,
+		WorkerClass:        def.Job.WorkerClass,
+		Env:                def.Environment,
+		Characteristics:    def.Job.Characteristics,
+		Resources:          def.Job.Resources,
 	}
 
 	return spec, nil
@@ -1330,6 +1434,10 @@ func (tp *TriggerProcessor) overlaySpec(base, overlay triggerJobSpec) triggerJob
 	}
 	if overlay.RunAsUser != "" {
 		result.RunAsUser = overlay.RunAsUser
+	}
+	if overlay.RunAsAdministrator != nil {
+		v := *overlay.RunAsAdministrator
+		result.RunAsAdministrator = &v
 	}
 
 	// Overlay pointer fields if non-nil
@@ -1396,6 +1504,8 @@ type orgQueueResolvingStore interface {
 // left as buildJobFromTrigger set it -- the parent's or an override's) when
 // the store doesn't implement queueResolvingStore.
 func (tp *TriggerProcessor) resolveJobQueue(ctx context.Context, job *models.Job) error {
+	// A job with egress control waits for a worker with an egress proxy.
+	egress.RouteJob(ctx, tp.store, job)
 	if qs, ok := tp.store.(orgQueueResolvingStore); ok {
 		queue, err := qs.FindOrCreateQueueForOrg(ctx, job.OrgID, job.WorkerClass, job.Characteristics)
 		if err != nil {
@@ -1416,17 +1526,50 @@ func (tp *TriggerProcessor) resolveJobQueue(ctx context.Context, job *models.Job
 	return nil
 }
 
+// resolveChildImage resolves the image of a triggered child job. A child
+// that names no image inherits the image of its parent: then it carries
+// the resolved image of the parent (reference, alias, digest), like a
+// retry, and does not resolve the inherited reference again. Else, after
+// a promotion, the old pinned reference of the parent would be refused,
+// and the child would get another digest than its parent. The carry needs
+// the same kind and platform as the parent; else the child resolves as
+// any other job. CheckCarried refuses the child when no worker can get the
+// image (the alias of the parent was deleted). While the parent is not
+// terminal, the drain keeps its digest.
+func (tp *TriggerProcessor) resolveChildImage(ctx context.Context, job *models.Job, spec triggerJobSpec, parentJob *models.Job) error {
+	if spec.ContainerImage == "" && parentJob != nil {
+		parent := imagealias.CarriedFromJob(parentJob)
+		if parent.Digest != "" && parent.Ref != "" && imagealias.JobReference(job.RunnerImage) == imagealias.JobReference(parent.Ref) &&
+			imagealias.JobPlatform(job) == imagealias.JobPlatform(parentJob) {
+			imagealias.ApplyCarried(job, parent)
+			return imagealias.CheckCarried(ctx, tp.store, job)
+		}
+	}
+	_, err := imagealias.ResolveJob(ctx, tp.store, job)
+	return err
+}
+
 // createAndSubmitJob creates a single job from a trigger spec and submits it to Corndogs.
 // Returns the created job ID on success.
 func (tp *TriggerProcessor) createAndSubmitJob(ctx context.Context, spec triggerJobSpec, parentJob *models.Job) (string, error) {
+	if spec.LoadError != "" {
+		return "", fmt.Errorf("job_file %q could not be loaded: %s", spec.JobFile, spec.LoadError)
+	}
 	job, err := tp.buildJobFromTrigger(spec, parentJob)
 	if err != nil {
 		return "", fmt.Errorf("failed to build triggered job: %w", err)
 	}
 
+	// The image alias of the job, before the queue (internal/imagealias).
+	if err := tp.resolveChildImage(ctx, job, spec, parentJob); err != nil {
+		return "", fmt.Errorf("triggered job %q: %w", job.Name, err)
+	}
 	if err := tp.resolveJobQueue(ctx, job); err != nil {
 		return "", err
 	}
+	// The lane and group shifts give the queue priority. The priority of
+	// the trigger spec moves the job inside its lane only (docs/priority.md).
+	priority.Assign(ctx, tp.store, job)
 
 	if err := tp.store.CreateJob(ctx, job); err != nil {
 		return "", fmt.Errorf("failed to create job in database: %w", err)
@@ -1456,6 +1599,7 @@ func (tp *TriggerProcessor) createAndSubmitJob(ctx context.Context, spec trigger
 		logging.Log.WithError(err).WithField("job_id", job.JobID).Error("Failed to submit triggered job to Corndogs")
 		job.Status = "failed"
 		job.LastError = fmt.Sprintf("failed to submit to Corndogs: %v", err)
+		job.SetFailure(models.FailureClassPlatform, "queue submission")
 	} else {
 		taskID := task.Uuid
 		job.CorndogsTaskID = &taskID
@@ -1585,6 +1729,12 @@ func (tp *TriggerProcessor) buildJobFromTriggerWithCapabilityLimit(spec triggerJ
 		job.ResourceCPURequest = cpuRequest
 		job.ResourceCPULimit = cpuLimit
 		job.ResourceMemoryLimit = memoryLimit
+		storageRequest, storageLimit, err := resources.ParseStorage(spec.Resources)
+		if err != nil {
+			return nil, fmt.Errorf("invalid resources in triggered job %q: %w", spec.JobName, err)
+		}
+		job.ResourceStorageRequest = storageRequest
+		job.ResourceStorageLimit = storageLimit
 	}
 
 	// Source configuration
@@ -1634,6 +1784,10 @@ func (tp *TriggerProcessor) buildJobFromTriggerWithCapabilityLimit(spec triggerJ
 	}
 	if spec.RunAsUser != "" {
 		job.RunAsUser = spec.RunAsUser
+	}
+	if spec.RunAsAdministrator != nil {
+		v := *spec.RunAsAdministrator
+		job.RunAsAdministrator = &v
 	}
 	if spec.Timeout != nil {
 		job.TimeoutSeconds = *spec.Timeout
@@ -1745,6 +1899,9 @@ func BuildTaskPayload(job *models.Job) *corndogs.TaskPayload {
 
 	if job.JobEnvVars != nil {
 		payload.Config["environment"] = job.JobEnvVars
+	}
+	if job.RunAsAdministrator != nil {
+		payload.Config["run_as_administrator"] = *job.RunAsAdministrator
 	}
 
 	return payload

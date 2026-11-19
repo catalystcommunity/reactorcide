@@ -8,6 +8,7 @@ import (
 
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/approvals"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/authz"
+	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/config"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/profiles"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store/models"
@@ -67,11 +68,22 @@ func (s *UiService) PrCommand(ctx context.Context, req csilapi.PrCommandRequest)
 	if authErr != nil {
 		return csilapi.PrCommandResponse{}, authErr
 	}
-	if id.UserID == "" {
-		return csilapi.PrCommandResponse{}, NewServiceError("forbidden", "a pull request command needs a person: use a session or a user token")
+	// The person: a user (a session or a user token), or a service
+	// principal token, as in REST. On a no-login instance only, the admin
+	// token and a wide service principal token act as the instance
+	// administrator.
+	instanceAdmin := config.NoLoginMode() && id.Token.IsWideInstanceToken()
+	if id.UserID == "" && id.PrincipalID == "" && !instanceAdmin {
+		return csilapi.PrCommandResponse{}, NewServiceError("forbidden", "a pull request command needs a person: use a session, a user token, or a service principal token")
 	}
 	project, err := s.visibleProject(ctx, id, req.ProjectId)
 	if err != nil {
+		return csilapi.PrCommandResponse{}, err
+	}
+	// A token needs workflows:control for the organization of the project,
+	// as the REST approvals route.
+	orgID := project.OwnershipOrgID()
+	if err := requireTokenGrant(id, &orgID, tokencaps.WorkflowsControl); err != nil {
 		return csilapi.PrCommandResponse{}, err
 	}
 	if s.deps.Approvals == nil {
@@ -84,8 +96,24 @@ func (s *UiService) PrCommand(ctx context.Context, req csilapi.PrCommandRequest)
 	if req.Label != nil {
 		command.Label = strings.TrimSpace(*req.Label)
 	}
+	if req.Shifts != nil {
+		if command.Name != approvals.CommandRetry && command.Name != approvals.CommandRerun {
+			return csilapi.PrCommandResponse{}, NewServiceError("invalid_argument", "only retry and rerun take shifts")
+		}
+		shifts, err := shiftsFromWire(req.Shifts)
+		if err != nil {
+			return csilapi.PrCommandResponse{}, err
+		}
+		command.Shifts = shifts
+	}
 	request := approvals.Request{Project: project, PRNumber: int(req.PrNumber), Command: command,
-		Channel: models.CIApprovalChannelUI, UserID: id.UserID}
+		Channel: models.CIApprovalChannelUI, UserID: id.UserID, PrincipalID: id.PrincipalID, InstanceAdmin: instanceAdmin}
+	if instanceAdmin {
+		request.PrincipalID = id.Token.PrincipalID
+		if request.PrincipalID == "" {
+			request.TokenID = id.Token.CredentialID
+		}
+	}
 	if req.HeadSha != nil {
 		request.HeadSHA = strings.TrimSpace(*req.HeadSha)
 	}
@@ -180,6 +208,17 @@ func (s *UiService) trustScope(ctx context.Context, id authz.Identity, store uiT
 	// settings too, like the CI policy (for example an admin token when there
 	// are no users).
 	policyToken := id.Token != nil && id.Token.HasOrganization(org.OrgID) && id.Token.HasCapability(tokencaps.PoliciesManage)
+	// A token never exceeds itself: a token with an owner needs both the
+	// role and policies:manage; a token with no owner (the admin token)
+	// acts by policies:manage alone.
+	if id.Token != nil {
+		if tokenHasNoRoles(id) {
+			orgAdmin = false
+		} else {
+			orgAdmin = orgAdmin && policyToken
+			policyToken = false
+		}
+	}
 	if projectID == nil {
 		if !orgAdmin && !policyToken {
 			return nil, nil, false, NewServiceError("forbidden", "organization CI trust settings need an organization administrator")
@@ -218,6 +257,7 @@ func trustToWire(row *models.CITrustSettings) csilapi.CiTrustSettings {
 			wire.RequiredReviews = append(wire.RequiredReviews, reviewToWire(review, ""))
 		}
 	}
+	wire.RerunShiftLimits = rerunLimitsToWire(row.RerunShiftLimits)
 	return wire
 }
 
@@ -248,11 +288,14 @@ func effectiveToWire(effective models.EffectiveTrustSettings) csilapi.CiTrustSet
 	for _, review := range effective.RequiredReviews {
 		wire.RequiredReviews = append(wire.RequiredReviews, reviewToWire(review.RequiredReview, review.Scope))
 	}
+	limits := effective.RerunShiftLimits
+	wire.RerunShiftLimits = rerunLimitsToWire(&limits)
 	return wire
 }
 
 func trustFromWire(wire csilapi.CiTrustSettings) *models.CITrustSettings {
-	row := &models.CITrustSettings{GatedRunAuthority: wire.GatedRunAuthority, OverrideProfile: wire.OverrideProfile}
+	row := &models.CITrustSettings{GatedRunAuthority: wire.GatedRunAuthority, OverrideProfile: wire.OverrideProfile,
+		RerunShiftLimits: rerunLimitsFromWire(wire.RerunShiftLimits)}
 	if wire.RunGate != nil {
 		row.RunGate = pq.StringArray(append([]string{}, wire.RunGate...))
 	}

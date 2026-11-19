@@ -177,11 +177,15 @@ describe('Event settings card', () => {
     expect(el.textContent).toContain('In force now: Deny.')
 
     const combos = [...el.querySelectorAll<ComboBox>('combo-box')]
-    expect(combos.map((c) => c.value)).toEqual(['inherit', 'deny'])
+    expect(combos.map((c) => c.value)).toEqual(['inherit', 'deny', 'inherit'])
     combos[0].value = 'skip'
     combos[0].dispatchEvent(new Event('change', { bubbles: true }))
+    combos[2].value = 'skip_when_shedding'
+    combos[2].dispatchEvent(new Event('change', { bubbles: true }))
     el.querySelector('form')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
-    await waitFor(() => expect(api.updateProject).toHaveBeenCalledWith({ projectId: 'p1', duplicateEvents: 'skip', dynamicJobs: 'deny' }))
+    await waitFor(() =>
+      expect(api.updateProject).toHaveBeenCalledWith({ projectId: 'p1', duplicateEvents: 'skip', dynamicJobs: 'deny', draftPrs: 'skip_when_shedding' }),
+    )
     await waitFor(() => expect(onSaved).toHaveBeenCalled())
   })
 })

@@ -1,0 +1,39 @@
+/* Diagnosis entries from principals (docs/diagnosis.md). */
+.diagnoses {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+.diagnosis {
+  border-top: 1px solid var(--border);
+  padding-top: var(--space-3);
+}
+.diagnosis:first-child {
+  border-top: none;
+  padding-top: 0;
+}
+.diagnosis-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-2);
+}
+.diagnosis-title {
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+/* The body is plain text: never rendered as HTML or Markdown. */
+.diagnosis-body {
+  margin: var(--space-2) 0 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-family: inherit;
+  max-height: 24rem;
+  overflow-y: auto;
+}
+.diagnosis-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  margin-top: var(--space-2);
+}

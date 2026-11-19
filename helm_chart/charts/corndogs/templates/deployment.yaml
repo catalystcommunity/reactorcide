@@ -55,6 +55,12 @@ spec:
               value: {{ .Values.appconfig.maxPayloadBytes | quote }}
             - name: STORAGE_BACKEND
               value: {{ .Values.storage.backend | quote }}
+            - name: CORNDOGS_SUBMISSION_KEY_POLICY
+              value: {{ .Values.resilience.submissionKeyPolicy | quote }}
+            - name: CORNDOGS_TASK_GUARD_POLICY
+              value: {{ .Values.resilience.taskGuardPolicy | quote }}
+            - name: CORNDOGS_RECEIPT_RETENTION
+              value: {{ .Values.resilience.receiptRetention | quote }}
             {{- if .Values.tls.enabled }}
             - name: CORNDOGS_TLS_CERT_FILE
               value: {{ printf "%s/tls.crt" .Values.tls.mountPath | quote }}

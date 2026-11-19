@@ -5,8 +5,8 @@ import (
 	"time"
 
 	"github.com/catalystcommunity/app-utils-go/logging"
+	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/metrics"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store/models"
-	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/worker"
 )
 
 // leaseReapInterval is how often the lease reaper scans for stale open
@@ -28,9 +28,12 @@ const leaseStaleAfter = 15 * time.Minute
 // treats it as lost. Longer than one claim commit and one ReportResult.
 const lostJobGrace = 2 * time.Minute
 
-// maxLostJobRetries is how many times the reconciler puts a lost job back in
-// the queue before it fails the job. retry_count counts these requeues.
-const maxLostJobRetries = 2
+// maxLostJobRetries is the least number of times the reconciler puts a lost
+// job back in the queue before it fails the job (infra.worker_lost). An
+// infra_retries setting above it raises the budget; see
+// models.InfraRetryBudget. retry_count counts these requeues together with
+// the automatic retries of infra.platform failures.
+const maxLostJobRetries = models.MinLostJobRetries
 
 // lostJobStore is the optional store surface of the lost-job reconciler.
 // PostgresDbStore implements it (job_guarded_operations.go).
@@ -125,11 +128,10 @@ func (s *WorkerService) reconcileLostJobs(ctx context.Context) {
 }
 
 // recoverLostJob puts a lost job back in the queue with a new corndogs task,
-// or fails it once maxLostJobRetries requeues are used. Every job-row write
+// or fails it (infra.worker_lost) once its retry budget is used. Every job-row write
 // is guarded from "running", so a result that arrives late (and finalizes
 // the job first) wins.
 func (s *WorkerService) recoverLostJob(ctx context.Context, job *models.Job) {
-	logger := logging.Log.WithFields(map[string]interface{}{"job_id": job.JobID, "retry_count": job.RetryCount})
 	if s.deps.CorndogsClient == nil {
 		return
 	}
@@ -140,52 +142,12 @@ func (s *WorkerService) recoverLostJob(ctx context.Context, job *models.Job) {
 		s.cancelLiveTask(ctx, *job.CorndogsTaskID)
 	}
 
-	if job.RetryCount >= maxLostJobRetries {
-		s.failLostJob(ctx, job, "lost: no lease after coordinator error; retries exhausted")
+	retry, budget := s.shouldRetryInfra(ctx, job, models.FailureClassWorkerLost)
+	if !retry {
+		s.failLostJob(ctx, job, models.LostJobErrorPrefix+" no lease after coordinator error; retries exhausted")
 		return
 	}
-
-	requeued, matched, err := s.deps.Store.UpdateJobStatusGuarded(ctx, job.JobID, []string{"scheduling", "running"}, func(j *models.Job) {
-		j.Status = "submitted"
-		j.StartedAt = nil
-		j.SchedulingStartedAt = nil
-		j.WorkerID = nil
-		j.CorndogsTaskID = nil
-		j.RetryCount++
-		j.LastError = "requeued: lost with no lease after coordinator error"
-	})
-	if err != nil || !matched {
-		if err != nil {
-			logger.WithError(err).Warn("Failed to requeue lost job")
-		}
-		return
-	}
-
-	task, err := s.deps.CorndogsClient.SubmitTaskToQueue(ctx, requeued.QueueName, worker.BuildTaskPayload(requeued), int64(requeued.Priority))
-	if err != nil {
-		// Back to running: the next pass tries again, and retry_count
-		// already counts this attempt.
-		logger.WithError(err).Warn("Failed to submit replacement corndogs task for lost job")
-		if _, _, revertErr := s.deps.Store.UpdateJobStatusGuarded(ctx, job.JobID, []string{"submitted"}, func(j *models.Job) {
-			j.Status = job.Status
-			j.SchedulingStartedAt = job.SchedulingStartedAt
-			j.StartedAt = job.StartedAt
-			j.LastError = "lost: replacement task submission failed"
-		}); revertErr != nil {
-			logger.WithError(revertErr).Warn("Failed to return lost job to running after submission failure")
-		}
-		return
-	}
-	taskID := task.Uuid
-	if _, _, err := s.deps.Store.UpdateJobStatusGuarded(ctx, job.JobID, []string{"submitted", "queued"}, func(j *models.Job) {
-		if j.CorndogsTaskID == nil || *j.CorndogsTaskID == "" {
-			j.CorndogsTaskID = &taskID
-		}
-	}); err != nil {
-		logger.WithError(err).WithField("task_id", taskID).Warn("Failed to record replacement corndogs task on lost job")
-	}
-	logger.WithField("task_id", taskID).Warn("Requeued lost job with a new corndogs task")
-	s.publishJobUpdate(ctx, requeued, time.Now().UTC())
+	s.requeueInfraFailure(ctx, job, models.FailureClassWorkerLost, "lost with no lease after coordinator error", budget, []string{"scheduling", "running"}, nil)
 }
 
 // failLostJob finalizes a lost job as failed and advances everything that
@@ -197,6 +159,7 @@ func (s *WorkerService) failLostJob(ctx context.Context, job *models.Job, reason
 		j.Status = "failed"
 		j.LastError = reason
 		j.CompletedAt = &now
+		j.SetFailure(models.FailureClassWorkerLost, "no lease")
 	})
 	if err != nil || !matched {
 		if err != nil {
@@ -205,6 +168,7 @@ func (s *WorkerService) failLostJob(ctx context.Context, job *models.Job, reason
 		return
 	}
 	logging.Log.WithField("job_id", job.JobID).Warn("Failed lost job: " + reason)
+	metrics.RecordJobFinished(failed.Status, failed.FailureClassValue(), failed.QueueName)
 	if tokenStore, ok := s.deps.Store.(jobTokenStore); ok {
 		if err := tokenStore.RevokeJobTokens(ctx, job.JobID); err != nil {
 			logging.Log.WithError(err).WithField("job_id", job.JobID).Warn("Failed to revoke job token of lost job")

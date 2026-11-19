@@ -26,13 +26,22 @@ export type RouteName =
   | 'project'
   | 'projectTrust'
   | 'projectPolicy'
+  | 'projectExecution'
+  | 'projectSubscriptions'
+  | 'projectImages'
   | 'workers'
+  | 'worker'
   | 'workerClasses'
   | 'queues'
+  | 'insights'
   | 'orgGroups'
+  | 'orgPrincipals'
+  | 'orgSubscriptions'
   | 'orgRoles'
   | 'orgSecrets'
   | 'orgTrust'
+  | 'orgProfiles'
+  | 'orgImages'
   | 'admin'
   | 'signin'
   | 'notFound'
@@ -55,17 +64,22 @@ export const STATIC_ROUTES: Readonly<Record<string, RouteName>> = {
   '/workers': 'workers',
   '/workers/classes': 'workerClasses',
   '/workers/queues': 'queues',
+  '/insights': 'insights',
   '/org/groups': 'orgGroups',
+  '/org/principals': 'orgPrincipals',
+  '/org/subscriptions': 'orgSubscriptions',
   '/org/roles': 'orgRoles',
   '/org/secrets': 'orgSecrets',
   '/org/ci-trust': 'orgTrust',
+  '/org/profiles': 'orgProfiles',
+  '/org/images': 'orgImages',
   '/admin': 'admin',
   '/signin': 'signin',
 }
 
 /** Sub-pages of a detail route: `<prefix>/:id/<suffix>`. */
 const SUB_ROUTES: Readonly<Record<string, Readonly<Record<string, RouteName>>>> = {
-  '/projects': { trust: 'projectTrust', policy: 'projectPolicy' },
+  '/projects': { trust: 'projectTrust', policy: 'projectPolicy', execution: 'projectExecution', subscriptions: 'projectSubscriptions', images: 'projectImages' },
 }
 
 const DETAIL_ROUTES: Readonly<Record<string, RouteName>> = {
@@ -73,6 +87,7 @@ const DETAIL_ROUTES: Readonly<Record<string, RouteName>> = {
   '/events': 'event',
   '/jobs': 'job',
   '/projects': 'project',
+  '/workers': 'worker',
 }
 
 function normalize(path: string): string {

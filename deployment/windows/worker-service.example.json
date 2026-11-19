@@ -13,11 +13,11 @@
     "vm"
   ],
   "environment": {
-    "REACTORCIDE_VM_IMAGE_SOURCE": "local",
+    "REACTORCIDE_VM_IMAGE_SOURCE": "oci",
     "REACTORCIDE_VM_IMAGE_DIR": "C:\\ProgramData\\Reactorcide\\vm-images",
     "REACTORCIDE_VM_IMAGE_CACHE_DIR": "C:\\ProgramData\\Reactorcide\\vm-images\\oci-cache",
     "REACTORCIDE_VM_SCRATCH_DIR": "C:\\ProgramData\\Reactorcide\\vm-scratch",
-    "REACTORCIDE_VM_SSH_USER": "reactorcide"
+    "REACTORCIDE_VM_GUEST_USER": "reactorcide"
   },
   "log_file": "C:\\ProgramData\\Reactorcide\\logs\\worker.log"
 }

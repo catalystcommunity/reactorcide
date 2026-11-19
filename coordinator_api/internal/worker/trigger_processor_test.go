@@ -1366,7 +1366,8 @@ func TestProcessTriggers_JobFileMissing(t *testing.T) {
 
 	tp := NewTriggerProcessor(mockStore, mockCorndogs)
 	err := tp.ProcessTriggers(context.Background(), tmpDir, parentJob)
-	// Should not return error — missing job file is logged and skipped
+	// Should not return error. With no workflow store, the job with the
+	// missing job file is logged as a failed create (with the load error).
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

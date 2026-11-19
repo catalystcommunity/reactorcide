@@ -5,9 +5,11 @@ import (
 	"encoding/json"
 	"testing"
 
+	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/checkauth"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/config"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store/models"
+	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/tokencaps"
 )
 
 // fakeStore is a hand-rolled in-memory RoleStore + SettingsStore for authz
@@ -108,7 +110,11 @@ func mustJSON(t *testing.T, v interface{}) models.JSONValue {
 
 func TestCapabilities_Matrix(t *testing.T) {
 	origMode := config.UIAuthMode
-	defer func() { config.UIAuthMode = origMode }()
+	origGuard := config.NoLoginGuardPassed()
+	defer func() {
+		config.UIAuthMode = origMode
+		config.SetNoLoginGuardPassed(origGuard)
+	}()
 
 	const (
 		orgID     = "org-1"
@@ -148,7 +154,7 @@ func TestCapabilities_Matrix(t *testing.T) {
 		{"anon rp-mode gets nothing", config.UIAuthModeRP, AnonymousIdentity(), Caps{}},
 		{"stranger (no assignment) gets nothing", config.UIAuthModeLocalRP, UserIdentity(strangerID), Caps{}},
 		{"member: view private only", config.UIAuthModeLocalRP, UserIdentity(memberID), Caps{ViewPrivate: true}},
-		{"project owner", config.UIAuthModeLocalRP, UserIdentity(ownerID), Caps{ViewPrivate: true, Cancel: true, Retry: true, ProjectSettings: true}},
+		{"project owner", config.UIAuthModeLocalRP, UserIdentity(ownerID), Caps{ViewPrivate: true, Cancel: true, Retry: true, ProjectSettings: true, ManageWorkflow: true}},
 		{"self-org (owns the project's org directly)", config.UIAuthModeLocalRP, UserIdentity(orgID), fullOrgAdmin()},
 		{"org admin", config.UIAuthModeLocalRP, UserIdentity(orgAdminID), fullOrgAdmin()},
 		{"global admin", config.UIAuthModeLocalRP, UserIdentity(globalAdmID), fullGlobalAdmin()},
@@ -160,6 +166,7 @@ func TestCapabilities_Matrix(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			config.UIAuthMode = tc.mode
+			config.SetNoLoginGuardPassed(true)
 			got, err := r.Capabilities(context.Background(), tc.id, scope)
 			if err != nil {
 				t.Fatalf("Capabilities: %v", err)
@@ -169,6 +176,21 @@ func TestCapabilities_Matrix(t *testing.T) {
 			}
 		})
 	}
+
+	// Mode none without the login history guard (an instance that ran with
+	// logins, or a process that did not run the guard): the anonymous caller
+	// gets nothing (fail closed).
+	t.Run("anon none-mode without the guard gets nothing", func(t *testing.T) {
+		config.UIAuthMode = config.UIAuthModeNone
+		config.SetNoLoginGuardPassed(false)
+		got, err := r.Capabilities(context.Background(), AnonymousIdentity(), scope)
+		if err != nil {
+			t.Fatalf("Capabilities: %v", err)
+		}
+		if got != (Caps{}) {
+			t.Fatalf("Capabilities() = %+v, want no capabilities", got)
+		}
+	})
 }
 
 // TestCapabilities_ManageWorkers drives the ManageWorkers field on its own:
@@ -690,5 +712,48 @@ func TestIdentityFromUser(t *testing.T) {
 	id := IdentityFromUser(&models.User{UserID: "u1"})
 	if id.Anonymous || id.UserID != "u1" {
 		t.Fatalf("IdentityFromUser(u1) = %+v, want {Anonymous:false UserID:u1}", id)
+	}
+}
+
+// TestUserTokenCapsStayInTokenScope: a user-delegated token gets the role of
+// its user intersected with the token, and only for the organizations of the
+// token. ViewWorkers needs workers:read or workers:manage.
+func TestUserTokenCapsStayInTokenScope(t *testing.T) {
+	origMode := config.UIAuthMode
+	config.UIAuthMode = config.UIAuthModeLocalRP
+	defer func() { config.UIAuthMode = origMode }()
+
+	fs := newFakeStore()
+	fs.assignments = []models.RoleAssignment{
+		{PrincipalType: models.PrincipalTypeUser, PrincipalID: "u-admin", ScopeType: models.ScopeTypeOrg, ScopeID: strPtr("org-a"), Role: models.RoleAdmin},
+		{PrincipalType: models.PrincipalTypeUser, PrincipalID: "u-admin", ScopeType: models.ScopeTypeOrg, ScopeID: strPtr("org-b"), Role: models.RoleAdmin},
+	}
+	r := NewResolver(fs)
+	token := func(capabilities ...string) Identity {
+		set, _ := tokencaps.New(capabilities...)
+		return Identity{UserID: "u-admin", Token: &checkauth.Principal{CredentialType: "user_token", UserID: "u-admin",
+			OrganizationIDs: []string{"org-a"}, Capabilities: set}}
+	}
+	ctx := context.Background()
+
+	caps, err := r.Capabilities(ctx, token(tokencaps.WorkersRead), Scope{OrgID: strPtr("org-a")})
+	if err != nil || !caps.ViewWorkers || caps.ManageWorkers {
+		t.Fatalf("workers:read token in org-a = %+v (err %v), want ViewWorkers only", caps, err)
+	}
+	caps, _ = r.Capabilities(ctx, token(tokencaps.WorkersManage), Scope{OrgID: strPtr("org-a")})
+	if !caps.ViewWorkers || !caps.ManageWorkers {
+		t.Fatalf("workers:manage token in org-a = %+v, want ViewWorkers and ManageWorkers", caps)
+	}
+	caps, _ = r.Capabilities(ctx, token(tokencaps.JobsRead), Scope{OrgID: strPtr("org-a")})
+	if caps.ViewWorkers {
+		t.Fatalf("jobs:read token got ViewWorkers")
+	}
+	caps, _ = r.Capabilities(ctx, token(tokencaps.WorkersManage, tokencaps.SecretsManage), Scope{OrgID: strPtr("org-b")})
+	if caps != (Caps{}) {
+		t.Fatalf("token for org-a in org-b = %+v, want no caps", caps)
+	}
+	caps, _ = r.Capabilities(ctx, UserIdentity("u-admin"), Scope{OrgID: strPtr("org-b")})
+	if !caps.ViewWorkers || !caps.ManageWorkers {
+		t.Fatalf("session of the admin in org-b = %+v, want worker caps", caps)
 	}
 }

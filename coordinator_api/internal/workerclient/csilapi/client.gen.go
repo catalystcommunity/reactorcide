@@ -105,3 +105,12 @@ func (c *ReactorcideWorkerClient) ReportResult(ctx context.Context, req ReportRe
 	}
 	return DecodeReportResultResponse(csilResp)
 }
+
+func (c *ReactorcideWorkerClient) UploadArtifact(ctx context.Context, req UploadArtifactRequest) (UploadArtifactResponse, error) {
+	var csilZero UploadArtifactResponse
+	csilResp, csilErr := c.transport.Call(ctx, "ReactorcideWorker", "upload-artifact", EncodeUploadArtifactRequest(req))
+	if csilErr != nil {
+		return csilZero, csilErr
+	}
+	return DecodeUploadArtifactResponse(csilResp)
+}

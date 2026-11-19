@@ -45,6 +45,13 @@ func GenericEventFromGitHub(eventType, action string, pr *PullRequestInfo, push 
 			return EventPullRequestOpened
 		case "synchronize":
 			return EventPullRequestUpdated
+		case "ready_for_review":
+			// A draft became ready. It is an update of the pull request with
+			// draft=false, so every workflow that runs on
+			// pull_request_updated runs, with no new event name in workflow
+			// files. converted_to_draft starts nothing: the head did not
+			// change, and the work of the head already ran or was skipped.
+			return EventPullRequestUpdated
 		case "closed":
 			if pr != nil && pr.Merged {
 				return EventPullRequestMerged

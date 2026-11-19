@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/subjects"
 	"github.com/lib/pq"
 )
 
@@ -73,8 +74,11 @@ type CITrustSettings struct {
 	OverrideApprovers pq.StringArray    `gorm:"type:text[]" json:"override_approvers"`
 	OverrideProfile   *string           `gorm:"type:text" json:"override_profile,omitempty"`
 	RequiredReviews   *[]RequiredReview `gorm:"type:jsonb;serializer:json" json:"required_reviews,omitempty"`
-	UpdatedAt         time.Time         `gorm:"autoUpdateTime:false;default:timezone('utc', now())" json:"updated_at"`
-	UpdatedBy         string            `gorm:"type:text;not null;default:''" json:"updated_by"`
+	// RerunShiftLimits bounds the shifts of a retry or a re-run. On a project
+	// row, a value that is not set inherits the organization value.
+	RerunShiftLimits *RerunShiftLimits `gorm:"type:jsonb;serializer:json" json:"rerun_shift_limits,omitempty"`
+	UpdatedAt        time.Time         `gorm:"autoUpdateTime:false;default:timezone('utc', now())" json:"updated_at"`
+	UpdatedBy        string            `gorm:"type:text;not null;default:''" json:"updated_by"`
 }
 
 func (CITrustSettings) TableName() string { return "ci_trust_settings" }
@@ -94,6 +98,7 @@ type EffectiveTrustSettings struct {
 	OverrideApprovers []string                  `json:"override_approvers"`
 	OverrideProfile   string                    `json:"override_profile"`
 	RequiredReviews   []EffectiveRequiredReview `json:"required_reviews"`
+	RerunShiftLimits  RerunShiftLimits          `json:"rerun_shift_limits"`
 }
 
 // GatedRunProfile returns the profile of an approved gated run, or "" when the
@@ -145,6 +150,9 @@ func EffectiveTrust(org, project *CITrustSettings) EffectiveTrustSettings {
 		if row.OverrideProfile != nil {
 			result.OverrideProfile = *row.OverrideProfile
 		}
+		if row.RerunShiftLimits != nil {
+			result.RerunShiftLimits = result.RerunShiftLimits.Over(*row.RerunShiftLimits)
+		}
 	}
 	// Required reviews add. A project cannot remove an organization review.
 	for scope, row := range map[string]*CITrustSettings{"org": org, "project": project} {
@@ -176,15 +184,25 @@ func (s CITrustSettings) Validate() error {
 	if s.GatedRunAuthority != nil && *s.GatedRunAuthority != GatedRunNoSecrets && *s.GatedRunAuthority != GatedRunNormal {
 		return fmt.Errorf("gated_run_authority must be no_secrets or normal")
 	}
-	for name, subjects := range map[string][]string{"run_approvers": s.RunApprovers, "override_approvers": s.OverrideApprovers} {
-		for _, subject := range subjects {
-			if !ValidApproverSubject(subject) {
-				return fmt.Errorf("%s subject %q is invalid", name, subject)
-			}
+	for _, subject := range s.RunApprovers {
+		if !ValidApproverSubject(subject) {
+			return fmt.Errorf("run_approvers subject %q is invalid", subject)
+		}
+	}
+	// override_approvers is decided per workflow, so it also accepts the
+	// workflow_owner placeholder (the owners of the trusted definition).
+	for _, subject := range s.OverrideApprovers {
+		if !subjects.ValidWorkflowApprover(subject) {
+			return fmt.Errorf("override_approvers subject %q is invalid", subject)
 		}
 	}
 	if s.OverrideProfile != nil && !approvalSecurityID.MatchString(*s.OverrideProfile) {
 		return fmt.Errorf("override_profile has an invalid name")
+	}
+	if s.RerunShiftLimits != nil {
+		if err := s.RerunShiftLimits.Validate(); err != nil {
+			return err
+		}
 	}
 	if s.RequiredReviews != nil {
 		seen := map[string]bool{}
@@ -237,6 +255,7 @@ func LooserThan(next, current EffectiveTrustSettings, profileWeakerOrEqual func(
 	if added := addedSubjects(next.OverrideApprovers, current.OverrideApprovers); len(added) > 0 {
 		reasons = append(reasons, "adds override approvers "+strings.Join(added, ", "))
 	}
+	reasons = append(reasons, next.RerunShiftLimits.LooserThan(current.RerunShiftLimits)...)
 	if next.OverrideProfile != current.OverrideProfile && (profileWeakerOrEqual == nil || !profileWeakerOrEqual(next.OverrideProfile, current.OverrideProfile)) {
 		reasons = append(reasons, fmt.Sprintf("override profile %s has more authority than %s", next.OverrideProfile, current.OverrideProfile))
 	}

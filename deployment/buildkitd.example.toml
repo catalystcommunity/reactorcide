@@ -24,3 +24,9 @@
 # Example of a registry that requires a private CA bundle:
 # [registry."registry.corp.example.com"]
 #   ca = ["/etc/buildkit/certs/corp-root.crt"]
+
+# Registry mirror (pull-through proxy) for base images. Operator-level; jobs
+# cannot change it. See docs/builds-and-caches.md ("Registry Mirrors for
+# BuildKit").
+# [registry."docker.io"]
+#   mirrors = ["mirror.internal:5000"]

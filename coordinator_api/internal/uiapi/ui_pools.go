@@ -43,15 +43,26 @@ func enrollmentTokenToSummary(t *models.PoolEnrollmentToken) csilapi.EnrollmentT
 	return out
 }
 
+// enrollmentTokenWithCount is enrollmentTokenToSummary with the active worker
+// count, for a row from ListPoolEnrollmentTokens (the only read that sets
+// it).
+func enrollmentTokenWithCount(t *models.PoolEnrollmentToken) csilapi.EnrollmentTokenSummary {
+	out := enrollmentTokenToSummary(t)
+	n := t.ActiveWorkerCount
+	out.ActiveWorkerCount = &n
+	return out
+}
+
 // ListPools requires org admin (of org_id) or global admin when org_id is
 // given; global admin only when org_id is omitted (listing across every
-// org, including global pools).
+// org, including global pools). It is a read (requireViewWorkers): a token
+// needs workers:read or workers:manage.
 func (s *UiService) ListPools(ctx context.Context, req csilapi.ListPoolsRequest) (csilapi.ListPoolsResponse, error) {
-	id, _, authErr := s.deps.requireUser(ctx)
+	ctx, id, _, authErr := s.deps.requireManagementIdentity(ctx)
 	if authErr != nil {
 		return csilapi.ListPoolsResponse{}, authErr
 	}
-	if err := s.requireManageWorkers(ctx, id, req.OrgId); err != nil {
+	if err := s.requireViewWorkers(ctx, id, req.OrgId); err != nil {
 		return csilapi.ListPoolsResponse{}, err
 	}
 
@@ -70,7 +81,7 @@ func (s *UiService) ListPools(ctx context.Context, req csilapi.ListPoolsRequest)
 // pool when omitted). Requires org admin (of org_id) or global admin when
 // org_id is given; global admin only when creating a global pool.
 func (s *UiService) CreatePool(ctx context.Context, req csilapi.CreatePoolRequest) (csilapi.CreatePoolResponse, error) {
-	id, _, authErr := s.deps.requireUser(ctx)
+	ctx, id, _, authErr := s.deps.requireManagementIdentity(ctx)
 	if authErr != nil {
 		return csilapi.CreatePoolResponse{}, authErr
 	}
@@ -92,7 +103,7 @@ func (s *UiService) CreatePool(ctx context.Context, req csilapi.CreatePoolReques
 // UpdatePool updates a pool's mutable name/description. Requires org admin
 // (of the pool's org) or global admin.
 func (s *UiService) UpdatePool(ctx context.Context, req csilapi.UpdatePoolRequest) (csilapi.UpdatePoolResponse, error) {
-	id, _, authErr := s.deps.requireUser(ctx)
+	ctx, id, _, authErr := s.deps.requireManagementIdentity(ctx)
 	if authErr != nil {
 		return csilapi.UpdatePoolResponse{}, authErr
 	}
@@ -129,7 +140,7 @@ func (s *UiService) UpdatePool(ctx context.Context, req csilapi.UpdatePoolReques
 // (foreign key violation, DeleteWorkerPool's documented contract) -- this op
 // does not orchestrate deleting/reassigning those workers first.
 func (s *UiService) DeletePool(ctx context.Context, req csilapi.DeletePoolRequest) (csilapi.DeletePoolResponse, error) {
-	id, _, authErr := s.deps.requireUser(ctx)
+	ctx, id, _, authErr := s.deps.requireManagementIdentity(ctx)
 	if authErr != nil {
 		return csilapi.DeletePoolResponse{}, authErr
 	}
@@ -159,7 +170,7 @@ func (s *UiService) DeletePool(ctx context.Context, req csilapi.DeletePoolReques
 // op, including list-enrollment-tokens, and never logged. Requires org admin
 // (of the pool's org) or global admin.
 func (s *UiService) CreateEnrollmentToken(ctx context.Context, req csilapi.CreateEnrollmentTokenRequest) (csilapi.CreateEnrollmentTokenResponse, error) {
-	id, _, authErr := s.deps.requireUser(ctx)
+	ctx, id, _, authErr := s.deps.requireManagementIdentity(ctx)
 	if authErr != nil {
 		return csilapi.CreateEnrollmentTokenResponse{}, authErr
 	}
@@ -193,9 +204,10 @@ func (s *UiService) CreateEnrollmentToken(ctx context.Context, req csilapi.Creat
 // ListEnrollmentTokens lists every enrollment token (active and deactivated)
 // for a pool -- metadata only, never a raw value or hash (see
 // enrollmentTokenToSummary). Requires org admin (of the pool's org) or
-// global admin.
+// global admin. A token needs workers:manage: enrollment tokens are worker
+// credentials, so their list is part of the manage surface.
 func (s *UiService) ListEnrollmentTokens(ctx context.Context, req csilapi.ListEnrollmentTokensRequest) (csilapi.ListEnrollmentTokensResponse, error) {
-	id, _, authErr := s.deps.requireUser(ctx)
+	ctx, id, _, authErr := s.deps.requireManagementIdentity(ctx)
 	if authErr != nil {
 		return csilapi.ListEnrollmentTokensResponse{}, authErr
 	}
@@ -217,20 +229,27 @@ func (s *UiService) ListEnrollmentTokens(ctx context.Context, req csilapi.ListEn
 	}
 	out := make([]csilapi.EnrollmentTokenSummary, len(tokens))
 	for i := range tokens {
-		out[i] = enrollmentTokenToSummary(&tokens[i])
+		out[i] = enrollmentTokenWithCount(&tokens[i])
 	}
 	return csilapi.ListEnrollmentTokensResponse{Tokens: out}, nil
 }
 
 // DeactivateEnrollmentToken deactivates an enrollment token by ID. Requires
-// org admin (of the token's pool's org) or global admin.
+// org admin (of the token's pool's org) or global admin, and
+// confirm_permanent: deactivation is permanent (migration 000066 refuses a
+// change back). Workers that run on the token keep their sessions; the
+// response gives their count.
 func (s *UiService) DeactivateEnrollmentToken(ctx context.Context, req csilapi.DeactivateEnrollmentTokenRequest) (csilapi.DeactivateEnrollmentTokenResponse, error) {
-	id, _, authErr := s.deps.requireUser(ctx)
+	ctx, id, _, authErr := s.deps.requireManagementIdentity(ctx)
 	if authErr != nil {
 		return csilapi.DeactivateEnrollmentTokenResponse{}, authErr
 	}
 	if err := requireNonEmpty("token_id", req.TokenId, 64); err != nil {
 		return csilapi.DeactivateEnrollmentTokenResponse{}, err
+	}
+	if req.ConfirmPermanent == nil || !*req.ConfirmPermanent {
+		return csilapi.DeactivateEnrollmentTokenResponse{}, NewServiceError("invalid_argument",
+			"deactivation is permanent and cannot be undone: set confirm_permanent to true")
 	}
 
 	token, err := s.deps.Store.GetPoolEnrollmentTokenByID(ctx, req.TokenId)
@@ -248,7 +267,20 @@ func (s *UiService) DeactivateEnrollmentToken(ctx context.Context, req csilapi.D
 	if err := s.deps.Store.DeactivatePoolEnrollmentToken(ctx, req.TokenId); err != nil {
 		return csilapi.DeactivateEnrollmentTokenResponse{}, mapStoreErr(err, "enrollment token not found")
 	}
-	s.recordAudit(ctx, derefOr(pool.OrgID, ""), "worker_enrollment_token.deactivate", "pool_enrollment_token", token.TokenID, models.JSONB{"pool_id": pool.PoolID})
 	token.IsActive = false
-	return csilapi.DeactivateEnrollmentTokenResponse{Summary: enrollmentTokenToSummary(token)}, nil
+	summary := enrollmentTokenToSummary(token)
+	if tokens, err := s.deps.Store.ListPoolEnrollmentTokens(ctx, token.PoolID); err == nil {
+		for i := range tokens {
+			if tokens[i].TokenID == token.TokenID {
+				summary = enrollmentTokenWithCount(&tokens[i])
+			}
+		}
+	}
+	activeWorkers := int64(0)
+	if summary.ActiveWorkerCount != nil {
+		activeWorkers = *summary.ActiveWorkerCount
+	}
+	s.recordAudit(ctx, derefOr(pool.OrgID, ""), "worker_enrollment_token.deactivate", "pool_enrollment_token", token.TokenID,
+		models.JSONB{"pool_id": pool.PoolID, "name": token.Name, "active_worker_count": activeWorkers})
+	return csilapi.DeactivateEnrollmentTokenResponse{Summary: summary}, nil
 }

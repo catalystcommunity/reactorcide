@@ -12,8 +12,11 @@ param(
 
     [string]$StateDirectory = 'C:\ProgramData\Reactorcide',
 
+    # oci (the default) pulls the pinned references of coordinator VM jobs.
+    # local resolves only pre-placed image files: use it for local tests.
+    # It cannot run a coordinator VM job.
     [ValidateSet('local', 'oci')]
-    [string]$ImageSource = 'local',
+    [string]$ImageSource = 'oci',
 
     [string]$ImageDirectory,
 
@@ -107,6 +110,15 @@ $serviceConfig.environment | Add-Member -NotePropertyName 'REACTORCIDE_VM_SCRATC
 $serviceConfig.environment | Add-Member -NotePropertyName 'REACTORCIDE_VM_REGISTRY_AUTH_FILE' -NotePropertyValue (Join-Path $stateRoot 'config\oci-auth.json') -Force
 $serviceConfig.environment.PSObject.Properties.Remove('REACTORCIDE_VM_SSH_PRIVATE_KEY_FILE')
 $serviceConfig.environment.PSObject.Properties.Remove('REACTORCIDE_VM_SSH_HOST_KEY_FILE')
+# The VM guests have no network adapter and no SSH server. Move an old SSH
+# account setting to the guest account setting.
+$oldGuestUser = $serviceConfig.environment.PSObject.Properties['REACTORCIDE_VM_SSH_USER']
+if ($null -ne $oldGuestUser -and $null -eq $serviceConfig.environment.PSObject.Properties['REACTORCIDE_VM_GUEST_USER']) {
+    $serviceConfig.environment | Add-Member -NotePropertyName 'REACTORCIDE_VM_GUEST_USER' -NotePropertyValue $oldGuestUser.Value -Force
+}
+$serviceConfig.environment.PSObject.Properties.Remove('REACTORCIDE_VM_SSH_USER')
+$serviceConfig.environment.PSObject.Properties.Remove('REACTORCIDE_VM_SSH_PASSWORD')
+$serviceConfig.environment.PSObject.Properties.Remove('REACTORCIDE_VM_HYPERV_SWITCH')
 $serviceConfig.log_file = Join-Path $stateRoot 'logs\worker.log'
 $serviceConfig | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $installedConfig -Encoding utf8
 if ($sourceEnrollmentToken) {

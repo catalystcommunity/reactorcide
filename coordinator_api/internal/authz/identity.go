@@ -34,6 +34,11 @@ type Identity struct {
 	// user-delegated tokens too, so live RBAC can be intersected with token
 	// scope on each request.
 	Token *checkauth.Principal
+	// PrincipalID is set for a service principal token whose authority is
+	// its capabilities intersected with the roles and groups of the
+	// principal (checkauth.Principal.IsServicePrincipalToken). UserID is
+	// empty for it.
+	PrincipalID string
 }
 
 func IdentityFromPrincipal(principal *checkauth.Principal, user *models.User) Identity {
@@ -46,6 +51,9 @@ func IdentityFromPrincipal(principal *checkauth.Principal, user *models.User) Id
 		}
 		return Identity{UserID: user.UserID, Token: principal}
 	}
+	if principal.IsServicePrincipalToken() {
+		return Identity{Token: principal, PrincipalID: principal.PrincipalID}
+	}
 	if principal.CredentialType == "instance_token" || principal.CredentialType == "service_token" || principal.CredentialType == "job_token" {
 		return Identity{Token: principal}
 	}
@@ -53,6 +61,10 @@ func IdentityFromPrincipal(principal *checkauth.Principal, user *models.User) Id
 }
 
 func (id Identity) isToken() bool { return id.Token != nil }
+
+// hasRoles reports whether live role assignments decide for id: a user (with
+// or without a delegated token) or a service principal token.
+func (id Identity) hasRoles() bool { return id.UserID != "" || id.PrincipalID != "" }
 
 func (id Identity) tokenAllows(orgID, capability string) bool {
 	return id.Token != nil && id.Token.HasOrganization(orgID) && id.Token.HasCapability(capability)

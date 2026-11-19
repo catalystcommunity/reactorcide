@@ -14,6 +14,7 @@ import (
 
 	"github.com/catalystcommunity/app-utils-go/logging"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/resources"
+	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store/models"
 	"github.com/google/uuid"
 	"github.com/sirupsen/logrus"
 	batchv1 "k8s.io/api/batch/v1"
@@ -21,6 +22,7 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/kubernetes/scheme"
@@ -74,6 +76,17 @@ type KubernetesRunner struct {
 	podLevelResources bool
 	startupTimeout    time.Duration
 	autoscalingMode   string
+	// capacityNodeSelector selects the nodes that count toward the
+	// admission capacity. Nil or empty selects every node.
+	capacityNodeSelector labels.Selector
+	// scheduling is the node selector, tolerations, and affinity of job
+	// pods. The image pre-seed DaemonSet uses the same values
+	// (kubernetes_preseed.go).
+	scheduling kubernetesJobScheduling
+	// preseed configures the image pre-seed DaemonSet.
+	preseed kubernetesPreseedConfig
+	// preseedPollInterval replaces the DaemonSet poll interval in tests.
+	preseedPollInterval time.Duration
 }
 
 // Job resource scopes (REACTORCIDE_K8S_JOB_RESOURCE_SCOPE).
@@ -101,6 +114,21 @@ type KubernetesRunnerConfig struct {
 	StartupTimeout time.Duration
 	// AutoscalingMode is "auto" (use autoscaler events) or "disabled".
 	AutoscalingMode string
+	// Kubeconfig is a kubeconfig file path for a remote cluster. Empty uses
+	// the in-cluster config. KubeContext selects a context in that file.
+	Kubeconfig  string
+	KubeContext string
+	// CapacityNodeSelector is a label selector for the nodes that count
+	// toward the admission capacity (see kubernetes_capacity.go).
+	CapacityNodeSelector string
+	// JobNodeSelector, JobTolerations, and JobAffinity go on every job pod
+	// and on the image pre-seed DaemonSet.
+	JobNodeSelector map[string]string
+	JobTolerations  []corev1.Toleration
+	JobAffinity     *corev1.Affinity
+	// Preseed configures the image pre-seed DaemonSet. Zero values use
+	// the defaults (kubernetes_preseed.go).
+	Preseed kubernetesPreseedConfig
 }
 
 // NewKubernetesRunner creates a new Kubernetes-based job runner
@@ -112,6 +140,10 @@ func NewKubernetesRunner() (*KubernetesRunner, error) {
 		DindImage:       os.Getenv("REACTORCIDE_DIND_IMAGE"),
 		ResourceScope:   os.Getenv("REACTORCIDE_K8S_JOB_RESOURCE_SCOPE"),
 		AutoscalingMode: os.Getenv("REACTORCIDE_K8S_JOB_AUTOSCALING"),
+		Kubeconfig:      os.Getenv("REACTORCIDE_K8S_KUBECONFIG"),
+		KubeContext:     os.Getenv("REACTORCIDE_K8S_CONTEXT"),
+		// The label selector of the nodes that count toward admission capacity.
+		CapacityNodeSelector: os.Getenv("REACTORCIDE_K8S_CAPACITY_NODE_SELECTOR"),
 	}
 	if raw := os.Getenv("REACTORCIDE_K8S_JOB_STARTUP_TIMEOUT"); raw != "" {
 		duration, err := time.ParseDuration(raw)
@@ -122,6 +154,14 @@ func NewKubernetesRunner() (*KubernetesRunner, error) {
 	}
 	cfg.ImagePullSecrets = splitSecretNameList(os.Getenv("REACTORCIDE_K8S_JOB_IMAGE_PULL_SECRETS"))
 	cfg.AllowedJobImagePullSecrets = splitSecretNameList(os.Getenv("REACTORCIDE_K8S_JOB_ALLOWED_IMAGE_PULL_SECRETS"))
+	scheduling, err := loadKubernetesJobScheduling(os.Getenv)
+	if err != nil {
+		return nil, err
+	}
+	cfg.JobNodeSelector, cfg.JobTolerations, cfg.JobAffinity = scheduling.nodeSelector, scheduling.tolerations, scheduling.affinity
+	if cfg.Preseed, err = loadKubernetesPreseedConfig(os.Getenv); err != nil {
+		return nil, err
+	}
 	return NewKubernetesRunnerWithConfig(cfg)
 }
 
@@ -133,10 +173,14 @@ func NewKubernetesRunnerWithConfig(cfg KubernetesRunnerConfig) (*KubernetesRunne
 	if cfg.StartupTimeout < 0 {
 		return nil, fmt.Errorf("startup timeout must not be negative")
 	}
-	// Try in-cluster config first
-	config, err := rest.InClusterConfig()
+	cluster, err := loadKubernetesClusterConfig(cfg.Kubeconfig, cfg.KubeContext)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get in-cluster config (is this running in Kubernetes?): %w", err)
+		return nil, err
+	}
+	config := cluster.rest
+	capacityNodes, err := labels.Parse(cfg.CapacityNodeSelector)
+	if err != nil {
+		return nil, fmt.Errorf("REACTORCIDE_K8S_CAPACITY_NODE_SELECTOR is not a valid label selector: %w", err)
 	}
 
 	clientset, err := kubernetes.NewForConfig(config)
@@ -146,6 +190,9 @@ func NewKubernetesRunnerWithConfig(cfg KubernetesRunnerConfig) (*KubernetesRunne
 
 	// Determine namespace
 	namespace := cfg.Namespace
+	if namespace == "" && !cluster.inCluster {
+		namespace = cluster.namespace
+	}
 	if namespace == "" {
 		// Try to get namespace from service account
 		nsBytes, err := os.ReadFile("/var/run/secrets/kubernetes.io/serviceaccount/namespace")
@@ -180,6 +227,13 @@ func NewKubernetesRunnerWithConfig(cfg KubernetesRunnerConfig) (*KubernetesRunne
 		resourceScope:              strings.ToLower(strings.TrimSpace(cfg.ResourceScope)),
 		startupTimeout:             cfg.StartupTimeout,
 		autoscalingMode:            cfg.AutoscalingMode,
+		capacityNodeSelector:       capacityNodes,
+		scheduling: kubernetesJobScheduling{
+			nodeSelector: cfg.JobNodeSelector,
+			tolerations:  cfg.JobTolerations,
+			affinity:     cfg.JobAffinity,
+		},
+		preseed: cfg.Preseed.withDefaults(),
 	}, nil
 }
 
@@ -369,6 +423,9 @@ func (kr *KubernetesRunner) SpawnJob(ctx context.Context, config *JobConfig) (st
 		containerResources = corev1.ResourceRequirements{}
 		logger.Info("Using pod-level resources shared by the job container and its sidecars")
 	}
+	// Ephemeral storage always goes on the job container: pod-level resources
+	// do not accept it.
+	applyEphemeralStorage(&containerResources, config, logger)
 
 	// Build pod spec
 	prepareEnv := []corev1.EnvVar{
@@ -400,6 +457,11 @@ func (kr *KubernetesRunner) SpawnJob(ctx context.Context, config *JobConfig) (st
 			},
 		},
 	}
+	// Job files (WP15, kubernetes_artifacts.go), for example the
+	// quarantined tests file.
+	if skipped := addKubernetesJobFiles(&prepareWorkspace, config.JobFiles); len(skipped) > 0 {
+		logger.WithField("files", skipped).Warn("Job files were not given to the Kubernetes job (bad name or too large)")
+	}
 	podSpec := corev1.PodSpec{
 		RestartPolicy:      corev1.RestartPolicyNever,
 		ServiceAccountName: kr.serviceAccount,
@@ -407,12 +469,15 @@ func (kr *KubernetesRunner) SpawnJob(ctx context.Context, config *JobConfig) (st
 			RunAsNonRoot: &runAsNonRoot,
 		},
 		Resources:      podResources,
+		NodeSelector:   kr.scheduling.nodeSelectorCopy(),
+		Tolerations:    kr.scheduling.tolerationsCopy(),
+		Affinity:       kr.scheduling.affinityCopy(),
 		InitContainers: []corev1.Container{prepareWorkspace},
 		Containers: []corev1.Container{
 			{
 				Name:            "job",
 				Image:           config.Image,
-				ImagePullPolicy: corev1.PullAlways,
+				ImagePullPolicy: jobImagePullPolicy(config.Image),
 				Command:         config.Command,
 				WorkingDir:      config.WorkingDir,
 				Env:             envVars,
@@ -457,7 +522,15 @@ func (kr *KubernetesRunner) SpawnJob(ctx context.Context, config *JobConfig) (st
 			},
 		},
 	}
-	if config.Env["RC_WF_OUTPUT_FILE"] != "" {
+	// Egress control (kubernetes_egress.go): before any Secret is created.
+	if err := prepareKubernetesEgress(&podSpec, config); err != nil {
+		return "", err
+	}
+	// The reader container reads /job after the main container ends: the
+	// workflow output of a workflow job, and /job/artifacts of every job
+	// that has artifacts (REACTORCIDE_ARTIFACTS_DIR, set by the worker when
+	// the lease has artifacts; kubernetes_artifacts.go).
+	if config.Env["RC_WF_OUTPUT_FILE"] != "" || config.Env[kubernetesArtifactsDirEnv] != "" {
 		podSpec.Containers = append(podSpec.Containers, corev1.Container{
 			Name:            kubernetesWorkflowOutputReader,
 			Image:           "busybox:1.36",
@@ -545,86 +618,21 @@ func (kr *KubernetesRunner) SpawnJob(ctx context.Context, config *JobConfig) (st
 	// Handle Builder capability: inject buildkitd native sidecar. The job
 	// container stays unprivileged; the privilege lives on the sidecar only.
 	if HasCapability(config.Capabilities, CapabilityBuilder) {
-		priv := true
 		always := corev1.ContainerRestartPolicyAlways
 
-		image := kr.builder.Image
-		if image == "" {
-			image = DefaultBuilderImage
-		}
-
-		sidecarArgs := []string{
-			"--addr", fmt.Sprintf("tcp://0.0.0.0:%d", BuilderSidecarPort),
-			"--oci-worker=true",
-		}
-
-		var sidecarMounts []corev1.VolumeMount
-		var sidecarVolumes []corev1.Volume
-
-		// ConfigMap name in ConfigPath when running under k8s.
-		if kr.builder.ConfigPath != "" {
-			sidecarArgs = append(sidecarArgs, "--config", "/etc/buildkit/buildkitd.toml")
-			sidecarMounts = append(sidecarMounts, corev1.VolumeMount{
-				Name:      "builder-config",
-				MountPath: "/etc/buildkit",
-				ReadOnly:  true,
-			})
-			sidecarVolumes = append(sidecarVolumes, corev1.Volume{
-				Name: "builder-config",
-				VolumeSource: corev1.VolumeSource{
-					ConfigMap: &corev1.ConfigMapVolumeSource{
-						LocalObjectReference: corev1.LocalObjectReference{
-							Name: kr.builder.ConfigPath,
-						},
-					},
-				},
-			})
-		}
-
-		// Secret name in RegistryAuthPath when running under k8s.
-		if kr.builder.RegistryAuthPath != "" {
-			sidecarMounts = append(sidecarMounts, corev1.VolumeMount{
-				Name:      "builder-auth",
-				MountPath: "/root/.docker",
-				ReadOnly:  true,
-			})
-			sidecarVolumes = append(sidecarVolumes, corev1.Volume{
-				Name: "builder-auth",
-				VolumeSource: corev1.VolumeSource{
-					Secret: &corev1.SecretVolumeSource{
-						SecretName: kr.builder.RegistryAuthPath,
-					},
-				},
-			})
-		}
-
-		// PVC name in CacheVolume when running under k8s.
-		if kr.builder.CacheVolume != "" {
-			sidecarMounts = append(sidecarMounts, corev1.VolumeMount{
-				Name:      "builder-cache",
-				MountPath: "/var/lib/buildkit",
-			})
-			sidecarVolumes = append(sidecarVolumes, corev1.Volume{
-				Name: "builder-cache",
-				VolumeSource: corev1.VolumeSource{
-					PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{
-						ClaimName: kr.builder.CacheVolume,
-					},
-				},
-			})
-		}
+		// Image, arguments, mounts, security context, and the cache
+		// namespace and write mode of the coordinator: builder_cache.go.
+		image := kr.builder.image()
+		sidecarArgs := kr.builder.sidecarArgs()
+		sidecarMounts, sidecarVolumes := kr.builder.kubernetesBuilderVolumes(config.Cache)
 
 		builderSidecar := corev1.Container{
-			Name:  "builder",
-			Image: image,
-			Args:  sidecarArgs,
-			SecurityContext: &corev1.SecurityContext{
-				Privileged:   &priv,
-				RunAsUser:    int64Ptr(0),
-				RunAsNonRoot: boolPtr(false),
-			},
-			VolumeMounts:  sidecarMounts,
-			RestartPolicy: &always,
+			Name:            "builder",
+			Image:           image,
+			Args:            sidecarArgs,
+			SecurityContext: kr.builder.kubernetesBuilderSecurityContext(),
+			VolumeMounts:    sidecarMounts,
+			RestartPolicy:   &always,
 			StartupProbe: &corev1.Probe{
 				ProbeHandler: corev1.ProbeHandler{
 					TCPSocket: &corev1.TCPSocketAction{
@@ -702,9 +710,14 @@ func (kr *KubernetesRunner) SpawnJob(ctx context.Context, config *JobConfig) (st
 
 	// Enforce the job's configured timeout at the pod level so it's authoritative
 	// (the lease/heartbeat path is best-effort). nil = no deadline when unset.
+	// The worker enforces timeout_seconds from the start of the main
+	// container (coordinatorworker enforceTimeout) and reports "timeout".
+	// The Job deadline counts from Job start, which includes scheduling and
+	// the image pull. It is only a backstop for a lost worker, so it adds
+	// the startup timeout and a stop allowance, and the worker fires first.
 	var activeDeadline *int64
 	if config.TimeoutSeconds > 0 {
-		d := int64(config.TimeoutSeconds)
+		d := int64(config.TimeoutSeconds) + int64(kr.podStartupTimeout().Seconds()) + kubernetesDeadlineAllowanceSeconds
 		activeDeadline = &d
 	}
 
@@ -774,6 +787,8 @@ func (kr *KubernetesRunner) SpawnJob(ctx context.Context, config *JobConfig) (st
 			},
 		},
 	}
+
+	markKubernetesEgress(job, config)
 
 	logger.WithFields(map[string]interface{}{
 		"job_name":  jobName,
@@ -941,14 +956,15 @@ func (kr *KubernetesRunner) WaitForCompletion(ctx context.Context, jobName strin
 				}
 				ready, readerErr := workflowOutputReaderReady(pod)
 				if readerErr != nil {
-					return -1, readerErr
+					return code, readerErr
 				}
 				if !ready {
 					continue
 				}
 				output, err := kr.readWorkflowOutputFromPod(ctx, pod.Name)
 				if err != nil {
-					return -1, fmt.Errorf("failed to read workflow output: %w", err)
+					// Keep the real exit code: the main container ran.
+					return code, fmt.Errorf("failed to read workflow output: %w", err)
 				}
 				kr.storeWorkflowOutput(jobName, output)
 				logger.WithField("exit_code", code).Info("Job container completed")
@@ -959,6 +975,9 @@ func (kr *KubernetesRunner) WaitForCompletion(ctx context.Context, jobName strin
 		// A Job can fail before a pod starts, or Stop can delete its pod. Keep
 		// the Job condition as a fallback for those paths.
 		if job, err := kr.clientset.BatchV1().Jobs(kr.namespace).Get(ctx, jobName, metav1.GetOptions{}); err == nil {
+			if jobDeadlineExceeded(job) {
+				return -1, errJobDeadlineExceeded()
+			}
 			if code, done := kr.jobTerminal(ctx, job, jobName, logger); done {
 				return code, nil
 			}
@@ -971,6 +990,67 @@ func (kr *KubernetesRunner) WaitForCompletion(ctx context.Context, jobName strin
 			}
 		}
 	}
+}
+
+// ClassifyExit reads the job's pod after a non-zero exit. The kubelet sets
+// the main container's termination reason "OOMKilled" when the container
+// exceeded its memory limit (oom). A pod that the kubelet evicted (node
+// pressure) or that the Job controller failed with no main container exit
+// is infra.platform. See ExitClassifier.
+func (kr *KubernetesRunner) ClassifyExit(ctx context.Context, jobName string, exitCode int) (string, string) {
+	if job, err := kr.clientset.BatchV1().Jobs(kr.namespace).Get(ctx, jobName, metav1.GetOptions{}); err == nil && jobDeadlineExceeded(job) {
+		return models.FailureClassTimeout, "DeadlineExceeded"
+	}
+	pods, err := kr.clientset.CoreV1().Pods(kr.namespace).List(ctx, metav1.ListOptions{
+		LabelSelector: fmt.Sprintf("reactorcide.io/job-name=%s", jobName),
+	})
+	if err != nil {
+		return "", ""
+	}
+	return podExitClass(pods.Items)
+}
+
+// kubernetesDeadlineAllowanceSeconds is added to the Job active deadline
+// after the job timeout and the startup timeout. It covers the poll interval
+// of the worker timeout check and the cancel grace period of the stop.
+const kubernetesDeadlineAllowanceSeconds = 300
+
+// jobDeadlineExceeded reports whether the Job controller failed the Job at
+// its active deadline.
+func jobDeadlineExceeded(job *batchv1.Job) bool {
+	for _, condition := range job.Status.Conditions {
+		if condition.Type == batchv1.JobFailed && condition.Status == corev1.ConditionTrue && condition.Reason == "DeadlineExceeded" {
+			return true
+		}
+	}
+	return false
+}
+
+func errJobDeadlineExceeded() error {
+	return NewFailureError(models.FailureClassTimeout, "DeadlineExceeded", fmt.Errorf("the Kubernetes Job exceeded its active deadline"))
+}
+
+// podExitClass is the pure part of ClassifyExit.
+func podExitClass(pods []corev1.Pod) (string, string) {
+	for i := range pods {
+		pod := &pods[i]
+		for _, status := range pod.Status.ContainerStatuses {
+			if status.Name == "job" && status.State.Terminated != nil && status.State.Terminated.Reason == "OOMKilled" {
+				return models.FailureClassOOM, "OOMKilled"
+			}
+		}
+		if pod.Status.Reason == "Evicted" {
+			return models.FailureClassPlatform, "Evicted"
+		}
+	}
+	for i := range pods {
+		if _, done := mainContainerExitCode(&pods[i]); done {
+			return "", ""
+		}
+	}
+	// No pod shows a main container exit: the Job failed around the
+	// container (pod deleted, deadline of the Job object).
+	return models.FailureClassPlatform, "no main container exit"
 }
 
 func mainContainerExitCode(pod *corev1.Pod) (int, bool) {

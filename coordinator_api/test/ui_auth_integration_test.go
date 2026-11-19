@@ -41,6 +41,7 @@ import (
 	"github.com/pressly/goose/v3"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"gorm.io/gorm"
 
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/auth"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/config"
@@ -97,13 +98,27 @@ func mintSessionForUser(t *testing.T, userID string) string {
 
 func createTestUser(t *testing.T) *models.User {
 	t.Helper()
-	du := &DataUtils{db: testDB}
+	return createTestUserIn(t, testDB)
+}
+
+// createTestUserIn is createTestUser on db. Pass the transaction of
+// RunTransactionalTest so that the row is rolled back with the test.
+// createTestUser commits to the shared test database.
+func createTestUserIn(t *testing.T, db *gorm.DB) *models.User {
+	t.Helper()
+	du := &DataUtils{db: db}
 	user, err := du.CreateUser(DataSetup{})
 	require.NoError(t, err)
 	return user
 }
 
 func createTestProject(t *testing.T, orgID string, repoURL string, isPrivate bool) *models.Project {
+	t.Helper()
+	return createTestProjectIn(t, testDB, orgID, repoURL, isPrivate)
+}
+
+// createTestProjectIn is createTestProject on db (see createTestUserIn).
+func createTestProjectIn(t *testing.T, db *gorm.DB, orgID string, repoURL string, isPrivate bool) *models.Project {
 	t.Helper()
 	project := &models.Project{
 		UserID:            &orgID,
@@ -115,13 +130,20 @@ func createTestProject(t *testing.T, orgID string, repoURL string, isPrivate boo
 		TargetBranches:    pq.StringArray{"main"},
 		AllowedEventTypes: pq.StringArray{"push"},
 	}
-	require.NoError(t, testDB.Create(project).Error)
+	require.NoError(t, db.Create(project).Error)
 	return project
 }
 
 func createTestJob(t *testing.T, userID, status string) *models.Job {
 	t.Helper()
-	du := &DataUtils{db: testDB}
+	return createTestJobIn(t, testDB, userID, status)
+}
+
+// createTestJobIn is createTestJob on db (see createTestUserIn). A job that
+// a committed test leaves behind is a public job in every later job list.
+func createTestJobIn(t *testing.T, db *gorm.DB, userID, status string) *models.Job {
+	t.Helper()
+	du := &DataUtils{db: db}
 	job, err := du.CreateJob(DataSetup{
 		"UserID":     userID,
 		"Status":     status,

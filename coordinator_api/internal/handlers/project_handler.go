@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/audit"
@@ -98,6 +99,14 @@ type CreateProjectRequest struct {
 	VCSCredentialSecrets map[string]string `json:"vcs_token_secrets,omitempty"`
 	WebhookSecret        string            `json:"webhook_secret,omitempty"`
 	WebhookSecrets       map[string]string `json:"webhook_secrets,omitempty"`
+
+	// Event settings, as in UpdateProjectRequest. Absent: inherit the
+	// organization value.
+	InfraRetries    json.RawMessage `json:"infra_retries,omitempty"`
+	EgressControl   *bool           `json:"egress_control,omitempty"`
+	DuplicateEvents *string         `json:"duplicate_events,omitempty"`
+	DynamicJobs     *string         `json:"dynamic_jobs,omitempty"`
+	DraftPRs        *string         `json:"draft_prs,omitempty"`
 }
 
 // UpdateProjectRequest represents the request body for updating a project
@@ -124,6 +133,45 @@ type UpdateProjectRequest struct {
 	VCSCredentialSecrets map[string]string `json:"vcs_token_secrets,omitempty"`
 	WebhookSecret        *string           `json:"webhook_secret,omitempty"`
 	WebhookSecrets       map[string]string `json:"webhook_secrets,omitempty"`
+
+	// InfraRetries overrides the organization infra_retries setting: a
+	// number 0-5, or "inherit" (or null) to use the organization value.
+	InfraRetries json.RawMessage `json:"infra_retries,omitempty"`
+
+	// EgressControl sends all egress of the project's jobs through the
+	// egress proxy (docs/egress-proxy.md).
+	EgressControl *bool `json:"egress_control,omitempty"`
+
+	// Event settings: "inherit" uses the organization value.
+	DuplicateEvents *string `json:"duplicate_events,omitempty"`
+	DynamicJobs     *string `json:"dynamic_jobs,omitempty"`
+	DraftPRs        *string `json:"draft_prs,omitempty"`
+}
+
+// parseProjectInfraRetries reads UpdateProjectRequest.InfraRetries. It
+// returns set=false when the field is absent.
+func parseProjectInfraRetries(raw json.RawMessage) (value *int, set bool, err error) {
+	if len(raw) == 0 {
+		return nil, false, nil
+	}
+	if strings.TrimSpace(string(raw)) == "null" {
+		return nil, true, nil
+	}
+	var text string
+	if json.Unmarshal(raw, &text) == nil {
+		if text == "inherit" {
+			return nil, true, nil
+		}
+		return nil, false, store.ErrInvalidInput
+	}
+	var number *int
+	if err := json.Unmarshal(raw, &number); err != nil {
+		return nil, false, store.ErrInvalidInput
+	}
+	if number != nil && !models.IsValidInfraRetries(*number) {
+		return nil, false, store.ErrInvalidInput
+	}
+	return number, true, nil
 }
 
 // ProjectResponse represents the response body for a project
@@ -155,6 +203,16 @@ type ProjectResponse struct {
 	VCSCredentialSecrets map[string]string `json:"vcs_token_secrets,omitempty"`
 	WebhookSecret        string            `json:"webhook_secret,omitempty"`
 	WebhookSecrets       map[string]string `json:"webhook_secrets,omitempty"`
+
+	// InfraRetries is the project override; null inherits the
+	// organization value.
+	InfraRetries *int `json:"infra_retries"`
+
+	EgressControl bool `json:"egress_control"`
+
+	DuplicateEvents string `json:"duplicate_events,omitempty"`
+	DynamicJobs     string `json:"dynamic_jobs,omitempty"`
+	DraftPRs        string `json:"draft_prs,omitempty"`
 }
 
 // ListProjectsResponse represents the response body for listing projects
@@ -179,6 +237,18 @@ type SecretGrantRequest struct {
 	State             string   `json:"state,omitempty"`
 	ExecutionProfiles []string `json:"execution_profiles,omitempty"`
 	CIOrigins         []string `json:"ci_origins,omitempty"`
+	// RefClassesAny and RefClassesNone are ref class conditions
+	// (docs/ref-classes.md). nil keeps the stored value on an update; an
+	// empty list removes the condition.
+	RefClassesAny  []string `json:"ref_classes_any,omitempty"`
+	RefClassesNone []string `json:"ref_classes_none,omitempty"`
+	// Delivery is "env" or "proxy" (docs/egress-proxy.md). ProxyHosts,
+	// ProxyHeader, and ProxyHeaderFormat bind a proxy-delivered secret to
+	// hosts and a request header. Omitted keeps the stored values.
+	Delivery          string   `json:"delivery,omitempty"`
+	ProxyHosts        []string `json:"proxy_hosts,omitempty"`
+	ProxyHeader       *string  `json:"proxy_header,omitempty"`
+	ProxyHeaderFormat *string  `json:"proxy_header_format,omitempty"`
 }
 
 type ListSecretGrantsResponse struct {
@@ -224,6 +294,11 @@ func projectToResponse(p *models.Project) ProjectResponse {
 		VCSCredentialSecrets:  jsonbStringMap(p.VCSCredentialSecrets),
 		WebhookSecret:         p.WebhookSecret,
 		WebhookSecrets:        jsonbStringMap(p.WebhookSecrets),
+		InfraRetries:          p.InfraRetries,
+		EgressControl:         p.EgressControl,
+		DuplicateEvents:       p.DuplicateEvents,
+		DynamicJobs:           p.DynamicJobs,
+		DraftPRs:              p.DraftPRs,
 	}
 }
 
@@ -302,6 +377,12 @@ func (h *ProjectHandler) CreateProject(w http.ResponseWriter, r *http.Request) {
 		project.DefaultRunnerImage = req.DefaultRunnerImage
 	}
 	if req.DefaultJobCommand != "" {
+		// Declarative only (plan item G3): the eval command replaces the
+		// workflow evaluation, so only a global administrator sets it.
+		if !canSetDefaultJobCommand(r.Context(), h.store) {
+			h.respondWithJSON(w, http.StatusForbidden, ErrorResponse{Error: "forbidden", Message: defaultJobCommandForbidden})
+			return
+		}
 		project.DefaultJobCommand = req.DefaultJobCommand
 	}
 	if req.DefaultTimeoutSeconds != nil {
@@ -327,12 +408,22 @@ func (h *ProjectHandler) CreateProject(w http.ResponseWriter, r *http.Request) {
 	if req.WebhookSecrets != nil {
 		project.WebhookSecrets = stringMapJSONB(req.WebhookSecrets)
 	}
+	settings := UpdateProjectRequest{InfraRetries: req.InfraRetries, EgressControl: req.EgressControl,
+		DuplicateEvents: req.DuplicateEvents, DynamicJobs: req.DynamicJobs, DraftPRs: req.DraftPRs}
+	if err := applyProjectSettingsREST(project, settings); err != nil {
+		h.respondWithJSON(w, http.StatusBadRequest, ErrorResponse{Error: "invalid_input", Message: err.Error()})
+		return
+	}
 
 	if err := h.store.CreateProject(r.Context(), project); err != nil {
 		h.respondWithError(w, http.StatusInternalServerError, err)
 		return
 	}
-	audit.Record(r.Context(), h.store, project.OrgID, "project.create", "project", project.ProjectID, models.JSONB{"name": project.Name})
+	details := models.JSONB{"name": project.Name}
+	for key, value := range projectEventSettingDetails(project, settings) {
+		details[key] = value
+	}
+	audit.Record(r.Context(), h.store, project.OrgID, "project.create", "project", project.ProjectID, details)
 
 	h.respondWithJSON(w, http.StatusCreated, projectToResponse(project))
 }
@@ -597,7 +688,11 @@ func (h *ProjectHandler) UpdateProject(w http.ResponseWriter, r *http.Request) {
 	if req.DefaultRunnerImage != nil {
 		project.DefaultRunnerImage = *req.DefaultRunnerImage
 	}
-	if req.DefaultJobCommand != nil {
+	if req.DefaultJobCommand != nil && *req.DefaultJobCommand != project.DefaultJobCommand {
+		if !canSetDefaultJobCommand(r.Context(), h.store) {
+			h.respondWithJSON(w, http.StatusForbidden, ErrorResponse{Error: "forbidden", Message: defaultJobCommandForbidden})
+			return
+		}
 		project.DefaultJobCommand = *req.DefaultJobCommand
 	}
 	if req.DefaultTimeoutSeconds != nil {
@@ -625,10 +720,21 @@ func (h *ProjectHandler) UpdateProject(w http.ResponseWriter, r *http.Request) {
 	if req.WebhookSecrets != nil {
 		project.WebhookSecrets = stringMapJSONB(req.WebhookSecrets)
 	}
+	before := *project
+	if err := applyProjectSettingsREST(project, req); err != nil {
+		h.respondWithJSON(w, http.StatusBadRequest, ErrorResponse{Error: "invalid_input", Message: err.Error()})
+		return
+	}
 
 	if err := h.store.UpdateProject(r.Context(), project); err != nil {
 		h.respondWithError(w, http.StatusInternalServerError, err)
 		return
+	}
+	// The event settings change how events of the project run (drafts,
+	// duplicates, dynamic jobs, automatic retries, egress). Record each
+	// change, as for an organization.
+	if changes := projectEventSettingChanges(&before, project, req); len(changes) > 0 {
+		audit.Record(r.Context(), h.store, project.OwnershipOrgID(), "project.event_settings", "project", project.ProjectID, changes)
 	}
 
 	h.respondWithJSON(w, http.StatusOK, projectToResponse(project))

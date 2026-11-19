@@ -11,10 +11,13 @@ import (
 	"testing"
 	"time"
 
+	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/characteristics"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/checkauth"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/corndogs"
+	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/egress"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store/models"
+	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/tokencaps"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/vcs"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -127,7 +130,10 @@ func submitTriggers(t *testing.T, st store.Store, parent *models.Job) *httptest.
 	handler := NewJobHandler(st, nil)
 	body := `{"type":"trigger_job","jobs":[{"job_name":"test","job_command":"make test","container_image":"alpine:latest"}]}`
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/jobs/"+parent.JobID+"/triggers", bytes.NewReader([]byte(body)))
-	ctx := checkauth.SetUserContext(req.Context(), &models.User{UserID: parent.UserID})
+	caps, err := tokencaps.New(tokencaps.JobsSubmit)
+	require.NoError(t, err)
+	ctx := checkauth.SetPrincipalContext(req.Context(), &checkauth.Principal{CredentialType: "job_token",
+		BoundJobID: parent.JobID, OrganizationIDs: []string{parent.OrgID}, Capabilities: caps})
 	ctx = context.WithValue(ctx, GetContextKey("job_id"), parent.JobID)
 	rr := httptest.NewRecorder()
 	handler.SubmitTriggers(rr, req.WithContext(ctx))
@@ -136,7 +142,7 @@ func submitTriggers(t *testing.T, st store.Store, parent *models.Job) *httptest.
 
 func triggerParent(t *testing.T, eval bool) *models.Job {
 	t.Helper()
-	parent := &models.Job{JobID: "parent-job", UserID: "user-1", OrgID: "org-1", QueueName: "q", RunnerImage: "img", TimeoutSeconds: 60}
+	parent := &models.Job{JobID: "parent-job", UserID: "user-1", OrgID: "org-1", Status: "running", QueueName: "q", RunnerImage: "img", TimeoutSeconds: 60}
 	if eval {
 		require.NoError(t, (&vcs.JobMetadata{VCSProvider: "github", Repo: "o/r", CommitSHA: "abc", IsEval: true}).ApplyToJob(parent))
 	}
@@ -243,7 +249,7 @@ func TestManualEvent_EvalSubmitIsIdempotent(t *testing.T) {
 	require.Len(t, st.events, 1)
 	event := st.events[0]
 	assert.Equal(t, models.CIEventSourceManual, event.Source)
-	assert.Equal(t, "push", event.EventType)
+	assert.Equal(t, "manual", event.EventType, "the submitter cannot state the event type of a manual event")
 	assert.Equal(t, "o/r", event.Repo)
 	assert.Equal(t, "abc", event.CommitSHA)
 	assert.Equal(t, "user-1", event.Actor)
@@ -443,6 +449,38 @@ func TestScheduleFirer_CreatesEventAndEvalJob(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, eventID, again)
 	assert.Len(t, st.CreateJobCalls, 1)
+}
+
+// egressFirerStore is a firerStore with egress control on for the project.
+type egressFirerStore struct {
+	*firerStore
+	on bool
+}
+
+func (s *egressFirerStore) EffectiveEgressControl(context.Context, string, *string, string) (bool, error) {
+	return s.on, nil
+}
+
+// The eval job of a schedule fire is routed like a webhook eval job: with
+// egress control on, it requires a worker with an egress proxy
+// (docs/egress-proxy.md "Automatic routing").
+func TestScheduleFirer_RoutesEgressControlledEvalJob(t *testing.T) {
+	for _, on := range []bool{true, false} {
+		project := webhookTestProject()
+		st := &egressFirerStore{firerStore: &firerStore{WebhookMockStore: &WebhookMockStore{}, project: project}, on: on}
+		handler := NewWebhookHandler(st, corndogs.NewMockClient())
+		handler.AddVCSClient(vcs.GitHub, &branchHeadClient{MockVCSClient: &MockVCSClient{}, sha: "feedface1234567"})
+		_, err := handler.ScheduleFirer().Fire(context.Background(), testSchedule(project), time.Now())
+		require.NoError(t, err)
+		require.Len(t, st.CreateJobCalls, 1)
+		value, routed := st.CreateJobCalls[0].Characteristics[egress.WorkerCharacteristic]
+		if on {
+			require.True(t, routed, "an egress-controlled schedule eval job must require an egress worker")
+			assert.Equal(t, characteristics.BoolValue(true), value)
+		} else {
+			assert.False(t, routed, "egress control off: no egress characteristic")
+		}
+	}
 }
 
 func TestScheduleFirer_ErrorsAreReturned(t *testing.T) {

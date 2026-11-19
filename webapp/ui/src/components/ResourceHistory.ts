@@ -1,6 +1,6 @@
 import type { CheckBox } from '@catalystcommunity/controls'
 import { api } from '~/api/client.ts'
-import type { EnumChoice, GetJobResourceHistoryResponse, JobRunResourceSummary } from '~/api/csilapi/types.gen.ts'
+import type { EnumChoice, GetJobResourceHistoryResponse, JobRunResourceSummary, ResourceSuggestion } from '~/api/csilapi/types.gen.ts'
 import { ChoiceSelect } from './ChoiceInput.ts'
 import { describeError } from './ManagementPage.ts'
 import { formatValue } from './MetricsPanel.ts'
@@ -116,6 +116,18 @@ export function formatSeconds(seconds: number): string {
 export function formatMetric(value: number | undefined, unit: HistoryUnit): string {
   if (value === undefined || !Number.isFinite(value)) return '—'
   return unit === 'seconds' ? formatSeconds(value) : formatValue(value, unit)
+}
+
+/** The right-sizing suggestion as one sentence, or '' when there is none. */
+export function describeSuggestion(suggestion: ResourceSuggestion | undefined): string {
+  if (!suggestion) return ''
+  if (!suggestion.sufficient) {
+    return `Right-sizing suggestion: needs ${suggestion.minRuns} measured runs (${suggestion.runs} now).`
+  }
+  const cpuNow = suggestion.currentCpuRequestMillicores ? ` (now ${formatMetric(suggestion.currentCpuRequestMillicores, 'millicores')})` : ''
+  const memoryNow = suggestion.currentMemoryLimitBytes ? ` (now ${formatMetric(suggestion.currentMemoryLimitBytes, 'bytes')})` : ''
+  const oom = suggestion.oomRuns > 0 ? ` ${suggestion.oomRuns} run${suggestion.oomRuns === 1 ? '' : 's'} ran out of memory.` : ''
+  return `Right-sizing suggestion from ${suggestion.runs} runs: cpu.request ${suggestion.cpuRequest}${cpuNow}, memory.limit ${suggestion.memoryLimit}${memoryNow}.${oom}`
 }
 
 export function formatPercent(fraction: number): string {
@@ -313,6 +325,7 @@ export class ResourceHistory extends RcElement {
   #statLabels = new Map<string, HTMLElement>()
   #anomalyBox!: HTMLDivElement
   #anomalyList!: HTMLUListElement
+  #suggestion!: HTMLParagraphElement
   #tableBody!: HTMLTableSectionElement
   #tableHead!: HTMLTableRowElement
 
@@ -376,6 +389,7 @@ export class ResourceHistory extends RcElement {
       this.#stats.append(h('div', { 'data-stat': key }, dt, dd))
     }
 
+    this.#suggestion = h('p', { class: 'meta history-suggestion', hidden: true })
     this.#anomalyList = h('ul', { class: 'history-anomalies' })
     this.#anomalyBox = h('div', { class: 'history-anomaly-box', hidden: true }, h('h3', { class: 'history-subtitle' }, 'Unusual runs'), this.#anomalyList)
 
@@ -388,7 +402,7 @@ export class ResourceHistory extends RcElement {
       h('div', { class: 'scroll-x' }, h('table', { class: 'table' }, h('thead', null, this.#tableHead), this.#tableBody)),
     )
 
-    this.#body = h('div', { class: 'history-body', hidden: true }, this.#chart.el, this.#legend, this.#stats, this.#anomalyBox, table)
+    this.#body = h('div', { class: 'history-body', hidden: true }, this.#chart.el, this.#legend, this.#stats, this.#suggestion, this.#anomalyBox, table)
 
     this.append(
       h('div', { class: 'metrics-controls' }, this.#metricSelect.el, this.#windowSelect.el, this.#completedBox, this.#updating),
@@ -467,6 +481,9 @@ export class ResourceHistory extends RcElement {
     if (!hasData) return
 
     this.#chart.update(analysis, this.#metric, this.jobId)
+    const suggestionText = describeSuggestion(data.suggestion)
+    show(this.#suggestion, suggestionText !== '')
+    setText(this.#suggestion, suggestionText)
     this.#renderLegend()
     this.#renderStats(analysis)
     this.#renderAnomalies(analysis)

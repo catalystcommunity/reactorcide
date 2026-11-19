@@ -10,19 +10,30 @@ import (
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/uiapi/csilapi"
 )
 
-// requireGlobalAdmin is a small wrapper so every global-admin-only op in this
-// file shares one authorization call site. An anonymous caller (no valid
-// session at all) is rejected with "unauthorized" rather than "forbidden",
-// matching every other identity-required op in this service (see
-// Deps.requireUser) — "forbidden" is reserved for an
-// authenticated-but-insufficiently-privileged caller.
+// requireGlobalAdmin is a small wrapper so every global-admin-only op shares
+// one authorization call site. It accepts a browser session or an API token:
+// a token needs every organization and organizations:manage (the global
+// admin capability), and its owner must be a global admin. A caller with no
+// valid session or token is rejected with "unauthorized" rather than
+// "forbidden" -- "forbidden" is reserved for an authenticated but
+// insufficiently privileged caller.
 func (s *UiService) requireGlobalAdmin(ctx context.Context) (authz.Identity, error) {
-	id, _, err := s.deps.requireUser(ctx)
+	return s.requireGlobalAdminFor(ctx)
+}
+
+// requireGlobalAdminRead is requireGlobalAdmin for a read: a token for all
+// organizations needs organizations:read or organizations:manage.
+func (s *UiService) requireGlobalAdminRead(ctx context.Context) (authz.Identity, error) {
+	return s.requireGlobalAdminFor(ctx, orgReadCapabilities...)
+}
+
+func (s *UiService) requireGlobalAdminFor(ctx context.Context, capabilities ...string) (authz.Identity, error) {
+	ctx, id, _, err := s.deps.requireManagementIdentity(ctx)
 	if err != nil {
 		return authz.Identity{}, err
 	}
-	if err := s.deps.Resolver.RequireGlobalAdmin(ctx, id); err != nil {
-		return authz.Identity{}, mapPermissionErr(err)
+	if err := s.requireGlobalAdminGrant(ctx, id, capabilities...); err != nil {
+		return authz.Identity{}, err
 	}
 	return id, nil
 }
@@ -35,7 +46,7 @@ func globalSettingToEntry(g *models.GlobalSetting) csilapi.GlobalSettingEntry {
 
 // GetGlobalSettings requires global admin.
 func (s *UiService) GetGlobalSettings(ctx context.Context, req csilapi.GetGlobalSettingsRequest) (csilapi.GetGlobalSettingsResponse, error) {
-	if _, err := s.requireGlobalAdmin(ctx); err != nil {
+	if _, err := s.requireGlobalAdminRead(ctx); err != nil {
 		return csilapi.GetGlobalSettingsResponse{}, err
 	}
 
@@ -72,6 +83,10 @@ func (s *UiService) UpdateGlobalSettings(ctx context.Context, req csilapi.Update
 		if err := requireNonEmpty("settings[].key", entry.Key, maxNameLength); err != nil {
 			return csilapi.UpdateGlobalSettingsResponse{}, err
 		}
+		if entry.Key == models.GlobalSettingShedLevel {
+			// The shed level is validated and audited by set-shed-level.
+			return csilapi.UpdateGlobalSettingsResponse{}, NewServiceError("invalid_argument", "use set-shed-level to change shed_level")
+		}
 		raw, err := json.Marshal(entry.Value)
 		if err != nil {
 			return csilapi.UpdateGlobalSettingsResponse{}, NewServiceError("invalid_argument", "settings[].value must be JSON-serializable")
@@ -101,7 +116,7 @@ func trustedIdentityToCsil(t *models.AuthTrustedIdentity) csilapi.TrustedIdentit
 
 // ListTrustedIdentities requires global admin.
 func (s *UiService) ListTrustedIdentities(ctx context.Context, req csilapi.ListTrustedIdentitiesRequest) (csilapi.ListTrustedIdentitiesResponse, error) {
-	if _, err := s.requireGlobalAdmin(ctx); err != nil {
+	if _, err := s.requireGlobalAdminRead(ctx); err != nil {
 		return csilapi.ListTrustedIdentitiesResponse{}, err
 	}
 	rows, err := s.deps.Store.ListTrustedIdentities(ctx)
@@ -163,7 +178,7 @@ func trustedDomainPatternToCsil(p *models.AuthTrustedDomainPattern) csilapi.Trus
 
 // ListTrustedDomainPatterns requires global admin.
 func (s *UiService) ListTrustedDomainPatterns(ctx context.Context, req csilapi.ListTrustedDomainPatternsRequest) (csilapi.ListTrustedDomainPatternsResponse, error) {
-	if _, err := s.requireGlobalAdmin(ctx); err != nil {
+	if _, err := s.requireGlobalAdminRead(ctx); err != nil {
 		return csilapi.ListTrustedDomainPatternsResponse{}, err
 	}
 	rows, err := s.deps.Store.ListTrustedDomainPatterns(ctx)

@@ -214,7 +214,7 @@ curl -X POST "https://reactorcide.example.com/api/v1/secrets/batch/set" \
 
 ## Using Secrets in Jobs
 
-Reference secrets in job environment variables with the `${secret:path:key}` syntax. The worker resolves these references before passing environment variables to the container.
+Reference secrets in job environment variables with the `${secret:path:key}` syntax. On a deployed worker, the coordinator resolves these references when a worker claims the job, and sends the values in the lease. `run-local` resolves them from the local secret store. The job container gets the values in its environment.
 
 ```yaml
 environment:
@@ -235,6 +235,67 @@ Worker jobs can always read their own job-scoped secrets. Access to shared
 project or organization secret paths requires a matching secret grant unless
 the job is running through the unrestricted local path. See
 [VCS Credentials and Secret Grants](./vcs-credentials-and-secret-grants.md).
+
+### Ref class conditions
+
+A secret grant can have ref class conditions (see [Ref Classes](./ref-classes.md)):
+
+| Condition | Effect |
+| --- | --- |
+| `ref_classes_any` | The grant applies only to a job that has one of the listed classes |
+| `ref_classes_none` | The grant never applies to a job that has one of the listed classes |
+
+A grant with no conditions applies to every job, as before. The coordinator
+checks the conditions when it authorizes the secret. It reads the classes
+from its own record of the job, never from the job environment or job code.
+
+Example: give the production deploy secret only to runs of the default branch
+that an operator rule marks `production`, and never to a fork pull request:
+
+```bash
+reactorcide ref-classes rules set --org example production \
+  --class production --event push --default-branch true
+
+reactorcide secret-grants set deploy-production \
+  --project github.com/example/repo \
+  --secret-path deploy/production \
+  --job-name "github.com/example/repo:deploy" --job-match exact \
+  --ref-class-any production \
+  --ref-class-none fork
+```
+
+Use `--clear-ref-classes` to remove the conditions. In a `SecretGrantList`
+file, use `spec.refClasses.any` and `spec.refClasses.none`. The REST fields are
+`ref_classes_any` and `ref_classes_none`. A `null` or absent field keeps the
+stored condition on an update, and `[]` removes it. In the CSIL operation
+`update-secret-grant`, set `set_ref_classes: true` to replace the conditions.
+
+### Proxy-delivered secrets
+
+A secret grant can deliver its secrets through the egress proxy
+(`delivery: proxy`). Then the job environment gets a placeholder such as
+`reactorcide-secret-3f2a…`, not the value. The egress proxy puts the real
+value in one request header (default `Authorization`), and only for the
+hosts in `proxy_hosts`. The real value never goes into the job container.
+The worker still masks the real value in the logs.
+
+```bash
+reactorcide secret-grants set github-api \
+  --project github.com/example/repo --secret-path org/github \
+  --delivery proxy --proxy-host api.github.com --proxy-header-format 'Bearer {}'
+```
+
+The job uses the placeholder like the secret:
+
+```yaml
+environment:
+  GH_TOKEN: "${secret:org/github:token}"
+```
+
+A job with a proxy-delivered secret always runs with egress control, on a
+worker with an egress proxy. The default is `delivery: env`, the behavior
+before this feature. See [Egress Proxy](./egress-proxy.md) for the design and
+the limits (for example, a client that pins certificates).
 
 ## Path and Key Naming
 

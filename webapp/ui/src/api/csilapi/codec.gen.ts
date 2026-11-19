@@ -2,7 +2,7 @@
 // Source: <csil spec>
 // Target: typescript-codec
 
-import type { AddGroupMemberRequest, AddGroupMemberResponse, AddTrustedDomainPatternRequest, AddTrustedDomainPatternResponse, AddTrustedIdentityRequest, AddTrustedIdentityResponse, AddVcsCredentialRequest, AddVcsCredentialResponse, AddWebhookSecretRequest, AddWebhookSecretResponse, AssignRoleRequest, AssignRoleResponse, AuthenticateRequest, AuthenticateResponse, AuthenticatedIdentity, BeginLoginRequest, BeginLoginResponse, BootstrapAdminRequest, BootstrapAdminResponse, CIDecisionReason, CIDependencyOutcome, CIEventDetail, CIEventWorkflowDecision, CancelJobRequest, CancelJobResponse, CancelWorkflowRequest, CancelWorkflowResponse, CharacteristicEntry, CharacteristicScalar, CiApprovalAction, CiPolicyDefaults, CiPolicyDetail, CiPolicyDocument, CiPolicyNodeAuthority, CiPolicyRule, CiPolicySubjectMatch, CiPolicyUse, CiTrustSettings, CompleteLoginRequest, CompleteLoginResponse, CreateEnrollmentTokenRequest, CreateEnrollmentTokenResponse, CreateGroupRequest, CreateGroupResponse, CreateOrgRequest, CreateOrgResponse, CreatePoolRequest, CreatePoolResponse, CreateProjectRequest, CreateProjectResponse, CreateQueueRequest, CreateQueueResponse, CreateScheduleRequest, CreateScheduleResponse, CreateSecretGrantRequest, CreateSecretGrantResponse, DeactivateEnrollmentTokenRequest, DeactivateEnrollmentTokenResponse, DeactivateVcsCredentialRequest, DeactivateVcsCredentialResponse, DeactivateWebhookSecretRequest, DeactivateWebhookSecretResponse, DeleteCiPolicyRequest, DeleteCiPolicyResponse, DeleteExecutionProfileRequest, DeleteExecutionProfileResponse, DeleteGroupRequest, DeleteGroupResponse, DeleteOrgRequest, DeleteOrgResponse, DeletePoolRequest, DeletePoolResponse, DeleteProjectRequest, DeleteProjectResponse, DeleteQueueRequest, DeleteQueueResponse, DeleteScheduleRequest, DeleteScheduleResponse, DeleteSecretGrantRequest, DeleteSecretGrantResponse, DeleteSecretRequest, DeleteSecretResponse, DeleteVcsCredentialRequest, DeleteVcsCredentialResponse, DeleteWebhookSecretRequest, DeleteWebhookSecretResponse, DeleteWorkerClassRequest, DeleteWorkerClassResponse, DescribeFormMetadataRequest, DescribeFormMetadataResponse, DrainWorkerRequest, DrainWorkerResponse, EnrollmentTokenSummary, EnumChoice, ExecutionProfileSummary, GetAuthConfigRequest, GetAuthConfigResponse, GetCapabilitiesRequest, GetCapabilitiesResponse, GetCiPolicyRequest, GetCiPolicyResponse, GetCiTrustSettingsRequest, GetCiTrustSettingsResponse, GetEventRequest, GetEventResponse, GetGlobalSettingsRequest, GetGlobalSettingsResponse, GetJobLogsRequest, GetJobLogsResponse, GetJobMetricsRequest, GetJobMetricsResponse, GetJobRequest, GetJobResourceHistoryRequest, GetJobResourceHistoryResponse, GetJobResponse, GetPrApprovalsRequest, GetPrApprovalsResponse, GetProjectRequest, GetProjectResponse, GetWorkflowRequest, GetWorkflowResponse, GlobalSettingEntry, GroupMemberEntry, GroupSummary, JobLogEntry, JobMetricLabel, JobMetricPoint, JobMetricSeries, JobMetricUnavailable, JobRunResourceSummary, JobSummary, KillJobRequest, KillJobResponse, ListEnrollmentTokensRequest, ListEnrollmentTokensResponse, ListExecutionProfilesRequest, ListExecutionProfilesResponse, ListGroupMembersRequest, ListGroupMembersResponse, ListGroupsRequest, ListGroupsResponse, ListJobsRequest, ListJobsResponse, ListOrgsRequest, ListOrgsResponse, ListPoolsRequest, ListPoolsResponse, ListProjectsRequest, ListProjectsResponse, ListQueuesRequest, ListQueuesResponse, ListRoleAssignmentsRequest, ListRoleAssignmentsResponse, ListScheduleFiresRequest, ListScheduleFiresResponse, ListSchedulesRequest, ListSchedulesResponse, ListSecretGrantsRequest, ListSecretGrantsResponse, ListSecretPathsRequest, ListSecretPathsResponse, ListTrustedDomainPatternsRequest, ListTrustedDomainPatternsResponse, ListTrustedIdentitiesRequest, ListTrustedIdentitiesResponse, ListUsersRequest, ListUsersResponse, ListVcsCredentialsRequest, ListVcsCredentialsResponse, ListWebhookSecretsRequest, ListWebhookSecretsResponse, ListWorkerClassesRequest, ListWorkerClassesResponse, ListWorkersRequest, ListWorkersResponse, ListWorkflowsRequest, ListWorkflowsResponse, LogoutRequest, LogoutResponse, OrgSummary, PrCommandRequest, PrCommandResponse, ProjectDetail, ProjectSummary, PutCiPolicyRequest, PutCiPolicyResponse, PutCiTrustSettingsRequest, PutCiTrustSettingsResponse, PutExecutionProfileRequest, PutExecutionProfileResponse, PutWorkerClassRequest, PutWorkerClassResponse, QueueSummary, RemoveGroupMemberRequest, RemoveGroupMemberResponse, RemoveTrustedDomainPatternRequest, RemoveTrustedDomainPatternResponse, RemoveTrustedIdentityRequest, RemoveTrustedIdentityResponse, RenameQueueRequest, RenameQueueResponse, RequiredReview, RequiredReviewState, RetryJobRequest, RetryJobResponse, RetryUnsuccessfulJobsRequest, RetryUnsuccessfulJobsResponse, RetryWorkflowRequest, RetryWorkflowResponse, RevokeRoleRequest, RevokeRoleResponse, RoleAssignment, RoleSummary, ScheduleFireSummary, ScheduleSummary, SecretGrant, SecretPathEntry, ServiceError, SetDefaultOrgRequest, SetDefaultOrgResponse, SetSecretRequest, SetSecretResponse, SetWorkerClassPoolRequest, SetWorkerClassPoolResponse, SetWorkerStatusRequest, SetWorkerStatusResponse, TrustedDomainPattern, TrustedIdentity, UpdateGlobalSettingsRequest, UpdateGlobalSettingsResponse, UpdateGroupRequest, UpdateGroupResponse, UpdateOrgRequest, UpdateOrgResponse, UpdatePoolRequest, UpdatePoolResponse, UpdateProjectRequest, UpdateProjectResponse, UpdateScheduleRequest, UpdateScheduleResponse, UpdateSecretGrantRequest, UpdateSecretGrantResponse, UserSummary, VcsCredentialSummary, WebhookSecretSummary, WorkerCharacteristicEntry, WorkerCharacteristicValue, WorkerClassSummary, WorkerPoolSummary, WorkerSummary, WorkflowEventSummary, WorkflowNodeSummary, WorkflowSummaryDetail } from "./types.gen.ts";
+import type { ActorSummary, AddGroupMemberRequest, AddGroupMemberResponse, AddTrustedDomainPatternRequest, AddTrustedDomainPatternResponse, AddTrustedIdentityRequest, AddTrustedIdentityResponse, AddVcsCredentialRequest, AddVcsCredentialResponse, AddWebhookSecretRequest, AddWebhookSecretResponse, AgreementOtherResult, AgreementRow, AlertRuleInput, AlertRuleResponse, AssignRoleRequest, AssignRoleResponse, AuthenticateRequest, AuthenticateResponse, AuthenticatedIdentity, BeginLoginRequest, BeginLoginResponse, BootstrapAdminRequest, BootstrapAdminResponse, CIDecisionReason, CIDependencyOutcome, CIEventDetail, CIEventWorkflowDecision, CancelJobRequest, CancelJobResponse, CancelWorkflowRequest, CancelWorkflowResponse, CharacteristicBacklog, CharacteristicEntry, CharacteristicScalar, CiApprovalAction, CiPolicyClassProfile, CiPolicyDefaults, CiPolicyDetail, CiPolicyDocument, CiPolicyNodeAuthority, CiPolicyRefClassMatch, CiPolicyRule, CiPolicySubjectMatch, CiPolicyUse, CiTrustSettings, CompleteLoginRequest, CompleteLoginResponse, CreateAlertRuleRequest, CreateEnrollmentTokenRequest, CreateEnrollmentTokenResponse, CreateEventSubscriptionRequest, CreateEventSubscriptionResponse, CreateGroupRequest, CreateGroupResponse, CreateOrgRequest, CreateOrgResponse, CreatePoolRequest, CreatePoolResponse, CreateProjectRequest, CreateProjectResponse, CreateQueueRequest, CreateQueueResponse, CreateScheduleRequest, CreateScheduleResponse, CreateSecretGrantRequest, CreateSecretGrantResponse, CreateServicePrincipalRequest, CreateServicePrincipalResponse, DeactivateEnrollmentTokenRequest, DeactivateEnrollmentTokenResponse, DeactivateVcsCredentialRequest, DeactivateVcsCredentialResponse, DeactivateWebhookSecretRequest, DeactivateWebhookSecretResponse, DecidePathAcceptanceRequest, DecideRequiredSetProposalRequest, DecideRequiredSetProposalResponse, DeleteAlertRuleRequest, DeleteAlertRuleResponse, DeleteCiPolicyRequest, DeleteCiPolicyResponse, DeleteDiagnosisRequest, DeleteDiagnosisResponse, DeleteEnvDefaultRequest, DeleteEnvDefaultResponse, DeleteEventSubscriptionRequest, DeleteEventSubscriptionResponse, DeleteExecutionProfileRequest, DeleteExecutionProfileResponse, DeleteFederationIssuerRequest, DeleteFederationIssuerResponse, DeleteFederationMappingRequest, DeleteFederationMappingResponse, DeleteGroupRequest, DeleteGroupResponse, DeleteImageAliasRequest, DeleteImageAliasResponse, DeleteOrgRequest, DeleteOrgResponse, DeletePoolRequest, DeletePoolResponse, DeletePriorityLaneRequest, DeletePriorityLaneResponse, DeleteProjectRequest, DeleteProjectResponse, DeleteQueueRequest, DeleteQueueResponse, DeleteRefClassRuleRequest, DeleteRefClassRuleResponse, DeleteScheduleRequest, DeleteScheduleResponse, DeleteSecretGrantRequest, DeleteSecretGrantResponse, DeleteSecretRequest, DeleteSecretResponse, DeleteVcsCredentialRequest, DeleteVcsCredentialResponse, DeleteWebhookSecretRequest, DeleteWebhookSecretResponse, DeleteWorkerClassRequest, DeleteWorkerClassResponse, DescribeFormMetadataRequest, DescribeFormMetadataResponse, DiagnosisLinkEntry, DiagnosisSummary, DrainWorkerRequest, DrainWorkerResponse, EnrollmentTokenSummary, EnumChoice, EnvDefaultEntry, EventDeliveryAttemptEntry, EventDeliverySummary, EventSubscriptionSummary, ExecutionProfileSummary, ExplainPriorityRequest, ExplainPriorityResponse, ExplainRefClassesRequest, ExplainRefClassesResponse, FederationConditionEntry, FederationIssuerEntry, FederationMappingEntry, FlakyTestView, GetAgreementReportRequest, GetAgreementReportResponse, GetAuthConfigRequest, GetAuthConfigResponse, GetCapabilitiesRequest, GetCapabilitiesResponse, GetCiPolicyRequest, GetCiPolicyResponse, GetCiTrustSettingsRequest, GetCiTrustSettingsResponse, GetEventDeliveryRequest, GetEventDeliveryResponse, GetEventRequest, GetEventResponse, GetEventSubscriptionRequest, GetEventSubscriptionResponse, GetGlobalSettingsRequest, GetGlobalSettingsResponse, GetImageAliasRequest, GetImageAliasResponse, GetImagePolicyRequest, GetImagePolicyResponse, GetImageRolloutStatusRequest, GetImageRolloutStatusResponse, GetInfraDashboardRequest, GetInfraDashboardResponse, GetJobLogsRequest, GetJobLogsResponse, GetJobMetricsRequest, GetJobMetricsResponse, GetJobProvenanceRequest, GetJobProvenanceResponse, GetJobRequest, GetJobResourceHistoryRequest, GetJobResourceHistoryResponse, GetJobResponse, GetJobTestResultsRequest, GetJobTestResultsResponse, GetOidcSettingsRequest, GetOrgReportingSettingsRequest, GetOrgReportingSettingsResponse, GetPipelineDashboardRequest, GetPipelineDashboardResponse, GetPrApprovalsRequest, GetPrApprovalsResponse, GetPrincipalRequest, GetPrincipalResponse, GetProjectRequest, GetProjectResponse, GetReportingSettingsRequest, GetReportingSettingsResponse, GetRequiredSetOrgSettingsRequest, GetRequiredSetOrgSettingsResponse, GetRequiredSetRequest, GetRequiredSetResponse, GetShedStateRequest, GetShedStateResponse, GetUsageDashboardRequest, GetUsageDashboardResponse, GetVcsOwnerAllowlistRequest, GetWorkerImageStateRequest, GetWorkerImageStateResponse, GetWorkflowRequest, GetWorkflowResponse, GitHubAppInstallationSummary, GitHubAppSummary, GlobalSettingEntry, GroupMemberDetail, GroupMemberEntry, GroupSummary, GroupVcsLink, GroupVcsSyncResult, ImageAliasRollout, ImageAliasSummary, ImageFailureSummary, ImagePolicySummary, ImageRolloutPoolSummary, ImageRolloutWorker, IssuePrincipalTokenRequest, IssuePrincipalTokenResponse, JobArtifactSummary, JobLinkSummary, JobLogEntry, JobMetricLabel, JobMetricPoint, JobMetricSeries, JobMetricUnavailable, JobRunResourceSummary, JobSummary, JobTestSummaryView, KillJobRequest, KillJobResponse, LinkGroupVcsTeamRequest, LinkGroupVcsTeamResponse, ListAlertRulesRequest, ListAlertRulesResponse, ListDiagnosesRequest, ListDiagnosesResponse, ListEnrollmentTokensRequest, ListEnrollmentTokensResponse, ListEnvDefaultsRequest, ListEnvDefaultsResponse, ListEventDeliveriesRequest, ListEventDeliveriesResponse, ListEventSubscriptionsRequest, ListEventSubscriptionsResponse, ListExecutionProfilesRequest, ListExecutionProfilesResponse, ListFederationIssuersRequest, ListFederationIssuersResponse, ListFlakyTestsRequest, ListFlakyTestsResponse, ListGitHubAppsRequest, ListGitHubAppsResponse, ListGroupMemberDetailsRequest, ListGroupMemberDetailsResponse, ListGroupMembersRequest, ListGroupMembersResponse, ListGroupVcsLinksRequest, ListGroupVcsLinksResponse, ListGroupsRequest, ListGroupsResponse, ListImageAliasesRequest, ListImageAliasesResponse, ListJobArtifactsRequest, ListJobArtifactsResponse, ListJobLinksRequest, ListJobLinksResponse, ListJobsRequest, ListJobsResponse, ListOidcKeysRequest, ListOidcKeysResponse, ListOrgsRequest, ListOrgsResponse, ListPathAcceptancesRequest, ListPathAcceptancesResponse, ListPoolsRequest, ListPoolsResponse, ListPrincipalsRequest, ListPrincipalsResponse, ListPriorityLanesRequest, ListPriorityLanesResponse, ListProjectsRequest, ListProjectsResponse, ListQueuesRequest, ListQueuesResponse, ListRefClassRulesRequest, ListRefClassRulesResponse, ListRoleAssignmentsRequest, ListRoleAssignmentsResponse, ListScheduleFiresRequest, ListScheduleFiresResponse, ListSchedulesRequest, ListSchedulesResponse, ListSecretGrantsRequest, ListSecretGrantsResponse, ListSecretPathsRequest, ListSecretPathsResponse, ListTestQuarantinesRequest, ListTestQuarantinesResponse, ListTrustedDomainPatternsRequest, ListTrustedDomainPatternsResponse, ListTrustedIdentitiesRequest, ListTrustedIdentitiesResponse, ListUsersRequest, ListUsersResponse, ListVcsCredentialsRequest, ListVcsCredentialsResponse, ListWebhookSecretsRequest, ListWebhookSecretsResponse, ListWorkerClassesRequest, ListWorkerClassesResponse, ListWorkersRequest, ListWorkersResponse, ListWorkflowsRequest, ListWorkflowsResponse, LogoutRequest, LogoutResponse, ObsAlertRule, ObsCapacity, ObsClassCount, ObsFlakyTest, ObsGroupUsage, ObsLaneHealth, ObsQueueBacklog, ObsSloStatus, ObsSummary, ObsTrendPoint, ObsUsagePoint, ObsWorkflowHealth, OidcAudienceClaims, OidcClaim, OidcSettingsResponse, OidcSigningKey, OrgReportingSettingsView, OrgSummary, PathAcceptanceResponse, PathAcceptanceSummary, PathOwnerRule, PrCommandRequest, PrCommandResponse, PrincipalDetail, PrincipalIdentityEntry, PrincipalIdentityRequest, PrincipalIdentityResponse, PrincipalSummary, PrincipalTokenEntry, PriorityBounds, PriorityDecision, PriorityLane, PriorityLaneCheck, PriorityLaneMatch, PriorityShift, ProjectDetail, ProjectSummary, ProposeRequiredSetChangeRequest, ProposeRequiredSetChangeResponse, PutCiPolicyRequest, PutCiPolicyResponse, PutCiTrustSettingsRequest, PutCiTrustSettingsResponse, PutDiagnosisRequest, PutDiagnosisResponse, PutEnvDefaultRequest, PutEnvDefaultResponse, PutExecutionProfileRequest, PutExecutionProfileResponse, PutImagePolicyRequest, PutImagePolicyResponse, PutOidcSettingsRequest, PutOrgReportingSettingsRequest, PutPriorityLaneRequest, PutPriorityLaneResponse, PutRefClassRuleRequest, PutRefClassRuleResponse, PutRequiredSetOrgSettingsRequest, PutVcsOwnerAllowlistRequest, PutWorkerClassRequest, PutWorkerClassResponse, QuarantineRequiredWorkflowRequest, QuarantineRequiredWorkflowResponse, QuarantineTestRequest, QuarantineTestResponse, QueueSummary, ReadJobArtifactRequest, ReadJobArtifactResponse, RefClassBuiltin, RefClassFacts, RefClassReason, RefClassRule, RefClassRuleCheck, RemoveGroupMemberRequest, RemoveGroupMemberResponse, RemoveTrustedDomainPatternRequest, RemoveTrustedDomainPatternResponse, RemoveTrustedIdentityRequest, RemoveTrustedIdentityResponse, RenameQueueRequest, RenameQueueResponse, ReplayEventDeliveryRequest, ReplayEventDeliveryResponse, ReportingSettings, RequestPathAcceptanceRequest, RequiredReview, RequiredReviewState, RequiredSetApproverRule, RequiredSetProposal, RequiredSetWorkflow, RerunShiftLimits, RerunWorkflowRequest, RerunWorkflowResponse, ResolvePrincipalRequest, ResolvePrincipalResponse, ResourceSuggestion, RetireOidcKeyRequest, RetryJobRequest, RetryJobResponse, RetryUnsuccessfulJobsRequest, RetryUnsuccessfulJobsResponse, RetryWorkflowRequest, RetryWorkflowResponse, RevokePrincipalTokenRequest, RevokePrincipalTokenResponse, RevokeRoleRequest, RevokeRoleResponse, RoleAssignment, RoleSummary, RotateOidcKeyRequest, RunShifts, SaveFederationIssuerRequest, SaveFederationIssuerResponse, SaveFederationMappingRequest, SaveFederationMappingResponse, ScheduleFireSummary, ScheduleSummary, SecretGrant, SecretPathEntry, ServiceError, SetDefaultOrgRequest, SetDefaultOrgResponse, SetGitHubAppEnabledRequest, SetGitHubAppEnabledResponse, SetGroupPriorityShiftRequest, SetGroupPriorityShiftResponse, SetImageAliasRequest, SetImageAliasResponse, SetPrincipalGroupRequest, SetPrincipalGroupResponse, SetPrincipalStatusRequest, SetPrincipalStatusResponse, SetRequiredSetApproversRequest, SetRequiredSetEnabledRequest, SetRequiredSetEnabledResponse, SetSecretRequest, SetSecretResponse, SetShedActionsRequest, SetShedLevelRequest, SetShedLevelResponse, SetWorkerClassPoolRequest, SetWorkerClassPoolResponse, SetWorkerStatusRequest, SetWorkerStatusResponse, ShedActions, ShedState, StartRunRequest, StartRunResponse, SyncGitHubAppRequest, SyncGitHubAppResponse, SyncGroupVcsTeamsRequest, SyncGroupVcsTeamsResponse, TestEventSubscriptionRequest, TestEventSubscriptionResponse, TestQuarantineView, TestResultView, TrustedDomainPattern, TrustedIdentity, UnlinkGroupVcsTeamRequest, UnlinkGroupVcsTeamResponse, UnquarantineRequiredWorkflowRequest, UnquarantineRequiredWorkflowResponse, UnquarantineTestRequest, UnquarantineTestResponse, UpdateAlertRuleRequest, UpdateEventSubscriptionRequest, UpdateEventSubscriptionResponse, UpdateGlobalSettingsRequest, UpdateGlobalSettingsResponse, UpdateGroupRequest, UpdateGroupResponse, UpdateOrgRequest, UpdateOrgResponse, UpdatePoolRequest, UpdatePoolResponse, UpdateProjectRequest, UpdateProjectResponse, UpdateReportingSettingsRequest, UpdateScheduleRequest, UpdateScheduleResponse, UpdateSecretGrantRequest, UpdateSecretGrantResponse, UserSummary, VcsCredentialSummary, VcsOwnerAllowlistResponse, WebhookSecretSummary, WorkerAdmissionSummary, WorkerCharacteristicEntry, WorkerCharacteristicValue, WorkerClassSummary, WorkerImageSetEntrySummary, WorkerPoolSummary, WorkerSummary, WorkflowEventSummary, WorkflowNodeSummary, WorkflowOwnership, WorkflowSummaryDetail } from "./types.gen.ts";
 
 /** A CBOR semantic tag wrapping an inner value (e.g. tag 0 timestamp, tag 4 decimal). */
 export type CborTag = { readonly tag: number; readonly value: CborValue };
@@ -672,6 +672,7 @@ export function toGetCapabilitiesRequestCborValue(v: GetCapabilitiesRequest): Cb
   const csilMap = new Map<CborValue, CborValue>();
   if (v.orgId !== undefined) csilMap.set("org_id", v.orgId);
   if (v.projectId !== undefined) csilMap.set("project_id", v.projectId);
+  if (v.workflowId !== undefined) csilMap.set("workflow_id", v.workflowId);
   return csilMap;
 }
 
@@ -679,6 +680,7 @@ export function fromGetCapabilitiesRequestCborValue(value: CborValue): GetCapabi
   return {
     orgId: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "org_id")),
     projectId: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "project_id")),
+    workflowId: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "workflow_id")),
   };
 }
 
@@ -703,6 +705,7 @@ export function toGetCapabilitiesResponseCborValue(v: GetCapabilitiesResponse): 
   csilMap.set("manage_secrets", v.manageSecrets);
   csilMap.set("manage_workers", v.manageWorkers);
   csilMap.set("is_global_admin", v.isGlobalAdmin);
+  if (v.manageWorkflow !== undefined) csilMap.set("manage_workflow", v.manageWorkflow);
   csilMap.set("is_project_owner", v.isProjectOwner);
   csilMap.set("manage_global_settings", v.manageGlobalSettings);
   csilMap.set("manage_vcs_credentials", v.manageVcsCredentials);
@@ -731,6 +734,7 @@ export function fromGetCapabilitiesResponseCborValue(value: CborValue): GetCapab
     isGlobalAdmin: asBool(requireKey(value, "is_global_admin")),
     isOrgAdmin: asBool(requireKey(value, "is_org_admin")),
     isProjectOwner: asBool(requireKey(value, "is_project_owner")),
+    manageWorkflow: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asBool(csilV))(mapGet(value, "manage_workflow")),
   };
 }
 
@@ -747,10 +751,15 @@ export function toOrgSummaryCborValue(v: OrgSummary): CborValue {
   csilMap.set("name", v.name);
   csilMap.set("org_id", v.orgId);
   csilMap.set("status", v.status);
+  if (v.draftPrs !== undefined) csilMap.set("draft_prs", v.draftPrs);
   csilMap.set("is_default", v.isDefault);
   csilMap.set("is_private", v.isPrivate);
+  if (v.shedLevel !== undefined) csilMap.set("shed_level", v.shedLevel);
   csilMap.set("display_name", v.displayName);
   if (v.dynamicJobs !== undefined) csilMap.set("dynamic_jobs", v.dynamicJobs);
+  if (v.infraRetries !== undefined) csilMap.set("infra_retries", v.infraRetries);
+  if (v.egressControl !== undefined) csilMap.set("egress_control", v.egressControl);
+  if (v.defaultsProfile !== undefined) csilMap.set("defaults_profile", v.defaultsProfile);
   if (v.duplicateEvents !== undefined) csilMap.set("duplicate_events", v.duplicateEvents);
   return csilMap;
 }
@@ -765,6 +774,11 @@ export function fromOrgSummaryCborValue(value: CborValue): OrgSummary {
     isPrivate: asBool(requireKey(value, "is_private")),
     duplicateEvents: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "duplicate_events")),
     dynamicJobs: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "dynamic_jobs")),
+    draftPrs: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "draft_prs")),
+    defaultsProfile: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "defaults_profile")),
+    shedLevel: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "shed_level")),
+    infraRetries: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asNumber(csilV))(mapGet(value, "infra_retries")),
+    egressControl: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asBool(csilV))(mapGet(value, "egress_control")),
   };
 }
 
@@ -862,9 +876,12 @@ export function toUpdateOrgRequestCborValue(v: UpdateOrgRequest): CborValue {
   const csilMap = new Map<CborValue, CborValue>();
   csilMap.set("name", v.name);
   if (v.status !== undefined) csilMap.set("status", v.status);
+  if (v.draftPrs !== undefined) csilMap.set("draft_prs", v.draftPrs);
   if (v.isPrivate !== undefined) csilMap.set("is_private", v.isPrivate);
   if (v.displayName !== undefined) csilMap.set("display_name", v.displayName);
   if (v.dynamicJobs !== undefined) csilMap.set("dynamic_jobs", v.dynamicJobs);
+  if (v.infraRetries !== undefined) csilMap.set("infra_retries", v.infraRetries);
+  if (v.egressControl !== undefined) csilMap.set("egress_control", v.egressControl);
   if (v.duplicateEvents !== undefined) csilMap.set("duplicate_events", v.duplicateEvents);
   return csilMap;
 }
@@ -877,6 +894,9 @@ export function fromUpdateOrgRequestCborValue(value: CborValue): UpdateOrgReques
     status: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "status")),
     duplicateEvents: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "duplicate_events")),
     dynamicJobs: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "dynamic_jobs")),
+    draftPrs: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "draft_prs")),
+    infraRetries: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asNumber(csilV))(mapGet(value, "infra_retries")),
+    egressControl: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asBool(csilV))(mapGet(value, "egress_control")),
   };
 }
 
@@ -996,14 +1016,17 @@ export function toExecutionProfileSummaryCborValue(v: ExecutionProfileSummary): 
   const csilMap = new Map<CborValue, CborValue>();
   csilMap.set("name", v.name);
   csilMap.set("deny_secrets", v.denySecrets);
+  if (v.egressControl !== undefined) csilMap.set("egress_control", v.egressControl);
   if (v.cacheNamespace !== undefined) csilMap.set("cache_namespace", v.cacheNamespace);
   csilMap.set("may_run_as_root", v.mayRunAsRoot);
   csilMap.set("resource_ceilings", v.resourceCeilings);
   if (v.artifactNamespace !== undefined) csilMap.set("artifact_namespace", v.artifactNamespace);
+  if (v.cacheWriteClasses !== undefined) csilMap.set("cache_write_classes", v.cacheWriteClasses);
   csilMap.set("runtime_capabilities", v.runtimeCapabilities);
   csilMap.set("trusted_cache_writes", v.trustedCacheWrites);
   csilMap.set("secret_path_allowlist", v.secretPathAllowlist);
   csilMap.set("allowed_worker_classes", v.allowedWorkerClasses);
+  if (v.cacheNamespaceClasses !== undefined) csilMap.set("cache_namespace_classes", v.cacheNamespaceClasses);
   if (v.timeoutCeilingSeconds !== undefined) csilMap.set("timeout_ceiling_seconds", v.timeoutCeilingSeconds);
   return csilMap;
 }
@@ -1021,6 +1044,9 @@ export function fromExecutionProfileSummaryCborValue(value: CborValue): Executio
     cacheNamespace: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "cache_namespace")),
     artifactNamespace: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "artifact_namespace")),
     trustedCacheWrites: asBool(requireKey(value, "trusted_cache_writes")),
+    cacheNamespaceClasses: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asArray(csilV).map((csilE) => asString(csilE)))(mapGet(value, "cache_namespace_classes")),
+    cacheWriteClasses: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asArray(csilV).map((csilE) => asString(csilE)))(mapGet(value, "cache_write_classes")),
+    egressControl: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asBool(csilV))(mapGet(value, "egress_control")),
   };
 }
 
@@ -1161,6 +1187,7 @@ export function toWorkerClassSummaryCborValue(v: WorkerClassSummary): CborValue 
   csilMap.set("name", v.name);
   csilMap.set("pool_ids", v.poolIds);
   csilMap.set("protected", v.protected);
+  if (v.refClassesAny !== undefined) csilMap.set("ref_classes_any", v.refClassesAny);
   return csilMap;
 }
 
@@ -1169,6 +1196,7 @@ export function fromWorkerClassSummaryCborValue(value: CborValue): WorkerClassSu
     name: asString(requireKey(value, "name")),
     protected: asBool(requireKey(value, "protected")),
     poolIds: asArray(requireKey(value, "pool_ids")).map((csilE) => asString(csilE)),
+    refClassesAny: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asArray(csilV).map((csilE) => asString(csilE)))(mapGet(value, "ref_classes_any")),
   };
 }
 
@@ -1353,6 +1381,7 @@ export function fromSetWorkerClassPoolResponseCbor(bytes: Uint8Array): SetWorker
 export function toPrCommandRequestCborValue(v: PrCommandRequest): CborValue {
   const csilMap = new Map<CborValue, CborValue>();
   if (v.label !== undefined) csilMap.set("label", v.label);
+  if (v.shifts !== undefined) csilMap.set("shifts", toRunShiftsCborValue(v.shifts));
   csilMap.set("command", v.command);
   if (v.headSha !== undefined) csilMap.set("head_sha", v.headSha);
   csilMap.set("pr_number", v.prNumber);
@@ -1367,6 +1396,7 @@ export function fromPrCommandRequestCborValue(value: CborValue): PrCommandReques
     command: asString(requireKey(value, "command")),
     label: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "label")),
     headSha: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "head_sha")),
+    shifts: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : fromRunShiftsCborValue(csilV))(mapGet(value, "shifts")),
   };
 }
 
@@ -1559,6 +1589,7 @@ export function toCiTrustSettingsCborValue(v: CiTrustSettings): CborValue {
   if (v.overrideProfile !== undefined) csilMap.set("override_profile", v.overrideProfile);
   if (v.requiredReviews !== undefined) csilMap.set("required_reviews", v.requiredReviews.map((csilE): CborValue => toRequiredReviewCborValue(csilE)));
   if (v.overrideApprovers !== undefined) csilMap.set("override_approvers", v.overrideApprovers);
+  if (v.rerunShiftLimits !== undefined) csilMap.set("rerun_shift_limits", toRerunShiftLimitsCborValue(v.rerunShiftLimits));
   if (v.gatedRunAuthority !== undefined) csilMap.set("gated_run_authority", v.gatedRunAuthority);
   return csilMap;
 }
@@ -1571,6 +1602,7 @@ export function fromCiTrustSettingsCborValue(value: CborValue): CiTrustSettings 
     overrideApprovers: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asArray(csilV).map((csilE) => asString(csilE)))(mapGet(value, "override_approvers")),
     overrideProfile: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "override_profile")),
     requiredReviews: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asArray(csilV).map((csilE) => fromRequiredReviewCborValue(csilE)))(mapGet(value, "required_reviews")),
+    rerunShiftLimits: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : fromRerunShiftLimitsCborValue(csilV))(mapGet(value, "rerun_shift_limits")),
   };
 }
 
@@ -1580,6 +1612,32 @@ export function toCiTrustSettingsCbor(v: CiTrustSettings): Uint8Array {
 
 export function fromCiTrustSettingsCbor(bytes: Uint8Array): CiTrustSettings {
   return fromCiTrustSettingsCborValue(decode(bytes));
+}
+
+export function toRerunShiftLimitsCborValue(v: RerunShiftLimits): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  if (v.maxCpu !== undefined) csilMap.set("max_cpu", v.maxCpu);
+  if (v.maxMemory !== undefined) csilMap.set("max_memory", v.maxMemory);
+  if (v.maxStorage !== undefined) csilMap.set("max_storage", v.maxStorage);
+  if (v.maxTimeoutSeconds !== undefined) csilMap.set("max_timeout_seconds", v.maxTimeoutSeconds);
+  return csilMap;
+}
+
+export function fromRerunShiftLimitsCborValue(value: CborValue): RerunShiftLimits {
+  return {
+    maxCpu: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "max_cpu")),
+    maxMemory: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "max_memory")),
+    maxStorage: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "max_storage")),
+    maxTimeoutSeconds: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asNumber(csilV))(mapGet(value, "max_timeout_seconds")),
+  };
+}
+
+export function toRerunShiftLimitsCbor(v: RerunShiftLimits): Uint8Array {
+  return encodeValue(toRerunShiftLimitsCborValue(v));
+}
+
+export function fromRerunShiftLimitsCbor(bytes: Uint8Array): RerunShiftLimits {
+  return fromRerunShiftLimitsCborValue(decode(bytes));
 }
 
 export function toGetCiTrustSettingsRequestCborValue(v: GetCiTrustSettingsRequest): CborValue {
@@ -1758,6 +1816,7 @@ export function toProjectDetailCborValue(v: ProjectDetail): CborValue {
   csilMap.set("org_id", v.orgId);
   csilMap.set("enabled", v.enabled);
   csilMap.set("repo_url", v.repoUrl);
+  if (v.draftPrs !== undefined) csilMap.set("draft_prs", v.draftPrs);
   csilMap.set("created_at", v.createdAt);
   csilMap.set("is_private", v.isPrivate);
   csilMap.set("project_id", v.projectId);
@@ -1765,17 +1824,22 @@ export function toProjectDetailCborValue(v: ProjectDetail): CborValue {
   csilMap.set("description", v.description);
   if (v.dynamicJobs !== undefined) csilMap.set("dynamic_jobs", v.dynamicJobs);
   csilMap.set("checkout_mode", v.checkoutMode);
+  if (v.infraRetries !== undefined) csilMap.set("infra_retries", v.infraRetries);
+  if (v.egressControl !== undefined) csilMap.set("egress_control", v.egressControl);
   csilMap.set("target_branches", v.targetBranches);
   if (v.duplicateEvents !== undefined) csilMap.set("duplicate_events", v.duplicateEvents);
   csilMap.set("default_queue_name", v.defaultQueueName);
   csilMap.set("allowed_event_types", v.allowedEventTypes);
   csilMap.set("default_job_command", v.defaultJobCommand);
+  if (v.effectiveDraftPrs !== undefined) csilMap.set("effective_draft_prs", v.effectiveDraftPrs);
   csilMap.set("default_runner_image", v.defaultRunnerImage);
   csilMap.set("default_ci_source_ref", v.defaultCiSourceRef);
   csilMap.set("default_ci_source_url", v.defaultCiSourceUrl);
   csilMap.set("default_ci_source_type", v.defaultCiSourceType);
   if (v.effectiveDynamicJobs !== undefined) csilMap.set("effective_dynamic_jobs", v.effectiveDynamicJobs);
   csilMap.set("default_timeout_seconds", v.defaultTimeoutSeconds);
+  if (v.effectiveInfraRetries !== undefined) csilMap.set("effective_infra_retries", v.effectiveInfraRetries);
+  if (v.effectiveEgressControl !== undefined) csilMap.set("effective_egress_control", v.effectiveEgressControl);
   if (v.effectiveDuplicateEvents !== undefined) csilMap.set("effective_duplicate_events", v.effectiveDuplicateEvents);
   return csilMap;
 }
@@ -1805,6 +1869,12 @@ export function fromProjectDetailCborValue(value: CborValue): ProjectDetail {
     effectiveDuplicateEvents: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "effective_duplicate_events")),
     dynamicJobs: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "dynamic_jobs")),
     effectiveDynamicJobs: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "effective_dynamic_jobs")),
+    draftPrs: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "draft_prs")),
+    effectiveDraftPrs: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "effective_draft_prs")),
+    infraRetries: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asNumber(csilV))(mapGet(value, "infra_retries")),
+    effectiveInfraRetries: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asNumber(csilV))(mapGet(value, "effective_infra_retries")),
+    egressControl: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asBool(csilV))(mapGet(value, "egress_control")),
+    effectiveEgressControl: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asBool(csilV))(mapGet(value, "effective_egress_control")),
   };
 }
 
@@ -1914,17 +1984,21 @@ export function toUpdateProjectRequestCborValue(v: UpdateProjectRequest): CborVa
   const csilMap = new Map<CborValue, CborValue>();
   if (v.name !== undefined) csilMap.set("name", v.name);
   if (v.enabled !== undefined) csilMap.set("enabled", v.enabled);
+  if (v.draftPrs !== undefined) csilMap.set("draft_prs", v.draftPrs);
   if (v.isPrivate !== undefined) csilMap.set("is_private", v.isPrivate);
   csilMap.set("project_id", v.projectId);
   if (v.description !== undefined) csilMap.set("description", v.description);
   if (v.dynamicJobs !== undefined) csilMap.set("dynamic_jobs", v.dynamicJobs);
   if (v.checkoutMode !== undefined) csilMap.set("checkout_mode", v.checkoutMode);
+  if (v.infraRetries !== undefined) csilMap.set("infra_retries", v.infraRetries);
+  if (v.egressControl !== undefined) csilMap.set("egress_control", v.egressControl);
   if (v.targetBranches !== undefined) csilMap.set("target_branches", v.targetBranches);
   if (v.duplicateEvents !== undefined) csilMap.set("duplicate_events", v.duplicateEvents);
   if (v.defaultQueueName !== undefined) csilMap.set("default_queue_name", v.defaultQueueName);
   if (v.allowedEventTypes !== undefined) csilMap.set("allowed_event_types", v.allowedEventTypes);
   if (v.defaultJobCommand !== undefined) csilMap.set("default_job_command", v.defaultJobCommand);
   if (v.defaultRunnerImage !== undefined) csilMap.set("default_runner_image", v.defaultRunnerImage);
+  if (v.infraRetriesInherit !== undefined) csilMap.set("infra_retries_inherit", v.infraRetriesInherit);
   if (v.defaultTimeoutSeconds !== undefined) csilMap.set("default_timeout_seconds", v.defaultTimeoutSeconds);
   return csilMap;
 }
@@ -1945,6 +2019,10 @@ export function fromUpdateProjectRequestCborValue(value: CborValue): UpdateProje
     checkoutMode: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "checkout_mode")),
     duplicateEvents: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "duplicate_events")),
     dynamicJobs: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "dynamic_jobs")),
+    draftPrs: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "draft_prs")),
+    infraRetries: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asNumber(csilV))(mapGet(value, "infra_retries")),
+    infraRetriesInherit: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asBool(csilV))(mapGet(value, "infra_retries_inherit")),
+    egressControl: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asBool(csilV))(mapGet(value, "egress_control")),
   };
 }
 
@@ -2092,6 +2170,7 @@ export function toCiPolicyDefaultsCborValue(v: CiPolicyDefaults): CborValue {
   const csilMap = new Map<CborValue, CborValue>();
   if (v.profile !== undefined) csilMap.set("profile", v.profile);
   if (v.ciSource !== undefined) csilMap.set("ci_source", v.ciSource);
+  if (v.byRefClass !== undefined) csilMap.set("by_ref_class", v.byRefClass.map((csilE): CborValue => toCiPolicyClassProfileCborValue(csilE)));
   return csilMap;
 }
 
@@ -2099,6 +2178,7 @@ export function fromCiPolicyDefaultsCborValue(value: CborValue): CiPolicyDefault
   return {
     ciSource: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "ci_source")),
     profile: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "profile")),
+    byRefClass: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asArray(csilV).map((csilE) => fromCiPolicyClassProfileCborValue(csilE)))(mapGet(value, "by_ref_class")),
   };
 }
 
@@ -2110,6 +2190,50 @@ export function fromCiPolicyDefaultsCbor(bytes: Uint8Array): CiPolicyDefaults {
   return fromCiPolicyDefaultsCborValue(decode(bytes));
 }
 
+export function toCiPolicyRefClassMatchCborValue(v: CiPolicyRefClassMatch): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  if (v.any !== undefined) csilMap.set("any", v.any);
+  if (v.none !== undefined) csilMap.set("none", v.none);
+  return csilMap;
+}
+
+export function fromCiPolicyRefClassMatchCborValue(value: CborValue): CiPolicyRefClassMatch {
+  return {
+    any: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asArray(csilV).map((csilE) => asString(csilE)))(mapGet(value, "any")),
+    none: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asArray(csilV).map((csilE) => asString(csilE)))(mapGet(value, "none")),
+  };
+}
+
+export function toCiPolicyRefClassMatchCbor(v: CiPolicyRefClassMatch): Uint8Array {
+  return encodeValue(toCiPolicyRefClassMatchCborValue(v));
+}
+
+export function fromCiPolicyRefClassMatchCbor(bytes: Uint8Array): CiPolicyRefClassMatch {
+  return fromCiPolicyRefClassMatchCborValue(decode(bytes));
+}
+
+export function toCiPolicyClassProfileCborValue(v: CiPolicyClassProfile): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  csilMap.set("profile", v.profile);
+  csilMap.set("ref_classes", toCiPolicyRefClassMatchCborValue(v.refClasses));
+  return csilMap;
+}
+
+export function fromCiPolicyClassProfileCborValue(value: CborValue): CiPolicyClassProfile {
+  return {
+    refClasses: fromCiPolicyRefClassMatchCborValue(requireKey(value, "ref_classes")),
+    profile: asString(requireKey(value, "profile")),
+  };
+}
+
+export function toCiPolicyClassProfileCbor(v: CiPolicyClassProfile): Uint8Array {
+  return encodeValue(toCiPolicyClassProfileCborValue(v));
+}
+
+export function fromCiPolicyClassProfileCbor(bytes: Uint8Array): CiPolicyClassProfile {
+  return fromCiPolicyClassProfileCborValue(decode(bytes));
+}
+
 export function toCiPolicyRuleCborValue(v: CiPolicyRule): CborValue {
   const csilMap = new Map<CborValue, CborValue>();
   csilMap.set("id", v.id);
@@ -2119,6 +2243,7 @@ export function toCiPolicyRuleCborValue(v: CiPolicyRule): CborValue {
   if (v.events !== undefined) csilMap.set("events", v.events);
   if (v.approval !== undefined) csilMap.set("approval", toCiPolicySubjectMatchCborValue(v.approval));
   if (v.workflows !== undefined) csilMap.set("workflows", v.workflows);
+  if (v.refClasses !== undefined) csilMap.set("ref_classes", toCiPolicyRefClassMatchCborValue(v.refClasses));
   if (v.baseBranches !== undefined) csilMap.set("base_branches", v.baseBranches);
   if (v.headRepository !== undefined) csilMap.set("head_repository", v.headRepository);
   return csilMap;
@@ -2134,6 +2259,7 @@ export function fromCiPolicyRuleCborValue(value: CborValue): CiPolicyRule {
     baseBranches: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asArray(csilV).map((csilE) => asString(csilE)))(mapGet(value, "base_branches")),
     headRepository: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "head_repository")),
     approval: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : fromCiPolicySubjectMatchCborValue(csilV))(mapGet(value, "approval")),
+    refClasses: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : fromCiPolicyRefClassMatchCborValue(csilV))(mapGet(value, "ref_classes")),
     use: fromCiPolicyUseCborValue(requireKey(value, "use")),
   };
 }
@@ -2225,12 +2351,16 @@ export function fromGetCiPolicyRequestCbor(bytes: Uint8Array): GetCiPolicyReques
 export function toGetCiPolicyResponseCborValue(v: GetCiPolicyResponse): CborValue {
   const csilMap = new Map<CborValue, CborValue>();
   csilMap.set("policy", toCiPolicyDetailCborValue(v.policy));
+  if (v.builtIn !== undefined) csilMap.set("built_in", v.builtIn);
+  if (v.builtInReason !== undefined) csilMap.set("built_in_reason", v.builtInReason);
   return csilMap;
 }
 
 export function fromGetCiPolicyResponseCborValue(value: CborValue): GetCiPolicyResponse {
   return {
     policy: fromCiPolicyDetailCborValue(requireKey(value, "policy")),
+    builtIn: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asBool(csilV))(mapGet(value, "built_in")),
+    builtInReason: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "built_in_reason")),
   };
 }
 
@@ -2336,6 +2466,7 @@ export function toGroupSummaryCborValue(v: GroupSummary): CborValue {
   csilMap.set("created_at", v.createdAt);
   csilMap.set("updated_at", v.updatedAt);
   if (v.description !== undefined) csilMap.set("description", v.description);
+  if (v.priorityShift !== undefined) csilMap.set("priority_shift", v.priorityShift);
   return csilMap;
 }
 
@@ -2345,6 +2476,7 @@ export function fromGroupSummaryCborValue(value: CborValue): GroupSummary {
     orgId: asString(requireKey(value, "org_id")),
     name: asString(requireKey(value, "name")),
     description: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "description")),
+    priorityShift: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asNumber(csilV))(mapGet(value, "priority_shift")),
     createdAt: asString(requireKey(value, "created_at")),
     updatedAt: asString(requireKey(value, "updated_at")),
   };
@@ -2672,6 +2804,324 @@ export function fromListGroupMembersResponseCbor(bytes: Uint8Array): ListGroupMe
   return fromListGroupMembersResponseCborValue(decode(bytes));
 }
 
+export function toGroupVcsLinkCborValue(v: GroupVcsLink): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  csilMap.set("team", v.team);
+  csilMap.set("link_id", v.linkId);
+  csilMap.set("subject", v.subject);
+  csilMap.set("group_id", v.groupId);
+  csilMap.set("provider", v.provider);
+  csilMap.set("created_at", v.createdAt);
+  csilMap.set("last_error", v.lastError);
+  csilMap.set("member_count", v.memberCount);
+  if (v.nextSyncAt !== undefined) csilMap.set("next_sync_at", v.nextSyncAt);
+  csilMap.set("failure_count", v.failureCount);
+  if (v.lastSyncedAt !== undefined) csilMap.set("last_synced_at", v.lastSyncedAt);
+  if (v.lastAttemptAt !== undefined) csilMap.set("last_attempt_at", v.lastAttemptAt);
+  return csilMap;
+}
+
+export function fromGroupVcsLinkCborValue(value: CborValue): GroupVcsLink {
+  return {
+    linkId: asString(requireKey(value, "link_id")),
+    groupId: asString(requireKey(value, "group_id")),
+    provider: asString(requireKey(value, "provider")),
+    team: asString(requireKey(value, "team")),
+    subject: asString(requireKey(value, "subject")),
+    lastSyncedAt: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "last_synced_at")),
+    lastAttemptAt: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "last_attempt_at")),
+    nextSyncAt: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "next_sync_at")),
+    lastError: asString(requireKey(value, "last_error")),
+    failureCount: asNumber(requireKey(value, "failure_count")),
+    memberCount: asNumber(requireKey(value, "member_count")),
+    createdAt: asString(requireKey(value, "created_at")),
+  };
+}
+
+export function toGroupVcsLinkCbor(v: GroupVcsLink): Uint8Array {
+  return encodeValue(toGroupVcsLinkCborValue(v));
+}
+
+export function fromGroupVcsLinkCbor(bytes: Uint8Array): GroupVcsLink {
+  return fromGroupVcsLinkCborValue(decode(bytes));
+}
+
+export function toListGroupVcsLinksRequestCborValue(v: ListGroupVcsLinksRequest): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  csilMap.set("group_id", v.groupId);
+  return csilMap;
+}
+
+export function fromListGroupVcsLinksRequestCborValue(value: CborValue): ListGroupVcsLinksRequest {
+  return {
+    groupId: asString(requireKey(value, "group_id")),
+  };
+}
+
+export function toListGroupVcsLinksRequestCbor(v: ListGroupVcsLinksRequest): Uint8Array {
+  return encodeValue(toListGroupVcsLinksRequestCborValue(v));
+}
+
+export function fromListGroupVcsLinksRequestCbor(bytes: Uint8Array): ListGroupVcsLinksRequest {
+  return fromListGroupVcsLinksRequestCborValue(decode(bytes));
+}
+
+export function toListGroupVcsLinksResponseCborValue(v: ListGroupVcsLinksResponse): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  csilMap.set("links", v.links.map((csilE): CborValue => toGroupVcsLinkCborValue(csilE)));
+  return csilMap;
+}
+
+export function fromListGroupVcsLinksResponseCborValue(value: CborValue): ListGroupVcsLinksResponse {
+  return {
+    links: asArray(requireKey(value, "links")).map((csilE) => fromGroupVcsLinkCborValue(csilE)),
+  };
+}
+
+export function toListGroupVcsLinksResponseCbor(v: ListGroupVcsLinksResponse): Uint8Array {
+  return encodeValue(toListGroupVcsLinksResponseCborValue(v));
+}
+
+export function fromListGroupVcsLinksResponseCbor(bytes: Uint8Array): ListGroupVcsLinksResponse {
+  return fromListGroupVcsLinksResponseCborValue(decode(bytes));
+}
+
+export function toLinkGroupVcsTeamRequestCborValue(v: LinkGroupVcsTeamRequest): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  csilMap.set("team", v.team);
+  csilMap.set("group_id", v.groupId);
+  if (v.provider !== undefined) csilMap.set("provider", v.provider);
+  return csilMap;
+}
+
+export function fromLinkGroupVcsTeamRequestCborValue(value: CborValue): LinkGroupVcsTeamRequest {
+  return {
+    groupId: asString(requireKey(value, "group_id")),
+    provider: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "provider")),
+    team: asString(requireKey(value, "team")),
+  };
+}
+
+export function toLinkGroupVcsTeamRequestCbor(v: LinkGroupVcsTeamRequest): Uint8Array {
+  return encodeValue(toLinkGroupVcsTeamRequestCborValue(v));
+}
+
+export function fromLinkGroupVcsTeamRequestCbor(bytes: Uint8Array): LinkGroupVcsTeamRequest {
+  return fromLinkGroupVcsTeamRequestCborValue(decode(bytes));
+}
+
+export function toLinkGroupVcsTeamResponseCborValue(v: LinkGroupVcsTeamResponse): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  csilMap.set("link", toGroupVcsLinkCborValue(v.link));
+  return csilMap;
+}
+
+export function fromLinkGroupVcsTeamResponseCborValue(value: CborValue): LinkGroupVcsTeamResponse {
+  return {
+    link: fromGroupVcsLinkCborValue(requireKey(value, "link")),
+  };
+}
+
+export function toLinkGroupVcsTeamResponseCbor(v: LinkGroupVcsTeamResponse): Uint8Array {
+  return encodeValue(toLinkGroupVcsTeamResponseCborValue(v));
+}
+
+export function fromLinkGroupVcsTeamResponseCbor(bytes: Uint8Array): LinkGroupVcsTeamResponse {
+  return fromLinkGroupVcsTeamResponseCborValue(decode(bytes));
+}
+
+export function toUnlinkGroupVcsTeamRequestCborValue(v: UnlinkGroupVcsTeamRequest): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  csilMap.set("link_id", v.linkId);
+  csilMap.set("group_id", v.groupId);
+  return csilMap;
+}
+
+export function fromUnlinkGroupVcsTeamRequestCborValue(value: CborValue): UnlinkGroupVcsTeamRequest {
+  return {
+    groupId: asString(requireKey(value, "group_id")),
+    linkId: asString(requireKey(value, "link_id")),
+  };
+}
+
+export function toUnlinkGroupVcsTeamRequestCbor(v: UnlinkGroupVcsTeamRequest): Uint8Array {
+  return encodeValue(toUnlinkGroupVcsTeamRequestCborValue(v));
+}
+
+export function fromUnlinkGroupVcsTeamRequestCbor(bytes: Uint8Array): UnlinkGroupVcsTeamRequest {
+  return fromUnlinkGroupVcsTeamRequestCborValue(decode(bytes));
+}
+
+export function toUnlinkGroupVcsTeamResponseCborValue(v: UnlinkGroupVcsTeamResponse): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  csilMap.set("removed", v.removed);
+  return csilMap;
+}
+
+export function fromUnlinkGroupVcsTeamResponseCborValue(value: CborValue): UnlinkGroupVcsTeamResponse {
+  return {
+    removed: asBool(requireKey(value, "removed")),
+  };
+}
+
+export function toUnlinkGroupVcsTeamResponseCbor(v: UnlinkGroupVcsTeamResponse): Uint8Array {
+  return encodeValue(toUnlinkGroupVcsTeamResponseCborValue(v));
+}
+
+export function fromUnlinkGroupVcsTeamResponseCbor(bytes: Uint8Array): UnlinkGroupVcsTeamResponse {
+  return fromUnlinkGroupVcsTeamResponseCborValue(decode(bytes));
+}
+
+export function toGroupVcsSyncResultCborValue(v: GroupVcsSyncResult): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  csilMap.set("team", v.team);
+  csilMap.set("added", v.added);
+  if (v.error !== undefined) csilMap.set("error", v.error);
+  csilMap.set("link_id", v.linkId);
+  csilMap.set("members", v.members);
+  csilMap.set("removed", v.removed);
+  return csilMap;
+}
+
+export function fromGroupVcsSyncResultCborValue(value: CborValue): GroupVcsSyncResult {
+  return {
+    linkId: asString(requireKey(value, "link_id")),
+    team: asString(requireKey(value, "team")),
+    members: asNumber(requireKey(value, "members")),
+    added: asNumber(requireKey(value, "added")),
+    removed: asNumber(requireKey(value, "removed")),
+    error: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "error")),
+  };
+}
+
+export function toGroupVcsSyncResultCbor(v: GroupVcsSyncResult): Uint8Array {
+  return encodeValue(toGroupVcsSyncResultCborValue(v));
+}
+
+export function fromGroupVcsSyncResultCbor(bytes: Uint8Array): GroupVcsSyncResult {
+  return fromGroupVcsSyncResultCborValue(decode(bytes));
+}
+
+export function toSyncGroupVcsTeamsRequestCborValue(v: SyncGroupVcsTeamsRequest): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  csilMap.set("group_id", v.groupId);
+  return csilMap;
+}
+
+export function fromSyncGroupVcsTeamsRequestCborValue(value: CborValue): SyncGroupVcsTeamsRequest {
+  return {
+    groupId: asString(requireKey(value, "group_id")),
+  };
+}
+
+export function toSyncGroupVcsTeamsRequestCbor(v: SyncGroupVcsTeamsRequest): Uint8Array {
+  return encodeValue(toSyncGroupVcsTeamsRequestCborValue(v));
+}
+
+export function fromSyncGroupVcsTeamsRequestCbor(bytes: Uint8Array): SyncGroupVcsTeamsRequest {
+  return fromSyncGroupVcsTeamsRequestCborValue(decode(bytes));
+}
+
+export function toSyncGroupVcsTeamsResponseCborValue(v: SyncGroupVcsTeamsResponse): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  csilMap.set("results", v.results.map((csilE): CborValue => toGroupVcsSyncResultCborValue(csilE)));
+  return csilMap;
+}
+
+export function fromSyncGroupVcsTeamsResponseCborValue(value: CborValue): SyncGroupVcsTeamsResponse {
+  return {
+    results: asArray(requireKey(value, "results")).map((csilE) => fromGroupVcsSyncResultCborValue(csilE)),
+  };
+}
+
+export function toSyncGroupVcsTeamsResponseCbor(v: SyncGroupVcsTeamsResponse): Uint8Array {
+  return encodeValue(toSyncGroupVcsTeamsResponseCborValue(v));
+}
+
+export function fromSyncGroupVcsTeamsResponseCbor(bytes: Uint8Array): SyncGroupVcsTeamsResponse {
+  return fromSyncGroupVcsTeamsResponseCborValue(decode(bytes));
+}
+
+export function toGroupMemberDetailCborValue(v: GroupMemberDetail): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  csilMap.set("kind", v.kind);
+  csilMap.set("name", v.name);
+  csilMap.set("teams", v.teams);
+  csilMap.set("manual", v.manual);
+  csilMap.set("source", v.source);
+  if (v.userId !== undefined) csilMap.set("user_id", v.userId);
+  csilMap.set("added_at", v.addedAt);
+  if (v.username !== undefined) csilMap.set("username", v.username);
+  csilMap.set("vcs_logins", v.vcsLogins);
+  csilMap.set("display_name", v.displayName);
+  csilMap.set("principal_id", v.principalId);
+  return csilMap;
+}
+
+export function fromGroupMemberDetailCborValue(value: CborValue): GroupMemberDetail {
+  return {
+    principalId: asString(requireKey(value, "principal_id")),
+    kind: asString(requireKey(value, "kind")),
+    name: asString(requireKey(value, "name")),
+    displayName: asString(requireKey(value, "display_name")),
+    userId: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "user_id")),
+    username: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "username")),
+    source: asString(requireKey(value, "source")),
+    manual: asBool(requireKey(value, "manual")),
+    teams: asArray(requireKey(value, "teams")).map((csilE) => asString(csilE)),
+    vcsLogins: asArray(requireKey(value, "vcs_logins")).map((csilE) => asString(csilE)),
+    addedAt: asString(requireKey(value, "added_at")),
+  };
+}
+
+export function toGroupMemberDetailCbor(v: GroupMemberDetail): Uint8Array {
+  return encodeValue(toGroupMemberDetailCborValue(v));
+}
+
+export function fromGroupMemberDetailCbor(bytes: Uint8Array): GroupMemberDetail {
+  return fromGroupMemberDetailCborValue(decode(bytes));
+}
+
+export function toListGroupMemberDetailsRequestCborValue(v: ListGroupMemberDetailsRequest): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  csilMap.set("group_id", v.groupId);
+  return csilMap;
+}
+
+export function fromListGroupMemberDetailsRequestCborValue(value: CborValue): ListGroupMemberDetailsRequest {
+  return {
+    groupId: asString(requireKey(value, "group_id")),
+  };
+}
+
+export function toListGroupMemberDetailsRequestCbor(v: ListGroupMemberDetailsRequest): Uint8Array {
+  return encodeValue(toListGroupMemberDetailsRequestCborValue(v));
+}
+
+export function fromListGroupMemberDetailsRequestCbor(bytes: Uint8Array): ListGroupMemberDetailsRequest {
+  return fromListGroupMemberDetailsRequestCborValue(decode(bytes));
+}
+
+export function toListGroupMemberDetailsResponseCborValue(v: ListGroupMemberDetailsResponse): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  csilMap.set("members", v.members.map((csilE): CborValue => toGroupMemberDetailCborValue(csilE)));
+  return csilMap;
+}
+
+export function fromListGroupMemberDetailsResponseCborValue(value: CborValue): ListGroupMemberDetailsResponse {
+  return {
+    members: asArray(requireKey(value, "members")).map((csilE) => fromGroupMemberDetailCborValue(csilE)),
+  };
+}
+
+export function toListGroupMemberDetailsResponseCbor(v: ListGroupMemberDetailsResponse): Uint8Array {
+  return encodeValue(toListGroupMemberDetailsResponseCborValue(v));
+}
+
+export function fromListGroupMemberDetailsResponseCbor(bytes: Uint8Array): ListGroupMemberDetailsResponse {
+  return fromListGroupMemberDetailsResponseCborValue(decode(bytes));
+}
+
 export function toUserSummaryCborValue(v: UserSummary): CborValue {
   const csilMap = new Map<CborValue, CborValue>();
   if (v.subject !== undefined) csilMap.set("subject", v.subject);
@@ -2752,6 +3202,7 @@ export function toRoleAssignmentCborValue(v: RoleAssignment): CborValue {
   csilMap.set("principal_id", v.principalId);
   csilMap.set("assignment_id", v.assignmentId);
   csilMap.set("principal_type", v.principalType);
+  if (v.scopeWorkflow !== undefined) csilMap.set("scope_workflow", v.scopeWorkflow);
   return csilMap;
 }
 
@@ -2762,6 +3213,7 @@ export function fromRoleAssignmentCborValue(value: CborValue): RoleAssignment {
     principalId: asString(requireKey(value, "principal_id")),
     scopeType: asString(requireKey(value, "scope_type")),
     scopeId: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "scope_id")),
+    scopeWorkflow: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "scope_workflow")),
     role: asString(requireKey(value, "role")),
     createdAt: asString(requireKey(value, "created_at")),
     createdBy: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "created_by")),
@@ -2781,6 +3233,7 @@ export function toListRoleAssignmentsRequestCborValue(v: ListRoleAssignmentsRequ
   if (v.scopeId !== undefined) csilMap.set("scope_id", v.scopeId);
   if (v.scopeType !== undefined) csilMap.set("scope_type", v.scopeType);
   if (v.principalId !== undefined) csilMap.set("principal_id", v.principalId);
+  if (v.scopeWorkflow !== undefined) csilMap.set("scope_workflow", v.scopeWorkflow);
   return csilMap;
 }
 
@@ -2788,6 +3241,7 @@ export function fromListRoleAssignmentsRequestCborValue(value: CborValue): ListR
   return {
     scopeType: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "scope_type")),
     scopeId: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "scope_id")),
+    scopeWorkflow: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "scope_workflow")),
     principalId: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "principal_id")),
   };
 }
@@ -2827,6 +3281,7 @@ export function toAssignRoleRequestCborValue(v: AssignRoleRequest): CborValue {
   csilMap.set("scope_type", v.scopeType);
   csilMap.set("principal_id", v.principalId);
   csilMap.set("principal_type", v.principalType);
+  if (v.scopeWorkflow !== undefined) csilMap.set("scope_workflow", v.scopeWorkflow);
   return csilMap;
 }
 
@@ -2836,6 +3291,7 @@ export function fromAssignRoleRequestCborValue(value: CborValue): AssignRoleRequ
     principalId: asString(requireKey(value, "principal_id")),
     scopeType: asString(requireKey(value, "scope_type")),
     scopeId: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "scope_id")),
+    scopeWorkflow: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "scope_workflow")),
     role: asString(requireKey(value, "role")),
   };
 }
@@ -3466,14 +3922,20 @@ export function toSecretGrantCborValue(v: SecretGrant): CborValue {
   const csilMap = new Map<CborValue, CborValue>();
   csilMap.set("name", v.name);
   csilMap.set("org_id", v.orgId);
+  if (v.delivery !== undefined) csilMap.set("delivery", v.delivery);
   csilMap.set("grant_id", v.grantId);
   csilMap.set("created_at", v.createdAt);
   if (v.projectId !== undefined) csilMap.set("project_id", v.projectId);
   csilMap.set("updated_at", v.updatedAt);
   if (v.description !== undefined) csilMap.set("description", v.description);
+  if (v.proxyHosts !== undefined) csilMap.set("proxy_hosts", v.proxyHosts);
+  if (v.proxyHeader !== undefined) csilMap.set("proxy_header", v.proxyHeader);
   csilMap.set("job_name_match", v.jobNameMatch);
+  if (v.refClassesAny !== undefined) csilMap.set("ref_classes_any", v.refClassesAny);
   if (v.jobNamePattern !== undefined) csilMap.set("job_name_pattern", v.jobNamePattern);
+  if (v.refClassesNone !== undefined) csilMap.set("ref_classes_none", v.refClassesNone);
   csilMap.set("secret_path_match", v.secretPathMatch);
+  if (v.proxyHeaderFormat !== undefined) csilMap.set("proxy_header_format", v.proxyHeaderFormat);
   csilMap.set("secret_path_pattern", v.secretPathPattern);
   return csilMap;
 }
@@ -3491,6 +3953,12 @@ export function fromSecretGrantCborValue(value: CborValue): SecretGrant {
     description: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "description")),
     createdAt: asString(requireKey(value, "created_at")),
     updatedAt: asString(requireKey(value, "updated_at")),
+    refClassesAny: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asArray(csilV).map((csilE) => asString(csilE)))(mapGet(value, "ref_classes_any")),
+    refClassesNone: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asArray(csilV).map((csilE) => asString(csilE)))(mapGet(value, "ref_classes_none")),
+    delivery: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "delivery")),
+    proxyHosts: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asArray(csilV).map((csilE) => asString(csilE)))(mapGet(value, "proxy_hosts")),
+    proxyHeader: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "proxy_header")),
+    proxyHeaderFormat: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "proxy_header_format")),
   };
 }
 
@@ -3546,11 +4014,17 @@ export function toCreateSecretGrantRequestCborValue(v: CreateSecretGrantRequest)
   const csilMap = new Map<CborValue, CborValue>();
   csilMap.set("name", v.name);
   csilMap.set("org_id", v.orgId);
+  if (v.delivery !== undefined) csilMap.set("delivery", v.delivery);
   if (v.projectId !== undefined) csilMap.set("project_id", v.projectId);
   if (v.description !== undefined) csilMap.set("description", v.description);
+  if (v.proxyHosts !== undefined) csilMap.set("proxy_hosts", v.proxyHosts);
+  if (v.proxyHeader !== undefined) csilMap.set("proxy_header", v.proxyHeader);
   if (v.jobNameMatch !== undefined) csilMap.set("job_name_match", v.jobNameMatch);
+  if (v.refClassesAny !== undefined) csilMap.set("ref_classes_any", v.refClassesAny);
   if (v.jobNamePattern !== undefined) csilMap.set("job_name_pattern", v.jobNamePattern);
+  if (v.refClassesNone !== undefined) csilMap.set("ref_classes_none", v.refClassesNone);
   csilMap.set("secret_path_match", v.secretPathMatch);
+  if (v.proxyHeaderFormat !== undefined) csilMap.set("proxy_header_format", v.proxyHeaderFormat);
   csilMap.set("secret_path_pattern", v.secretPathPattern);
   return csilMap;
 }
@@ -3565,6 +4039,12 @@ export function fromCreateSecretGrantRequestCborValue(value: CborValue): CreateS
     jobNameMatch: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "job_name_match")),
     jobNamePattern: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "job_name_pattern")),
     description: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "description")),
+    refClassesAny: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asArray(csilV).map((csilE) => asString(csilE)))(mapGet(value, "ref_classes_any")),
+    refClassesNone: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asArray(csilV).map((csilE) => asString(csilE)))(mapGet(value, "ref_classes_none")),
+    delivery: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "delivery")),
+    proxyHosts: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asArray(csilV).map((csilE) => asString(csilE)))(mapGet(value, "proxy_hosts")),
+    proxyHeader: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "proxy_header")),
+    proxyHeaderFormat: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "proxy_header_format")),
   };
 }
 
@@ -3599,11 +4079,18 @@ export function fromCreateSecretGrantResponseCbor(bytes: Uint8Array): CreateSecr
 export function toUpdateSecretGrantRequestCborValue(v: UpdateSecretGrantRequest): CborValue {
   const csilMap = new Map<CborValue, CborValue>();
   if (v.name !== undefined) csilMap.set("name", v.name);
+  if (v.delivery !== undefined) csilMap.set("delivery", v.delivery);
   csilMap.set("grant_id", v.grantId);
   if (v.description !== undefined) csilMap.set("description", v.description);
+  if (v.proxyHosts !== undefined) csilMap.set("proxy_hosts", v.proxyHosts);
+  if (v.proxyHeader !== undefined) csilMap.set("proxy_header", v.proxyHeader);
   if (v.jobNameMatch !== undefined) csilMap.set("job_name_match", v.jobNameMatch);
+  if (v.refClassesAny !== undefined) csilMap.set("ref_classes_any", v.refClassesAny);
+  if (v.setRefClasses !== undefined) csilMap.set("set_ref_classes", v.setRefClasses);
   if (v.jobNamePattern !== undefined) csilMap.set("job_name_pattern", v.jobNamePattern);
+  if (v.refClassesNone !== undefined) csilMap.set("ref_classes_none", v.refClassesNone);
   if (v.secretPathMatch !== undefined) csilMap.set("secret_path_match", v.secretPathMatch);
+  if (v.proxyHeaderFormat !== undefined) csilMap.set("proxy_header_format", v.proxyHeaderFormat);
   if (v.secretPathPattern !== undefined) csilMap.set("secret_path_pattern", v.secretPathPattern);
   return csilMap;
 }
@@ -3617,6 +4104,13 @@ export function fromUpdateSecretGrantRequestCborValue(value: CborValue): UpdateS
     jobNameMatch: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "job_name_match")),
     jobNamePattern: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "job_name_pattern")),
     description: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "description")),
+    setRefClasses: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asBool(csilV))(mapGet(value, "set_ref_classes")),
+    refClassesAny: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asArray(csilV).map((csilE) => asString(csilE)))(mapGet(value, "ref_classes_any")),
+    refClassesNone: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asArray(csilV).map((csilE) => asString(csilE)))(mapGet(value, "ref_classes_none")),
+    delivery: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "delivery")),
+    proxyHosts: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asArray(csilV).map((csilE) => asString(csilE)))(mapGet(value, "proxy_hosts")),
+    proxyHeader: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "proxy_header")),
+    proxyHeaderFormat: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "proxy_header_format")),
   };
 }
 
@@ -3814,15 +4308,47 @@ export function fromCancelWorkflowResponseCbor(bytes: Uint8Array): CancelWorkflo
   return fromCancelWorkflowResponseCborValue(decode(bytes));
 }
 
+export function toRunShiftsCborValue(v: RunShifts): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  if (v.cpu !== undefined) csilMap.set("cpu", v.cpu);
+  if (v.memory !== undefined) csilMap.set("memory", v.memory);
+  if (v.storage !== undefined) csilMap.set("storage", v.storage);
+  if (v.timeout !== undefined) csilMap.set("timeout", v.timeout);
+  if (v.cpuRequest !== undefined) csilMap.set("cpu_request", v.cpuRequest);
+  if (v.storageRequest !== undefined) csilMap.set("storage_request", v.storageRequest);
+  return csilMap;
+}
+
+export function fromRunShiftsCborValue(value: CborValue): RunShifts {
+  return {
+    cpu: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "cpu")),
+    cpuRequest: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "cpu_request")),
+    memory: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "memory")),
+    storage: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "storage")),
+    storageRequest: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "storage_request")),
+    timeout: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "timeout")),
+  };
+}
+
+export function toRunShiftsCbor(v: RunShifts): Uint8Array {
+  return encodeValue(toRunShiftsCborValue(v));
+}
+
+export function fromRunShiftsCbor(bytes: Uint8Array): RunShifts {
+  return fromRunShiftsCborValue(decode(bytes));
+}
+
 export function toRetryJobRequestCborValue(v: RetryJobRequest): CborValue {
   const csilMap = new Map<CborValue, CborValue>();
   csilMap.set("job_id", v.jobId);
+  if (v.shifts !== undefined) csilMap.set("shifts", toRunShiftsCborValue(v.shifts));
   return csilMap;
 }
 
 export function fromRetryJobRequestCborValue(value: CborValue): RetryJobRequest {
   return {
     jobId: asString(requireKey(value, "job_id")),
+    shifts: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : fromRunShiftsCborValue(csilV))(mapGet(value, "shifts")),
   };
 }
 
@@ -3858,6 +4384,7 @@ export function fromRetryJobResponseCbor(bytes: Uint8Array): RetryJobResponse {
 
 export function toRetryWorkflowRequestCborValue(v: RetryWorkflowRequest): CborValue {
   const csilMap = new Map<CborValue, CborValue>();
+  if (v.shifts !== undefined) csilMap.set("shifts", toRunShiftsCborValue(v.shifts));
   csilMap.set("workflow_instance_id", v.workflowInstanceId);
   return csilMap;
 }
@@ -3865,6 +4392,7 @@ export function toRetryWorkflowRequestCborValue(v: RetryWorkflowRequest): CborVa
 export function fromRetryWorkflowRequestCborValue(value: CborValue): RetryWorkflowRequest {
   return {
     workflowInstanceId: asString(requireKey(value, "workflow_instance_id")),
+    shifts: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : fromRunShiftsCborValue(csilV))(mapGet(value, "shifts")),
   };
 }
 
@@ -3900,6 +4428,7 @@ export function fromRetryWorkflowResponseCbor(bytes: Uint8Array): RetryWorkflowR
 
 export function toRetryUnsuccessfulJobsRequestCborValue(v: RetryUnsuccessfulJobsRequest): CborValue {
   const csilMap = new Map<CborValue, CborValue>();
+  if (v.shifts !== undefined) csilMap.set("shifts", toRunShiftsCborValue(v.shifts));
   csilMap.set("workflow_instance_id", v.workflowInstanceId);
   return csilMap;
 }
@@ -3907,6 +4436,7 @@ export function toRetryUnsuccessfulJobsRequestCborValue(v: RetryUnsuccessfulJobs
 export function fromRetryUnsuccessfulJobsRequestCborValue(value: CborValue): RetryUnsuccessfulJobsRequest {
   return {
     workflowInstanceId: asString(requireKey(value, "workflow_instance_id")),
+    shifts: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : fromRunShiftsCborValue(csilV))(mapGet(value, "shifts")),
   };
 }
 
@@ -3916,6 +4446,108 @@ export function toRetryUnsuccessfulJobsRequestCbor(v: RetryUnsuccessfulJobsReque
 
 export function fromRetryUnsuccessfulJobsRequestCbor(bytes: Uint8Array): RetryUnsuccessfulJobsRequest {
   return fromRetryUnsuccessfulJobsRequestCborValue(decode(bytes));
+}
+
+export function toRerunWorkflowRequestCborValue(v: RerunWorkflowRequest): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  if (v.shifts !== undefined) csilMap.set("shifts", toRunShiftsCborValue(v.shifts));
+  csilMap.set("workflow_instance_id", v.workflowInstanceId);
+  return csilMap;
+}
+
+export function fromRerunWorkflowRequestCborValue(value: CborValue): RerunWorkflowRequest {
+  return {
+    workflowInstanceId: asString(requireKey(value, "workflow_instance_id")),
+    shifts: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : fromRunShiftsCborValue(csilV))(mapGet(value, "shifts")),
+  };
+}
+
+export function toRerunWorkflowRequestCbor(v: RerunWorkflowRequest): Uint8Array {
+  return encodeValue(toRerunWorkflowRequestCborValue(v));
+}
+
+export function fromRerunWorkflowRequestCbor(bytes: Uint8Array): RerunWorkflowRequest {
+  return fromRerunWorkflowRequestCborValue(decode(bytes));
+}
+
+export function toRerunWorkflowResponseCborValue(v: RerunWorkflowResponse): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  csilMap.set("status", v.status);
+  csilMap.set("workflow_instance_id", v.workflowInstanceId);
+  return csilMap;
+}
+
+export function fromRerunWorkflowResponseCborValue(value: CborValue): RerunWorkflowResponse {
+  return {
+    workflowInstanceId: asString(requireKey(value, "workflow_instance_id")),
+    status: asString(requireKey(value, "status")),
+  };
+}
+
+export function toRerunWorkflowResponseCbor(v: RerunWorkflowResponse): Uint8Array {
+  return encodeValue(toRerunWorkflowResponseCborValue(v));
+}
+
+export function fromRerunWorkflowResponseCbor(bytes: Uint8Array): RerunWorkflowResponse {
+  return fromRerunWorkflowResponseCborValue(decode(bytes));
+}
+
+export function toStartRunRequestCborValue(v: StartRunRequest): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  if (v.ref !== undefined) csilMap.set("ref", v.ref);
+  if (v.workflow !== undefined) csilMap.set("workflow", v.workflow);
+  if (v.prNumber !== undefined) csilMap.set("pr_number", v.prNumber);
+  csilMap.set("project_id", v.projectId);
+  return csilMap;
+}
+
+export function fromStartRunRequestCborValue(value: CborValue): StartRunRequest {
+  return {
+    projectId: asString(requireKey(value, "project_id")),
+    ref: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "ref")),
+    prNumber: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asNumber(csilV))(mapGet(value, "pr_number")),
+    workflow: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "workflow")),
+  };
+}
+
+export function toStartRunRequestCbor(v: StartRunRequest): Uint8Array {
+  return encodeValue(toStartRunRequestCborValue(v));
+}
+
+export function fromStartRunRequestCbor(bytes: Uint8Array): StartRunRequest {
+  return fromStartRunRequestCborValue(decode(bytes));
+}
+
+export function toStartRunResponseCborValue(v: StartRunResponse): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  csilMap.set("ref", v.ref);
+  csilMap.set("status", v.status);
+  csilMap.set("event_id", v.eventId);
+  if (v.workflow !== undefined) csilMap.set("workflow", v.workflow);
+  if (v.prNumber !== undefined) csilMap.set("pr_number", v.prNumber);
+  csilMap.set("commit_sha", v.commitSha);
+  if (v.evalJobId !== undefined) csilMap.set("eval_job_id", v.evalJobId);
+  return csilMap;
+}
+
+export function fromStartRunResponseCborValue(value: CborValue): StartRunResponse {
+  return {
+    eventId: asString(requireKey(value, "event_id")),
+    status: asString(requireKey(value, "status")),
+    evalJobId: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "eval_job_id")),
+    ref: asString(requireKey(value, "ref")),
+    commitSha: asString(requireKey(value, "commit_sha")),
+    prNumber: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asNumber(csilV))(mapGet(value, "pr_number")),
+    workflow: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "workflow")),
+  };
+}
+
+export function toStartRunResponseCbor(v: StartRunResponse): Uint8Array {
+  return encodeValue(toStartRunResponseCborValue(v));
+}
+
+export function fromStartRunResponseCbor(bytes: Uint8Array): StartRunResponse {
+  return fromStartRunResponseCborValue(decode(bytes));
 }
 
 export function toRetryUnsuccessfulJobsResponseCborValue(v: RetryUnsuccessfulJobsResponse): CborValue {
@@ -4048,6 +4680,150 @@ export function toUpdateGlobalSettingsResponseCbor(v: UpdateGlobalSettingsRespon
 
 export function fromUpdateGlobalSettingsResponseCbor(bytes: Uint8Array): UpdateGlobalSettingsResponse {
   return fromUpdateGlobalSettingsResponseCborValue(decode(bytes));
+}
+
+export function toShedActionsCborValue(v: ShedActions): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  csilMap.set("skip_drafts", v.skipDrafts);
+  csilMap.set("skip_advisory", v.skipAdvisory);
+  csilMap.set("pause_schedules", v.pauseSchedules);
+  csilMap.set("lower_pr_priority", v.lowerPrPriority);
+  csilMap.set("refuse_manual_runs", v.refuseManualRuns);
+  return csilMap;
+}
+
+export function fromShedActionsCborValue(value: CborValue): ShedActions {
+  return {
+    skipDrafts: asBool(requireKey(value, "skip_drafts")),
+    pauseSchedules: asBool(requireKey(value, "pause_schedules")),
+    lowerPrPriority: asBool(requireKey(value, "lower_pr_priority")),
+    skipAdvisory: asBool(requireKey(value, "skip_advisory")),
+    refuseManualRuns: asBool(requireKey(value, "refuse_manual_runs")),
+  };
+}
+
+export function toShedActionsCbor(v: ShedActions): Uint8Array {
+  return encodeValue(toShedActionsCborValue(v));
+}
+
+export function fromShedActionsCbor(bytes: Uint8Array): ShedActions {
+  return fromShedActionsCborValue(decode(bytes));
+}
+
+export function toShedStateCborValue(v: ShedState): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  csilMap.set("level", v.level);
+  if (v.source !== undefined) csilMap.set("source", v.source);
+  csilMap.set("actions", toShedActionsCborValue(v.actions));
+  if (v.orgLevel !== undefined) csilMap.set("org_level", v.orgLevel);
+  csilMap.set("global_level", v.globalLevel);
+  csilMap.set("critical_actions", toShedActionsCborValue(v.criticalActions));
+  csilMap.set("degraded_actions", toShedActionsCborValue(v.degradedActions));
+  return csilMap;
+}
+
+export function fromShedStateCborValue(value: CborValue): ShedState {
+  return {
+    globalLevel: asString(requireKey(value, "global_level")),
+    orgLevel: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "org_level")),
+    level: asString(requireKey(value, "level")),
+    source: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "source")),
+    actions: fromShedActionsCborValue(requireKey(value, "actions")),
+    degradedActions: fromShedActionsCborValue(requireKey(value, "degraded_actions")),
+    criticalActions: fromShedActionsCborValue(requireKey(value, "critical_actions")),
+  };
+}
+
+export function toShedStateCbor(v: ShedState): Uint8Array {
+  return encodeValue(toShedStateCborValue(v));
+}
+
+export function fromShedStateCbor(bytes: Uint8Array): ShedState {
+  return fromShedStateCborValue(decode(bytes));
+}
+
+export function toGetShedStateRequestCborValue(v: GetShedStateRequest): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  if (v.orgId !== undefined) csilMap.set("org_id", v.orgId);
+  return csilMap;
+}
+
+export function fromGetShedStateRequestCborValue(value: CborValue): GetShedStateRequest {
+  return {
+    orgId: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "org_id")),
+  };
+}
+
+export function toGetShedStateRequestCbor(v: GetShedStateRequest): Uint8Array {
+  return encodeValue(toGetShedStateRequestCborValue(v));
+}
+
+export function fromGetShedStateRequestCbor(bytes: Uint8Array): GetShedStateRequest {
+  return fromGetShedStateRequestCborValue(decode(bytes));
+}
+
+export function toGetShedStateResponseCborValue(v: GetShedStateResponse): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  csilMap.set("state", toShedStateCborValue(v.state));
+  return csilMap;
+}
+
+export function fromGetShedStateResponseCborValue(value: CborValue): GetShedStateResponse {
+  return {
+    state: fromShedStateCborValue(requireKey(value, "state")),
+  };
+}
+
+export function toGetShedStateResponseCbor(v: GetShedStateResponse): Uint8Array {
+  return encodeValue(toGetShedStateResponseCborValue(v));
+}
+
+export function fromGetShedStateResponseCbor(bytes: Uint8Array): GetShedStateResponse {
+  return fromGetShedStateResponseCborValue(decode(bytes));
+}
+
+export function toSetShedLevelRequestCborValue(v: SetShedLevelRequest): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  csilMap.set("level", v.level);
+  if (v.orgId !== undefined) csilMap.set("org_id", v.orgId);
+  if (v.reason !== undefined) csilMap.set("reason", v.reason);
+  return csilMap;
+}
+
+export function fromSetShedLevelRequestCborValue(value: CborValue): SetShedLevelRequest {
+  return {
+    level: asString(requireKey(value, "level")),
+    orgId: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "org_id")),
+    reason: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "reason")),
+  };
+}
+
+export function toSetShedLevelRequestCbor(v: SetShedLevelRequest): Uint8Array {
+  return encodeValue(toSetShedLevelRequestCborValue(v));
+}
+
+export function fromSetShedLevelRequestCbor(bytes: Uint8Array): SetShedLevelRequest {
+  return fromSetShedLevelRequestCborValue(decode(bytes));
+}
+
+export function toSetShedLevelResponseCborValue(v: SetShedLevelResponse): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  csilMap.set("state", toShedStateCborValue(v.state));
+  return csilMap;
+}
+
+export function fromSetShedLevelResponseCborValue(value: CborValue): SetShedLevelResponse {
+  return {
+    state: fromShedStateCborValue(requireKey(value, "state")),
+  };
+}
+
+export function toSetShedLevelResponseCbor(v: SetShedLevelResponse): Uint8Array {
+  return encodeValue(toSetShedLevelResponseCborValue(v));
+}
+
+export function fromSetShedLevelResponseCbor(bytes: Uint8Array): SetShedLevelResponse {
+  return fromSetShedLevelResponseCborValue(decode(bytes));
 }
 
 export function toTrustedIdentityCborValue(v: TrustedIdentity): CborValue {
@@ -4458,6 +5234,9 @@ export function toQueueSummaryCborValue(v: QueueSummary): CborValue {
   csilMap.set("display_name", v.displayName);
   csilMap.set("backlog_count", v.backlogCount);
   csilMap.set("characteristics", v.characteristics.map((csilE): CborValue => toCharacteristicEntryCborValue(csilE)));
+  if (v.backlogMemoryLimitBytes !== undefined) csilMap.set("backlog_memory_limit_bytes", v.backlogMemoryLimitBytes);
+  if (v.backlogOldestAgeSeconds !== undefined) csilMap.set("backlog_oldest_age_seconds", v.backlogOldestAgeSeconds);
+  if (v.backlogCpuRequestMillicores !== undefined) csilMap.set("backlog_cpu_request_millicores", v.backlogCpuRequestMillicores);
   return csilMap;
 }
 
@@ -4469,6 +5248,9 @@ export function fromQueueSummaryCborValue(value: CborValue): QueueSummary {
     displayName: asString(requireKey(value, "display_name")),
     isDefault: asBool(requireKey(value, "is_default")),
     backlogCount: asNumber(requireKey(value, "backlog_count")),
+    backlogOldestAgeSeconds: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asNumber(csilV))(mapGet(value, "backlog_oldest_age_seconds")),
+    backlogCpuRequestMillicores: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asNumber(csilV))(mapGet(value, "backlog_cpu_request_millicores")),
+    backlogMemoryLimitBytes: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asNumber(csilV))(mapGet(value, "backlog_memory_limit_bytes")),
   };
 }
 
@@ -4478,6 +5260,38 @@ export function toQueueSummaryCbor(v: QueueSummary): Uint8Array {
 
 export function fromQueueSummaryCbor(bytes: Uint8Array): QueueSummary {
   return fromQueueSummaryCborValue(decode(bytes));
+}
+
+export function toCharacteristicBacklogCborValue(v: CharacteristicBacklog): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  csilMap.set("key", v.key);
+  csilMap.set("count", v.count);
+  csilMap.set("value", v.value);
+  csilMap.set("queues", v.queues);
+  csilMap.set("memory_limit_bytes", v.memoryLimitBytes);
+  csilMap.set("oldest_age_seconds", v.oldestAgeSeconds);
+  csilMap.set("cpu_request_millicores", v.cpuRequestMillicores);
+  return csilMap;
+}
+
+export function fromCharacteristicBacklogCborValue(value: CborValue): CharacteristicBacklog {
+  return {
+    key: asString(requireKey(value, "key")),
+    value: asString(requireKey(value, "value")),
+    queues: asNumber(requireKey(value, "queues")),
+    count: asNumber(requireKey(value, "count")),
+    oldestAgeSeconds: asNumber(requireKey(value, "oldest_age_seconds")),
+    cpuRequestMillicores: asNumber(requireKey(value, "cpu_request_millicores")),
+    memoryLimitBytes: asNumber(requireKey(value, "memory_limit_bytes")),
+  };
+}
+
+export function toCharacteristicBacklogCbor(v: CharacteristicBacklog): Uint8Array {
+  return encodeValue(toCharacteristicBacklogCborValue(v));
+}
+
+export function fromCharacteristicBacklogCbor(bytes: Uint8Array): CharacteristicBacklog {
+  return fromCharacteristicBacklogCborValue(decode(bytes));
 }
 
 export function toListQueuesRequestCborValue(v: ListQueuesRequest): CborValue {
@@ -4501,12 +5315,14 @@ export function fromListQueuesRequestCbor(bytes: Uint8Array): ListQueuesRequest 
 export function toListQueuesResponseCborValue(v: ListQueuesResponse): CborValue {
   const csilMap = new Map<CborValue, CborValue>();
   csilMap.set("queues", v.queues.map((csilE): CborValue => toQueueSummaryCborValue(csilE)));
+  if (v.backlogByCharacteristic !== undefined) csilMap.set("backlog_by_characteristic", v.backlogByCharacteristic.map((csilE): CborValue => toCharacteristicBacklogCborValue(csilE)));
   return csilMap;
 }
 
 export function fromListQueuesResponseCborValue(value: CborValue): ListQueuesResponse {
   return {
     queues: asArray(requireKey(value, "queues")).map((csilE) => fromQueueSummaryCborValue(csilE)),
+    backlogByCharacteristic: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asArray(csilV).map((csilE) => fromCharacteristicBacklogCborValue(csilE)))(mapGet(value, "backlog_by_characteristic")),
   };
 }
 
@@ -4648,15 +5464,26 @@ export function toWorkerSummaryCborValue(v: WorkerSummary): CborValue {
   const csilMap = new Map<CborValue, CborValue>();
   csilMap.set("os", v.os);
   csilMap.set("arch", v.arch);
+  if (v.online !== undefined) csilMap.set("online", v.online);
   csilMap.set("status", v.status);
   csilMap.set("pool_id", v.poolId);
   if (v.hostname !== undefined) csilMap.set("hostname", v.hostname);
+  if (v.admission !== undefined) csilMap.set("admission", toWorkerAdmissionSummaryCborValue(v.admission));
   csilMap.set("worker_id", v.workerId);
   csilMap.set("worker_key", v.workerKey);
+  if (v.imageStatus !== undefined) csilMap.set("image_status", v.imageStatus);
   if (v.lastSeenAt !== undefined) csilMap.set("last_seen_at", v.lastSeenAt);
+  if (v.imageRuntime !== undefined) csilMap.set("image_runtime", v.imageRuntime);
   if (v.workerVersion !== undefined) csilMap.set("worker_version", v.workerVersion);
   csilMap.set("characteristics", v.characteristics.map((csilE): CborValue => toWorkerCharacteristicEntryCborValue(csilE)));
+  if (v.imageSetVersion !== undefined) csilMap.set("image_set_version", v.imageSetVersion);
   csilMap.set("active_lease_count", v.activeLeaseCount);
+  if (v.enrollmentTokenId !== undefined) csilMap.set("enrollment_token_id", v.enrollmentTokenId);
+  if (v.imageStatusDetail !== undefined) csilMap.set("image_status_detail", v.imageStatusDetail);
+  if (v.onDeactivatedToken !== undefined) csilMap.set("on_deactivated_token", v.onDeactivatedToken);
+  if (v.enrollmentTokenName !== undefined) csilMap.set("enrollment_token_name", v.enrollmentTokenName);
+  if (v.imageReportedVersion !== undefined) csilMap.set("image_reported_version", v.imageReportedVersion);
+  if (v.enrollmentTokenActive !== undefined) csilMap.set("enrollment_token_active", v.enrollmentTokenActive);
   return csilMap;
 }
 
@@ -4673,6 +5500,17 @@ export function fromWorkerSummaryCborValue(value: CborValue): WorkerSummary {
     status: asString(requireKey(value, "status")),
     lastSeenAt: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "last_seen_at")),
     activeLeaseCount: asNumber(requireKey(value, "active_lease_count")),
+    admission: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : fromWorkerAdmissionSummaryCborValue(csilV))(mapGet(value, "admission")),
+    enrollmentTokenId: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "enrollment_token_id")),
+    enrollmentTokenName: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "enrollment_token_name")),
+    enrollmentTokenActive: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asBool(csilV))(mapGet(value, "enrollment_token_active")),
+    onDeactivatedToken: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asBool(csilV))(mapGet(value, "on_deactivated_token")),
+    online: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asBool(csilV))(mapGet(value, "online")),
+    imageStatus: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "image_status")),
+    imageStatusDetail: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "image_status_detail")),
+    imageRuntime: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "image_runtime")),
+    imageSetVersion: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asNumber(csilV))(mapGet(value, "image_set_version")),
+    imageReportedVersion: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asNumber(csilV))(mapGet(value, "image_reported_version")),
   };
 }
 
@@ -4684,15 +5522,49 @@ export function fromWorkerSummaryCbor(bytes: Uint8Array): WorkerSummary {
   return fromWorkerSummaryCborValue(decode(bytes));
 }
 
+export function toWorkerAdmissionSummaryCborValue(v: WorkerAdmissionSummary): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  csilMap.set("mode", v.mode);
+  csilMap.set("reported_at", v.reportedAt);
+  csilMap.set("capacity_memory_bytes", v.capacityMemoryBytes);
+  csilMap.set("headroom_memory_bytes", v.headroomMemoryBytes);
+  csilMap.set("capacity_cpu_millicores", v.capacityCpuMillicores);
+  csilMap.set("headroom_cpu_millicores", v.headroomCpuMillicores);
+  return csilMap;
+}
+
+export function fromWorkerAdmissionSummaryCborValue(value: CborValue): WorkerAdmissionSummary {
+  return {
+    mode: asString(requireKey(value, "mode")),
+    capacityCpuMillicores: asNumber(requireKey(value, "capacity_cpu_millicores")),
+    capacityMemoryBytes: asNumber(requireKey(value, "capacity_memory_bytes")),
+    headroomCpuMillicores: asNumber(requireKey(value, "headroom_cpu_millicores")),
+    headroomMemoryBytes: asNumber(requireKey(value, "headroom_memory_bytes")),
+    reportedAt: asString(requireKey(value, "reported_at")),
+  };
+}
+
+export function toWorkerAdmissionSummaryCbor(v: WorkerAdmissionSummary): Uint8Array {
+  return encodeValue(toWorkerAdmissionSummaryCborValue(v));
+}
+
+export function fromWorkerAdmissionSummaryCbor(bytes: Uint8Array): WorkerAdmissionSummary {
+  return fromWorkerAdmissionSummaryCborValue(decode(bytes));
+}
+
 export function toListWorkersRequestCborValue(v: ListWorkersRequest): CborValue {
   const csilMap = new Map<CborValue, CborValue>();
   if (v.poolId !== undefined) csilMap.set("pool_id", v.poolId);
+  if (v.enrollmentTokenId !== undefined) csilMap.set("enrollment_token_id", v.enrollmentTokenId);
+  if (v.onDeactivatedToken !== undefined) csilMap.set("on_deactivated_token", v.onDeactivatedToken);
   return csilMap;
 }
 
 export function fromListWorkersRequestCborValue(value: CborValue): ListWorkersRequest {
   return {
     poolId: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "pool_id")),
+    enrollmentTokenId: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "enrollment_token_id")),
+    onDeactivatedToken: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asBool(csilV))(mapGet(value, "on_deactivated_token")),
   };
 }
 
@@ -5013,6 +5885,7 @@ export function toEnrollmentTokenSummaryCborValue(v: EnrollmentTokenSummary): Cb
   csilMap.set("created_at", v.createdAt);
   if (v.lastUsedAt !== undefined) csilMap.set("last_used_at", v.lastUsedAt);
   if (v.deactivatedAt !== undefined) csilMap.set("deactivated_at", v.deactivatedAt);
+  if (v.activeWorkerCount !== undefined) csilMap.set("active_worker_count", v.activeWorkerCount);
   return csilMap;
 }
 
@@ -5025,6 +5898,7 @@ export function fromEnrollmentTokenSummaryCborValue(value: CborValue): Enrollmen
     lastUsedAt: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "last_used_at")),
     createdAt: asString(requireKey(value, "created_at")),
     deactivatedAt: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "deactivated_at")),
+    activeWorkerCount: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asNumber(csilV))(mapGet(value, "active_worker_count")),
   };
 }
 
@@ -5123,12 +5997,14 @@ export function fromListEnrollmentTokensResponseCbor(bytes: Uint8Array): ListEnr
 export function toDeactivateEnrollmentTokenRequestCborValue(v: DeactivateEnrollmentTokenRequest): CborValue {
   const csilMap = new Map<CborValue, CborValue>();
   csilMap.set("token_id", v.tokenId);
+  if (v.confirmPermanent !== undefined) csilMap.set("confirm_permanent", v.confirmPermanent);
   return csilMap;
 }
 
 export function fromDeactivateEnrollmentTokenRequestCborValue(value: CborValue): DeactivateEnrollmentTokenRequest {
   return {
     tokenId: asString(requireKey(value, "token_id")),
+    confirmPermanent: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asBool(csilV))(mapGet(value, "confirm_permanent")),
   };
 }
 
@@ -5622,6 +6498,590 @@ export function fromListScheduleFiresResponseCbor(bytes: Uint8Array): ListSchedu
   return fromListScheduleFiresResponseCborValue(decode(bytes));
 }
 
+export function toEventSubscriptionSummaryCborValue(v: EventSubscriptionSummary): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  csilMap.set("name", v.name);
+  csilMap.set("scope", v.scope);
+  csilMap.set("org_id", v.orgId);
+  csilMap.set("enabled", v.enabled);
+  csilMap.set("results", v.results);
+  csilMap.set("sink_type", v.sinkType);
+  csilMap.set("created_at", v.createdAt);
+  if (v.projectId !== undefined) csilMap.set("project_id", v.projectId);
+  csilMap.set("updated_at", v.updatedAt);
+  csilMap.set("actor_kinds", v.actorKinds);
+  csilMap.set("description", v.description);
+  csilMap.set("event_types", v.eventTypes);
+  csilMap.set("owner_group", v.ownerGroup);
+  csilMap.set("webhook_url", v.webhookUrl);
+  csilMap.set("max_attempts", v.maxAttempts);
+  csilMap.set("owner_active", v.ownerActive);
+  if (v.failureClasses !== undefined) csilMap.set("failure_classes", v.failureClasses);
+  csilMap.set("ref_classes_any", v.refClassesAny);
+  csilMap.set("subscription_id", v.subscriptionId);
+  csilMap.set("owner_principal_id", v.ownerPrincipalId);
+  csilMap.set("workflow_security_id", v.workflowSecurityId);
+  return csilMap;
+}
+
+export function fromEventSubscriptionSummaryCborValue(value: CborValue): EventSubscriptionSummary {
+  return {
+    subscriptionId: asString(requireKey(value, "subscription_id")),
+    orgId: asString(requireKey(value, "org_id")),
+    name: asString(requireKey(value, "name")),
+    description: asString(requireKey(value, "description")),
+    ownerPrincipalId: asString(requireKey(value, "owner_principal_id")),
+    ownerActive: asBool(requireKey(value, "owner_active")),
+    scope: asString(requireKey(value, "scope")),
+    projectId: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "project_id")),
+    workflowSecurityId: asString(requireKey(value, "workflow_security_id")),
+    ownerGroup: asString(requireKey(value, "owner_group")),
+    eventTypes: asArray(requireKey(value, "event_types")).map((csilE) => asString(csilE)),
+    refClassesAny: asArray(requireKey(value, "ref_classes_any")).map((csilE) => asString(csilE)),
+    results: asArray(requireKey(value, "results")).map((csilE) => asString(csilE)),
+    actorKinds: asArray(requireKey(value, "actor_kinds")).map((csilE) => asString(csilE)),
+    failureClasses: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asArray(csilV).map((csilE) => asString(csilE)))(mapGet(value, "failure_classes")),
+    sinkType: asString(requireKey(value, "sink_type")),
+    webhookUrl: asString(requireKey(value, "webhook_url")),
+    maxAttempts: asNumber(requireKey(value, "max_attempts")),
+    enabled: asBool(requireKey(value, "enabled")),
+    createdAt: asString(requireKey(value, "created_at")),
+    updatedAt: asString(requireKey(value, "updated_at")),
+  };
+}
+
+export function toEventSubscriptionSummaryCbor(v: EventSubscriptionSummary): Uint8Array {
+  return encodeValue(toEventSubscriptionSummaryCborValue(v));
+}
+
+export function fromEventSubscriptionSummaryCbor(bytes: Uint8Array): EventSubscriptionSummary {
+  return fromEventSubscriptionSummaryCborValue(decode(bytes));
+}
+
+export function toEventDeliverySummaryCborValue(v: EventDeliverySummary): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  csilMap.set("status", v.status);
+  csilMap.set("attempts", v.attempts);
+  csilMap.set("event_id", v.eventId);
+  csilMap.set("sequence", v.sequence);
+  csilMap.set("order_key", v.orderKey);
+  csilMap.set("created_at", v.createdAt);
+  csilMap.set("event_type", v.eventType);
+  csilMap.set("last_error", v.lastError);
+  csilMap.set("delivery_id", v.deliveryId);
+  if (v.deliveredAt !== undefined) csilMap.set("delivered_at", v.deliveredAt);
+  if (v.lastLatencyMs !== undefined) csilMap.set("last_latency_ms", v.lastLatencyMs);
+  csilMap.set("next_attempt_at", v.nextAttemptAt);
+  csilMap.set("subscription_id", v.subscriptionId);
+  if (v.deadLetteredAt !== undefined) csilMap.set("dead_lettered_at", v.deadLetteredAt);
+  if (v.lastHttpStatus !== undefined) csilMap.set("last_http_status", v.lastHttpStatus);
+  return csilMap;
+}
+
+export function fromEventDeliverySummaryCborValue(value: CborValue): EventDeliverySummary {
+  return {
+    deliveryId: asString(requireKey(value, "delivery_id")),
+    subscriptionId: asString(requireKey(value, "subscription_id")),
+    eventId: asString(requireKey(value, "event_id")),
+    eventType: asString(requireKey(value, "event_type")),
+    orderKey: asString(requireKey(value, "order_key")),
+    sequence: asNumber(requireKey(value, "sequence")),
+    status: asString(requireKey(value, "status")),
+    attempts: asNumber(requireKey(value, "attempts")),
+    lastHttpStatus: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asNumber(csilV))(mapGet(value, "last_http_status")),
+    lastLatencyMs: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asNumber(csilV))(mapGet(value, "last_latency_ms")),
+    lastError: asString(requireKey(value, "last_error")),
+    nextAttemptAt: asString(requireKey(value, "next_attempt_at")),
+    deliveredAt: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "delivered_at")),
+    deadLetteredAt: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "dead_lettered_at")),
+    createdAt: asString(requireKey(value, "created_at")),
+  };
+}
+
+export function toEventDeliverySummaryCbor(v: EventDeliverySummary): Uint8Array {
+  return encodeValue(toEventDeliverySummaryCborValue(v));
+}
+
+export function fromEventDeliverySummaryCbor(bytes: Uint8Array): EventDeliverySummary {
+  return fromEventDeliverySummaryCborValue(decode(bytes));
+}
+
+export function toEventDeliveryAttemptEntryCborValue(v: EventDeliveryAttemptEntry): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  csilMap.set("error", v.error);
+  csilMap.set("result", v.result);
+  csilMap.set("attempt", v.attempt);
+  csilMap.set("latency_ms", v.latencyMs);
+  csilMap.set("started_at", v.startedAt);
+  csilMap.set("finished_at", v.finishedAt);
+  if (v.httpStatus !== undefined) csilMap.set("http_status", v.httpStatus);
+  return csilMap;
+}
+
+export function fromEventDeliveryAttemptEntryCborValue(value: CborValue): EventDeliveryAttemptEntry {
+  return {
+    attempt: asNumber(requireKey(value, "attempt")),
+    startedAt: asString(requireKey(value, "started_at")),
+    finishedAt: asString(requireKey(value, "finished_at")),
+    result: asString(requireKey(value, "result")),
+    httpStatus: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asNumber(csilV))(mapGet(value, "http_status")),
+    latencyMs: asNumber(requireKey(value, "latency_ms")),
+    error: asString(requireKey(value, "error")),
+  };
+}
+
+export function toEventDeliveryAttemptEntryCbor(v: EventDeliveryAttemptEntry): Uint8Array {
+  return encodeValue(toEventDeliveryAttemptEntryCborValue(v));
+}
+
+export function fromEventDeliveryAttemptEntryCbor(bytes: Uint8Array): EventDeliveryAttemptEntry {
+  return fromEventDeliveryAttemptEntryCborValue(decode(bytes));
+}
+
+export function toListEventSubscriptionsRequestCborValue(v: ListEventSubscriptionsRequest): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  csilMap.set("org_id", v.orgId);
+  if (v.projectId !== undefined) csilMap.set("project_id", v.projectId);
+  return csilMap;
+}
+
+export function fromListEventSubscriptionsRequestCborValue(value: CborValue): ListEventSubscriptionsRequest {
+  return {
+    orgId: asString(requireKey(value, "org_id")),
+    projectId: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "project_id")),
+  };
+}
+
+export function toListEventSubscriptionsRequestCbor(v: ListEventSubscriptionsRequest): Uint8Array {
+  return encodeValue(toListEventSubscriptionsRequestCborValue(v));
+}
+
+export function fromListEventSubscriptionsRequestCbor(bytes: Uint8Array): ListEventSubscriptionsRequest {
+  return fromListEventSubscriptionsRequestCborValue(decode(bytes));
+}
+
+export function toListEventSubscriptionsResponseCborValue(v: ListEventSubscriptionsResponse): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  csilMap.set("subscriptions", v.subscriptions.map((csilE): CborValue => toEventSubscriptionSummaryCborValue(csilE)));
+  return csilMap;
+}
+
+export function fromListEventSubscriptionsResponseCborValue(value: CborValue): ListEventSubscriptionsResponse {
+  return {
+    subscriptions: asArray(requireKey(value, "subscriptions")).map((csilE) => fromEventSubscriptionSummaryCborValue(csilE)),
+  };
+}
+
+export function toListEventSubscriptionsResponseCbor(v: ListEventSubscriptionsResponse): Uint8Array {
+  return encodeValue(toListEventSubscriptionsResponseCborValue(v));
+}
+
+export function fromListEventSubscriptionsResponseCbor(bytes: Uint8Array): ListEventSubscriptionsResponse {
+  return fromListEventSubscriptionsResponseCborValue(decode(bytes));
+}
+
+export function toGetEventSubscriptionRequestCborValue(v: GetEventSubscriptionRequest): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  csilMap.set("subscription_id", v.subscriptionId);
+  return csilMap;
+}
+
+export function fromGetEventSubscriptionRequestCborValue(value: CborValue): GetEventSubscriptionRequest {
+  return {
+    subscriptionId: asString(requireKey(value, "subscription_id")),
+  };
+}
+
+export function toGetEventSubscriptionRequestCbor(v: GetEventSubscriptionRequest): Uint8Array {
+  return encodeValue(toGetEventSubscriptionRequestCborValue(v));
+}
+
+export function fromGetEventSubscriptionRequestCbor(bytes: Uint8Array): GetEventSubscriptionRequest {
+  return fromGetEventSubscriptionRequestCborValue(decode(bytes));
+}
+
+export function toGetEventSubscriptionResponseCborValue(v: GetEventSubscriptionResponse): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  csilMap.set("subscription", toEventSubscriptionSummaryCborValue(v.subscription));
+  return csilMap;
+}
+
+export function fromGetEventSubscriptionResponseCborValue(value: CborValue): GetEventSubscriptionResponse {
+  return {
+    subscription: fromEventSubscriptionSummaryCborValue(requireKey(value, "subscription")),
+  };
+}
+
+export function toGetEventSubscriptionResponseCbor(v: GetEventSubscriptionResponse): Uint8Array {
+  return encodeValue(toGetEventSubscriptionResponseCborValue(v));
+}
+
+export function fromGetEventSubscriptionResponseCbor(bytes: Uint8Array): GetEventSubscriptionResponse {
+  return fromGetEventSubscriptionResponseCborValue(decode(bytes));
+}
+
+export function toCreateEventSubscriptionRequestCborValue(v: CreateEventSubscriptionRequest): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  csilMap.set("name", v.name);
+  csilMap.set("scope", v.scope);
+  csilMap.set("org_id", v.orgId);
+  if (v.enabled !== undefined) csilMap.set("enabled", v.enabled);
+  if (v.results !== undefined) csilMap.set("results", v.results);
+  if (v.sinkType !== undefined) csilMap.set("sink_type", v.sinkType);
+  if (v.projectId !== undefined) csilMap.set("project_id", v.projectId);
+  if (v.actorKinds !== undefined) csilMap.set("actor_kinds", v.actorKinds);
+  if (v.description !== undefined) csilMap.set("description", v.description);
+  if (v.eventTypes !== undefined) csilMap.set("event_types", v.eventTypes);
+  if (v.ownerGroup !== undefined) csilMap.set("owner_group", v.ownerGroup);
+  csilMap.set("webhook_url", v.webhookUrl);
+  if (v.maxAttempts !== undefined) csilMap.set("max_attempts", v.maxAttempts);
+  if (v.signingSecret !== undefined) csilMap.set("signing_secret", v.signingSecret);
+  if (v.failureClasses !== undefined) csilMap.set("failure_classes", v.failureClasses);
+  if (v.refClassesAny !== undefined) csilMap.set("ref_classes_any", v.refClassesAny);
+  if (v.ownerPrincipalId !== undefined) csilMap.set("owner_principal_id", v.ownerPrincipalId);
+  if (v.workflowSecurityId !== undefined) csilMap.set("workflow_security_id", v.workflowSecurityId);
+  return csilMap;
+}
+
+export function fromCreateEventSubscriptionRequestCborValue(value: CborValue): CreateEventSubscriptionRequest {
+  return {
+    orgId: asString(requireKey(value, "org_id")),
+    name: asString(requireKey(value, "name")),
+    description: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "description")),
+    scope: asString(requireKey(value, "scope")),
+    projectId: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "project_id")),
+    workflowSecurityId: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "workflow_security_id")),
+    ownerGroup: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "owner_group")),
+    eventTypes: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asArray(csilV).map((csilE) => asString(csilE)))(mapGet(value, "event_types")),
+    refClassesAny: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asArray(csilV).map((csilE) => asString(csilE)))(mapGet(value, "ref_classes_any")),
+    results: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asArray(csilV).map((csilE) => asString(csilE)))(mapGet(value, "results")),
+    actorKinds: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asArray(csilV).map((csilE) => asString(csilE)))(mapGet(value, "actor_kinds")),
+    failureClasses: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asArray(csilV).map((csilE) => asString(csilE)))(mapGet(value, "failure_classes")),
+    sinkType: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "sink_type")),
+    webhookUrl: asString(requireKey(value, "webhook_url")),
+    maxAttempts: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asNumber(csilV))(mapGet(value, "max_attempts")),
+    enabled: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asBool(csilV))(mapGet(value, "enabled")),
+    signingSecret: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "signing_secret")),
+    ownerPrincipalId: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "owner_principal_id")),
+  };
+}
+
+export function toCreateEventSubscriptionRequestCbor(v: CreateEventSubscriptionRequest): Uint8Array {
+  return encodeValue(toCreateEventSubscriptionRequestCborValue(v));
+}
+
+export function fromCreateEventSubscriptionRequestCbor(bytes: Uint8Array): CreateEventSubscriptionRequest {
+  return fromCreateEventSubscriptionRequestCborValue(decode(bytes));
+}
+
+export function toCreateEventSubscriptionResponseCborValue(v: CreateEventSubscriptionResponse): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  csilMap.set("subscription", toEventSubscriptionSummaryCborValue(v.subscription));
+  csilMap.set("signing_secret", v.signingSecret);
+  return csilMap;
+}
+
+export function fromCreateEventSubscriptionResponseCborValue(value: CborValue): CreateEventSubscriptionResponse {
+  return {
+    subscription: fromEventSubscriptionSummaryCborValue(requireKey(value, "subscription")),
+    signingSecret: asString(requireKey(value, "signing_secret")),
+  };
+}
+
+export function toCreateEventSubscriptionResponseCbor(v: CreateEventSubscriptionResponse): Uint8Array {
+  return encodeValue(toCreateEventSubscriptionResponseCborValue(v));
+}
+
+export function fromCreateEventSubscriptionResponseCbor(bytes: Uint8Array): CreateEventSubscriptionResponse {
+  return fromCreateEventSubscriptionResponseCborValue(decode(bytes));
+}
+
+export function toUpdateEventSubscriptionRequestCborValue(v: UpdateEventSubscriptionRequest): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  if (v.enabled !== undefined) csilMap.set("enabled", v.enabled);
+  if (v.results !== undefined) csilMap.set("results", v.results);
+  if (v.actorKinds !== undefined) csilMap.set("actor_kinds", v.actorKinds);
+  if (v.description !== undefined) csilMap.set("description", v.description);
+  if (v.eventTypes !== undefined) csilMap.set("event_types", v.eventTypes);
+  if (v.webhookUrl !== undefined) csilMap.set("webhook_url", v.webhookUrl);
+  if (v.maxAttempts !== undefined) csilMap.set("max_attempts", v.maxAttempts);
+  if (v.clearFilters !== undefined) csilMap.set("clear_filters", v.clearFilters);
+  if (v.rotateSecret !== undefined) csilMap.set("rotate_secret", v.rotateSecret);
+  if (v.signingSecret !== undefined) csilMap.set("signing_secret", v.signingSecret);
+  if (v.failureClasses !== undefined) csilMap.set("failure_classes", v.failureClasses);
+  if (v.refClassesAny !== undefined) csilMap.set("ref_classes_any", v.refClassesAny);
+  csilMap.set("subscription_id", v.subscriptionId);
+  return csilMap;
+}
+
+export function fromUpdateEventSubscriptionRequestCborValue(value: CborValue): UpdateEventSubscriptionRequest {
+  return {
+    subscriptionId: asString(requireKey(value, "subscription_id")),
+    description: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "description")),
+    eventTypes: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asArray(csilV).map((csilE) => asString(csilE)))(mapGet(value, "event_types")),
+    refClassesAny: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asArray(csilV).map((csilE) => asString(csilE)))(mapGet(value, "ref_classes_any")),
+    results: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asArray(csilV).map((csilE) => asString(csilE)))(mapGet(value, "results")),
+    actorKinds: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asArray(csilV).map((csilE) => asString(csilE)))(mapGet(value, "actor_kinds")),
+    failureClasses: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asArray(csilV).map((csilE) => asString(csilE)))(mapGet(value, "failure_classes")),
+    webhookUrl: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "webhook_url")),
+    maxAttempts: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asNumber(csilV))(mapGet(value, "max_attempts")),
+    enabled: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asBool(csilV))(mapGet(value, "enabled")),
+    rotateSecret: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asBool(csilV))(mapGet(value, "rotate_secret")),
+    signingSecret: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "signing_secret")),
+    clearFilters: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asArray(csilV).map((csilE) => asString(csilE)))(mapGet(value, "clear_filters")),
+  };
+}
+
+export function toUpdateEventSubscriptionRequestCbor(v: UpdateEventSubscriptionRequest): Uint8Array {
+  return encodeValue(toUpdateEventSubscriptionRequestCborValue(v));
+}
+
+export function fromUpdateEventSubscriptionRequestCbor(bytes: Uint8Array): UpdateEventSubscriptionRequest {
+  return fromUpdateEventSubscriptionRequestCborValue(decode(bytes));
+}
+
+export function toUpdateEventSubscriptionResponseCborValue(v: UpdateEventSubscriptionResponse): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  csilMap.set("subscription", toEventSubscriptionSummaryCborValue(v.subscription));
+  if (v.signingSecret !== undefined) csilMap.set("signing_secret", v.signingSecret);
+  return csilMap;
+}
+
+export function fromUpdateEventSubscriptionResponseCborValue(value: CborValue): UpdateEventSubscriptionResponse {
+  return {
+    subscription: fromEventSubscriptionSummaryCborValue(requireKey(value, "subscription")),
+    signingSecret: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "signing_secret")),
+  };
+}
+
+export function toUpdateEventSubscriptionResponseCbor(v: UpdateEventSubscriptionResponse): Uint8Array {
+  return encodeValue(toUpdateEventSubscriptionResponseCborValue(v));
+}
+
+export function fromUpdateEventSubscriptionResponseCbor(bytes: Uint8Array): UpdateEventSubscriptionResponse {
+  return fromUpdateEventSubscriptionResponseCborValue(decode(bytes));
+}
+
+export function toDeleteEventSubscriptionRequestCborValue(v: DeleteEventSubscriptionRequest): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  csilMap.set("subscription_id", v.subscriptionId);
+  return csilMap;
+}
+
+export function fromDeleteEventSubscriptionRequestCborValue(value: CborValue): DeleteEventSubscriptionRequest {
+  return {
+    subscriptionId: asString(requireKey(value, "subscription_id")),
+  };
+}
+
+export function toDeleteEventSubscriptionRequestCbor(v: DeleteEventSubscriptionRequest): Uint8Array {
+  return encodeValue(toDeleteEventSubscriptionRequestCborValue(v));
+}
+
+export function fromDeleteEventSubscriptionRequestCbor(bytes: Uint8Array): DeleteEventSubscriptionRequest {
+  return fromDeleteEventSubscriptionRequestCborValue(decode(bytes));
+}
+
+export function toDeleteEventSubscriptionResponseCborValue(v: DeleteEventSubscriptionResponse): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  csilMap.set("ok", v.ok);
+  return csilMap;
+}
+
+export function fromDeleteEventSubscriptionResponseCborValue(value: CborValue): DeleteEventSubscriptionResponse {
+  return {
+    ok: asBool(requireKey(value, "ok")),
+  };
+}
+
+export function toDeleteEventSubscriptionResponseCbor(v: DeleteEventSubscriptionResponse): Uint8Array {
+  return encodeValue(toDeleteEventSubscriptionResponseCborValue(v));
+}
+
+export function fromDeleteEventSubscriptionResponseCbor(bytes: Uint8Array): DeleteEventSubscriptionResponse {
+  return fromDeleteEventSubscriptionResponseCborValue(decode(bytes));
+}
+
+export function toListEventDeliveriesRequestCborValue(v: ListEventDeliveriesRequest): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  if (v.limit !== undefined) csilMap.set("limit", v.limit);
+  if (v.status !== undefined) csilMap.set("status", v.status);
+  csilMap.set("subscription_id", v.subscriptionId);
+  return csilMap;
+}
+
+export function fromListEventDeliveriesRequestCborValue(value: CborValue): ListEventDeliveriesRequest {
+  return {
+    subscriptionId: asString(requireKey(value, "subscription_id")),
+    status: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "status")),
+    limit: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asNumber(csilV))(mapGet(value, "limit")),
+  };
+}
+
+export function toListEventDeliveriesRequestCbor(v: ListEventDeliveriesRequest): Uint8Array {
+  return encodeValue(toListEventDeliveriesRequestCborValue(v));
+}
+
+export function fromListEventDeliveriesRequestCbor(bytes: Uint8Array): ListEventDeliveriesRequest {
+  return fromListEventDeliveriesRequestCborValue(decode(bytes));
+}
+
+export function toListEventDeliveriesResponseCborValue(v: ListEventDeliveriesResponse): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  csilMap.set("deliveries", v.deliveries.map((csilE): CborValue => toEventDeliverySummaryCborValue(csilE)));
+  return csilMap;
+}
+
+export function fromListEventDeliveriesResponseCborValue(value: CborValue): ListEventDeliveriesResponse {
+  return {
+    deliveries: asArray(requireKey(value, "deliveries")).map((csilE) => fromEventDeliverySummaryCborValue(csilE)),
+  };
+}
+
+export function toListEventDeliveriesResponseCbor(v: ListEventDeliveriesResponse): Uint8Array {
+  return encodeValue(toListEventDeliveriesResponseCborValue(v));
+}
+
+export function fromListEventDeliveriesResponseCbor(bytes: Uint8Array): ListEventDeliveriesResponse {
+  return fromListEventDeliveriesResponseCborValue(decode(bytes));
+}
+
+export function toGetEventDeliveryRequestCborValue(v: GetEventDeliveryRequest): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  csilMap.set("delivery_id", v.deliveryId);
+  csilMap.set("subscription_id", v.subscriptionId);
+  return csilMap;
+}
+
+export function fromGetEventDeliveryRequestCborValue(value: CborValue): GetEventDeliveryRequest {
+  return {
+    subscriptionId: asString(requireKey(value, "subscription_id")),
+    deliveryId: asString(requireKey(value, "delivery_id")),
+  };
+}
+
+export function toGetEventDeliveryRequestCbor(v: GetEventDeliveryRequest): Uint8Array {
+  return encodeValue(toGetEventDeliveryRequestCborValue(v));
+}
+
+export function fromGetEventDeliveryRequestCbor(bytes: Uint8Array): GetEventDeliveryRequest {
+  return fromGetEventDeliveryRequestCborValue(decode(bytes));
+}
+
+export function toGetEventDeliveryResponseCborValue(v: GetEventDeliveryResponse): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  csilMap.set("attempts", v.attempts.map((csilE): CborValue => toEventDeliveryAttemptEntryCborValue(csilE)));
+  csilMap.set("delivery", toEventDeliverySummaryCborValue(v.delivery));
+  return csilMap;
+}
+
+export function fromGetEventDeliveryResponseCborValue(value: CborValue): GetEventDeliveryResponse {
+  return {
+    delivery: fromEventDeliverySummaryCborValue(requireKey(value, "delivery")),
+    attempts: asArray(requireKey(value, "attempts")).map((csilE) => fromEventDeliveryAttemptEntryCborValue(csilE)),
+  };
+}
+
+export function toGetEventDeliveryResponseCbor(v: GetEventDeliveryResponse): Uint8Array {
+  return encodeValue(toGetEventDeliveryResponseCborValue(v));
+}
+
+export function fromGetEventDeliveryResponseCbor(bytes: Uint8Array): GetEventDeliveryResponse {
+  return fromGetEventDeliveryResponseCborValue(decode(bytes));
+}
+
+export function toReplayEventDeliveryRequestCborValue(v: ReplayEventDeliveryRequest): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  if (v.deliveryId !== undefined) csilMap.set("delivery_id", v.deliveryId);
+  csilMap.set("subscription_id", v.subscriptionId);
+  if (v.allDeadLetters !== undefined) csilMap.set("all_dead_letters", v.allDeadLetters);
+  return csilMap;
+}
+
+export function fromReplayEventDeliveryRequestCborValue(value: CborValue): ReplayEventDeliveryRequest {
+  return {
+    subscriptionId: asString(requireKey(value, "subscription_id")),
+    deliveryId: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "delivery_id")),
+    allDeadLetters: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asBool(csilV))(mapGet(value, "all_dead_letters")),
+  };
+}
+
+export function toReplayEventDeliveryRequestCbor(v: ReplayEventDeliveryRequest): Uint8Array {
+  return encodeValue(toReplayEventDeliveryRequestCborValue(v));
+}
+
+export function fromReplayEventDeliveryRequestCbor(bytes: Uint8Array): ReplayEventDeliveryRequest {
+  return fromReplayEventDeliveryRequestCborValue(decode(bytes));
+}
+
+export function toReplayEventDeliveryResponseCborValue(v: ReplayEventDeliveryResponse): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  csilMap.set("replayed", v.replayed);
+  return csilMap;
+}
+
+export function fromReplayEventDeliveryResponseCborValue(value: CborValue): ReplayEventDeliveryResponse {
+  return {
+    replayed: asNumber(requireKey(value, "replayed")),
+  };
+}
+
+export function toReplayEventDeliveryResponseCbor(v: ReplayEventDeliveryResponse): Uint8Array {
+  return encodeValue(toReplayEventDeliveryResponseCborValue(v));
+}
+
+export function fromReplayEventDeliveryResponseCbor(bytes: Uint8Array): ReplayEventDeliveryResponse {
+  return fromReplayEventDeliveryResponseCborValue(decode(bytes));
+}
+
+export function toTestEventSubscriptionRequestCborValue(v: TestEventSubscriptionRequest): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  csilMap.set("subscription_id", v.subscriptionId);
+  return csilMap;
+}
+
+export function fromTestEventSubscriptionRequestCborValue(value: CborValue): TestEventSubscriptionRequest {
+  return {
+    subscriptionId: asString(requireKey(value, "subscription_id")),
+  };
+}
+
+export function toTestEventSubscriptionRequestCbor(v: TestEventSubscriptionRequest): Uint8Array {
+  return encodeValue(toTestEventSubscriptionRequestCborValue(v));
+}
+
+export function fromTestEventSubscriptionRequestCbor(bytes: Uint8Array): TestEventSubscriptionRequest {
+  return fromTestEventSubscriptionRequestCborValue(decode(bytes));
+}
+
+export function toTestEventSubscriptionResponseCborValue(v: TestEventSubscriptionResponse): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  csilMap.set("error", v.error);
+  csilMap.set("refused", v.refused);
+  csilMap.set("delivered", v.delivered);
+  csilMap.set("latency_ms", v.latencyMs);
+  if (v.httpStatus !== undefined) csilMap.set("http_status", v.httpStatus);
+  return csilMap;
+}
+
+export function fromTestEventSubscriptionResponseCborValue(value: CborValue): TestEventSubscriptionResponse {
+  return {
+    delivered: asBool(requireKey(value, "delivered")),
+    httpStatus: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asNumber(csilV))(mapGet(value, "http_status")),
+    latencyMs: asNumber(requireKey(value, "latency_ms")),
+    error: asString(requireKey(value, "error")),
+    refused: asBool(requireKey(value, "refused")),
+  };
+}
+
+export function toTestEventSubscriptionResponseCbor(v: TestEventSubscriptionResponse): Uint8Array {
+  return encodeValue(toTestEventSubscriptionResponseCborValue(v));
+}
+
+export function fromTestEventSubscriptionResponseCbor(bytes: Uint8Array): TestEventSubscriptionResponse {
+  return fromTestEventSubscriptionResponseCborValue(decode(bytes));
+}
+
 export function toGetJobResourceHistoryRequestCborValue(v: GetJobResourceHistoryRequest): CborValue {
   const csilMap = new Map<CborValue, CborValue>();
   if (v.limit !== undefined) csilMap.set("limit", v.limit);
@@ -5714,6 +7174,7 @@ export function toGetJobResourceHistoryResponseCborValue(v: GetJobResourceHistor
   csilMap.set("runs", v.runs.map((csilE): CborValue => toJobRunResourceSummaryCborValue(csilE)));
   csilMap.set("pending", v.pending);
   if (v.projectId !== undefined) csilMap.set("project_id", v.projectId);
+  if (v.suggestion !== undefined) csilMap.set("suggestion", toResourceSuggestionCborValue(v.suggestion));
   return csilMap;
 }
 
@@ -5723,6 +7184,7 @@ export function fromGetJobResourceHistoryResponseCborValue(value: CborValue): Ge
     name: asString(requireKey(value, "name")),
     runs: asArray(requireKey(value, "runs")).map((csilE) => fromJobRunResourceSummaryCborValue(csilE)),
     pending: asNumber(requireKey(value, "pending")),
+    suggestion: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : fromResourceSuggestionCborValue(csilV))(mapGet(value, "suggestion")),
   };
 }
 
@@ -5732,6 +7194,48 @@ export function toGetJobResourceHistoryResponseCbor(v: GetJobResourceHistoryResp
 
 export function fromGetJobResourceHistoryResponseCbor(bytes: Uint8Array): GetJobResourceHistoryResponse {
   return fromGetJobResourceHistoryResponseCborValue(decode(bytes));
+}
+
+export function toResourceSuggestionCborValue(v: ResourceSuggestion): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  csilMap.set("runs", v.runs);
+  csilMap.set("min_runs", v.minRuns);
+  csilMap.set("oom_runs", v.oomRuns);
+  csilMap.set("sufficient", v.sufficient);
+  if (v.cpuRequest !== undefined) csilMap.set("cpu_request", v.cpuRequest);
+  if (v.memoryLimit !== undefined) csilMap.set("memory_limit", v.memoryLimit);
+  csilMap.set("cpu_p95_millicores", v.cpuP95Millicores);
+  if (v.memoryLimitBytes !== undefined) csilMap.set("memory_limit_bytes", v.memoryLimitBytes);
+  csilMap.set("memory_peak_p95_bytes", v.memoryPeakP95Bytes);
+  if (v.cpuRequestMillicores !== undefined) csilMap.set("cpu_request_millicores", v.cpuRequestMillicores);
+  csilMap.set("current_memory_limit_bytes", v.currentMemoryLimitBytes);
+  csilMap.set("current_cpu_request_millicores", v.currentCpuRequestMillicores);
+  return csilMap;
+}
+
+export function fromResourceSuggestionCborValue(value: CborValue): ResourceSuggestion {
+  return {
+    runs: asNumber(requireKey(value, "runs")),
+    minRuns: asNumber(requireKey(value, "min_runs")),
+    sufficient: asBool(requireKey(value, "sufficient")),
+    cpuP95Millicores: asNumber(requireKey(value, "cpu_p95_millicores")),
+    memoryPeakP95Bytes: asNumber(requireKey(value, "memory_peak_p95_bytes")),
+    oomRuns: asNumber(requireKey(value, "oom_runs")),
+    cpuRequest: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "cpu_request")),
+    cpuRequestMillicores: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asNumber(csilV))(mapGet(value, "cpu_request_millicores")),
+    memoryLimit: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "memory_limit")),
+    memoryLimitBytes: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asNumber(csilV))(mapGet(value, "memory_limit_bytes")),
+    currentCpuRequestMillicores: asNumber(requireKey(value, "current_cpu_request_millicores")),
+    currentMemoryLimitBytes: asNumber(requireKey(value, "current_memory_limit_bytes")),
+  };
+}
+
+export function toResourceSuggestionCbor(v: ResourceSuggestion): Uint8Array {
+  return encodeValue(toResourceSuggestionCborValue(v));
+}
+
+export function fromResourceSuggestionCbor(bytes: Uint8Array): ResourceSuggestion {
+  return fromResourceSuggestionCborValue(decode(bytes));
 }
 
 export function toGetJobLogsRequestCborValue(v: GetJobLogsRequest): CborValue {
@@ -5815,7 +7319,10 @@ export function fromGetJobLogsResponseCbor(bytes: Uint8Array): GetJobLogsRespons
 export function toJobSummaryCborValue(v: JobSummary): CborValue {
   const csilMap = new Map<CborValue, CborValue>();
   csilMap.set("name", v.name);
+  if (v.actor !== undefined) csilMap.set("actor", toActorSummaryCborValue(v.actor));
+  if (v.owner !== undefined) csilMap.set("owner", toWorkflowOwnershipCborValue(v.owner));
   csilMap.set("job_id", v.jobId);
+  if (v.shifts !== undefined) csilMap.set("shifts", toRunShiftsCborValue(v.shifts));
   csilMap.set("status", v.status);
   csilMap.set("priority", v.priority);
   csilMap.set("ci_origin", v.ciOrigin);
@@ -5829,13 +7336,23 @@ export function toJobSummaryCborValue(v: JobSummary): CborValue {
   if (v.startedAt !== undefined) csilMap.set("started_at", v.startedAt);
   csilMap.set("updated_at", v.updatedAt);
   csilMap.set("description", v.description);
+  if (v.imageAlias !== undefined) csilMap.set("image_alias", v.imageAlias);
+  if (v.refClasses !== undefined) csilMap.set("ref_classes", v.refClasses);
+  if (v.retryCount !== undefined) csilMap.set("retry_count", v.retryCount);
   csilMap.set("source_path", v.sourcePath);
   csilMap.set("source_type", v.sourceType);
   if (v.workflowId !== undefined) csilMap.set("workflow_id", v.workflowId);
   if (v.completedAt !== undefined) csilMap.set("completed_at", v.completedAt);
   csilMap.set("runner_image", v.runnerImage);
   csilMap.set("worker_class", v.workerClass);
+  if (v.failureClass !== undefined) csilMap.set("failure_class", v.failureClass);
+  if (v.failureOwner !== undefined) csilMap.set("failure_owner", v.failureOwner);
+  if (v.imageDisplay !== undefined) csilMap.set("image_display", v.imageDisplay);
   if (v.parentJobId !== undefined) csilMap.set("parent_job_id", v.parentJobId);
+  if (v.priorityLane !== undefined) csilMap.set("priority_lane", v.priorityLane);
+  if (v.failureDetail !== undefined) csilMap.set("failure_detail", v.failureDetail);
+  if (v.imageRetryOf !== undefined) csilMap.set("image_retry_of", v.imageRetryOf);
+  if (v.priorityReason !== undefined) csilMap.set("priority_reason", toCIDecisionReasonCborValue(v.priorityReason));
   csilMap.set("execution_profile", v.executionProfile);
   csilMap.set("workflow_node_name", v.workflowNodeName);
   if (v.schedulingStartedAt !== undefined) csilMap.set("scheduling_started_at", v.schedulingStartedAt);
@@ -5855,13 +7372,22 @@ export function fromJobSummaryCborValue(value: CborValue): JobSummary {
     startedAt: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "started_at")),
     completedAt: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "completed_at")),
     exitCode: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asNumber(csilV))(mapGet(value, "exit_code")),
+    failureClass: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "failure_class")),
+    failureDetail: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "failure_detail")),
+    failureOwner: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "failure_owner")),
+    retryCount: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asNumber(csilV))(mapGet(value, "retry_count")),
     sourceUrl: asString(requireKey(value, "source_url")),
     sourceRef: asString(requireKey(value, "source_ref")),
     sourceType: asString(requireKey(value, "source_type")),
     sourcePath: asString(requireKey(value, "source_path")),
     runnerImage: asString(requireKey(value, "runner_image")),
+    imageAlias: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "image_alias")),
+    imageDisplay: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "image_display")),
+    imageRetryOf: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "image_retry_of")),
     queueName: asString(requireKey(value, "queue_name")),
     priority: asNumber(requireKey(value, "priority")),
+    priorityLane: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "priority_lane")),
+    priorityReason: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : fromCIDecisionReasonCborValue(csilV))(mapGet(value, "priority_reason")),
     parentJobId: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "parent_job_id")),
     projectId: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "project_id")),
     workflowId: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "workflow_id")),
@@ -5869,6 +7395,10 @@ export function fromJobSummaryCborValue(value: CborValue): JobSummary {
     ciOrigin: asString(requireKey(value, "ci_origin")),
     executionProfile: asString(requireKey(value, "execution_profile")),
     workerClass: asString(requireKey(value, "worker_class")),
+    actor: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : fromActorSummaryCborValue(csilV))(mapGet(value, "actor")),
+    shifts: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : fromRunShiftsCborValue(csilV))(mapGet(value, "shifts")),
+    refClasses: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asArray(csilV).map((csilE) => asString(csilE)))(mapGet(value, "ref_classes")),
+    owner: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : fromWorkflowOwnershipCborValue(csilV))(mapGet(value, "owner")),
   };
 }
 
@@ -5880,6 +7410,40 @@ export function fromJobSummaryCbor(bytes: Uint8Array): JobSummary {
   return fromJobSummaryCborValue(decode(bytes));
 }
 
+export function toWorkflowOwnershipCborValue(v: WorkflowOwnership): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  if (v.email !== undefined) csilMap.set("email", v.email);
+  if (v.group !== undefined) csilMap.set("group", v.group);
+  if (v.ciSha !== undefined) csilMap.set("ci_sha", v.ciSha);
+  if (v.source !== undefined) csilMap.set("source", v.source);
+  if (v.channel !== undefined) csilMap.set("channel", v.channel);
+  if (v.trusted !== undefined) csilMap.set("trusted", v.trusted);
+  if (v.helpUrl !== undefined) csilMap.set("help_url", v.helpUrl);
+  if (v.subjects !== undefined) csilMap.set("subjects", v.subjects);
+  return csilMap;
+}
+
+export function fromWorkflowOwnershipCborValue(value: CborValue): WorkflowOwnership {
+  return {
+    group: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "group")),
+    subjects: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asArray(csilV).map((csilE) => asString(csilE)))(mapGet(value, "subjects")),
+    channel: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "channel")),
+    helpUrl: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "help_url")),
+    email: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "email")),
+    source: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "source")),
+    ciSha: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "ci_sha")),
+    trusted: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asBool(csilV))(mapGet(value, "trusted")),
+  };
+}
+
+export function toWorkflowOwnershipCbor(v: WorkflowOwnership): Uint8Array {
+  return encodeValue(toWorkflowOwnershipCborValue(v));
+}
+
+export function fromWorkflowOwnershipCbor(bytes: Uint8Array): WorkflowOwnership {
+  return fromWorkflowOwnershipCborValue(decode(bytes));
+}
+
 export function toListJobsRequestCborValue(v: ListJobsRequest): CborValue {
   const csilMap = new Map<CborValue, CborValue>();
   if (v.limit !== undefined) csilMap.set("limit", v.limit);
@@ -5888,6 +7452,7 @@ export function toListJobsRequestCborValue(v: ListJobsRequest): CborValue {
   if (v.projectId !== undefined) csilMap.set("project_id", v.projectId);
   if (v.queueName !== undefined) csilMap.set("queue_name", v.queueName);
   if (v.workflowId !== undefined) csilMap.set("workflow_id", v.workflowId);
+  if (v.failureClass !== undefined) csilMap.set("failure_class", v.failureClass);
   return csilMap;
 }
 
@@ -5897,6 +7462,7 @@ export function fromListJobsRequestCborValue(value: CborValue): ListJobsRequest 
     projectId: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "project_id")),
     workflowId: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "workflow_id")),
     queueName: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "queue_name")),
+    failureClass: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "failure_class")),
     limit: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asNumber(csilV))(mapGet(value, "limit")),
     offset: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asNumber(csilV))(mapGet(value, "offset")),
   };
@@ -6054,6 +7620,8 @@ export function toWorkflowSummaryDetailCborValue(v: WorkflowSummaryDetail): Cbor
   const csilMap = new Map<CborValue, CborValue>();
   csilMap.set("kind", v.kind);
   csilMap.set("name", v.name);
+  if (v.actor !== undefined) csilMap.set("actor", toActorSummaryCborValue(v.actor));
+  if (v.owner !== undefined) csilMap.set("owner", toWorkflowOwnershipCborValue(v.owner));
   csilMap.set("status", v.status);
   if (v.eventId !== undefined) csilMap.set("event_id", v.eventId);
   csilMap.set("vcs_repo", v.vcsRepo);
@@ -6066,6 +7634,7 @@ export function toWorkflowSummaryDetailCborValue(v: WorkflowSummaryDetail): Cbor
   csilMap.set("queue_name", v.queueName);
   csilMap.set("updated_at", v.updatedAt);
   csilMap.set("origin_type", v.originType);
+  if (v.refClasses !== undefined) csilMap.set("ref_classes", v.refClasses);
   csilMap.set("workflow_id", v.workflowId);
   if (v.completedAt !== undefined) csilMap.set("completed_at", v.completedAt);
   csilMap.set("failed_count", v.failedCount);
@@ -6117,6 +7686,9 @@ export function fromWorkflowSummaryDetailCborValue(value: CborValue): WorkflowSu
     executionProfile: asString(requireKey(value, "execution_profile")),
     workerClass: asString(requireKey(value, "worker_class")),
     eventId: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "event_id")),
+    actor: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : fromActorSummaryCborValue(csilV))(mapGet(value, "actor")),
+    refClasses: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asArray(csilV).map((csilE) => asString(csilE)))(mapGet(value, "ref_classes")),
+    owner: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : fromWorkflowOwnershipCborValue(csilV))(mapGet(value, "owner")),
   };
 }
 
@@ -6230,16 +7802,22 @@ export function fromGetWorkflowResponseCbor(bytes: Uint8Array): GetWorkflowRespo
 
 export function toCIDecisionReasonCborValue(v: CIDecisionReason): CborValue {
   const csilMap = new Map<CborValue, CborValue>();
+  if (v.base !== undefined) csilMap.set("base", v.base);
   if (v.deps !== undefined) csilMap.set("deps", v.deps.map((csilE): CborValue => toCIDependencyOutcomeCborValue(csilE)));
   csilMap.set("kind", v.kind);
+  if (v.lane !== undefined) csilMap.set("lane", v.lane);
+  if (v.final !== undefined) csilMap.set("final", v.final);
   if (v.value !== undefined) csilMap.set("value", v.value);
   if (v.detail !== undefined) csilMap.set("detail", v.detail);
+  if (v.shifts !== undefined) csilMap.set("shifts", v.shifts.map((csilE): CborValue => toPriorityShiftCborValue(csilE)));
+  if (v.classes !== undefined) csilMap.set("classes", v.classes);
   if (v.matched !== undefined) csilMap.set("matched", v.matched);
   if (v.profile !== undefined) csilMap.set("profile", v.profile);
   if (v.reasons !== undefined) csilMap.set("reasons", v.reasons);
   if (v.ruleId !== undefined) csilMap.set("rule_id", v.ruleId);
   if (v.patterns !== undefined) csilMap.set("patterns", v.patterns);
   if (v.required !== undefined) csilMap.set("required", v.required);
+  if (v.ruleIds !== undefined) csilMap.set("rule_ids", v.ruleIds);
   if (v.ciOrigin !== undefined) csilMap.set("ci_origin", v.ciOrigin);
   if (v.condition !== undefined) csilMap.set("condition", v.condition);
   if (v.fireTime !== undefined) csilMap.set("fire_time", v.fireTime);
@@ -6275,6 +7853,12 @@ export function fromCIDecisionReasonCborValue(value: CborValue): CIDecisionReaso
     required: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asBool(csilV))(mapGet(value, "required")),
     scheduleId: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "schedule_id")),
     fireTime: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "fire_time")),
+    classes: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asArray(csilV).map((csilE) => asString(csilE)))(mapGet(value, "classes")),
+    ruleIds: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asArray(csilV).map((csilE) => asString(csilE)))(mapGet(value, "rule_ids")),
+    lane: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "lane")),
+    base: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asNumber(csilV))(mapGet(value, "base")),
+    shifts: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asArray(csilV).map((csilE) => fromPriorityShiftCborValue(csilE)))(mapGet(value, "shifts")),
+    final: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asNumber(csilV))(mapGet(value, "final")),
   };
 }
 
@@ -6310,11 +7894,14 @@ export function fromCIDependencyOutcomeCbor(bytes: Uint8Array): CIDependencyOutc
 
 export function toCIEventWorkflowDecisionCborValue(v: CIEventWorkflowDecision): CborValue {
   const csilMap = new Map<CborValue, CborValue>();
+  if (v.owner !== undefined) csilMap.set("owner", toWorkflowOwnershipCborValue(v.owner));
   csilMap.set("reasons", v.reasons.map((csilE): CborValue => toCIDecisionReasonCborValue(csilE)));
   csilMap.set("decision", v.decision);
   if (v.sourceFile !== undefined) csilMap.set("source_file", v.sourceFile);
   if (v.workflowId !== undefined) csilMap.set("workflow_id", v.workflowId);
   csilMap.set("workflow_name", v.workflowName);
+  if (v.requiredLabel !== undefined) csilMap.set("required_label", v.requiredLabel);
+  if (v.requiredState !== undefined) csilMap.set("required_state", v.requiredState);
   csilMap.set("workflow_security_id", v.workflowSecurityId);
   return csilMap;
 }
@@ -6327,6 +7914,9 @@ export function fromCIEventWorkflowDecisionCborValue(value: CborValue): CIEventW
     decision: asString(requireKey(value, "decision")),
     reasons: asArray(requireKey(value, "reasons")).map((csilE) => fromCIDecisionReasonCborValue(csilE)),
     workflowId: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "workflow_id")),
+    owner: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : fromWorkflowOwnershipCborValue(csilV))(mapGet(value, "owner")),
+    requiredState: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "required_state")),
+    requiredLabel: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "required_label")),
   };
 }
 
@@ -6357,8 +7947,12 @@ export function toCIEventDetailCborValue(v: CIEventDetail): CborValue {
   if (v.deliveryId !== undefined) csilMap.set("delivery_id", v.deliveryId);
   if (v.evalJobId !== undefined) csilMap.set("eval_job_id", v.evalJobId);
   csilMap.set("received_at", v.receivedAt);
+  if (v.refClasses !== undefined) csilMap.set("ref_classes", v.refClasses);
   if (v.scheduleId !== undefined) csilMap.set("schedule_id", v.scheduleId);
   if (v.checksState !== undefined) csilMap.set("checks_state", v.checksState);
+  if (v.actorPrincipal !== undefined) csilMap.set("actor_principal", toActorSummaryCborValue(v.actorPrincipal));
+  if (v.refClassFacts !== undefined) csilMap.set("ref_class_facts", toRefClassFactsCborValue(v.refClassFacts));
+  if (v.refClassReasons !== undefined) csilMap.set("ref_class_reasons", v.refClassReasons.map((csilE): CborValue => toRefClassReasonCborValue(csilE)));
   if (v.checksDescription !== undefined) csilMap.set("checks_description", v.checksDescription);
   csilMap.set("changed_files_count", v.changedFilesCount);
   if (v.checksPublishedAt !== undefined) csilMap.set("checks_published_at", v.checksPublishedAt);
@@ -6393,6 +7987,10 @@ export function fromCIEventDetailCborValue(value: CborValue): CIEventDetail {
     checksState: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "checks_state")),
     checksDescription: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "checks_description")),
     checksPublishedAt: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "checks_published_at")),
+    actorPrincipal: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : fromActorSummaryCborValue(csilV))(mapGet(value, "actor_principal")),
+    refClasses: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asArray(csilV).map((csilE) => asString(csilE)))(mapGet(value, "ref_classes")),
+    refClassFacts: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : fromRefClassFactsCborValue(csilV))(mapGet(value, "ref_class_facts")),
+    refClassReasons: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asArray(csilV).map((csilE) => fromRefClassReasonCborValue(csilE)))(mapGet(value, "ref_class_reasons")),
   };
 }
 
@@ -6520,5 +8118,5739 @@ export function toDescribeFormMetadataResponseCbor(v: DescribeFormMetadataRespon
 
 export function fromDescribeFormMetadataResponseCbor(bytes: Uint8Array): DescribeFormMetadataResponse {
   return fromDescribeFormMetadataResponseCborValue(decode(bytes));
+}
+
+export function toActorSummaryCborValue(v: ActorSummary): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  csilMap.set("kind", v.kind);
+  if (v.identity !== undefined) csilMap.set("identity", v.identity);
+  csilMap.set("display_name", v.displayName);
+  csilMap.set("principal_id", v.principalId);
+  return csilMap;
+}
+
+export function fromActorSummaryCborValue(value: CborValue): ActorSummary {
+  return {
+    principalId: asString(requireKey(value, "principal_id")),
+    kind: asString(requireKey(value, "kind")),
+    displayName: asString(requireKey(value, "display_name")),
+    identity: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "identity")),
+  };
+}
+
+export function toActorSummaryCbor(v: ActorSummary): Uint8Array {
+  return encodeValue(toActorSummaryCborValue(v));
+}
+
+export function fromActorSummaryCbor(bytes: Uint8Array): ActorSummary {
+  return fromActorSummaryCborValue(decode(bytes));
+}
+
+export function toPrincipalIdentityEntryCborValue(v: PrincipalIdentityEntry): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  csilMap.set("created_at", v.createdAt);
+  csilMap.set("verified_by", v.verifiedBy);
+  csilMap.set("identity_type", v.identityType);
+  csilMap.set("identity_value", v.identityValue);
+  return csilMap;
+}
+
+export function fromPrincipalIdentityEntryCborValue(value: CborValue): PrincipalIdentityEntry {
+  return {
+    identityType: asString(requireKey(value, "identity_type")),
+    identityValue: asString(requireKey(value, "identity_value")),
+    verifiedBy: asString(requireKey(value, "verified_by")),
+    createdAt: asString(requireKey(value, "created_at")),
+  };
+}
+
+export function toPrincipalIdentityEntryCbor(v: PrincipalIdentityEntry): Uint8Array {
+  return encodeValue(toPrincipalIdentityEntryCborValue(v));
+}
+
+export function fromPrincipalIdentityEntryCbor(bytes: Uint8Array): PrincipalIdentityEntry {
+  return fromPrincipalIdentityEntryCborValue(decode(bytes));
+}
+
+export function toPrincipalTokenEntryCborValue(v: PrincipalTokenEntry): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  csilMap.set("name", v.name);
+  csilMap.set("token_id", v.tokenId);
+  csilMap.set("is_active", v.isActive);
+  csilMap.set("created_at", v.createdAt);
+  if (v.expiresAt !== undefined) csilMap.set("expires_at", v.expiresAt);
+  csilMap.set("capabilities", v.capabilities);
+  if (v.lastUsedAt !== undefined) csilMap.set("last_used_at", v.lastUsedAt);
+  return csilMap;
+}
+
+export function fromPrincipalTokenEntryCborValue(value: CborValue): PrincipalTokenEntry {
+  return {
+    tokenId: asString(requireKey(value, "token_id")),
+    name: asString(requireKey(value, "name")),
+    capabilities: asArray(requireKey(value, "capabilities")).map((csilE) => asString(csilE)),
+    createdAt: asString(requireKey(value, "created_at")),
+    expiresAt: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "expires_at")),
+    lastUsedAt: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "last_used_at")),
+    isActive: asBool(requireKey(value, "is_active")),
+  };
+}
+
+export function toPrincipalTokenEntryCbor(v: PrincipalTokenEntry): Uint8Array {
+  return encodeValue(toPrincipalTokenEntryCborValue(v));
+}
+
+export function fromPrincipalTokenEntryCbor(bytes: Uint8Array): PrincipalTokenEntry {
+  return fromPrincipalTokenEntryCborValue(decode(bytes));
+}
+
+export function toPrincipalSummaryCborValue(v: PrincipalSummary): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  csilMap.set("kind", v.kind);
+  csilMap.set("name", v.name);
+  if (v.orgId !== undefined) csilMap.set("org_id", v.orgId);
+  csilMap.set("status", v.status);
+  csilMap.set("created_at", v.createdAt);
+  csilMap.set("display_name", v.displayName);
+  csilMap.set("principal_id", v.principalId);
+  return csilMap;
+}
+
+export function fromPrincipalSummaryCborValue(value: CborValue): PrincipalSummary {
+  return {
+    principalId: asString(requireKey(value, "principal_id")),
+    kind: asString(requireKey(value, "kind")),
+    name: asString(requireKey(value, "name")),
+    displayName: asString(requireKey(value, "display_name")),
+    status: asString(requireKey(value, "status")),
+    orgId: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "org_id")),
+    createdAt: asString(requireKey(value, "created_at")),
+  };
+}
+
+export function toPrincipalSummaryCbor(v: PrincipalSummary): Uint8Array {
+  return encodeValue(toPrincipalSummaryCborValue(v));
+}
+
+export function fromPrincipalSummaryCbor(bytes: Uint8Array): PrincipalSummary {
+  return fromPrincipalSummaryCborValue(decode(bytes));
+}
+
+export function toPrincipalDetailCborValue(v: PrincipalDetail): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  csilMap.set("groups", v.groups);
+  csilMap.set("tokens", v.tokens.map((csilE): CborValue => toPrincipalTokenEntryCborValue(csilE)));
+  csilMap.set("subjects", v.subjects);
+  csilMap.set("principal", toPrincipalSummaryCborValue(v.principal));
+  csilMap.set("identities", v.identities.map((csilE): CborValue => toPrincipalIdentityEntryCborValue(csilE)));
+  return csilMap;
+}
+
+export function fromPrincipalDetailCborValue(value: CborValue): PrincipalDetail {
+  return {
+    principal: fromPrincipalSummaryCborValue(requireKey(value, "principal")),
+    identities: asArray(requireKey(value, "identities")).map((csilE) => fromPrincipalIdentityEntryCborValue(csilE)),
+    groups: asArray(requireKey(value, "groups")).map((csilE) => asString(csilE)),
+    tokens: asArray(requireKey(value, "tokens")).map((csilE) => fromPrincipalTokenEntryCborValue(csilE)),
+    subjects: asArray(requireKey(value, "subjects")).map((csilE) => asString(csilE)),
+  };
+}
+
+export function toPrincipalDetailCbor(v: PrincipalDetail): Uint8Array {
+  return encodeValue(toPrincipalDetailCborValue(v));
+}
+
+export function fromPrincipalDetailCbor(bytes: Uint8Array): PrincipalDetail {
+  return fromPrincipalDetailCborValue(decode(bytes));
+}
+
+export function toListPrincipalsRequestCborValue(v: ListPrincipalsRequest): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  if (v.kind !== undefined) csilMap.set("kind", v.kind);
+  csilMap.set("org_id", v.orgId);
+  return csilMap;
+}
+
+export function fromListPrincipalsRequestCborValue(value: CborValue): ListPrincipalsRequest {
+  return {
+    orgId: asString(requireKey(value, "org_id")),
+    kind: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "kind")),
+  };
+}
+
+export function toListPrincipalsRequestCbor(v: ListPrincipalsRequest): Uint8Array {
+  return encodeValue(toListPrincipalsRequestCborValue(v));
+}
+
+export function fromListPrincipalsRequestCbor(bytes: Uint8Array): ListPrincipalsRequest {
+  return fromListPrincipalsRequestCborValue(decode(bytes));
+}
+
+export function toListPrincipalsResponseCborValue(v: ListPrincipalsResponse): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  csilMap.set("principals", v.principals.map((csilE): CborValue => toPrincipalSummaryCborValue(csilE)));
+  return csilMap;
+}
+
+export function fromListPrincipalsResponseCborValue(value: CborValue): ListPrincipalsResponse {
+  return {
+    principals: asArray(requireKey(value, "principals")).map((csilE) => fromPrincipalSummaryCborValue(csilE)),
+  };
+}
+
+export function toListPrincipalsResponseCbor(v: ListPrincipalsResponse): Uint8Array {
+  return encodeValue(toListPrincipalsResponseCborValue(v));
+}
+
+export function fromListPrincipalsResponseCbor(bytes: Uint8Array): ListPrincipalsResponse {
+  return fromListPrincipalsResponseCborValue(decode(bytes));
+}
+
+export function toGetPrincipalRequestCborValue(v: GetPrincipalRequest): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  csilMap.set("org_id", v.orgId);
+  csilMap.set("principal_id", v.principalId);
+  return csilMap;
+}
+
+export function fromGetPrincipalRequestCborValue(value: CborValue): GetPrincipalRequest {
+  return {
+    orgId: asString(requireKey(value, "org_id")),
+    principalId: asString(requireKey(value, "principal_id")),
+  };
+}
+
+export function toGetPrincipalRequestCbor(v: GetPrincipalRequest): Uint8Array {
+  return encodeValue(toGetPrincipalRequestCborValue(v));
+}
+
+export function fromGetPrincipalRequestCbor(bytes: Uint8Array): GetPrincipalRequest {
+  return fromGetPrincipalRequestCborValue(decode(bytes));
+}
+
+export function toGetPrincipalResponseCborValue(v: GetPrincipalResponse): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  csilMap.set("principal", toPrincipalDetailCborValue(v.principal));
+  return csilMap;
+}
+
+export function fromGetPrincipalResponseCborValue(value: CborValue): GetPrincipalResponse {
+  return {
+    principal: fromPrincipalDetailCborValue(requireKey(value, "principal")),
+  };
+}
+
+export function toGetPrincipalResponseCbor(v: GetPrincipalResponse): Uint8Array {
+  return encodeValue(toGetPrincipalResponseCborValue(v));
+}
+
+export function fromGetPrincipalResponseCbor(bytes: Uint8Array): GetPrincipalResponse {
+  return fromGetPrincipalResponseCborValue(decode(bytes));
+}
+
+export function toCreateServicePrincipalRequestCborValue(v: CreateServicePrincipalRequest): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  csilMap.set("name", v.name);
+  csilMap.set("org_id", v.orgId);
+  if (v.displayName !== undefined) csilMap.set("display_name", v.displayName);
+  return csilMap;
+}
+
+export function fromCreateServicePrincipalRequestCborValue(value: CborValue): CreateServicePrincipalRequest {
+  return {
+    orgId: asString(requireKey(value, "org_id")),
+    name: asString(requireKey(value, "name")),
+    displayName: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "display_name")),
+  };
+}
+
+export function toCreateServicePrincipalRequestCbor(v: CreateServicePrincipalRequest): Uint8Array {
+  return encodeValue(toCreateServicePrincipalRequestCborValue(v));
+}
+
+export function fromCreateServicePrincipalRequestCbor(bytes: Uint8Array): CreateServicePrincipalRequest {
+  return fromCreateServicePrincipalRequestCborValue(decode(bytes));
+}
+
+export function toCreateServicePrincipalResponseCborValue(v: CreateServicePrincipalResponse): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  csilMap.set("principal", toPrincipalDetailCborValue(v.principal));
+  return csilMap;
+}
+
+export function fromCreateServicePrincipalResponseCborValue(value: CborValue): CreateServicePrincipalResponse {
+  return {
+    principal: fromPrincipalDetailCborValue(requireKey(value, "principal")),
+  };
+}
+
+export function toCreateServicePrincipalResponseCbor(v: CreateServicePrincipalResponse): Uint8Array {
+  return encodeValue(toCreateServicePrincipalResponseCborValue(v));
+}
+
+export function fromCreateServicePrincipalResponseCbor(bytes: Uint8Array): CreateServicePrincipalResponse {
+  return fromCreateServicePrincipalResponseCborValue(decode(bytes));
+}
+
+export function toSetPrincipalStatusRequestCborValue(v: SetPrincipalStatusRequest): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  csilMap.set("org_id", v.orgId);
+  csilMap.set("status", v.status);
+  csilMap.set("principal_id", v.principalId);
+  return csilMap;
+}
+
+export function fromSetPrincipalStatusRequestCborValue(value: CborValue): SetPrincipalStatusRequest {
+  return {
+    orgId: asString(requireKey(value, "org_id")),
+    principalId: asString(requireKey(value, "principal_id")),
+    status: asString(requireKey(value, "status")),
+  };
+}
+
+export function toSetPrincipalStatusRequestCbor(v: SetPrincipalStatusRequest): Uint8Array {
+  return encodeValue(toSetPrincipalStatusRequestCborValue(v));
+}
+
+export function fromSetPrincipalStatusRequestCbor(bytes: Uint8Array): SetPrincipalStatusRequest {
+  return fromSetPrincipalStatusRequestCborValue(decode(bytes));
+}
+
+export function toSetPrincipalStatusResponseCborValue(v: SetPrincipalStatusResponse): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  csilMap.set("principal", toPrincipalDetailCborValue(v.principal));
+  return csilMap;
+}
+
+export function fromSetPrincipalStatusResponseCborValue(value: CborValue): SetPrincipalStatusResponse {
+  return {
+    principal: fromPrincipalDetailCborValue(requireKey(value, "principal")),
+  };
+}
+
+export function toSetPrincipalStatusResponseCbor(v: SetPrincipalStatusResponse): Uint8Array {
+  return encodeValue(toSetPrincipalStatusResponseCborValue(v));
+}
+
+export function fromSetPrincipalStatusResponseCbor(bytes: Uint8Array): SetPrincipalStatusResponse {
+  return fromSetPrincipalStatusResponseCborValue(decode(bytes));
+}
+
+export function toPrincipalIdentityRequestCborValue(v: PrincipalIdentityRequest): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  csilMap.set("org_id", v.orgId);
+  csilMap.set("principal_id", v.principalId);
+  csilMap.set("identity_type", v.identityType);
+  csilMap.set("identity_value", v.identityValue);
+  return csilMap;
+}
+
+export function fromPrincipalIdentityRequestCborValue(value: CborValue): PrincipalIdentityRequest {
+  return {
+    orgId: asString(requireKey(value, "org_id")),
+    principalId: asString(requireKey(value, "principal_id")),
+    identityType: asString(requireKey(value, "identity_type")),
+    identityValue: asString(requireKey(value, "identity_value")),
+  };
+}
+
+export function toPrincipalIdentityRequestCbor(v: PrincipalIdentityRequest): Uint8Array {
+  return encodeValue(toPrincipalIdentityRequestCborValue(v));
+}
+
+export function fromPrincipalIdentityRequestCbor(bytes: Uint8Array): PrincipalIdentityRequest {
+  return fromPrincipalIdentityRequestCborValue(decode(bytes));
+}
+
+export function toPrincipalIdentityResponseCborValue(v: PrincipalIdentityResponse): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  csilMap.set("principal", toPrincipalDetailCborValue(v.principal));
+  return csilMap;
+}
+
+export function fromPrincipalIdentityResponseCborValue(value: CborValue): PrincipalIdentityResponse {
+  return {
+    principal: fromPrincipalDetailCborValue(requireKey(value, "principal")),
+  };
+}
+
+export function toPrincipalIdentityResponseCbor(v: PrincipalIdentityResponse): Uint8Array {
+  return encodeValue(toPrincipalIdentityResponseCborValue(v));
+}
+
+export function fromPrincipalIdentityResponseCbor(bytes: Uint8Array): PrincipalIdentityResponse {
+  return fromPrincipalIdentityResponseCborValue(decode(bytes));
+}
+
+export function toSetPrincipalGroupRequestCborValue(v: SetPrincipalGroupRequest): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  csilMap.set("member", v.member);
+  csilMap.set("org_id", v.orgId);
+  csilMap.set("group_id", v.groupId);
+  csilMap.set("principal_id", v.principalId);
+  return csilMap;
+}
+
+export function fromSetPrincipalGroupRequestCborValue(value: CborValue): SetPrincipalGroupRequest {
+  return {
+    orgId: asString(requireKey(value, "org_id")),
+    principalId: asString(requireKey(value, "principal_id")),
+    groupId: asString(requireKey(value, "group_id")),
+    member: asBool(requireKey(value, "member")),
+  };
+}
+
+export function toSetPrincipalGroupRequestCbor(v: SetPrincipalGroupRequest): Uint8Array {
+  return encodeValue(toSetPrincipalGroupRequestCborValue(v));
+}
+
+export function fromSetPrincipalGroupRequestCbor(bytes: Uint8Array): SetPrincipalGroupRequest {
+  return fromSetPrincipalGroupRequestCborValue(decode(bytes));
+}
+
+export function toSetPrincipalGroupResponseCborValue(v: SetPrincipalGroupResponse): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  csilMap.set("principal", toPrincipalDetailCborValue(v.principal));
+  return csilMap;
+}
+
+export function fromSetPrincipalGroupResponseCborValue(value: CborValue): SetPrincipalGroupResponse {
+  return {
+    principal: fromPrincipalDetailCborValue(requireKey(value, "principal")),
+  };
+}
+
+export function toSetPrincipalGroupResponseCbor(v: SetPrincipalGroupResponse): Uint8Array {
+  return encodeValue(toSetPrincipalGroupResponseCborValue(v));
+}
+
+export function fromSetPrincipalGroupResponseCbor(bytes: Uint8Array): SetPrincipalGroupResponse {
+  return fromSetPrincipalGroupResponseCborValue(decode(bytes));
+}
+
+export function toIssuePrincipalTokenRequestCborValue(v: IssuePrincipalTokenRequest): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  csilMap.set("name", v.name);
+  csilMap.set("org_id", v.orgId);
+  if (v.expiresAt !== undefined) csilMap.set("expires_at", v.expiresAt);
+  csilMap.set("capabilities", v.capabilities);
+  csilMap.set("principal_id", v.principalId);
+  return csilMap;
+}
+
+export function fromIssuePrincipalTokenRequestCborValue(value: CborValue): IssuePrincipalTokenRequest {
+  return {
+    orgId: asString(requireKey(value, "org_id")),
+    principalId: asString(requireKey(value, "principal_id")),
+    name: asString(requireKey(value, "name")),
+    capabilities: asArray(requireKey(value, "capabilities")).map((csilE) => asString(csilE)),
+    expiresAt: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "expires_at")),
+  };
+}
+
+export function toIssuePrincipalTokenRequestCbor(v: IssuePrincipalTokenRequest): Uint8Array {
+  return encodeValue(toIssuePrincipalTokenRequestCborValue(v));
+}
+
+export function fromIssuePrincipalTokenRequestCbor(bytes: Uint8Array): IssuePrincipalTokenRequest {
+  return fromIssuePrincipalTokenRequestCborValue(decode(bytes));
+}
+
+export function toIssuePrincipalTokenResponseCborValue(v: IssuePrincipalTokenResponse): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  csilMap.set("info", toPrincipalTokenEntryCborValue(v.info));
+  csilMap.set("token", v.token);
+  return csilMap;
+}
+
+export function fromIssuePrincipalTokenResponseCborValue(value: CborValue): IssuePrincipalTokenResponse {
+  return {
+    token: asString(requireKey(value, "token")),
+    info: fromPrincipalTokenEntryCborValue(requireKey(value, "info")),
+  };
+}
+
+export function toIssuePrincipalTokenResponseCbor(v: IssuePrincipalTokenResponse): Uint8Array {
+  return encodeValue(toIssuePrincipalTokenResponseCborValue(v));
+}
+
+export function fromIssuePrincipalTokenResponseCbor(bytes: Uint8Array): IssuePrincipalTokenResponse {
+  return fromIssuePrincipalTokenResponseCborValue(decode(bytes));
+}
+
+export function toRevokePrincipalTokenRequestCborValue(v: RevokePrincipalTokenRequest): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  csilMap.set("org_id", v.orgId);
+  csilMap.set("token_id", v.tokenId);
+  csilMap.set("principal_id", v.principalId);
+  return csilMap;
+}
+
+export function fromRevokePrincipalTokenRequestCborValue(value: CborValue): RevokePrincipalTokenRequest {
+  return {
+    orgId: asString(requireKey(value, "org_id")),
+    principalId: asString(requireKey(value, "principal_id")),
+    tokenId: asString(requireKey(value, "token_id")),
+  };
+}
+
+export function toRevokePrincipalTokenRequestCbor(v: RevokePrincipalTokenRequest): Uint8Array {
+  return encodeValue(toRevokePrincipalTokenRequestCborValue(v));
+}
+
+export function fromRevokePrincipalTokenRequestCbor(bytes: Uint8Array): RevokePrincipalTokenRequest {
+  return fromRevokePrincipalTokenRequestCborValue(decode(bytes));
+}
+
+export function toRevokePrincipalTokenResponseCborValue(v: RevokePrincipalTokenResponse): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  csilMap.set("revoked", v.revoked);
+  return csilMap;
+}
+
+export function fromRevokePrincipalTokenResponseCborValue(value: CborValue): RevokePrincipalTokenResponse {
+  return {
+    revoked: asBool(requireKey(value, "revoked")),
+  };
+}
+
+export function toRevokePrincipalTokenResponseCbor(v: RevokePrincipalTokenResponse): Uint8Array {
+  return encodeValue(toRevokePrincipalTokenResponseCborValue(v));
+}
+
+export function fromRevokePrincipalTokenResponseCbor(bytes: Uint8Array): RevokePrincipalTokenResponse {
+  return fromRevokePrincipalTokenResponseCborValue(decode(bytes));
+}
+
+export function toResolvePrincipalRequestCborValue(v: ResolvePrincipalRequest): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  csilMap.set("org_id", v.orgId);
+  csilMap.set("identity_type", v.identityType);
+  csilMap.set("identity_value", v.identityValue);
+  return csilMap;
+}
+
+export function fromResolvePrincipalRequestCborValue(value: CborValue): ResolvePrincipalRequest {
+  return {
+    orgId: asString(requireKey(value, "org_id")),
+    identityType: asString(requireKey(value, "identity_type")),
+    identityValue: asString(requireKey(value, "identity_value")),
+  };
+}
+
+export function toResolvePrincipalRequestCbor(v: ResolvePrincipalRequest): Uint8Array {
+  return encodeValue(toResolvePrincipalRequestCborValue(v));
+}
+
+export function fromResolvePrincipalRequestCbor(bytes: Uint8Array): ResolvePrincipalRequest {
+  return fromResolvePrincipalRequestCborValue(decode(bytes));
+}
+
+export function toResolvePrincipalResponseCborValue(v: ResolvePrincipalResponse): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  csilMap.set("identity", v.identity);
+  csilMap.set("principal", toPrincipalDetailCborValue(v.principal));
+  return csilMap;
+}
+
+export function fromResolvePrincipalResponseCborValue(value: CborValue): ResolvePrincipalResponse {
+  return {
+    principal: fromPrincipalDetailCborValue(requireKey(value, "principal")),
+    identity: asString(requireKey(value, "identity")),
+  };
+}
+
+export function toResolvePrincipalResponseCbor(v: ResolvePrincipalResponse): Uint8Array {
+  return encodeValue(toResolvePrincipalResponseCborValue(v));
+}
+
+export function fromResolvePrincipalResponseCbor(bytes: Uint8Array): ResolvePrincipalResponse {
+  return fromResolvePrincipalResponseCborValue(decode(bytes));
+}
+
+export function toFederationIssuerEntryCborValue(v: FederationIssuerEntry): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  csilMap.set("name", v.name);
+  csilMap.set("status", v.status);
+  csilMap.set("jwks_url", v.jwksUrl);
+  csilMap.set("audiences", v.audiences);
+  csilMap.set("issuer_id", v.issuerId);
+  csilMap.set("algorithms", v.algorithms);
+  csilMap.set("created_at", v.createdAt);
+  csilMap.set("issuer_url", v.issuerUrl);
+  csilMap.set("clock_skew_seconds", v.clockSkewSeconds);
+  return csilMap;
+}
+
+export function fromFederationIssuerEntryCborValue(value: CborValue): FederationIssuerEntry {
+  return {
+    issuerId: asString(requireKey(value, "issuer_id")),
+    name: asString(requireKey(value, "name")),
+    issuerUrl: asString(requireKey(value, "issuer_url")),
+    jwksUrl: asString(requireKey(value, "jwks_url")),
+    audiences: asArray(requireKey(value, "audiences")).map((csilE) => asString(csilE)),
+    algorithms: asArray(requireKey(value, "algorithms")).map((csilE) => asString(csilE)),
+    clockSkewSeconds: asNumber(requireKey(value, "clock_skew_seconds")),
+    status: asString(requireKey(value, "status")),
+    createdAt: asString(requireKey(value, "created_at")),
+  };
+}
+
+export function toFederationIssuerEntryCbor(v: FederationIssuerEntry): Uint8Array {
+  return encodeValue(toFederationIssuerEntryCborValue(v));
+}
+
+export function fromFederationIssuerEntryCbor(bytes: Uint8Array): FederationIssuerEntry {
+  return fromFederationIssuerEntryCborValue(decode(bytes));
+}
+
+export function toFederationConditionEntryCborValue(v: FederationConditionEntry): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  csilMap.set("op", v.op);
+  csilMap.set("claim", v.claim);
+  csilMap.set("value", v.value);
+  return csilMap;
+}
+
+export function fromFederationConditionEntryCborValue(value: CborValue): FederationConditionEntry {
+  return {
+    claim: asString(requireKey(value, "claim")),
+    op: asString(requireKey(value, "op")),
+    value: asString(requireKey(value, "value")),
+  };
+}
+
+export function toFederationConditionEntryCbor(v: FederationConditionEntry): Uint8Array {
+  return encodeValue(toFederationConditionEntryCborValue(v));
+}
+
+export function fromFederationConditionEntryCbor(bytes: Uint8Array): FederationConditionEntry {
+  return fromFederationConditionEntryCborValue(decode(bytes));
+}
+
+export function toFederationMappingEntryCborValue(v: FederationMappingEntry): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  csilMap.set("name", v.name);
+  csilMap.set("status", v.status);
+  csilMap.set("issuer_id", v.issuerId);
+  csilMap.set("conditions", v.conditions.map((csilE): CborValue => toFederationConditionEntryCborValue(csilE)));
+  csilMap.set("created_at", v.createdAt);
+  csilMap.set("mapping_id", v.mappingId);
+  csilMap.set("capabilities", v.capabilities);
+  csilMap.set("principal_id", v.principalId);
+  csilMap.set("principal_name", v.principalName);
+  csilMap.set("token_ttl_seconds", v.tokenTtlSeconds);
+  return csilMap;
+}
+
+export function fromFederationMappingEntryCborValue(value: CborValue): FederationMappingEntry {
+  return {
+    mappingId: asString(requireKey(value, "mapping_id")),
+    issuerId: asString(requireKey(value, "issuer_id")),
+    name: asString(requireKey(value, "name")),
+    principalId: asString(requireKey(value, "principal_id")),
+    principalName: asString(requireKey(value, "principal_name")),
+    conditions: asArray(requireKey(value, "conditions")).map((csilE) => fromFederationConditionEntryCborValue(csilE)),
+    capabilities: asArray(requireKey(value, "capabilities")).map((csilE) => asString(csilE)),
+    tokenTtlSeconds: asNumber(requireKey(value, "token_ttl_seconds")),
+    status: asString(requireKey(value, "status")),
+    createdAt: asString(requireKey(value, "created_at")),
+  };
+}
+
+export function toFederationMappingEntryCbor(v: FederationMappingEntry): Uint8Array {
+  return encodeValue(toFederationMappingEntryCborValue(v));
+}
+
+export function fromFederationMappingEntryCbor(bytes: Uint8Array): FederationMappingEntry {
+  return fromFederationMappingEntryCborValue(decode(bytes));
+}
+
+export function toListFederationIssuersRequestCborValue(v: ListFederationIssuersRequest): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  csilMap.set("org_id", v.orgId);
+  return csilMap;
+}
+
+export function fromListFederationIssuersRequestCborValue(value: CborValue): ListFederationIssuersRequest {
+  return {
+    orgId: asString(requireKey(value, "org_id")),
+  };
+}
+
+export function toListFederationIssuersRequestCbor(v: ListFederationIssuersRequest): Uint8Array {
+  return encodeValue(toListFederationIssuersRequestCborValue(v));
+}
+
+export function fromListFederationIssuersRequestCbor(bytes: Uint8Array): ListFederationIssuersRequest {
+  return fromListFederationIssuersRequestCborValue(decode(bytes));
+}
+
+export function toListFederationIssuersResponseCborValue(v: ListFederationIssuersResponse): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  csilMap.set("issuers", v.issuers.map((csilE): CborValue => toFederationIssuerEntryCborValue(csilE)));
+  csilMap.set("mappings", v.mappings.map((csilE): CborValue => toFederationMappingEntryCborValue(csilE)));
+  return csilMap;
+}
+
+export function fromListFederationIssuersResponseCborValue(value: CborValue): ListFederationIssuersResponse {
+  return {
+    issuers: asArray(requireKey(value, "issuers")).map((csilE) => fromFederationIssuerEntryCborValue(csilE)),
+    mappings: asArray(requireKey(value, "mappings")).map((csilE) => fromFederationMappingEntryCborValue(csilE)),
+  };
+}
+
+export function toListFederationIssuersResponseCbor(v: ListFederationIssuersResponse): Uint8Array {
+  return encodeValue(toListFederationIssuersResponseCborValue(v));
+}
+
+export function fromListFederationIssuersResponseCbor(bytes: Uint8Array): ListFederationIssuersResponse {
+  return fromListFederationIssuersResponseCborValue(decode(bytes));
+}
+
+export function toSaveFederationIssuerRequestCborValue(v: SaveFederationIssuerRequest): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  csilMap.set("name", v.name);
+  csilMap.set("org_id", v.orgId);
+  if (v.status !== undefined) csilMap.set("status", v.status);
+  if (v.jwksUrl !== undefined) csilMap.set("jwks_url", v.jwksUrl);
+  csilMap.set("audiences", v.audiences);
+  if (v.issuerId !== undefined) csilMap.set("issuer_id", v.issuerId);
+  if (v.algorithms !== undefined) csilMap.set("algorithms", v.algorithms);
+  csilMap.set("issuer_url", v.issuerUrl);
+  if (v.clockSkewSeconds !== undefined) csilMap.set("clock_skew_seconds", v.clockSkewSeconds);
+  return csilMap;
+}
+
+export function fromSaveFederationIssuerRequestCborValue(value: CborValue): SaveFederationIssuerRequest {
+  return {
+    orgId: asString(requireKey(value, "org_id")),
+    issuerId: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "issuer_id")),
+    name: asString(requireKey(value, "name")),
+    issuerUrl: asString(requireKey(value, "issuer_url")),
+    jwksUrl: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "jwks_url")),
+    audiences: asArray(requireKey(value, "audiences")).map((csilE) => asString(csilE)),
+    algorithms: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asArray(csilV).map((csilE) => asString(csilE)))(mapGet(value, "algorithms")),
+    clockSkewSeconds: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asNumber(csilV))(mapGet(value, "clock_skew_seconds")),
+    status: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "status")),
+  };
+}
+
+export function toSaveFederationIssuerRequestCbor(v: SaveFederationIssuerRequest): Uint8Array {
+  return encodeValue(toSaveFederationIssuerRequestCborValue(v));
+}
+
+export function fromSaveFederationIssuerRequestCbor(bytes: Uint8Array): SaveFederationIssuerRequest {
+  return fromSaveFederationIssuerRequestCborValue(decode(bytes));
+}
+
+export function toSaveFederationIssuerResponseCborValue(v: SaveFederationIssuerResponse): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  csilMap.set("issuer", toFederationIssuerEntryCborValue(v.issuer));
+  return csilMap;
+}
+
+export function fromSaveFederationIssuerResponseCborValue(value: CborValue): SaveFederationIssuerResponse {
+  return {
+    issuer: fromFederationIssuerEntryCborValue(requireKey(value, "issuer")),
+  };
+}
+
+export function toSaveFederationIssuerResponseCbor(v: SaveFederationIssuerResponse): Uint8Array {
+  return encodeValue(toSaveFederationIssuerResponseCborValue(v));
+}
+
+export function fromSaveFederationIssuerResponseCbor(bytes: Uint8Array): SaveFederationIssuerResponse {
+  return fromSaveFederationIssuerResponseCborValue(decode(bytes));
+}
+
+export function toDeleteFederationIssuerRequestCborValue(v: DeleteFederationIssuerRequest): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  csilMap.set("org_id", v.orgId);
+  csilMap.set("issuer_id", v.issuerId);
+  return csilMap;
+}
+
+export function fromDeleteFederationIssuerRequestCborValue(value: CborValue): DeleteFederationIssuerRequest {
+  return {
+    orgId: asString(requireKey(value, "org_id")),
+    issuerId: asString(requireKey(value, "issuer_id")),
+  };
+}
+
+export function toDeleteFederationIssuerRequestCbor(v: DeleteFederationIssuerRequest): Uint8Array {
+  return encodeValue(toDeleteFederationIssuerRequestCborValue(v));
+}
+
+export function fromDeleteFederationIssuerRequestCbor(bytes: Uint8Array): DeleteFederationIssuerRequest {
+  return fromDeleteFederationIssuerRequestCborValue(decode(bytes));
+}
+
+export function toDeleteFederationIssuerResponseCborValue(v: DeleteFederationIssuerResponse): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  csilMap.set("deleted", v.deleted);
+  return csilMap;
+}
+
+export function fromDeleteFederationIssuerResponseCborValue(value: CborValue): DeleteFederationIssuerResponse {
+  return {
+    deleted: asBool(requireKey(value, "deleted")),
+  };
+}
+
+export function toDeleteFederationIssuerResponseCbor(v: DeleteFederationIssuerResponse): Uint8Array {
+  return encodeValue(toDeleteFederationIssuerResponseCborValue(v));
+}
+
+export function fromDeleteFederationIssuerResponseCbor(bytes: Uint8Array): DeleteFederationIssuerResponse {
+  return fromDeleteFederationIssuerResponseCborValue(decode(bytes));
+}
+
+export function toSaveFederationMappingRequestCborValue(v: SaveFederationMappingRequest): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  csilMap.set("name", v.name);
+  csilMap.set("org_id", v.orgId);
+  if (v.status !== undefined) csilMap.set("status", v.status);
+  csilMap.set("issuer_id", v.issuerId);
+  csilMap.set("conditions", v.conditions.map((csilE): CborValue => toFederationConditionEntryCborValue(csilE)));
+  if (v.mappingId !== undefined) csilMap.set("mapping_id", v.mappingId);
+  csilMap.set("capabilities", v.capabilities);
+  csilMap.set("principal_id", v.principalId);
+  if (v.tokenTtlSeconds !== undefined) csilMap.set("token_ttl_seconds", v.tokenTtlSeconds);
+  return csilMap;
+}
+
+export function fromSaveFederationMappingRequestCborValue(value: CborValue): SaveFederationMappingRequest {
+  return {
+    orgId: asString(requireKey(value, "org_id")),
+    issuerId: asString(requireKey(value, "issuer_id")),
+    mappingId: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "mapping_id")),
+    name: asString(requireKey(value, "name")),
+    principalId: asString(requireKey(value, "principal_id")),
+    conditions: asArray(requireKey(value, "conditions")).map((csilE) => fromFederationConditionEntryCborValue(csilE)),
+    capabilities: asArray(requireKey(value, "capabilities")).map((csilE) => asString(csilE)),
+    tokenTtlSeconds: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asNumber(csilV))(mapGet(value, "token_ttl_seconds")),
+    status: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "status")),
+  };
+}
+
+export function toSaveFederationMappingRequestCbor(v: SaveFederationMappingRequest): Uint8Array {
+  return encodeValue(toSaveFederationMappingRequestCborValue(v));
+}
+
+export function fromSaveFederationMappingRequestCbor(bytes: Uint8Array): SaveFederationMappingRequest {
+  return fromSaveFederationMappingRequestCborValue(decode(bytes));
+}
+
+export function toSaveFederationMappingResponseCborValue(v: SaveFederationMappingResponse): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  csilMap.set("mapping", toFederationMappingEntryCborValue(v.mapping));
+  return csilMap;
+}
+
+export function fromSaveFederationMappingResponseCborValue(value: CborValue): SaveFederationMappingResponse {
+  return {
+    mapping: fromFederationMappingEntryCborValue(requireKey(value, "mapping")),
+  };
+}
+
+export function toSaveFederationMappingResponseCbor(v: SaveFederationMappingResponse): Uint8Array {
+  return encodeValue(toSaveFederationMappingResponseCborValue(v));
+}
+
+export function fromSaveFederationMappingResponseCbor(bytes: Uint8Array): SaveFederationMappingResponse {
+  return fromSaveFederationMappingResponseCborValue(decode(bytes));
+}
+
+export function toDeleteFederationMappingRequestCborValue(v: DeleteFederationMappingRequest): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  csilMap.set("org_id", v.orgId);
+  csilMap.set("mapping_id", v.mappingId);
+  return csilMap;
+}
+
+export function fromDeleteFederationMappingRequestCborValue(value: CborValue): DeleteFederationMappingRequest {
+  return {
+    orgId: asString(requireKey(value, "org_id")),
+    mappingId: asString(requireKey(value, "mapping_id")),
+  };
+}
+
+export function toDeleteFederationMappingRequestCbor(v: DeleteFederationMappingRequest): Uint8Array {
+  return encodeValue(toDeleteFederationMappingRequestCborValue(v));
+}
+
+export function fromDeleteFederationMappingRequestCbor(bytes: Uint8Array): DeleteFederationMappingRequest {
+  return fromDeleteFederationMappingRequestCborValue(decode(bytes));
+}
+
+export function toDeleteFederationMappingResponseCborValue(v: DeleteFederationMappingResponse): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  csilMap.set("deleted", v.deleted);
+  return csilMap;
+}
+
+export function fromDeleteFederationMappingResponseCborValue(value: CborValue): DeleteFederationMappingResponse {
+  return {
+    deleted: asBool(requireKey(value, "deleted")),
+  };
+}
+
+export function toDeleteFederationMappingResponseCbor(v: DeleteFederationMappingResponse): Uint8Array {
+  return encodeValue(toDeleteFederationMappingResponseCborValue(v));
+}
+
+export function fromDeleteFederationMappingResponseCbor(bytes: Uint8Array): DeleteFederationMappingResponse {
+  return fromDeleteFederationMappingResponseCborValue(decode(bytes));
+}
+
+export function toRefClassFactsCborValue(v: RefClassFacts): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  if (v.tag !== undefined) csilMap.set("tag", v.tag);
+  if (v.isPr !== undefined) csilMap.set("is_pr", v.isPr);
+  if (v.branch !== undefined) csilMap.set("branch", v.branch);
+  if (v.source !== undefined) csilMap.set("source", v.source);
+  if (v.isFork !== undefined) csilMap.set("is_fork", v.isFork);
+  if (v.eventType !== undefined) csilMap.set("event_type", v.eventType);
+  if (v.baseBranch !== undefined) csilMap.set("base_branch", v.baseBranch);
+  if (v.headBranch !== undefined) csilMap.set("head_branch", v.headBranch);
+  if (v.defaultBranch !== undefined) csilMap.set("default_branch", v.defaultBranch);
+  if (v.isDefaultBranch !== undefined) csilMap.set("is_default_branch", v.isDefaultBranch);
+  return csilMap;
+}
+
+export function fromRefClassFactsCborValue(value: CborValue): RefClassFacts {
+  return {
+    source: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "source")),
+    eventType: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "event_type")),
+    branch: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "branch")),
+    headBranch: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "head_branch")),
+    tag: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "tag")),
+    baseBranch: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "base_branch")),
+    defaultBranch: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "default_branch")),
+    isPr: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asBool(csilV))(mapGet(value, "is_pr")),
+    isFork: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asBool(csilV))(mapGet(value, "is_fork")),
+    isDefaultBranch: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asBool(csilV))(mapGet(value, "is_default_branch")),
+  };
+}
+
+export function toRefClassFactsCbor(v: RefClassFacts): Uint8Array {
+  return encodeValue(toRefClassFactsCborValue(v));
+}
+
+export function fromRefClassFactsCbor(bytes: Uint8Array): RefClassFacts {
+  return fromRefClassFactsCborValue(decode(bytes));
+}
+
+export function toRefClassReasonCborValue(v: RefClassReason): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  csilMap.set("class", v.class);
+  csilMap.set("scope", v.scope);
+  csilMap.set("rule_id", v.ruleId);
+  if (v.ruleName !== undefined) csilMap.set("rule_name", v.ruleName);
+  return csilMap;
+}
+
+export function fromRefClassReasonCborValue(value: CborValue): RefClassReason {
+  return {
+    class: asString(requireKey(value, "class")),
+    ruleId: asString(requireKey(value, "rule_id")),
+    ruleName: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "rule_name")),
+    scope: asString(requireKey(value, "scope")),
+  };
+}
+
+export function toRefClassReasonCbor(v: RefClassReason): Uint8Array {
+  return encodeValue(toRefClassReasonCborValue(v));
+}
+
+export function fromRefClassReasonCbor(bytes: Uint8Array): RefClassReason {
+  return fromRefClassReasonCborValue(decode(bytes));
+}
+
+export function toRefClassRuleCborValue(v: RefClassRule): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  csilMap.set("name", v.name);
+  if (v.isPr !== undefined) csilMap.set("is_pr", v.isPr);
+  csilMap.set("classes", v.classes);
+  csilMap.set("enabled", v.enabled);
+  if (v.isFork !== undefined) csilMap.set("is_fork", v.isFork);
+  if (v.ruleId !== undefined) csilMap.set("rule_id", v.ruleId);
+  csilMap.set("position", v.position);
+  if (v.tagGlob !== undefined) csilMap.set("tag_glob", v.tagGlob);
+  if (v.createdAt !== undefined) csilMap.set("created_at", v.createdAt);
+  if (v.projectId !== undefined) csilMap.set("project_id", v.projectId);
+  if (v.updatedAt !== undefined) csilMap.set("updated_at", v.updatedAt);
+  if (v.branchGlob !== undefined) csilMap.set("branch_glob", v.branchGlob);
+  if (v.description !== undefined) csilMap.set("description", v.description);
+  if (v.eventTypes !== undefined) csilMap.set("event_types", v.eventTypes);
+  if (v.baseBranchGlob !== undefined) csilMap.set("base_branch_glob", v.baseBranchGlob);
+  if (v.isDefaultBranch !== undefined) csilMap.set("is_default_branch", v.isDefaultBranch);
+  return csilMap;
+}
+
+export function fromRefClassRuleCborValue(value: CborValue): RefClassRule {
+  return {
+    ruleId: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "rule_id")),
+    projectId: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "project_id")),
+    name: asString(requireKey(value, "name")),
+    position: asNumber(requireKey(value, "position")),
+    description: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "description")),
+    eventTypes: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asArray(csilV).map((csilE) => asString(csilE)))(mapGet(value, "event_types")),
+    branchGlob: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "branch_glob")),
+    tagGlob: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "tag_glob")),
+    baseBranchGlob: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "base_branch_glob")),
+    isPr: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asBool(csilV))(mapGet(value, "is_pr")),
+    isFork: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asBool(csilV))(mapGet(value, "is_fork")),
+    isDefaultBranch: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asBool(csilV))(mapGet(value, "is_default_branch")),
+    classes: asArray(requireKey(value, "classes")).map((csilE) => asString(csilE)),
+    enabled: asBool(requireKey(value, "enabled")),
+    createdAt: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "created_at")),
+    updatedAt: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "updated_at")),
+  };
+}
+
+export function toRefClassRuleCbor(v: RefClassRule): Uint8Array {
+  return encodeValue(toRefClassRuleCborValue(v));
+}
+
+export function fromRefClassRuleCbor(bytes: Uint8Array): RefClassRule {
+  return fromRefClassRuleCborValue(decode(bytes));
+}
+
+export function toRefClassBuiltinCborValue(v: RefClassBuiltin): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  csilMap.set("classes", v.classes);
+  csilMap.set("rule_id", v.ruleId);
+  return csilMap;
+}
+
+export function fromRefClassBuiltinCborValue(value: CborValue): RefClassBuiltin {
+  return {
+    ruleId: asString(requireKey(value, "rule_id")),
+    classes: asArray(requireKey(value, "classes")).map((csilE) => asString(csilE)),
+  };
+}
+
+export function toRefClassBuiltinCbor(v: RefClassBuiltin): Uint8Array {
+  return encodeValue(toRefClassBuiltinCborValue(v));
+}
+
+export function fromRefClassBuiltinCbor(bytes: Uint8Array): RefClassBuiltin {
+  return fromRefClassBuiltinCborValue(decode(bytes));
+}
+
+export function toRefClassRuleCheckCborValue(v: RefClassRuleCheck): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  csilMap.set("name", v.name);
+  csilMap.set("scope", v.scope);
+  csilMap.set("classes", v.classes);
+  csilMap.set("enabled", v.enabled);
+  csilMap.set("matched", v.matched);
+  csilMap.set("rule_id", v.ruleId);
+  return csilMap;
+}
+
+export function fromRefClassRuleCheckCborValue(value: CborValue): RefClassRuleCheck {
+  return {
+    ruleId: asString(requireKey(value, "rule_id")),
+    name: asString(requireKey(value, "name")),
+    scope: asString(requireKey(value, "scope")),
+    enabled: asBool(requireKey(value, "enabled")),
+    matched: asBool(requireKey(value, "matched")),
+    classes: asArray(requireKey(value, "classes")).map((csilE) => asString(csilE)),
+  };
+}
+
+export function toRefClassRuleCheckCbor(v: RefClassRuleCheck): Uint8Array {
+  return encodeValue(toRefClassRuleCheckCborValue(v));
+}
+
+export function fromRefClassRuleCheckCbor(bytes: Uint8Array): RefClassRuleCheck {
+  return fromRefClassRuleCheckCborValue(decode(bytes));
+}
+
+export function toListRefClassRulesRequestCborValue(v: ListRefClassRulesRequest): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  if (v.projectId !== undefined) csilMap.set("project_id", v.projectId);
+  csilMap.set("organization", v.organization);
+  return csilMap;
+}
+
+export function fromListRefClassRulesRequestCborValue(value: CborValue): ListRefClassRulesRequest {
+  return {
+    organization: asString(requireKey(value, "organization")),
+    projectId: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "project_id")),
+  };
+}
+
+export function toListRefClassRulesRequestCbor(v: ListRefClassRulesRequest): Uint8Array {
+  return encodeValue(toListRefClassRulesRequestCborValue(v));
+}
+
+export function fromListRefClassRulesRequestCbor(bytes: Uint8Array): ListRefClassRulesRequest {
+  return fromListRefClassRulesRequestCborValue(decode(bytes));
+}
+
+export function toListRefClassRulesResponseCborValue(v: ListRefClassRulesResponse): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  csilMap.set("rules", v.rules.map((csilE): CborValue => toRefClassRuleCborValue(csilE)));
+  csilMap.set("builtin", v.builtin.map((csilE): CborValue => toRefClassBuiltinCborValue(csilE)));
+  csilMap.set("inherited", v.inherited.map((csilE): CborValue => toRefClassRuleCborValue(csilE)));
+  csilMap.set("can_manage", v.canManage);
+  return csilMap;
+}
+
+export function fromListRefClassRulesResponseCborValue(value: CborValue): ListRefClassRulesResponse {
+  return {
+    rules: asArray(requireKey(value, "rules")).map((csilE) => fromRefClassRuleCborValue(csilE)),
+    inherited: asArray(requireKey(value, "inherited")).map((csilE) => fromRefClassRuleCborValue(csilE)),
+    builtin: asArray(requireKey(value, "builtin")).map((csilE) => fromRefClassBuiltinCborValue(csilE)),
+    canManage: asBool(requireKey(value, "can_manage")),
+  };
+}
+
+export function toListRefClassRulesResponseCbor(v: ListRefClassRulesResponse): Uint8Array {
+  return encodeValue(toListRefClassRulesResponseCborValue(v));
+}
+
+export function fromListRefClassRulesResponseCbor(bytes: Uint8Array): ListRefClassRulesResponse {
+  return fromListRefClassRulesResponseCborValue(decode(bytes));
+}
+
+export function toPutRefClassRuleRequestCborValue(v: PutRefClassRuleRequest): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  csilMap.set("rule", toRefClassRuleCborValue(v.rule));
+  if (v.projectId !== undefined) csilMap.set("project_id", v.projectId);
+  csilMap.set("organization", v.organization);
+  return csilMap;
+}
+
+export function fromPutRefClassRuleRequestCborValue(value: CborValue): PutRefClassRuleRequest {
+  return {
+    organization: asString(requireKey(value, "organization")),
+    projectId: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "project_id")),
+    rule: fromRefClassRuleCborValue(requireKey(value, "rule")),
+  };
+}
+
+export function toPutRefClassRuleRequestCbor(v: PutRefClassRuleRequest): Uint8Array {
+  return encodeValue(toPutRefClassRuleRequestCborValue(v));
+}
+
+export function fromPutRefClassRuleRequestCbor(bytes: Uint8Array): PutRefClassRuleRequest {
+  return fromPutRefClassRuleRequestCborValue(decode(bytes));
+}
+
+export function toPutRefClassRuleResponseCborValue(v: PutRefClassRuleResponse): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  csilMap.set("rule", toRefClassRuleCborValue(v.rule));
+  return csilMap;
+}
+
+export function fromPutRefClassRuleResponseCborValue(value: CborValue): PutRefClassRuleResponse {
+  return {
+    rule: fromRefClassRuleCborValue(requireKey(value, "rule")),
+  };
+}
+
+export function toPutRefClassRuleResponseCbor(v: PutRefClassRuleResponse): Uint8Array {
+  return encodeValue(toPutRefClassRuleResponseCborValue(v));
+}
+
+export function fromPutRefClassRuleResponseCbor(bytes: Uint8Array): PutRefClassRuleResponse {
+  return fromPutRefClassRuleResponseCborValue(decode(bytes));
+}
+
+export function toDeleteRefClassRuleRequestCborValue(v: DeleteRefClassRuleRequest): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  csilMap.set("name", v.name);
+  if (v.projectId !== undefined) csilMap.set("project_id", v.projectId);
+  csilMap.set("organization", v.organization);
+  return csilMap;
+}
+
+export function fromDeleteRefClassRuleRequestCborValue(value: CborValue): DeleteRefClassRuleRequest {
+  return {
+    organization: asString(requireKey(value, "organization")),
+    projectId: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "project_id")),
+    name: asString(requireKey(value, "name")),
+  };
+}
+
+export function toDeleteRefClassRuleRequestCbor(v: DeleteRefClassRuleRequest): Uint8Array {
+  return encodeValue(toDeleteRefClassRuleRequestCborValue(v));
+}
+
+export function fromDeleteRefClassRuleRequestCbor(bytes: Uint8Array): DeleteRefClassRuleRequest {
+  return fromDeleteRefClassRuleRequestCborValue(decode(bytes));
+}
+
+export function toDeleteRefClassRuleResponseCborValue(v: DeleteRefClassRuleResponse): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  csilMap.set("deleted", v.deleted);
+  return csilMap;
+}
+
+export function fromDeleteRefClassRuleResponseCborValue(value: CborValue): DeleteRefClassRuleResponse {
+  return {
+    deleted: asBool(requireKey(value, "deleted")),
+  };
+}
+
+export function toDeleteRefClassRuleResponseCbor(v: DeleteRefClassRuleResponse): Uint8Array {
+  return encodeValue(toDeleteRefClassRuleResponseCborValue(v));
+}
+
+export function fromDeleteRefClassRuleResponseCbor(bytes: Uint8Array): DeleteRefClassRuleResponse {
+  return fromDeleteRefClassRuleResponseCborValue(decode(bytes));
+}
+
+export function toExplainRefClassesRequestCborValue(v: ExplainRefClassesRequest): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  if (v.facts !== undefined) csilMap.set("facts", toRefClassFactsCborValue(v.facts));
+  if (v.eventId !== undefined) csilMap.set("event_id", v.eventId);
+  if (v.projectId !== undefined) csilMap.set("project_id", v.projectId);
+  csilMap.set("organization", v.organization);
+  return csilMap;
+}
+
+export function fromExplainRefClassesRequestCborValue(value: CborValue): ExplainRefClassesRequest {
+  return {
+    organization: asString(requireKey(value, "organization")),
+    projectId: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "project_id")),
+    eventId: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "event_id")),
+    facts: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : fromRefClassFactsCborValue(csilV))(mapGet(value, "facts")),
+  };
+}
+
+export function toExplainRefClassesRequestCbor(v: ExplainRefClassesRequest): Uint8Array {
+  return encodeValue(toExplainRefClassesRequestCborValue(v));
+}
+
+export function fromExplainRefClassesRequestCbor(bytes: Uint8Array): ExplainRefClassesRequest {
+  return fromExplainRefClassesRequestCborValue(decode(bytes));
+}
+
+export function toExplainRefClassesResponseCborValue(v: ExplainRefClassesResponse): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  csilMap.set("facts", toRefClassFactsCborValue(v.facts));
+  csilMap.set("rules", v.rules.map((csilE): CborValue => toRefClassRuleCheckCborValue(csilE)));
+  csilMap.set("classes", v.classes);
+  csilMap.set("reasons", v.reasons.map((csilE): CborValue => toRefClassReasonCborValue(csilE)));
+  csilMap.set("rule_ids", v.ruleIds);
+  if (v.storedClasses !== undefined) csilMap.set("stored_classes", v.storedClasses);
+  return csilMap;
+}
+
+export function fromExplainRefClassesResponseCborValue(value: CborValue): ExplainRefClassesResponse {
+  return {
+    facts: fromRefClassFactsCborValue(requireKey(value, "facts")),
+    classes: asArray(requireKey(value, "classes")).map((csilE) => asString(csilE)),
+    reasons: asArray(requireKey(value, "reasons")).map((csilE) => fromRefClassReasonCborValue(csilE)),
+    ruleIds: asArray(requireKey(value, "rule_ids")).map((csilE) => asString(csilE)),
+    rules: asArray(requireKey(value, "rules")).map((csilE) => fromRefClassRuleCheckCborValue(csilE)),
+    storedClasses: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asArray(csilV).map((csilE) => asString(csilE)))(mapGet(value, "stored_classes")),
+  };
+}
+
+export function toExplainRefClassesResponseCbor(v: ExplainRefClassesResponse): Uint8Array {
+  return encodeValue(toExplainRefClassesResponseCborValue(v));
+}
+
+export function fromExplainRefClassesResponseCbor(bytes: Uint8Array): ExplainRefClassesResponse {
+  return fromExplainRefClassesResponseCborValue(decode(bytes));
+}
+
+export function toImageAliasSummaryCborValue(v: ImageAliasSummary): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  csilMap.set("os", v.os);
+  csilMap.set("arch", v.arch);
+  csilMap.set("kind", v.kind);
+  csilMap.set("name", v.name);
+  csilMap.set("scope", v.scope);
+  csilMap.set("org_id", v.orgId);
+  csilMap.set("alias_id", v.aliasId);
+  csilMap.set("active_ref", v.activeRef);
+  csilMap.set("created_at", v.createdAt);
+  if (v.projectId !== undefined) csilMap.set("project_id", v.projectId);
+  csilMap.set("updated_at", v.updatedAt);
+  csilMap.set("updated_by", v.updatedBy);
+  if (v.pendingRef !== undefined) csilMap.set("pending_ref", v.pendingRef);
+  csilMap.set("active_digest", v.activeDigest);
+  if (v.pendingSince !== undefined) csilMap.set("pending_since", v.pendingSince);
+  if (v.pendingDigest !== undefined) csilMap.set("pending_digest", v.pendingDigest);
+  csilMap.set("characteristics", v.characteristics.map((csilE): CborValue => toCharacteristicEntryCborValue(csilE)));
+  return csilMap;
+}
+
+export function fromImageAliasSummaryCborValue(value: CborValue): ImageAliasSummary {
+  return {
+    aliasId: asString(requireKey(value, "alias_id")),
+    orgId: asString(requireKey(value, "org_id")),
+    projectId: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "project_id")),
+    scope: asString(requireKey(value, "scope")),
+    name: asString(requireKey(value, "name")),
+    kind: asString(requireKey(value, "kind")),
+    os: asString(requireKey(value, "os")),
+    arch: asString(requireKey(value, "arch")),
+    characteristics: asArray(requireKey(value, "characteristics")).map((csilE) => fromCharacteristicEntryCborValue(csilE)),
+    activeRef: asString(requireKey(value, "active_ref")),
+    activeDigest: asString(requireKey(value, "active_digest")),
+    pendingRef: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "pending_ref")),
+    pendingDigest: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "pending_digest")),
+    pendingSince: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "pending_since")),
+    createdAt: asString(requireKey(value, "created_at")),
+    updatedAt: asString(requireKey(value, "updated_at")),
+    updatedBy: asString(requireKey(value, "updated_by")),
+  };
+}
+
+export function toImageAliasSummaryCbor(v: ImageAliasSummary): Uint8Array {
+  return encodeValue(toImageAliasSummaryCborValue(v));
+}
+
+export function fromImageAliasSummaryCbor(bytes: Uint8Array): ImageAliasSummary {
+  return fromImageAliasSummaryCborValue(decode(bytes));
+}
+
+export function toListImageAliasesRequestCborValue(v: ListImageAliasesRequest): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  if (v.projectId !== undefined) csilMap.set("project_id", v.projectId);
+  csilMap.set("organization", v.organization);
+  return csilMap;
+}
+
+export function fromListImageAliasesRequestCborValue(value: CborValue): ListImageAliasesRequest {
+  return {
+    organization: asString(requireKey(value, "organization")),
+    projectId: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "project_id")),
+  };
+}
+
+export function toListImageAliasesRequestCbor(v: ListImageAliasesRequest): Uint8Array {
+  return encodeValue(toListImageAliasesRequestCborValue(v));
+}
+
+export function fromListImageAliasesRequestCbor(bytes: Uint8Array): ListImageAliasesRequest {
+  return fromListImageAliasesRequestCborValue(decode(bytes));
+}
+
+export function toListImageAliasesResponseCborValue(v: ListImageAliasesResponse): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  csilMap.set("aliases", v.aliases.map((csilE): CborValue => toImageAliasSummaryCborValue(csilE)));
+  return csilMap;
+}
+
+export function fromListImageAliasesResponseCborValue(value: CborValue): ListImageAliasesResponse {
+  return {
+    aliases: asArray(requireKey(value, "aliases")).map((csilE) => fromImageAliasSummaryCborValue(csilE)),
+  };
+}
+
+export function toListImageAliasesResponseCbor(v: ListImageAliasesResponse): Uint8Array {
+  return encodeValue(toListImageAliasesResponseCborValue(v));
+}
+
+export function fromListImageAliasesResponseCbor(bytes: Uint8Array): ListImageAliasesResponse {
+  return fromListImageAliasesResponseCborValue(decode(bytes));
+}
+
+export function toGetImageAliasRequestCborValue(v: GetImageAliasRequest): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  csilMap.set("name", v.name);
+  if (v.projectId !== undefined) csilMap.set("project_id", v.projectId);
+  csilMap.set("organization", v.organization);
+  return csilMap;
+}
+
+export function fromGetImageAliasRequestCborValue(value: CborValue): GetImageAliasRequest {
+  return {
+    organization: asString(requireKey(value, "organization")),
+    projectId: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "project_id")),
+    name: asString(requireKey(value, "name")),
+  };
+}
+
+export function toGetImageAliasRequestCbor(v: GetImageAliasRequest): Uint8Array {
+  return encodeValue(toGetImageAliasRequestCborValue(v));
+}
+
+export function fromGetImageAliasRequestCbor(bytes: Uint8Array): GetImageAliasRequest {
+  return fromGetImageAliasRequestCborValue(decode(bytes));
+}
+
+export function toGetImageAliasResponseCborValue(v: GetImageAliasResponse): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  csilMap.set("alias", toImageAliasSummaryCborValue(v.alias));
+  return csilMap;
+}
+
+export function fromGetImageAliasResponseCborValue(value: CborValue): GetImageAliasResponse {
+  return {
+    alias: fromImageAliasSummaryCborValue(requireKey(value, "alias")),
+  };
+}
+
+export function toGetImageAliasResponseCbor(v: GetImageAliasResponse): Uint8Array {
+  return encodeValue(toGetImageAliasResponseCborValue(v));
+}
+
+export function fromGetImageAliasResponseCbor(bytes: Uint8Array): GetImageAliasResponse {
+  return fromGetImageAliasResponseCborValue(decode(bytes));
+}
+
+export function toSetImageAliasRequestCborValue(v: SetImageAliasRequest): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  if (v.os !== undefined) csilMap.set("os", v.os);
+  csilMap.set("ref", v.ref);
+  if (v.arch !== undefined) csilMap.set("arch", v.arch);
+  if (v.kind !== undefined) csilMap.set("kind", v.kind);
+  csilMap.set("name", v.name);
+  if (v.force !== undefined) csilMap.set("force", v.force);
+  if (v.projectId !== undefined) csilMap.set("project_id", v.projectId);
+  csilMap.set("organization", v.organization);
+  if (v.characteristics !== undefined) csilMap.set("characteristics", v.characteristics.map((csilE): CborValue => toCharacteristicEntryCborValue(csilE)));
+  return csilMap;
+}
+
+export function fromSetImageAliasRequestCborValue(value: CborValue): SetImageAliasRequest {
+  return {
+    organization: asString(requireKey(value, "organization")),
+    projectId: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "project_id")),
+    name: asString(requireKey(value, "name")),
+    ref: asString(requireKey(value, "ref")),
+    kind: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "kind")),
+    os: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "os")),
+    arch: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "arch")),
+    characteristics: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asArray(csilV).map((csilE) => fromCharacteristicEntryCborValue(csilE)))(mapGet(value, "characteristics")),
+    force: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asBool(csilV))(mapGet(value, "force")),
+  };
+}
+
+export function toSetImageAliasRequestCbor(v: SetImageAliasRequest): Uint8Array {
+  return encodeValue(toSetImageAliasRequestCborValue(v));
+}
+
+export function fromSetImageAliasRequestCbor(bytes: Uint8Array): SetImageAliasRequest {
+  return fromSetImageAliasRequestCborValue(decode(bytes));
+}
+
+export function toSetImageAliasResponseCborValue(v: SetImageAliasResponse): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  csilMap.set("alias", toImageAliasSummaryCborValue(v.alias));
+  csilMap.set("outcome", v.outcome);
+  return csilMap;
+}
+
+export function fromSetImageAliasResponseCborValue(value: CborValue): SetImageAliasResponse {
+  return {
+    alias: fromImageAliasSummaryCborValue(requireKey(value, "alias")),
+    outcome: asString(requireKey(value, "outcome")),
+  };
+}
+
+export function toSetImageAliasResponseCbor(v: SetImageAliasResponse): Uint8Array {
+  return encodeValue(toSetImageAliasResponseCborValue(v));
+}
+
+export function fromSetImageAliasResponseCbor(bytes: Uint8Array): SetImageAliasResponse {
+  return fromSetImageAliasResponseCborValue(decode(bytes));
+}
+
+export function toDeleteImageAliasRequestCborValue(v: DeleteImageAliasRequest): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  csilMap.set("name", v.name);
+  if (v.projectId !== undefined) csilMap.set("project_id", v.projectId);
+  csilMap.set("organization", v.organization);
+  return csilMap;
+}
+
+export function fromDeleteImageAliasRequestCborValue(value: CborValue): DeleteImageAliasRequest {
+  return {
+    organization: asString(requireKey(value, "organization")),
+    projectId: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "project_id")),
+    name: asString(requireKey(value, "name")),
+  };
+}
+
+export function toDeleteImageAliasRequestCbor(v: DeleteImageAliasRequest): Uint8Array {
+  return encodeValue(toDeleteImageAliasRequestCborValue(v));
+}
+
+export function fromDeleteImageAliasRequestCbor(bytes: Uint8Array): DeleteImageAliasRequest {
+  return fromDeleteImageAliasRequestCborValue(decode(bytes));
+}
+
+export function toDeleteImageAliasResponseCborValue(v: DeleteImageAliasResponse): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  csilMap.set("deleted", v.deleted);
+  return csilMap;
+}
+
+export function fromDeleteImageAliasResponseCborValue(value: CborValue): DeleteImageAliasResponse {
+  return {
+    deleted: asBool(requireKey(value, "deleted")),
+  };
+}
+
+export function toDeleteImageAliasResponseCbor(v: DeleteImageAliasResponse): Uint8Array {
+  return encodeValue(toDeleteImageAliasResponseCborValue(v));
+}
+
+export function fromDeleteImageAliasResponseCbor(bytes: Uint8Array): DeleteImageAliasResponse {
+  return fromDeleteImageAliasResponseCborValue(decode(bytes));
+}
+
+export function toImageFailureSummaryCborValue(v: ImageFailureSummary): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  csilMap.set("detail", v.detail);
+  csilMap.set("digest", v.digest);
+  csilMap.set("permanent", v.permanent);
+  return csilMap;
+}
+
+export function fromImageFailureSummaryCborValue(value: CborValue): ImageFailureSummary {
+  return {
+    digest: asString(requireKey(value, "digest")),
+    permanent: asBool(requireKey(value, "permanent")),
+    detail: asString(requireKey(value, "detail")),
+  };
+}
+
+export function toImageFailureSummaryCbor(v: ImageFailureSummary): Uint8Array {
+  return encodeValue(toImageFailureSummaryCborValue(v));
+}
+
+export function fromImageFailureSummaryCbor(bytes: Uint8Array): ImageFailureSummary {
+  return fromImageFailureSummaryCborValue(decode(bytes));
+}
+
+export function toImageRolloutWorkerCborValue(v: ImageRolloutWorker): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  csilMap.set("ready", v.ready);
+  if (v.failed !== undefined) csilMap.set("failed", v.failed.map((csilE): CborValue => toImageFailureSummaryCborValue(csilE)));
+  csilMap.set("online", v.online);
+  csilMap.set("pool_id", v.poolId);
+  if (v.hostname !== undefined) csilMap.set("hostname", v.hostname);
+  csilMap.set("worker_id", v.workerId);
+  csilMap.set("has_active", v.hasActive);
+  csilMap.set("has_pending", v.hasPending);
+  csilMap.set("image_status", v.imageStatus);
+  csilMap.set("image_set_version", v.imageSetVersion);
+  if (v.imageStatusDetail !== undefined) csilMap.set("image_status_detail", v.imageStatusDetail);
+  if (v.imageReportedVersion !== undefined) csilMap.set("image_reported_version", v.imageReportedVersion);
+  return csilMap;
+}
+
+export function fromImageRolloutWorkerCborValue(value: CborValue): ImageRolloutWorker {
+  return {
+    workerId: asString(requireKey(value, "worker_id")),
+    hostname: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "hostname")),
+    poolId: asString(requireKey(value, "pool_id")),
+    online: asBool(requireKey(value, "online")),
+    imageStatus: asString(requireKey(value, "image_status")),
+    imageStatusDetail: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "image_status_detail")),
+    imageSetVersion: asNumber(requireKey(value, "image_set_version")),
+    imageReportedVersion: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asNumber(csilV))(mapGet(value, "image_reported_version")),
+    hasActive: asBool(requireKey(value, "has_active")),
+    hasPending: asBool(requireKey(value, "has_pending")),
+    ready: asBool(requireKey(value, "ready")),
+    failed: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asArray(csilV).map((csilE) => fromImageFailureSummaryCborValue(csilE)))(mapGet(value, "failed")),
+  };
+}
+
+export function toImageRolloutWorkerCbor(v: ImageRolloutWorker): Uint8Array {
+  return encodeValue(toImageRolloutWorkerCborValue(v));
+}
+
+export function fromImageRolloutWorkerCbor(bytes: Uint8Array): ImageRolloutWorker {
+  return fromImageRolloutWorkerCborValue(decode(bytes));
+}
+
+export function toImageRolloutPoolSummaryCborValue(v: ImageRolloutPoolSummary): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  csilMap.set("workers", v.workers);
+  csilMap.set("pool_name", v.poolName);
+  csilMap.set("ready_workers", v.readyWorkers);
+  csilMap.set("failed_workers", v.failedWorkers);
+  csilMap.set("online_workers", v.onlineWorkers);
+  return csilMap;
+}
+
+export function fromImageRolloutPoolSummaryCborValue(value: CborValue): ImageRolloutPoolSummary {
+  return {
+    poolName: asString(requireKey(value, "pool_name")),
+    workers: asNumber(requireKey(value, "workers")),
+    onlineWorkers: asNumber(requireKey(value, "online_workers")),
+    readyWorkers: asNumber(requireKey(value, "ready_workers")),
+    failedWorkers: asNumber(requireKey(value, "failed_workers")),
+  };
+}
+
+export function toImageRolloutPoolSummaryCbor(v: ImageRolloutPoolSummary): Uint8Array {
+  return encodeValue(toImageRolloutPoolSummaryCborValue(v));
+}
+
+export function fromImageRolloutPoolSummaryCbor(bytes: Uint8Array): ImageRolloutPoolSummary {
+  return fromImageRolloutPoolSummaryCborValue(decode(bytes));
+}
+
+export function toImageAliasRolloutCborValue(v: ImageAliasRollout): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  csilMap.set("alias", toImageAliasSummaryCborValue(v.alias));
+  if (v.blocked !== undefined) csilMap.set("blocked", v.blocked);
+  csilMap.set("workers", v.workers.map((csilE): CborValue => toImageRolloutWorkerCborValue(csilE)));
+  if (v.problems !== undefined) csilMap.set("problems", v.problems);
+  csilMap.set("promotable", v.promotable);
+  if (v.otherPools !== undefined) csilMap.set("other_pools", v.otherPools.map((csilE): CborValue => toImageRolloutPoolSummaryCborValue(csilE)));
+  csilMap.set("ready_workers", v.readyWorkers);
+  csilMap.set("online_workers", v.onlineWorkers);
+  return csilMap;
+}
+
+export function fromImageAliasRolloutCborValue(value: CborValue): ImageAliasRollout {
+  return {
+    alias: fromImageAliasSummaryCborValue(requireKey(value, "alias")),
+    workers: asArray(requireKey(value, "workers")).map((csilE) => fromImageRolloutWorkerCborValue(csilE)),
+    onlineWorkers: asNumber(requireKey(value, "online_workers")),
+    readyWorkers: asNumber(requireKey(value, "ready_workers")),
+    promotable: asBool(requireKey(value, "promotable")),
+    blocked: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "blocked")),
+    otherPools: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asArray(csilV).map((csilE) => fromImageRolloutPoolSummaryCborValue(csilE)))(mapGet(value, "other_pools")),
+    problems: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asArray(csilV).map((csilE) => asString(csilE)))(mapGet(value, "problems")),
+  };
+}
+
+export function toImageAliasRolloutCbor(v: ImageAliasRollout): Uint8Array {
+  return encodeValue(toImageAliasRolloutCborValue(v));
+}
+
+export function fromImageAliasRolloutCbor(bytes: Uint8Array): ImageAliasRollout {
+  return fromImageAliasRolloutCborValue(decode(bytes));
+}
+
+export function toGetImageRolloutStatusRequestCborValue(v: GetImageRolloutStatusRequest): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  if (v.name !== undefined) csilMap.set("name", v.name);
+  if (v.projectId !== undefined) csilMap.set("project_id", v.projectId);
+  csilMap.set("organization", v.organization);
+  return csilMap;
+}
+
+export function fromGetImageRolloutStatusRequestCborValue(value: CborValue): GetImageRolloutStatusRequest {
+  return {
+    organization: asString(requireKey(value, "organization")),
+    projectId: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "project_id")),
+    name: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "name")),
+  };
+}
+
+export function toGetImageRolloutStatusRequestCbor(v: GetImageRolloutStatusRequest): Uint8Array {
+  return encodeValue(toGetImageRolloutStatusRequestCborValue(v));
+}
+
+export function fromGetImageRolloutStatusRequestCbor(bytes: Uint8Array): GetImageRolloutStatusRequest {
+  return fromGetImageRolloutStatusRequestCborValue(decode(bytes));
+}
+
+export function toGetImageRolloutStatusResponseCborValue(v: GetImageRolloutStatusResponse): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  csilMap.set("rollouts", v.rollouts.map((csilE): CborValue => toImageAliasRolloutCborValue(csilE)));
+  return csilMap;
+}
+
+export function fromGetImageRolloutStatusResponseCborValue(value: CborValue): GetImageRolloutStatusResponse {
+  return {
+    rollouts: asArray(requireKey(value, "rollouts")).map((csilE) => fromImageAliasRolloutCborValue(csilE)),
+  };
+}
+
+export function toGetImageRolloutStatusResponseCbor(v: GetImageRolloutStatusResponse): Uint8Array {
+  return encodeValue(toGetImageRolloutStatusResponseCborValue(v));
+}
+
+export function fromGetImageRolloutStatusResponseCbor(bytes: Uint8Array): GetImageRolloutStatusResponse {
+  return fromGetImageRolloutStatusResponseCborValue(decode(bytes));
+}
+
+export function toWorkerImageSetEntrySummaryCborValue(v: WorkerImageSetEntrySummary): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  csilMap.set("ref", v.ref);
+  csilMap.set("kind", v.kind);
+  csilMap.set("ready", v.ready);
+  csilMap.set("digest", v.digest);
+  csilMap.set("aliases", v.aliases);
+  if (v.failure !== undefined) csilMap.set("failure", toImageFailureSummaryCborValue(v.failure));
+  if (v.pending !== undefined) csilMap.set("pending", v.pending);
+  return csilMap;
+}
+
+export function fromWorkerImageSetEntrySummaryCborValue(value: CborValue): WorkerImageSetEntrySummary {
+  return {
+    ref: asString(requireKey(value, "ref")),
+    digest: asString(requireKey(value, "digest")),
+    kind: asString(requireKey(value, "kind")),
+    aliases: asArray(requireKey(value, "aliases")).map((csilE) => asString(csilE)),
+    ready: asBool(requireKey(value, "ready")),
+    pending: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asBool(csilV))(mapGet(value, "pending")),
+    failure: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : fromImageFailureSummaryCborValue(csilV))(mapGet(value, "failure")),
+  };
+}
+
+export function toWorkerImageSetEntrySummaryCbor(v: WorkerImageSetEntrySummary): Uint8Array {
+  return encodeValue(toWorkerImageSetEntrySummaryCborValue(v));
+}
+
+export function fromWorkerImageSetEntrySummaryCbor(bytes: Uint8Array): WorkerImageSetEntrySummary {
+  return fromWorkerImageSetEntrySummaryCborValue(decode(bytes));
+}
+
+export function toGetWorkerImageStateRequestCborValue(v: GetWorkerImageStateRequest): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  csilMap.set("worker_id", v.workerId);
+  return csilMap;
+}
+
+export function fromGetWorkerImageStateRequestCborValue(value: CborValue): GetWorkerImageStateRequest {
+  return {
+    workerId: asString(requireKey(value, "worker_id")),
+  };
+}
+
+export function toGetWorkerImageStateRequestCbor(v: GetWorkerImageStateRequest): Uint8Array {
+  return encodeValue(toGetWorkerImageStateRequestCborValue(v));
+}
+
+export function fromGetWorkerImageStateRequestCbor(bytes: Uint8Array): GetWorkerImageStateRequest {
+  return fromGetWorkerImageStateRequestCborValue(decode(bytes));
+}
+
+export function toGetWorkerImageStateResponseCborValue(v: GetWorkerImageStateResponse): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  if (v.state !== undefined) csilMap.set("state", v.state);
+  if (v.failed !== undefined) csilMap.set("failed", v.failed.map((csilE): CborValue => toImageFailureSummaryCborValue(csilE)));
+  csilMap.set("images", v.images.map((csilE): CborValue => toWorkerImageSetEntrySummaryCborValue(csilE)));
+  csilMap.set("worker_id", v.workerId);
+  csilMap.set("image_aware", v.imageAware);
+  if (v.imageStatus !== undefined) csilMap.set("image_status", v.imageStatus);
+  if (v.imageRuntime !== undefined) csilMap.set("image_runtime", v.imageRuntime);
+  csilMap.set("ready_digests", v.readyDigests);
+  csilMap.set("image_set_version", v.imageSetVersion);
+  if (v.imageStatusDetail !== undefined) csilMap.set("image_status_detail", v.imageStatusDetail);
+  if (v.imageReportedVersion !== undefined) csilMap.set("image_reported_version", v.imageReportedVersion);
+  return csilMap;
+}
+
+export function fromGetWorkerImageStateResponseCborValue(value: CborValue): GetWorkerImageStateResponse {
+  return {
+    workerId: asString(requireKey(value, "worker_id")),
+    imageAware: asBool(requireKey(value, "image_aware")),
+    imageRuntime: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "image_runtime")),
+    imageStatus: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "image_status")),
+    imageStatusDetail: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "image_status_detail")),
+    imageSetVersion: asNumber(requireKey(value, "image_set_version")),
+    imageReportedVersion: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asNumber(csilV))(mapGet(value, "image_reported_version")),
+    state: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "state")),
+    readyDigests: asArray(requireKey(value, "ready_digests")).map((csilE) => asString(csilE)),
+    images: asArray(requireKey(value, "images")).map((csilE) => fromWorkerImageSetEntrySummaryCborValue(csilE)),
+    failed: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asArray(csilV).map((csilE) => fromImageFailureSummaryCborValue(csilE)))(mapGet(value, "failed")),
+  };
+}
+
+export function toGetWorkerImageStateResponseCbor(v: GetWorkerImageStateResponse): Uint8Array {
+  return encodeValue(toGetWorkerImageStateResponseCborValue(v));
+}
+
+export function fromGetWorkerImageStateResponseCbor(bytes: Uint8Array): GetWorkerImageStateResponse {
+  return fromGetWorkerImageStateResponseCborValue(decode(bytes));
+}
+
+export function toEnvDefaultEntryCborValue(v: EnvDefaultEntry): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  csilMap.set("key", v.key);
+  csilMap.set("value", v.value);
+  if (v.updatedAt !== undefined) csilMap.set("updated_at", v.updatedAt);
+  return csilMap;
+}
+
+export function fromEnvDefaultEntryCborValue(value: CborValue): EnvDefaultEntry {
+  return {
+    key: asString(requireKey(value, "key")),
+    value: asString(requireKey(value, "value")),
+    updatedAt: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "updated_at")),
+  };
+}
+
+export function toEnvDefaultEntryCbor(v: EnvDefaultEntry): Uint8Array {
+  return encodeValue(toEnvDefaultEntryCborValue(v));
+}
+
+export function fromEnvDefaultEntryCbor(bytes: Uint8Array): EnvDefaultEntry {
+  return fromEnvDefaultEntryCborValue(decode(bytes));
+}
+
+export function toListEnvDefaultsRequestCborValue(v: ListEnvDefaultsRequest): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  if (v.projectId !== undefined) csilMap.set("project_id", v.projectId);
+  csilMap.set("organization", v.organization);
+  if (v.workerClass !== undefined) csilMap.set("worker_class", v.workerClass);
+  return csilMap;
+}
+
+export function fromListEnvDefaultsRequestCborValue(value: CborValue): ListEnvDefaultsRequest {
+  return {
+    organization: asString(requireKey(value, "organization")),
+    workerClass: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "worker_class")),
+    projectId: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "project_id")),
+  };
+}
+
+export function toListEnvDefaultsRequestCbor(v: ListEnvDefaultsRequest): Uint8Array {
+  return encodeValue(toListEnvDefaultsRequestCborValue(v));
+}
+
+export function fromListEnvDefaultsRequestCbor(bytes: Uint8Array): ListEnvDefaultsRequest {
+  return fromListEnvDefaultsRequestCborValue(decode(bytes));
+}
+
+export function toListEnvDefaultsResponseCborValue(v: ListEnvDefaultsResponse): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  csilMap.set("scope", v.scope);
+  csilMap.set("entries", v.entries.map((csilE): CborValue => toEnvDefaultEntryCborValue(csilE)));
+  return csilMap;
+}
+
+export function fromListEnvDefaultsResponseCborValue(value: CborValue): ListEnvDefaultsResponse {
+  return {
+    scope: asString(requireKey(value, "scope")),
+    entries: asArray(requireKey(value, "entries")).map((csilE) => fromEnvDefaultEntryCborValue(csilE)),
+  };
+}
+
+export function toListEnvDefaultsResponseCbor(v: ListEnvDefaultsResponse): Uint8Array {
+  return encodeValue(toListEnvDefaultsResponseCborValue(v));
+}
+
+export function fromListEnvDefaultsResponseCbor(bytes: Uint8Array): ListEnvDefaultsResponse {
+  return fromListEnvDefaultsResponseCborValue(decode(bytes));
+}
+
+export function toPutEnvDefaultRequestCborValue(v: PutEnvDefaultRequest): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  csilMap.set("key", v.key);
+  csilMap.set("value", v.value);
+  if (v.projectId !== undefined) csilMap.set("project_id", v.projectId);
+  csilMap.set("organization", v.organization);
+  if (v.workerClass !== undefined) csilMap.set("worker_class", v.workerClass);
+  return csilMap;
+}
+
+export function fromPutEnvDefaultRequestCborValue(value: CborValue): PutEnvDefaultRequest {
+  return {
+    organization: asString(requireKey(value, "organization")),
+    workerClass: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "worker_class")),
+    projectId: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "project_id")),
+    key: asString(requireKey(value, "key")),
+    value: asString(requireKey(value, "value")),
+  };
+}
+
+export function toPutEnvDefaultRequestCbor(v: PutEnvDefaultRequest): Uint8Array {
+  return encodeValue(toPutEnvDefaultRequestCborValue(v));
+}
+
+export function fromPutEnvDefaultRequestCbor(bytes: Uint8Array): PutEnvDefaultRequest {
+  return fromPutEnvDefaultRequestCborValue(decode(bytes));
+}
+
+export function toPutEnvDefaultResponseCborValue(v: PutEnvDefaultResponse): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  csilMap.set("entry", toEnvDefaultEntryCborValue(v.entry));
+  return csilMap;
+}
+
+export function fromPutEnvDefaultResponseCborValue(value: CborValue): PutEnvDefaultResponse {
+  return {
+    entry: fromEnvDefaultEntryCborValue(requireKey(value, "entry")),
+  };
+}
+
+export function toPutEnvDefaultResponseCbor(v: PutEnvDefaultResponse): Uint8Array {
+  return encodeValue(toPutEnvDefaultResponseCborValue(v));
+}
+
+export function fromPutEnvDefaultResponseCbor(bytes: Uint8Array): PutEnvDefaultResponse {
+  return fromPutEnvDefaultResponseCborValue(decode(bytes));
+}
+
+export function toDeleteEnvDefaultRequestCborValue(v: DeleteEnvDefaultRequest): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  csilMap.set("key", v.key);
+  if (v.projectId !== undefined) csilMap.set("project_id", v.projectId);
+  csilMap.set("organization", v.organization);
+  if (v.workerClass !== undefined) csilMap.set("worker_class", v.workerClass);
+  return csilMap;
+}
+
+export function fromDeleteEnvDefaultRequestCborValue(value: CborValue): DeleteEnvDefaultRequest {
+  return {
+    organization: asString(requireKey(value, "organization")),
+    workerClass: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "worker_class")),
+    projectId: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "project_id")),
+    key: asString(requireKey(value, "key")),
+  };
+}
+
+export function toDeleteEnvDefaultRequestCbor(v: DeleteEnvDefaultRequest): Uint8Array {
+  return encodeValue(toDeleteEnvDefaultRequestCborValue(v));
+}
+
+export function fromDeleteEnvDefaultRequestCbor(bytes: Uint8Array): DeleteEnvDefaultRequest {
+  return fromDeleteEnvDefaultRequestCborValue(decode(bytes));
+}
+
+export function toDeleteEnvDefaultResponseCborValue(v: DeleteEnvDefaultResponse): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  csilMap.set("deleted", v.deleted);
+  return csilMap;
+}
+
+export function fromDeleteEnvDefaultResponseCborValue(value: CborValue): DeleteEnvDefaultResponse {
+  return {
+    deleted: asBool(requireKey(value, "deleted")),
+  };
+}
+
+export function toDeleteEnvDefaultResponseCbor(v: DeleteEnvDefaultResponse): Uint8Array {
+  return encodeValue(toDeleteEnvDefaultResponseCborValue(v));
+}
+
+export function fromDeleteEnvDefaultResponseCbor(bytes: Uint8Array): DeleteEnvDefaultResponse {
+  return fromDeleteEnvDefaultResponseCborValue(decode(bytes));
+}
+
+export function toImagePolicySummaryCborValue(v: ImagePolicySummary): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  csilMap.set("enabled", v.enabled);
+  if (v.updatedAt !== undefined) csilMap.set("updated_at", v.updatedAt);
+  csilMap.set("require_digest", v.requireDigest);
+  csilMap.set("allowed_prefixes", v.allowedPrefixes);
+  return csilMap;
+}
+
+export function fromImagePolicySummaryCborValue(value: CborValue): ImagePolicySummary {
+  return {
+    enabled: asBool(requireKey(value, "enabled")),
+    allowedPrefixes: asArray(requireKey(value, "allowed_prefixes")).map((csilE) => asString(csilE)),
+    requireDigest: asBool(requireKey(value, "require_digest")),
+    updatedAt: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "updated_at")),
+  };
+}
+
+export function toImagePolicySummaryCbor(v: ImagePolicySummary): Uint8Array {
+  return encodeValue(toImagePolicySummaryCborValue(v));
+}
+
+export function fromImagePolicySummaryCbor(bytes: Uint8Array): ImagePolicySummary {
+  return fromImagePolicySummaryCborValue(decode(bytes));
+}
+
+export function toGetImagePolicyRequestCborValue(v: GetImagePolicyRequest): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  csilMap.set("organization", v.organization);
+  return csilMap;
+}
+
+export function fromGetImagePolicyRequestCborValue(value: CborValue): GetImagePolicyRequest {
+  return {
+    organization: asString(requireKey(value, "organization")),
+  };
+}
+
+export function toGetImagePolicyRequestCbor(v: GetImagePolicyRequest): Uint8Array {
+  return encodeValue(toGetImagePolicyRequestCborValue(v));
+}
+
+export function fromGetImagePolicyRequestCbor(bytes: Uint8Array): GetImagePolicyRequest {
+  return fromGetImagePolicyRequestCborValue(decode(bytes));
+}
+
+export function toGetImagePolicyResponseCborValue(v: GetImagePolicyResponse): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  csilMap.set("policy", toImagePolicySummaryCborValue(v.policy));
+  return csilMap;
+}
+
+export function fromGetImagePolicyResponseCborValue(value: CborValue): GetImagePolicyResponse {
+  return {
+    policy: fromImagePolicySummaryCborValue(requireKey(value, "policy")),
+  };
+}
+
+export function toGetImagePolicyResponseCbor(v: GetImagePolicyResponse): Uint8Array {
+  return encodeValue(toGetImagePolicyResponseCborValue(v));
+}
+
+export function fromGetImagePolicyResponseCbor(bytes: Uint8Array): GetImagePolicyResponse {
+  return fromGetImagePolicyResponseCborValue(decode(bytes));
+}
+
+export function toPutImagePolicyRequestCborValue(v: PutImagePolicyRequest): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  csilMap.set("policy", toImagePolicySummaryCborValue(v.policy));
+  csilMap.set("organization", v.organization);
+  return csilMap;
+}
+
+export function fromPutImagePolicyRequestCborValue(value: CborValue): PutImagePolicyRequest {
+  return {
+    organization: asString(requireKey(value, "organization")),
+    policy: fromImagePolicySummaryCborValue(requireKey(value, "policy")),
+  };
+}
+
+export function toPutImagePolicyRequestCbor(v: PutImagePolicyRequest): Uint8Array {
+  return encodeValue(toPutImagePolicyRequestCborValue(v));
+}
+
+export function fromPutImagePolicyRequestCbor(bytes: Uint8Array): PutImagePolicyRequest {
+  return fromPutImagePolicyRequestCborValue(decode(bytes));
+}
+
+export function toPutImagePolicyResponseCborValue(v: PutImagePolicyResponse): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  csilMap.set("policy", toImagePolicySummaryCborValue(v.policy));
+  return csilMap;
+}
+
+export function fromPutImagePolicyResponseCborValue(value: CborValue): PutImagePolicyResponse {
+  return {
+    policy: fromImagePolicySummaryCborValue(requireKey(value, "policy")),
+  };
+}
+
+export function toPutImagePolicyResponseCbor(v: PutImagePolicyResponse): Uint8Array {
+  return encodeValue(toPutImagePolicyResponseCborValue(v));
+}
+
+export function fromPutImagePolicyResponseCbor(bytes: Uint8Array): PutImagePolicyResponse {
+  return fromPutImagePolicyResponseCborValue(decode(bytes));
+}
+
+export function toJobLinkSummaryCborValue(v: JobLinkSummary): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  csilMap.set("url", v.url);
+  csilMap.set("name", v.name);
+  return csilMap;
+}
+
+export function fromJobLinkSummaryCborValue(value: CborValue): JobLinkSummary {
+  return {
+    name: asString(requireKey(value, "name")),
+    url: asString(requireKey(value, "url")),
+  };
+}
+
+export function toJobLinkSummaryCbor(v: JobLinkSummary): Uint8Array {
+  return encodeValue(toJobLinkSummaryCborValue(v));
+}
+
+export function fromJobLinkSummaryCbor(bytes: Uint8Array): JobLinkSummary {
+  return fromJobLinkSummaryCborValue(decode(bytes));
+}
+
+export function toListJobLinksRequestCborValue(v: ListJobLinksRequest): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  csilMap.set("job_id", v.jobId);
+  return csilMap;
+}
+
+export function fromListJobLinksRequestCborValue(value: CborValue): ListJobLinksRequest {
+  return {
+    jobId: asString(requireKey(value, "job_id")),
+  };
+}
+
+export function toListJobLinksRequestCbor(v: ListJobLinksRequest): Uint8Array {
+  return encodeValue(toListJobLinksRequestCborValue(v));
+}
+
+export function fromListJobLinksRequestCbor(bytes: Uint8Array): ListJobLinksRequest {
+  return fromListJobLinksRequestCborValue(decode(bytes));
+}
+
+export function toListJobLinksResponseCborValue(v: ListJobLinksResponse): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  csilMap.set("links", v.links.map((csilE): CborValue => toJobLinkSummaryCborValue(csilE)));
+  return csilMap;
+}
+
+export function fromListJobLinksResponseCborValue(value: CborValue): ListJobLinksResponse {
+  return {
+    links: asArray(requireKey(value, "links")).map((csilE) => fromJobLinkSummaryCborValue(csilE)),
+  };
+}
+
+export function toListJobLinksResponseCbor(v: ListJobLinksResponse): Uint8Array {
+  return encodeValue(toListJobLinksResponseCborValue(v));
+}
+
+export function fromListJobLinksResponseCbor(bytes: Uint8Array): ListJobLinksResponse {
+  return fromListJobLinksResponseCborValue(decode(bytes));
+}
+
+export function toJobArtifactSummaryCborValue(v: JobArtifactSummary): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  csilMap.set("kind", v.kind);
+  csilMap.set("path", v.path);
+  csilMap.set("sha256", v.sha256);
+  csilMap.set("status", v.status);
+  csilMap.set("created_at", v.createdAt);
+  csilMap.set("media_type", v.mediaType);
+  csilMap.set("size_bytes", v.sizeBytes);
+  csilMap.set("artifact_id", v.artifactId);
+  if (v.statusReason !== undefined) csilMap.set("status_reason", v.statusReason);
+  return csilMap;
+}
+
+export function fromJobArtifactSummaryCborValue(value: CborValue): JobArtifactSummary {
+  return {
+    artifactId: asString(requireKey(value, "artifact_id")),
+    path: asString(requireKey(value, "path")),
+    kind: asString(requireKey(value, "kind")),
+    mediaType: asString(requireKey(value, "media_type")),
+    sizeBytes: asNumber(requireKey(value, "size_bytes")),
+    sha256: asString(requireKey(value, "sha256")),
+    status: asString(requireKey(value, "status")),
+    statusReason: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "status_reason")),
+    createdAt: asString(requireKey(value, "created_at")),
+  };
+}
+
+export function toJobArtifactSummaryCbor(v: JobArtifactSummary): Uint8Array {
+  return encodeValue(toJobArtifactSummaryCborValue(v));
+}
+
+export function fromJobArtifactSummaryCbor(bytes: Uint8Array): JobArtifactSummary {
+  return fromJobArtifactSummaryCborValue(decode(bytes));
+}
+
+export function toListJobArtifactsRequestCborValue(v: ListJobArtifactsRequest): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  csilMap.set("job_id", v.jobId);
+  return csilMap;
+}
+
+export function fromListJobArtifactsRequestCborValue(value: CborValue): ListJobArtifactsRequest {
+  return {
+    jobId: asString(requireKey(value, "job_id")),
+  };
+}
+
+export function toListJobArtifactsRequestCbor(v: ListJobArtifactsRequest): Uint8Array {
+  return encodeValue(toListJobArtifactsRequestCborValue(v));
+}
+
+export function fromListJobArtifactsRequestCbor(bytes: Uint8Array): ListJobArtifactsRequest {
+  return fromListJobArtifactsRequestCborValue(decode(bytes));
+}
+
+export function toListJobArtifactsResponseCborValue(v: ListJobArtifactsResponse): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  csilMap.set("artifacts", v.artifacts.map((csilE): CborValue => toJobArtifactSummaryCborValue(csilE)));
+  return csilMap;
+}
+
+export function fromListJobArtifactsResponseCborValue(value: CborValue): ListJobArtifactsResponse {
+  return {
+    artifacts: asArray(requireKey(value, "artifacts")).map((csilE) => fromJobArtifactSummaryCborValue(csilE)),
+  };
+}
+
+export function toListJobArtifactsResponseCbor(v: ListJobArtifactsResponse): Uint8Array {
+  return encodeValue(toListJobArtifactsResponseCborValue(v));
+}
+
+export function fromListJobArtifactsResponseCbor(bytes: Uint8Array): ListJobArtifactsResponse {
+  return fromListJobArtifactsResponseCborValue(decode(bytes));
+}
+
+export function toReadJobArtifactRequestCborValue(v: ReadJobArtifactRequest): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  csilMap.set("job_id", v.jobId);
+  if (v.length !== undefined) csilMap.set("length", v.length);
+  csilMap.set("offset", v.offset);
+  csilMap.set("artifact_id", v.artifactId);
+  return csilMap;
+}
+
+export function fromReadJobArtifactRequestCborValue(value: CborValue): ReadJobArtifactRequest {
+  return {
+    jobId: asString(requireKey(value, "job_id")),
+    artifactId: asString(requireKey(value, "artifact_id")),
+    offset: asNumber(requireKey(value, "offset")),
+    length: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asNumber(csilV))(mapGet(value, "length")),
+  };
+}
+
+export function toReadJobArtifactRequestCbor(v: ReadJobArtifactRequest): Uint8Array {
+  return encodeValue(toReadJobArtifactRequestCborValue(v));
+}
+
+export function fromReadJobArtifactRequestCbor(bytes: Uint8Array): ReadJobArtifactRequest {
+  return fromReadJobArtifactRequestCborValue(decode(bytes));
+}
+
+export function toReadJobArtifactResponseCborValue(v: ReadJobArtifactResponse): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  csilMap.set("eof", v.eof);
+  csilMap.set("data", v.data);
+  csilMap.set("sha256", v.sha256);
+  csilMap.set("size_bytes", v.sizeBytes);
+  return csilMap;
+}
+
+export function fromReadJobArtifactResponseCborValue(value: CborValue): ReadJobArtifactResponse {
+  return {
+    data: asBytes(requireKey(value, "data")),
+    sizeBytes: asNumber(requireKey(value, "size_bytes")),
+    sha256: asString(requireKey(value, "sha256")),
+    eof: asBool(requireKey(value, "eof")),
+  };
+}
+
+export function toReadJobArtifactResponseCbor(v: ReadJobArtifactResponse): Uint8Array {
+  return encodeValue(toReadJobArtifactResponseCborValue(v));
+}
+
+export function fromReadJobArtifactResponseCbor(bytes: Uint8Array): ReadJobArtifactResponse {
+  return fromReadJobArtifactResponseCborValue(decode(bytes));
+}
+
+export function toJobTestSummaryViewCborValue(v: JobTestSummaryView): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  csilMap.set("flaky", v.flaky);
+  csilMap.set("total", v.total);
+  csilMap.set("failed", v.failed);
+  csilMap.set("passed", v.passed);
+  csilMap.set("errored", v.errored);
+  csilMap.set("reports", v.reports);
+  csilMap.set("skipped", v.skipped);
+  csilMap.set("truncated", v.truncated);
+  csilMap.set("parse_errors", v.parseErrors);
+  csilMap.set("quarantine_policy", v.quarantinePolicy);
+  csilMap.set("quarantine_override", v.quarantineOverride);
+  csilMap.set("quarantined_failures", v.quarantinedFailures);
+  return csilMap;
+}
+
+export function fromJobTestSummaryViewCborValue(value: CborValue): JobTestSummaryView {
+  return {
+    reports: asNumber(requireKey(value, "reports")),
+    total: asNumber(requireKey(value, "total")),
+    passed: asNumber(requireKey(value, "passed")),
+    failed: asNumber(requireKey(value, "failed")),
+    errored: asNumber(requireKey(value, "errored")),
+    skipped: asNumber(requireKey(value, "skipped")),
+    quarantinedFailures: asNumber(requireKey(value, "quarantined_failures")),
+    flaky: asNumber(requireKey(value, "flaky")),
+    truncated: asBool(requireKey(value, "truncated")),
+    parseErrors: asArray(requireKey(value, "parse_errors")).map((csilE) => asString(csilE)),
+    quarantinePolicy: asString(requireKey(value, "quarantine_policy")),
+    quarantineOverride: asBool(requireKey(value, "quarantine_override")),
+  };
+}
+
+export function toJobTestSummaryViewCbor(v: JobTestSummaryView): Uint8Array {
+  return encodeValue(toJobTestSummaryViewCborValue(v));
+}
+
+export function fromJobTestSummaryViewCbor(bytes: Uint8Array): JobTestSummaryView {
+  return fromJobTestSummaryViewCborValue(decode(bytes));
+}
+
+export function toTestResultViewCborValue(v: TestResultView): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  csilMap.set("file", v.file);
+  if (v.line !== undefined) csilMap.set("line", v.line);
+  csilMap.set("name", v.name);
+  csilMap.set("flaky", v.flaky);
+  csilMap.set("suite", v.suite);
+  csilMap.set("status", v.status);
+  csilMap.set("message", v.message);
+  csilMap.set("test_id", v.testId);
+  csilMap.set("classname", v.classname);
+  csilMap.set("duration_ms", v.durationMs);
+  csilMap.set("quarantined", v.quarantined);
+  return csilMap;
+}
+
+export function fromTestResultViewCborValue(value: CborValue): TestResultView {
+  return {
+    testId: asString(requireKey(value, "test_id")),
+    suite: asString(requireKey(value, "suite")),
+    classname: asString(requireKey(value, "classname")),
+    name: asString(requireKey(value, "name")),
+    status: asString(requireKey(value, "status")),
+    durationMs: asNumber(requireKey(value, "duration_ms")),
+    message: asString(requireKey(value, "message")),
+    file: asString(requireKey(value, "file")),
+    line: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asNumber(csilV))(mapGet(value, "line")),
+    quarantined: asBool(requireKey(value, "quarantined")),
+    flaky: asBool(requireKey(value, "flaky")),
+  };
+}
+
+export function toTestResultViewCbor(v: TestResultView): Uint8Array {
+  return encodeValue(toTestResultViewCborValue(v));
+}
+
+export function fromTestResultViewCbor(bytes: Uint8Array): TestResultView {
+  return fromTestResultViewCborValue(decode(bytes));
+}
+
+export function toGetJobTestResultsRequestCborValue(v: GetJobTestResultsRequest): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  if (v.limit !== undefined) csilMap.set("limit", v.limit);
+  csilMap.set("job_id", v.jobId);
+  if (v.failedOnly !== undefined) csilMap.set("failed_only", v.failedOnly);
+  return csilMap;
+}
+
+export function fromGetJobTestResultsRequestCborValue(value: CborValue): GetJobTestResultsRequest {
+  return {
+    jobId: asString(requireKey(value, "job_id")),
+    failedOnly: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asBool(csilV))(mapGet(value, "failed_only")),
+    limit: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asNumber(csilV))(mapGet(value, "limit")),
+  };
+}
+
+export function toGetJobTestResultsRequestCbor(v: GetJobTestResultsRequest): Uint8Array {
+  return encodeValue(toGetJobTestResultsRequestCborValue(v));
+}
+
+export function fromGetJobTestResultsRequestCbor(bytes: Uint8Array): GetJobTestResultsRequest {
+  return fromGetJobTestResultsRequestCborValue(decode(bytes));
+}
+
+export function toGetJobTestResultsResponseCborValue(v: GetJobTestResultsResponse): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  csilMap.set("results", v.results.map((csilE): CborValue => toTestResultViewCborValue(csilE)));
+  if (v.summary !== undefined) csilMap.set("summary", toJobTestSummaryViewCborValue(v.summary));
+  if (v.projectId !== undefined) csilMap.set("project_id", v.projectId);
+  csilMap.set("can_quarantine", v.canQuarantine);
+  return csilMap;
+}
+
+export function fromGetJobTestResultsResponseCborValue(value: CborValue): GetJobTestResultsResponse {
+  return {
+    summary: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : fromJobTestSummaryViewCborValue(csilV))(mapGet(value, "summary")),
+    results: asArray(requireKey(value, "results")).map((csilE) => fromTestResultViewCborValue(csilE)),
+    projectId: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "project_id")),
+    canQuarantine: asBool(requireKey(value, "can_quarantine")),
+  };
+}
+
+export function toGetJobTestResultsResponseCbor(v: GetJobTestResultsResponse): Uint8Array {
+  return encodeValue(toGetJobTestResultsResponseCborValue(v));
+}
+
+export function fromGetJobTestResultsResponseCbor(bytes: Uint8Array): GetJobTestResultsResponse {
+  return fromGetJobTestResultsResponseCborValue(decode(bytes));
+}
+
+export function toFlakyTestViewCborValue(v: FlakyTestView): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  csilMap.set("name", v.name);
+  csilMap.set("suite", v.suite);
+  csilMap.set("test_id", v.testId);
+  csilMap.set("classname", v.classname);
+  csilMap.set("total_runs", v.totalRuns);
+  csilMap.set("flaky_count", v.flakyCount);
+  if (v.lastFlakyAt !== undefined) csilMap.set("last_flaky_at", v.lastFlakyAt);
+  if (v.lastFlakySha !== undefined) csilMap.set("last_flaky_sha", v.lastFlakySha);
+  return csilMap;
+}
+
+export function fromFlakyTestViewCborValue(value: CborValue): FlakyTestView {
+  return {
+    testId: asString(requireKey(value, "test_id")),
+    suite: asString(requireKey(value, "suite")),
+    classname: asString(requireKey(value, "classname")),
+    name: asString(requireKey(value, "name")),
+    flakyCount: asNumber(requireKey(value, "flaky_count")),
+    totalRuns: asNumber(requireKey(value, "total_runs")),
+    lastFlakyAt: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "last_flaky_at")),
+    lastFlakySha: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "last_flaky_sha")),
+  };
+}
+
+export function toFlakyTestViewCbor(v: FlakyTestView): Uint8Array {
+  return encodeValue(toFlakyTestViewCborValue(v));
+}
+
+export function fromFlakyTestViewCbor(bytes: Uint8Array): FlakyTestView {
+  return fromFlakyTestViewCborValue(decode(bytes));
+}
+
+export function toListFlakyTestsRequestCborValue(v: ListFlakyTestsRequest): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  if (v.days !== undefined) csilMap.set("days", v.days);
+  csilMap.set("project_id", v.projectId);
+  return csilMap;
+}
+
+export function fromListFlakyTestsRequestCborValue(value: CborValue): ListFlakyTestsRequest {
+  return {
+    projectId: asString(requireKey(value, "project_id")),
+    days: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asNumber(csilV))(mapGet(value, "days")),
+  };
+}
+
+export function toListFlakyTestsRequestCbor(v: ListFlakyTestsRequest): Uint8Array {
+  return encodeValue(toListFlakyTestsRequestCborValue(v));
+}
+
+export function fromListFlakyTestsRequestCbor(bytes: Uint8Array): ListFlakyTestsRequest {
+  return fromListFlakyTestsRequestCborValue(decode(bytes));
+}
+
+export function toListFlakyTestsResponseCborValue(v: ListFlakyTestsResponse): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  csilMap.set("tests", v.tests.map((csilE): CborValue => toFlakyTestViewCborValue(csilE)));
+  csilMap.set("window_days", v.windowDays);
+  return csilMap;
+}
+
+export function fromListFlakyTestsResponseCborValue(value: CborValue): ListFlakyTestsResponse {
+  return {
+    tests: asArray(requireKey(value, "tests")).map((csilE) => fromFlakyTestViewCborValue(csilE)),
+    windowDays: asNumber(requireKey(value, "window_days")),
+  };
+}
+
+export function toListFlakyTestsResponseCbor(v: ListFlakyTestsResponse): Uint8Array {
+  return encodeValue(toListFlakyTestsResponseCborValue(v));
+}
+
+export function fromListFlakyTestsResponseCbor(bytes: Uint8Array): ListFlakyTestsResponse {
+  return fromListFlakyTestsResponseCborValue(decode(bytes));
+}
+
+export function toTestQuarantineViewCborValue(v: TestQuarantineView): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  csilMap.set("name", v.name);
+  csilMap.set("suite", v.suite);
+  csilMap.set("reason", v.reason);
+  csilMap.set("test_id", v.testId);
+  csilMap.set("classname", v.classname);
+  csilMap.set("created_at", v.createdAt);
+  if (v.createdBy !== undefined) csilMap.set("created_by", v.createdBy);
+  csilMap.set("expires_at", v.expiresAt);
+  if (v.removedAt !== undefined) csilMap.set("removed_at", v.removedAt);
+  if (v.removedBy !== undefined) csilMap.set("removed_by", v.removedBy);
+  csilMap.set("quarantine_id", v.quarantineId);
+  csilMap.set("owner_principal_id", v.ownerPrincipalId);
+  return csilMap;
+}
+
+export function fromTestQuarantineViewCborValue(value: CborValue): TestQuarantineView {
+  return {
+    quarantineId: asString(requireKey(value, "quarantine_id")),
+    testId: asString(requireKey(value, "test_id")),
+    suite: asString(requireKey(value, "suite")),
+    classname: asString(requireKey(value, "classname")),
+    name: asString(requireKey(value, "name")),
+    ownerPrincipalId: asString(requireKey(value, "owner_principal_id")),
+    reason: asString(requireKey(value, "reason")),
+    expiresAt: asString(requireKey(value, "expires_at")),
+    createdAt: asString(requireKey(value, "created_at")),
+    createdBy: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "created_by")),
+    removedAt: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "removed_at")),
+    removedBy: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "removed_by")),
+  };
+}
+
+export function toTestQuarantineViewCbor(v: TestQuarantineView): Uint8Array {
+  return encodeValue(toTestQuarantineViewCborValue(v));
+}
+
+export function fromTestQuarantineViewCbor(bytes: Uint8Array): TestQuarantineView {
+  return fromTestQuarantineViewCborValue(decode(bytes));
+}
+
+export function toListTestQuarantinesRequestCborValue(v: ListTestQuarantinesRequest): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  csilMap.set("project_id", v.projectId);
+  if (v.includeEnded !== undefined) csilMap.set("include_ended", v.includeEnded);
+  return csilMap;
+}
+
+export function fromListTestQuarantinesRequestCborValue(value: CborValue): ListTestQuarantinesRequest {
+  return {
+    projectId: asString(requireKey(value, "project_id")),
+    includeEnded: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asBool(csilV))(mapGet(value, "include_ended")),
+  };
+}
+
+export function toListTestQuarantinesRequestCbor(v: ListTestQuarantinesRequest): Uint8Array {
+  return encodeValue(toListTestQuarantinesRequestCborValue(v));
+}
+
+export function fromListTestQuarantinesRequestCbor(bytes: Uint8Array): ListTestQuarantinesRequest {
+  return fromListTestQuarantinesRequestCborValue(decode(bytes));
+}
+
+export function toListTestQuarantinesResponseCborValue(v: ListTestQuarantinesResponse): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  csilMap.set("can_manage", v.canManage);
+  csilMap.set("quarantines", v.quarantines.map((csilE): CborValue => toTestQuarantineViewCborValue(csilE)));
+  return csilMap;
+}
+
+export function fromListTestQuarantinesResponseCborValue(value: CborValue): ListTestQuarantinesResponse {
+  return {
+    quarantines: asArray(requireKey(value, "quarantines")).map((csilE) => fromTestQuarantineViewCborValue(csilE)),
+    canManage: asBool(requireKey(value, "can_manage")),
+  };
+}
+
+export function toListTestQuarantinesResponseCbor(v: ListTestQuarantinesResponse): Uint8Array {
+  return encodeValue(toListTestQuarantinesResponseCborValue(v));
+}
+
+export function fromListTestQuarantinesResponseCbor(bytes: Uint8Array): ListTestQuarantinesResponse {
+  return fromListTestQuarantinesResponseCborValue(decode(bytes));
+}
+
+export function toQuarantineTestRequestCborValue(v: QuarantineTestRequest): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  if (v.name !== undefined) csilMap.set("name", v.name);
+  if (v.suite !== undefined) csilMap.set("suite", v.suite);
+  csilMap.set("until", v.until);
+  csilMap.set("reason", v.reason);
+  if (v.testId !== undefined) csilMap.set("test_id", v.testId);
+  if (v.classname !== undefined) csilMap.set("classname", v.classname);
+  csilMap.set("project_id", v.projectId);
+  if (v.ownerPrincipalId !== undefined) csilMap.set("owner_principal_id", v.ownerPrincipalId);
+  if (v.workflowSecurityId !== undefined) csilMap.set("workflow_security_id", v.workflowSecurityId);
+  return csilMap;
+}
+
+export function fromQuarantineTestRequestCborValue(value: CborValue): QuarantineTestRequest {
+  return {
+    projectId: asString(requireKey(value, "project_id")),
+    testId: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "test_id")),
+    suite: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "suite")),
+    classname: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "classname")),
+    name: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "name")),
+    reason: asString(requireKey(value, "reason")),
+    until: asString(requireKey(value, "until")),
+    ownerPrincipalId: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "owner_principal_id")),
+    workflowSecurityId: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "workflow_security_id")),
+  };
+}
+
+export function toQuarantineTestRequestCbor(v: QuarantineTestRequest): Uint8Array {
+  return encodeValue(toQuarantineTestRequestCborValue(v));
+}
+
+export function fromQuarantineTestRequestCbor(bytes: Uint8Array): QuarantineTestRequest {
+  return fromQuarantineTestRequestCborValue(decode(bytes));
+}
+
+export function toQuarantineTestResponseCborValue(v: QuarantineTestResponse): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  csilMap.set("quarantine", toTestQuarantineViewCborValue(v.quarantine));
+  return csilMap;
+}
+
+export function fromQuarantineTestResponseCborValue(value: CborValue): QuarantineTestResponse {
+  return {
+    quarantine: fromTestQuarantineViewCborValue(requireKey(value, "quarantine")),
+  };
+}
+
+export function toQuarantineTestResponseCbor(v: QuarantineTestResponse): Uint8Array {
+  return encodeValue(toQuarantineTestResponseCborValue(v));
+}
+
+export function fromQuarantineTestResponseCbor(bytes: Uint8Array): QuarantineTestResponse {
+  return fromQuarantineTestResponseCborValue(decode(bytes));
+}
+
+export function toUnquarantineTestRequestCborValue(v: UnquarantineTestRequest): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  csilMap.set("project_id", v.projectId);
+  csilMap.set("quarantine_id", v.quarantineId);
+  if (v.workflowSecurityId !== undefined) csilMap.set("workflow_security_id", v.workflowSecurityId);
+  return csilMap;
+}
+
+export function fromUnquarantineTestRequestCborValue(value: CborValue): UnquarantineTestRequest {
+  return {
+    projectId: asString(requireKey(value, "project_id")),
+    quarantineId: asString(requireKey(value, "quarantine_id")),
+    workflowSecurityId: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "workflow_security_id")),
+  };
+}
+
+export function toUnquarantineTestRequestCbor(v: UnquarantineTestRequest): Uint8Array {
+  return encodeValue(toUnquarantineTestRequestCborValue(v));
+}
+
+export function fromUnquarantineTestRequestCbor(bytes: Uint8Array): UnquarantineTestRequest {
+  return fromUnquarantineTestRequestCborValue(decode(bytes));
+}
+
+export function toUnquarantineTestResponseCborValue(v: UnquarantineTestResponse): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  csilMap.set("done", v.done);
+  return csilMap;
+}
+
+export function fromUnquarantineTestResponseCborValue(value: CborValue): UnquarantineTestResponse {
+  return {
+    done: asBool(requireKey(value, "done")),
+  };
+}
+
+export function toUnquarantineTestResponseCbor(v: UnquarantineTestResponse): Uint8Array {
+  return encodeValue(toUnquarantineTestResponseCborValue(v));
+}
+
+export function fromUnquarantineTestResponseCbor(bytes: Uint8Array): UnquarantineTestResponse {
+  return fromUnquarantineTestResponseCborValue(decode(bytes));
+}
+
+export function toGetJobProvenanceRequestCborValue(v: GetJobProvenanceRequest): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  csilMap.set("job_id", v.jobId);
+  return csilMap;
+}
+
+export function fromGetJobProvenanceRequestCborValue(value: CborValue): GetJobProvenanceRequest {
+  return {
+    jobId: asString(requireKey(value, "job_id")),
+  };
+}
+
+export function toGetJobProvenanceRequestCbor(v: GetJobProvenanceRequest): Uint8Array {
+  return encodeValue(toGetJobProvenanceRequestCborValue(v));
+}
+
+export function fromGetJobProvenanceRequestCbor(bytes: Uint8Array): GetJobProvenanceRequest {
+  return fromGetJobProvenanceRequestCborValue(decode(bytes));
+}
+
+export function toGetJobProvenanceResponseCborValue(v: GetJobProvenanceResponse): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  if (v.error !== undefined) csilMap.set("error", v.error);
+  if (v.keyId !== undefined) csilMap.set("key_id", v.keyId);
+  csilMap.set("present", v.present);
+  csilMap.set("verified", v.verified);
+  if (v.envelopeJson !== undefined) csilMap.set("envelope_json", v.envelopeJson);
+  if (v.statementJson !== undefined) csilMap.set("statement_json", v.statementJson);
+  return csilMap;
+}
+
+export function fromGetJobProvenanceResponseCborValue(value: CborValue): GetJobProvenanceResponse {
+  return {
+    present: asBool(requireKey(value, "present")),
+    verified: asBool(requireKey(value, "verified")),
+    keyId: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "key_id")),
+    envelopeJson: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "envelope_json")),
+    statementJson: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "statement_json")),
+    error: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "error")),
+  };
+}
+
+export function toGetJobProvenanceResponseCbor(v: GetJobProvenanceResponse): Uint8Array {
+  return encodeValue(toGetJobProvenanceResponseCborValue(v));
+}
+
+export function fromGetJobProvenanceResponseCbor(bytes: Uint8Array): GetJobProvenanceResponse {
+  return fromGetJobProvenanceResponseCborValue(decode(bytes));
+}
+
+export function toDiagnosisLinkEntryCborValue(v: DiagnosisLinkEntry): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  csilMap.set("url", v.url);
+  csilMap.set("name", v.name);
+  return csilMap;
+}
+
+export function fromDiagnosisLinkEntryCborValue(value: CborValue): DiagnosisLinkEntry {
+  return {
+    name: asString(requireKey(value, "name")),
+    url: asString(requireKey(value, "url")),
+  };
+}
+
+export function toDiagnosisLinkEntryCbor(v: DiagnosisLinkEntry): Uint8Array {
+  return encodeValue(toDiagnosisLinkEntryCborValue(v));
+}
+
+export function fromDiagnosisLinkEntryCbor(bytes: Uint8Array): DiagnosisLinkEntry {
+  return fromDiagnosisLinkEntryCborValue(decode(bytes));
+}
+
+export function toDiagnosisSummaryCborValue(v: DiagnosisSummary): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  csilMap.set("body", v.body);
+  csilMap.set("links", v.links.map((csilE): CborValue => toDiagnosisLinkEntryCborValue(csilE)));
+  csilMap.set("title", v.title);
+  csilMap.set("author", toActorSummaryCborValue(v.author));
+  if (v.jobId !== undefined) csilMap.set("job_id", v.jobId);
+  csilMap.set("category", v.category);
+  csilMap.set("revision", v.revision);
+  if (v.nodeName !== undefined) csilMap.set("node_name", v.nodeName);
+  csilMap.set("confidence", v.confidence);
+  csilMap.set("created_at", v.createdAt);
+  csilMap.set("updated_at", v.updatedAt);
+  csilMap.set("target_type", v.targetType);
+  if (v.workflowId !== undefined) csilMap.set("workflow_id", v.workflowId);
+  csilMap.set("diagnosis_id", v.diagnosisId);
+  if (v.suggestedShifts !== undefined) csilMap.set("suggested_shifts", toRunShiftsCborValue(v.suggestedShifts));
+  csilMap.set("suggested_shifts_text", v.suggestedShiftsText);
+  return csilMap;
+}
+
+export function fromDiagnosisSummaryCborValue(value: CborValue): DiagnosisSummary {
+  return {
+    diagnosisId: asString(requireKey(value, "diagnosis_id")),
+    targetType: asString(requireKey(value, "target_type")),
+    jobId: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "job_id")),
+    workflowId: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "workflow_id")),
+    nodeName: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "node_name")),
+    author: fromActorSummaryCborValue(requireKey(value, "author")),
+    title: asString(requireKey(value, "title")),
+    body: asString(requireKey(value, "body")),
+    confidence: asString(requireKey(value, "confidence")),
+    category: asString(requireKey(value, "category")),
+    links: asArray(requireKey(value, "links")).map((csilE) => fromDiagnosisLinkEntryCborValue(csilE)),
+    suggestedShifts: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : fromRunShiftsCborValue(csilV))(mapGet(value, "suggested_shifts")),
+    suggestedShiftsText: asString(requireKey(value, "suggested_shifts_text")),
+    revision: asNumber(requireKey(value, "revision")),
+    createdAt: asString(requireKey(value, "created_at")),
+    updatedAt: asString(requireKey(value, "updated_at")),
+  };
+}
+
+export function toDiagnosisSummaryCbor(v: DiagnosisSummary): Uint8Array {
+  return encodeValue(toDiagnosisSummaryCborValue(v));
+}
+
+export function fromDiagnosisSummaryCbor(bytes: Uint8Array): DiagnosisSummary {
+  return fromDiagnosisSummaryCborValue(decode(bytes));
+}
+
+export function toListDiagnosesRequestCborValue(v: ListDiagnosesRequest): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  if (v.jobId !== undefined) csilMap.set("job_id", v.jobId);
+  if (v.workflowId !== undefined) csilMap.set("workflow_id", v.workflowId);
+  return csilMap;
+}
+
+export function fromListDiagnosesRequestCborValue(value: CborValue): ListDiagnosesRequest {
+  return {
+    jobId: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "job_id")),
+    workflowId: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "workflow_id")),
+  };
+}
+
+export function toListDiagnosesRequestCbor(v: ListDiagnosesRequest): Uint8Array {
+  return encodeValue(toListDiagnosesRequestCborValue(v));
+}
+
+export function fromListDiagnosesRequestCbor(bytes: Uint8Array): ListDiagnosesRequest {
+  return fromListDiagnosesRequestCborValue(decode(bytes));
+}
+
+export function toListDiagnosesResponseCborValue(v: ListDiagnosesResponse): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  csilMap.set("diagnoses", v.diagnoses.map((csilE): CborValue => toDiagnosisSummaryCborValue(csilE)));
+  return csilMap;
+}
+
+export function fromListDiagnosesResponseCborValue(value: CborValue): ListDiagnosesResponse {
+  return {
+    diagnoses: asArray(requireKey(value, "diagnoses")).map((csilE) => fromDiagnosisSummaryCborValue(csilE)),
+  };
+}
+
+export function toListDiagnosesResponseCbor(v: ListDiagnosesResponse): Uint8Array {
+  return encodeValue(toListDiagnosesResponseCborValue(v));
+}
+
+export function fromListDiagnosesResponseCbor(bytes: Uint8Array): ListDiagnosesResponse {
+  return fromListDiagnosesResponseCborValue(decode(bytes));
+}
+
+export function toPutDiagnosisRequestCborValue(v: PutDiagnosisRequest): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  if (v.body !== undefined) csilMap.set("body", v.body);
+  if (v.links !== undefined) csilMap.set("links", v.links.map((csilE): CborValue => toDiagnosisLinkEntryCborValue(csilE)));
+  csilMap.set("title", v.title);
+  if (v.jobId !== undefined) csilMap.set("job_id", v.jobId);
+  if (v.category !== undefined) csilMap.set("category", v.category);
+  if (v.nodeName !== undefined) csilMap.set("node_name", v.nodeName);
+  if (v.confidence !== undefined) csilMap.set("confidence", v.confidence);
+  if (v.workflowId !== undefined) csilMap.set("workflow_id", v.workflowId);
+  if (v.suggestedShifts !== undefined) csilMap.set("suggested_shifts", toRunShiftsCborValue(v.suggestedShifts));
+  return csilMap;
+}
+
+export function fromPutDiagnosisRequestCborValue(value: CborValue): PutDiagnosisRequest {
+  return {
+    jobId: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "job_id")),
+    workflowId: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "workflow_id")),
+    nodeName: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "node_name")),
+    title: asString(requireKey(value, "title")),
+    body: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "body")),
+    confidence: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "confidence")),
+    category: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "category")),
+    links: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asArray(csilV).map((csilE) => fromDiagnosisLinkEntryCborValue(csilE)))(mapGet(value, "links")),
+    suggestedShifts: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : fromRunShiftsCborValue(csilV))(mapGet(value, "suggested_shifts")),
+  };
+}
+
+export function toPutDiagnosisRequestCbor(v: PutDiagnosisRequest): Uint8Array {
+  return encodeValue(toPutDiagnosisRequestCborValue(v));
+}
+
+export function fromPutDiagnosisRequestCbor(bytes: Uint8Array): PutDiagnosisRequest {
+  return fromPutDiagnosisRequestCborValue(decode(bytes));
+}
+
+export function toPutDiagnosisResponseCborValue(v: PutDiagnosisResponse): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  csilMap.set("created", v.created);
+  csilMap.set("diagnosis", toDiagnosisSummaryCborValue(v.diagnosis));
+  return csilMap;
+}
+
+export function fromPutDiagnosisResponseCborValue(value: CborValue): PutDiagnosisResponse {
+  return {
+    diagnosis: fromDiagnosisSummaryCborValue(requireKey(value, "diagnosis")),
+    created: asBool(requireKey(value, "created")),
+  };
+}
+
+export function toPutDiagnosisResponseCbor(v: PutDiagnosisResponse): Uint8Array {
+  return encodeValue(toPutDiagnosisResponseCborValue(v));
+}
+
+export function fromPutDiagnosisResponseCbor(bytes: Uint8Array): PutDiagnosisResponse {
+  return fromPutDiagnosisResponseCborValue(decode(bytes));
+}
+
+export function toPathOwnerRuleCborValue(v: PathOwnerRule): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  csilMap.set("owners", v.owners);
+  csilMap.set("pattern", v.pattern);
+  return csilMap;
+}
+
+export function fromPathOwnerRuleCborValue(value: CborValue): PathOwnerRule {
+  return {
+    pattern: asString(requireKey(value, "pattern")),
+    owners: asArray(requireKey(value, "owners")).map((csilE) => asString(csilE)),
+  };
+}
+
+export function toPathOwnerRuleCbor(v: PathOwnerRule): Uint8Array {
+  return encodeValue(toPathOwnerRuleCborValue(v));
+}
+
+export function fromPathOwnerRuleCbor(bytes: Uint8Array): PathOwnerRule {
+  return fromPathOwnerRuleCborValue(decode(bytes));
+}
+
+export function toReportingSettingsCborValue(v: ReportingSettings): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  csilMap.set("path_owners", v.pathOwners.map((csilE): CborValue => toPathOwnerRuleCborValue(csilE)));
+  csilMap.set("report_mode", v.reportMode);
+  csilMap.set("path_acceptance", v.pathAcceptance);
+  csilMap.set("codeowners_import", v.codeownersImport);
+  csilMap.set("agreement_contexts", v.agreementContexts);
+  csilMap.set("path_owners_source", v.pathOwnersSource);
+  csilMap.set("report_mode_source", v.reportModeSource);
+  csilMap.set("path_acceptance_source", v.pathAcceptanceSource);
+  csilMap.set("codeowners_import_source", v.codeownersImportSource);
+  csilMap.set("agreement_contexts_source", v.agreementContextsSource);
+  csilMap.set("codeowners_cache_ttl_seconds", v.codeownersCacheTtlSeconds);
+  return csilMap;
+}
+
+export function fromReportingSettingsCborValue(value: CborValue): ReportingSettings {
+  return {
+    reportMode: asString(requireKey(value, "report_mode")),
+    reportModeSource: asString(requireKey(value, "report_mode_source")),
+    agreementContexts: asArray(requireKey(value, "agreement_contexts")).map((csilE) => asString(csilE)),
+    agreementContextsSource: asString(requireKey(value, "agreement_contexts_source")),
+    codeownersImport: asString(requireKey(value, "codeowners_import")),
+    codeownersImportSource: asString(requireKey(value, "codeowners_import_source")),
+    codeownersCacheTtlSeconds: asNumber(requireKey(value, "codeowners_cache_ttl_seconds")),
+    pathAcceptance: asString(requireKey(value, "path_acceptance")),
+    pathAcceptanceSource: asString(requireKey(value, "path_acceptance_source")),
+    pathOwners: asArray(requireKey(value, "path_owners")).map((csilE) => fromPathOwnerRuleCborValue(csilE)),
+    pathOwnersSource: asString(requireKey(value, "path_owners_source")),
+  };
+}
+
+export function toReportingSettingsCbor(v: ReportingSettings): Uint8Array {
+  return encodeValue(toReportingSettingsCborValue(v));
+}
+
+export function fromReportingSettingsCbor(bytes: Uint8Array): ReportingSettings {
+  return fromReportingSettingsCborValue(decode(bytes));
+}
+
+export function toGetReportingSettingsRequestCborValue(v: GetReportingSettingsRequest): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  csilMap.set("project_id", v.projectId);
+  return csilMap;
+}
+
+export function fromGetReportingSettingsRequestCborValue(value: CborValue): GetReportingSettingsRequest {
+  return {
+    projectId: asString(requireKey(value, "project_id")),
+  };
+}
+
+export function toGetReportingSettingsRequestCbor(v: GetReportingSettingsRequest): Uint8Array {
+  return encodeValue(toGetReportingSettingsRequestCborValue(v));
+}
+
+export function fromGetReportingSettingsRequestCbor(bytes: Uint8Array): GetReportingSettingsRequest {
+  return fromGetReportingSettingsRequestCborValue(decode(bytes));
+}
+
+export function toGetReportingSettingsResponseCborValue(v: GetReportingSettingsResponse): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  csilMap.set("effective", toReportingSettingsCborValue(v.effective));
+  if (v.projectPathOwners !== undefined) csilMap.set("project_path_owners", v.projectPathOwners.map((csilE): CborValue => toPathOwnerRuleCborValue(csilE)));
+  if (v.projectReportMode !== undefined) csilMap.set("project_report_mode", v.projectReportMode);
+  csilMap.set("can_manage_ownership", v.canManageOwnership);
+  csilMap.set("can_manage_reporting", v.canManageReporting);
+  if (v.projectPathAcceptance !== undefined) csilMap.set("project_path_acceptance", v.projectPathAcceptance);
+  if (v.projectCodeownersImport !== undefined) csilMap.set("project_codeowners_import", v.projectCodeownersImport);
+  if (v.projectAgreementContexts !== undefined) csilMap.set("project_agreement_contexts", v.projectAgreementContexts);
+  if (v.projectCodeownersCacheTtlSeconds !== undefined) csilMap.set("project_codeowners_cache_ttl_seconds", v.projectCodeownersCacheTtlSeconds);
+  return csilMap;
+}
+
+export function fromGetReportingSettingsResponseCborValue(value: CborValue): GetReportingSettingsResponse {
+  return {
+    effective: fromReportingSettingsCborValue(requireKey(value, "effective")),
+    projectReportMode: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "project_report_mode")),
+    projectAgreementContexts: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asArray(csilV).map((csilE) => asString(csilE)))(mapGet(value, "project_agreement_contexts")),
+    projectCodeownersImport: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "project_codeowners_import")),
+    projectCodeownersCacheTtlSeconds: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asNumber(csilV))(mapGet(value, "project_codeowners_cache_ttl_seconds")),
+    projectPathAcceptance: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "project_path_acceptance")),
+    projectPathOwners: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asArray(csilV).map((csilE) => fromPathOwnerRuleCborValue(csilE)))(mapGet(value, "project_path_owners")),
+    canManageReporting: asBool(requireKey(value, "can_manage_reporting")),
+    canManageOwnership: asBool(requireKey(value, "can_manage_ownership")),
+  };
+}
+
+export function toGetReportingSettingsResponseCbor(v: GetReportingSettingsResponse): Uint8Array {
+  return encodeValue(toGetReportingSettingsResponseCborValue(v));
+}
+
+export function fromGetReportingSettingsResponseCbor(bytes: Uint8Array): GetReportingSettingsResponse {
+  return fromGetReportingSettingsResponseCborValue(decode(bytes));
+}
+
+export function toUpdateReportingSettingsRequestCborValue(v: UpdateReportingSettingsRequest): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  if (v.inherit !== undefined) csilMap.set("inherit", v.inherit);
+  csilMap.set("project_id", v.projectId);
+  if (v.pathOwners !== undefined) csilMap.set("path_owners", v.pathOwners.map((csilE): CborValue => toPathOwnerRuleCborValue(csilE)));
+  if (v.reportMode !== undefined) csilMap.set("report_mode", v.reportMode);
+  if (v.pathAcceptance !== undefined) csilMap.set("path_acceptance", v.pathAcceptance);
+  if (v.codeownersImport !== undefined) csilMap.set("codeowners_import", v.codeownersImport);
+  if (v.agreementContexts !== undefined) csilMap.set("agreement_contexts", v.agreementContexts);
+  if (v.codeownersCacheTtlSeconds !== undefined) csilMap.set("codeowners_cache_ttl_seconds", v.codeownersCacheTtlSeconds);
+  return csilMap;
+}
+
+export function fromUpdateReportingSettingsRequestCborValue(value: CborValue): UpdateReportingSettingsRequest {
+  return {
+    projectId: asString(requireKey(value, "project_id")),
+    reportMode: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "report_mode")),
+    agreementContexts: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asArray(csilV).map((csilE) => asString(csilE)))(mapGet(value, "agreement_contexts")),
+    codeownersImport: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "codeowners_import")),
+    codeownersCacheTtlSeconds: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asNumber(csilV))(mapGet(value, "codeowners_cache_ttl_seconds")),
+    pathAcceptance: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "path_acceptance")),
+    pathOwners: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asArray(csilV).map((csilE) => fromPathOwnerRuleCborValue(csilE)))(mapGet(value, "path_owners")),
+    inherit: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asArray(csilV).map((csilE) => asString(csilE)))(mapGet(value, "inherit")),
+  };
+}
+
+export function toUpdateReportingSettingsRequestCbor(v: UpdateReportingSettingsRequest): Uint8Array {
+  return encodeValue(toUpdateReportingSettingsRequestCborValue(v));
+}
+
+export function fromUpdateReportingSettingsRequestCbor(bytes: Uint8Array): UpdateReportingSettingsRequest {
+  return fromUpdateReportingSettingsRequestCborValue(decode(bytes));
+}
+
+export function toAgreementOtherResultCborValue(v: AgreementOtherResult): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  if (v.raw !== undefined) csilMap.set("raw", v.raw);
+  csilMap.set("kind", v.kind);
+  csilMap.set("name", v.name);
+  csilMap.set("state", v.state);
+  if (v.targetUrl !== undefined) csilMap.set("target_url", v.targetUrl);
+  return csilMap;
+}
+
+export function fromAgreementOtherResultCborValue(value: CborValue): AgreementOtherResult {
+  return {
+    name: asString(requireKey(value, "name")),
+    kind: asString(requireKey(value, "kind")),
+    state: asString(requireKey(value, "state")),
+    raw: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "raw")),
+    targetUrl: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "target_url")),
+  };
+}
+
+export function toAgreementOtherResultCbor(v: AgreementOtherResult): Uint8Array {
+  return encodeValue(toAgreementOtherResultCborValue(v));
+}
+
+export function fromAgreementOtherResultCbor(bytes: Uint8Array): AgreementOtherResult {
+  return fromAgreementOtherResultCborValue(decode(bytes));
+}
+
+export function toAgreementRowCborValue(v: AgreementRow): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  if (v.agree !== undefined) csilMap.set("agree", v.agree);
+  if (v.branch !== undefined) csilMap.set("branch", v.branch);
+  csilMap.set("status", v.status);
+  if (v.eventId !== undefined) csilMap.set("event_id", v.eventId);
+  if (v.prNumber !== undefined) csilMap.set("pr_number", v.prNumber);
+  csilMap.set("commit_sha", v.commitSha);
+  if (v.commitUrl !== undefined) csilMap.set("commit_url", v.commitUrl);
+  if (v.lastError !== undefined) csilMap.set("last_error", v.lastError);
+  if (v.observedAt !== undefined) csilMap.set("observed_at", v.observedAt);
+  if (v.otherResult !== undefined) csilMap.set("other_result", v.otherResult);
+  csilMap.set("other_results", v.otherResults.map((csilE): CborValue => toAgreementOtherResultCborValue(csilE)));
+  csilMap.set("reactorcide_result", v.reactorcideResult);
+  csilMap.set("reactorcide_completed_at", v.reactorcideCompletedAt);
+  return csilMap;
+}
+
+export function fromAgreementRowCborValue(value: CborValue): AgreementRow {
+  return {
+    commitSha: asString(requireKey(value, "commit_sha")),
+    eventId: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "event_id")),
+    prNumber: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asNumber(csilV))(mapGet(value, "pr_number")),
+    branch: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "branch")),
+    reactorcideResult: asString(requireKey(value, "reactorcide_result")),
+    otherResult: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "other_result")),
+    agree: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asBool(csilV))(mapGet(value, "agree")),
+    status: asString(requireKey(value, "status")),
+    otherResults: asArray(requireKey(value, "other_results")).map((csilE) => fromAgreementOtherResultCborValue(csilE)),
+    reactorcideCompletedAt: asString(requireKey(value, "reactorcide_completed_at")),
+    observedAt: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "observed_at")),
+    lastError: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "last_error")),
+    commitUrl: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "commit_url")),
+  };
+}
+
+export function toAgreementRowCbor(v: AgreementRow): Uint8Array {
+  return encodeValue(toAgreementRowCborValue(v));
+}
+
+export function fromAgreementRowCbor(bytes: Uint8Array): AgreementRow {
+  return fromAgreementRowCborValue(decode(bytes));
+}
+
+export function toGetAgreementReportRequestCborValue(v: GetAgreementReportRequest): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  if (v.limit !== undefined) csilMap.set("limit", v.limit);
+  if (v.since !== undefined) csilMap.set("since", v.since);
+  csilMap.set("project_id", v.projectId);
+  return csilMap;
+}
+
+export function fromGetAgreementReportRequestCborValue(value: CborValue): GetAgreementReportRequest {
+  return {
+    projectId: asString(requireKey(value, "project_id")),
+    since: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "since")),
+    limit: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asNumber(csilV))(mapGet(value, "limit")),
+  };
+}
+
+export function toGetAgreementReportRequestCbor(v: GetAgreementReportRequest): Uint8Array {
+  return encodeValue(toGetAgreementReportRequestCborValue(v));
+}
+
+export function fromGetAgreementReportRequestCbor(bytes: Uint8Array): GetAgreementReportRequest {
+  return fromGetAgreementReportRequestCborValue(decode(bytes));
+}
+
+export function toGetAgreementReportResponseCborValue(v: GetAgreementReportResponse): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  csilMap.set("rows", v.rows.map((csilE): CborValue => toAgreementRowCborValue(csilE)));
+  csilMap.set("total", v.total);
+  csilMap.set("agreed", v.agreed);
+  csilMap.set("pending", v.pending);
+  csilMap.set("compared", v.compared);
+  csilMap.set("contexts", v.contexts);
+  csilMap.set("no_other", v.noOther);
+  csilMap.set("disagreed", v.disagreed);
+  csilMap.set("disagreements", v.disagreements.map((csilE): CborValue => toAgreementRowCborValue(csilE)));
+  if (v.rateBasisPoints !== undefined) csilMap.set("rate_basis_points", v.rateBasisPoints);
+  csilMap.set("reactorcide_failed_other_passed", v.reactorcideFailedOtherPassed);
+  csilMap.set("reactorcide_passed_other_failed", v.reactorcidePassedOtherFailed);
+  return csilMap;
+}
+
+export function fromGetAgreementReportResponseCborValue(value: CborValue): GetAgreementReportResponse {
+  return {
+    contexts: asArray(requireKey(value, "contexts")).map((csilE) => asString(csilE)),
+    total: asNumber(requireKey(value, "total")),
+    compared: asNumber(requireKey(value, "compared")),
+    agreed: asNumber(requireKey(value, "agreed")),
+    disagreed: asNumber(requireKey(value, "disagreed")),
+    pending: asNumber(requireKey(value, "pending")),
+    noOther: asNumber(requireKey(value, "no_other")),
+    rateBasisPoints: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asNumber(csilV))(mapGet(value, "rate_basis_points")),
+    reactorcideFailedOtherPassed: asNumber(requireKey(value, "reactorcide_failed_other_passed")),
+    reactorcidePassedOtherFailed: asNumber(requireKey(value, "reactorcide_passed_other_failed")),
+    disagreements: asArray(requireKey(value, "disagreements")).map((csilE) => fromAgreementRowCborValue(csilE)),
+    rows: asArray(requireKey(value, "rows")).map((csilE) => fromAgreementRowCborValue(csilE)),
+  };
+}
+
+export function toGetAgreementReportResponseCbor(v: GetAgreementReportResponse): Uint8Array {
+  return encodeValue(toGetAgreementReportResponseCborValue(v));
+}
+
+export function fromGetAgreementReportResponseCbor(bytes: Uint8Array): GetAgreementReportResponse {
+  return fromGetAgreementReportResponseCborValue(decode(bytes));
+}
+
+export function toPathAcceptanceSummaryCborValue(v: PathAcceptanceSummary): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  csilMap.set("state", v.state);
+  if (v.reason !== undefined) csilMap.set("reason", v.reason);
+  if (v.revokedAt !== undefined) csilMap.set("revoked_at", v.revokedAt);
+  if (v.revokedBy !== undefined) csilMap.set("revoked_by", v.revokedBy);
+  if (v.acceptedAt !== undefined) csilMap.set("accepted_at", v.acceptedAt);
+  if (v.acceptedBy !== undefined) csilMap.set("accepted_by", v.acceptedBy);
+  csilMap.set("path_pattern", v.pathPattern);
+  if (v.requestedAt !== undefined) csilMap.set("requested_at", v.requestedAt);
+  if (v.requestedBy !== undefined) csilMap.set("requested_by", v.requestedBy);
+  csilMap.set("acceptance_id", v.acceptanceId);
+  csilMap.set("owner_subject", v.ownerSubject);
+  if (v.decisionReason !== undefined) csilMap.set("decision_reason", v.decisionReason);
+  if (v.revokedByName !== undefined) csilMap.set("revoked_by_name", v.revokedByName);
+  if (v.acceptedByName !== undefined) csilMap.set("accepted_by_name", v.acceptedByName);
+  if (v.requestedByName !== undefined) csilMap.set("requested_by_name", v.requestedByName);
+  csilMap.set("workflow_security_id", v.workflowSecurityId);
+  return csilMap;
+}
+
+export function fromPathAcceptanceSummaryCborValue(value: CborValue): PathAcceptanceSummary {
+  return {
+    acceptanceId: asString(requireKey(value, "acceptance_id")),
+    workflowSecurityId: asString(requireKey(value, "workflow_security_id")),
+    pathPattern: asString(requireKey(value, "path_pattern")),
+    ownerSubject: asString(requireKey(value, "owner_subject")),
+    state: asString(requireKey(value, "state")),
+    reason: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "reason")),
+    requestedBy: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "requested_by")),
+    requestedByName: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "requested_by_name")),
+    requestedAt: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "requested_at")),
+    acceptedBy: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "accepted_by")),
+    acceptedByName: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "accepted_by_name")),
+    acceptedAt: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "accepted_at")),
+    revokedBy: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "revoked_by")),
+    revokedByName: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "revoked_by_name")),
+    revokedAt: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "revoked_at")),
+    decisionReason: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "decision_reason")),
+  };
+}
+
+export function toPathAcceptanceSummaryCbor(v: PathAcceptanceSummary): Uint8Array {
+  return encodeValue(toPathAcceptanceSummaryCborValue(v));
+}
+
+export function fromPathAcceptanceSummaryCbor(bytes: Uint8Array): PathAcceptanceSummary {
+  return fromPathAcceptanceSummaryCborValue(decode(bytes));
+}
+
+export function toListPathAcceptancesRequestCborValue(v: ListPathAcceptancesRequest): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  if (v.state !== undefined) csilMap.set("state", v.state);
+  csilMap.set("project_id", v.projectId);
+  return csilMap;
+}
+
+export function fromListPathAcceptancesRequestCborValue(value: CborValue): ListPathAcceptancesRequest {
+  return {
+    projectId: asString(requireKey(value, "project_id")),
+    state: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "state")),
+  };
+}
+
+export function toListPathAcceptancesRequestCbor(v: ListPathAcceptancesRequest): Uint8Array {
+  return encodeValue(toListPathAcceptancesRequestCborValue(v));
+}
+
+export function fromListPathAcceptancesRequestCbor(bytes: Uint8Array): ListPathAcceptancesRequest {
+  return fromListPathAcceptancesRequestCborValue(decode(bytes));
+}
+
+export function toListPathAcceptancesResponseCborValue(v: ListPathAcceptancesResponse): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  csilMap.set("rows", v.rows.map((csilE): CborValue => toPathAcceptanceSummaryCborValue(csilE)));
+  csilMap.set("path_acceptance", v.pathAcceptance);
+  csilMap.set("ownership_source", v.ownershipSource);
+  csilMap.set("can_manage_ownership", v.canManageOwnership);
+  return csilMap;
+}
+
+export function fromListPathAcceptancesResponseCborValue(value: CborValue): ListPathAcceptancesResponse {
+  return {
+    pathAcceptance: asString(requireKey(value, "path_acceptance")),
+    ownershipSource: asString(requireKey(value, "ownership_source")),
+    rows: asArray(requireKey(value, "rows")).map((csilE) => fromPathAcceptanceSummaryCborValue(csilE)),
+    canManageOwnership: asBool(requireKey(value, "can_manage_ownership")),
+  };
+}
+
+export function toListPathAcceptancesResponseCbor(v: ListPathAcceptancesResponse): Uint8Array {
+  return encodeValue(toListPathAcceptancesResponseCborValue(v));
+}
+
+export function fromListPathAcceptancesResponseCbor(bytes: Uint8Array): ListPathAcceptancesResponse {
+  return fromListPathAcceptancesResponseCborValue(decode(bytes));
+}
+
+export function toRequestPathAcceptanceRequestCborValue(v: RequestPathAcceptanceRequest): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  if (v.accept !== undefined) csilMap.set("accept", v.accept);
+  if (v.reason !== undefined) csilMap.set("reason", v.reason);
+  csilMap.set("project_id", v.projectId);
+  csilMap.set("path_pattern", v.pathPattern);
+  csilMap.set("owner_subject", v.ownerSubject);
+  csilMap.set("workflow_security_id", v.workflowSecurityId);
+  return csilMap;
+}
+
+export function fromRequestPathAcceptanceRequestCborValue(value: CborValue): RequestPathAcceptanceRequest {
+  return {
+    projectId: asString(requireKey(value, "project_id")),
+    workflowSecurityId: asString(requireKey(value, "workflow_security_id")),
+    pathPattern: asString(requireKey(value, "path_pattern")),
+    ownerSubject: asString(requireKey(value, "owner_subject")),
+    reason: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "reason")),
+    accept: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asBool(csilV))(mapGet(value, "accept")),
+  };
+}
+
+export function toRequestPathAcceptanceRequestCbor(v: RequestPathAcceptanceRequest): Uint8Array {
+  return encodeValue(toRequestPathAcceptanceRequestCborValue(v));
+}
+
+export function fromRequestPathAcceptanceRequestCbor(bytes: Uint8Array): RequestPathAcceptanceRequest {
+  return fromRequestPathAcceptanceRequestCborValue(decode(bytes));
+}
+
+export function toPathAcceptanceResponseCborValue(v: PathAcceptanceResponse): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  csilMap.set("acceptance", toPathAcceptanceSummaryCborValue(v.acceptance));
+  return csilMap;
+}
+
+export function fromPathAcceptanceResponseCborValue(value: CborValue): PathAcceptanceResponse {
+  return {
+    acceptance: fromPathAcceptanceSummaryCborValue(requireKey(value, "acceptance")),
+  };
+}
+
+export function toPathAcceptanceResponseCbor(v: PathAcceptanceResponse): Uint8Array {
+  return encodeValue(toPathAcceptanceResponseCborValue(v));
+}
+
+export function fromPathAcceptanceResponseCbor(bytes: Uint8Array): PathAcceptanceResponse {
+  return fromPathAcceptanceResponseCborValue(decode(bytes));
+}
+
+export function toDecidePathAcceptanceRequestCborValue(v: DecidePathAcceptanceRequest): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  if (v.reason !== undefined) csilMap.set("reason", v.reason);
+  csilMap.set("decision", v.decision);
+  csilMap.set("project_id", v.projectId);
+  csilMap.set("acceptance_id", v.acceptanceId);
+  return csilMap;
+}
+
+export function fromDecidePathAcceptanceRequestCborValue(value: CborValue): DecidePathAcceptanceRequest {
+  return {
+    projectId: asString(requireKey(value, "project_id")),
+    acceptanceId: asString(requireKey(value, "acceptance_id")),
+    decision: asString(requireKey(value, "decision")),
+    reason: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "reason")),
+  };
+}
+
+export function toDecidePathAcceptanceRequestCbor(v: DecidePathAcceptanceRequest): Uint8Array {
+  return encodeValue(toDecidePathAcceptanceRequestCborValue(v));
+}
+
+export function fromDecidePathAcceptanceRequestCbor(bytes: Uint8Array): DecidePathAcceptanceRequest {
+  return fromDecidePathAcceptanceRequestCborValue(decode(bytes));
+}
+
+export function toRequiredSetApproverRuleCborValue(v: RequiredSetApproverRule): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  csilMap.set("branches", v.branches);
+  csilMap.set("approvers", v.approvers);
+  return csilMap;
+}
+
+export function fromRequiredSetApproverRuleCborValue(value: CborValue): RequiredSetApproverRule {
+  return {
+    branches: asArray(requireKey(value, "branches")).map((csilE) => asString(csilE)),
+    approvers: asArray(requireKey(value, "approvers")).map((csilE) => asString(csilE)),
+  };
+}
+
+export function toRequiredSetApproverRuleCbor(v: RequiredSetApproverRule): Uint8Array {
+  return encodeValue(toRequiredSetApproverRuleCborValue(v));
+}
+
+export function fromRequiredSetApproverRuleCbor(bytes: Uint8Array): RequiredSetApproverRule {
+  return fromRequiredSetApproverRuleCborValue(decode(bytes));
+}
+
+export function toRequiredSetWorkflowCborValue(v: RequiredSetWorkflow): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  if (v.name !== undefined) csilMap.set("name", v.name);
+  csilMap.set("state", v.state);
+  csilMap.set("in_set", v.inSet);
+  if (v.reason !== undefined) csilMap.set("reason", v.reason);
+  if (v.source !== undefined) csilMap.set("source", v.source);
+  if (v.addedAt !== undefined) csilMap.set("added_at", v.addedAt);
+  if (v.addedBy !== undefined) csilMap.set("added_by", v.addedBy);
+  if (v.lastSeen !== undefined) csilMap.set("last_seen", v.lastSeen);
+  if (v.addedByName !== undefined) csilMap.set("added_by_name", v.addedByName);
+  csilMap.set("branch_pattern", v.branchPattern);
+  if (v.quarantinedBy !== undefined) csilMap.set("quarantined_by", v.quarantinedBy);
+  if (v.quarantineReason !== undefined) csilMap.set("quarantine_reason", v.quarantineReason);
+  if (v.quarantinedUntil !== undefined) csilMap.set("quarantined_until", v.quarantinedUntil);
+  if (v.quarantinedByName !== undefined) csilMap.set("quarantined_by_name", v.quarantinedByName);
+  csilMap.set("workflow_security_id", v.workflowSecurityId);
+  return csilMap;
+}
+
+export function fromRequiredSetWorkflowCborValue(value: CborValue): RequiredSetWorkflow {
+  return {
+    workflowSecurityId: asString(requireKey(value, "workflow_security_id")),
+    name: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "name")),
+    branchPattern: asString(requireKey(value, "branch_pattern")),
+    state: asString(requireKey(value, "state")),
+    inSet: asBool(requireKey(value, "in_set")),
+    source: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "source")),
+    addedBy: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "added_by")),
+    addedByName: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "added_by_name")),
+    addedAt: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "added_at")),
+    reason: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "reason")),
+    quarantinedUntil: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "quarantined_until")),
+    quarantineReason: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "quarantine_reason")),
+    quarantinedBy: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "quarantined_by")),
+    quarantinedByName: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "quarantined_by_name")),
+    lastSeen: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "last_seen")),
+  };
+}
+
+export function toRequiredSetWorkflowCbor(v: RequiredSetWorkflow): Uint8Array {
+  return encodeValue(toRequiredSetWorkflowCborValue(v));
+}
+
+export function fromRequiredSetWorkflowCbor(bytes: Uint8Array): RequiredSetWorkflow {
+  return fromRequiredSetWorkflowCborValue(decode(bytes));
+}
+
+export function toRequiredSetProposalCborValue(v: RequiredSetProposal): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  csilMap.set("state", v.state);
+  csilMap.set("action", v.action);
+  if (v.reason !== undefined) csilMap.set("reason", v.reason);
+  if (v.decidedAt !== undefined) csilMap.set("decided_at", v.decidedAt);
+  if (v.decidedBy !== undefined) csilMap.set("decided_by", v.decidedBy);
+  csilMap.set("proposal_id", v.proposalId);
+  csilMap.set("proposed_at", v.proposedAt);
+  if (v.proposedBy !== undefined) csilMap.set("proposed_by", v.proposedBy);
+  csilMap.set("branch_pattern", v.branchPattern);
+  if (v.decidedByName !== undefined) csilMap.set("decided_by_name", v.decidedByName);
+  if (v.decisionReason !== undefined) csilMap.set("decision_reason", v.decisionReason);
+  if (v.proposedByName !== undefined) csilMap.set("proposed_by_name", v.proposedByName);
+  csilMap.set("workflow_security_id", v.workflowSecurityId);
+  return csilMap;
+}
+
+export function fromRequiredSetProposalCborValue(value: CborValue): RequiredSetProposal {
+  return {
+    proposalId: asString(requireKey(value, "proposal_id")),
+    workflowSecurityId: asString(requireKey(value, "workflow_security_id")),
+    branchPattern: asString(requireKey(value, "branch_pattern")),
+    action: asString(requireKey(value, "action")),
+    state: asString(requireKey(value, "state")),
+    reason: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "reason")),
+    proposedBy: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "proposed_by")),
+    proposedByName: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "proposed_by_name")),
+    proposedAt: asString(requireKey(value, "proposed_at")),
+    decidedBy: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "decided_by")),
+    decidedByName: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "decided_by_name")),
+    decidedAt: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "decided_at")),
+    decisionReason: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "decision_reason")),
+  };
+}
+
+export function toRequiredSetProposalCbor(v: RequiredSetProposal): Uint8Array {
+  return encodeValue(toRequiredSetProposalCborValue(v));
+}
+
+export function fromRequiredSetProposalCbor(bytes: Uint8Array): RequiredSetProposal {
+  return fromRequiredSetProposalCborValue(decode(bytes));
+}
+
+export function toGetRequiredSetRequestCborValue(v: GetRequiredSetRequest): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  csilMap.set("project_id", v.projectId);
+  return csilMap;
+}
+
+export function fromGetRequiredSetRequestCborValue(value: CborValue): GetRequiredSetRequest {
+  return {
+    projectId: asString(requireKey(value, "project_id")),
+  };
+}
+
+export function toGetRequiredSetRequestCbor(v: GetRequiredSetRequest): Uint8Array {
+  return encodeValue(toGetRequiredSetRequestCborValue(v));
+}
+
+export function fromGetRequiredSetRequestCbor(bytes: Uint8Array): GetRequiredSetRequest {
+  return fromGetRequiredSetRequestCborValue(decode(bytes));
+}
+
+export function toGetRequiredSetResponseCborValue(v: GetRequiredSetResponse): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  csilMap.set("enabled", v.enabled);
+  csilMap.set("approvers", v.approvers);
+  csilMap.set("proposals", v.proposals.map((csilE): CborValue => toRequiredSetProposalCborValue(csilE)));
+  csilMap.set("workflows", v.workflows.map((csilE): CborValue => toRequiredSetWorkflowCborValue(csilE)));
+  csilMap.set("can_manage", v.canManage);
+  if (v.enabledAt !== undefined) csilMap.set("enabled_at", v.enabledAt);
+  csilMap.set("can_propose", v.canPropose);
+  csilMap.set("approver_rules", v.approverRules.map((csilE): CborValue => toRequiredSetApproverRuleCborValue(csilE)));
+  csilMap.set("approvers_source", v.approversSource);
+  csilMap.set("approvers_inherit", v.approversInherit);
+  csilMap.set("max_quarantine_days", v.maxQuarantineDays);
+  csilMap.set("approver_rules_inherit", v.approverRulesInherit);
+  csilMap.set("can_approve_all_branches", v.canApproveAllBranches);
+  return csilMap;
+}
+
+export function fromGetRequiredSetResponseCborValue(value: CborValue): GetRequiredSetResponse {
+  return {
+    enabled: asBool(requireKey(value, "enabled")),
+    enabledAt: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "enabled_at")),
+    workflows: asArray(requireKey(value, "workflows")).map((csilE) => fromRequiredSetWorkflowCborValue(csilE)),
+    proposals: asArray(requireKey(value, "proposals")).map((csilE) => fromRequiredSetProposalCborValue(csilE)),
+    approvers: asArray(requireKey(value, "approvers")).map((csilE) => asString(csilE)),
+    approversSource: asString(requireKey(value, "approvers_source")),
+    approverRules: asArray(requireKey(value, "approver_rules")).map((csilE) => fromRequiredSetApproverRuleCborValue(csilE)),
+    approversInherit: asBool(requireKey(value, "approvers_inherit")),
+    approverRulesInherit: asBool(requireKey(value, "approver_rules_inherit")),
+    maxQuarantineDays: asNumber(requireKey(value, "max_quarantine_days")),
+    canPropose: asBool(requireKey(value, "can_propose")),
+    canManage: asBool(requireKey(value, "can_manage")),
+    canApproveAllBranches: asBool(requireKey(value, "can_approve_all_branches")),
+  };
+}
+
+export function toGetRequiredSetResponseCbor(v: GetRequiredSetResponse): Uint8Array {
+  return encodeValue(toGetRequiredSetResponseCborValue(v));
+}
+
+export function fromGetRequiredSetResponseCbor(bytes: Uint8Array): GetRequiredSetResponse {
+  return fromGetRequiredSetResponseCborValue(decode(bytes));
+}
+
+export function toSetRequiredSetEnabledRequestCborValue(v: SetRequiredSetEnabledRequest): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  csilMap.set("enabled", v.enabled);
+  csilMap.set("project_id", v.projectId);
+  return csilMap;
+}
+
+export function fromSetRequiredSetEnabledRequestCborValue(value: CborValue): SetRequiredSetEnabledRequest {
+  return {
+    projectId: asString(requireKey(value, "project_id")),
+    enabled: asBool(requireKey(value, "enabled")),
+  };
+}
+
+export function toSetRequiredSetEnabledRequestCbor(v: SetRequiredSetEnabledRequest): Uint8Array {
+  return encodeValue(toSetRequiredSetEnabledRequestCborValue(v));
+}
+
+export function fromSetRequiredSetEnabledRequestCbor(bytes: Uint8Array): SetRequiredSetEnabledRequest {
+  return fromSetRequiredSetEnabledRequestCborValue(decode(bytes));
+}
+
+export function toSetRequiredSetEnabledResponseCborValue(v: SetRequiredSetEnabledResponse): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  csilMap.set("seeded", v.seeded);
+  csilMap.set("enabled", v.enabled);
+  return csilMap;
+}
+
+export function fromSetRequiredSetEnabledResponseCborValue(value: CborValue): SetRequiredSetEnabledResponse {
+  return {
+    enabled: asBool(requireKey(value, "enabled")),
+    seeded: asArray(requireKey(value, "seeded")).map((csilE) => asString(csilE)),
+  };
+}
+
+export function toSetRequiredSetEnabledResponseCbor(v: SetRequiredSetEnabledResponse): Uint8Array {
+  return encodeValue(toSetRequiredSetEnabledResponseCborValue(v));
+}
+
+export function fromSetRequiredSetEnabledResponseCbor(bytes: Uint8Array): SetRequiredSetEnabledResponse {
+  return fromSetRequiredSetEnabledResponseCborValue(decode(bytes));
+}
+
+export function toProposeRequiredSetChangeRequestCborValue(v: ProposeRequiredSetChangeRequest): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  csilMap.set("action", v.action);
+  if (v.reason !== undefined) csilMap.set("reason", v.reason);
+  if (v.approve !== undefined) csilMap.set("approve", v.approve);
+  csilMap.set("project_id", v.projectId);
+  if (v.branchPattern !== undefined) csilMap.set("branch_pattern", v.branchPattern);
+  csilMap.set("workflow_security_id", v.workflowSecurityId);
+  return csilMap;
+}
+
+export function fromProposeRequiredSetChangeRequestCborValue(value: CborValue): ProposeRequiredSetChangeRequest {
+  return {
+    projectId: asString(requireKey(value, "project_id")),
+    action: asString(requireKey(value, "action")),
+    workflowSecurityId: asString(requireKey(value, "workflow_security_id")),
+    branchPattern: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "branch_pattern")),
+    reason: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "reason")),
+    approve: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asBool(csilV))(mapGet(value, "approve")),
+  };
+}
+
+export function toProposeRequiredSetChangeRequestCbor(v: ProposeRequiredSetChangeRequest): Uint8Array {
+  return encodeValue(toProposeRequiredSetChangeRequestCborValue(v));
+}
+
+export function fromProposeRequiredSetChangeRequestCbor(bytes: Uint8Array): ProposeRequiredSetChangeRequest {
+  return fromProposeRequiredSetChangeRequestCborValue(decode(bytes));
+}
+
+export function toProposeRequiredSetChangeResponseCborValue(v: ProposeRequiredSetChangeResponse): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  csilMap.set("proposal", toRequiredSetProposalCborValue(v.proposal));
+  return csilMap;
+}
+
+export function fromProposeRequiredSetChangeResponseCborValue(value: CborValue): ProposeRequiredSetChangeResponse {
+  return {
+    proposal: fromRequiredSetProposalCborValue(requireKey(value, "proposal")),
+  };
+}
+
+export function toProposeRequiredSetChangeResponseCbor(v: ProposeRequiredSetChangeResponse): Uint8Array {
+  return encodeValue(toProposeRequiredSetChangeResponseCborValue(v));
+}
+
+export function fromProposeRequiredSetChangeResponseCbor(bytes: Uint8Array): ProposeRequiredSetChangeResponse {
+  return fromProposeRequiredSetChangeResponseCborValue(decode(bytes));
+}
+
+export function toDecideRequiredSetProposalRequestCborValue(v: DecideRequiredSetProposalRequest): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  if (v.reason !== undefined) csilMap.set("reason", v.reason);
+  csilMap.set("decision", v.decision);
+  csilMap.set("project_id", v.projectId);
+  csilMap.set("proposal_id", v.proposalId);
+  return csilMap;
+}
+
+export function fromDecideRequiredSetProposalRequestCborValue(value: CborValue): DecideRequiredSetProposalRequest {
+  return {
+    projectId: asString(requireKey(value, "project_id")),
+    proposalId: asString(requireKey(value, "proposal_id")),
+    decision: asString(requireKey(value, "decision")),
+    reason: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "reason")),
+  };
+}
+
+export function toDecideRequiredSetProposalRequestCbor(v: DecideRequiredSetProposalRequest): Uint8Array {
+  return encodeValue(toDecideRequiredSetProposalRequestCborValue(v));
+}
+
+export function fromDecideRequiredSetProposalRequestCbor(bytes: Uint8Array): DecideRequiredSetProposalRequest {
+  return fromDecideRequiredSetProposalRequestCborValue(decode(bytes));
+}
+
+export function toDecideRequiredSetProposalResponseCborValue(v: DecideRequiredSetProposalResponse): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  csilMap.set("proposal", toRequiredSetProposalCborValue(v.proposal));
+  return csilMap;
+}
+
+export function fromDecideRequiredSetProposalResponseCborValue(value: CborValue): DecideRequiredSetProposalResponse {
+  return {
+    proposal: fromRequiredSetProposalCborValue(requireKey(value, "proposal")),
+  };
+}
+
+export function toDecideRequiredSetProposalResponseCbor(v: DecideRequiredSetProposalResponse): Uint8Array {
+  return encodeValue(toDecideRequiredSetProposalResponseCborValue(v));
+}
+
+export function fromDecideRequiredSetProposalResponseCbor(bytes: Uint8Array): DecideRequiredSetProposalResponse {
+  return fromDecideRequiredSetProposalResponseCborValue(decode(bytes));
+}
+
+export function toQuarantineRequiredWorkflowRequestCborValue(v: QuarantineRequiredWorkflowRequest): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  csilMap.set("until", v.until);
+  csilMap.set("reason", v.reason);
+  csilMap.set("project_id", v.projectId);
+  if (v.branchPattern !== undefined) csilMap.set("branch_pattern", v.branchPattern);
+  csilMap.set("workflow_security_id", v.workflowSecurityId);
+  return csilMap;
+}
+
+export function fromQuarantineRequiredWorkflowRequestCborValue(value: CborValue): QuarantineRequiredWorkflowRequest {
+  return {
+    projectId: asString(requireKey(value, "project_id")),
+    workflowSecurityId: asString(requireKey(value, "workflow_security_id")),
+    branchPattern: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "branch_pattern")),
+    until: asString(requireKey(value, "until")),
+    reason: asString(requireKey(value, "reason")),
+  };
+}
+
+export function toQuarantineRequiredWorkflowRequestCbor(v: QuarantineRequiredWorkflowRequest): Uint8Array {
+  return encodeValue(toQuarantineRequiredWorkflowRequestCborValue(v));
+}
+
+export function fromQuarantineRequiredWorkflowRequestCbor(bytes: Uint8Array): QuarantineRequiredWorkflowRequest {
+  return fromQuarantineRequiredWorkflowRequestCborValue(decode(bytes));
+}
+
+export function toQuarantineRequiredWorkflowResponseCborValue(v: QuarantineRequiredWorkflowResponse): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  csilMap.set("workflow", toRequiredSetWorkflowCborValue(v.workflow));
+  return csilMap;
+}
+
+export function fromQuarantineRequiredWorkflowResponseCborValue(value: CborValue): QuarantineRequiredWorkflowResponse {
+  return {
+    workflow: fromRequiredSetWorkflowCborValue(requireKey(value, "workflow")),
+  };
+}
+
+export function toQuarantineRequiredWorkflowResponseCbor(v: QuarantineRequiredWorkflowResponse): Uint8Array {
+  return encodeValue(toQuarantineRequiredWorkflowResponseCborValue(v));
+}
+
+export function fromQuarantineRequiredWorkflowResponseCbor(bytes: Uint8Array): QuarantineRequiredWorkflowResponse {
+  return fromQuarantineRequiredWorkflowResponseCborValue(decode(bytes));
+}
+
+export function toUnquarantineRequiredWorkflowRequestCborValue(v: UnquarantineRequiredWorkflowRequest): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  csilMap.set("project_id", v.projectId);
+  if (v.branchPattern !== undefined) csilMap.set("branch_pattern", v.branchPattern);
+  csilMap.set("workflow_security_id", v.workflowSecurityId);
+  return csilMap;
+}
+
+export function fromUnquarantineRequiredWorkflowRequestCborValue(value: CborValue): UnquarantineRequiredWorkflowRequest {
+  return {
+    projectId: asString(requireKey(value, "project_id")),
+    workflowSecurityId: asString(requireKey(value, "workflow_security_id")),
+    branchPattern: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "branch_pattern")),
+  };
+}
+
+export function toUnquarantineRequiredWorkflowRequestCbor(v: UnquarantineRequiredWorkflowRequest): Uint8Array {
+  return encodeValue(toUnquarantineRequiredWorkflowRequestCborValue(v));
+}
+
+export function fromUnquarantineRequiredWorkflowRequestCbor(bytes: Uint8Array): UnquarantineRequiredWorkflowRequest {
+  return fromUnquarantineRequiredWorkflowRequestCborValue(decode(bytes));
+}
+
+export function toUnquarantineRequiredWorkflowResponseCborValue(v: UnquarantineRequiredWorkflowResponse): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  csilMap.set("done", v.done);
+  return csilMap;
+}
+
+export function fromUnquarantineRequiredWorkflowResponseCborValue(value: CborValue): UnquarantineRequiredWorkflowResponse {
+  return {
+    done: asBool(requireKey(value, "done")),
+  };
+}
+
+export function toUnquarantineRequiredWorkflowResponseCbor(v: UnquarantineRequiredWorkflowResponse): Uint8Array {
+  return encodeValue(toUnquarantineRequiredWorkflowResponseCborValue(v));
+}
+
+export function fromUnquarantineRequiredWorkflowResponseCbor(bytes: Uint8Array): UnquarantineRequiredWorkflowResponse {
+  return fromUnquarantineRequiredWorkflowResponseCborValue(decode(bytes));
+}
+
+export function toSetRequiredSetApproversRequestCborValue(v: SetRequiredSetApproversRequest): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  csilMap.set("approvers", v.approvers);
+  csilMap.set("project_id", v.projectId);
+  csilMap.set("inherit_rules", v.inheritRules);
+  csilMap.set("approver_rules", v.approverRules.map((csilE): CborValue => toRequiredSetApproverRuleCborValue(csilE)));
+  csilMap.set("inherit_approvers", v.inheritApprovers);
+  return csilMap;
+}
+
+export function fromSetRequiredSetApproversRequestCborValue(value: CborValue): SetRequiredSetApproversRequest {
+  return {
+    projectId: asString(requireKey(value, "project_id")),
+    inheritApprovers: asBool(requireKey(value, "inherit_approvers")),
+    approvers: asArray(requireKey(value, "approvers")).map((csilE) => asString(csilE)),
+    inheritRules: asBool(requireKey(value, "inherit_rules")),
+    approverRules: asArray(requireKey(value, "approver_rules")).map((csilE) => fromRequiredSetApproverRuleCborValue(csilE)),
+  };
+}
+
+export function toSetRequiredSetApproversRequestCbor(v: SetRequiredSetApproversRequest): Uint8Array {
+  return encodeValue(toSetRequiredSetApproversRequestCborValue(v));
+}
+
+export function fromSetRequiredSetApproversRequestCbor(bytes: Uint8Array): SetRequiredSetApproversRequest {
+  return fromSetRequiredSetApproversRequestCborValue(decode(bytes));
+}
+
+export function toPriorityLaneMatchCborValue(v: PriorityLaneMatch): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  if (v.draft !== undefined) csilMap.set("draft", v.draft);
+  if (v.retry !== undefined) csilMap.set("retry", v.retry);
+  if (v.jobKind !== undefined) csilMap.set("job_kind", v.jobKind);
+  if (v.classesAny !== undefined) csilMap.set("classes_any", v.classesAny);
+  if (v.eventTypes !== undefined) csilMap.set("event_types", v.eventTypes);
+  if (v.classesNone !== undefined) csilMap.set("classes_none", v.classesNone);
+  return csilMap;
+}
+
+export function fromPriorityLaneMatchCborValue(value: CborValue): PriorityLaneMatch {
+  return {
+    classesAny: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asArray(csilV).map((csilE) => asString(csilE)))(mapGet(value, "classes_any")),
+    classesNone: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asArray(csilV).map((csilE) => asString(csilE)))(mapGet(value, "classes_none")),
+    eventTypes: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asArray(csilV).map((csilE) => asString(csilE)))(mapGet(value, "event_types")),
+    draft: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asBool(csilV))(mapGet(value, "draft")),
+    jobKind: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "job_kind")),
+    retry: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asBool(csilV))(mapGet(value, "retry")),
+  };
+}
+
+export function toPriorityLaneMatchCbor(v: PriorityLaneMatch): Uint8Array {
+  return encodeValue(toPriorityLaneMatchCborValue(v));
+}
+
+export function fromPriorityLaneMatchCbor(bytes: Uint8Array): PriorityLaneMatch {
+  return fromPriorityLaneMatchCborValue(decode(bytes));
+}
+
+export function toPriorityLaneCborValue(v: PriorityLane): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  csilMap.set("base", v.base);
+  csilMap.set("name", v.name);
+  csilMap.set("match", toPriorityLaneMatchCborValue(v.match));
+  if (v.scope !== undefined) csilMap.set("scope", v.scope);
+  csilMap.set("enabled", v.enabled);
+  if (v.laneId !== undefined) csilMap.set("lane_id", v.laneId);
+  if (v.ruleId !== undefined) csilMap.set("rule_id", v.ruleId);
+  csilMap.set("position", v.position);
+  if (v.replaces !== undefined) csilMap.set("replaces", v.replaces);
+  csilMap.set("match_text", v.matchText);
+  if (v.projectId !== undefined) csilMap.set("project_id", v.projectId);
+  if (v.description !== undefined) csilMap.set("description", v.description);
+  return csilMap;
+}
+
+export function fromPriorityLaneCborValue(value: CborValue): PriorityLane {
+  return {
+    laneId: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "lane_id")),
+    ruleId: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "rule_id")),
+    projectId: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "project_id")),
+    name: asString(requireKey(value, "name")),
+    position: asNumber(requireKey(value, "position")),
+    description: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "description")),
+    base: asNumber(requireKey(value, "base")),
+    match: fromPriorityLaneMatchCborValue(requireKey(value, "match")),
+    matchText: asString(requireKey(value, "match_text")),
+    enabled: asBool(requireKey(value, "enabled")),
+    scope: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "scope")),
+    replaces: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "replaces")),
+  };
+}
+
+export function toPriorityLaneCbor(v: PriorityLane): Uint8Array {
+  return encodeValue(toPriorityLaneCborValue(v));
+}
+
+export function fromPriorityLaneCbor(bytes: Uint8Array): PriorityLane {
+  return fromPriorityLaneCborValue(decode(bytes));
+}
+
+export function toPriorityBoundsCborValue(v: PriorityBounds): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  csilMap.set("max_base", v.maxBase);
+  csilMap.set("min_base", v.minBase);
+  csilMap.set("max_requested", v.maxRequested);
+  csilMap.set("shed_pr_shift", v.shedPrShift);
+  csilMap.set("max_group_shift", v.maxGroupShift);
+  csilMap.set("min_group_shift", v.minGroupShift);
+  return csilMap;
+}
+
+export function fromPriorityBoundsCborValue(value: CborValue): PriorityBounds {
+  return {
+    minBase: asNumber(requireKey(value, "min_base")),
+    maxBase: asNumber(requireKey(value, "max_base")),
+    minGroupShift: asNumber(requireKey(value, "min_group_shift")),
+    maxGroupShift: asNumber(requireKey(value, "max_group_shift")),
+    maxRequested: asNumber(requireKey(value, "max_requested")),
+    shedPrShift: asNumber(requireKey(value, "shed_pr_shift")),
+  };
+}
+
+export function toPriorityBoundsCbor(v: PriorityBounds): Uint8Array {
+  return encodeValue(toPriorityBoundsCborValue(v));
+}
+
+export function fromPriorityBoundsCbor(bytes: Uint8Array): PriorityBounds {
+  return fromPriorityBoundsCborValue(decode(bytes));
+}
+
+export function toPriorityShiftCborValue(v: PriorityShift): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  if (v.group !== undefined) csilMap.set("group", v.group);
+  csilMap.set("value", v.value);
+  csilMap.set("source", v.source);
+  csilMap.set("applied", v.applied);
+  return csilMap;
+}
+
+export function fromPriorityShiftCborValue(value: CborValue): PriorityShift {
+  return {
+    source: asString(requireKey(value, "source")),
+    group: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "group")),
+    value: asNumber(requireKey(value, "value")),
+    applied: asBool(requireKey(value, "applied")),
+  };
+}
+
+export function toPriorityShiftCbor(v: PriorityShift): Uint8Array {
+  return encodeValue(toPriorityShiftCborValue(v));
+}
+
+export function fromPriorityShiftCbor(bytes: Uint8Array): PriorityShift {
+  return fromPriorityShiftCborValue(decode(bytes));
+}
+
+export function toPriorityDecisionCborValue(v: PriorityDecision): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  csilMap.set("base", v.base);
+  csilMap.set("lane", v.lane);
+  csilMap.set("final", v.final);
+  csilMap.set("scope", v.scope);
+  csilMap.set("shifts", v.shifts.map((csilE): CborValue => toPriorityShiftCborValue(csilE)));
+  csilMap.set("rule_id", v.ruleId);
+  csilMap.set("summary", v.summary);
+  if (v.retainedFrom !== undefined) csilMap.set("retained_from", v.retainedFrom);
+  return csilMap;
+}
+
+export function fromPriorityDecisionCborValue(value: CborValue): PriorityDecision {
+  return {
+    lane: asString(requireKey(value, "lane")),
+    ruleId: asString(requireKey(value, "rule_id")),
+    scope: asString(requireKey(value, "scope")),
+    base: asNumber(requireKey(value, "base")),
+    shifts: asArray(requireKey(value, "shifts")).map((csilE) => fromPriorityShiftCborValue(csilE)),
+    final: asNumber(requireKey(value, "final")),
+    retainedFrom: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "retained_from")),
+    summary: asString(requireKey(value, "summary")),
+  };
+}
+
+export function toPriorityDecisionCbor(v: PriorityDecision): Uint8Array {
+  return encodeValue(toPriorityDecisionCborValue(v));
+}
+
+export function fromPriorityDecisionCbor(bytes: Uint8Array): PriorityDecision {
+  return fromPriorityDecisionCborValue(decode(bytes));
+}
+
+export function toPriorityLaneCheckCborValue(v: PriorityLaneCheck): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  csilMap.set("base", v.base);
+  csilMap.set("name", v.name);
+  csilMap.set("scope", v.scope);
+  csilMap.set("enabled", v.enabled);
+  csilMap.set("matched", v.matched);
+  csilMap.set("match_text", v.matchText);
+  return csilMap;
+}
+
+export function fromPriorityLaneCheckCborValue(value: CborValue): PriorityLaneCheck {
+  return {
+    name: asString(requireKey(value, "name")),
+    scope: asString(requireKey(value, "scope")),
+    base: asNumber(requireKey(value, "base")),
+    enabled: asBool(requireKey(value, "enabled")),
+    matched: asBool(requireKey(value, "matched")),
+    matchText: asString(requireKey(value, "match_text")),
+  };
+}
+
+export function toPriorityLaneCheckCbor(v: PriorityLaneCheck): Uint8Array {
+  return encodeValue(toPriorityLaneCheckCborValue(v));
+}
+
+export function fromPriorityLaneCheckCbor(bytes: Uint8Array): PriorityLaneCheck {
+  return fromPriorityLaneCheckCborValue(decode(bytes));
+}
+
+export function toListPriorityLanesRequestCborValue(v: ListPriorityLanesRequest): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  if (v.projectId !== undefined) csilMap.set("project_id", v.projectId);
+  csilMap.set("organization", v.organization);
+  return csilMap;
+}
+
+export function fromListPriorityLanesRequestCborValue(value: CborValue): ListPriorityLanesRequest {
+  return {
+    organization: asString(requireKey(value, "organization")),
+    projectId: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "project_id")),
+  };
+}
+
+export function toListPriorityLanesRequestCbor(v: ListPriorityLanesRequest): Uint8Array {
+  return encodeValue(toListPriorityLanesRequestCborValue(v));
+}
+
+export function fromListPriorityLanesRequestCbor(bytes: Uint8Array): ListPriorityLanesRequest {
+  return fromListPriorityLanesRequestCborValue(decode(bytes));
+}
+
+export function toListPriorityLanesResponseCborValue(v: ListPriorityLanesResponse): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  csilMap.set("lanes", v.lanes.map((csilE): CborValue => toPriorityLaneCborValue(csilE)));
+  csilMap.set("bounds", toPriorityBoundsCborValue(v.bounds));
+  csilMap.set("builtin", v.builtin.map((csilE): CborValue => toPriorityLaneCborValue(csilE)));
+  csilMap.set("effective", v.effective.map((csilE): CborValue => toPriorityLaneCborValue(csilE)));
+  csilMap.set("inherited", v.inherited.map((csilE): CborValue => toPriorityLaneCborValue(csilE)));
+  csilMap.set("can_manage", v.canManage);
+  return csilMap;
+}
+
+export function fromListPriorityLanesResponseCborValue(value: CborValue): ListPriorityLanesResponse {
+  return {
+    lanes: asArray(requireKey(value, "lanes")).map((csilE) => fromPriorityLaneCborValue(csilE)),
+    inherited: asArray(requireKey(value, "inherited")).map((csilE) => fromPriorityLaneCborValue(csilE)),
+    builtin: asArray(requireKey(value, "builtin")).map((csilE) => fromPriorityLaneCborValue(csilE)),
+    effective: asArray(requireKey(value, "effective")).map((csilE) => fromPriorityLaneCborValue(csilE)),
+    bounds: fromPriorityBoundsCborValue(requireKey(value, "bounds")),
+    canManage: asBool(requireKey(value, "can_manage")),
+  };
+}
+
+export function toListPriorityLanesResponseCbor(v: ListPriorityLanesResponse): Uint8Array {
+  return encodeValue(toListPriorityLanesResponseCborValue(v));
+}
+
+export function fromListPriorityLanesResponseCbor(bytes: Uint8Array): ListPriorityLanesResponse {
+  return fromListPriorityLanesResponseCborValue(decode(bytes));
+}
+
+export function toPutPriorityLaneRequestCborValue(v: PutPriorityLaneRequest): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  csilMap.set("base", v.base);
+  csilMap.set("name", v.name);
+  if (v.match !== undefined) csilMap.set("match", toPriorityLaneMatchCborValue(v.match));
+  if (v.enabled !== undefined) csilMap.set("enabled", v.enabled);
+  if (v.position !== undefined) csilMap.set("position", v.position);
+  if (v.projectId !== undefined) csilMap.set("project_id", v.projectId);
+  if (v.description !== undefined) csilMap.set("description", v.description);
+  csilMap.set("organization", v.organization);
+  return csilMap;
+}
+
+export function fromPutPriorityLaneRequestCborValue(value: CborValue): PutPriorityLaneRequest {
+  return {
+    organization: asString(requireKey(value, "organization")),
+    projectId: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "project_id")),
+    name: asString(requireKey(value, "name")),
+    base: asNumber(requireKey(value, "base")),
+    position: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asNumber(csilV))(mapGet(value, "position")),
+    description: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "description")),
+    match: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : fromPriorityLaneMatchCborValue(csilV))(mapGet(value, "match")),
+    enabled: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asBool(csilV))(mapGet(value, "enabled")),
+  };
+}
+
+export function toPutPriorityLaneRequestCbor(v: PutPriorityLaneRequest): Uint8Array {
+  return encodeValue(toPutPriorityLaneRequestCborValue(v));
+}
+
+export function fromPutPriorityLaneRequestCbor(bytes: Uint8Array): PutPriorityLaneRequest {
+  return fromPutPriorityLaneRequestCborValue(decode(bytes));
+}
+
+export function toPutPriorityLaneResponseCborValue(v: PutPriorityLaneResponse): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  csilMap.set("lane", toPriorityLaneCborValue(v.lane));
+  return csilMap;
+}
+
+export function fromPutPriorityLaneResponseCborValue(value: CborValue): PutPriorityLaneResponse {
+  return {
+    lane: fromPriorityLaneCborValue(requireKey(value, "lane")),
+  };
+}
+
+export function toPutPriorityLaneResponseCbor(v: PutPriorityLaneResponse): Uint8Array {
+  return encodeValue(toPutPriorityLaneResponseCborValue(v));
+}
+
+export function fromPutPriorityLaneResponseCbor(bytes: Uint8Array): PutPriorityLaneResponse {
+  return fromPutPriorityLaneResponseCborValue(decode(bytes));
+}
+
+export function toDeletePriorityLaneRequestCborValue(v: DeletePriorityLaneRequest): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  csilMap.set("name", v.name);
+  if (v.projectId !== undefined) csilMap.set("project_id", v.projectId);
+  csilMap.set("organization", v.organization);
+  return csilMap;
+}
+
+export function fromDeletePriorityLaneRequestCborValue(value: CborValue): DeletePriorityLaneRequest {
+  return {
+    organization: asString(requireKey(value, "organization")),
+    projectId: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "project_id")),
+    name: asString(requireKey(value, "name")),
+  };
+}
+
+export function toDeletePriorityLaneRequestCbor(v: DeletePriorityLaneRequest): Uint8Array {
+  return encodeValue(toDeletePriorityLaneRequestCborValue(v));
+}
+
+export function fromDeletePriorityLaneRequestCbor(bytes: Uint8Array): DeletePriorityLaneRequest {
+  return fromDeletePriorityLaneRequestCborValue(decode(bytes));
+}
+
+export function toDeletePriorityLaneResponseCborValue(v: DeletePriorityLaneResponse): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  csilMap.set("deleted", v.deleted);
+  return csilMap;
+}
+
+export function fromDeletePriorityLaneResponseCborValue(value: CborValue): DeletePriorityLaneResponse {
+  return {
+    deleted: asBool(requireKey(value, "deleted")),
+  };
+}
+
+export function toDeletePriorityLaneResponseCbor(v: DeletePriorityLaneResponse): Uint8Array {
+  return encodeValue(toDeletePriorityLaneResponseCborValue(v));
+}
+
+export function fromDeletePriorityLaneResponseCbor(bytes: Uint8Array): DeletePriorityLaneResponse {
+  return fromDeletePriorityLaneResponseCborValue(decode(bytes));
+}
+
+export function toExplainPriorityRequestCborValue(v: ExplainPriorityRequest): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  if (v.draft !== undefined) csilMap.set("draft", v.draft);
+  if (v.jobId !== undefined) csilMap.set("job_id", v.jobId);
+  if (v.jobKind !== undefined) csilMap.set("job_kind", v.jobKind);
+  if (v.requested !== undefined) csilMap.set("requested", v.requested);
+  if (v.eventType !== undefined) csilMap.set("event_type", v.eventType);
+  if (v.projectId !== undefined) csilMap.set("project_id", v.projectId);
+  if (v.refClasses !== undefined) csilMap.set("ref_classes", v.refClasses);
+  csilMap.set("organization", v.organization);
+  return csilMap;
+}
+
+export function fromExplainPriorityRequestCborValue(value: CborValue): ExplainPriorityRequest {
+  return {
+    organization: asString(requireKey(value, "organization")),
+    projectId: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "project_id")),
+    jobId: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "job_id")),
+    refClasses: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asArray(csilV).map((csilE) => asString(csilE)))(mapGet(value, "ref_classes")),
+    eventType: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "event_type")),
+    draft: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asBool(csilV))(mapGet(value, "draft")),
+    jobKind: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "job_kind")),
+    requested: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asNumber(csilV))(mapGet(value, "requested")),
+  };
+}
+
+export function toExplainPriorityRequestCbor(v: ExplainPriorityRequest): Uint8Array {
+  return encodeValue(toExplainPriorityRequestCborValue(v));
+}
+
+export function fromExplainPriorityRequestCbor(bytes: Uint8Array): ExplainPriorityRequest {
+  return fromExplainPriorityRequestCborValue(decode(bytes));
+}
+
+export function toExplainPriorityResponseCborValue(v: ExplainPriorityResponse): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  csilMap.set("lanes", v.lanes.map((csilE): CborValue => toPriorityLaneCheckCborValue(csilE)));
+  if (v.stored !== undefined) csilMap.set("stored", toPriorityDecisionCborValue(v.stored));
+  csilMap.set("decision", toPriorityDecisionCborValue(v.decision));
+  return csilMap;
+}
+
+export function fromExplainPriorityResponseCborValue(value: CborValue): ExplainPriorityResponse {
+  return {
+    decision: fromPriorityDecisionCborValue(requireKey(value, "decision")),
+    stored: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : fromPriorityDecisionCborValue(csilV))(mapGet(value, "stored")),
+    lanes: asArray(requireKey(value, "lanes")).map((csilE) => fromPriorityLaneCheckCborValue(csilE)),
+  };
+}
+
+export function toExplainPriorityResponseCbor(v: ExplainPriorityResponse): Uint8Array {
+  return encodeValue(toExplainPriorityResponseCborValue(v));
+}
+
+export function fromExplainPriorityResponseCbor(bytes: Uint8Array): ExplainPriorityResponse {
+  return fromExplainPriorityResponseCborValue(decode(bytes));
+}
+
+export function toSetGroupPriorityShiftRequestCborValue(v: SetGroupPriorityShiftRequest): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  csilMap.set("shift", v.shift);
+  csilMap.set("group_id", v.groupId);
+  return csilMap;
+}
+
+export function fromSetGroupPriorityShiftRequestCborValue(value: CborValue): SetGroupPriorityShiftRequest {
+  return {
+    groupId: asString(requireKey(value, "group_id")),
+    shift: asNumber(requireKey(value, "shift")),
+  };
+}
+
+export function toSetGroupPriorityShiftRequestCbor(v: SetGroupPriorityShiftRequest): Uint8Array {
+  return encodeValue(toSetGroupPriorityShiftRequestCborValue(v));
+}
+
+export function fromSetGroupPriorityShiftRequestCbor(bytes: Uint8Array): SetGroupPriorityShiftRequest {
+  return fromSetGroupPriorityShiftRequestCborValue(decode(bytes));
+}
+
+export function toSetGroupPriorityShiftResponseCborValue(v: SetGroupPriorityShiftResponse): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  csilMap.set("group", toGroupSummaryCborValue(v.group));
+  return csilMap;
+}
+
+export function fromSetGroupPriorityShiftResponseCborValue(value: CborValue): SetGroupPriorityShiftResponse {
+  return {
+    group: fromGroupSummaryCborValue(requireKey(value, "group")),
+  };
+}
+
+export function toSetGroupPriorityShiftResponseCbor(v: SetGroupPriorityShiftResponse): Uint8Array {
+  return encodeValue(toSetGroupPriorityShiftResponseCborValue(v));
+}
+
+export function fromSetGroupPriorityShiftResponseCbor(bytes: Uint8Array): SetGroupPriorityShiftResponse {
+  return fromSetGroupPriorityShiftResponseCborValue(decode(bytes));
+}
+
+export function toObsClassCountCborValue(v: ObsClassCount): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  csilMap.set("count", v.count);
+  csilMap.set("failure_class", v.failureClass);
+  return csilMap;
+}
+
+export function fromObsClassCountCborValue(value: CborValue): ObsClassCount {
+  return {
+    failureClass: asString(requireKey(value, "failure_class")),
+    count: asNumber(requireKey(value, "count")),
+  };
+}
+
+export function toObsClassCountCbor(v: ObsClassCount): Uint8Array {
+  return encodeValue(toObsClassCountCborValue(v));
+}
+
+export function fromObsClassCountCbor(bytes: Uint8Array): ObsClassCount {
+  return fromObsClassCountCborValue(decode(bytes));
+}
+
+export function toObsSummaryCborValue(v: ObsSummary): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  csilMap.set("runs", v.runs);
+  csilMap.set("by_class", v.byClass.map((csilE): CborValue => toObsClassCountCborValue(csilE)));
+  csilMap.set("cancelled", v.cancelled);
+  if (v.passRate !== undefined) csilMap.set("pass_rate", v.passRate);
+  csilMap.set("successes", v.successes);
+  csilMap.set("measured_runs", v.measuredRuns);
+  csilMap.set("cpu_core_hours", v.cpuCoreHours);
+  csilMap.set("infra_failures", v.infraFailures);
+  csilMap.set("memory_gib_hours", v.memoryGibHours);
+  csilMap.set("pipeline_failures", v.pipelineFailures);
+  if (v.infraFailureRate !== undefined) csilMap.set("infra_failure_rate", v.infraFailureRate);
+  if (v.durationP50Seconds !== undefined) csilMap.set("duration_p50_seconds", v.durationP50Seconds);
+  if (v.durationP95Seconds !== undefined) csilMap.set("duration_p95_seconds", v.durationP95Seconds);
+  if (v.queueWaitP50Seconds !== undefined) csilMap.set("queue_wait_p50_seconds", v.queueWaitP50Seconds);
+  if (v.queueWaitP95Seconds !== undefined) csilMap.set("queue_wait_p95_seconds", v.queueWaitP95Seconds);
+  csilMap.set("cpu_reserved_core_hours", v.cpuReservedCoreHours);
+  csilMap.set("memory_reserved_gib_hours", v.memoryReservedGibHours);
+  return csilMap;
+}
+
+export function fromObsSummaryCborValue(value: CborValue): ObsSummary {
+  return {
+    runs: asNumber(requireKey(value, "runs")),
+    successes: asNumber(requireKey(value, "successes")),
+    pipelineFailures: asNumber(requireKey(value, "pipeline_failures")),
+    infraFailures: asNumber(requireKey(value, "infra_failures")),
+    cancelled: asNumber(requireKey(value, "cancelled")),
+    passRate: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asNumber(csilV))(mapGet(value, "pass_rate")),
+    infraFailureRate: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asNumber(csilV))(mapGet(value, "infra_failure_rate")),
+    durationP50Seconds: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asNumber(csilV))(mapGet(value, "duration_p50_seconds")),
+    durationP95Seconds: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asNumber(csilV))(mapGet(value, "duration_p95_seconds")),
+    queueWaitP50Seconds: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asNumber(csilV))(mapGet(value, "queue_wait_p50_seconds")),
+    queueWaitP95Seconds: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asNumber(csilV))(mapGet(value, "queue_wait_p95_seconds")),
+    byClass: asArray(requireKey(value, "by_class")).map((csilE) => fromObsClassCountCborValue(csilE)),
+    measuredRuns: asNumber(requireKey(value, "measured_runs")),
+    cpuCoreHours: asNumber(requireKey(value, "cpu_core_hours")),
+    memoryGibHours: asNumber(requireKey(value, "memory_gib_hours")),
+    cpuReservedCoreHours: asNumber(requireKey(value, "cpu_reserved_core_hours")),
+    memoryReservedGibHours: asNumber(requireKey(value, "memory_reserved_gib_hours")),
+  };
+}
+
+export function toObsSummaryCbor(v: ObsSummary): Uint8Array {
+  return encodeValue(toObsSummaryCborValue(v));
+}
+
+export function fromObsSummaryCbor(bytes: Uint8Array): ObsSummary {
+  return fromObsSummaryCborValue(decode(bytes));
+}
+
+export function toObsTrendPointCborValue(v: ObsTrendPoint): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  csilMap.set("runs", v.runs);
+  if (v.passRate !== undefined) csilMap.set("pass_rate", v.passRate);
+  csilMap.set("eval_events", v.evalEvents);
+  csilMap.set("bucket_start", v.bucketStart);
+  csilMap.set("cpu_core_hours", v.cpuCoreHours);
+  csilMap.set("infra_failures", v.infraFailures);
+  if (v.evalP95Seconds !== undefined) csilMap.set("eval_p95_seconds", v.evalP95Seconds);
+  if (v.infraFailureRate !== undefined) csilMap.set("infra_failure_rate", v.infraFailureRate);
+  if (v.durationP95Seconds !== undefined) csilMap.set("duration_p95_seconds", v.durationP95Seconds);
+  if (v.queueWaitP95Seconds !== undefined) csilMap.set("queue_wait_p95_seconds", v.queueWaitP95Seconds);
+  return csilMap;
+}
+
+export function fromObsTrendPointCborValue(value: CborValue): ObsTrendPoint {
+  return {
+    bucketStart: asString(requireKey(value, "bucket_start")),
+    runs: asNumber(requireKey(value, "runs")),
+    passRate: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asNumber(csilV))(mapGet(value, "pass_rate")),
+    durationP95Seconds: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asNumber(csilV))(mapGet(value, "duration_p95_seconds")),
+    queueWaitP95Seconds: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asNumber(csilV))(mapGet(value, "queue_wait_p95_seconds")),
+    infraFailures: asNumber(requireKey(value, "infra_failures")),
+    infraFailureRate: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asNumber(csilV))(mapGet(value, "infra_failure_rate")),
+    cpuCoreHours: asNumber(requireKey(value, "cpu_core_hours")),
+    evalEvents: asNumber(requireKey(value, "eval_events")),
+    evalP95Seconds: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asNumber(csilV))(mapGet(value, "eval_p95_seconds")),
+  };
+}
+
+export function toObsTrendPointCbor(v: ObsTrendPoint): Uint8Array {
+  return encodeValue(toObsTrendPointCborValue(v));
+}
+
+export function fromObsTrendPointCbor(bytes: Uint8Array): ObsTrendPoint {
+  return fromObsTrendPointCborValue(decode(bytes));
+}
+
+export function toObsWorkflowHealthCborValue(v: ObsWorkflowHealth): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  csilMap.set("trend", v.trend.map((csilE): CborValue => toObsTrendPointCborValue(csilE)));
+  csilMap.set("summary", toObsSummaryCborValue(v.summary));
+  if (v.projectId !== undefined) csilMap.set("project_id", v.projectId);
+  csilMap.set("owner_group", v.ownerGroup);
+  if (v.projectName !== undefined) csilMap.set("project_name", v.projectName);
+  csilMap.set("default_branch", toObsSummaryCborValue(v.defaultBranch));
+  csilMap.set("workflow_security_id", v.workflowSecurityId);
+  if (v.cpuCoreHoursPerRun !== undefined) csilMap.set("cpu_core_hours_per_run", v.cpuCoreHoursPerRun);
+  return csilMap;
+}
+
+export function fromObsWorkflowHealthCborValue(value: CborValue): ObsWorkflowHealth {
+  return {
+    projectId: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "project_id")),
+    projectName: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "project_name")),
+    workflowSecurityId: asString(requireKey(value, "workflow_security_id")),
+    ownerGroup: asString(requireKey(value, "owner_group")),
+    summary: fromObsSummaryCborValue(requireKey(value, "summary")),
+    defaultBranch: fromObsSummaryCborValue(requireKey(value, "default_branch")),
+    cpuCoreHoursPerRun: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asNumber(csilV))(mapGet(value, "cpu_core_hours_per_run")),
+    trend: asArray(requireKey(value, "trend")).map((csilE) => fromObsTrendPointCborValue(csilE)),
+  };
+}
+
+export function toObsWorkflowHealthCbor(v: ObsWorkflowHealth): Uint8Array {
+  return encodeValue(toObsWorkflowHealthCborValue(v));
+}
+
+export function fromObsWorkflowHealthCbor(bytes: Uint8Array): ObsWorkflowHealth {
+  return fromObsWorkflowHealthCborValue(decode(bytes));
+}
+
+export function toObsFlakyTestCborValue(v: ObsFlakyTest): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  csilMap.set("name", v.name);
+  csilMap.set("suite", v.suite);
+  csilMap.set("test_id", v.testId);
+  csilMap.set("classname", v.classname);
+  if (v.projectId !== undefined) csilMap.set("project_id", v.projectId);
+  csilMap.set("total_runs", v.totalRuns);
+  csilMap.set("flaky_count", v.flakyCount);
+  if (v.lastFlakyAt !== undefined) csilMap.set("last_flaky_at", v.lastFlakyAt);
+  return csilMap;
+}
+
+export function fromObsFlakyTestCborValue(value: CborValue): ObsFlakyTest {
+  return {
+    projectId: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "project_id")),
+    testId: asString(requireKey(value, "test_id")),
+    suite: asString(requireKey(value, "suite")),
+    classname: asString(requireKey(value, "classname")),
+    name: asString(requireKey(value, "name")),
+    flakyCount: asNumber(requireKey(value, "flaky_count")),
+    totalRuns: asNumber(requireKey(value, "total_runs")),
+    lastFlakyAt: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "last_flaky_at")),
+  };
+}
+
+export function toObsFlakyTestCbor(v: ObsFlakyTest): Uint8Array {
+  return encodeValue(toObsFlakyTestCborValue(v));
+}
+
+export function fromObsFlakyTestCbor(bytes: Uint8Array): ObsFlakyTest {
+  return fromObsFlakyTestCborValue(decode(bytes));
+}
+
+export function toObsAlertRuleCborValue(v: ObsAlertRule): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  csilMap.set("name", v.name);
+  csilMap.set("scope", v.scope);
+  csilMap.set("state", v.state);
+  csilMap.set("factor", v.factor);
+  csilMap.set("enabled", v.enabled);
+  csilMap.set("rule_id", v.ruleId);
+  if (v.minRuns !== undefined) csilMap.set("min_runs", v.minRuns);
+  csilMap.set("condition", v.condition);
+  csilMap.set("last_runs", v.lastRuns);
+  csilMap.set("threshold", v.threshold);
+  if (v.canManage !== undefined) csilMap.set("can_manage", v.canManage);
+  if (v.fireAfter !== undefined) csilMap.set("fire_after", v.fireAfter);
+  if (v.lastValue !== undefined) csilMap.set("last_value", v.lastValue);
+  if (v.projectId !== undefined) csilMap.set("project_id", v.projectId);
+  if (v.description !== undefined) csilMap.set("description", v.description);
+  if (v.ownerGroup !== undefined) csilMap.set("owner_group", v.ownerGroup);
+  csilMap.set("window_hours", v.windowHours);
+  if (v.baselineDays !== undefined) csilMap.set("baseline_days", v.baselineDays);
+  if (v.lastBaseline !== undefined) csilMap.set("last_baseline", v.lastBaseline);
+  if (v.resolveAfter !== undefined) csilMap.set("resolve_after", v.resolveAfter);
+  if (v.resolveMargin !== undefined) csilMap.set("resolve_margin", v.resolveMargin);
+  csilMap.set("ref_class_bucket", v.refClassBucket);
+  if (v.stateChangedAt !== undefined) csilMap.set("state_changed_at", v.stateChangedAt);
+  if (v.lastEvaluatedAt !== undefined) csilMap.set("last_evaluated_at", v.lastEvaluatedAt);
+  if (v.workflowSecurityId !== undefined) csilMap.set("workflow_security_id", v.workflowSecurityId);
+  return csilMap;
+}
+
+export function fromObsAlertRuleCborValue(value: CborValue): ObsAlertRule {
+  return {
+    ruleId: asString(requireKey(value, "rule_id")),
+    name: asString(requireKey(value, "name")),
+    scope: asString(requireKey(value, "scope")),
+    projectId: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "project_id")),
+    workflowSecurityId: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "workflow_security_id")),
+    ownerGroup: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "owner_group")),
+    condition: asString(requireKey(value, "condition")),
+    refClassBucket: asString(requireKey(value, "ref_class_bucket")),
+    threshold: asNumber(requireKey(value, "threshold")),
+    factor: asNumber(requireKey(value, "factor")),
+    windowHours: asNumber(requireKey(value, "window_hours")),
+    state: asString(requireKey(value, "state")),
+    enabled: asBool(requireKey(value, "enabled")),
+    lastValue: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asNumber(csilV))(mapGet(value, "last_value")),
+    lastBaseline: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asNumber(csilV))(mapGet(value, "last_baseline")),
+    lastRuns: asNumber(requireKey(value, "last_runs")),
+    lastEvaluatedAt: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "last_evaluated_at")),
+    stateChangedAt: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "state_changed_at")),
+    description: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "description")),
+    baselineDays: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asNumber(csilV))(mapGet(value, "baseline_days")),
+    minRuns: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asNumber(csilV))(mapGet(value, "min_runs")),
+    resolveMargin: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asNumber(csilV))(mapGet(value, "resolve_margin")),
+    fireAfter: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asNumber(csilV))(mapGet(value, "fire_after")),
+    resolveAfter: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asNumber(csilV))(mapGet(value, "resolve_after")),
+    canManage: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asBool(csilV))(mapGet(value, "can_manage")),
+  };
+}
+
+export function toObsAlertRuleCbor(v: ObsAlertRule): Uint8Array {
+  return encodeValue(toObsAlertRuleCborValue(v));
+}
+
+export function fromObsAlertRuleCbor(bytes: Uint8Array): ObsAlertRule {
+  return fromObsAlertRuleCborValue(decode(bytes));
+}
+
+export function toGetPipelineDashboardRequestCborValue(v: GetPipelineDashboardRequest): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  if (v.days !== undefined) csilMap.set("days", v.days);
+  csilMap.set("org_id", v.orgId);
+  if (v.projectId !== undefined) csilMap.set("project_id", v.projectId);
+  return csilMap;
+}
+
+export function fromGetPipelineDashboardRequestCborValue(value: CborValue): GetPipelineDashboardRequest {
+  return {
+    orgId: asString(requireKey(value, "org_id")),
+    projectId: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "project_id")),
+    days: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asNumber(csilV))(mapGet(value, "days")),
+  };
+}
+
+export function toGetPipelineDashboardRequestCbor(v: GetPipelineDashboardRequest): Uint8Array {
+  return encodeValue(toGetPipelineDashboardRequestCborValue(v));
+}
+
+export function fromGetPipelineDashboardRequestCbor(bytes: Uint8Array): GetPipelineDashboardRequest {
+  return fromGetPipelineDashboardRequestCborValue(decode(bytes));
+}
+
+export function toGetPipelineDashboardResponseCborValue(v: GetPipelineDashboardResponse): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  csilMap.set("days", v.days);
+  csilMap.set("trend", v.trend.map((csilE): CborValue => toObsTrendPointCborValue(csilE)));
+  csilMap.set("alerts", v.alerts.map((csilE): CborValue => toObsAlertRuleCborValue(csilE)));
+  csilMap.set("totals", toObsSummaryCborValue(v.totals));
+  csilMap.set("range_to", v.rangeTo);
+  csilMap.set("workflows", v.workflows.map((csilE): CborValue => toObsWorkflowHealthCborValue(csilE)));
+  csilMap.set("range_from", v.rangeFrom);
+  csilMap.set("flaky_tests", v.flakyTests.map((csilE): CborValue => toObsFlakyTestCborValue(csilE)));
+  return csilMap;
+}
+
+export function fromGetPipelineDashboardResponseCborValue(value: CborValue): GetPipelineDashboardResponse {
+  return {
+    rangeFrom: asString(requireKey(value, "range_from")),
+    rangeTo: asString(requireKey(value, "range_to")),
+    days: asNumber(requireKey(value, "days")),
+    totals: fromObsSummaryCborValue(requireKey(value, "totals")),
+    trend: asArray(requireKey(value, "trend")).map((csilE) => fromObsTrendPointCborValue(csilE)),
+    workflows: asArray(requireKey(value, "workflows")).map((csilE) => fromObsWorkflowHealthCborValue(csilE)),
+    flakyTests: asArray(requireKey(value, "flaky_tests")).map((csilE) => fromObsFlakyTestCborValue(csilE)),
+    alerts: asArray(requireKey(value, "alerts")).map((csilE) => fromObsAlertRuleCborValue(csilE)),
+  };
+}
+
+export function toGetPipelineDashboardResponseCbor(v: GetPipelineDashboardResponse): Uint8Array {
+  return encodeValue(toGetPipelineDashboardResponseCborValue(v));
+}
+
+export function fromGetPipelineDashboardResponseCbor(bytes: Uint8Array): GetPipelineDashboardResponse {
+  return fromGetPipelineDashboardResponseCborValue(decode(bytes));
+}
+
+export function toObsLaneHealthCborValue(v: ObsLaneHealth): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  csilMap.set("lane", v.lane);
+  csilMap.set("summary", toObsSummaryCborValue(v.summary));
+  return csilMap;
+}
+
+export function fromObsLaneHealthCborValue(value: CborValue): ObsLaneHealth {
+  return {
+    lane: asString(requireKey(value, "lane")),
+    summary: fromObsSummaryCborValue(requireKey(value, "summary")),
+  };
+}
+
+export function toObsLaneHealthCbor(v: ObsLaneHealth): Uint8Array {
+  return encodeValue(toObsLaneHealthCborValue(v));
+}
+
+export function fromObsLaneHealthCbor(bytes: Uint8Array): ObsLaneHealth {
+  return fromObsLaneHealthCborValue(decode(bytes));
+}
+
+export function toObsSloStatusCborValue(v: ObsSloStatus): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  csilMap.set("sli", v.sli);
+  csilMap.set("good", v.good);
+  csilMap.set("lane", v.lane);
+  csilMap.set("total", v.total);
+  csilMap.set("measures", v.measures);
+  csilMap.set("objective", v.objective);
+  if (v.compliance !== undefined) csilMap.set("compliance", v.compliance);
+  if (v.p95Seconds !== undefined) csilMap.set("p95_seconds", v.p95Seconds);
+  csilMap.set("window_days", v.windowDays);
+  csilMap.set("budget_state", v.budgetState);
+  csilMap.set("threshold_seconds", v.thresholdSeconds);
+  csilMap.set("error_budget_remaining", v.errorBudgetRemaining);
+  return csilMap;
+}
+
+export function fromObsSloStatusCborValue(value: CborValue): ObsSloStatus {
+  return {
+    sli: asString(requireKey(value, "sli")),
+    lane: asString(requireKey(value, "lane")),
+    objective: asNumber(requireKey(value, "objective")),
+    thresholdSeconds: asNumber(requireKey(value, "threshold_seconds")),
+    windowDays: asNumber(requireKey(value, "window_days")),
+    total: asNumber(requireKey(value, "total")),
+    good: asNumber(requireKey(value, "good")),
+    compliance: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asNumber(csilV))(mapGet(value, "compliance")),
+    p95Seconds: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asNumber(csilV))(mapGet(value, "p95_seconds")),
+    errorBudgetRemaining: asNumber(requireKey(value, "error_budget_remaining")),
+    budgetState: asString(requireKey(value, "budget_state")),
+    measures: asString(requireKey(value, "measures")),
+  };
+}
+
+export function toObsSloStatusCbor(v: ObsSloStatus): Uint8Array {
+  return encodeValue(toObsSloStatusCborValue(v));
+}
+
+export function fromObsSloStatusCbor(bytes: Uint8Array): ObsSloStatus {
+  return fromObsSloStatusCborValue(decode(bytes));
+}
+
+export function toObsQueueBacklogCborValue(v: ObsQueueBacklog): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  csilMap.set("count", v.count);
+  csilMap.set("queue_uuid", v.queueUuid);
+  csilMap.set("display_name", v.displayName);
+  csilMap.set("oldest_age_seconds", v.oldestAgeSeconds);
+  return csilMap;
+}
+
+export function fromObsQueueBacklogCborValue(value: CborValue): ObsQueueBacklog {
+  return {
+    queueUuid: asString(requireKey(value, "queue_uuid")),
+    displayName: asString(requireKey(value, "display_name")),
+    count: asNumber(requireKey(value, "count")),
+    oldestAgeSeconds: asNumber(requireKey(value, "oldest_age_seconds")),
+  };
+}
+
+export function toObsQueueBacklogCbor(v: ObsQueueBacklog): Uint8Array {
+  return encodeValue(toObsQueueBacklogCborValue(v));
+}
+
+export function fromObsQueueBacklogCbor(bytes: Uint8Array): ObsQueueBacklog {
+  return fromObsQueueBacklogCborValue(decode(bytes));
+}
+
+export function toObsCapacityCborValue(v: ObsCapacity): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  csilMap.set("queues", v.queues.map((csilE): CborValue => toObsQueueBacklogCborValue(csilE)));
+  csilMap.set("backlog_jobs", v.backlogJobs);
+  csilMap.set("workers_seen", v.workersSeen);
+  csilMap.set("workers_total", v.workersTotal);
+  csilMap.set("workers_active", v.workersActive);
+  csilMap.set("workers_disabled", v.workersDisabled);
+  csilMap.set("workers_quarantined", v.workersQuarantined);
+  csilMap.set("backlog_oldest_age_seconds", v.backlogOldestAgeSeconds);
+  return csilMap;
+}
+
+export function fromObsCapacityCborValue(value: CborValue): ObsCapacity {
+  return {
+    workersTotal: asNumber(requireKey(value, "workers_total")),
+    workersActive: asNumber(requireKey(value, "workers_active")),
+    workersQuarantined: asNumber(requireKey(value, "workers_quarantined")),
+    workersDisabled: asNumber(requireKey(value, "workers_disabled")),
+    workersSeen: asNumber(requireKey(value, "workers_seen")),
+    backlogJobs: asNumber(requireKey(value, "backlog_jobs")),
+    backlogOldestAgeSeconds: asNumber(requireKey(value, "backlog_oldest_age_seconds")),
+    queues: asArray(requireKey(value, "queues")).map((csilE) => fromObsQueueBacklogCborValue(csilE)),
+  };
+}
+
+export function toObsCapacityCbor(v: ObsCapacity): Uint8Array {
+  return encodeValue(toObsCapacityCborValue(v));
+}
+
+export function fromObsCapacityCbor(bytes: Uint8Array): ObsCapacity {
+  return fromObsCapacityCborValue(decode(bytes));
+}
+
+export function toGetInfraDashboardRequestCborValue(v: GetInfraDashboardRequest): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  if (v.days !== undefined) csilMap.set("days", v.days);
+  csilMap.set("org_id", v.orgId);
+  return csilMap;
+}
+
+export function fromGetInfraDashboardRequestCborValue(value: CborValue): GetInfraDashboardRequest {
+  return {
+    orgId: asString(requireKey(value, "org_id")),
+    days: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asNumber(csilV))(mapGet(value, "days")),
+  };
+}
+
+export function toGetInfraDashboardRequestCbor(v: GetInfraDashboardRequest): Uint8Array {
+  return encodeValue(toGetInfraDashboardRequestCborValue(v));
+}
+
+export function fromGetInfraDashboardRequestCbor(bytes: Uint8Array): GetInfraDashboardRequest {
+  return fromGetInfraDashboardRequestCborValue(decode(bytes));
+}
+
+export function toGetInfraDashboardResponseCborValue(v: GetInfraDashboardResponse): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  csilMap.set("days", v.days);
+  csilMap.set("slos", v.slos.map((csilE): CborValue => toObsSloStatusCborValue(csilE)));
+  csilMap.set("lanes", v.lanes.map((csilE): CborValue => toObsLaneHealthCborValue(csilE)));
+  csilMap.set("trend", v.trend.map((csilE): CborValue => toObsTrendPointCborValue(csilE)));
+  csilMap.set("totals", toObsSummaryCborValue(v.totals));
+  csilMap.set("capacity", toObsCapacityCborValue(v.capacity));
+  csilMap.set("range_to", v.rangeTo);
+  csilMap.set("range_from", v.rangeFrom);
+  csilMap.set("eval_events", v.evalEvents);
+  if (v.evalP50Seconds !== undefined) csilMap.set("eval_p50_seconds", v.evalP50Seconds);
+  if (v.evalP95Seconds !== undefined) csilMap.set("eval_p95_seconds", v.evalP95Seconds);
+  return csilMap;
+}
+
+export function fromGetInfraDashboardResponseCborValue(value: CborValue): GetInfraDashboardResponse {
+  return {
+    rangeFrom: asString(requireKey(value, "range_from")),
+    rangeTo: asString(requireKey(value, "range_to")),
+    days: asNumber(requireKey(value, "days")),
+    totals: fromObsSummaryCborValue(requireKey(value, "totals")),
+    lanes: asArray(requireKey(value, "lanes")).map((csilE) => fromObsLaneHealthCborValue(csilE)),
+    evalEvents: asNumber(requireKey(value, "eval_events")),
+    evalP50Seconds: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asNumber(csilV))(mapGet(value, "eval_p50_seconds")),
+    evalP95Seconds: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asNumber(csilV))(mapGet(value, "eval_p95_seconds")),
+    trend: asArray(requireKey(value, "trend")).map((csilE) => fromObsTrendPointCborValue(csilE)),
+    slos: asArray(requireKey(value, "slos")).map((csilE) => fromObsSloStatusCborValue(csilE)),
+    capacity: fromObsCapacityCborValue(requireKey(value, "capacity")),
+  };
+}
+
+export function toGetInfraDashboardResponseCbor(v: GetInfraDashboardResponse): Uint8Array {
+  return encodeValue(toGetInfraDashboardResponseCborValue(v));
+}
+
+export function fromGetInfraDashboardResponseCbor(bytes: Uint8Array): GetInfraDashboardResponse {
+  return fromGetInfraDashboardResponseCborValue(decode(bytes));
+}
+
+export function toObsUsagePointCborValue(v: ObsUsagePoint): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  csilMap.set("runs", v.runs);
+  csilMap.set("bucket_start", v.bucketStart);
+  csilMap.set("cpu_core_hours", v.cpuCoreHours);
+  return csilMap;
+}
+
+export function fromObsUsagePointCborValue(value: CborValue): ObsUsagePoint {
+  return {
+    bucketStart: asString(requireKey(value, "bucket_start")),
+    runs: asNumber(requireKey(value, "runs")),
+    cpuCoreHours: asNumber(requireKey(value, "cpu_core_hours")),
+  };
+}
+
+export function toObsUsagePointCbor(v: ObsUsagePoint): Uint8Array {
+  return encodeValue(toObsUsagePointCborValue(v));
+}
+
+export function fromObsUsagePointCbor(bytes: Uint8Array): ObsUsagePoint {
+  return fromObsUsagePointCborValue(decode(bytes));
+}
+
+export function toObsGroupUsageCborValue(v: ObsGroupUsage): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  csilMap.set("runs", v.runs);
+  csilMap.set("group", v.group);
+  csilMap.set("series", v.series.map((csilE): CborValue => toObsUsagePointCborValue(csilE)));
+  if (v.passRate !== undefined) csilMap.set("pass_rate", v.passRate);
+  csilMap.set("successes", v.successes);
+  csilMap.set("cpu_core_hours", v.cpuCoreHours);
+  csilMap.set("infra_failures", v.infraFailures);
+  csilMap.set("memory_gib_hours", v.memoryGibHours);
+  csilMap.set("pipeline_failures", v.pipelineFailures);
+  csilMap.set("cpu_reserved_core_hours", v.cpuReservedCoreHours);
+  return csilMap;
+}
+
+export function fromObsGroupUsageCborValue(value: CborValue): ObsGroupUsage {
+  return {
+    group: asString(requireKey(value, "group")),
+    runs: asNumber(requireKey(value, "runs")),
+    successes: asNumber(requireKey(value, "successes")),
+    pipelineFailures: asNumber(requireKey(value, "pipeline_failures")),
+    infraFailures: asNumber(requireKey(value, "infra_failures")),
+    passRate: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asNumber(csilV))(mapGet(value, "pass_rate")),
+    cpuCoreHours: asNumber(requireKey(value, "cpu_core_hours")),
+    memoryGibHours: asNumber(requireKey(value, "memory_gib_hours")),
+    cpuReservedCoreHours: asNumber(requireKey(value, "cpu_reserved_core_hours")),
+    series: asArray(requireKey(value, "series")).map((csilE) => fromObsUsagePointCborValue(csilE)),
+  };
+}
+
+export function toObsGroupUsageCbor(v: ObsGroupUsage): Uint8Array {
+  return encodeValue(toObsGroupUsageCborValue(v));
+}
+
+export function fromObsGroupUsageCbor(bytes: Uint8Array): ObsGroupUsage {
+  return fromObsGroupUsageCborValue(decode(bytes));
+}
+
+export function toGetUsageDashboardRequestCborValue(v: GetUsageDashboardRequest): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  if (v.days !== undefined) csilMap.set("days", v.days);
+  csilMap.set("org_id", v.orgId);
+  if (v.attribution !== undefined) csilMap.set("attribution", v.attribution);
+  return csilMap;
+}
+
+export function fromGetUsageDashboardRequestCborValue(value: CborValue): GetUsageDashboardRequest {
+  return {
+    orgId: asString(requireKey(value, "org_id")),
+    days: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asNumber(csilV))(mapGet(value, "days")),
+    attribution: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "attribution")),
+  };
+}
+
+export function toGetUsageDashboardRequestCbor(v: GetUsageDashboardRequest): Uint8Array {
+  return encodeValue(toGetUsageDashboardRequestCborValue(v));
+}
+
+export function fromGetUsageDashboardRequestCbor(bytes: Uint8Array): GetUsageDashboardRequest {
+  return fromGetUsageDashboardRequestCborValue(decode(bytes));
+}
+
+export function toGetUsageDashboardResponseCborValue(v: GetUsageDashboardResponse): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  csilMap.set("days", v.days);
+  csilMap.set("groups", v.groups.map((csilE): CborValue => toObsGroupUsageCborValue(csilE)));
+  csilMap.set("range_to", v.rangeTo);
+  csilMap.set("range_from", v.rangeFrom);
+  csilMap.set("attribution", v.attribution);
+  return csilMap;
+}
+
+export function fromGetUsageDashboardResponseCborValue(value: CborValue): GetUsageDashboardResponse {
+  return {
+    rangeFrom: asString(requireKey(value, "range_from")),
+    rangeTo: asString(requireKey(value, "range_to")),
+    days: asNumber(requireKey(value, "days")),
+    attribution: asString(requireKey(value, "attribution")),
+    groups: asArray(requireKey(value, "groups")).map((csilE) => fromObsGroupUsageCborValue(csilE)),
+  };
+}
+
+export function toGetUsageDashboardResponseCbor(v: GetUsageDashboardResponse): Uint8Array {
+  return encodeValue(toGetUsageDashboardResponseCborValue(v));
+}
+
+export function fromGetUsageDashboardResponseCbor(bytes: Uint8Array): GetUsageDashboardResponse {
+  return fromGetUsageDashboardResponseCborValue(decode(bytes));
+}
+
+export function toGitHubAppSummaryCborValue(v: GitHubAppSummary): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  csilMap.set("name", v.name);
+  csilMap.set("slug", v.slug);
+  csilMap.set("app_id", v.appId);
+  csilMap.set("enabled", v.enabled);
+  csilMap.set("created_at", v.createdAt);
+  if (v.installUrl !== undefined) csilMap.set("install_url", v.installUrl);
+  csilMap.set("recommended", v.recommended);
+  csilMap.set("repositories", v.repositories);
+  if (v.ratelimitLimit !== undefined) csilMap.set("ratelimit_limit", v.ratelimitLimit);
+  csilMap.set("headroom_percent", v.headroomPercent);
+  csilMap.set("open_registration", v.openRegistration);
+  if (v.ratelimitResetAt !== undefined) csilMap.set("ratelimit_reset_at", v.ratelimitResetAt);
+  if (v.ratelimitRemaining !== undefined) csilMap.set("ratelimit_remaining", v.ratelimitRemaining);
+  csilMap.set("active_installations", v.activeInstallations);
+  return csilMap;
+}
+
+export function fromGitHubAppSummaryCborValue(value: CborValue): GitHubAppSummary {
+  return {
+    appId: asNumber(requireKey(value, "app_id")),
+    slug: asString(requireKey(value, "slug")),
+    name: asString(requireKey(value, "name")),
+    enabled: asBool(requireKey(value, "enabled")),
+    openRegistration: asBool(requireKey(value, "open_registration")),
+    headroomPercent: asNumber(requireKey(value, "headroom_percent")),
+    activeInstallations: asNumber(requireKey(value, "active_installations")),
+    repositories: asNumber(requireKey(value, "repositories")),
+    recommended: asBool(requireKey(value, "recommended")),
+    installUrl: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "install_url")),
+    ratelimitLimit: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asNumber(csilV))(mapGet(value, "ratelimit_limit")),
+    ratelimitRemaining: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asNumber(csilV))(mapGet(value, "ratelimit_remaining")),
+    ratelimitResetAt: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "ratelimit_reset_at")),
+    createdAt: asString(requireKey(value, "created_at")),
+  };
+}
+
+export function toGitHubAppSummaryCbor(v: GitHubAppSummary): Uint8Array {
+  return encodeValue(toGitHubAppSummaryCborValue(v));
+}
+
+export function fromGitHubAppSummaryCbor(bytes: Uint8Array): GitHubAppSummary {
+  return fromGitHubAppSummaryCborValue(decode(bytes));
+}
+
+export function toGitHubAppInstallationSummaryCborValue(v: GitHubAppInstallationSummary): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  csilMap.set("app_id", v.appId);
+  csilMap.set("deleted", v.deleted);
+  csilMap.set("suspended", v.suspended);
+  csilMap.set("account_type", v.accountType);
+  csilMap.set("last_seen_at", v.lastSeenAt);
+  csilMap.set("repositories", v.repositories);
+  csilMap.set("account_login", v.accountLogin);
+  csilMap.set("installation_id", v.installationId);
+  if (v.ratelimitLimit !== undefined) csilMap.set("ratelimit_limit", v.ratelimitLimit);
+  csilMap.set("headroom_percent", v.headroomPercent);
+  if (v.ratelimitResetAt !== undefined) csilMap.set("ratelimit_reset_at", v.ratelimitResetAt);
+  if (v.ratelimitRemaining !== undefined) csilMap.set("ratelimit_remaining", v.ratelimitRemaining);
+  csilMap.set("pending_repositories", v.pendingRepositories);
+  csilMap.set("repository_selection", v.repositorySelection);
+  return csilMap;
+}
+
+export function fromGitHubAppInstallationSummaryCborValue(value: CborValue): GitHubAppInstallationSummary {
+  return {
+    installationId: asNumber(requireKey(value, "installation_id")),
+    appId: asNumber(requireKey(value, "app_id")),
+    accountLogin: asString(requireKey(value, "account_login")),
+    accountType: asString(requireKey(value, "account_type")),
+    repositorySelection: asString(requireKey(value, "repository_selection")),
+    suspended: asBool(requireKey(value, "suspended")),
+    deleted: asBool(requireKey(value, "deleted")),
+    headroomPercent: asNumber(requireKey(value, "headroom_percent")),
+    ratelimitLimit: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asNumber(csilV))(mapGet(value, "ratelimit_limit")),
+    ratelimitRemaining: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asNumber(csilV))(mapGet(value, "ratelimit_remaining")),
+    ratelimitResetAt: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "ratelimit_reset_at")),
+    lastSeenAt: asString(requireKey(value, "last_seen_at")),
+    repositories: asArray(requireKey(value, "repositories")).map((csilE) => asString(csilE)),
+    pendingRepositories: asArray(requireKey(value, "pending_repositories")).map((csilE) => asString(csilE)),
+  };
+}
+
+export function toGitHubAppInstallationSummaryCbor(v: GitHubAppInstallationSummary): Uint8Array {
+  return encodeValue(toGitHubAppInstallationSummaryCborValue(v));
+}
+
+export function fromGitHubAppInstallationSummaryCbor(bytes: Uint8Array): GitHubAppInstallationSummary {
+  return fromGitHubAppInstallationSummaryCborValue(decode(bytes));
+}
+
+export function toListGitHubAppsRequestCborValue(v: ListGitHubAppsRequest): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  return csilMap;
+}
+
+export function fromListGitHubAppsRequestCborValue(value: CborValue): ListGitHubAppsRequest {
+  void value;
+  return {} as ListGitHubAppsRequest;
+}
+
+export function toListGitHubAppsRequestCbor(v: ListGitHubAppsRequest): Uint8Array {
+  return encodeValue(toListGitHubAppsRequestCborValue(v));
+}
+
+export function fromListGitHubAppsRequestCbor(bytes: Uint8Array): ListGitHubAppsRequest {
+  return fromListGitHubAppsRequestCborValue(decode(bytes));
+}
+
+export function toListGitHubAppsResponseCborValue(v: ListGitHubAppsResponse): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  csilMap.set("apps", v.apps.map((csilE): CborValue => toGitHubAppSummaryCborValue(csilE)));
+  csilMap.set("installations", v.installations.map((csilE): CborValue => toGitHubAppInstallationSummaryCborValue(csilE)));
+  return csilMap;
+}
+
+export function fromListGitHubAppsResponseCborValue(value: CborValue): ListGitHubAppsResponse {
+  return {
+    apps: asArray(requireKey(value, "apps")).map((csilE) => fromGitHubAppSummaryCborValue(csilE)),
+    installations: asArray(requireKey(value, "installations")).map((csilE) => fromGitHubAppInstallationSummaryCborValue(csilE)),
+  };
+}
+
+export function toListGitHubAppsResponseCbor(v: ListGitHubAppsResponse): Uint8Array {
+  return encodeValue(toListGitHubAppsResponseCborValue(v));
+}
+
+export function fromListGitHubAppsResponseCbor(bytes: Uint8Array): ListGitHubAppsResponse {
+  return fromListGitHubAppsResponseCborValue(decode(bytes));
+}
+
+export function toSetGitHubAppEnabledRequestCborValue(v: SetGitHubAppEnabledRequest): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  csilMap.set("app_id", v.appId);
+  csilMap.set("enabled", v.enabled);
+  return csilMap;
+}
+
+export function fromSetGitHubAppEnabledRequestCborValue(value: CborValue): SetGitHubAppEnabledRequest {
+  return {
+    appId: asNumber(requireKey(value, "app_id")),
+    enabled: asBool(requireKey(value, "enabled")),
+  };
+}
+
+export function toSetGitHubAppEnabledRequestCbor(v: SetGitHubAppEnabledRequest): Uint8Array {
+  return encodeValue(toSetGitHubAppEnabledRequestCborValue(v));
+}
+
+export function fromSetGitHubAppEnabledRequestCbor(bytes: Uint8Array): SetGitHubAppEnabledRequest {
+  return fromSetGitHubAppEnabledRequestCborValue(decode(bytes));
+}
+
+export function toSetGitHubAppEnabledResponseCborValue(v: SetGitHubAppEnabledResponse): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  csilMap.set("app", toGitHubAppSummaryCborValue(v.app));
+  return csilMap;
+}
+
+export function fromSetGitHubAppEnabledResponseCborValue(value: CborValue): SetGitHubAppEnabledResponse {
+  return {
+    app: fromGitHubAppSummaryCborValue(requireKey(value, "app")),
+  };
+}
+
+export function toSetGitHubAppEnabledResponseCbor(v: SetGitHubAppEnabledResponse): Uint8Array {
+  return encodeValue(toSetGitHubAppEnabledResponseCborValue(v));
+}
+
+export function fromSetGitHubAppEnabledResponseCbor(bytes: Uint8Array): SetGitHubAppEnabledResponse {
+  return fromSetGitHubAppEnabledResponseCborValue(decode(bytes));
+}
+
+export function toSyncGitHubAppRequestCborValue(v: SyncGitHubAppRequest): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  csilMap.set("app_id", v.appId);
+  return csilMap;
+}
+
+export function fromSyncGitHubAppRequestCborValue(value: CborValue): SyncGitHubAppRequest {
+  return {
+    appId: asNumber(requireKey(value, "app_id")),
+  };
+}
+
+export function toSyncGitHubAppRequestCbor(v: SyncGitHubAppRequest): Uint8Array {
+  return encodeValue(toSyncGitHubAppRequestCborValue(v));
+}
+
+export function fromSyncGitHubAppRequestCbor(bytes: Uint8Array): SyncGitHubAppRequest {
+  return fromSyncGitHubAppRequestCborValue(decode(bytes));
+}
+
+export function toSyncGitHubAppResponseCborValue(v: SyncGitHubAppResponse): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  csilMap.set("errors", v.errors);
+  csilMap.set("created", v.created);
+  csilMap.set("disabled", v.disabled);
+  csilMap.set("installations", v.installations);
+  return csilMap;
+}
+
+export function fromSyncGitHubAppResponseCborValue(value: CborValue): SyncGitHubAppResponse {
+  return {
+    installations: asNumber(requireKey(value, "installations")),
+    created: asNumber(requireKey(value, "created")),
+    disabled: asNumber(requireKey(value, "disabled")),
+    errors: asArray(requireKey(value, "errors")).map((csilE) => asString(csilE)),
+  };
+}
+
+export function toSyncGitHubAppResponseCbor(v: SyncGitHubAppResponse): Uint8Array {
+  return encodeValue(toSyncGitHubAppResponseCborValue(v));
+}
+
+export function fromSyncGitHubAppResponseCbor(bytes: Uint8Array): SyncGitHubAppResponse {
+  return fromSyncGitHubAppResponseCborValue(decode(bytes));
+}
+
+export function toSetShedActionsRequestCborValue(v: SetShedActionsRequest): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  if (v.reset !== undefined) csilMap.set("reset", v.reset);
+  csilMap.set("org_id", v.orgId);
+  if (v.critical !== undefined) csilMap.set("critical", toShedActionsCborValue(v.critical));
+  if (v.degraded !== undefined) csilMap.set("degraded", toShedActionsCborValue(v.degraded));
+  return csilMap;
+}
+
+export function fromSetShedActionsRequestCborValue(value: CborValue): SetShedActionsRequest {
+  return {
+    orgId: asString(requireKey(value, "org_id")),
+    degraded: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : fromShedActionsCborValue(csilV))(mapGet(value, "degraded")),
+    critical: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : fromShedActionsCborValue(csilV))(mapGet(value, "critical")),
+    reset: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asBool(csilV))(mapGet(value, "reset")),
+  };
+}
+
+export function toSetShedActionsRequestCbor(v: SetShedActionsRequest): Uint8Array {
+  return encodeValue(toSetShedActionsRequestCborValue(v));
+}
+
+export function fromSetShedActionsRequestCbor(bytes: Uint8Array): SetShedActionsRequest {
+  return fromSetShedActionsRequestCborValue(decode(bytes));
+}
+
+export function toOrgReportingSettingsViewCborValue(v: OrgReportingSettingsView): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  csilMap.set("path_owners", v.pathOwners.map((csilE): CborValue => toPathOwnerRuleCborValue(csilE)));
+  csilMap.set("report_mode", v.reportMode);
+  csilMap.set("path_acceptance", v.pathAcceptance);
+  csilMap.set("codeowners_import", v.codeownersImport);
+  csilMap.set("agreement_contexts", v.agreementContexts);
+  csilMap.set("codeowners_cache_ttl_seconds", v.codeownersCacheTtlSeconds);
+  return csilMap;
+}
+
+export function fromOrgReportingSettingsViewCborValue(value: CborValue): OrgReportingSettingsView {
+  return {
+    reportMode: asString(requireKey(value, "report_mode")),
+    agreementContexts: asArray(requireKey(value, "agreement_contexts")).map((csilE) => asString(csilE)),
+    codeownersImport: asString(requireKey(value, "codeowners_import")),
+    codeownersCacheTtlSeconds: asNumber(requireKey(value, "codeowners_cache_ttl_seconds")),
+    pathAcceptance: asString(requireKey(value, "path_acceptance")),
+    pathOwners: asArray(requireKey(value, "path_owners")).map((csilE) => fromPathOwnerRuleCborValue(csilE)),
+  };
+}
+
+export function toOrgReportingSettingsViewCbor(v: OrgReportingSettingsView): Uint8Array {
+  return encodeValue(toOrgReportingSettingsViewCborValue(v));
+}
+
+export function fromOrgReportingSettingsViewCbor(bytes: Uint8Array): OrgReportingSettingsView {
+  return fromOrgReportingSettingsViewCborValue(decode(bytes));
+}
+
+export function toGetOrgReportingSettingsRequestCborValue(v: GetOrgReportingSettingsRequest): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  csilMap.set("organization", v.organization);
+  return csilMap;
+}
+
+export function fromGetOrgReportingSettingsRequestCborValue(value: CborValue): GetOrgReportingSettingsRequest {
+  return {
+    organization: asString(requireKey(value, "organization")),
+  };
+}
+
+export function toGetOrgReportingSettingsRequestCbor(v: GetOrgReportingSettingsRequest): Uint8Array {
+  return encodeValue(toGetOrgReportingSettingsRequestCborValue(v));
+}
+
+export function fromGetOrgReportingSettingsRequestCbor(bytes: Uint8Array): GetOrgReportingSettingsRequest {
+  return fromGetOrgReportingSettingsRequestCborValue(decode(bytes));
+}
+
+export function toGetOrgReportingSettingsResponseCborValue(v: GetOrgReportingSettingsResponse): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  csilMap.set("settings", toOrgReportingSettingsViewCborValue(v.settings));
+  csilMap.set("can_manage", v.canManage);
+  return csilMap;
+}
+
+export function fromGetOrgReportingSettingsResponseCborValue(value: CborValue): GetOrgReportingSettingsResponse {
+  return {
+    settings: fromOrgReportingSettingsViewCborValue(requireKey(value, "settings")),
+    canManage: asBool(requireKey(value, "can_manage")),
+  };
+}
+
+export function toGetOrgReportingSettingsResponseCbor(v: GetOrgReportingSettingsResponse): Uint8Array {
+  return encodeValue(toGetOrgReportingSettingsResponseCborValue(v));
+}
+
+export function fromGetOrgReportingSettingsResponseCbor(bytes: Uint8Array): GetOrgReportingSettingsResponse {
+  return fromGetOrgReportingSettingsResponseCborValue(decode(bytes));
+}
+
+export function toPutOrgReportingSettingsRequestCborValue(v: PutOrgReportingSettingsRequest): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  csilMap.set("settings", toOrgReportingSettingsViewCborValue(v.settings));
+  csilMap.set("organization", v.organization);
+  return csilMap;
+}
+
+export function fromPutOrgReportingSettingsRequestCborValue(value: CborValue): PutOrgReportingSettingsRequest {
+  return {
+    organization: asString(requireKey(value, "organization")),
+    settings: fromOrgReportingSettingsViewCborValue(requireKey(value, "settings")),
+  };
+}
+
+export function toPutOrgReportingSettingsRequestCbor(v: PutOrgReportingSettingsRequest): Uint8Array {
+  return encodeValue(toPutOrgReportingSettingsRequestCborValue(v));
+}
+
+export function fromPutOrgReportingSettingsRequestCbor(bytes: Uint8Array): PutOrgReportingSettingsRequest {
+  return fromPutOrgReportingSettingsRequestCborValue(decode(bytes));
+}
+
+export function toGetRequiredSetOrgSettingsRequestCborValue(v: GetRequiredSetOrgSettingsRequest): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  csilMap.set("organization", v.organization);
+  return csilMap;
+}
+
+export function fromGetRequiredSetOrgSettingsRequestCborValue(value: CborValue): GetRequiredSetOrgSettingsRequest {
+  return {
+    organization: asString(requireKey(value, "organization")),
+  };
+}
+
+export function toGetRequiredSetOrgSettingsRequestCbor(v: GetRequiredSetOrgSettingsRequest): Uint8Array {
+  return encodeValue(toGetRequiredSetOrgSettingsRequestCborValue(v));
+}
+
+export function fromGetRequiredSetOrgSettingsRequestCbor(bytes: Uint8Array): GetRequiredSetOrgSettingsRequest {
+  return fromGetRequiredSetOrgSettingsRequestCborValue(decode(bytes));
+}
+
+export function toGetRequiredSetOrgSettingsResponseCborValue(v: GetRequiredSetOrgSettingsResponse): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  csilMap.set("approvers", v.approvers);
+  csilMap.set("can_manage", v.canManage);
+  csilMap.set("approver_rules", v.approverRules.map((csilE): CborValue => toRequiredSetApproverRuleCborValue(csilE)));
+  csilMap.set("max_quarantine_days", v.maxQuarantineDays);
+  return csilMap;
+}
+
+export function fromGetRequiredSetOrgSettingsResponseCborValue(value: CborValue): GetRequiredSetOrgSettingsResponse {
+  return {
+    approvers: asArray(requireKey(value, "approvers")).map((csilE) => asString(csilE)),
+    approverRules: asArray(requireKey(value, "approver_rules")).map((csilE) => fromRequiredSetApproverRuleCborValue(csilE)),
+    maxQuarantineDays: asNumber(requireKey(value, "max_quarantine_days")),
+    canManage: asBool(requireKey(value, "can_manage")),
+  };
+}
+
+export function toGetRequiredSetOrgSettingsResponseCbor(v: GetRequiredSetOrgSettingsResponse): Uint8Array {
+  return encodeValue(toGetRequiredSetOrgSettingsResponseCborValue(v));
+}
+
+export function fromGetRequiredSetOrgSettingsResponseCbor(bytes: Uint8Array): GetRequiredSetOrgSettingsResponse {
+  return fromGetRequiredSetOrgSettingsResponseCborValue(decode(bytes));
+}
+
+export function toPutRequiredSetOrgSettingsRequestCborValue(v: PutRequiredSetOrgSettingsRequest): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  csilMap.set("approvers", v.approvers);
+  csilMap.set("organization", v.organization);
+  csilMap.set("approver_rules", v.approverRules.map((csilE): CborValue => toRequiredSetApproverRuleCborValue(csilE)));
+  csilMap.set("max_quarantine_days", v.maxQuarantineDays);
+  return csilMap;
+}
+
+export function fromPutRequiredSetOrgSettingsRequestCborValue(value: CborValue): PutRequiredSetOrgSettingsRequest {
+  return {
+    organization: asString(requireKey(value, "organization")),
+    approvers: asArray(requireKey(value, "approvers")).map((csilE) => asString(csilE)),
+    approverRules: asArray(requireKey(value, "approver_rules")).map((csilE) => fromRequiredSetApproverRuleCborValue(csilE)),
+    maxQuarantineDays: asNumber(requireKey(value, "max_quarantine_days")),
+  };
+}
+
+export function toPutRequiredSetOrgSettingsRequestCbor(v: PutRequiredSetOrgSettingsRequest): Uint8Array {
+  return encodeValue(toPutRequiredSetOrgSettingsRequestCborValue(v));
+}
+
+export function fromPutRequiredSetOrgSettingsRequestCbor(bytes: Uint8Array): PutRequiredSetOrgSettingsRequest {
+  return fromPutRequiredSetOrgSettingsRequestCborValue(decode(bytes));
+}
+
+export function toGetVcsOwnerAllowlistRequestCborValue(v: GetVcsOwnerAllowlistRequest): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  csilMap.set("organization", v.organization);
+  return csilMap;
+}
+
+export function fromGetVcsOwnerAllowlistRequestCborValue(value: CborValue): GetVcsOwnerAllowlistRequest {
+  return {
+    organization: asString(requireKey(value, "organization")),
+  };
+}
+
+export function toGetVcsOwnerAllowlistRequestCbor(v: GetVcsOwnerAllowlistRequest): Uint8Array {
+  return encodeValue(toGetVcsOwnerAllowlistRequestCborValue(v));
+}
+
+export function fromGetVcsOwnerAllowlistRequestCbor(bytes: Uint8Array): GetVcsOwnerAllowlistRequest {
+  return fromGetVcsOwnerAllowlistRequestCborValue(decode(bytes));
+}
+
+export function toVcsOwnerAllowlistResponseCborValue(v: VcsOwnerAllowlistResponse): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  csilMap.set("owners", v.owners);
+  return csilMap;
+}
+
+export function fromVcsOwnerAllowlistResponseCborValue(value: CborValue): VcsOwnerAllowlistResponse {
+  return {
+    owners: asArray(requireKey(value, "owners")).map((csilE) => asString(csilE)),
+  };
+}
+
+export function toVcsOwnerAllowlistResponseCbor(v: VcsOwnerAllowlistResponse): Uint8Array {
+  return encodeValue(toVcsOwnerAllowlistResponseCborValue(v));
+}
+
+export function fromVcsOwnerAllowlistResponseCbor(bytes: Uint8Array): VcsOwnerAllowlistResponse {
+  return fromVcsOwnerAllowlistResponseCborValue(decode(bytes));
+}
+
+export function toPutVcsOwnerAllowlistRequestCborValue(v: PutVcsOwnerAllowlistRequest): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  csilMap.set("owners", v.owners);
+  csilMap.set("organization", v.organization);
+  return csilMap;
+}
+
+export function fromPutVcsOwnerAllowlistRequestCborValue(value: CborValue): PutVcsOwnerAllowlistRequest {
+  return {
+    organization: asString(requireKey(value, "organization")),
+    owners: asArray(requireKey(value, "owners")).map((csilE) => asString(csilE)),
+  };
+}
+
+export function toPutVcsOwnerAllowlistRequestCbor(v: PutVcsOwnerAllowlistRequest): Uint8Array {
+  return encodeValue(toPutVcsOwnerAllowlistRequestCborValue(v));
+}
+
+export function fromPutVcsOwnerAllowlistRequestCbor(bytes: Uint8Array): PutVcsOwnerAllowlistRequest {
+  return fromPutVcsOwnerAllowlistRequestCborValue(decode(bytes));
+}
+
+export function toOidcClaimCborValue(v: OidcClaim): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  csilMap.set("name", v.name);
+  csilMap.set("value", v.value);
+  return csilMap;
+}
+
+export function fromOidcClaimCborValue(value: CborValue): OidcClaim {
+  return {
+    name: asString(requireKey(value, "name")),
+    value: asString(requireKey(value, "value")),
+  };
+}
+
+export function toOidcClaimCbor(v: OidcClaim): Uint8Array {
+  return encodeValue(toOidcClaimCborValue(v));
+}
+
+export function fromOidcClaimCbor(bytes: Uint8Array): OidcClaim {
+  return fromOidcClaimCborValue(decode(bytes));
+}
+
+export function toOidcAudienceClaimsCborValue(v: OidcAudienceClaims): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  csilMap.set("claims", v.claims.map((csilE): CborValue => toOidcClaimCborValue(csilE)));
+  csilMap.set("audience", v.audience);
+  return csilMap;
+}
+
+export function fromOidcAudienceClaimsCborValue(value: CborValue): OidcAudienceClaims {
+  return {
+    audience: asString(requireKey(value, "audience")),
+    claims: asArray(requireKey(value, "claims")).map((csilE) => fromOidcClaimCborValue(csilE)),
+  };
+}
+
+export function toOidcAudienceClaimsCbor(v: OidcAudienceClaims): Uint8Array {
+  return encodeValue(toOidcAudienceClaimsCborValue(v));
+}
+
+export function fromOidcAudienceClaimsCbor(bytes: Uint8Array): OidcAudienceClaims {
+  return fromOidcAudienceClaimsCborValue(decode(bytes));
+}
+
+export function toGetOidcSettingsRequestCborValue(v: GetOidcSettingsRequest): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  if (v.projectId !== undefined) csilMap.set("project_id", v.projectId);
+  csilMap.set("organization", v.organization);
+  return csilMap;
+}
+
+export function fromGetOidcSettingsRequestCborValue(value: CborValue): GetOidcSettingsRequest {
+  return {
+    organization: asString(requireKey(value, "organization")),
+    projectId: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "project_id")),
+  };
+}
+
+export function toGetOidcSettingsRequestCbor(v: GetOidcSettingsRequest): Uint8Array {
+  return encodeValue(toGetOidcSettingsRequestCborValue(v));
+}
+
+export function fromGetOidcSettingsRequestCbor(bytes: Uint8Array): GetOidcSettingsRequest {
+  return fromGetOidcSettingsRequestCborValue(decode(bytes));
+}
+
+export function toOidcSettingsResponseCborValue(v: OidcSettingsResponse): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  csilMap.set("issuer", v.issuer);
+  csilMap.set("can_manage", v.canManage);
+  if (v.issuerUrl !== undefined) csilMap.set("issuer_url", v.issuerUrl);
+  csilMap.set("audience_claims", v.audienceClaims.map((csilE): CborValue => toOidcAudienceClaimsCborValue(csilE)));
+  csilMap.set("effective_enabled", v.effectiveEnabled);
+  csilMap.set("issuer_configured", v.issuerConfigured);
+  return csilMap;
+}
+
+export function fromOidcSettingsResponseCborValue(value: CborValue): OidcSettingsResponse {
+  return {
+    issuer: asString(requireKey(value, "issuer")),
+    audienceClaims: asArray(requireKey(value, "audience_claims")).map((csilE) => fromOidcAudienceClaimsCborValue(csilE)),
+    effectiveEnabled: asBool(requireKey(value, "effective_enabled")),
+    issuerConfigured: asBool(requireKey(value, "issuer_configured")),
+    issuerUrl: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "issuer_url")),
+    canManage: asBool(requireKey(value, "can_manage")),
+  };
+}
+
+export function toOidcSettingsResponseCbor(v: OidcSettingsResponse): Uint8Array {
+  return encodeValue(toOidcSettingsResponseCborValue(v));
+}
+
+export function fromOidcSettingsResponseCbor(bytes: Uint8Array): OidcSettingsResponse {
+  return fromOidcSettingsResponseCborValue(decode(bytes));
+}
+
+export function toPutOidcSettingsRequestCborValue(v: PutOidcSettingsRequest): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  if (v.issuer !== undefined) csilMap.set("issuer", v.issuer);
+  if (v.projectId !== undefined) csilMap.set("project_id", v.projectId);
+  csilMap.set("organization", v.organization);
+  if (v.audienceClaims !== undefined) csilMap.set("audience_claims", v.audienceClaims.map((csilE): CborValue => toOidcAudienceClaimsCborValue(csilE)));
+  return csilMap;
+}
+
+export function fromPutOidcSettingsRequestCborValue(value: CborValue): PutOidcSettingsRequest {
+  return {
+    organization: asString(requireKey(value, "organization")),
+    projectId: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "project_id")),
+    issuer: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "issuer")),
+    audienceClaims: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asArray(csilV).map((csilE) => fromOidcAudienceClaimsCborValue(csilE)))(mapGet(value, "audience_claims")),
+  };
+}
+
+export function toPutOidcSettingsRequestCbor(v: PutOidcSettingsRequest): Uint8Array {
+  return encodeValue(toPutOidcSettingsRequestCborValue(v));
+}
+
+export function fromPutOidcSettingsRequestCbor(bytes: Uint8Array): PutOidcSettingsRequest {
+  return fromPutOidcSettingsRequestCborValue(decode(bytes));
+}
+
+export function toOidcSigningKeyCborValue(v: OidcSigningKey): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  csilMap.set("kid", v.kid);
+  csilMap.set("state", v.state);
+  csilMap.set("algorithm", v.algorithm);
+  csilMap.set("created_at", v.createdAt);
+  if (v.retiresAt !== undefined) csilMap.set("retires_at", v.retiresAt);
+  csilMap.set("activates_at", v.activatesAt);
+  return csilMap;
+}
+
+export function fromOidcSigningKeyCborValue(value: CborValue): OidcSigningKey {
+  return {
+    kid: asString(requireKey(value, "kid")),
+    algorithm: asString(requireKey(value, "algorithm")),
+    createdAt: asString(requireKey(value, "created_at")),
+    activatesAt: asString(requireKey(value, "activates_at")),
+    retiresAt: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "retires_at")),
+    state: asString(requireKey(value, "state")),
+  };
+}
+
+export function toOidcSigningKeyCbor(v: OidcSigningKey): Uint8Array {
+  return encodeValue(toOidcSigningKeyCborValue(v));
+}
+
+export function fromOidcSigningKeyCbor(bytes: Uint8Array): OidcSigningKey {
+  return fromOidcSigningKeyCborValue(decode(bytes));
+}
+
+export function toListOidcKeysRequestCborValue(v: ListOidcKeysRequest): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  return csilMap;
+}
+
+export function fromListOidcKeysRequestCborValue(value: CborValue): ListOidcKeysRequest {
+  void value;
+  return {} as ListOidcKeysRequest;
+}
+
+export function toListOidcKeysRequestCbor(v: ListOidcKeysRequest): Uint8Array {
+  return encodeValue(toListOidcKeysRequestCborValue(v));
+}
+
+export function fromListOidcKeysRequestCbor(bytes: Uint8Array): ListOidcKeysRequest {
+  return fromListOidcKeysRequestCborValue(decode(bytes));
+}
+
+export function toListOidcKeysResponseCborValue(v: ListOidcKeysResponse): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  csilMap.set("keys", v.keys.map((csilE): CborValue => toOidcSigningKeyCborValue(csilE)));
+  if (v.issuer !== undefined) csilMap.set("issuer", v.issuer);
+  csilMap.set("issuer_configured", v.issuerConfigured);
+  return csilMap;
+}
+
+export function fromListOidcKeysResponseCborValue(value: CborValue): ListOidcKeysResponse {
+  return {
+    issuerConfigured: asBool(requireKey(value, "issuer_configured")),
+    issuer: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "issuer")),
+    keys: asArray(requireKey(value, "keys")).map((csilE) => fromOidcSigningKeyCborValue(csilE)),
+  };
+}
+
+export function toListOidcKeysResponseCbor(v: ListOidcKeysResponse): Uint8Array {
+  return encodeValue(toListOidcKeysResponseCborValue(v));
+}
+
+export function fromListOidcKeysResponseCbor(bytes: Uint8Array): ListOidcKeysResponse {
+  return fromListOidcKeysResponseCborValue(decode(bytes));
+}
+
+export function toRotateOidcKeyRequestCborValue(v: RotateOidcKeyRequest): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  if (v.immediate !== undefined) csilMap.set("immediate", v.immediate);
+  return csilMap;
+}
+
+export function fromRotateOidcKeyRequestCborValue(value: CborValue): RotateOidcKeyRequest {
+  return {
+    immediate: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asBool(csilV))(mapGet(value, "immediate")),
+  };
+}
+
+export function toRotateOidcKeyRequestCbor(v: RotateOidcKeyRequest): Uint8Array {
+  return encodeValue(toRotateOidcKeyRequestCborValue(v));
+}
+
+export function fromRotateOidcKeyRequestCbor(bytes: Uint8Array): RotateOidcKeyRequest {
+  return fromRotateOidcKeyRequestCborValue(decode(bytes));
+}
+
+export function toRetireOidcKeyRequestCborValue(v: RetireOidcKeyRequest): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  csilMap.set("kid", v.kid);
+  return csilMap;
+}
+
+export function fromRetireOidcKeyRequestCborValue(value: CborValue): RetireOidcKeyRequest {
+  return {
+    kid: asString(requireKey(value, "kid")),
+  };
+}
+
+export function toRetireOidcKeyRequestCbor(v: RetireOidcKeyRequest): Uint8Array {
+  return encodeValue(toRetireOidcKeyRequestCborValue(v));
+}
+
+export function fromRetireOidcKeyRequestCbor(bytes: Uint8Array): RetireOidcKeyRequest {
+  return fromRetireOidcKeyRequestCborValue(decode(bytes));
+}
+
+export function toListAlertRulesRequestCborValue(v: ListAlertRulesRequest): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  csilMap.set("org_id", v.orgId);
+  if (v.projectId !== undefined) csilMap.set("project_id", v.projectId);
+  return csilMap;
+}
+
+export function fromListAlertRulesRequestCborValue(value: CborValue): ListAlertRulesRequest {
+  return {
+    orgId: asString(requireKey(value, "org_id")),
+    projectId: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "project_id")),
+  };
+}
+
+export function toListAlertRulesRequestCbor(v: ListAlertRulesRequest): Uint8Array {
+  return encodeValue(toListAlertRulesRequestCborValue(v));
+}
+
+export function fromListAlertRulesRequestCbor(bytes: Uint8Array): ListAlertRulesRequest {
+  return fromListAlertRulesRequestCborValue(decode(bytes));
+}
+
+export function toListAlertRulesResponseCborValue(v: ListAlertRulesResponse): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  csilMap.set("rules", v.rules.map((csilE): CborValue => toObsAlertRuleCborValue(csilE)));
+  csilMap.set("can_create_org_rules", v.canCreateOrgRules);
+  return csilMap;
+}
+
+export function fromListAlertRulesResponseCborValue(value: CborValue): ListAlertRulesResponse {
+  return {
+    rules: asArray(requireKey(value, "rules")).map((csilE) => fromObsAlertRuleCborValue(csilE)),
+    canCreateOrgRules: asBool(requireKey(value, "can_create_org_rules")),
+  };
+}
+
+export function toListAlertRulesResponseCbor(v: ListAlertRulesResponse): Uint8Array {
+  return encodeValue(toListAlertRulesResponseCborValue(v));
+}
+
+export function fromListAlertRulesResponseCbor(bytes: Uint8Array): ListAlertRulesResponse {
+  return fromListAlertRulesResponseCborValue(decode(bytes));
+}
+
+export function toAlertRuleInputCborValue(v: AlertRuleInput): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  if (v.factor !== undefined) csilMap.set("factor", v.factor);
+  if (v.enabled !== undefined) csilMap.set("enabled", v.enabled);
+  if (v.minRuns !== undefined) csilMap.set("min_runs", v.minRuns);
+  if (v.condition !== undefined) csilMap.set("condition", v.condition);
+  if (v.threshold !== undefined) csilMap.set("threshold", v.threshold);
+  if (v.fireAfter !== undefined) csilMap.set("fire_after", v.fireAfter);
+  if (v.description !== undefined) csilMap.set("description", v.description);
+  if (v.windowHours !== undefined) csilMap.set("window_hours", v.windowHours);
+  if (v.baselineDays !== undefined) csilMap.set("baseline_days", v.baselineDays);
+  if (v.resolveAfter !== undefined) csilMap.set("resolve_after", v.resolveAfter);
+  if (v.resolveMargin !== undefined) csilMap.set("resolve_margin", v.resolveMargin);
+  if (v.refClassBucket !== undefined) csilMap.set("ref_class_bucket", v.refClassBucket);
+  return csilMap;
+}
+
+export function fromAlertRuleInputCborValue(value: CborValue): AlertRuleInput {
+  return {
+    description: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "description")),
+    condition: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "condition")),
+    refClassBucket: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "ref_class_bucket")),
+    threshold: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asNumber(csilV))(mapGet(value, "threshold")),
+    factor: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asNumber(csilV))(mapGet(value, "factor")),
+    windowHours: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asNumber(csilV))(mapGet(value, "window_hours")),
+    baselineDays: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asNumber(csilV))(mapGet(value, "baseline_days")),
+    minRuns: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asNumber(csilV))(mapGet(value, "min_runs")),
+    resolveMargin: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asNumber(csilV))(mapGet(value, "resolve_margin")),
+    fireAfter: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asNumber(csilV))(mapGet(value, "fire_after")),
+    resolveAfter: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asNumber(csilV))(mapGet(value, "resolve_after")),
+    enabled: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asBool(csilV))(mapGet(value, "enabled")),
+  };
+}
+
+export function toAlertRuleInputCbor(v: AlertRuleInput): Uint8Array {
+  return encodeValue(toAlertRuleInputCborValue(v));
+}
+
+export function fromAlertRuleInputCbor(bytes: Uint8Array): AlertRuleInput {
+  return fromAlertRuleInputCborValue(decode(bytes));
+}
+
+export function toCreateAlertRuleRequestCborValue(v: CreateAlertRuleRequest): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  csilMap.set("name", v.name);
+  csilMap.set("rule", toAlertRuleInputCborValue(v.rule));
+  csilMap.set("scope", v.scope);
+  csilMap.set("org_id", v.orgId);
+  if (v.projectId !== undefined) csilMap.set("project_id", v.projectId);
+  if (v.ownerGroup !== undefined) csilMap.set("owner_group", v.ownerGroup);
+  if (v.workflowSecurityId !== undefined) csilMap.set("workflow_security_id", v.workflowSecurityId);
+  return csilMap;
+}
+
+export function fromCreateAlertRuleRequestCborValue(value: CborValue): CreateAlertRuleRequest {
+  return {
+    orgId: asString(requireKey(value, "org_id")),
+    name: asString(requireKey(value, "name")),
+    scope: asString(requireKey(value, "scope")),
+    projectId: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "project_id")),
+    workflowSecurityId: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "workflow_security_id")),
+    ownerGroup: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "owner_group")),
+    rule: fromAlertRuleInputCborValue(requireKey(value, "rule")),
+  };
+}
+
+export function toCreateAlertRuleRequestCbor(v: CreateAlertRuleRequest): Uint8Array {
+  return encodeValue(toCreateAlertRuleRequestCborValue(v));
+}
+
+export function fromCreateAlertRuleRequestCbor(bytes: Uint8Array): CreateAlertRuleRequest {
+  return fromCreateAlertRuleRequestCborValue(decode(bytes));
+}
+
+export function toUpdateAlertRuleRequestCborValue(v: UpdateAlertRuleRequest): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  csilMap.set("rule", toAlertRuleInputCborValue(v.rule));
+  csilMap.set("org_id", v.orgId);
+  csilMap.set("rule_id", v.ruleId);
+  return csilMap;
+}
+
+export function fromUpdateAlertRuleRequestCborValue(value: CborValue): UpdateAlertRuleRequest {
+  return {
+    orgId: asString(requireKey(value, "org_id")),
+    ruleId: asString(requireKey(value, "rule_id")),
+    rule: fromAlertRuleInputCborValue(requireKey(value, "rule")),
+  };
+}
+
+export function toUpdateAlertRuleRequestCbor(v: UpdateAlertRuleRequest): Uint8Array {
+  return encodeValue(toUpdateAlertRuleRequestCborValue(v));
+}
+
+export function fromUpdateAlertRuleRequestCbor(bytes: Uint8Array): UpdateAlertRuleRequest {
+  return fromUpdateAlertRuleRequestCborValue(decode(bytes));
+}
+
+export function toAlertRuleResponseCborValue(v: AlertRuleResponse): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  csilMap.set("rule", toObsAlertRuleCborValue(v.rule));
+  return csilMap;
+}
+
+export function fromAlertRuleResponseCborValue(value: CborValue): AlertRuleResponse {
+  return {
+    rule: fromObsAlertRuleCborValue(requireKey(value, "rule")),
+  };
+}
+
+export function toAlertRuleResponseCbor(v: AlertRuleResponse): Uint8Array {
+  return encodeValue(toAlertRuleResponseCborValue(v));
+}
+
+export function fromAlertRuleResponseCbor(bytes: Uint8Array): AlertRuleResponse {
+  return fromAlertRuleResponseCborValue(decode(bytes));
+}
+
+export function toDeleteAlertRuleRequestCborValue(v: DeleteAlertRuleRequest): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  csilMap.set("org_id", v.orgId);
+  csilMap.set("rule_id", v.ruleId);
+  return csilMap;
+}
+
+export function fromDeleteAlertRuleRequestCborValue(value: CborValue): DeleteAlertRuleRequest {
+  return {
+    orgId: asString(requireKey(value, "org_id")),
+    ruleId: asString(requireKey(value, "rule_id")),
+  };
+}
+
+export function toDeleteAlertRuleRequestCbor(v: DeleteAlertRuleRequest): Uint8Array {
+  return encodeValue(toDeleteAlertRuleRequestCborValue(v));
+}
+
+export function fromDeleteAlertRuleRequestCbor(bytes: Uint8Array): DeleteAlertRuleRequest {
+  return fromDeleteAlertRuleRequestCborValue(decode(bytes));
+}
+
+export function toDeleteAlertRuleResponseCborValue(v: DeleteAlertRuleResponse): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  csilMap.set("deleted", v.deleted);
+  return csilMap;
+}
+
+export function fromDeleteAlertRuleResponseCborValue(value: CborValue): DeleteAlertRuleResponse {
+  return {
+    deleted: asBool(requireKey(value, "deleted")),
+  };
+}
+
+export function toDeleteAlertRuleResponseCbor(v: DeleteAlertRuleResponse): Uint8Array {
+  return encodeValue(toDeleteAlertRuleResponseCborValue(v));
+}
+
+export function fromDeleteAlertRuleResponseCbor(bytes: Uint8Array): DeleteAlertRuleResponse {
+  return fromDeleteAlertRuleResponseCborValue(decode(bytes));
+}
+
+export function toDeleteDiagnosisRequestCborValue(v: DeleteDiagnosisRequest): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  if (v.jobId !== undefined) csilMap.set("job_id", v.jobId);
+  if (v.nodeName !== undefined) csilMap.set("node_name", v.nodeName);
+  if (v.workflowId !== undefined) csilMap.set("workflow_id", v.workflowId);
+  return csilMap;
+}
+
+export function fromDeleteDiagnosisRequestCborValue(value: CborValue): DeleteDiagnosisRequest {
+  return {
+    jobId: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "job_id")),
+    workflowId: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "workflow_id")),
+    nodeName: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "node_name")),
+  };
+}
+
+export function toDeleteDiagnosisRequestCbor(v: DeleteDiagnosisRequest): Uint8Array {
+  return encodeValue(toDeleteDiagnosisRequestCborValue(v));
+}
+
+export function fromDeleteDiagnosisRequestCbor(bytes: Uint8Array): DeleteDiagnosisRequest {
+  return fromDeleteDiagnosisRequestCborValue(decode(bytes));
+}
+
+export function toDeleteDiagnosisResponseCborValue(v: DeleteDiagnosisResponse): CborValue {
+  const csilMap = new Map<CborValue, CborValue>();
+  csilMap.set("deleted", v.deleted);
+  if (v.diagnosisId !== undefined) csilMap.set("diagnosis_id", v.diagnosisId);
+  return csilMap;
+}
+
+export function fromDeleteDiagnosisResponseCborValue(value: CborValue): DeleteDiagnosisResponse {
+  return {
+    deleted: asBool(requireKey(value, "deleted")),
+    diagnosisId: ((csilV: CborValue | undefined) => csilV === undefined ? undefined : asString(csilV))(mapGet(value, "diagnosis_id")),
+  };
+}
+
+export function toDeleteDiagnosisResponseCbor(v: DeleteDiagnosisResponse): Uint8Array {
+  return encodeValue(toDeleteDiagnosisResponseCborValue(v));
+}
+
+export function fromDeleteDiagnosisResponseCbor(bytes: Uint8Array): DeleteDiagnosisResponse {
+  return fromDeleteDiagnosisResponseCborValue(decode(bytes));
 }
 

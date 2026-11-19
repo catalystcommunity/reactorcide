@@ -24,6 +24,13 @@ type APIToken struct {
 	OrganizationIDs  []string   `gorm:"-" json:"organization_ids,omitempty"`
 	Capabilities     []string   `gorm:"-" json:"capabilities,omitempty"`
 
+	// PrincipalID is the principal the token acts as. IntersectRoles makes
+	// the effective authority the capabilities intersected with the roles and
+	// groups of the principal (always for a user token; for a service token
+	// only when it was issued for a principal).
+	PrincipalID    *string `gorm:"type:uuid;default:null" json:"principal_id,omitempty"`
+	IntersectRoles bool    `gorm:"not null;default:false" json:"intersect_roles"`
+
 	// Relationships
 	User *User `gorm:"foreignKey:UserID" json:"user,omitempty"`
 }

@@ -90,6 +90,9 @@ def read_config() -> Dict[str, Any]:
         'release': os.environ.get('REACTORCIDE_HELM_RELEASE', 'reactorcide'),
         'image_tag': os.environ.get('REACTORCIDE_IMAGE_TAG', ''),
         'helm_values': os.environ.get('REACTORCIDE_HELM_VALUES', ''),
+        # Optional: the egress proxy image repository. Empty keeps the
+        # repository of the chart values (or of REACTORCIDE_HELM_VALUES).
+        'egress_image_repository': (os.environ.get('REACTORCIDE_EGRESS_IMAGE_REPOSITORY') or '').strip(),
         'registry_server': os.environ.get('REACTORCIDE_REGISTRY_SERVER', '').strip(),
         'registry_pull_secret_name': os.environ.get('REACTORCIDE_REGISTRY_PULL_SECRET_NAME', '').strip(),
         'registry_username': os.environ.get('REACTORCIDE_REGISTRY_USERNAME', '').strip(),
@@ -414,6 +417,12 @@ def build_helm_values(config: Dict[str, Any], db_uri: str, corndogs_url: str) ->
         args.extend(["--set", f"app.image.tag={config['image_tag']}"])
         args.extend(["--set", f"worker.image.tag={config['image_tag']}"])
         args.extend(["--set", f"web.image.tag={config['image_tag']}"])
+        # The egress proxy image is released with the same tag. The chart
+        # uses it only when egressProxy.enabled is true, but a stale default
+        # tag ("dev") must not reach production when an operator enables it.
+        args.extend(["--set", f"egressProxy.image.tag={config['image_tag']}"])
+    if config.get('egress_image_repository'):
+        args.extend(["--set", f"egressProxy.image.repository={config['egress_image_repository']}"])
 
     # Object storage
     args.extend(["--set", f"objectStore.type={config['object_store_type']}"])

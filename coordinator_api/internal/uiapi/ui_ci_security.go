@@ -4,8 +4,11 @@ import (
 	"context"
 	"errors"
 
+	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/cachens"
+	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/refclass"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store/models"
+	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/tokencaps"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/uiapi/csilapi"
 	"github.com/lib/pq"
 )
@@ -38,23 +41,27 @@ func (s *UiService) ciSecurityStore() (uiCISecurityStore, error) {
 	return value, nil
 }
 
-func (s *UiService) requireCIOrgAdmin(ctx context.Context, organization string) (uiCISecurityStore, *models.Organization, error) {
-	id, _, err := s.deps.requireUser(ctx)
+// requireCIOrgAdmin requires an admin of the organization. A token needs one
+// of capabilities for it: policies:manage for execution profiles,
+// workers:manage (or workers:read for a list) for worker classes, as in the
+// REST routes.
+func (s *UiService) requireCIOrgAdmin(ctx context.Context, organization string, capabilities ...string) (context.Context, uiCISecurityStore, *models.Organization, error) {
+	ctx, id, _, err := s.deps.requireManagementIdentity(ctx)
 	if err != nil {
-		return nil, nil, err
+		return ctx, nil, nil, err
 	}
 	value, err := s.ciSecurityStore()
 	if err != nil {
-		return nil, nil, err
+		return ctx, nil, nil, err
 	}
 	org, err := value.GetOrganizationByName(ctx, organization)
 	if err != nil {
-		return nil, nil, mapStoreErr(err, "organization not found")
+		return ctx, nil, nil, mapStoreErr(err, "organization not found")
 	}
-	if err := s.deps.Resolver.RequireOrgAdmin(ctx, id, org.OrgID); err != nil {
-		return nil, nil, mapPermissionErr(err)
+	if err := s.requireOrgAdminGrant(ctx, id, org.OrgID, capabilities...); err != nil {
+		return ctx, nil, nil, err
 	}
-	return value, org, nil
+	return ctx, value, org, nil
 }
 
 func profileSummary(profile *models.ExecutionProfile) csilapi.ExecutionProfileSummary {
@@ -67,7 +74,9 @@ func profileSummary(profile *models.ExecutionProfile) csilapi.ExecutionProfileSu
 		SecretPathAllowlist: append([]string{}, profile.SecretPathAllowlist...), RuntimeCapabilities: append([]string{}, profile.RuntimeCapabilities...),
 		MayRunAsRoot: profile.MayRunAsRoot, AllowedWorkerClasses: append([]string{}, profile.AllowedWorkerClasses...),
 		TimeoutCeilingSeconds: ceiling, ResourceCeilings: map[string]any(profile.ResourceCeilings),
-		CacheNamespace: profile.CacheNamespace, ArtifactNamespace: profile.ArtifactNamespace, TrustedCacheWrites: profile.TrustedCacheWrites}
+		CacheNamespace: profile.CacheNamespace, ArtifactNamespace: profile.ArtifactNamespace, TrustedCacheWrites: profile.TrustedCacheWrites,
+		CacheNamespaceClasses: append([]string{}, profile.CacheNamespaceClasses...), CacheWriteClasses: append([]string{}, profile.CacheWriteClasses...),
+		EgressControl: optionalBool(profile.EgressControl)}
 }
 
 func profileFromSummary(orgID string, value csilapi.ExecutionProfileSummary) *models.ExecutionProfile {
@@ -75,6 +84,14 @@ func profileFromSummary(orgID string, value csilapi.ExecutionProfileSummary) *mo
 		SecretPathAllowlist: pq.StringArray(value.SecretPathAllowlist), RuntimeCapabilities: pq.StringArray(value.RuntimeCapabilities),
 		MayRunAsRoot: value.MayRunAsRoot, AllowedWorkerClasses: pq.StringArray(value.AllowedWorkerClasses),
 		CacheNamespace: value.CacheNamespace, ArtifactNamespace: value.ArtifactNamespace, TrustedCacheWrites: value.TrustedCacheWrites}
+	// A nil list keeps the stored classes; an empty list clears them. The
+	// put operation validates them (cachens.NormalizeProfile).
+	if value.CacheNamespaceClasses != nil {
+		profile.CacheNamespaceClasses = pq.StringArray(append([]string{}, value.CacheNamespaceClasses...))
+	}
+	if value.CacheWriteClasses != nil {
+		profile.CacheWriteClasses = pq.StringArray(append([]string{}, value.CacheWriteClasses...))
+	}
 	if value.TimeoutCeilingSeconds != nil {
 		ceiling := int(*value.TimeoutCeilingSeconds)
 		profile.TimeoutCeilingSeconds = &ceiling
@@ -86,7 +103,7 @@ func profileFromSummary(orgID string, value csilapi.ExecutionProfileSummary) *mo
 }
 
 func (s *UiService) ListExecutionProfiles(ctx context.Context, req csilapi.ListExecutionProfilesRequest) (csilapi.ListExecutionProfilesResponse, error) {
-	value, org, err := s.requireCIOrgAdmin(ctx, req.Organization)
+	ctx, value, org, err := s.requireCIOrgAdmin(ctx, req.Organization, tokencaps.PoliciesManage)
 	if err != nil {
 		return csilapi.ListExecutionProfilesResponse{}, err
 	}
@@ -102,12 +119,21 @@ func (s *UiService) ListExecutionProfiles(ctx context.Context, req csilapi.ListE
 }
 
 func (s *UiService) PutExecutionProfile(ctx context.Context, req csilapi.PutExecutionProfileRequest) (csilapi.PutExecutionProfileResponse, error) {
-	value, org, err := s.requireCIOrgAdmin(ctx, req.Organization)
+	ctx, value, org, err := s.requireCIOrgAdmin(ctx, req.Organization, tokencaps.PoliciesManage)
 	if err != nil {
 		return csilapi.PutExecutionProfileResponse{}, err
 	}
 	profile := profileFromSummary(org.OrgID, req.Profile)
+	if err := cachens.NormalizeProfile(profile); err != nil {
+		return csilapi.PutExecutionProfileResponse{}, NewServiceError("invalid_argument", err.Error())
+	}
 	existing, getErr := value.GetExecutionProfile(ctx, org.OrgID, profile.Name)
+	// An absent egress_control keeps the stored value (an older client).
+	if req.Profile.EgressControl != nil {
+		profile.EgressControl = *req.Profile.EgressControl
+	} else if getErr == nil {
+		profile.EgressControl = existing.EgressControl
+	}
 	if getErr == nil {
 		profile.ProfileID, profile.CreatedAt = existing.ProfileID, existing.CreatedAt
 		err = value.UpdateExecutionProfile(ctx, profile)
@@ -128,7 +154,7 @@ func (s *UiService) PutExecutionProfile(ctx context.Context, req csilapi.PutExec
 }
 
 func (s *UiService) DeleteExecutionProfile(ctx context.Context, req csilapi.DeleteExecutionProfileRequest) (csilapi.DeleteExecutionProfileResponse, error) {
-	value, org, err := s.requireCIOrgAdmin(ctx, req.Organization)
+	ctx, value, org, err := s.requireCIOrgAdmin(ctx, req.Organization, tokencaps.PoliciesManage)
 	if err != nil {
 		return csilapi.DeleteExecutionProfileResponse{}, err
 	}
@@ -140,11 +166,15 @@ func (s *UiService) DeleteExecutionProfile(ctx context.Context, req csilapi.Dele
 }
 
 func classSummary(value *models.WorkerClass, poolIDs []string) csilapi.WorkerClassSummary {
-	return csilapi.WorkerClassSummary{Name: value.Name, Protected: value.Protected, PoolIds: poolIDs}
+	summary := csilapi.WorkerClassSummary{Name: value.Name, Protected: value.Protected, PoolIds: poolIDs}
+	if len(value.RefClassesAny) > 0 {
+		summary.RefClassesAny = append([]string{}, value.RefClassesAny...)
+	}
+	return summary
 }
 
 func (s *UiService) ListWorkerClasses(ctx context.Context, req csilapi.ListWorkerClassesRequest) (csilapi.ListWorkerClassesResponse, error) {
-	value, org, err := s.requireCIOrgAdmin(ctx, req.Organization)
+	ctx, value, org, err := s.requireCIOrgAdmin(ctx, req.Organization, tokencaps.WorkersRead, tokencaps.WorkersManage)
 	if err != nil {
 		return csilapi.ListWorkerClassesResponse{}, err
 	}
@@ -168,16 +198,21 @@ func (s *UiService) ListWorkerClasses(ctx context.Context, req csilapi.ListWorke
 }
 
 func (s *UiService) PutWorkerClass(ctx context.Context, req csilapi.PutWorkerClassRequest) (csilapi.PutWorkerClassResponse, error) {
-	value, org, err := s.requireCIOrgAdmin(ctx, req.Organization)
+	ctx, value, org, err := s.requireCIOrgAdmin(ctx, req.Organization, tokencaps.WorkersManage)
 	if err != nil {
 		return csilapi.PutWorkerClassResponse{}, err
 	}
+	if err := refclass.ValidateClasses(req.WorkerClass.RefClassesAny); err != nil {
+		return csilapi.PutWorkerClassResponse{}, NewServiceError("invalid_argument", "ref_classes_any: "+err.Error())
+	}
+	refClassesAny := pq.StringArray(refclass.Normalize(req.WorkerClass.RefClassesAny))
 	class, getErr := value.GetWorkerClass(ctx, org.OrgID, req.WorkerClass.Name)
 	if getErr == nil {
 		class.Protected = req.WorkerClass.Protected
+		class.RefClassesAny = refClassesAny
 		err = value.UpdateWorkerClass(ctx, class)
 	} else if errors.Is(getErr, store.ErrNotFound) {
-		class = &models.WorkerClass{OrgID: org.OrgID, Name: req.WorkerClass.Name, Protected: req.WorkerClass.Protected}
+		class = &models.WorkerClass{OrgID: org.OrgID, Name: req.WorkerClass.Name, Protected: req.WorkerClass.Protected, RefClassesAny: refClassesAny}
 		err = value.CreateWorkerClass(ctx, class)
 	} else {
 		err = getErr
@@ -189,12 +224,12 @@ func (s *UiService) PutWorkerClass(ctx context.Context, req csilapi.PutWorkerCla
 	if getErr == nil {
 		action = "worker_class.update"
 	}
-	s.recordAudit(ctx, org.OrgID, action, "worker_class", class.ClassID, models.JSONB{"name": class.Name, "protected": class.Protected})
+	s.recordAudit(ctx, org.OrgID, action, "worker_class", class.ClassID, models.JSONB{"name": class.Name, "protected": class.Protected, "ref_classes_any": []string(class.RefClassesAny)})
 	return csilapi.PutWorkerClassResponse{WorkerClass: classSummary(class, nil)}, nil
 }
 
 func (s *UiService) DeleteWorkerClass(ctx context.Context, req csilapi.DeleteWorkerClassRequest) (csilapi.DeleteWorkerClassResponse, error) {
-	value, org, err := s.requireCIOrgAdmin(ctx, req.Organization)
+	ctx, value, org, err := s.requireCIOrgAdmin(ctx, req.Organization, tokencaps.WorkersManage)
 	if err != nil {
 		return csilapi.DeleteWorkerClassResponse{}, err
 	}
@@ -210,7 +245,7 @@ func (s *UiService) DeleteWorkerClass(ctx context.Context, req csilapi.DeleteWor
 }
 
 func (s *UiService) SetWorkerClassPool(ctx context.Context, req csilapi.SetWorkerClassPoolRequest) (csilapi.SetWorkerClassPoolResponse, error) {
-	value, org, err := s.requireCIOrgAdmin(ctx, req.Organization)
+	ctx, value, org, err := s.requireCIOrgAdmin(ctx, req.Organization, tokencaps.WorkersManage)
 	if err != nil {
 		return csilapi.SetWorkerClassPoolResponse{}, err
 	}

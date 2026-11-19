@@ -828,6 +828,29 @@ def build_release_images(code_dir: Path) -> None:
             deployment_binary.unlink(missing_ok=True)
         return
 
+    if target == "egress":
+        # The egress proxy image (egress_proxy/, docs/egress-proxy.md): the
+        # Rust proxy and the network helper of job pods. Its Dockerfile
+        # builds both inside BuildKit, so the job needs no Rust toolchain.
+        # A cold release build of the Rust proxy (wasmtime) takes longer than
+        # the other images, so it has its own node with a longer timeout and
+        # more resources (.reactorcide/jobs/release-image-egress.yaml).
+        egress_context = code_dir / "egress_proxy"
+        if not (egress_context / "Dockerfile").is_file():
+            raise RuntimeError(
+                "egress_proxy/Dockerfile is missing; the egress image cannot be built"
+            )
+        _build_and_push(
+            buildctl,
+            code_dir=code_dir,
+            context=egress_context,
+            dockerfile="Dockerfile",
+            repository=f"{registry}/public/reactorcide/egress",
+            tag=tag,
+            env=environment,
+        )
+        return
+
     if target == "web":
         # Build the SPA FIRST. It compiles into the binary through go:embed, so
         # without this the release ships a binary that either fails to compile

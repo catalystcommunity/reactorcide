@@ -113,13 +113,21 @@ func (h *WebHandler) SessionInfoJSON(w http.ResponseWriter, r *http.Request) {
 		}
 		roles = append(roles, entry)
 	}
+	caps := si.Caps
+	// manage_workflow is optional in the CSIL (omitempty in the Go type).
+	// Emit it as an explicit false when the coordinator sent none, so the
+	// SPA always gets the same key set.
+	if caps.ManageWorkflow == nil {
+		manageWorkflow := false
+		caps.ManageWorkflow = &manageWorkflow
+	}
 	writeJSON(w, sessionJSON{
 		LoggedIn:      si.LoggedIn,
 		UserID:        si.UserID,
 		DisplayName:   si.DisplayName,
 		IsGlobalAdmin: si.IsGlobalAdmin,
 		Roles:         roles,
-		Capabilities:  si.Caps,
+		Capabilities:  caps,
 	})
 }
 

@@ -69,7 +69,13 @@ WorkerInfo = {
     os: text,
     arch: text,
     ? worker_version: text,
-    custom: [* CustomCharacteristic]
+    custom: [* CustomCharacteristic],
+    ;; runtime is the job runner backend of the worker: "vm", "docker",
+    ;; "containerd", or "kubernetes". A worker that sends it gets an image
+    ;; set (docs/image-aliases.md): vm aliases for "vm", container aliases
+    ;; for the other values. An older worker sends no value and gets no
+    ;; image set.
+    ? runtime: text
 }
 
 RegisterRequest = {
@@ -79,7 +85,71 @@ RegisterRequest = {
 RegisterResponse = {
     worker_session: text,
     worker_id: text,
-    heartbeat_interval: int
+    heartbeat_interval: int,
+    ;; The enrollment token that this Register used: its ID and its name (if
+    ;; it has one), never its value. The worker logs them for audits.
+    ? enrollment_token_id: text,
+    ? enrollment_token_name: text,
+    ;; image_set is the image set that the coordinator wants this worker to
+    ;; hold (docs/vm-images.md "Image aliases"). Absent when the coordinator
+    ;; has no set for the worker. An older coordinator sends no value; an
+    ;; older worker ignores it.
+    ? image_set: ImageSet
+}
+
+;;; ImageSetEntry is one image of a worker image set. ref is the pinned
+;;; reference (it has a @sha256: digest). digest is "sha256:<hex>". kind is
+;;; "vm" or "container". aliases are the alias names that pin this digest.
+;;; pending is true when the digest is only the pending pin of a rollout
+;;; (not the active pin of a served alias and not a digest that a job that
+;;; is not terminal uses). The worker pulls a pending entry, but the startup
+;;; gate does not wait for it. A missing value is false: an older
+;;; coordinator sends none, and the worker then waits for every entry.
+ImageSetEntry = {
+    ref: text,
+    digest: text,
+    kind: text,
+    aliases: [* text],
+    ? pending: bool
+}
+
+;;; ImageSet is the full set of images that a worker must hold. version
+;;; increases each time that the set changes. The version of a worker can
+;;; go back after a new enrollment: a worker accepts a set with a lower
+;;; version when its content is different, and takes the version of a set
+;;; with the same content.
+ImageSet = {
+    version: int,
+    images: [* ImageSetEntry]
+}
+
+;;; ImageFailure is one image of the set that the worker could not pull.
+;;; permanent is true when a retry with the same reference cannot help
+;;; (manifest or blob not found, digest mismatch, unauthorized or denied,
+;;; reference not valid). Else the failure is transient (network, timeout,
+;;; a 5xx answer, no disk space) and the worker tries again with backoff.
+;;; detail is the reason.
+ImageFailure = {
+    digest: text,
+    permanent: bool,
+    detail: text
+}
+
+;;; ImageSetReport is the image state of a worker for one image set version.
+;;; state is "updating", "updated" (every image of the set is ready), or
+;;; "failed" (one or more images failed). detail is the reason for a
+;;; failure. ready_digests are the digests that the worker has now. failed
+;;; gives each image that failed. The worker pulls each image
+;;; independently, so one failed image does not stop the others. An older
+;;; worker sends no failed list; an older coordinator ignores it.
+ImageSetReport = {
+    version: int,
+    state: text,
+    ? detail: text,
+    ready_digests: [* text],
+    ? free_bytes: int,
+    ? required_bytes: int,
+    ? failed: [* ImageFailure]
 }
 
 ;;; WorkerCharacteristics is the worker's full characteristic set as of this
@@ -92,9 +162,25 @@ WorkerCharacteristics = {
     custom: [* CustomCharacteristic]
 }
 
+;;; AdmissionReport is sent by a worker in resources admission mode. capacity
+;;; is the total CPU (millicores) and memory (bytes) the worker can use for
+;;; jobs. headroom is the part of capacity that is not in use now. The
+;;; coordinator offers only a job whose CPU request and memory limit fit
+;;; headroom (see internal/admission). mode is "resources"; a worker in the
+;;; default concurrency mode sends no AdmissionReport. An older coordinator
+;;; ignores this field.
+AdmissionReport = {
+    mode: text,
+    capacity_cpu_millicores: int,
+    capacity_memory_bytes: int,
+    headroom_cpu_millicores: int,
+    headroom_memory_bytes: int
+}
+
 RequestJobRequest = {
     worker_characteristics: WorkerCharacteristics,
-    ? reports_execution_timing: bool
+    ? reports_execution_timing: bool,
+    ? admission: AdmissionReport
 }
 
 ;;; EnvVar is a single environment variable key/value pair. Used both for
@@ -113,7 +199,12 @@ EnvVar = {
 Resources = {
     cpu_request: text,
     cpu_limit: text,
-    memory_limit: text
+    memory_limit: text,
+    ;; Ephemeral (scratch) storage, in the memory grammar ("10Gi"). Absent
+    ;; when the job sets none. Kubernetes applies it as ephemeral-storage;
+    ;; Docker and containerd do not enforce it.
+    ? storage_request: text,
+    ? storage_limit: text
 }
 
 ;;; VCSAuth is a resolved git-checkout credential for a leased job's source
@@ -163,7 +254,126 @@ Lease = {
     ;; read a Kubernetes Secret.
     image_pull_secrets: [* text],
     run_as_user: text,
-    ? vcs_auth: VCSAuth
+    ;; run_as_administrator is the job's run_as.administrator value. It
+    ;; applies only to Windows VM jobs: when the guest image has no job
+    ;; account, the in-guest daemon creates it, and this value says whether
+    ;; the new account goes in Administrators. Absent means the job did not
+    ;; set it (the guest default is administrator). An older coordinator
+    ;; sends no value; an older worker ignores it.
+    ? run_as_administrator: bool,
+    ? vcs_auth: VCSAuth,
+    ;; egress is set when all egress of the job must go through the egress
+    ;; proxy (docs/egress-proxy.md). A worker without an egress proxy must
+    ;; not run such a lease. An older worker ignores the field; the
+    ;; coordinator therefore leases such a job only to a worker with the
+    ;; characteristic egress_proxy=true.
+    ? egress: EgressLease,
+    ;; cache is the cache decision of the job (docs/builds-and-caches.md).
+    ;; The coordinator computes it from the execution profile and the ref
+    ;; classes of the job; the worker cannot choose another namespace. An
+    ;; older coordinator sends no cache: the worker then uses the shared
+    ;; builder cache volume with writes, as before namespaces.
+    ? cache: CacheLease,
+    ;; artifacts is set when the coordinator accepts artifact uploads for
+    ;; this job (docs/artifacts-and-tests.md). The worker then gives the job
+    ;; an artifacts directory (/job/artifacts, REACTORCIDE_ARTIFACTS_DIR) and
+    ;; uploads its files with upload-artifact before report-result. An older
+    ;; coordinator sends no artifacts: the worker uploads nothing.
+    ? artifacts: ArtifactLease,
+    ;; quarantined_tests are the tests of the project that are quarantined
+    ;; now. The worker writes them to /job/quarantined-tests.json
+    ;; (REACTORCIDE_QUARANTINED_TESTS_FILE), so a test runner can skip or
+    ;; ignore them. Absent from an older coordinator.
+    ? quarantined_tests: [* QuarantinedTest],
+    ;; image_alias is the image alias name that the job named, when the
+    ;; coordinator resolved image from an alias (docs/image-aliases.md).
+    ;; The worker logs the image as "image_alias (image)". Absent for a job
+    ;; that named a reference, and from an older coordinator.
+    ? image_alias: text,
+    ;; image_retry_of is the image of the earlier run in display form, when
+    ;; a retry or a re-run resolved the alias again to a new pin. The worker
+    ;; logs it as "retry of: image_retry_of" after the image line. Absent
+    ;; when the image did not change, and from an older coordinator.
+    ? image_retry_of: text
+}
+
+;;; ArtifactLease holds the artifact limits of one job. The coordinator
+;;; checks them again on each chunk; the worker uses them to skip a file
+;;; early. declared_reports are not here: the job declares them in its
+;;; workflow output (test_reports), which the worker reads after the job.
+ArtifactLease = {
+    max_file_bytes: int,
+    max_job_bytes: int,
+    max_files: int,
+    chunk_bytes: int
+}
+
+;;; QuarantinedTest is one quarantined test. test_id is the stable test ID
+;;; (a hash of the project, suite, class, and name). expires_at is RFC3339.
+QuarantinedTest = {
+    test_id: text,
+    suite: text,
+    classname: text,
+    name: text,
+    expires_at: text
+}
+
+;;; CacheLease selects the builder cache of one job. volume_key empty is
+;;; the shared, operator-named volume; otherwise the worker uses a volume (or
+;;; a PVC sub path) for that key only. writable false: the builder gets no
+;;; persistent cache state, so the job cannot change a shared cache.
+CacheLease = {
+    namespace: text,
+    volume_key: text,
+    writable: bool,
+    artifact_namespace: text
+}
+
+;;; EgressLease is the egress policy of one job. The worker registers it
+;;; with its egress proxy before it starts the job, and removes it when the
+;;; job ends. grants hold real secret values (proxy-delivered secret
+;;; grants); they go to the proxy only, never into the job environment,
+;;; which has the placeholders. Delivered ONLY on this authenticated Lease
+;;; response -- never logged.
+EgressLease = {
+    identity: EgressIdentity,
+    destinations: [* EgressDestination],
+    grants: [* EgressGrant]
+}
+
+;;; EgressIdentity holds the facts about the job that the proxy policy can
+;;; use. ref_classes is empty until ref classes exist (WP3).
+EgressIdentity = {
+    org_id: text,
+    project_id: text,
+    workflow_id: text,
+    workflow_security_id: text,
+    node: text,
+    actor_principal_id: text,
+    actor_identity: text,
+    execution_profile: text,
+    ci_origin: text,
+    ref_classes: [* text]
+}
+
+;;; EgressDestination is a host pattern and its ports (empty: 80 and 443).
+EgressDestination = {
+    host: text,
+    ports: [* int]
+}
+
+;;; EgressGrant binds placeholder to the real value. The proxy puts value in
+;;; place of placeholder only in the header named header (default
+;;; "authorization") and only for a host that matches hosts. format, when
+;;; not empty, is the full header value with "{}" for the value.
+EgressGrant = {
+    id: text,
+    secret_ref: text,
+    placeholder: text,
+    value: text,
+    hosts: [* text],
+    header: text,
+    format: text
 }
 
 RequestJobResponse = {
@@ -180,7 +390,10 @@ RunningLease = {
 
 HeartbeatRequest = {
     status: text,
-    running_leases: [* RunningLease]
+    running_leases: [* RunningLease],
+    ;; image_set_report is the image state of the worker. An older worker
+    ;; sends no report: it then gets no image set and routes as before.
+    ? image_set_report: ImageSetReport
 }
 
 ;;; Directive tells a worker to act on a lease it holds: action is "cancel"
@@ -201,7 +414,11 @@ Directive = {
 ;;; persisted state.
 HeartbeatResponse = {
     directives: [* Directive],
-    draining: bool
+    draining: bool,
+    ;; image_set is sent only when the version in the image_set_report of
+    ;; the worker is not the version that the coordinator wants (older, or
+    ;; newer after a new enrollment reset the version).
+    ? image_set: ImageSet
 }
 
 ;;; AppendLogs is push log ingestion (new -- today logs are pulled by the
@@ -282,6 +499,13 @@ AppendMetricBatchResponse = {
 ;;; guarded transition + corndogs Complete/Cancel/Fail path, exactly like
 ;;; internal/worker/corndogs_worker.go's own finalize step, and releases the
 ;;; worker_leases row.
+;;;
+;;; status is "completed", "failed", "cancelled" or "timeout". failure_class
+;;; is the cause of a failure as the worker knows it: "job", "timeout",
+;;; "oom", "infra.image_pull", "infra.scheduling", "infra.platform" or
+;;; "cancelled". An older worker sends no failure_class; the coordinator
+;;; then derives the class from status and exit_code. failure_detail is a
+;;; short, masked reason for the class (for example "OOMKilled").
 ReportResultRequest = {
     lease_id: text,
     exit_code: int,
@@ -289,10 +513,42 @@ ReportResultRequest = {
     ? error: text,
     ? workflow_output: text,
     ? started_at: text,
-    ? finished_at: text
+    ? finished_at: text,
+    ? failure_class: text,
+    ? failure_detail: text,
+    ; main_started: true when the job's main container started; false
+    ; only when the worker proves that the main container never started;
+    ; absent when the worker cannot prove either (and from older workers).
+    ; The coordinator auto-retries an infra.platform failure only when
+    ; main_started is false.
+    ? main_started: bool
 }
 ReportResultResponse = {
     ok: bool
+}
+
+;;; UploadArtifactRequest is one chunk of one artifact file. The worker sends
+;;; the chunks of a file in order, from offset 0, one at a time; final is
+;;; true on the last chunk (an empty file is one final chunk with no data).
+;;; A retry sends the same bytes again. path is relative to the artifacts
+;;; directory, with "/" separators. kind is "file" or "test_report" (the
+;;; worker knows the declared test reports); the coordinator also applies
+;;; the name convention. The coordinator computes the size and the sha256
+;;; digest from the bytes it stores. The lease must be active.
+UploadArtifactRequest = {
+    lease_id: text,
+    path: text,
+    offset: int,
+    data: bytes,
+    final: bool,
+    ? media_type: text,
+    ? kind: text
+}
+UploadArtifactResponse = {
+    ok: bool,
+    artifact_id: text,
+    size: int,
+    ? sha256: text
 }
 
 service ReactorcideWorker {
@@ -302,5 +558,6 @@ service ReactorcideWorker {
     append-logs: AppendLogsRequest -> AppendLogsResponse / ServiceError,
     append-log-batch: AppendLogBatchRequest -> AppendLogBatchResponse / ServiceError,
     append-metric-batch: AppendMetricBatchRequest -> AppendMetricBatchResponse / ServiceError,
-    report-result: ReportResultRequest -> ReportResultResponse / ServiceError
+    report-result: ReportResultRequest -> ReportResultResponse / ServiceError,
+    upload-artifact: UploadArtifactRequest -> UploadArtifactResponse / ServiceError
 }

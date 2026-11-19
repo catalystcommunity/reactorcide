@@ -32,6 +32,34 @@ from src.signals import (
 app = typer.Typer()
 
 
+def _source_is_untrusted(ci_source_path=None):
+    """Return True when the application source can be untrusted.
+
+    A run has a separate trusted CI tree when the coordinator (or run-local)
+    supplied one: a prepared CI checkout, REACTORCIDE_CI_SOURCE_DIR, or a CI
+    source type. The application source of such a run can be a fork pull
+    request or other untrusted content. A fork pull request is always
+    untrusted, also when no CI tree was supplied.
+    """
+    if ci_source_path:
+        return True
+    if os.environ.get("REACTORCIDE_CI_SOURCE_DIR"):
+        return True
+    if os.environ.get("REACTORCIDE_CI_SOURCE_TYPE", "").strip() not in ("", "none"):
+        return True
+    if os.environ.get("REACTORCIDE_IS_FORK_PR", "").strip().lower() == "true":
+        return True
+    return False
+
+
+def _path_is_inside(child, parent):
+    try:
+        Path(child).resolve().relative_to(Path(parent).resolve())
+        return True
+    except (ValueError, OSError):
+        return False
+
+
 def discover_run_plugin_directories(
     config,
     ci_source_path=None,
@@ -40,11 +68,19 @@ def discover_run_plugin_directories(
 ):
     """Find plugin directories for an in-container runnerlib job.
 
-    Trusted CI plugins take precedence over application-source plugins. This
-    prevents a pull request from adding a plugin when the coordinator supplied
-    a separate trusted CI checkout.
+    Plugins of a run with untrusted application source come only from the
+    trusted CI tree. If the trusted CI tree has no .reactorcide/plugins, no
+    repository plugins load: the application source is never a fallback.
+    The application source is used only when the run has no separate CI tree
+    and is not a fork pull request (the source is then the trusted CI).
+
+    A directory from --plugin-dir or REACTORCIDE_PLUGIN_DIR that is inside the
+    untrusted application source (and not in the trusted CI tree) is refused
+    for the same reason.
     """
     plugin_dirs = []
+    application_path = source_path or getattr(config, "code_dir", None)
+    untrusted = _source_is_untrusted(ci_source_path)
 
     def add_plugins_from(base_path):
         if not base_path:
@@ -57,18 +93,35 @@ def discover_run_plugin_directories(
             plugin_dirs.append(candidate_text)
         return True
 
-    trusted_plugins_found = add_plugins_from(ci_source_path)
-
-    if not trusted_plugins_found:
-        configured_ci_path = os.environ.get("REACTORCIDE_CI_SOURCE_DIR")
-        trusted_plugins_found = add_plugins_from(configured_ci_path)
-
-    if not trusted_plugins_found:
-        application_path = source_path or config.code_dir
+    trusted_roots = [p for p in (ci_source_path, os.environ.get("REACTORCIDE_CI_SOURCE_DIR")) if p]
+    if untrusted:
+        for root in trusted_roots:
+            if add_plugins_from(root):
+                break
+        if not plugin_dirs:
+            log_stdout(
+                "No trusted CI plugins found; application source plugins are not loaded for this run"
+            )
+    else:
         add_plugins_from(application_path)
 
-    if explicit_plugin_dir and explicit_plugin_dir not in plugin_dirs:
-        plugin_dirs.append(explicit_plugin_dir)
+    # REACTORCIDE_PLUGIN_DIR and --plugin-dir name a directory directly.
+    # For an untrusted run, refuse one that is in the application source and
+    # not in a trusted CI tree.
+    for extra in (os.environ.get("REACTORCIDE_PLUGIN_DIR"), explicit_plugin_dir):
+        if not extra or extra in plugin_dirs:
+            continue
+        if (
+            untrusted
+            and application_path
+            and _path_is_inside(extra, application_path)
+            and not any(_path_is_inside(extra, root) for root in trusted_roots)
+        ):
+            log_stderr(
+                f"Refusing plugin directory {extra}: it is inside the untrusted application source"
+            )
+            continue
+        plugin_dirs.append(extra)
 
     return plugin_dirs
 
@@ -290,7 +343,7 @@ def run(
     code_dir: Optional[str] = typer.Option(None, "--code-dir", help="Code directory path (default: /job/src)"),
     job_dir: Optional[str] = typer.Option(None, "--job-dir", help="Job directory path (default: same as code-dir)"),
     job_command: Optional[str] = typer.Option(None, "--job-command", help="Command to run in the container"),
-    runner_image: Optional[str] = typer.Option(None, "--runner-image", help="Container image to use (default: quay.io/catalystcommunity/reactorcide_runner)"),
+    runner_image: Optional[str] = typer.Option(None, "--runner-image", help="Container image for --container mode (default: REACTORCIDE_RUNNER_IMAGE, else containers.catalystsquad.com/public/reactorcide/runnerbase:dev)"),
     job_env: Optional[str] = typer.Option(None, "--job-env", help="Environment variables as key=value pairs or file path (must start with ./job/)"),
     secret_values_list: Optional[str] = typer.Option(None, "--secret-values-list", help="Comma-separated list of secret values to mask in logs, or path to secrets file"),
     secret_env_names: Optional[str] = typer.Option(None, "--secret-env-names", help="Comma-separated list of env var names whose values should be masked"),
@@ -298,12 +351,12 @@ def run(
     work_dir: Optional[str] = typer.Option(None, "--work-dir", help="Working directory for job execution (default: current directory)"),
     plugin_dir: Optional[str] = typer.Option(None, "--plugin-dir", help="Directory containing custom plugins"),
     # Source preparation options
-    source_type: Optional[str] = typer.Option(None, "--source-type", help="Source type: git, copy, tarball, hg, svn, none (default: none)"),
-    source_url: Optional[str] = typer.Option(None, "--source-url", help="Source URL or path (required for git, copy, tarball, hg, svn)"),
+    source_type: Optional[str] = typer.Option(None, "--source-type", help="Source type: git, copy, or none (default: none). tarball, hg, and svn are not implemented"),
+    source_url: Optional[str] = typer.Option(None, "--source-url", help="Source URL or path (required for git and copy)"),
     source_ref: Optional[str] = typer.Option(None, "--source-ref", help="Source ref: branch, tag, commit, or version"),
     # CI source preparation options
-    ci_source_type: Optional[str] = typer.Option(None, "--ci-source-type", help="CI source type: git, copy, tarball, hg, svn, none (default: none)"),
-    ci_source_url: Optional[str] = typer.Option(None, "--ci-source-url", help="CI source URL or path (required for git, copy, tarball, hg, svn)"),
+    ci_source_type: Optional[str] = typer.Option(None, "--ci-source-type", help="CI source type: git, copy, or none (default: none). tarball, hg, and svn are not implemented"),
+    ci_source_url: Optional[str] = typer.Option(None, "--ci-source-url", help="CI source URL or path (required for git and copy)"),
     ci_source_ref: Optional[str] = typer.Option(None, "--ci-source-ref", help="CI source ref: branch, tag, commit, or version"),
     # Execution mode flags
     dry_run: bool = typer.Option(False, "--dry-run", help="Validate configuration without executing"),
@@ -430,7 +483,9 @@ def run(
         )
 
         # Initialize plugins from all discovered directories
-        initialize_plugins(None)  # Load built-in plugins first
+        # Built-in plugins first. REACTORCIDE_PLUGIN_DIR is in plugin_dirs
+        # after the trust check, so initialize_plugins does not load it.
+        initialize_plugins(None, load_env_dir=False)
         for pdir in plugin_dirs:
             log_stdout(f"Loading plugins from: {pdir}")
             plugin_manager.load_plugins_from_directory(pdir)
@@ -493,7 +548,7 @@ def checkout(
     # Configuration overrides
     code_dir: Optional[str] = typer.Option(None, "--code-dir", help="Code directory path (default: /job/src)"),
     job_dir: Optional[str] = typer.Option(None, "--job-dir", help="Job directory path (default: same as code-dir)"),
-    runner_image: Optional[str] = typer.Option(None, "--runner-image", help="Container image to use (default: quay.io/catalystcommunity/reactorcide_runner)"),
+    runner_image: Optional[str] = typer.Option(None, "--runner-image", help="Container image for --container mode (default: REACTORCIDE_RUNNER_IMAGE, else containers.catalystsquad.com/public/reactorcide/runnerbase:dev)"),
     work_dir: Optional[str] = typer.Option(None, "--work-dir", help="Working directory for job execution (default: current directory)")
 ):
     """Checkout a git repository to the configured code directory."""
@@ -660,7 +715,7 @@ def copy(
     # Configuration overrides
     code_dir: Optional[str] = typer.Option(None, "--code-dir", help="Code directory path (default: /job/src)"),
     job_dir: Optional[str] = typer.Option(None, "--job-dir", help="Job directory path (default: same as code-dir)"),
-    runner_image: Optional[str] = typer.Option(None, "--runner-image", help="Container image to use (default: quay.io/catalystcommunity/reactorcide_runner)"),
+    runner_image: Optional[str] = typer.Option(None, "--runner-image", help="Container image for --container mode (default: REACTORCIDE_RUNNER_IMAGE, else containers.catalystsquad.com/public/reactorcide/runnerbase:dev)"),
     work_dir: Optional[str] = typer.Option(None, "--work-dir", help="Working directory for job execution (default: current directory)")
 ):
     """Copy a directory to the configured code directory."""
@@ -773,7 +828,7 @@ def config(
     code_dir: Optional[str] = typer.Option(None, "--code-dir", help="Code directory path (default: /job/src)"),
     job_dir: Optional[str] = typer.Option(None, "--job-dir", help="Job directory path (default: same as code-dir)"),
     job_command: Optional[str] = typer.Option(None, "--job-command", help="Command to run in the container"),
-    runner_image: Optional[str] = typer.Option(None, "--runner-image", help="Container image to use (default: quay.io/catalystcommunity/reactorcide_runner)"),
+    runner_image: Optional[str] = typer.Option(None, "--runner-image", help="Container image for --container mode (default: REACTORCIDE_RUNNER_IMAGE, else containers.catalystsquad.com/public/reactorcide/runnerbase:dev)"),
     job_env: Optional[str] = typer.Option(None, "--job-env", help="Environment variables as key=value pairs or file path (must start with ./job/)"),
     secret_values_list: Optional[str] = typer.Option(None, "--secret-values-list", help="Comma-separated list of secret values to mask in logs, or path to secrets file"),
     secret_env_names: Optional[str] = typer.Option(None, "--secret-env-names", help="Comma-separated list of env var names whose values should be masked"),
@@ -828,7 +883,7 @@ def validate(
     code_dir: Optional[str] = typer.Option(None, "--code-dir", help="Code directory path (default: /job/src)"),
     job_dir: Optional[str] = typer.Option(None, "--job-dir", help="Job directory path (default: same as code-dir)"),
     job_command: Optional[str] = typer.Option(None, "--job-command", help="Command to run in the container"),
-    runner_image: Optional[str] = typer.Option(None, "--runner-image", help="Container image to use (default: quay.io/catalystcommunity/reactorcide_runner)"),
+    runner_image: Optional[str] = typer.Option(None, "--runner-image", help="Container image for --container mode (default: REACTORCIDE_RUNNER_IMAGE, else containers.catalystsquad.com/public/reactorcide/runnerbase:dev)"),
     job_env: Optional[str] = typer.Option(None, "--job-env", help="Environment variables as key=value pairs or file path (must start with ./job/)"),
     secret_values_list: Optional[str] = typer.Option(None, "--secret-values-list", help="Comma-separated list of secret values to mask in logs, or path to secrets file"),
     secret_env_names: Optional[str] = typer.Option(None, "--secret-env-names", help="Comma-separated list of env var names whose values should be masked"),
@@ -930,8 +985,8 @@ def eval_cmd(
     from src.schedule_eval import (
         SCHEDULE_EVENT,
         not_found_decision,
-        schedule_reason_from_env,
         select_scheduled_workflow,
+        selection_reason_from_env,
         workflow_ref_from_env,
     )
     workflow_ref = workflow_ref_from_env()
@@ -1049,7 +1104,7 @@ def eval_cmd(
     if workflow_ref:
         workflow_defs, invalid_workflow_files = select_scheduled_workflow(
             workflow_ref, workflow_defs, invalid_workflow_files, ci_source_path)
-        schedule_reason = schedule_reason_from_env()
+        schedule_reason = selection_reason_from_env(event_type, workflow_ref)
         if not workflow_defs and not invalid_workflow_files:
             log_stdout(f"Scheduled workflow '{workflow_ref}' was not found on this branch; nothing to run.")
             if workflow_ctx.api_configured:
@@ -1121,6 +1176,12 @@ def eval_cmd(
             }
             if wf.status_context:
                 batch["status_context"] = wf.status_context
+            # Owners and contact. The coordinator uses them only from the
+            # trusted (base) definition; a head candidate's values are ignored.
+            if wf.owners:
+                batch["owners"] = wf.owners
+            if wf.contact:
+                batch["contact"] = wf.contact
             if include_authority:
                 batch.update({
                     "ci_origin": "base",
@@ -1142,7 +1203,8 @@ def eval_cmd(
             if schedule_reason is not None:
                 # The schedule chose this workflow; its on/paths filters do
                 # not apply.
-                matched_wf, reason, reasons = True, "scheduled", [dict(schedule_reason)]
+                label = "scheduled" if schedule_reason.get("kind") == "schedule" else "selected by a manual run"
+                matched_wf, reason, reasons = True, label, [dict(schedule_reason)]
             decision = {
                 "id": wf.workflow_id,
                 "name": wf.name,
@@ -1345,9 +1407,8 @@ def trigger_cmd(
                 env[key] = val
 
         # Handle raw_command wrapping (same logic as generate_triggers in eval.py)
-        command = defn.job.command or None
-        if command and not defn.job.raw_command and not command.strip().startswith("runnerlib "):
-            command = f"runnerlib run --job-command '{command}'"
+        from src.eval import wrap_job_command
+        command = wrap_job_command(defn.job, defn.environment)
 
         trigger = JobTrigger(
             job_name=defn.name,
@@ -1363,11 +1424,13 @@ def trigger_cmd(
             job_dir=defn.job.job_dir or None,
             working_dir=defn.job.working_dir or None,
             run_as_user=defn.job.run_as_user or None,
+            run_as_administrator=defn.job.run_as_administrator,
             worker_class=defn.job.worker_class or None,
             characteristics=defn.job.characteristics or None,
             resources=defn.job.resources or None,
             disable_run_local=True if defn.job.disable_run_local else None,
             run_local=defn.job.run_local or None,
+            quarantine_policy=defn.job.quarantine_policy or None,
             for_each=defn.job.for_each or None,
             item_var=defn.job.item_var or None,
             source_type="git" if source_url else None,
@@ -1409,7 +1472,7 @@ def git_files_changed(
     # Configuration overrides
     code_dir: Optional[str] = typer.Option(None, "--code-dir", help="Code directory path (default: /job/src)"),
     job_dir: Optional[str] = typer.Option(None, "--job-dir", help="Job directory path (default: same as code-dir)"),
-    runner_image: Optional[str] = typer.Option(None, "--runner-image", help="Container image to use (default: quay.io/catalystcommunity/reactorcide_runner)")
+    runner_image: Optional[str] = typer.Option(None, "--runner-image", help="Container image for --container mode (default: REACTORCIDE_RUNNER_IMAGE, else containers.catalystsquad.com/public/reactorcide/runnerbase:dev)")
 ):
     """Get list of files changed from the given git reference."""
     # Build configuration overrides from CLI arguments
@@ -1471,7 +1534,7 @@ def git_info(
     # Configuration overrides
     code_dir: Optional[str] = typer.Option(None, "--code-dir", help="Code directory path (default: /job/src)"),
     job_dir: Optional[str] = typer.Option(None, "--job-dir", help="Job directory path (default: same as code-dir)"),
-    runner_image: Optional[str] = typer.Option(None, "--runner-image", help="Container image to use (default: quay.io/catalystcommunity/reactorcide_runner)")
+    runner_image: Optional[str] = typer.Option(None, "--runner-image", help="Container image for --container mode (default: REACTORCIDE_RUNNER_IMAGE, else containers.catalystsquad.com/public/reactorcide/runnerbase:dev)")
 ):
     """Show information about the git repository in the code directory."""
     # Build configuration overrides from CLI arguments
@@ -1784,6 +1847,39 @@ def _perform_dry_run(config, additional_args: Optional[List[str]] = None) -> Non
         log_stdout("💡 Run without --dry-run to execute the job")
     else:
         log_stdout("🛠️  Fix the issues above before executing")
+
+
+@app.command("oidc-token")
+def oidc_token_cmd(
+    audience: str = typer.Option(..., "--audience", "-a", help="The audience (aud) of the token, for example sts.amazonaws.com"),
+    ttl_seconds: Optional[int] = typer.Option(None, "--ttl", help="Token lifetime in seconds (60-3600, default 600; never after the job timeout)"),
+    output: Optional[str] = typer.Option(None, "--output", "-o", help="Write the token to this file (mode 0600) instead of stdout"),
+    allow_insecure_transport: bool = typer.Option(
+        False,
+        "--allow-insecure-transport",
+        envvar="REACTORCIDE_ALLOW_INSECURE_TRANSPORT",
+        help="Allow the job token without TLS on an isolated development network. "
+        "A worker in its insecure development mode sets REACTORCIDE_ALLOW_INSECURE_TRANSPORT=true",
+    ),
+):
+    """Request an OIDC token for this job from the coordinator.
+
+    Prints only the token to stdout, so that you can pipe it. The token is
+    never logged. See docs/oidc.md for the claims.
+    """
+    from src.oidc import OIDCTokenError, request_token, write_token_file
+
+    try:
+        token = request_token(audience, ttl_seconds=ttl_seconds, allow_insecure_transport=allow_insecure_transport)
+    except OIDCTokenError as exc:
+        typer.echo(f"oidc-token: {exc}", err=True)
+        raise typer.Exit(1)
+    if output:
+        write_token_file(output, token)
+        return
+    sys.stdout.write(token)
+    sys.stdout.write("\n")
+    sys.stdout.flush()
 
 
 if __name__ == "__main__":

@@ -3,6 +3,7 @@ package handlers
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strings"
 
@@ -10,7 +11,7 @@ import (
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/checkauth"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store/models"
-	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/tokencaps"
+	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/vcsteams"
 )
 
 // groupStore holds the group operations the REST group routes use. The UI
@@ -33,6 +34,8 @@ type GroupHandler struct {
 	BaseHandler
 	store    groupStore
 	appStore store.Store
+	// teamSync syncs linked VCS teams for the sync route (group_vcs_handler.go).
+	teamSync *vcsteams.Syncer
 }
 
 func NewGroupHandler(appStore store.Store) *GroupHandler {
@@ -44,11 +47,27 @@ type groupSummaryResponse struct {
 	GroupID     string `json:"group_id"`
 	Name        string `json:"name"`
 	Description string `json:"description,omitempty"`
+	// PriorityShift moves the priority of the work of the members
+	// (docs/priority.md).
+	PriorityShift int `json:"priority_shift"`
+}
+
+type groupPriorityShiftRequest struct {
+	Shift *int `json:"shift"`
 }
 
 type groupMemberResponse struct {
 	UserID   string `json:"user_id"`
 	Username string `json:"username"`
+	// The fields below come from the principal of the member. A member that
+	// a linked VCS team gives can be a principal with no user.
+	PrincipalID string   `json:"principal_id,omitempty"`
+	Kind        string   `json:"kind,omitempty"`
+	Name        string   `json:"name,omitempty"`
+	Source      string   `json:"source,omitempty"`
+	Manual      bool     `json:"manual,omitempty"`
+	Teams       []string `json:"teams,omitempty"`
+	VCSLogins   []string `json:"vcs_logins,omitempty"`
 }
 
 type groupCreateRequest struct {
@@ -64,12 +83,14 @@ type groupMemberRequest struct {
 // rest is the path after "{org}/groups".
 func (h *GroupHandler) ServeGroups(w http.ResponseWriter, r *http.Request, orgName, rest string) {
 	principal := checkauth.GetPrincipalFromContext(r.Context())
-	if h.store == nil || principal == nil || !principal.HasCapability(tokencaps.OrganizationsManage) {
+	// A read (GET) accepts organizations:read; a change needs
+	// organizations:manage. Both need the organization admin role.
+	if h.store == nil || principal == nil || !principalHasAny(principal, readOrManage(r)) {
 		h.respondWithError(w, http.StatusForbidden, store.ErrForbidden)
 		return
 	}
 	org, err := h.store.GetOrganizationByName(r.Context(), orgName)
-	if err != nil || !principalAllowsOrg(r.Context(), h.appStore, org.OrgID, tokencaps.OrganizationsManage) {
+	if err != nil || !principalAllowsOrgAdmin(r.Context(), h.appStore, org.OrgID, readOrManage(r)) {
 		h.respondWithError(w, http.StatusForbidden, store.ErrForbidden)
 		return
 	}
@@ -78,6 +99,9 @@ func (h *GroupHandler) ServeGroups(w http.ResponseWriter, r *http.Request, orgNa
 		if part != "" {
 			parts = append(parts, part)
 		}
+	}
+	if h.serveTeams(w, r, org, parts) {
+		return
 	}
 	switch {
 	case len(parts) == 0 && r.Method == http.MethodGet:
@@ -88,6 +112,8 @@ func (h *GroupHandler) ServeGroups(w http.ResponseWriter, r *http.Request, orgNa
 		h.withGroup(w, r, org, parts[0], h.listMembers)
 	case len(parts) == 2 && parts[1] == "members" && r.Method == http.MethodPost:
 		h.withGroup(w, r, org, parts[0], h.addMember)
+	case len(parts) == 2 && parts[1] == "priority-shift" && r.Method == http.MethodPut:
+		h.withGroup(w, r, org, parts[0], h.setPriorityShift)
 	case len(parts) == 3 && parts[1] == "members" && r.Method == http.MethodDelete:
 		username := parts[2]
 		h.withGroup(w, r, org, parts[0], func(w http.ResponseWriter, r *http.Request, org *models.Organization, group *models.Group) {
@@ -106,7 +132,7 @@ func (h *GroupHandler) listGroups(w http.ResponseWriter, r *http.Request, org *m
 	}
 	out := make([]groupSummaryResponse, 0, len(groups))
 	for _, group := range groups {
-		out = append(out, groupSummaryResponse{GroupID: group.GroupID, Name: group.Name, Description: group.Description})
+		out = append(out, groupSummaryResponse{GroupID: group.GroupID, Name: group.Name, Description: group.Description, PriorityShift: group.PriorityShift})
 	}
 	h.respondWithJSON(w, http.StatusOK, map[string]any{"groups": out})
 }
@@ -137,7 +163,47 @@ func (h *GroupHandler) createGroup(w http.ResponseWriter, r *http.Request, org *
 	h.respondWithJSON(w, http.StatusCreated, groupSummaryResponse{GroupID: group.GroupID, Name: group.Name, Description: group.Description})
 }
 
+// setPriorityShift sets the priority shift of a group (docs/priority.md):
+// PUT .../groups/{group}/priority-shift {"shift": N}, -50..50, 0 for none.
+func (h *GroupHandler) setPriorityShift(w http.ResponseWriter, r *http.Request, org *models.Organization, group *models.Group) {
+	var req groupPriorityShiftRequest
+	if json.NewDecoder(r.Body).Decode(&req) != nil || req.Shift == nil {
+		h.respondWithError(w, http.StatusBadRequest, store.ErrInvalidInput)
+		return
+	}
+	shifts, ok := h.appStore.(store.PriorityStore)
+	if !ok {
+		h.respondWithError(w, http.StatusNotImplemented, store.ErrNotFound)
+		return
+	}
+	if err := shifts.SetGroupPriorityShift(r.Context(), group.GroupID, *req.Shift); err != nil {
+		if errors.Is(err, store.ErrInvalidInput) {
+			h.respondWithJSON(w, http.StatusBadRequest, ErrorResponse{Error: "invalid_input", Message: err.Error()})
+			return
+		}
+		h.respondWithError(w, http.StatusInternalServerError, err)
+		return
+	}
+	audit.Record(r.Context(), h.appStore, org.OrgID, "group.priority_shift", "group", group.GroupID,
+		models.JSONB{"name": group.Name, "from": group.PriorityShift, "to": *req.Shift})
+	h.respondWithJSON(w, http.StatusOK, groupSummaryResponse{GroupID: group.GroupID, Name: group.Name, Description: group.Description, PriorityShift: *req.Shift})
+}
+
 func (h *GroupHandler) listMembers(w http.ResponseWriter, r *http.Request, _ *models.Organization, group *models.Group) {
+	if st := h.vcsStore(); st != nil {
+		details, err := st.ListGroupMemberDetails(r.Context(), group.GroupID)
+		if err != nil {
+			h.respondWithError(w, http.StatusInternalServerError, err)
+			return
+		}
+		out := make([]groupMemberResponse, 0, len(details))
+		for _, d := range details {
+			out = append(out, groupMemberResponse{UserID: d.UserID, Username: d.Username, PrincipalID: d.PrincipalID,
+				Kind: d.Kind, Name: d.Name, Source: d.Source, Manual: d.Manual, Teams: d.Teams, VCSLogins: d.VCSLogins})
+		}
+		h.respondWithJSON(w, http.StatusOK, map[string]any{"members": out})
+		return
+	}
 	users, err := h.store.ListGroupMembers(r.Context(), group.GroupID)
 	if err != nil {
 		h.respondWithError(w, http.StatusInternalServerError, err)
@@ -176,6 +242,11 @@ func (h *GroupHandler) removeMember(w http.ResponseWriter, r *http.Request, org 
 		return
 	}
 	if err := h.store.RemoveGroupMember(r.Context(), group.GroupID, user.UserID); err != nil {
+		if errors.Is(err, store.ErrConflict) {
+			// Only a linked VCS team gives the membership.
+			h.respondWithJSON(w, http.StatusConflict, map[string]string{"error": "the member comes from a linked VCS team; remove the person from the team, or unlink the team"})
+			return
+		}
 		h.respondWithError(w, http.StatusNotFound, err)
 		return
 	}

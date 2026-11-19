@@ -85,33 +85,38 @@ var WorkflowsCommand = &cli.Command{
 		},
 		{
 			Name:      "retry",
-			Usage:     "Retry a workflow as a new instance, leaving the original for history",
+			Usage:     "Retry a failed or cancelled workflow as a new instance, leaving the original for history",
 			ArgsUsage: "<workflow-id>",
-			Flags:     append(apiFlags(), formatFlag()),
+			Flags:     append(append(apiFlags(), formatFlag()), shiftFlags()...),
 			Action: func(ctx *cli.Context) error {
-				workflowID, client, err := workflowTarget(ctx)
-				if err != nil {
-					return err
-				}
-				var instance models.WorkflowInstance
-				if err := client.doJSON(http.MethodPost, "/api/v1/workflows/"+url.PathEscape(workflowID)+"/retry", nil, http.StatusCreated, &instance); err != nil {
-					return err
-				}
-				return renderWorkflowInstance(ctx.String("format"), &instance)
+				return newWorkflowInstance(ctx, "/retry")
+			},
+		},
+		{
+			Name:      "rerun",
+			Usage:     "Run a finished workflow again as a new instance with its recorded authority and optional shifts",
+			ArgsUsage: "<workflow-id>",
+			Flags:     append(append(apiFlags(), formatFlag()), shiftFlags()...),
+			Action: func(ctx *cli.Context) error {
+				return newWorkflowInstance(ctx, "/rerun")
 			},
 		},
 		{
 			Name:      "retry-unsuccessful",
-			Usage:     "Retry the failed and cancelled jobs of a workflow in place",
+			Usage:     "Retry the failed and cancelled jobs of a workflow in place, with optional shifts",
 			ArgsUsage: "<workflow-id>",
-			Flags:     append(apiFlags(), formatFlag()),
+			Flags:     append(append(apiFlags(), formatFlag()), shiftFlags()...),
 			Action: func(ctx *cli.Context) error {
 				workflowID, client, err := workflowTarget(ctx)
 				if err != nil {
 					return err
 				}
+				body, err := shiftsBody(ctx)
+				if err != nil {
+					return err
+				}
 				var resp retryUnsuccessfulResponse
-				if err := client.doJSON(http.MethodPost, "/api/v1/workflows/"+url.PathEscape(workflowID)+"/retry-unsuccessful", nil, http.StatusOK, &resp); err != nil {
+				if err := client.doJSON(http.MethodPost, "/api/v1/workflows/"+url.PathEscape(workflowID)+"/retry-unsuccessful", body, http.StatusOK, &resp); err != nil {
 					return err
 				}
 				// A partial success returns 200 with both fields set, so
@@ -194,4 +199,22 @@ func renderWorkflowInstance(format string, wf *models.WorkflowInstance) error {
 			fmt.Fprintf(w, "last_error\t%s\n", wf.LastError)
 		}
 	})
+}
+
+// newWorkflowInstance posts a retry or a re-run of a workflow with the shift
+// flags and renders the new instance.
+func newWorkflowInstance(ctx *cli.Context, suffix string) error {
+	workflowID, client, err := workflowTarget(ctx)
+	if err != nil {
+		return err
+	}
+	body, err := shiftsBody(ctx)
+	if err != nil {
+		return err
+	}
+	var instance models.WorkflowInstance
+	if err := client.doJSON(http.MethodPost, "/api/v1/workflows/"+url.PathEscape(workflowID)+suffix, body, http.StatusCreated, &instance); err != nil {
+		return err
+	}
+	return renderWorkflowInstance(ctx.String("format"), &instance)
 }

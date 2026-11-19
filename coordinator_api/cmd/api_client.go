@@ -34,7 +34,25 @@ type apiError struct {
 }
 
 func (e *apiError) Error() string {
-	return fmt.Sprintf("API error (%d): %s", e.StatusCode, e.Body)
+	return apiErrorText(e.StatusCode, e.Body)
+}
+
+// apiErrorText formats an API error response. A JSON ErrorResponse body
+// ({"error": code, "message": text}) shows as "API error (400 code): text",
+// so that the reason (for example an image alias refusal) is easy to read.
+// Any other body shows as it is.
+func apiErrorText(status int, body string) string {
+	var decoded struct {
+		Error   string `json:"error"`
+		Message string `json:"message"`
+	}
+	if err := json.Unmarshal([]byte(body), &decoded); err == nil && decoded.Message != "" {
+		if decoded.Error != "" {
+			return fmt.Sprintf("API error (%d %s): %s", status, decoded.Error, decoded.Message)
+		}
+		return fmt.Sprintf("API error (%d): %s", status, decoded.Message)
+	}
+	return fmt.Sprintf("API error (%d): %s", status, body)
 }
 
 // apiFlags returns the connection flags shared by every command that talks to
@@ -143,7 +161,10 @@ func (c *apiClient) doJSON(method, path string, requestBody interface{}, expecte
 	if err != nil {
 		return fmt.Errorf("failed to create request: %w", err)
 	}
-	req.Header.Set("Authorization", "Bearer "+c.token)
+	if c.token != "" {
+		// An unauthenticated client (the federation token exchange) has no token.
+		req.Header.Set("Authorization", "Bearer "+c.token)
+	}
 	if requestBody != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}

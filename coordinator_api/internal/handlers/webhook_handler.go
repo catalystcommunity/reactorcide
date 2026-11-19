@@ -16,7 +16,12 @@ import (
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/cipolicy"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/config"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/corndogs"
+	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/egress"
+	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/imagealias"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/metrics"
+	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/principals"
+	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/priority"
+	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/shedding"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store/models"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/vcs"
@@ -31,6 +36,7 @@ type WebhookHandler struct {
 	tokenResolver  vcs.TokenResolverFunc         // optional: per-project secret resolution
 	clientFactory  vcs.ClientFactoryFunc         // optional: create client with per-project token
 	statusUpdater  vcs.JobStatusUpdaterInterface // optional: used to refresh comments for in-flight jobs on merge
+	githubApps     githubAppWebhooks             // optional: GitHub App deliveries (github_app_webhook.go)
 	logger         *logrus.Logger
 }
 
@@ -185,6 +191,18 @@ func (h *WebhookHandler) attachCIEvaluationFacts(ctx context.Context, job *model
 			subjects = append(subjects, resolved...)
 		}
 	}
+	// The principal of the sender: its identity subjects, the subjects of
+	// every linked identity, and its groups. The actor of the job is the
+	// principal that started the run (the sender, or the starter of a
+	// coordinator event).
+	if sender := h.resolveVCSPrincipal(ctx, event.Provider, event.SenderLogin); sender != nil {
+		if extra, err := h.principalSubjects(ctx, project, sender); err != nil {
+			h.logger.WithError(err).Warn("Could not resolve the principal facts of the actor")
+		} else {
+			subjects = append(subjects, extra...)
+		}
+	}
+	principals.ApplyToJob(job, h.webhookActor(ctx, event))
 	factsStore, ok := h.store.(ciEvaluationFactsStore)
 	if ok {
 		link, err := factsStore.ResolveVCSIdentityLink(ctx, string(event.Provider), event.SenderLogin)
@@ -219,7 +237,13 @@ func (h *WebhookHandler) attachCIEvaluationFacts(ctx context.Context, job *model
 	if encoded, err := json.Marshal(uniqueStrings(subjects)); err == nil {
 		job.JobEnvVars["REACTORCIDE_ACTOR_SUBJECTS"] = string(encoded)
 	}
-	return h.attachCIPolicy(ctx, job, project)
+	state := h.attachCIPolicy(ctx, job, project)
+	if state == ciPolicyNone && event.PullRequest != nil {
+		// Secure defaults: a pull request of a project with no stored policy
+		// gets the built-in policy (defaults_policy.go).
+		state = h.attachBuiltInCIPolicy(ctx, job, project)
+	}
+	return state
 }
 
 // ciPolicyState is what attachCIPolicy found.
@@ -415,6 +439,20 @@ func (h *WebhookHandler) handleWebhook(w http.ResponseWriter, r *http.Request, p
 		return
 	}
 
+	// A GitHub App delivery is verified with the secret of its App
+	// (github_app_webhook.go). Installation and check run events end there;
+	// the other events continue below as for a repository webhook.
+	appVerified := false
+	var appID int64
+	if provider == vcs.GitHub {
+		if id, isApp := githubAppDeliveryTarget(r); isApp {
+			if done := h.handleGitHubAppDelivery(w, r, client, body, id); done {
+				return
+			}
+			appVerified, appID = true, id
+		}
+	}
+
 	// Extract the repo clone URL from the raw payload and look up the project.
 	// This enables per-project webhook secrets: we identify which project the
 	// webhook is for, resolve its secret, then validate the HMAC signature.
@@ -431,18 +469,42 @@ func (h *WebhookHandler) handleWebhook(w http.ResponseWriter, r *http.Request, p
 		}
 	}
 
+	// An App delivery skips the project secrets below. The App secret only
+	// proves that the delivery came from that App. The repository must also
+	// be bound to an installation of that App, and the project must be the
+	// project of that binding (github_app_webhook.go).
+	if appVerified {
+		bound, reason, err := h.githubAppDeliveryProject(r.Context(), appID, r.Header.Get("X-GitHub-Event"), body, project)
+		if err != nil {
+			h.logger.WithError(err).WithField("app_id", appID).Error("Could not read the GitHub App binding of a delivery")
+			http.Error(w, "GitHub App binding unavailable", http.StatusInternalServerError)
+			return
+		}
+		if reason != "" {
+			h.logger.WithFields(logrus.Fields{"app_id": appID, "event_type": r.Header.Get("X-GitHub-Event"),
+				"delivery_id": r.Header.Get("X-GitHub-Delivery")}).Warn("GitHub App delivery ignored: " + reason)
+			w.WriteHeader(http.StatusOK)
+			_ = json.NewEncoder(w).Encode(map[string]string{"status": "ignored", "reason": reason})
+			return
+		}
+		project = bound
+	}
+
 	// Resolve webhook secret candidates: active rotation rows first (newest
 	// first), then legacy project/org/env fallbacks. Try each until one
 	// validates the signature; constant-time comparison happens inside
 	// client.ValidateWebhook, same as before rotation support existed.
-	candidates := h.resolveWebhookSecretCandidates(context.Background(), project, provider)
-	if len(candidates) == 0 {
-		h.logger.WithField("project_found", project != nil).Error("Webhook secret not configured — rejecting request")
-		http.Error(w, "Webhook secret not configured", http.StatusInternalServerError)
-		return
+	var candidates []webhookSecretCandidate
+	if !appVerified {
+		candidates = h.resolveWebhookSecretCandidates(context.Background(), project, provider)
+		if len(candidates) == 0 {
+			h.logger.WithField("project_found", project != nil).Error("Webhook secret not configured — rejecting request")
+			http.Error(w, "Webhook secret not configured", http.StatusInternalServerError)
+			return
+		}
 	}
 
-	matched := false
+	matched := appVerified
 	for _, candidate := range candidates {
 		// Each attempt needs its own fresh body reader: some ValidateWebhook
 		// implementations (e.g. GitHub's) consume the request body.
@@ -481,6 +543,13 @@ func (h *WebhookHandler) handleWebhook(w http.ResponseWriter, r *http.Request, p
 		"repository":  event.Repository.FullName,
 		"delivery_id": event.DeliveryID,
 	}).Info("Received webhook event")
+	if event.Team != nil {
+		// A team or membership change: sync the linked groups (group_vcs_handler.go).
+		h.handleTeamEvent(r.Context(), event)
+		w.WriteHeader(http.StatusOK)
+		_ = json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
+		return
+	}
 	if event.PullRequestReview != nil {
 		if err := h.processReview(r.Context(), event, project); err != nil {
 			h.logger.WithError(err).Warn("Could not process pull request review")
@@ -510,6 +579,12 @@ func (h *WebhookHandler) handleWebhook(w http.ResponseWriter, r *http.Request, p
 		}).Debug("Ignoring unsupported event type")
 		w.WriteHeader(http.StatusOK)
 		json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
+		return
+	}
+
+	// Overload protection (plan item D4): a project over its webhook rate
+	// limit gets 429, and the event is recorded as rate_limited.
+	if h.refuseRateLimitedWebhook(w, project, event) {
 		return
 	}
 
@@ -548,6 +623,21 @@ func (h *WebhookHandler) processApprovalComment(ctx context.Context, event *vcs.
 	}
 	command, ok := approvals.ParseComment(comment.Body)
 	if !ok {
+		if parseErr := approvals.CommentError(comment.Body); parseErr != nil && project != nil {
+			// A retry or rerun with arguments that are not shifts is
+			// refused, never run with the arguments ignored.
+			h.logger.WithError(parseErr).WithFields(logrus.Fields{"pr_number": comment.IssueNumber, "login": event.SenderLogin}).
+				Info("Pull request command refused")
+			audit.Record(ctx, h.store, project.OwnershipOrgID(), "ci_approval.refused", "project", project.ProjectID,
+				models.JSONB{"pr_number": comment.IssueNumber, "person": event.SenderLogin, "channel": models.CIApprovalChannelComment,
+					"reason": parseErr.Error()})
+			// The parse error can contain the arguments; the reply does not.
+			h.replyToCommand(ctx, project, comment.IssueNumber, invalidCommandReply("the retry or rerun arguments are not valid shifts"))
+		} else if approvals.IsCommandAttempt(comment.Body) && project != nil {
+			h.logger.WithFields(logrus.Fields{"pr_number": comment.IssueNumber, "login": event.SenderLogin}).
+				Info("Pull request comment is not a valid command")
+			h.replyToCommand(ctx, project, comment.IssueNumber, invalidCommandReply(""))
+		}
 		return nil
 	}
 	if project == nil {
@@ -598,8 +688,15 @@ func (h *WebhookHandler) processReview(ctx context.Context, event *vcs.WebhookEv
 func (h *WebhookHandler) executeProviderCommand(ctx context.Context, request approvals.Request) error {
 	result, err := h.Execute(ctx, request)
 	fields := logrus.Fields{"pr_number": request.PRNumber, "command": request.Command.Name, "login": request.Login}
+	if request.Channel == models.CIApprovalChannelComment {
+		// A comment gets a short reply when the command was refused, and
+		// for a required set change (which is otherwise not visible).
+		h.replyToCommand(ctx, request.Project, request.PRNumber, commandReplyText(err, result, request.Command.Name))
+	}
+	var refused *approvals.RefusedError
 	switch {
-	case errors.Is(err, approvals.ErrNotAllowed), errors.Is(err, approvals.ErrHeadChanged), errors.Is(err, approvals.ErrPullRequestClosed):
+	case errors.Is(err, approvals.ErrNotAllowed), errors.Is(err, approvals.ErrHeadChanged), errors.Is(err, approvals.ErrPullRequestClosed),
+		errors.As(err, &refused):
 		h.logger.WithFields(fields).WithError(err).Info("Pull request command refused")
 		return nil
 	case err != nil:
@@ -681,6 +778,15 @@ func (h *WebhookHandler) processPullRequestEvent(event *vcs.WebhookEvent, client
 		// A new head needs its reviews again.
 		h.publishReviewsStatus(context.Background(), project, reviewTarget)
 	}
+	// Drafts and shed levels (plan item D4): a skipped draft records the
+	// reason and posts it in "Reactorcide Checks". The run gate does not
+	// apply to a skipped draft; it applies when the draft becomes ready.
+	shedState := shedding.State(context.Background(), h.store, project.OwnershipOrgID())
+	if reason := h.draftSkipReason(context.Background(), project, event, shedState); reason != nil {
+		evalJobLinked = true
+		h.skipCIEvent(context.Background(), project, ciEvent, models.CIEventStatusSkipped, *reason)
+		return nil
+	}
 	runAuthority, held, gateErr := h.runAuthorityFor(context.Background(), project, event, statusClient)
 	if gateErr != nil {
 		h.logger.WithError(gateErr).WithField("project", project.Name).Warn("Could not decide the run gate; holding the pull request")
@@ -697,6 +803,8 @@ func (h *WebhookHandler) processPullRequestEvent(event *vcs.WebhookEvent, client
 	// Build eval job using the shared builder
 	job := BuildEvalJob(project, event)
 	applyCIEventToEvalJob(job, ciEvent)
+	// The shed level lowers pull request priority through the lanes
+	// (priority.Assign below reads it: priority.ShedAdjustment).
 	if encoded, encodeErr := runAuthority.Encode(); encodeErr != nil {
 		return fmt.Errorf("encoding run authority: %w", encodeErr)
 	} else if encoded != "" {
@@ -724,8 +832,14 @@ func (h *WebhookHandler) processPullRequestEvent(event *vcs.WebhookEvent, client
 	}
 
 	if err := h.resolveJobQueue(context.Background(), job); err != nil {
+		if h.refuseEvalImage(project, ciEvent, err) {
+			evalJobLinked = true
+			return nil
+		}
 		return err
 	}
+	// The lane and group shifts give the queue priority (docs/priority.md).
+	priority.Assign(context.Background(), h.store, job)
 
 	// Create the job in the database
 	if err := h.store.CreateJob(context.Background(), job); err != nil {
@@ -832,8 +946,14 @@ func (h *WebhookHandler) processPushEvent(event *vcs.WebhookEvent, client vcs.Cl
 	}
 
 	if err := h.resolveJobQueue(context.Background(), job); err != nil {
+		if h.refuseEvalImage(project, ciEvent, err) {
+			evalJobLinked = true
+			return nil
+		}
 		return err
 	}
+	// The lane and group shifts give the queue priority (docs/priority.md).
+	priority.Assign(context.Background(), h.store, job)
 
 	// Create the job in the database
 	if err := h.store.CreateJob(context.Background(), job); err != nil {
@@ -879,7 +999,7 @@ func (h *WebhookHandler) postEvalPendingStatus(job *models.Job, statusClient vcs
 			return
 		}
 	}
-	if statusClient == nil {
+	if statusClient == nil || !h.vcsStatusesAllowedForJob(ctx, job) {
 		return
 	}
 	statusUpdate := vcs.StatusUpdate{
@@ -953,6 +1073,22 @@ type vcsCredentialRotationStore interface {
 // client. Deactivated rotation rows are never used (the store only returns
 // active rows).
 func (h *WebhookHandler) getStatusClient(ctx context.Context, project *models.Project, provider vcs.Provider, fallback vcs.Client) vcs.Client {
+	if client := h.scopedVCSClient(ctx, project, provider); client != nil {
+		return client
+	}
+	return fallback
+}
+
+// scopedVCSClient returns the VCS client of a credential that belongs to the
+// project or its organization (a GitHub App installation, a project
+// credential, the organization credential), or nil when there is none. It
+// never returns the global client of the coordinator.
+func (h *WebhookHandler) scopedVCSClient(ctx context.Context, project *models.Project, provider vcs.Provider) vcs.Client {
+	// A repository in a GitHub App installation uses an installation token
+	// (docs/github-app.md). Other projects keep the token path below.
+	if client := vcs.AppClientForProject(ctx, vcs.AppSource(), project, provider); client != nil {
+		return client
+	}
 	if project != nil {
 		if rotationStore, ok := h.store.(vcsCredentialRotationStore); ok {
 			rows, err := rotationStore.ListActiveProjectVCSCredentials(ctx, project.ProjectID, string(provider))
@@ -982,7 +1118,7 @@ func (h *WebhookHandler) getStatusClient(ctx context.Context, project *models.Pr
 			}
 		}
 	}
-	return fallback
+	return nil
 }
 
 // touchVCSCredentialLastUsed stamps last_used_at for the rotation row that
@@ -1093,12 +1229,36 @@ func globalWebhookSecret(provider vcs.Provider) string {
 	return config.VCSWebhookSecret
 }
 
+// refuseEvalImage records an image refusal of the eval job
+// (imagealias.RefusedError: an image alias that does not fit the job, or
+// the image policy) on the CI event, and posts it in "Reactorcide Checks".
+// The refusal is permanent, so the event is failed and not released for a
+// redelivery. It returns false for any other error.
+func (h *WebhookHandler) refuseEvalImage(project *models.Project, ciEvent *models.CIEvent, err error) bool {
+	refused, ok := imagealias.IsRefused(err)
+	if !ok {
+		return false
+	}
+	h.logger.WithField("project", project.Name).WithField("reason", refused.Message).
+		Warn("The eval job was refused at creation")
+	h.skipCIEvent(context.Background(), project, ciEvent, models.CIEventStatusFailed, models.DecisionReason{
+		Kind: refused.Code, Value: "eval_not_created", Detail: "eval job not created: " + refused.Message,
+	})
+	return true
+}
+
 // resolveJobQueue resolves job.Characteristics to a queue (find-or-create)
 // and sets job.QueueName to the resolved Queue.QueueUUID, mutating job in
 // place before it is persisted. A no-op (job.QueueName left as BuildEvalJob
 // set it) when the store doesn't implement queueResolvingStore, matching
 // job_handler.go's CreateJob so tests with a narrower store mock still work.
 func (h *WebhookHandler) resolveJobQueue(ctx context.Context, job *models.Job) error {
+	// The image alias of the job, before the queue (internal/imagealias).
+	if _, err := imagealias.ResolveJob(ctx, h.store, job); err != nil {
+		return fmt.Errorf("resolving job image: %w", err)
+	}
+	// A job with egress control waits for a worker with an egress proxy.
+	egress.RouteJob(ctx, h.store, job)
 	if qs, ok := h.store.(orgQueueResolvingStore); ok {
 		queue, err := qs.FindOrCreateQueueForOrg(ctx, job.OrgID, job.WorkerClass, job.Characteristics)
 		if err != nil {
@@ -1184,6 +1344,8 @@ func (h *WebhookHandler) submitJobToCorndogs(job *models.Job) {
 			"error":    err.Error(),
 		}).Error("Failed to submit task to Corndogs")
 		job.Status = "failed"
+		job.SetFailure(models.FailureClassPlatform, "queue submission")
+		metrics.RecordJobFinished(job.Status, models.FailureClassPlatform, job.QueueName)
 		metrics.RecordCornDogsTaskSubmission(job.QueueName, false)
 	} else {
 		metrics.RecordCornDogsTaskSubmission(job.QueueName, true)

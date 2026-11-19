@@ -17,7 +17,7 @@ type client interface {
 	ReportExecutionResult(ctx context.Context, req csilapi.ReportResultRequest) (csilapi.ReportResultResponse, error)
 	Register(ctx context.Context, enrollmentToken string, info csilapi.WorkerInfo) (csilapi.RegisterResponse, error)
 	RequestJob(ctx context.Context, characteristics csilapi.WorkerCharacteristics) (csilapi.RequestJobResponse, error)
-	Heartbeat(ctx context.Context, status string, runningLeases []csilapi.RunningLease) (csilapi.HeartbeatResponse, error)
+	HeartbeatWithReport(ctx context.Context, status string, runningLeases []csilapi.RunningLease, report *csilapi.ImageSetReport) (csilapi.HeartbeatResponse, error)
 	AppendLogs(ctx context.Context, leaseID, stream, chunk string) (csilapi.AppendLogsResponse, error)
 	AppendLogBatch(ctx context.Context, req csilapi.AppendLogBatchRequest) (csilapi.AppendLogBatchResponse, error)
 	AppendMetricBatch(ctx context.Context, req csilapi.AppendMetricBatchRequest) (csilapi.AppendMetricBatchResponse, error)
@@ -42,6 +42,10 @@ func workerInfo(cfg Config) (csilapi.WorkerInfo, error) {
 	}
 	if cfg.WorkerVersion != "" {
 		info.WorkerVersion = &cfg.WorkerVersion
+	}
+	if cfg.runtime != "" {
+		runtime := cfg.runtime
+		info.Runtime = &runtime
 	}
 	return info, nil
 }

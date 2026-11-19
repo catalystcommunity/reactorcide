@@ -37,6 +37,11 @@ func (s *UiService) GetCiPolicy(ctx context.Context, req csilapi.GetCiPolicyRequ
 		return csilapi.GetCiPolicyResponse{}, mapPermissionErr(err)
 	}
 	policy, err := s.deps.Store.GetCIPolicyByProject(ctx, req.ProjectId)
+	if errors.Is(err, store.ErrNotFound) {
+		if builtIn, ok := s.builtInPolicy(ctx, req.ProjectId); ok {
+			return builtIn, nil
+		}
+	}
 	if err != nil {
 		return csilapi.GetCiPolicyResponse{}, mapStoreErr(err, "CI policy not found")
 	}
@@ -145,4 +150,42 @@ func (s *UiService) DeleteCiPolicy(ctx context.Context, req csilapi.DeleteCiPoli
 	}
 	audit.RecordUser(ctx, s.deps.Store, user, project.OwnershipOrgID(), "ci_policy.deleted", "project", project.ProjectID, models.JSONB{"revision": current.Revision})
 	return csilapi.DeleteCiPolicyResponse{Deleted: true}, nil
+}
+
+// builtInPolicyReason is the text of cmd/policy.go for the same case.
+const builtInPolicyReason = "the project stores no CI policy and its organization has the secure defaults profile"
+
+// builtInPolicy returns the built-in policy when the project stores none and
+// its organization has the secure defaults profile, as "reactorcide policy
+// get" shows it. ok is false when the project does not use it.
+func (s *UiService) builtInPolicy(ctx context.Context, projectID string) (csilapi.GetCiPolicyResponse, bool) {
+	project, err := s.deps.Store.GetProjectByID(ctx, projectID)
+	if err != nil || project == nil {
+		return csilapi.GetCiPolicyResponse{}, false
+	}
+	orgs, ok := s.deps.Store.(uiOrgByID)
+	if !ok {
+		return csilapi.GetCiPolicyResponse{}, false
+	}
+	org, err := orgs.GetOrganizationByID(ctx, project.OwnershipOrgID())
+	if err != nil || org == nil || !models.UsesBuiltInPolicy(org.DefaultsProfile) {
+		return csilapi.GetCiPolicyResponse{}, false
+	}
+	policy, document, err := cipolicy.BuiltIn()
+	if err != nil {
+		return csilapi.GetCiPolicyResponse{}, false
+	}
+	var stored models.JSONB
+	if err := json.Unmarshal(document, &stored); err != nil {
+		return csilapi.GetCiPolicyResponse{}, false
+	}
+	detail, err := ciPolicyToDetail(&models.CIPolicy{ProjectID: projectID, OrgID: org.OrgID, Document: stored, Revision: policy.Revision})
+	if err != nil {
+		return csilapi.GetCiPolicyResponse{}, false
+	}
+	return csilapi.GetCiPolicyResponse{Policy: detail, BuiltIn: optionalBool(true), BuiltInReason: optionalText(builtInPolicyReason)}, true
+}
+
+type uiOrgByID interface {
+	GetOrganizationByID(context.Context, string) (*models.Organization, error)
 }

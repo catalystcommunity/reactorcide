@@ -18,8 +18,6 @@ from src.workflow import (
     trigger_job,
     submit_job,
     flush_triggers,
-    is_job_running,
-    get_job_result,
     log_next_job,
     set_workflow_output,
     set_workflow_var,
@@ -161,6 +159,61 @@ class TestWorkflowContext:
             assert ctx.commit == "abc123"
             assert ctx.ref == "refs/heads/main"
 
+    _JOB_ENV_NAMES = (
+        "REACTORCIDE_GIT_BRANCH", "REACTORCIDE_GIT_COMMIT", "REACTORCIDE_GIT_REF",
+        "REACTORCIDE_BRANCH", "REACTORCIDE_SHA", "REACTORCIDE_EVENT_TYPE",
+        "REACTORCIDE_PR_NUMBER", "REACTORCIDE_HEAD_REF", "REACTORCIDE_PR_REF",
+    )
+
+    def _job_env(self, values):
+        env = {k: v for k, v in os.environ.items() if k not in self._JOB_ENV_NAMES}
+        env.update(values)
+        return patch.dict(os.environ, env, clear=True)
+
+    def test_environment_properties_from_push_job_env(self):
+        with self._job_env({
+            "REACTORCIDE_EVENT_TYPE": "push",
+            "REACTORCIDE_BRANCH": "main",
+            "REACTORCIDE_SHA": "abc123",
+        }):
+            ctx = WorkflowContext()
+            assert ctx.branch == "main"
+            assert ctx.commit == "abc123"
+            assert ctx.ref == "refs/heads/main"
+
+    def test_environment_properties_from_pull_request_job_env(self):
+        # REACTORCIDE_BRANCH is the target branch of a pull request. The
+        # branch of the code under test is the head branch.
+        with self._job_env({
+            "REACTORCIDE_EVENT_TYPE": "pull_request_updated",
+            "REACTORCIDE_BRANCH": "main",
+            "REACTORCIDE_PR_NUMBER": "42",
+            "REACTORCIDE_HEAD_REF": "feature/x",
+            "REACTORCIDE_SHA": "def456",
+        }):
+            ctx = WorkflowContext()
+            assert ctx.branch == "feature/x"
+            assert ctx.commit == "def456"
+            assert ctx.ref == "refs/heads/feature/x"
+
+    def test_environment_properties_from_tag_job_env(self):
+        with self._job_env({
+            "REACTORCIDE_EVENT_TYPE": "tag_created",
+            "REACTORCIDE_BRANCH": "v1.2.3",
+            "REACTORCIDE_SHA": "aaa111",
+        }):
+            ctx = WorkflowContext()
+            assert ctx.branch is None
+            assert ctx.ref == "refs/tags/v1.2.3"
+            assert ctx.commit == "aaa111"
+
+    def test_environment_properties_empty_job_env(self):
+        with self._job_env({}):
+            ctx = WorkflowContext()
+            assert ctx.branch is None
+            assert ctx.commit is None
+            assert ctx.ref is None
+
     def test_trigger_job(self):
         """Test triggering a job."""
         ctx = WorkflowContext()
@@ -255,22 +308,6 @@ class TestWorkflowContext:
 
             assert not triggers_file.exists()
 
-    def test_is_job_running_without_api(self):
-        """Test is_job_running returns False when API not configured."""
-        ctx = WorkflowContext()
-
-        result = ctx.is_job_running("deploy")
-
-        assert result is False
-
-    def test_get_job_result_without_api(self):
-        """Test get_job_result returns None when API not configured."""
-        ctx = WorkflowContext()
-
-        result = ctx.get_job_result("test")
-
-        assert result is None
-
     def test_log_next_job(self):
         """Test log_next_job prints message."""
         ctx = WorkflowContext()
@@ -359,22 +396,6 @@ class TestModuleLevelFunctions:
             flush_triggers()
 
             assert ctx.triggers_file.exists()
-
-    def test_is_job_running_convenience(self):
-        """Test module-level is_job_running function."""
-        self.setUp()
-
-        result = is_job_running("deploy")
-
-        assert result is False
-
-    def test_get_job_result_convenience(self):
-        """Test module-level get_job_result function."""
-        self.setUp()
-
-        result = get_job_result("test")
-
-        assert result is None
 
     def test_log_next_job_convenience(self):
         """Test module-level log_next_job function."""
@@ -820,3 +841,22 @@ class TestIntegrationPatterns:
             job_names = [job["job_name"] for job in data["jobs"]]
             assert "test" in job_names
             assert "deploy" in job_names
+
+
+def test_trigger_redirect_handler_refuses_other_host():
+    """The trigger request carries the job token; a redirect to another
+    origin must not be followed."""
+    import urllib.error
+    import urllib.request
+
+    import pytest
+
+    from src.workflow import _SecureRedirectHandler
+
+    handler = _SecureRedirectHandler(allow_insecure_transport=True)
+    req = urllib.request.Request("http://coordinator:6080/api/v1/jobs/j/triggers", data=b"{}", method="POST",
+                                 headers={"Authorization": "Bearer x"})
+    with pytest.raises(urllib.error.URLError):
+        handler.redirect_request(req, None, 302, "Found", {}, "http://evil.example/steal")
+    with pytest.raises(urllib.error.URLError):
+        handler.redirect_request(req, None, 302, "Found", {}, "http://coordinator:6081/api/v1/jobs/j/triggers")

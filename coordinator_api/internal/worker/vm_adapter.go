@@ -30,7 +30,7 @@ func isVMBackendImplemented() bool {
 // VMConfig holds operator-level configuration for the "vm" JobRunner
 // backend: which ImageSource to use and where its images live/cache
 // (LocalImageSource's pre-placed ImageDir, or the OCI-backed
-// OCIImageSource) and the SSH credentials used to reach a booted guest.
+// OCIImageSource) and the guest account that runs jobs in a booted guest.
 // Mirrors BuilderConfig's env-var-driven, zero-value-is-valid shape.
 type VMConfig struct {
 	// ImageSource selects the ImageSource implementation: "local" (default,
@@ -57,20 +57,11 @@ type VMConfig struct {
 	// from an explicit command-line option.
 	OCIPlainHTTPRegistries []string
 
-	// SSHUser is the guest OS account SSHTransport authenticates as.
-	SSHUser string
-
-	// SSHPassword authenticates via SSH password auth when set.
-	SSHPassword string
-
-	// SSHPrivateKeyPEM authenticates via SSH public-key auth when set,
-	// taking precedence over SSHPassword. Loaded from the file at
-	// REACTORCIDE_VM_SSH_PRIVATE_KEY_FILE, never itself taken directly from
-	// an env var so its contents can't leak into a printed environment.
-	SSHPrivateKeyPEM []byte
-
-	// SSHHostPublicKey pins the guest SSH server key when configured.
-	SSHHostPublicKey []byte
+	// GuestUser is the guest OS account that owns the job files and runs the
+	// job command. The guest daemon (cmd/vmguest) switches to it. The
+	// Windows guest daemon creates it when the image does not have it (an
+	// administrator unless the job sets run_as.administrator to false).
+	GuestUser string
 
 	MetricsDir      string
 	MetricsInterval time.Duration
@@ -82,7 +73,12 @@ type VMConfig struct {
 //
 // Env vars:
 //   - REACTORCIDE_VM_IMAGE_SOURCE              (default: "local"; "oci"
-//     pulls base images from an OCI registry via vmrunner.OCIImageSource)
+//     or "s3" pulls base images from an OCI registry or from an s3://
+//     OCI layout via vmrunner.OCIImageSource; both accept both reference
+//     forms)
+//   - REACTORCIDE_VM_S3_ENDPOINT              (optional S3-compatible
+//     endpoint for s3:// images; fallback REACTORCIDE_S3_ENDPOINT; AWS
+//     credentials and AWS_REGION come from the standard AWS chain)
 //   - REACTORCIDE_VM_IMAGE_DIR                 (default: current working
 //     directory; only used when REACTORCIDE_VM_IMAGE_SOURCE is "local")
 //   - REACTORCIDE_VM_IMAGE_CACHE_DIR           (default:
@@ -91,13 +87,9 @@ type VMConfig struct {
 //   - REACTORCIDE_VM_REGISTRY_AUTH_FILE         (default:
 //     ~/.config/reactorcide/oci-auth.json; Docker-compatible credentials for
 //     several registry hosts)
-//   - REACTORCIDE_VM_SSH_USER              (default: "reactorcide")
-//   - REACTORCIDE_VM_SSH_PASSWORD          (optional, no default)
-//   - REACTORCIDE_VM_SSH_PRIVATE_KEY_FILE  (optional; path to a PEM private
-//     key file, read at load time -- the key material never passes through
-//     an env var directly)
-//   - REACTORCIDE_VM_SSH_HOST_KEY_FILE     (optional; authorized_keys-format
-//     guest SSH host public key)
+//   - REACTORCIDE_VM_GUEST_USER            (default: "reactorcide")
+//   - REACTORCIDE_VM_EGRESS_PROXY          (optional HTTP CONNECT proxy
+//     "host:port" for guest egress; read by the vmrunner lifecycle)
 //   - REACTORCIDE_VM_METRICS_DIR            (optional local JSONL debug output)
 //   - REACTORCIDE_VM_METRICS_INTERVAL       (default: 5s)
 var vmPlainHTTPConfig struct {
@@ -139,9 +131,9 @@ func LoadVMConfig() (VMConfig, error) {
 		ociRegistryAuthFile = vmrunner.DefaultRegistryAuthFile()
 	}
 
-	sshUser := os.Getenv("REACTORCIDE_VM_SSH_USER")
-	if sshUser == "" {
-		sshUser = "reactorcide"
+	guestUser := strings.TrimSpace(os.Getenv("REACTORCIDE_VM_GUEST_USER"))
+	if guestUser == "" {
+		guestUser = "reactorcide"
 	}
 	metricsDir := os.Getenv("REACTORCIDE_VM_METRICS_DIR")
 	metricsInterval := 5 * time.Second
@@ -159,25 +151,9 @@ func LoadVMConfig() (VMConfig, error) {
 		OCIImageCacheDir:       ociImageCacheDir,
 		OCIRegistryAuthFile:    ociRegistryAuthFile,
 		OCIPlainHTTPRegistries: configuredVMPlainHTTPRegistries(),
-		SSHUser:                sshUser,
-		SSHPassword:            os.Getenv("REACTORCIDE_VM_SSH_PASSWORD"),
+		GuestUser:              guestUser,
 		MetricsDir:             metricsDir,
 		MetricsInterval:        metricsInterval,
-	}
-
-	if keyFile := os.Getenv("REACTORCIDE_VM_SSH_PRIVATE_KEY_FILE"); keyFile != "" {
-		key, err := os.ReadFile(keyFile)
-		if err != nil {
-			return VMConfig{}, fmt.Errorf("read REACTORCIDE_VM_SSH_PRIVATE_KEY_FILE: %w", err)
-		}
-		cfg.SSHPrivateKeyPEM = key
-	}
-	if hostKeyFile := os.Getenv("REACTORCIDE_VM_SSH_HOST_KEY_FILE"); hostKeyFile != "" {
-		hostKey, err := os.ReadFile(hostKeyFile)
-		if err != nil {
-			return VMConfig{}, fmt.Errorf("read REACTORCIDE_VM_SSH_HOST_KEY_FILE: %w", err)
-		}
-		cfg.SSHHostPublicKey = hostKey
 	}
 
 	return cfg, nil
@@ -191,7 +167,10 @@ func buildVMImageSource(cfg VMConfig) (vmrunner.ImageSource, error) {
 	switch strings.ToLower(strings.TrimSpace(cfg.ImageSource)) {
 	case "", "local":
 		return vmrunner.NewLocalImageSource(cfg.ImageDir), nil
-	case "oci":
+	case "oci", "s3":
+		// One source serves registry and s3:// references. Both use the
+		// same local cache, keyed by the manifest digest. The worker needs
+		// a pinned s3:// reference (a tag is a name, not a pin).
 		credentialStore, err := credentials.NewStore(cfg.OCIRegistryAuthFile, credentials.StoreOptions{})
 		if err != nil {
 			return nil, fmt.Errorf("open VM registry credential file %q: %w", cfg.OCIRegistryAuthFile, err)
@@ -200,17 +179,19 @@ func buildVMImageSource(cfg VMConfig) (vmrunner.ImageSource, error) {
 			cfg.OCIImageCacheDir,
 			vmrunner.WithCredentialStore(credentialStore),
 			vmrunner.WithPlainHTTPRegistries(cfg.OCIPlainHTTPRegistries...),
+			vmrunner.WithS3Config(vmrunner.S3ImageStoreConfigFromEnv()),
+			vmrunner.WithRequireS3Digest(),
 		)
 	default:
 		return nil, fmt.Errorf(
-			"unsupported REACTORCIDE_VM_IMAGE_SOURCE %q (supported: local, oci)",
+			"unsupported REACTORCIDE_VM_IMAGE_SOURCE %q (supported: local, oci, s3)",
 			cfg.ImageSource,
 		)
 	}
 }
 
 // newVMRunner builds the "vm" JobRunner backend: a vmrunner.VMRunner (this
-// platform's VMLifecycle, the SSH GuestTransport, and a config-driven ImageSource,
+// platform's VMLifecycle, the guest daemon GuestTransport, and a config-driven ImageSource,
 // local or OCI per REACTORCIDE_VM_IMAGE_SOURCE) wrapped in vmRunnerAdapter
 // so it satisfies JobRunner.
 //
@@ -224,12 +205,7 @@ func newVMRunner() (JobRunner, error) {
 		return nil, fmt.Errorf("load vm backend config: %w", err)
 	}
 
-	creds := vmrunner.GuestCreds{
-		User:          cfg.SSHUser,
-		Password:      cfg.SSHPassword,
-		PrivateKeyPEM: cfg.SSHPrivateKeyPEM,
-		HostPublicKey: cfg.SSHHostPublicKey,
-	}
+	creds := vmrunner.GuestCreds{User: cfg.GuestUser}
 
 	images, err := buildVMImageSource(cfg)
 	if err != nil {
@@ -240,7 +216,7 @@ func newVMRunner() (JobRunner, error) {
 	if err != nil {
 		return nil, err
 	}
-	adapter := &vmRunnerAdapter{inner: inner, guestUser: cfg.SSHUser}
+	adapter := &vmRunnerAdapter{inner: inner, guestUser: cfg.GuestUser, imageUse: newVMImageUse()}
 	if ociImages, ok := images.(*vmrunner.OCIImageSource); ok {
 		adapter.ociImages = ociImages
 	}
@@ -253,14 +229,34 @@ type vmRunnerAdapter struct {
 	inner     *vmrunner.VMRunner
 	guestUser string
 	ociImages *vmrunner.OCIImageSource
+	// imageUse records the image digests that running jobs use and the
+	// digests that the image set keeps (vm_image_set.go).
+	imageUse *vmImageUse
 }
 
 func (a *vmRunnerAdapter) SpawnJob(ctx context.Context, config *JobConfig) (string, error) {
+	if config.Egress != nil {
+		// The host forwarder sends each guest flow to the egress proxy with
+		// the job credential (vmrunner/egress_proxy_auth.go). Fail closed
+		// when that is not configured.
+		if err := vmrunner.EgressProxyConfigured(); err != nil {
+			return "", err
+		}
+	}
 	vmConfig, err := toVMJobConfig(config, a.guestUser, runtime.GOOS)
 	if err != nil {
 		return "", err
 	}
-	return a.inner.SpawnJob(ctx, vmConfig)
+	// Mark the image as in use before the clone, so that retention and
+	// the image set removal do not remove it under the job.
+	release := a.imageUse.acquire(ImageDigest(config.Image))
+	id, err := a.inner.SpawnJob(ctx, vmConfig)
+	if err != nil {
+		release()
+		return "", err
+	}
+	a.imageUse.bind(id, release)
+	return id, nil
 }
 
 func (a *vmRunnerAdapter) StreamLogs(ctx context.Context, jobID string) (io.ReadCloser, io.ReadCloser, error) {
@@ -276,7 +272,9 @@ func (a *vmRunnerAdapter) Stop(ctx context.Context, jobID string, grace time.Dur
 }
 
 func (a *vmRunnerAdapter) Cleanup(ctx context.Context, jobID string) error {
-	return a.inner.Cleanup(ctx, jobID)
+	err := a.inner.Cleanup(ctx, jobID)
+	a.imageUse.releaseJob(jobID)
+	return err
 }
 
 func (a *vmRunnerAdapter) SampleResources(ctx context.Context, jobID string, options ResourceSampleOptions) (ResourceSnapshot, error) {
@@ -318,7 +316,7 @@ func (a *vmRunnerAdapter) PrefetchImages(ctx context.Context, imageRefs []string
 		if len(imageRefs) == 0 {
 			return nil
 		}
-		return fmt.Errorf("VM image prefetch requires REACTORCIDE_VM_IMAGE_SOURCE=oci")
+		return fmt.Errorf("VM image prefetch requires REACTORCIDE_VM_IMAGE_SOURCE=oci or s3")
 	}
 	for _, imageRef := range imageRefs {
 		if _, err := a.ociImages.Resolve(ctx, imageRef); err != nil {
@@ -328,11 +326,14 @@ func (a *vmRunnerAdapter) PrefetchImages(ctx context.Context, imageRefs []string
 	return nil
 }
 
+// PruneImages removes cached images that were not used for maxUnused. It
+// never removes an image of the image set (KeepImages) or an image that a
+// running job uses.
 func (a *vmRunnerAdapter) PruneImages(ctx context.Context, maxUnused time.Duration, now time.Time) (int, error) {
 	if a.ociImages == nil {
 		return 0, nil
 	}
-	return a.ociImages.Prune(ctx, maxUnused, now)
+	return a.ociImages.PruneKeeping(ctx, maxUnused, now, a.imageUse.keepSet())
 }
 
 // toVMJobConfig translates process inputs, the workspace, /job-scoped input
@@ -472,6 +473,8 @@ func toVMJobConfig(config *JobConfig, guestUser, hostOS string) (*vmrunner.JobCo
 		CPULimit:    config.CPULimit,
 		MemoryLimit: config.MemoryLimit,
 		JobID:       config.JobID,
+
+		CreateAdministrator: config.RunAsAdministrator,
 	}, nil
 }
 

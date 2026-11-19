@@ -178,3 +178,21 @@ class TestScheduledEval:
             assert result.exit_code == 0, result.output
             data = json.loads(triggers_file.read_text())
         assert {d["id"] for d in data["decisions"]} == {"nightly", "api", "broken"}
+
+
+def test_selection_reason_manual_run():
+    from src.schedule_eval import selection_reason_from_env
+
+    reason = selection_reason_from_env("push", "build", {"REACTORCIDE_EVENT_SOURCE": "manual"})
+    assert reason["kind"] == "event"
+    assert reason["matched"] is True
+    assert "manual run selected workflow 'build'" in reason["detail"]
+
+
+def test_selection_reason_schedule_keeps_schedule_reason():
+    from src.schedule_eval import selection_reason_from_env
+
+    reason = selection_reason_from_env("schedule", "nightly", SCHEDULE_ENV)
+    assert reason["kind"] == "schedule"
+    # A push with a workflow ref but no manual source keeps the old reason.
+    assert selection_reason_from_env("push", "nightly", {})["kind"] == "schedule"

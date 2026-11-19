@@ -702,6 +702,35 @@ func TestJobHandler_RetryJob_NotRetryable(t *testing.T) {
 	}
 }
 
+// TestJobHandler_RetryJob_CompletedSaysWhy verifies that a refused retry of a
+// completed job says which states can be retried and the current status,
+// not only "Invalid input data".
+func TestJobHandler_RetryJob_CompletedSaysWhy(t *testing.T) {
+	mockStore := &MockStore{
+		GetJobByIDFunc: func(ctx context.Context, jobID string) (*models.Job, error) {
+			return &models.Job{JobID: jobID, Status: "completed", UserID: "test-user-id"}, nil
+		},
+	}
+	handler := NewJobHandler(mockStore, nil)
+	req := httptest.NewRequest("POST", "/api/v1/jobs/test-job-id/retry", nil)
+	ctx := checkauth.SetUserContext(req.Context(), &models.User{UserID: "test-user-id"})
+	ctx = context.WithValue(ctx, GetContextKey("job_id"), "test-job-id")
+	w := httptest.NewRecorder()
+	handler.RetryJob(w, req.WithContext(ctx))
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400", w.Code)
+	}
+	var body ErrorResponse
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	want := "only a failed, cancelled, or timed-out job can be retried; job test-job-id is completed"
+	if body.Error != "not_retryable" || body.Message != want {
+		t.Fatalf("body = %+v, want not_retryable: %q", body, want)
+	}
+}
+
 // TestJobHandler_RetryJob_Forbidden verifies a non-owner, non-admin caller
 // cannot retry someone else's job — same authz tier as CancelJob
 // (canUserAccessJob).
@@ -1397,6 +1426,8 @@ func TestJobHandler_SubmitTriggers(t *testing.T) {
 	parentJob := &models.Job{
 		JobID:          parentJobID,
 		UserID:         testUserID,
+		OrgID:          "org-1",
+		Status:         "running",
 		QueueName:      "reactorcide-jobs",
 		RunnerImage:    "default:image",
 		TimeoutSeconds: 3600,
@@ -1517,8 +1548,15 @@ func TestJobHandler_SubmitTriggers(t *testing.T) {
 			handler := NewJobHandler(mockStore, nil)
 
 			req := httptest.NewRequest("POST", fmt.Sprintf("/api/v1/jobs/%s/triggers", tt.jobID), bytes.NewReader([]byte(tt.body)))
-			user := &models.User{UserID: tt.userID}
-			ctx := checkauth.SetUserContext(req.Context(), user)
+			// Only the bound job token of the running parent submits triggers.
+			bound := parentJobID
+			if tt.userID != testUserID {
+				bound = "another-job"
+			}
+			caps, err := tokencaps.New(tokencaps.JobsSubmit)
+			require.NoError(t, err)
+			ctx := checkauth.SetPrincipalContext(req.Context(), &checkauth.Principal{CredentialType: "job_token",
+				BoundJobID: bound, OrganizationIDs: []string{"org-1"}, Capabilities: caps})
 			ctx = context.WithValue(ctx, GetContextKey("job_id"), tt.jobID)
 			req = req.WithContext(ctx)
 
@@ -1542,23 +1580,47 @@ func TestJobTokenCanSubmitTriggersOnlyForItsBoundParent(t *testing.T) {
 	)
 	capabilities, err := tokencaps.New(tokencaps.JobsSubmit)
 	require.NoError(t, err)
+	status := "running"
 	handler := NewJobHandler(&MockStore{GetJobByIDFunc: func(ctx context.Context, jobID string) (*models.Job, error) {
-		return &models.Job{JobID: jobID, OrgID: orgID}, nil
+		return &models.Job{JobID: jobID, OrgID: orgID, Status: status}, nil
 	}}, nil)
 
-	request := func(jobID string) int {
+	send := func(jobID string, principal *checkauth.Principal, user *models.User) int {
 		req := httptest.NewRequest(http.MethodPost, "/api/v1/jobs/"+jobID+"/triggers", strings.NewReader(`{"type":"trigger_job","jobs":[]}`))
-		principal := &checkauth.Principal{CredentialType: "job_token", BoundJobID: parentJobID,
-			OrganizationIDs: []string{orgID}, Capabilities: capabilities}
-		ctx := checkauth.SetPrincipalContext(req.Context(), principal)
+		ctx := req.Context()
+		if principal != nil {
+			ctx = checkauth.SetPrincipalContext(ctx, principal)
+		}
+		if user != nil {
+			ctx = checkauth.SetUserContext(ctx, user)
+		}
 		ctx = context.WithValue(ctx, GetContextKey("job_id"), jobID)
 		recorder := httptest.NewRecorder()
 		handler.SubmitTriggers(recorder, req.WithContext(ctx))
 		return recorder.Code
 	}
+	jobToken := &checkauth.Principal{CredentialType: "job_token", BoundJobID: parentJobID,
+		OrganizationIDs: []string{orgID}, Capabilities: capabilities}
+	request := func(jobID string) int { return send(jobID, jobToken, nil) }
 
 	assert.Equal(t, http.StatusCreated, request(parentJobID))
 	assert.Equal(t, http.StatusForbidden, request(otherJobID))
+
+	// No other credential can attach triggers to a job: not a service token
+	// or the admin token with jobs:submit, and not a user session.
+	for _, credential := range []string{"service_token", "instance_token", "user_token"} {
+		other := &checkauth.Principal{CredentialType: credential, OrganizationIDs: []string{orgID}, Capabilities: capabilities}
+		assert.Equal(t, http.StatusForbidden, send(parentJobID, other, nil), credential)
+	}
+	assert.Equal(t, http.StatusForbidden, send(parentJobID, nil, &models.User{UserID: "owner"}))
+
+	// A finished parent cannot submit triggers, also with its own token.
+	for _, finished := range []string{"completed", "failed", "cancelled", "timeout", "submitted"} {
+		status = finished
+		assert.Equal(t, http.StatusForbidden, request(parentJobID), finished)
+	}
+	status = "scheduling"
+	assert.Equal(t, http.StatusCreated, request(parentJobID))
 }
 
 // TestGetJobLogsObjectStoreNotConfigured tests behavior when object store is nil
@@ -1860,4 +1922,40 @@ func TestJobHandler_CreateJob_ResolvesQueueUUID_SubmitsToIt(t *testing.T) {
 	require.Len(t, mockCorndogs.SubmitTaskToQueueCalls, 1)
 	assert.Equal(t, resolvedQueue.QueueUUID, mockCorndogs.SubmitTaskToQueueCalls[0].Queue,
 		"expected the Corndogs task to be submitted to the resolved queue's UUID")
+}
+
+type workerClassGateStore struct {
+	*MockStore
+	class *models.WorkerClass
+}
+
+func (s workerClassGateStore) GetWorkerClass(context.Context, string, string) (*models.WorkerClass, error) {
+	return s.class, nil
+}
+
+// A REST submit runs the worker class conditions, as a workflow node does:
+// a REST job has the "manual" ref class, so a class that needs "production"
+// refuses it.
+func TestJobHandler_CreateJob_WorkerClassRefClassesChecked(t *testing.T) {
+	submit := func(class *models.WorkerClass) (*httptest.ResponseRecorder, *MockStore) {
+		mock := &MockStore{CreateJobFunc: func(ctx context.Context, job *models.Job) error {
+			job.JobID = "test-job-id"
+			return nil
+		}}
+		handler := NewJobHandler(workerClassGateStore{MockStore: mock, class: class}, nil)
+		body, _ := json.Marshal(CreateJobRequest{Name: "deploy", JobCommand: "echo", SourceType: "copy", SourcePath: "./", WorkerClass: "deploy"})
+		req := httptest.NewRequest("POST", "/api/v1/jobs", bytes.NewReader(body))
+		req = req.WithContext(checkauth.SetUserContext(req.Context(), &models.User{UserID: "test-user-id"}))
+		w := httptest.NewRecorder()
+		handler.CreateJob(w, req)
+		return w, mock
+	}
+	w, mock := submit(&models.WorkerClass{Name: "deploy", RefClassesAny: []string{"production"}})
+	require.Equal(t, http.StatusForbidden, w.Code, w.Body.String())
+	assert.Contains(t, w.Body.String(), "worker_class_refused")
+	assert.Empty(t, mock.CreateJobCalls)
+
+	w, mock = submit(&models.WorkerClass{Name: "deploy", RefClassesAny: []string{"manual"}})
+	require.Equal(t, http.StatusCreated, w.Code, w.Body.String())
+	assert.Len(t, mock.CreateJobCalls, 1)
 }

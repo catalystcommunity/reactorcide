@@ -82,6 +82,13 @@ var SecretGrantsCommand = &cli.Command{
 				&cli.StringSliceFlag{Name: "ci-origin", Usage: "Allowed CI origin: base or head; repeatable. Omit for either origin"},
 				&cli.BoolFlag{Name: "clear-execution-profiles", Usage: "Remove the execution profile limit"},
 				&cli.BoolFlag{Name: "clear-ci-origins", Usage: "Remove the CI origin limit"},
+				&cli.StringSliceFlag{Name: "ref-class-any", Usage: "The grant applies only to a job with one of these ref classes; repeatable (docs/ref-classes.md)"},
+				&cli.StringSliceFlag{Name: "ref-class-none", Usage: "The grant never applies to a job with one of these ref classes; repeatable"},
+				&cli.BoolFlag{Name: "clear-ref-classes", Usage: "Remove the ref class conditions"},
+				&cli.StringFlag{Name: "delivery", Usage: "Secret delivery: env (the value is in the job environment) or proxy (a placeholder; the egress proxy adds the value for --proxy-host only)"},
+				&cli.StringSliceFlag{Name: "proxy-host", Usage: "Host pattern where the egress proxy may send the secret (api.example.com or *.example.com); repeatable"},
+				&cli.StringFlag{Name: "proxy-header", Usage: "Request header where the egress proxy puts the secret (default Authorization)"},
+				&cli.StringFlag{Name: "proxy-header-format", Usage: "Full header value with {} for the secret, for example \"Bearer {}\""},
 			},
 			Action: func(ctx *cli.Context) error {
 				if ctx.NArg() < 1 {
@@ -115,8 +122,32 @@ var SecretGrantsCommand = &cli.Command{
 				} else if ctx.IsSet("ci-origin") {
 					req.CIOrigins = ctx.StringSlice("ci-origin")
 				}
+				if ctx.Bool("clear-ref-classes") && (ctx.IsSet("ref-class-any") || ctx.IsSet("ref-class-none")) {
+					return fmt.Errorf("--ref-class-any/--ref-class-none and --clear-ref-classes are mutually exclusive")
+				}
+				if ctx.Bool("clear-ref-classes") {
+					req.RefClassesAny, req.RefClassesNone = []string{}, []string{}
+				}
+				if ctx.IsSet("ref-class-any") {
+					req.RefClassesAny = ctx.StringSlice("ref-class-any")
+				}
+				if ctx.IsSet("ref-class-none") {
+					req.RefClassesNone = ctx.StringSlice("ref-class-none")
+				}
 				if req.JobNamePattern != "" && req.JobNameMatch == models.SecretGrantMatchAny {
 					req.JobNameMatch = models.SecretGrantMatchExact
+				}
+				req.Delivery = ctx.String("delivery")
+				if ctx.IsSet("proxy-host") {
+					req.ProxyHosts = ctx.StringSlice("proxy-host")
+				}
+				if ctx.IsSet("proxy-header") {
+					v := ctx.String("proxy-header")
+					req.ProxyHeader = &v
+				}
+				if ctx.IsSet("proxy-header-format") {
+					v := ctx.String("proxy-header-format")
+					req.ProxyHeaderFormat = &v
 				}
 				client, err := newSecretGrantsAPIClient(ctx)
 				if err != nil {
@@ -202,6 +233,15 @@ type secretGrantAPIRequest struct {
 	State             string   `json:"state,omitempty" yaml:"state,omitempty"`
 	ExecutionProfiles []string `json:"execution_profiles" yaml:"execution_profiles,omitempty"`
 	CIOrigins         []string `json:"ci_origins" yaml:"ci_origins,omitempty"`
+	// RefClassesAny and RefClassesNone are ref class conditions
+	// (docs/ref-classes.md). nil keeps the stored value.
+	RefClassesAny  []string `json:"ref_classes_any" yaml:"ref_classes_any,omitempty"`
+	RefClassesNone []string `json:"ref_classes_none" yaml:"ref_classes_none,omitempty"`
+	// Delivery is "env" (default) or "proxy" (docs/egress-proxy.md).
+	Delivery          string   `json:"delivery,omitempty" yaml:"delivery,omitempty"`
+	ProxyHosts        []string `json:"proxy_hosts,omitempty" yaml:"proxy_hosts,omitempty"`
+	ProxyHeader       *string  `json:"proxy_header,omitempty" yaml:"proxy_header,omitempty"`
+	ProxyHeaderFormat *string  `json:"proxy_header_format,omitempty" yaml:"proxy_header_format,omitempty"`
 }
 
 type secretGrantListResponse struct {
@@ -255,6 +295,16 @@ type secretGrantResource struct {
 		State             string   `yaml:"state"`
 		ExecutionProfiles []string `yaml:"executionProfiles"`
 		CIOrigins         []string `yaml:"ciOrigins"`
+		RefClasses        struct {
+			Any  []string `yaml:"any"`
+			None []string `yaml:"none"`
+		} `yaml:"refClasses"`
+		Delivery struct {
+			Mode         string   `yaml:"mode"`
+			Hosts        []string `yaml:"hosts"`
+			Header       *string  `yaml:"header"`
+			HeaderFormat *string  `yaml:"headerFormat"`
+		} `yaml:"delivery"`
 	} `yaml:"spec"`
 }
 
@@ -358,6 +408,12 @@ func loadSecretGrantApplyFile(path string) (secretGrantApplyRequest, error) {
 			State:             item.Spec.State,
 			ExecutionProfiles: item.Spec.ExecutionProfiles,
 			CIOrigins:         item.Spec.CIOrigins,
+			RefClassesAny:     item.Spec.RefClasses.Any,
+			RefClassesNone:    item.Spec.RefClasses.None,
+			Delivery:          item.Spec.Delivery.Mode,
+			ProxyHosts:        item.Spec.Delivery.Hosts,
+			ProxyHeader:       item.Spec.Delivery.Header,
+			ProxyHeaderFormat: item.Spec.Delivery.HeaderFormat,
 		}
 		if grant.SecretPathMatch == "" {
 			grant.SecretPathMatch = models.SecretGrantMatchPrefix
@@ -396,7 +452,7 @@ func printSecretGrants(format string, grants []models.SecretGrant) error {
 		fmt.Print(string(data))
 	case "table":
 		w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-		fmt.Fprintln(w, "NAME\tORG\tSCOPE\tSECRET\tJOB\tDESCRIPTION")
+		fmt.Fprintln(w, "NAME\tORG\tSCOPE\tSECRET\tJOB\tDELIVERY\tDESCRIPTION")
 		for _, grant := range grants {
 			scope := "global"
 			if grant.ProjectID != nil && *grant.ProjectID != "" {
@@ -407,7 +463,11 @@ func printSecretGrants(format string, grants []models.SecretGrant) error {
 			if grant.JobNamePattern != "" {
 				job += ":" + grant.JobNamePattern
 			}
-			fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\n", grant.Name, grant.UserID, scope, secret, job, grant.Description)
+			delivery := grant.EffectiveDelivery()
+			if delivery == models.SecretDeliveryProxy {
+				delivery += ":" + strings.Join(grant.ProxyHosts, ",")
+			}
+			fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\t%s\n", grant.Name, grant.UserID, scope, secret, job, delivery, grant.Description)
 		}
 		return w.Flush()
 	default:

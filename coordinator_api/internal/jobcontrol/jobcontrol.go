@@ -25,6 +25,7 @@ import (
 
 	"github.com/catalystcommunity/app-utils-go/logging"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/corndogs"
+	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/metrics"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store/models"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/worker"
@@ -269,6 +270,7 @@ func transitionJob(ctx context.Context, st store.Store, corndogsClient corndogs.
 	finalized, matched, err := gs.UpdateJobStatusGuarded(ctx, job.JobID, []string{"cancelling"}, func(j *models.Job) {
 		j.Status = "cancelled"
 		j.LastError = lastError
+		j.SetFailure(models.FailureClassCancelled, "")
 	})
 	if err != nil {
 		return updated, fmt.Errorf("failed to finalize cancelled job: %w", err)
@@ -278,6 +280,7 @@ func transitionJob(ctx context.Context, st store.Store, corndogsClient corndogs.
 		// already moved the row on; they own the terminal status now.
 		return updated, nil
 	}
+	metrics.RecordJobFinished(finalized.Status, finalized.FailureClassValue(), finalized.QueueName)
 	return finalized, nil
 }
 
@@ -298,6 +301,7 @@ func transitionJobBestEffort(ctx context.Context, st store.Store, corndogsClient
 			}
 		}
 		job.Status = "cancelled"
+		job.SetFailure(models.FailureClassCancelled, "")
 		if kill {
 			job.LastError = "killed by admin"
 		} else {

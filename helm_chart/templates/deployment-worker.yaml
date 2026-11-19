@@ -93,8 +93,56 @@ spec:
               value: {{ .Values.worker.dataDir | quote }}
             - name: REACTORCIDE_CONTAINER_RUNTIME
               value: {{ .Values.worker.containerRuntime | quote }}
+            {{- $admissionMode := default "concurrency" (.Values.worker.admission).mode }}
+            {{- if not (has $admissionMode (list "concurrency" "resources")) }}
+            {{- fail "worker.admission.mode must be concurrency or resources" }}
+            {{- end }}
             - name: REACTORCIDE_WORKER_CONCURRENCY
+              {{- if eq $admissionMode "resources" }}
+              value: {{ default 64 .Values.worker.admission.maxLeases | quote }}
+              {{- else }}
               value: {{ .Values.worker.concurrency | quote }}
+              {{- end }}
+            {{- if eq $admissionMode "resources" }}
+            - name: REACTORCIDE_WORKER_ADMISSION
+              value: "resources"
+            {{- with .Values.worker.admission.cpu }}
+            - name: REACTORCIDE_WORKER_ADMISSION_CPU
+              value: {{ . | quote }}
+            {{- end }}
+            {{- with .Values.worker.admission.memory }}
+            - name: REACTORCIDE_WORKER_ADMISSION_MEMORY
+              value: {{ . | quote }}
+            {{- end }}
+            {{- end }}
+            {{- with (.Values.worker.admission).capacityNodeSelector }}
+            - name: REACTORCIDE_K8S_CAPACITY_NODE_SELECTOR
+              value: {{ . | quote }}
+            {{- end }}
+            {{- with .Values.worker.region }}
+            - name: REACTORCIDE_WORKER_REGION
+              value: {{ . | quote }}
+            {{- end }}
+            {{- with .Values.worker.zone }}
+            - name: REACTORCIDE_WORKER_ZONE
+              value: {{ . | quote }}
+            {{- end }}
+            {{- with .Values.worker.cloud }}
+            - name: REACTORCIDE_WORKER_CLOUD
+              value: {{ . | quote }}
+            {{- end }}
+            {{- if eq (toString .Values.worker.detectTopology) "false" }}
+            - name: REACTORCIDE_WORKER_DETECT_TOPOLOGY
+              value: "false"
+            {{- end }}
+            {{- if (.Values.worker.kubeconfig).secretName }}
+            - name: REACTORCIDE_K8S_KUBECONFIG
+              value: "/etc/reactorcide/kubeconfig/{{ default "config" .Values.worker.kubeconfig.key }}"
+            {{- with .Values.worker.kubeconfig.context }}
+            - name: REACTORCIDE_K8S_CONTEXT
+              value: {{ . | quote }}
+            {{- end }}
+            {{- end }}
             - name: REACTORCIDE_WORKER_METRICS_INTERVAL
               value: {{ .Values.worker.metricsInterval | quote }}
             - name: REACTORCIDE_WORKER_STORAGE_METRICS_INTERVAL
@@ -126,7 +174,7 @@ spec:
             {{- end }}
             # API URL for job containers to submit triggers (reachable from job pods)
             - name: REACTORCIDE_JOB_API_URL
-              value: "http://{{ include "app.name" . }}.{{ .Release.Namespace }}.svc.cluster.local:{{ .Values.app.service.port }}"
+              value: {{ default (printf "http://%s.%s.svc.cluster.local:%v" (include "app.name" .) .Release.Namespace .Values.app.service.port) .Values.worker.jobApiUrl | quote }}
             {{- if .Values.worker.jobNamespace }}
             - name: REACTORCIDE_K8S_JOB_NAMESPACE
               value: {{ .Values.worker.jobNamespace | quote }}
@@ -149,6 +197,33 @@ spec:
               value: {{ default "30m" .Values.worker.jobStartupTimeout | quote }}
             - name: REACTORCIDE_K8S_JOB_AUTOSCALING
               value: {{ default "auto" .Values.worker.jobAutoscaling | quote }}
+            {{- if .Values.worker.jobNodeSelector }}
+            - name: REACTORCIDE_K8S_JOB_NODE_SELECTOR
+              value: {{ $pairs := list }}{{ range $k, $v := .Values.worker.jobNodeSelector }}{{ $pairs = append $pairs (printf "%s=%s" $k $v) }}{{ end }}{{ join "," $pairs | quote }}
+            {{- end }}
+            {{- if .Values.worker.jobTolerations }}
+            - name: REACTORCIDE_K8S_JOB_TOLERATIONS
+              value: {{ toJson .Values.worker.jobTolerations | quote }}
+            {{- end }}
+            {{- if .Values.worker.jobAffinity }}
+            - name: REACTORCIDE_K8S_JOB_AFFINITY
+              value: {{ toJson .Values.worker.jobAffinity | quote }}
+            {{- end }}
+            {{- $preseed := .Values.worker.imagePreseed | default dict }}
+            - name: REACTORCIDE_K8S_IMAGE_PRESEED_NAME
+              value: {{ default (printf "%s-image-preseed" (include "worker.name" .)) $preseed.name | trunc 52 | trimSuffix "-" | quote }}
+            {{- if $preseed.toolsImage }}
+            - name: REACTORCIDE_K8S_IMAGE_PRESEED_TOOLS_IMAGE
+              value: {{ $preseed.toolsImage | quote }}
+            {{- end }}
+            {{- if $preseed.pauseImage }}
+            - name: REACTORCIDE_K8S_IMAGE_PRESEED_PAUSE_IMAGE
+              value: {{ $preseed.pauseImage | quote }}
+            {{- end }}
+            {{- if $preseed.timeout }}
+            - name: REACTORCIDE_K8S_IMAGE_PRESEED_TIMEOUT
+              value: {{ $preseed.timeout | quote }}
+            {{- end }}
             {{- /* Builder sidecar config — applied to jobs with `capabilities: [builder]` */ -}}
             {{- if .Values.builder }}
             {{- if .Values.builder.image }}
@@ -167,15 +242,67 @@ spec:
             - name: REACTORCIDE_BUILDER_CACHE_VOLUME
               value: {{ .Values.builder.cachePvc | quote }}
             {{- end }}
+            {{- if .Values.builder.rootless }}
+            - name: REACTORCIDE_BUILDER_ROOTLESS
+              value: "true"
+            {{- end }}
+            {{- end }}
+            {{- if .Values.egressProxy.enabled }}
+            {{- /* Egress proxy settings (docs/egress-proxy.md). */}}
+            - name: REACTORCIDE_EGRESS_CONTROL_URL
+              value: "{{ if .Values.egressProxy.controlTLS.enabled }}https{{ else }}http{{ end }}://{{ include "egress.host" . }}:{{ .Values.egressProxy.service.controlPort }}"
+            - name: REACTORCIDE_EGRESS_PROXY_ADDR
+              value: "{{ include "egress.host" . }}:{{ .Values.egressProxy.service.proxyPort }}"
+            - name: REACTORCIDE_EGRESS_CONTROL_TOKEN_FILE
+              value: /etc/reactorcide/egress/control.token
+            - name: REACTORCIDE_EGRESS_JOB_KEY_FILE
+              value: /etc/reactorcide/egress/job.key
+            - name: REACTORCIDE_EGRESS_CA_FILE
+              value: /etc/reactorcide/egress/ca.crt
+            - name: REACTORCIDE_EGRESS_NET_IMAGE
+              value: {{ default (printf "%s:%s" .Values.egressProxy.image.repository (.Values.egressProxy.image.tag | default .Chart.AppVersion)) .Values.egressProxy.netImage | quote }}
+            {{- end }}
+            {{- with .Values.worker.extraEnv }}
+            {{- toYaml . | nindent 12 }}
             {{- end }}
           volumeMounts:
             - name: work-dir
               mountPath: /tmp/reactorcide-jobs
+            {{- if .Values.egressProxy.enabled }}
+            - name: egress-worker
+              mountPath: /etc/reactorcide/egress
+              readOnly: true
+            {{- end }}
             - name: worker-data
               mountPath: {{ .Values.worker.dataDir }}
+            {{- if (.Values.worker.kubeconfig).secretName }}
+            - name: kubeconfig
+              mountPath: /etc/reactorcide/kubeconfig
+              readOnly: true
+            {{- end }}
       volumes:
         - name: work-dir
           emptyDir: {}
+        {{- if .Values.egressProxy.enabled }}
+        - name: egress-worker
+          secret:
+            secretName: {{ .Values.egressProxy.secretName }}
+            defaultMode: 0400
+            # Not the CA private key: the worker never signs certificates.
+            items:
+              - key: ca.crt
+                path: ca.crt
+              - key: job.key
+                path: job.key
+              - key: control.token
+                path: control.token
+        {{- end }}
+        {{- if (.Values.worker.kubeconfig).secretName }}
+        - name: kubeconfig
+          secret:
+            secretName: {{ .Values.worker.kubeconfig.secretName }}
+            defaultMode: 0400
+        {{- end }}
         - name: worker-data
           {{- if .Values.worker.dataDirEphemeralPVC.enabled }}
           ephemeral:

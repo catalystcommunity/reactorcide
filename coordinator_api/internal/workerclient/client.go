@@ -65,12 +65,27 @@ func (c *Client) RequestJob(ctx context.Context, characteristics csilapi.WorkerC
 	return c.raw.RequestJob(ctx, csilapi.RequestJobRequest{WorkerCharacteristics: characteristics, ReportsExecutionTiming: &reportsTiming})
 }
 
+// RequestJobWithAdmission is RequestJob for a worker in resources admission
+// mode: report carries the worker's capacity and current headroom, and the
+// coordinator offers only a job that fits the headroom.
+func (c *Client) RequestJobWithAdmission(ctx context.Context, characteristics csilapi.WorkerCharacteristics, report *csilapi.AdmissionReport) (csilapi.RequestJobResponse, error) {
+	reportsTiming := true
+	return c.raw.RequestJob(ctx, csilapi.RequestJobRequest{WorkerCharacteristics: characteristics, ReportsExecutionTiming: &reportsTiming, Admission: report})
+}
+
 // Heartbeat reports the worker's status and the leases it currently holds,
 // extending each lease's underlying corndogs task timeout and renewing the
 // worker session server-side. The response's Directives tell the caller to
 // cancel or kill specific leases.
 func (c *Client) Heartbeat(ctx context.Context, status string, runningLeases []csilapi.RunningLease) (csilapi.HeartbeatResponse, error) {
-	return c.raw.Heartbeat(ctx, csilapi.HeartbeatRequest{Status: status, RunningLeases: runningLeases})
+	return c.HeartbeatWithReport(ctx, status, runningLeases, nil)
+}
+
+// HeartbeatWithReport is Heartbeat with the worker image set report
+// (VM_IMAGES_PLAN.md "Worker image sets"). A nil report sends none. The
+// response can carry a newer image set.
+func (c *Client) HeartbeatWithReport(ctx context.Context, status string, runningLeases []csilapi.RunningLease, report *csilapi.ImageSetReport) (csilapi.HeartbeatResponse, error) {
+	return c.raw.Heartbeat(ctx, csilapi.HeartbeatRequest{Status: status, RunningLeases: runningLeases, ImageSetReport: report})
 }
 
 // AppendLogs pushes one chunk of a lease's stdout/stderr (stream must be
@@ -114,4 +129,11 @@ func (c *Client) ReportResultWithOutput(ctx context.Context, leaseID string, exi
 
 func (c *Client) ReportExecutionResult(ctx context.Context, req csilapi.ReportResultRequest) (csilapi.ReportResultResponse, error) {
 	return c.raw.ReportResult(ctx, req)
+}
+
+// UploadArtifact sends one chunk of one job artifact (WP15). The chunk
+// rides the authenticated worker connection; the worker never connects to
+// the object store.
+func (c *Client) UploadArtifact(ctx context.Context, req csilapi.UploadArtifactRequest) (csilapi.UploadArtifactResponse, error) {
+	return c.raw.UploadArtifact(ctx, req)
 }

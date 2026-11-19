@@ -72,6 +72,11 @@ type ExecutionTimingReader interface {
 type ExecutionTiming struct {
 	StartedAt  time.Time
 	FinishedAt time.Time
+	// MainNotStarted is true when the runtime shows the job, and shows
+	// that its main container never started (for example, a pending pod
+	// whose main container is waiting). A zero StartedAt alone is not
+	// proof: the runtime can have lost the job.
+	MainNotStarted bool
 }
 
 // ResourceSampleOptions selects the resource groups for one snapshot.
@@ -191,10 +196,24 @@ type JobConfig struct {
 	// writable.
 	RunAsUser string
 
+	// RunAsAdministrator applies only to Windows VM guests. The in-guest
+	// daemon uses it only when it must create the job account because the
+	// image has no such account: it says whether the new account goes in
+	// Administrators. nil means administrator (true). An account that the
+	// image already has is not changed. Container runners ignore it.
+	RunAsAdministrator *bool
+
 	// ExtraMounts are additional bind mounts in "hostpath:containerpath[:ro]"
 	// format. Used by run-local to inject a synthetic /etc/passwd and
 	// /etc/group for the host uid so tools like ssh find a valid user entry.
 	ExtraMounts []string
+
+	// JobFiles are small files that the worker gives the job under /job
+	// (name -> content), for example quarantined-tests.json (WP15).
+	// Docker and containerd read them from WorkspaceDir, where the worker
+	// writes them; Kubernetes writes them in the prepare-workspace init
+	// container. A name has only [A-Za-z0-9._-] characters.
+	JobFiles map[string][]byte
 
 	// VCSAuth contains per-job checkout credential files. Docker/containerd
 	// jobs read these from WorkspaceDir; Kubernetes jobs materialize them as
@@ -213,13 +232,28 @@ type JobConfig struct {
 	// reservation). CPURequest is advisory for runners that have no native
 	// CPU reservation concept (see DockerRunner: mapped to --cpu-shares);
 	// KubernetesRunner sets it as a real requests.cpu.
-	CPURequest  string // e.g., "1" or "500m"; advisory outside Kubernetes
-	CPULimit    string // e.g., "1", "2", or "500m"
-	MemoryLimit string // e.g., "512Mi" or "4Gi"
+	CPURequest string // e.g., "1" or "500m"; advisory outside Kubernetes
+	CPULimit   string // e.g., "1", "2", or "500m"
+	// StorageRequest/StorageLimit are the ephemeral (scratch) storage of the
+	// job container, in the memory grammar ("10Gi"). Kubernetes sets them as
+	// ephemeral-storage; Docker and containerd do not enforce them.
+	StorageRequest string
+	StorageLimit   string
+	MemoryLimit    string // e.g., "512Mi" or "4Gi"
 
 	// Job metadata (for labeling/tagging)
 	JobID     string
 	QueueName string
+
+	// Egress, when set, sends all egress of the job through the egress
+	// proxy (see egress.go and docs/egress-proxy.md). nil keeps the
+	// network of the runner as it is.
+	Egress *EgressConfig
+
+	// Cache is the cache decision of the coordinator (Lease.cache): the
+	// namespace and the write mode of the builder cache (builder_cache.go).
+	// nil keeps the shared cache volume with writes.
+	Cache *CacheConfig
 }
 
 // VCSAuthConfig contains runtime Git auth material for source preparation.

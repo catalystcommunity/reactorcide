@@ -152,3 +152,26 @@ describe('OrgRoles picker', () => {
     expect(window.location.search).toContain('org=org-b')
   })
 })
+
+describe('OrgRoles workflow scope', () => {
+  it('shows the project and workflow of a workflow-scoped role', async () => {
+    setSessionForTest(sessionFor({ roles: [{ scope_type: 'org', scope_id: 'org-b', role: 'admin' }] }))
+    vi.mocked(api.listRoleAssignments).mockResolvedValueOnce({
+      assignments: [
+        {
+          assignmentId: 'ra-1',
+          principalType: 'group',
+          principalId: 'g-1',
+          scopeType: 'workflow',
+          scopeId: 'p1',
+          scopeWorkflow: 'payments',
+          role: 'owner',
+          createdAt: '2026-11-16T10:00:00Z',
+        },
+      ],
+    })
+    const page = await renderAt('/org/roles')
+    await waitFor(() => expect(page.querySelector('.scope-id')?.textContent).toBe('p1 / payments'))
+    expect(page.querySelector('.scope-type')?.textContent).toBe('workflow')
+  })
+})

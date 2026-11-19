@@ -27,6 +27,29 @@ var (
 		[]string{"queue", "result"},
 	)
 
+	// JobsFinished counts jobs that reached a terminal status. The labels
+	// are low cardinality: status (completed, failed, cancelled, timeout),
+	// failure_class (models.FailureClasses, or "none"), and queue. There is
+	// no workflow or project label: a large repository has thousands of
+	// workflows.
+	JobsFinished = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "reactorcide_jobs_finished_total",
+			Help: "Jobs that reached a terminal status, by status, failure class and queue",
+		},
+		[]string{"status", "failure_class", "queue"},
+	)
+
+	// JobInfraRetries counts automatic retries after an infrastructure
+	// failure, by failure class.
+	JobInfraRetries = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "reactorcide_job_infra_retries_total",
+			Help: "Automatic job retries after an infrastructure failure, by failure class",
+		},
+		[]string{"failure_class"},
+	)
+
 	TelemetryBatches = promauto.NewCounterVec(
 		prometheus.CounterOpts{Name: "reactorcide_telemetry_batches_total", Help: "Telemetry batches by kind and result"},
 		[]string{"kind", "result"},
@@ -62,4 +85,18 @@ func RecordCornDogsTaskSubmission(queue string, success bool) {
 		result = "success"
 	}
 	CornDogsTaskSubmissions.WithLabelValues(queue, result).Inc()
+}
+
+// RecordJobFinished counts one job that reached a terminal status. An empty
+// class is recorded as "none" (a completed job, or an unknown cause).
+func RecordJobFinished(status, failureClass, queue string) {
+	if failureClass == "" {
+		failureClass = "none"
+	}
+	JobsFinished.WithLabelValues(status, failureClass, queue).Inc()
+}
+
+// RecordInfraRetry counts one automatic retry of an infrastructure failure.
+func RecordInfraRetry(failureClass string) {
+	JobInfraRetries.WithLabelValues(failureClass).Inc()
 }

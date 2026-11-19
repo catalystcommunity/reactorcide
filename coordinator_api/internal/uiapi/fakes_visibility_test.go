@@ -2,6 +2,7 @@ package uiapi
 
 import (
 	"context"
+	"slices"
 	"sort"
 
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/authz"
@@ -48,6 +49,10 @@ func jobMatchesFilters(job *models.Job, filters map[string]interface{}) bool {
 			}
 		case "workflow_id":
 			if job.WorkflowID == nil || *job.WorkflowID != want.(string) {
+				return false
+			}
+		case "org_ids":
+			if !slices.Contains(want.([]string), job.OrgID) {
 				return false
 			}
 		}
@@ -126,6 +131,9 @@ func (f *fakeStore) ListWorkflowSummariesVisibleTo(ctx context.Context, viewerID
 			if summary.ProjectID == nil || *summary.ProjectID != want.(string) {
 				continue
 			}
+		}
+		if want, ok := filters["org_ids"]; ok && !slices.Contains(want.([]string), summary.OrgID) {
+			continue
 		}
 		if isGlobalAdmin {
 			visible = append(visible, summary)

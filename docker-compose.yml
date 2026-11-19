@@ -24,7 +24,7 @@ services:
 
     # Corndogs Task Queue
     corndogs:
-        image: containers.catalystsquad.com/public/catalystcommunity/corndogs:0.7.6
+        image: containers.catalystsquad.com/public/catalystcommunity/corndogs:0.8.0
         container_name: reactorcide-corndogs-dev
         user: "0:0"
         environment:
@@ -122,10 +122,24 @@ services:
             REACTORCIDE_WORKER_TELEMETRY_SEND_INTERVAL: ${REACTORCIDE_WORKER_TELEMETRY_SEND_INTERVAL:-10s}
             REACTORCIDE_WORKER_TELEMETRY_BUFFER_BATCHES: ${REACTORCIDE_WORKER_TELEMETRY_BUFFER_BATCHES:-12}
             REACTORCIDE_LOG_LEVEL: debug
+            # Egress proxy (docs/egress-proxy.md). Empty (the default) means
+            # no egress proxy. To try it: scripts/egress-dev-keys.sh, then
+            # `docker compose --profile egress up -d` with these in .env:
+            #   REACTORCIDE_EGRESS_CONTROL_URL=http://egress-proxy:8080
+            #   REACTORCIDE_EGRESS_PROXY_ADDR=egress-proxy:3128
+            #   REACTORCIDE_EGRESS_NETWORK=reactorcide_reactorcide
+            REACTORCIDE_EGRESS_CONTROL_URL: ${REACTORCIDE_EGRESS_CONTROL_URL:-}
+            REACTORCIDE_EGRESS_PROXY_ADDR: ${REACTORCIDE_EGRESS_PROXY_ADDR:-}
+            REACTORCIDE_EGRESS_NETWORK: ${REACTORCIDE_EGRESS_NETWORK:-}
+            REACTORCIDE_EGRESS_NET_IMAGE: ${REACTORCIDE_EGRESS_NET_IMAGE:-reactorcide/egress:dev}
+            REACTORCIDE_EGRESS_CONTROL_TOKEN_FILE: /etc/reactorcide/egress/control.token
+            REACTORCIDE_EGRESS_JOB_KEY_FILE: /etc/reactorcide/egress/job.key
+            REACTORCIDE_EGRESS_CA_FILE: /etc/reactorcide/egress/ca.crt
         volumes:
             - /var/run/docker.sock:/var/run/docker.sock
             - reactorcide_worker_data:/var/lib/reactorcide-worker
             - /tmp/reactorcide-jobs:/tmp/reactorcide-jobs
+            - reactorcide_egress_keys:/etc/reactorcide/egress:ro
         depends_on:
             coordinator-api:
                 condition: service_started
@@ -162,6 +176,29 @@ services:
         networks:
             - reactorcide
 
+    # Egress proxy (docs/egress-proxy.md). Only with the "egress" profile:
+    # `docker compose --profile egress up -d`. Make its keys first with
+    # scripts/egress-dev-keys.sh (they go into reactorcide_egress_keys).
+    egress-proxy:
+        profiles: ["egress"]
+        build:
+            context: ./egress_proxy
+            dockerfile: Dockerfile
+        image: reactorcide/egress:dev
+        container_name: reactorcide-egress-dev
+        # Dev only: the keys in the volume belong to root.
+        user: "0:0"
+        environment:
+            REACTORCIDE_EGRESS_CA_CERT: /etc/reactorcide/egress/ca.crt
+            REACTORCIDE_EGRESS_CA_KEY: /etc/reactorcide/egress/ca.key
+            REACTORCIDE_EGRESS_JOB_KEY: /etc/reactorcide/egress/job.key
+            REACTORCIDE_EGRESS_CONTROL_TOKEN_FILE: /etc/reactorcide/egress/control.token
+            REACTORCIDE_EGRESS_POLICY: ${REACTORCIDE_EGRESS_POLICY:-}
+        volumes:
+            - reactorcide_egress_keys:/etc/reactorcide/egress:ro
+        networks:
+            - reactorcide
+
 networks:
     reactorcide:
         driver: bridge
@@ -174,3 +211,6 @@ volumes:
     # coordinator-api's reactorcide_data -- the worker no longer touches
     # object storage.
     reactorcide_worker_data:
+    # Egress proxy keys (scripts/egress-dev-keys.sh). Empty unless you make
+    # them; an empty volume keeps the worker without an egress proxy.
+    reactorcide_egress_keys:

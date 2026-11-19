@@ -17,6 +17,7 @@ package coordinatorworker
 import (
 	"time"
 
+	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/admission"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/characteristics"
 )
 
@@ -65,8 +66,22 @@ type Config struct {
 	ContainerRuntime string
 
 	// Concurrency bounds how many leases this worker runs at once. Values
-	// less than 1 are treated as 1.
+	// less than 1 are treated as 1. In resources admission mode it is the
+	// upper bound, and the headroom decides first.
 	Concurrency int
+
+	// AdmissionMode is admission.ModeConcurrency ("" or "concurrency", the
+	// default: a fixed lease count) or admission.ModeResources (request work
+	// only when the headroom has room for it, see admission.go).
+	AdmissionMode string
+	// AdmissionBudget replaces the measured capacity in resources mode. A
+	// zero field keeps the measured value of that resource.
+	AdmissionBudget admission.Resources
+
+	// DetectTopology adds the "region" and "zone" characteristics that the
+	// runner detects (Kubernetes node topology labels) when the operator did
+	// not set them.
+	DetectTopology bool
 
 	// WorkspaceRoot is the base directory under which each lease's ephemeral
 	// job workspace is created (bind-mounted into the job container as /job).
@@ -100,6 +115,15 @@ type Config struct {
 	// startup and then at VMImagePruneInterval.
 	VMImageMaxUnused     time.Duration
 	VMImagePruneInterval time.Duration
+
+	// Egress is the egress proxy of this worker (egress.go). nil reads it
+	// from the REACTORCIDE_EGRESS_* environment at Run.
+	Egress *EgressSettings
+
+	// runtime is the runner backend (vm, docker, containerd, kubernetes)
+	// that Register sends in WorkerInfo.runtime. runLoop sets it from the
+	// runner.
+	runtime string
 }
 
 // defaultHeartbeatInterval is used only if Register's response carries a

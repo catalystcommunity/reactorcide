@@ -66,7 +66,7 @@ func vcsCredentialToCsil(r *models.ProjectVCSCredential) csilapi.VcsCredentialSu
 // admin/global admin of the project's owning org). Values are never returned
 // — only rotation metadata.
 func (s *UiService) ListWebhookSecrets(ctx context.Context, req csilapi.ListWebhookSecretsRequest) (csilapi.ListWebhookSecretsResponse, error) {
-	id, _, authErr := s.deps.requireUser(ctx)
+	ctx, id, _, authErr := s.deps.requireManagementIdentity(ctx)
 	if authErr != nil {
 		return csilapi.ListWebhookSecretsResponse{}, authErr
 	}
@@ -95,7 +95,7 @@ func (s *UiService) ListWebhookSecrets(ctx context.Context, req csilapi.ListWebh
 // AddWebhookSecret stores a new webhook signing secret value under a
 // generated path and records only its reference in the rotation table.
 func (s *UiService) AddWebhookSecret(ctx context.Context, req csilapi.AddWebhookSecretRequest) (csilapi.AddWebhookSecretResponse, error) {
-	id, _, authErr := s.deps.requireUser(ctx)
+	ctx, id, _, authErr := s.deps.requireManagementIdentity(ctx)
 	if authErr != nil {
 		return csilapi.AddWebhookSecretResponse{}, authErr
 	}
@@ -148,7 +148,7 @@ func (s *UiService) AddWebhookSecret(ctx context.Context, req csilapi.AddWebhook
 // DeactivateWebhookSecret marks a webhook secret inactive without deleting
 // its stored value (still resolvable for audit/rollback until deleted).
 func (s *UiService) DeactivateWebhookSecret(ctx context.Context, req csilapi.DeactivateWebhookSecretRequest) (csilapi.DeactivateWebhookSecretResponse, error) {
-	id, _, authErr := s.deps.requireUser(ctx)
+	ctx, id, _, authErr := s.deps.requireManagementIdentity(ctx)
 	if authErr != nil {
 		return csilapi.DeactivateWebhookSecretResponse{}, authErr
 	}
@@ -181,7 +181,7 @@ func (s *UiService) DeactivateWebhookSecret(ctx context.Context, req csilapi.Dea
 // DeleteWebhookSecret removes a webhook secret row and best-effort deletes
 // its underlying stored value.
 func (s *UiService) DeleteWebhookSecret(ctx context.Context, req csilapi.DeleteWebhookSecretRequest) (csilapi.DeleteWebhookSecretResponse, error) {
-	id, _, authErr := s.deps.requireUser(ctx)
+	ctx, id, _, authErr := s.deps.requireManagementIdentity(ctx)
 	if authErr != nil {
 		return csilapi.DeleteWebhookSecretResponse{}, authErr
 	}
@@ -218,7 +218,7 @@ func (s *UiService) DeleteWebhookSecret(ctx context.Context, req csilapi.DeleteW
 
 // ListVcsCredentials requires manage-vcs-credentials capability.
 func (s *UiService) ListVcsCredentials(ctx context.Context, req csilapi.ListVcsCredentialsRequest) (csilapi.ListVcsCredentialsResponse, error) {
-	id, _, authErr := s.deps.requireUser(ctx)
+	ctx, id, _, authErr := s.deps.requireManagementIdentity(ctx)
 	if authErr != nil {
 		return csilapi.ListVcsCredentialsResponse{}, authErr
 	}
@@ -247,7 +247,7 @@ func (s *UiService) ListVcsCredentials(ctx context.Context, req csilapi.ListVcsC
 // AddVcsCredential stores a new VCS credential value under a generated path
 // and records only its reference in the rotation table.
 func (s *UiService) AddVcsCredential(ctx context.Context, req csilapi.AddVcsCredentialRequest) (csilapi.AddVcsCredentialResponse, error) {
-	id, _, authErr := s.deps.requireUser(ctx)
+	ctx, id, _, authErr := s.deps.requireManagementIdentity(ctx)
 	if authErr != nil {
 		return csilapi.AddVcsCredentialResponse{}, authErr
 	}
@@ -300,7 +300,7 @@ func (s *UiService) AddVcsCredential(ctx context.Context, req csilapi.AddVcsCred
 // DeactivateVcsCredential marks a VCS credential inactive without deleting
 // its stored value.
 func (s *UiService) DeactivateVcsCredential(ctx context.Context, req csilapi.DeactivateVcsCredentialRequest) (csilapi.DeactivateVcsCredentialResponse, error) {
-	id, _, authErr := s.deps.requireUser(ctx)
+	ctx, id, _, authErr := s.deps.requireManagementIdentity(ctx)
 	if authErr != nil {
 		return csilapi.DeactivateVcsCredentialResponse{}, authErr
 	}
@@ -333,7 +333,7 @@ func (s *UiService) DeactivateVcsCredential(ctx context.Context, req csilapi.Dea
 // DeleteVcsCredential removes a VCS credential row and best-effort deletes
 // its underlying stored value, mirroring DeleteWebhookSecret.
 func (s *UiService) DeleteVcsCredential(ctx context.Context, req csilapi.DeleteVcsCredentialRequest) (csilapi.DeleteVcsCredentialResponse, error) {
-	id, _, authErr := s.deps.requireUser(ctx)
+	ctx, id, _, authErr := s.deps.requireManagementIdentity(ctx)
 	if authErr != nil {
 		return csilapi.DeleteVcsCredentialResponse{}, authErr
 	}

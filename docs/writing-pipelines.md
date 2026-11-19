@@ -44,6 +44,10 @@ workflow nodes, submits ready jobs, and leaves blocked jobs waiting without
 occupying worker slots. If the authenticated API request fails, runnerlib
 fails the job. A remote worker does not use the local file as a fallback.
 
+The coordinator accepts trigger data only from the job token of the running
+parent job. A user, a service token, or the admin token cannot submit
+triggers for a job, and a finished job cannot submit triggers.
+
 `run-local` can use the trigger file without API credentials.
 
 Source code is available at `REACTORCIDE_CODE_DIR` (default `/job/src`). The job working directory is `REACTORCIDE_JOB_DIR` (defaulting to the code directory). Prefer these environment variables in reusable pipeline scripts so jobs continue to work when a definition customizes `code_dir` or `job_dir`.
@@ -52,6 +56,8 @@ Source code is available at `REACTORCIDE_CODE_DIR` (default `/job/src`). The job
 ```json
 {
   "type": "trigger_job",
+  "operation_id": "<event id or random UUID>",
+  "trigger_type": "runnerlib",
   "jobs": [
     {
       "job_name": "deploy",
@@ -86,6 +92,19 @@ Source code is available at `REACTORCIDE_CODE_DIR` (default `/job/src`). The job
 
 ## Quick Start
 
+### Import the Workflow Module
+
+The runner image installs runnerlib as the Python package `src`. In a job
+that uses the runner image, import the module as `src.workflow`:
+
+```python
+from src.workflow import trigger_job, flush_triggers, WorkflowContext
+```
+
+The scripts in [`examples/pipelines/`](../examples/pipelines/) add
+`runnerlib/src` to `sys.path` and use `from workflow import ...`. The
+examples on this page use the short form too.
+
 ### Basic Pipeline Script
 
 ```python
@@ -94,6 +113,7 @@ Source code is available at `REACTORCIDE_CODE_DIR` (default `/job/src`). The job
 Minimal pipeline: run tests, then deploy on main branch.
 """
 
+import os
 import sys
 from workflow import trigger_job, flush_triggers, WorkflowContext
 
@@ -105,7 +125,7 @@ def main():
     # ... test execution logic ...
 
     # Trigger follow-up job conditionally
-    if ctx.branch == "main":
+    if os.getenv("REACTORCIDE_BRANCH") == "main":
         trigger_job("deploy", env={"TARGET": "production"})
 
     # Write triggers to file
@@ -218,7 +238,10 @@ set_workflow_output("image_digest", "sha256:...")
 
 #### `workflow_vars()`
 
-Load current workflow variables from `RC_WF_VARS_FILE`.
+Load the current workflow variables. The function reads `RC_WF_VARS_JSON`
+first. If that variable is not set, it reads the file at `RC_WF_VARS_FILE`
+(default `/job/workflow-vars.json`). It returns an empty dictionary when
+neither has a JSON object.
 
 ```python
 from workflow import workflow_vars
@@ -278,34 +301,7 @@ if info['tag']:
     trigger_job("release", env={"TAG": info['tag']})
 ```
 
-### State Checking (Requires API Access)
-
-#### `is_job_running(job_name)`
-
-Check if a job is currently running.
-
-**Note**: Requires `REACTORCIDE_COORDINATOR_URL` and `REACTORCIDE_API_TOKEN` environment variables.
-
-**Example**:
-```python
-if not is_job_running("deploy-production"):
-    trigger_job("deploy-production")
-else:
-    print("Deploy already in progress, skipping")
-```
-
-#### `get_job_result(job_name)`
-
-Get result of a previous job.
-
-**Returns**: Dictionary with job information or None
-
-**Example**:
-```python
-test_result = get_job_result("test")
-if test_result and test_result["exit_code"] == 0:
-    trigger_job("deploy")
-```
+### Next Job Logging
 
 #### `log_next_job(job_name, reason="")`
 
@@ -332,8 +328,7 @@ Context manager that automatically flushes triggers on successful exit.
 ```python
 with workflow_context() as ctx:
     # Access context properties
-    print(f"Branch: {ctx.branch}")
-    print(f"Commit: {ctx.commit}")
+    print(f"Job: {ctx.job_id}")
 
     # Trigger jobs
     ctx.trigger_job("test")
@@ -346,19 +341,34 @@ with workflow_context() as ctx:
 
 When using `WorkflowContext` or `workflow_context`:
 
-- `ctx.job_id` - Current job ID
-- `ctx.branch` - Current git branch
-- `ctx.commit` - Current git commit SHA
-- `ctx.ref` - Current git ref
+- `ctx.job_id` - Current job ID (`REACTORCIDE_JOB_ID`)
+- `ctx.workflow_id` - Current workflow ID (`RC_WF_ID`)
+- `ctx.branch` - The branch of the code under test
+- `ctx.commit` - The commit SHA of the code under test
+- `ctx.ref` - The full git ref of the code under test
+
+These properties come from the job environment that the coordinator sets:
+
+| Property | Push | Pull request | Tag |
+| --- | --- | --- | --- |
+| `ctx.branch` | `REACTORCIDE_BRANCH` | the head branch (`REACTORCIDE_HEAD_REF`, then `REACTORCIDE_PR_REF`) | `None` |
+| `ctx.commit` | `REACTORCIDE_SHA` | `REACTORCIDE_SHA` | `REACTORCIDE_SHA` |
+| `ctx.ref` | `refs/heads/<branch>` | `refs/heads/<head branch>` | `refs/tags/<tag>` |
+
+For a pull request, `ctx.branch` is the head branch, not the target branch.
+`REACTORCIDE_BRANCH` of a pull request job is the target branch. Thus a pull
+request into `main` does not make `ctx.branch == "main"` true. The head
+branch can be the branch of a fork: do not use it to give trust.
+
+`REACTORCIDE_GIT_BRANCH`, `REACTORCIDE_GIT_COMMIT`, and `REACTORCIDE_GIT_REF`
+replace these values when they are set (for example, in a local run). A
+property is `None` when the job environment does not have the value.
 
 **Example**:
 ```python
 with workflow_context() as ctx:
-    if ctx.branch == "main":
-        print("Running on main branch")
-
     if ctx.branch and ctx.branch.startswith("release/"):
-        trigger_job("release-validation")
+        ctx.trigger_job("release-validation")
 ```
 
 ## Common Patterns
@@ -417,18 +427,15 @@ with workflow_context() as ctx:
         ctx.trigger_job("build-docs")
 ```
 
-### Pattern 4: Guarded Deploy (Check State)
+### Pattern 4: Ordered Deploy
 
-Prevent duplicate deploys by checking if one is already running.
+A job cannot examine the state of other jobs. Use `depends_on` and
+`condition` to set the order of jobs in one workflow:
 
 ```python
 with workflow_context() as ctx:
-    if ctx.branch == "main":
-        # Only trigger deploy if none running
-        if not ctx.is_job_running("deploy-production"):
-            ctx.trigger_job("deploy-production")
-        else:
-            print("Deploy already in progress, skipping")
+    ctx.trigger_job("build")
+    ctx.trigger_job("deploy", depends_on=["build"], condition="all_success")
 ```
 
 ### Pattern 5: Multi-Stage Pipeline
@@ -777,9 +784,13 @@ Each example includes:
 **Problem**: Jobs trigger but follow-up jobs don't run.
 
 **Solutions**:
-1. Ensure `flush_triggers()` is called (or use context manager)
-2. Check that `/job/triggers.json` is being written
-3. Verify worker has permission to read the triggers file
+1. Make sure that the script calls `flush_triggers()`, or use the context manager.
+2. In a coordinator job, make sure that `REACTORCIDE_COORDINATOR_URL`,
+   `REACTORCIDE_API_TOKEN`, and `REACTORCIDE_JOB_ID` are set. Runnerlib sends
+   the triggers to `POST /api/v1/jobs/{job_id}/triggers`. If the request
+   fails, the job fails. After a successful request, runnerlib deletes
+   `/job/triggers.json`.
+3. In `run-local`, make sure that the script writes `/job/triggers.json`.
 
 ### Jobs Running When They Shouldn't
 
@@ -805,12 +816,11 @@ ctx.trigger_job("deploy", depends_on=["test", "build"], condition="all_success")
 
 **Problem**: `ctx.branch` or `ctx.commit` are None.
 
-**Solution**: Ensure environment variables are set:
-- `REACTORCIDE_GIT_BRANCH`
-- `REACTORCIDE_GIT_COMMIT`
-- `REACTORCIDE_GIT_REF`
-
-These are typically set by runnerlib during source preparation.
+**Solution**: These properties read the job environment (see
+[Context Properties](#context-properties)). A job from the coordinator has
+`REACTORCIDE_BRANCH` and `REACTORCIDE_SHA`. For a local run, set
+`REACTORCIDE_GIT_BRANCH`, `REACTORCIDE_GIT_COMMIT`, and `REACTORCIDE_GIT_REF`.
+`ctx.branch` is `None` for a tag event: use `ctx.ref`.
 
 ## Reference
 
@@ -819,11 +829,22 @@ These are typically set by runnerlib during source preparation.
 The workflow module uses these environment variables:
 
 - `REACTORCIDE_JOB_ID` - Current job ID
-- `REACTORCIDE_GIT_BRANCH` - Current git branch
-- `REACTORCIDE_GIT_COMMIT` - Current git commit SHA
-- `REACTORCIDE_GIT_REF` - Current git ref
-- `REACTORCIDE_COORDINATOR_URL` - Coordinator API URL (for state checking)
-- `REACTORCIDE_API_TOKEN` - API token (for state checking)
+- `REACTORCIDE_COORDINATOR_URL` - Coordinator API URL (for trigger submission)
+- `REACTORCIDE_API_TOKEN` - Job token (for trigger submission)
+- `REACTORCIDE_EVENT_ID` - Operation ID of the trigger submission. If it is
+  not set, runnerlib uses a random UUID.
+- `RC_WF_ID` - Current workflow ID
+- `RC_WF_VARS_JSON` - Workflow variables as JSON (read first)
+- `RC_WF_VARS_FILE` - Workflow variables file (default `/job/workflow-vars.json`)
+- `RC_WF_OUTPUT_FILE` - File for `set_workflow_var()` and
+  `set_workflow_output()` (default `/job/workflow-output.json`)
+- `REACTORCIDE_BRANCH`, `REACTORCIDE_SHA`, `REACTORCIDE_EVENT_TYPE`,
+  `REACTORCIDE_PR_NUMBER`, `REACTORCIDE_HEAD_REF`, `REACTORCIDE_PR_REF` -
+  Read by `ctx.branch`, `ctx.commit`, and `ctx.ref`. The coordinator sets
+  them.
+- `REACTORCIDE_GIT_BRANCH`, `REACTORCIDE_GIT_COMMIT`, `REACTORCIDE_GIT_REF` -
+  Replace the values of `ctx.branch`, `ctx.commit`, and `ctx.ref` when set.
+  Reactorcide does not set them.
 
 ### JobTrigger Fields
 
@@ -841,8 +862,20 @@ When triggering jobs, these fields are available:
 - `ci_source_ref` - CI source ref
 - `container_image` - Container image to use
 - `job_command` - Command to run
-- `priority` - Job priority (integer, higher = more urgent)
+- `priority` - Requested priority (integer, higher = more urgent). See
+  [Priority and Lanes](./priority.md).
 - `timeout` - Job timeout in seconds
+- `capabilities` - Runtime services, such as `docker` or `builder`
+- `image_pull_secrets` - Kubernetes Secret names for the image pull
+- `code_dir`, `job_dir`, `working_dir` - Container paths
+- `run_as_user`, `run_as_administrator` - Job identity
+- `for_each`, `item_var` - Expand one trigger into many nodes
+- `worker_class` - Worker class. A trigger cannot raise or change the
+  inherited worker class.
+- `characteristics` - Worker routing characteristics
+- `resources` - CPU and memory requests and limits
+- `disable_run_local`, `run_local` - Local execution settings
+- `quarantine_policy` - `report` or `ignore_quarantined`
 
 ## Additional Resources
 

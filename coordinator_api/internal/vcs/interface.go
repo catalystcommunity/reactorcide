@@ -37,8 +37,11 @@ type WebhookEvent struct {
 	IssueComment *IssueCommentInfo
 	// PullRequestReview is set for a pull request review event.
 	PullRequestReview *PullRequestReviewInfo
-	RawPayload        []byte
-	SenderLogin       string // actor that delivered the current head update
+	// Team is set for a team or team membership event (GitHub `team` and
+	// `membership`). It is a hint to sync linked groups (github_teams.go).
+	Team        *TeamEventInfo
+	RawPayload  []byte
+	SenderLogin string // actor that delivered the current head update
 	// DeliveryID is the provider's unique ID for this delivery
 	// (X-GitHub-Delivery, X-Gitlab-Event-UUID). A redelivery keeps it.
 	DeliveryID string
@@ -50,10 +53,22 @@ type WebhookEvent struct {
 
 // CoordinatorEvent says why the coordinator made an event.
 type CoordinatorEvent struct {
-	// Source is models.CIEventSourceApproval or models.CIEventSourceRerun.
+	// Source is models.CIEventSourceApproval, models.CIEventSourceRerun or
+	// models.CIEventSourceManual.
 	Source string
 	// ID makes the event unique: the approval ID, or the comment object.
 	ID string
+	// ActorPrincipalID and ActorIdentity are the principal that started the
+	// event (the approver or the re-runner), for attribution. The sender of
+	// the event stays the earlier actor of the head, for admission facts.
+	ActorPrincipalID string
+	ActorIdentity    string
+	// WorkflowRef, when set, names the one workflow the eval runs (a manual
+	// run with a workflow). The eval gets it as REACTORCIDE_WORKFLOW_REF.
+	WorkflowRef string
+	// EventID is set by the coordinator when it records the event, so the
+	// starter of a manual run can return it.
+	EventID string
 }
 
 // IssueCommentInfo contains a comment that can carry a CI approval command.
@@ -154,6 +169,9 @@ type PullRequestInfo struct {
 	// repository, for GitHub: OWNER, MEMBER, COLLABORATOR, CONTRIBUTOR,
 	// FIRST_TIME_CONTRIBUTOR, FIRST_TIMER, or NONE.
 	AuthorAssociation string
+	// Draft is true when the pull request is a draft (GitHub draft, GitLab
+	// draft merge request). The draft_prs setting reads it.
+	Draft bool
 
 	// HeadRepository is set only for cross-repository PRs (forks).
 	// When nil, the PR's head branch lives on the same repository as Repository
@@ -255,4 +273,7 @@ type Config struct {
 	Token                  string // API token for status updates
 	BaseURL                string // Base URL for Enterprise instances (optional)
 	AllowInsecureTransport bool   // explicit development-only exception
+	// Transport, when set, is the HTTP transport of the client. A GitHub App
+	// installation client sets it to record rate-limit headers.
+	Transport http.RoundTripper
 }

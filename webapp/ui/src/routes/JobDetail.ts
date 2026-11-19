@@ -2,11 +2,16 @@ import type { PushButton } from '@catalystcommunity/controls'
 import { api } from '~/api/client.ts'
 import type { GetCapabilitiesResponse, GetJobResponse } from '~/api/csilapi/types.gen.ts'
 import { RcPage } from '~/app/page.ts'
+import { jobLinksCard, type JobLinksCard } from '~/components/JobLinks.ts'
+import { jobArtifactsCard, type JobArtifactsCard } from '~/components/JobArtifacts.ts'
+import { jobTestsCard, type JobTestsCard } from '~/components/JobTests.ts'
+import { diagnosisCard, type DiagnosisCard } from '~/components/Diagnoses.ts'
 import { describeError } from '~/components/ManagementPage.ts'
 import { metricsPanel, type MetricsPanel } from '~/components/MetricsPanel.ts'
 import { resourceHistory, type ResourceHistory } from '~/components/ResourceHistory.ts'
+import { ShiftFields, describeShifts } from '~/components/ShiftFields.ts'
 import { ErrorNotice, ResourceView, duration, relativeTime } from '~/components/States.ts'
-import { isTerminal, setStatus, statusBadge } from '~/components/StatusBadge.ts'
+import { failureClassBadge, isTerminal, setFailureClass, setStatus, statusBadge } from '~/components/StatusBadge.ts'
 import { BUFFER_CAPS, type ResourceHandle } from '~/store/index.ts'
 import { eventSocket, topics } from '~/store/events.ts'
 import { useCapabilities, useJob } from '~/store/resources.ts'
@@ -15,6 +20,11 @@ import { h, setAttr, setText, show } from '~/ui/dom.ts'
 import { RcElement, define } from '~/ui/element.ts'
 import { href } from '~/ui/router.ts'
 import './job.css'
+import { OwnerView } from '~/components/Owner.ts'
+import { actorText } from '~/components/Labels.ts'
+import { priorityText } from '~/components/priorityText.ts'
+import { refClassLabels, setRefClasses } from '~/components/RefClasses.ts'
+import { jobImageText } from '~/components/imageText.ts'
 
 type Tab = 'logs' | 'metrics' | 'history'
 type Capability = 'cancelJob' | 'killJob' | 'retryJob'
@@ -40,6 +50,10 @@ export class JobDetailPage extends RcPage {
   #historyTab!: HTMLButtonElement
   #history: ResourceHistory | null = null
   #panels!: HTMLDivElement
+  #links!: JobLinksCard
+  #tests!: JobTestsCard
+  #artifacts!: JobArtifactsCard
+  #diagnoses!: DiagnosisCard
 
   #id(): string {
     return this.route().id ?? ''
@@ -69,6 +83,10 @@ export class JobDetailPage extends RcPage {
     this.#historyTab.addEventListener('click', () => this.#setTab('history'))
     this.#logs = logViewer(this.#id())
     this.#panels = h('div', null, this.#logs)
+    this.#links = jobLinksCard(this.#id())
+    this.#tests = jobTestsCard(this.#id())
+    this.#artifacts = jobArtifactsCard(this.#id())
+    this.#diagnoses = diagnosisCard()
 
     this.append(
       h(
@@ -77,6 +95,10 @@ export class JobDetailPage extends RcPage {
         h('div', { style: { marginBottom: 'var(--space-4)' } }, this.#back),
         this.#actionError.el,
         this.#view.el,
+        this.#links,
+        this.#tests,
+        this.#artifacts,
+        this.#diagnoses,
         h(
           'div',
           { class: 'card' },
@@ -110,9 +132,11 @@ export class JobDetailPage extends RcPage {
     // cancel and retry here and has nothing in the global set; an org admin
     // the same. Until the job has loaded there is no scope to ask about, and
     // no button shows.
+    // A job of a workflow asks about that workflow: the workflow's owners
+    // (workflow roles, owner group) can cancel and retry it too.
     this.#caps = useCapabilities(this, () => {
       const job = this.#job.state().data?.job
-      return job ? { projectId: job.projectId } : undefined
+      return job ? { projectId: job.projectId, workflowId: job.workflowId } : undefined
     })
   }
 
@@ -126,6 +150,13 @@ export class JobDetailPage extends RcPage {
 
     const live = this.#live()
     this.#logs.live = live
+    // Links come with the result: load again when the job finishes.
+    this.#links.setJob(this.#id(), Boolean(job) && !live)
+    // Test results and artifacts arrive with the result too.
+    this.#tests.setJob(this.#id(), Boolean(job) && !live)
+    this.#artifacts.setJob(this.#id(), Boolean(job) && !live)
+    // Diagnosis entries come after a failure: load again on each status.
+    this.#diagnoses.setTarget(job ? { jobId: this.#id() } : undefined, job?.status ?? '')
     if (this.#metrics) this.#metrics.live = live
     setAttr(this.#logsTab, 'aria-selected', String(this.#tab === 'logs'))
     setAttr(this.#metricsTab, 'aria-selected', String(this.#tab === 'metrics'))
@@ -152,6 +183,7 @@ export class JobDetailPage extends RcPage {
   #content(): { node: Node; update(data: GetJobResponse): void } {
     const title = h('h1')
     const badge = statusBadge()
+    const failureBadge = failureClassBadge()
     const exit = h('span', { class: 'meta mono' })
     const description = h('p', { class: 'meta' })
 
@@ -169,9 +201,16 @@ export class JobDetailPage extends RcPage {
         await this.#act(() => api.killJob({ jobId: this.#id() }), 'The job could not be killed.')
       },
     })
+    // A retry can change only the shifts (resources and timeout); it keeps
+    // the authority of this job.
+    const shifts = new ShiftFields('retry')
     const retry: PushButton = button('Retry', {
       small: true,
-      onClick: () => void this.#act(() => api.retryJob({ jobId: this.#id() }), 'The job could not be retried.'),
+      onClick: () =>
+        void this.#act(async () => {
+          await api.retryJob({ jobId: this.#id(), shifts: shifts.value() })
+          shifts.clear()
+        }, 'The job could not be retried.'),
     })
 
     const item = (label: string, cls = ''): { el: HTMLElement; value: HTMLElement } => {
@@ -184,8 +223,21 @@ export class JobDetailPage extends RcPage {
     const updated = item('Updated')
     const queue = item('Queue', 'mono truncate')
     const sourceRef = item('Source ref', 'mono truncate')
-    const image = item('Runner image', 'mono truncate')
+    const image = item('Runner image', 'mono truncate job-image')
+    // The image of the earlier run, when a retry or a re-run resolved the
+    // alias again to a new pin (docs/image-aliases.md "Retry and rerun").
+    const imageRetryOf = item('Retry of image', 'mono truncate job-image-retry-of')
     const workerClass = item('Worker class', 'mono')
+    const retries = item('Automatic retries')
+    const shifted = item('Shifts', 'shift-recorded')
+    const priorityItem = item('Priority', 'job-priority')
+    const refClasses = item('Ref classes')
+    const refClassList = refClassLabels()
+    refClasses.value.append(refClassList)
+    const actorItem = item('Started by')
+    const ownerItem = item('Owner')
+    const owner = new OwnerView()
+    ownerItem.value.append(owner.el)
 
     const failureText = h('pre', { class: 'log-viewer' })
     const failure = h('div', { class: 'card' }, h('h3', { class: 'section-title' }, 'Failure reason'), failureText)
@@ -196,13 +248,14 @@ export class JobDetailPage extends RcPage {
       h(
         'div',
         { class: 'page-header' },
-        h('div', null, h('div', { class: 'row' }, title, badge, exit), description),
+        h('div', null, h('div', { class: 'row' }, title, badge, failureBadge, exit), description),
         h('div', { class: 'row' }, cancel, kill, retry),
       ),
+      shifts.el,
       h(
         'div',
         { class: 'card' },
-        h('dl', { class: 'grid-dl' }, id.el, runtime.el, scheduling.el, updated.el, queue.el, sourceRef.el, image.el, workerClass.el),
+        h('dl', { class: 'grid-dl' }, id.el, runtime.el, scheduling.el, updated.el, queue.el, sourceRef.el, image.el, imageRetryOf.el, workerClass.el, retries.el, shifted.el, priorityItem.el, refClasses.el, actorItem.el, ownerItem.el),
       ),
       failure,
     )
@@ -214,12 +267,14 @@ export class JobDetailPage extends RcPage {
         const live = !isTerminal(job.status)
         setText(title, job.name)
         setStatus(badge, job.status)
+        setFailureClass(failureBadge, job.failureClass, job.failureOwner)
         show(exit, job.exitCode !== undefined)
         setText(exit, job.exitCode !== undefined ? `exit ${job.exitCode}` : '')
         setText(description, job.description || 'No description')
         show(cancel, this.#can('cancelJob') && live)
         show(kill, this.#can('killJob') && live)
         show(retry, this.#can('retryJob') && !live)
+        show(shifts.el, this.#can('retryJob') && !live)
         setText(id.value, job.jobId)
         setText(runtime.value, duration(job.startedAt, job.completedAt))
         setText(scheduling.value, duration(job.schedulingStartedAt, job.startedAt ?? job.completedAt))
@@ -227,10 +282,27 @@ export class JobDetailPage extends RcPage {
         setText(queue.value, job.queueName ?? '')
         show(sourceRef.el, job.sourceRef)
         setText(sourceRef.value, job.sourceRef ?? '')
-        show(image.el, job.runnerImage)
-        setText(image.value, job.runnerImage ?? '')
+        // I2: `alias (ref)` when the job used an image alias, else the ref.
+        const imageText = jobImageText(job)
+        show(image.el, imageText)
+        setText(image.value, imageText)
+        setAttr(image.value, 'title', imageText || null)
+        show(imageRetryOf.el, job.imageRetryOf)
+        setText(imageRetryOf.value, job.imageRetryOf ?? '')
+        setAttr(imageRetryOf.value, 'title', job.imageRetryOf || null)
         show(workerClass.el, job.workerClass)
         setText(workerClass.value, job.workerClass ?? '')
+        show(retries.el, (job.retryCount ?? 0) > 0)
+        setText(retries.value, String(job.retryCount ?? 0))
+        show(shifted.el, job.shifts)
+        setText(shifted.value, describeShifts(job.shifts))
+        // The lane and how the coordinator computed the priority (docs/priority.md).
+        setText(priorityItem.value, priorityText(job.priorityReason, job.priority))
+        setRefClasses(refClassList, job.refClasses)
+        show(actorItem.el, job.actor)
+        setText(actorItem.value, actorText(job.actor))
+        show(ownerItem.el, job.workflowId || job.owner)
+        owner.update(job.owner)
         show(failure, job.lastError)
         setText(failureText, job.lastError ?? '')
       },

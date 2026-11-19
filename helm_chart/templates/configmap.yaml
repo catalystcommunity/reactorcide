@@ -90,3 +90,42 @@ data:
   # REACTORCIDE_LINKKEYS_RP_API_KEY / REACTORCIDE_BOOTSTRAP_ADMIN_TOKEN are
   # secret-bearing and read from {{ include "app.secretName" . }} (or
   # uiAuth.existingSecret) instead — see secret-app.yaml / deployment-app.yaml.
+  {{- /* Settings added in 0.13 (docs/upgrade-0.13.md). An empty value
+  ("" or null) does not set the variable, so the coordinator keeps its code
+  default and the default render does not change. Numbers from a values file
+  are float64 in Helm; convert them so that 268435456 does not render as
+  2.68435456e+08. */}}
+  {{- $optional := list
+    (list "REACTORCIDE_OIDC_ISSUER_URL" (.Values.oidc).issuerUrl)
+    (list "REACTORCIDE_WEBHOOK_RATE_LIMIT_PER_MINUTE" (.Values.rateLimits).webhookPerMinute)
+    (list "REACTORCIDE_WEBHOOK_RATE_LIMIT_BURST" (.Values.rateLimits).webhookBurst)
+    (list "REACTORCIDE_API_RATE_LIMIT_PER_MINUTE" (.Values.rateLimits).apiPerMinute)
+    (list "REACTORCIDE_API_RATE_LIMIT_BURST" (.Values.rateLimits).apiBurst)
+    (list "REACTORCIDE_TRUSTED_PROXY_CIDRS" (.Values.rateLimits).trustedProxyCIDRs)
+    (list "REACTORCIDE_OUTBOUND_EVENTS_ENABLED" (.Values.outboundEvents).enabled)
+    (list "REACTORCIDE_OUTBOUND_EVENTS_ALLOWED_NETWORKS" (.Values.outboundEvents).allowedNetworks)
+    (list "REACTORCIDE_OBSERVABILITY_ENABLED" (.Values.observability).enabled)
+    (list "REACTORCIDE_OBSERVABILITY_INTERVAL_SECONDS" (.Values.observability).intervalSeconds)
+    (list "REACTORCIDE_OBSERVABILITY_ALERT_INTERVAL_SECONDS" (.Values.observability).alertIntervalSeconds)
+    (list "REACTORCIDE_ROLLUP_HOURLY_RETENTION_DAYS" (.Values.observability).rollupHourlyRetentionDays)
+    (list "REACTORCIDE_ROLLUP_DAILY_RETENTION_DAYS" (.Values.observability).rollupDailyRetentionDays)
+    (list "REACTORCIDE_ARTIFACTS_ENABLED" (.Values.artifacts).enabled)
+    (list "REACTORCIDE_ARTIFACT_MAX_FILE_BYTES" (.Values.artifacts).maxFileBytes)
+    (list "REACTORCIDE_ARTIFACT_MAX_JOB_BYTES" (.Values.artifacts).maxJobBytes)
+    (list "REACTORCIDE_ARTIFACT_MAX_FILES" (.Values.artifacts).maxFiles)
+    (list "REACTORCIDE_FLAKY_WINDOW_DAYS" (.Values.artifacts).flakyWindowDays)
+    (list "REACTORCIDE_PROVENANCE_ENABLED" (.Values.provenance).enabled)
+    (list "REACTORCIDE_PROVENANCE_BUILDER_ID" (.Values.provenance).builderId)
+    (list "REACTORCIDE_GROUP_VCS_SYNC_INTERVAL" (.Values.groupVcsSync).interval) }}
+  {{- range $optional }}
+  {{- $value := index . 1 }}
+  {{- if kindIs "float64" $value }}{{ $value = int64 $value }}{{ end }}
+  {{- if and (not (kindIs "invalid" $value)) (ne (toString $value) "") }}
+  {{ index . 0 }}: {{ toString $value | quote }}
+  {{- end }}
+  {{- end }}
+  {{- /* null does not set the variable (shared namespace "standard"); an
+  empty string turns the shared builder cache volume off. */}}
+  {{- if not (kindIs "invalid" (.Values.cache).sharedNamespace) }}
+  REACTORCIDE_CACHE_SHARED_NAMESPACE: {{ toString .Values.cache.sharedNamespace | quote }}
+  {{- end }}

@@ -21,15 +21,17 @@ type JobSpec struct {
 	// Name is a human-readable name for the job
 	Name string `json:"name" yaml:"name"`
 
-	// Command is the full command to execute. Single-line commands are parsed
-	// and split on whitespace. Multiline commands are wrapped with "sh -c" by
-	// default (see CommandPrefix).
+	// Command is the full command to execute. Every command, single-line or
+	// multi-line, goes through the shell prefix (see CommandPrefix), unless
+	// it already starts with a shell invocation.
 	Command string `json:"command" yaml:"command"`
 
-	// CommandPrefix overrides the default shell wrapper for multiline
-	// commands. Default is "sh -c". Examples: "bash -c", "zsh -c", "/bin/ash
-	// -c" Only applies to multiline commands that don't already start with a
-	// shell invocation.
+	// CommandPrefix overrides the default shell wrapper of the command.
+	// Default: REACTORCIDE_JOB_SHELLCMD from Environment, else "sh -c", or
+	// WindowsShellPrefix for a job with the characteristic os: windows.
+	// Examples: "bash -c", "zsh -c", "/bin/ash -c". "none" runs the command
+	// without a shell (an image without /bin/sh). Does not apply to a
+	// command that already starts with a shell invocation.
 	CommandPrefix string `json:"command_prefix" yaml:"command_prefix"`
 
 	// Image is the container image to use (defaults to DefaultRunnerImage)
@@ -121,6 +123,26 @@ type RunAsSpec struct {
 	// User accepts "runner", "root", or numeric "uid[:gid]". "host" is
 	// intentionally run-local-only and is not accepted by deployed workers.
 	User string `json:"user" yaml:"user"`
+
+	// Administrator applies only to Windows VM jobs. When the guest image
+	// has no job account, the in-guest daemon creates it, and this value
+	// says whether the new account goes in Administrators. Unset (nil)
+	// means true. The daemon does not change an account that the image
+	// already has. Container backends ignore this value.
+	Administrator *bool `json:"administrator,omitempty" yaml:"administrator,omitempty"`
+}
+
+// copyRunAsSpec returns a deep copy of spec, or nil when spec is nil.
+func copyRunAsSpec(spec *RunAsSpec) *RunAsSpec {
+	if spec == nil {
+		return nil
+	}
+	out := &RunAsSpec{User: spec.User}
+	if spec.Administrator != nil {
+		v := *spec.Administrator
+		out.Administrator = &v
+	}
+	return out
 }
 
 // RunLocalSpec holds run-local-only overrides. The worker never reads this;
@@ -322,12 +344,19 @@ func ContainerPathInsideJob(path string) string {
 	return containerPathInsideJob(path)
 }
 
+// ShellPrefix returns the shell prefix of the job command (see
+// ResolveShellPrefix).
+func (s *JobSpec) ShellPrefix() string {
+	return ResolveShellPrefix(s.CommandPrefix, s.Environment[ShellPrefixEnvVar], OSFromCharacteristics(s.Characteristics))
+}
+
 // ToJobConfig converts a JobSpec to a JobConfig for execution workspaceDir is
 // the host directory to mount into the container jobID is a unique identifier
 // for this job execution
 func (s *JobSpec) ToJobConfig(workspaceDir, jobID, queueName string) *JobConfig {
-	// Parse command into args, using CommandPrefix for multiline commands
-	command := ParseCommandWithPrefix(s.Command, s.CommandPrefix)
+	// Parse command into args. The prefix is command_prefix, else
+	// REACTORCIDE_JOB_SHELLCMD, else the default for the job os.
+	command := ParseCommandWithPrefix(s.Command, s.ShellPrefix())
 
 	// Build environment
 	env := make(map[string]string)
@@ -351,8 +380,13 @@ func (s *JobSpec) ToJobConfig(workspaceDir, jobID, queueName string) *JobConfig 
 		workingDir = s.WorkingDir
 	}
 	runAsUser := ""
+	var runAsAdministrator *bool
 	if s.RunAs != nil {
 		runAsUser, _ = NormalizeRunAsUser(s.RunAs.User)
+		if s.RunAs.Administrator != nil {
+			v := *s.RunAs.Administrator
+			runAsAdministrator = &v
+		}
 	}
 
 	// Add triggers file path
@@ -380,9 +414,60 @@ func (s *JobSpec) ToJobConfig(workspaceDir, jobID, queueName string) *JobConfig 
 		JobID:            jobID,
 		QueueName:        queueName,
 		RunAsUser:        runAsUser,
+
+		RunAsAdministrator: runAsAdministrator,
 	}
 
 	return config
+}
+
+// DefaultShellPrefix is the shell prefix of a job that does not set one
+// and that does not run on Windows.
+const DefaultShellPrefix = "sh -c"
+
+// WindowsShellPrefix is the shell prefix of a Windows job (characteristic
+// os: windows) that does not set one. Windows guests have no /bin/sh.
+const WindowsShellPrefix = "powershell.exe -NoProfile -NonInteractive -Command"
+
+// DirectCommandPrefix is the command_prefix / REACTORCIDE_JOB_SHELLCMD
+// value that runs the command without a shell: the worker splits the
+// command into words and runs the first word. Use it for an image that
+// has no shell (for example a distroless image).
+const DirectCommandPrefix = "none"
+
+// ShellPrefixEnvVar is the job environment variable that sets the shell
+// prefix of the job command.
+const ShellPrefixEnvVar = "REACTORCIDE_JOB_SHELLCMD"
+
+// DefaultShellPrefixForOS returns the shell prefix of a job with the os
+// characteristic osName when the job sets no prefix.
+func DefaultShellPrefixForOS(osName string) string {
+	if strings.EqualFold(strings.TrimSpace(osName), "windows") {
+		return WindowsShellPrefix
+	}
+	return DefaultShellPrefix
+}
+
+// ResolveShellPrefix returns the shell prefix of a job: the job spec's
+// command_prefix, else the job environment's REACTORCIDE_JOB_SHELLCMD,
+// else the default for the job's os characteristic.
+func ResolveShellPrefix(commandPrefix, envPrefix, osName string) string {
+	if p := strings.TrimSpace(commandPrefix); p != "" {
+		return p
+	}
+	if p := strings.TrimSpace(envPrefix); p != "" {
+		return p
+	}
+	return DefaultShellPrefixForOS(osName)
+}
+
+// OSFromCharacteristics returns the os characteristic of a raw job
+// characteristic map, or "" when it has none.
+func OSFromCharacteristics(chars map[string]interface{}) string {
+	if v, ok := chars["os"].(string); ok {
+		return v
+	}
+	return ""
 }
 
 // shellPrefixes are command prefixes that indicate the command is already
@@ -397,89 +482,103 @@ var shellPrefixes = []string{
 	"/usr/bin/sh -c",
 	"/usr/bin/bash -c",
 	"/usr/bin/zsh -c",
+	"powershell ",
+	"powershell.exe ",
+	"pwsh ",
+	"pwsh.exe ",
+	"cmd /c ",
+	"cmd.exe /c ",
 }
 
-// ParseCommandWithPrefix converts a command string to []string for container
-// execution. For multiline commands, wraps with the specified prefix (default
-// "sh -c"). For single-line commands, splits on whitespace respecting basic
-// quoting.
-func ParseCommandWithPrefix(cmd, prefix string) []string {
-	cmd = strings.TrimSpace(cmd)
-
-	// Check if command is multiline
-	if strings.Contains(cmd, "\n") {
-		// Check if command already starts with a shell invocation
-		cmdLower := strings.ToLower(cmd)
-		for _, shellPrefix := range shellPrefixes {
-			if strings.HasPrefix(cmdLower, shellPrefix) {
-				// Already has shell prefix, parse normally (this handles
-				// cases like "sh -c '\n script \n'")
-				return parseSimpleCommand(cmd)
-			}
-		}
-
-		// Wrap with shell prefix
-		if prefix == "" {
-			prefix = "sh -c"
-		}
-
-		// Parse the prefix to get shell and flag
-		prefixParts := strings.SplitN(prefix, " ", 2)
-		if len(prefixParts) == 2 {
-			return []string{prefixParts[0], prefixParts[1], cmd}
-		}
-		// If prefix doesn't have a flag (unusual), just use sh -c
-		return []string{"sh", "-c", cmd}
-	}
-
-	// Single-line command with environment variable references needs shell
-	// expansion. Without a shell, $VAR is passed as a literal string by K8s
-	// and container runtimes.
-	if containsEnvVarRef(cmd) {
-		// Check if command already starts with a shell invocation
-		cmdLower := strings.ToLower(cmd)
-		alreadyShell := false
-		for _, shellPrefix := range shellPrefixes {
-			if strings.HasPrefix(cmdLower, shellPrefix) {
-				alreadyShell = true
-				break
-			}
-		}
-		if !alreadyShell {
-			if prefix == "" {
-				prefix = "sh -c"
-			}
-			prefixParts := strings.SplitN(prefix, " ", 2)
-			if len(prefixParts) == 2 {
-				return []string{prefixParts[0], prefixParts[1], cmd}
-			}
-			return []string{"sh", "-c", cmd}
-		}
-	}
-
-	// Single-line command: parse normally
-	return parseSimpleCommand(cmd)
-}
-
-// ParseCommand splits a command string for container execution. Uses default
-// "sh -c" prefix for multiline commands.
-func ParseCommand(cmd string) []string {
-	return ParseCommandWithPrefix(cmd, "")
-}
-
-// containsEnvVarRef checks if a command string contains shell environment
-// variable references like $VAR or ${VAR} that need shell expansion.
-func containsEnvVarRef(cmd string) bool {
-	for i := 0; i < len(cmd)-1; i++ {
-		if cmd[i] == '$' {
-			next := cmd[i+1]
-			// $LETTER or $_ or ${ are env var references
-			if next == '{' || next == '_' || (next >= 'A' && next <= 'Z') || (next >= 'a' && next <= 'z') {
-				return true
-			}
+// startsWithShell reports whether cmd already starts with a shell
+// invocation (see shellPrefixes).
+func startsWithShell(cmd string) bool {
+	cmdLower := strings.ToLower(cmd)
+	for _, shellPrefix := range shellPrefixes {
+		if strings.HasPrefix(cmdLower, shellPrefix) {
+			return true
 		}
 	}
 	return false
+}
+
+// ParseCommandWithPrefix converts a command string to []string for container
+// execution. Every command goes through the shell prefix (default
+// DefaultShellPrefix), single-line and multi-line, so shell syntax such as
+// `;`, `|`, `&&`, and `$VAR` works in each one. Two exceptions:
+//   - A command that already starts with a shell invocation (`sh -c '...'`,
+//     `bash -c`, `powershell.exe ...`, see shellPrefixes) is split into
+//     words and not wrapped again.
+//   - The prefix DirectCommandPrefix ("none") splits the command into words
+//     and runs it without a shell, for an image that has no shell.
+func ParseCommandWithPrefix(cmd, prefix string) []string {
+	cmd = strings.TrimSpace(cmd)
+	prefix = strings.TrimSpace(prefix)
+
+	if strings.EqualFold(prefix, DirectCommandPrefix) || startsWithShell(cmd) {
+		return parseSimpleCommand(cmd)
+	}
+	if prefix == "" {
+		prefix = DefaultShellPrefix
+	}
+	return wrapWithShellPrefix(prefix, cmd)
+}
+
+// wrapWithShellPrefix splits prefix (REACTORCIDE_JOB_SHELLCMD or a job
+// spec's command_prefix) into all of its whitespace-separated words and
+// appends cmd as the last argument. A prefix such as "powershell.exe
+// -NoProfile -NonInteractive -Command" thus gives each flag as its own
+// argument. A prefix with fewer than two words (no flag) falls back to
+// "sh -c".
+func wrapWithShellPrefix(prefix, cmd string) []string {
+	parts := splitShellPrefix(prefix)
+	if len(parts) < 2 {
+		return []string{"sh", "-c", cmd}
+	}
+	return append(parts, cmd)
+}
+
+// splitShellPrefix splits a shell prefix on whitespace. Single or double
+// quotes group a word that has spaces ("C:/Program Files/.../pwsh.exe").
+// A backslash is a literal character, NOT an escape, so a Windows path
+// such as C:\Windows\System32\...\powershell.exe stays intact.
+func splitShellPrefix(prefix string) []string {
+	var words []string
+	var current strings.Builder
+	var quote rune
+	inWord := false
+	for _, r := range prefix {
+		switch {
+		case quote != 0:
+			if r == quote {
+				quote = 0
+			} else {
+				current.WriteRune(r)
+			}
+		case r == '"' || r == '\'':
+			quote = r
+			inWord = true
+		case r == ' ' || r == '\t' || r == '\n' || r == '\r':
+			if inWord {
+				words = append(words, current.String())
+				current.Reset()
+				inWord = false
+			}
+		default:
+			current.WriteRune(r)
+			inWord = true
+		}
+	}
+	if inWord {
+		words = append(words, current.String())
+	}
+	return words
+}
+
+// ParseCommand converts a command string for container execution with the
+// default prefix DefaultShellPrefix (see ParseCommandWithPrefix).
+func ParseCommand(cmd string) []string {
+	return ParseCommandWithPrefix(cmd, "")
 }
 
 // parseSimpleCommand splits a single-line command on whitespace, respecting
@@ -765,11 +864,7 @@ func MergeJobSpecs(base *JobSpec, overlays []*JobSpec, overlayFiles []string) (*
 			User:     base.RunLocal.User,
 		}
 	}
-	if base.RunAs != nil {
-		result.RunAs = &RunAsSpec{
-			User: base.RunAs.User,
-		}
-	}
+	result.RunAs = copyRunAsSpec(base.RunAs)
 
 	var secretOverrides []SecretOverride
 
@@ -818,9 +913,21 @@ func MergeJobSpecs(base *JobSpec, overlays []*JobSpec, overlayFiles []string) (*
 			result.DisableRunLocal = true
 		}
 		if overlay.RunAs != nil {
-			result.RunAs = &RunAsSpec{
-				User: overlay.RunAs.User,
+			// run_as merges field by field: an overlay changes only the
+			// fields that it sets.
+			merged := &RunAsSpec{User: overlay.RunAs.User}
+			if merged.User == "" && result.RunAs != nil {
+				merged.User = result.RunAs.User
 			}
+			if result.RunAs != nil && result.RunAs.Administrator != nil {
+				v := *result.RunAs.Administrator
+				merged.Administrator = &v
+			}
+			if overlay.RunAs.Administrator != nil {
+				v := *overlay.RunAs.Administrator
+				merged.Administrator = &v
+			}
+			result.RunAs = merged
 		}
 
 		// Merge environment (overlay values take precedence)

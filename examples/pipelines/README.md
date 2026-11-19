@@ -4,7 +4,7 @@ This directory contains example pipeline scripts demonstrating various workflow 
 
 ## Overview
 
-These examples show how to use the `runnerlib.workflow` module to create multi-step CI/CD pipelines where jobs can trigger follow-up jobs based on conditions, results, and state.
+These examples show how to use the runnerlib workflow module (`src/workflow.py`) to create multi-step CI/CD pipelines where jobs can trigger follow-up jobs based on conditions, results, and state.
 
 ## Examples
 
@@ -34,16 +34,15 @@ These examples show how to use the `runnerlib.workflow` module to create multi-s
 - Analyzes changed files to determine what needs to run
 - Triggers test and lint jobs in parallel
 - After both complete, triggers build job
-- If on main branch and no deploy running, triggers deploy
+- If on main branch, triggers deploy (it waits for build)
 
 **Key concepts**:
 - Parallel job execution
 - Job dependencies (`depends_on`)
 - Change detection with `changed_files()`
-- State checking with `is_job_running()`
 - Conditional job triggering
 
-**Use case**: Production pipeline with parallel validation, artifact building, and guarded deploys
+**Use case**: Production pipeline with parallel validation, artifact building, and a deploy from main
 
 ---
 
@@ -73,7 +72,7 @@ These examples show how to use the `runnerlib.workflow` module to create multi-s
 You can run these scripts locally to see what jobs would be triggered:
 
 ```bash
-cd /home/todhansmann/repos/catalystcommunity/reactorcide
+cd /path/to/reactorcide
 export REACTORCIDE_GIT_BRANCH=main
 export REACTORCIDE_GIT_COMMIT=$(git rev-parse HEAD)
 export REACTORCIDE_GIT_REF=refs/heads/main
@@ -81,14 +80,31 @@ export REACTORCIDE_GIT_REF=refs/heads/main
 python3 examples/pipelines/simple_test_and_deploy.py
 ```
 
-This will show what jobs would be triggered and create `/job/triggers.json` (you'll need to create the `/job` directory first or modify the script).
+The script shows the jobs that it triggers and writes `/job/triggers.json`.
+Create the `/job` directory first, or change the script.
+
+`ctx.branch`, `ctx.commit`, and `ctx.ref` come from the job environment:
+
+| Property | Push | Pull request | Tag |
+| --- | --- | --- | --- |
+| `ctx.branch` | `REACTORCIDE_BRANCH` | the head branch (`REACTORCIDE_HEAD_REF`, then `REACTORCIDE_PR_REF`) | `None` |
+| `ctx.commit` | `REACTORCIDE_SHA` | `REACTORCIDE_SHA` | `REACTORCIDE_SHA` |
+| `ctx.ref` | `refs/heads/<branch>` | `refs/heads/<head branch>` | `refs/tags/<tag>` |
+
+For a pull request, `ctx.branch` is the head branch, not the target branch.
+A pull request into `main` does not give `main`. The head branch can be the
+branch of a fork.
+
+`REACTORCIDE_GIT_BRANCH`, `REACTORCIDE_GIT_COMMIT`, and `REACTORCIDE_GIT_REF`
+replace these values when they are set. Use them for a local run, as in the
+example above.
 
 ### Via Runnerlib
 
 Run as a complete job with source checkout:
 
 ```bash
-python -m runnerlib.cli run \
+runnerlib run \
     --source-type git \
     --source-url https://github.com/user/repo.git \
     --source-ref main \
@@ -103,8 +119,8 @@ python -m runnerlib.cli run \
 Submit as a job through the API (requires running Reactorcide system):
 
 ```bash
-curl -X POST http://coordinator:8080/api/v1/jobs \
-  -H "Authorization: Bearer YOUR_TOKEN" \
+curl -X POST http://coordinator:6080/api/v1/jobs \
+  -H "Authorization: Bearer $(cat ~/.config/reactorcide/api-token)" \
   -H "Content-Type: application/json" \
   -d '{
     "name": "ingest-pipeline",
@@ -114,7 +130,7 @@ curl -X POST http://coordinator:8080/api/v1/jobs \
     "ci_source_type": "git",
     "ci_source_url": "https://github.com/user/repo.git",
     "ci_source_ref": "main",
-    "container_image": "reactorcide/runner:latest",
+    "runner_image": "containers.catalystsquad.com/public/reactorcide/runnerbase:dev",
     "job_command": "python /job/ci/examples/pipelines/simple_test_and_deploy.py"
   }'
 ```
@@ -122,6 +138,10 @@ curl -X POST http://coordinator:8080/api/v1/jobs \
 ## Creating Your Own Pipelines
 
 ### Basic Structure
+
+In the runner image, the module is `src.workflow`. Use
+`from src.workflow import ...` there. The examples below use the short form
+`from workflow import ...`, which needs `runnerlib/src` on `sys.path`.
 
 ```python
 #!/usr/bin/env python3
@@ -185,11 +205,6 @@ if __name__ == "__main__":
 
 - `git_info()` - Get branch, commit, tag, remote URL
 - `changed_files(from_ref, to_ref)` - Get list of changed files
-
-### State Checking
-
-- `is_job_running(job_name)` - Check if a job is currently running
-- `get_job_result(job_name)` - Get result of a previous job
 
 ### Context Manager
 

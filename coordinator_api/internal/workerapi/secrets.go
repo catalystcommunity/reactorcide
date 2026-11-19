@@ -9,6 +9,7 @@ import (
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store/models"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/worker"
+	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/workerapi/csilapi"
 )
 
 // defaultSecretsProviderForOrg builds a secrets.Provider scoped to orgID,
@@ -49,6 +50,14 @@ type resolvedLeaseSecrets struct {
 	Env          map[string]string
 	Secrets      map[string]string
 	SecretValues []string
+	// ProxyGrants are the secrets of proxy-delivered grants (egress.go):
+	// the environment has their placeholders, and the real values go only
+	// to Lease.egress.grants.
+	ProxyGrants []csilapi.EgressGrant
+	// Egress is the egress policy of the lease (nil: egress control off).
+	Egress *csilapi.EgressLease
+	// Cache is the cache decision of the lease (build_settings.go).
+	Cache *csilapi.CacheLease
 }
 
 // resolveJobSecrets resolves every ${secret:path:key} reference in env
@@ -85,11 +94,17 @@ func (d *Deps) resolveJobSecrets(ctx context.Context, job *models.Job, env map[s
 		return nil, fmt.Errorf("job contains secret references but secrets are not configured")
 	}
 
+	delivery := newProxyDelivery(ctx, d.Store, job)
 	getSecret := func(path, key string) (string, error) {
 		if err := worker.AuthorizeSecretAccess(ctx, d.Store, job, path, key); err != nil {
 			return "", err
 		}
-		return provider.Get(ctx, path, key)
+		value, err := provider.Get(ctx, path, key)
+		if err != nil {
+			return "", err
+		}
+		// A proxy-delivered grant puts a placeholder in the environment.
+		return delivery.deliver(path, key, value)
 	}
 
 	result, err := worker.ResolveSecretsInEnvFull(env, getSecret)
@@ -105,7 +120,8 @@ func (d *Deps) resolveJobSecrets(ctx context.Context, job *models.Job, env map[s
 	out := &resolvedLeaseSecrets{
 		Env:          make(map[string]string, len(result.Resolved)),
 		Secrets:      make(map[string]string, len(secretNames)),
-		SecretValues: result.SecretValues,
+		SecretValues: delivery.maskValues(result.SecretValues),
+		ProxyGrants:  delivery.out,
 	}
 	for k, v := range result.Resolved {
 		if secretNames[k] {

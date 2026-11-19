@@ -107,6 +107,168 @@ func NewReactorcideUiClient(transport Transport) *ReactorcideUiClient {
 	return &ReactorcideUiClient{transport: transport}
 }
 
+func (c *ReactorcideUiClient) ListPriorityLanes(ctx context.Context, req ListPriorityLanesRequest) (ListPriorityLanesResponse, error) {
+	var csilZero ListPriorityLanesResponse
+	csilResp, csilErr := c.transport.Call(ctx, "ReactorcideUi", "list-priority-lanes", EncodeListPriorityLanesRequest(req))
+	if csilErr != nil {
+		return csilZero, csilErr
+	}
+	return DecodeListPriorityLanesResponse(csilResp)
+}
+
+func (c *ReactorcideUiClient) PutPriorityLane(ctx context.Context, req PutPriorityLaneRequest) (PutPriorityLaneResponse, error) {
+	var csilZero PutPriorityLaneResponse
+	csilResp, csilErr := c.transport.Call(ctx, "ReactorcideUi", "put-priority-lane", EncodePutPriorityLaneRequest(req))
+	if csilErr != nil {
+		return csilZero, csilErr
+	}
+	return DecodePutPriorityLaneResponse(csilResp)
+}
+
+func (c *ReactorcideUiClient) DeletePriorityLane(ctx context.Context, req DeletePriorityLaneRequest) (DeletePriorityLaneResponse, error) {
+	var csilZero DeletePriorityLaneResponse
+	csilResp, csilErr := c.transport.Call(ctx, "ReactorcideUi", "delete-priority-lane", EncodeDeletePriorityLaneRequest(req))
+	if csilErr != nil {
+		return csilZero, csilErr
+	}
+	return DecodeDeletePriorityLaneResponse(csilResp)
+}
+
+func (c *ReactorcideUiClient) ExplainPriority(ctx context.Context, req ExplainPriorityRequest) (ExplainPriorityResponse, error) {
+	var csilZero ExplainPriorityResponse
+	csilResp, csilErr := c.transport.Call(ctx, "ReactorcideUi", "explain-priority", EncodeExplainPriorityRequest(req))
+	if csilErr != nil {
+		return csilZero, csilErr
+	}
+	return DecodeExplainPriorityResponse(csilResp)
+}
+
+func (c *ReactorcideUiClient) SetGroupPriorityShift(ctx context.Context, req SetGroupPriorityShiftRequest) (SetGroupPriorityShiftResponse, error) {
+	var csilZero SetGroupPriorityShiftResponse
+	csilResp, csilErr := c.transport.Call(ctx, "ReactorcideUi", "set-group-priority-shift", EncodeSetGroupPriorityShiftRequest(req))
+	if csilErr != nil {
+		return csilZero, csilErr
+	}
+	return DecodeSetGroupPriorityShiftResponse(csilResp)
+}
+
+func (c *ReactorcideUiClient) GetReportingSettings(ctx context.Context, req GetReportingSettingsRequest) (GetReportingSettingsResponse, error) {
+	var csilZero GetReportingSettingsResponse
+	csilResp, csilErr := c.transport.Call(ctx, "ReactorcideUi", "get-reporting-settings", EncodeGetReportingSettingsRequest(req))
+	if csilErr != nil {
+		return csilZero, csilErr
+	}
+	return DecodeGetReportingSettingsResponse(csilResp)
+}
+
+func (c *ReactorcideUiClient) UpdateReportingSettings(ctx context.Context, req UpdateReportingSettingsRequest) (GetReportingSettingsResponse, error) {
+	var csilZero GetReportingSettingsResponse
+	csilResp, csilErr := c.transport.Call(ctx, "ReactorcideUi", "update-reporting-settings", EncodeUpdateReportingSettingsRequest(req))
+	if csilErr != nil {
+		return csilZero, csilErr
+	}
+	return DecodeGetReportingSettingsResponse(csilResp)
+}
+
+func (c *ReactorcideUiClient) GetAgreementReport(ctx context.Context, req GetAgreementReportRequest) (GetAgreementReportResponse, error) {
+	var csilZero GetAgreementReportResponse
+	csilResp, csilErr := c.transport.Call(ctx, "ReactorcideUi", "get-agreement-report", EncodeGetAgreementReportRequest(req))
+	if csilErr != nil {
+		return csilZero, csilErr
+	}
+	return DecodeGetAgreementReportResponse(csilResp)
+}
+
+func (c *ReactorcideUiClient) ListPathAcceptances(ctx context.Context, req ListPathAcceptancesRequest) (ListPathAcceptancesResponse, error) {
+	var csilZero ListPathAcceptancesResponse
+	csilResp, csilErr := c.transport.Call(ctx, "ReactorcideUi", "list-path-acceptances", EncodeListPathAcceptancesRequest(req))
+	if csilErr != nil {
+		return csilZero, csilErr
+	}
+	return DecodeListPathAcceptancesResponse(csilResp)
+}
+
+func (c *ReactorcideUiClient) RequestPathAcceptance(ctx context.Context, req RequestPathAcceptanceRequest) (PathAcceptanceResponse, error) {
+	var csilZero PathAcceptanceResponse
+	csilResp, csilErr := c.transport.Call(ctx, "ReactorcideUi", "request-path-acceptance", EncodeRequestPathAcceptanceRequest(req))
+	if csilErr != nil {
+		return csilZero, csilErr
+	}
+	return DecodePathAcceptanceResponse(csilResp)
+}
+
+func (c *ReactorcideUiClient) DecidePathAcceptance(ctx context.Context, req DecidePathAcceptanceRequest) (PathAcceptanceResponse, error) {
+	var csilZero PathAcceptanceResponse
+	csilResp, csilErr := c.transport.Call(ctx, "ReactorcideUi", "decide-path-acceptance", EncodeDecidePathAcceptanceRequest(req))
+	if csilErr != nil {
+		return csilZero, csilErr
+	}
+	return DecodePathAcceptanceResponse(csilResp)
+}
+
+func (c *ReactorcideUiClient) GetRequiredSet(ctx context.Context, req GetRequiredSetRequest) (GetRequiredSetResponse, error) {
+	var csilZero GetRequiredSetResponse
+	csilResp, csilErr := c.transport.Call(ctx, "ReactorcideUi", "get-required-set", EncodeGetRequiredSetRequest(req))
+	if csilErr != nil {
+		return csilZero, csilErr
+	}
+	return DecodeGetRequiredSetResponse(csilResp)
+}
+
+func (c *ReactorcideUiClient) SetRequiredSetEnabled(ctx context.Context, req SetRequiredSetEnabledRequest) (SetRequiredSetEnabledResponse, error) {
+	var csilZero SetRequiredSetEnabledResponse
+	csilResp, csilErr := c.transport.Call(ctx, "ReactorcideUi", "set-required-set-enabled", EncodeSetRequiredSetEnabledRequest(req))
+	if csilErr != nil {
+		return csilZero, csilErr
+	}
+	return DecodeSetRequiredSetEnabledResponse(csilResp)
+}
+
+func (c *ReactorcideUiClient) SetRequiredSetApprovers(ctx context.Context, req SetRequiredSetApproversRequest) (GetRequiredSetResponse, error) {
+	var csilZero GetRequiredSetResponse
+	csilResp, csilErr := c.transport.Call(ctx, "ReactorcideUi", "set-required-set-approvers", EncodeSetRequiredSetApproversRequest(req))
+	if csilErr != nil {
+		return csilZero, csilErr
+	}
+	return DecodeGetRequiredSetResponse(csilResp)
+}
+
+func (c *ReactorcideUiClient) ProposeRequiredSetChange(ctx context.Context, req ProposeRequiredSetChangeRequest) (ProposeRequiredSetChangeResponse, error) {
+	var csilZero ProposeRequiredSetChangeResponse
+	csilResp, csilErr := c.transport.Call(ctx, "ReactorcideUi", "propose-required-set-change", EncodeProposeRequiredSetChangeRequest(req))
+	if csilErr != nil {
+		return csilZero, csilErr
+	}
+	return DecodeProposeRequiredSetChangeResponse(csilResp)
+}
+
+func (c *ReactorcideUiClient) DecideRequiredSetProposal(ctx context.Context, req DecideRequiredSetProposalRequest) (DecideRequiredSetProposalResponse, error) {
+	var csilZero DecideRequiredSetProposalResponse
+	csilResp, csilErr := c.transport.Call(ctx, "ReactorcideUi", "decide-required-set-proposal", EncodeDecideRequiredSetProposalRequest(req))
+	if csilErr != nil {
+		return csilZero, csilErr
+	}
+	return DecodeDecideRequiredSetProposalResponse(csilResp)
+}
+
+func (c *ReactorcideUiClient) QuarantineRequiredWorkflow(ctx context.Context, req QuarantineRequiredWorkflowRequest) (QuarantineRequiredWorkflowResponse, error) {
+	var csilZero QuarantineRequiredWorkflowResponse
+	csilResp, csilErr := c.transport.Call(ctx, "ReactorcideUi", "quarantine-required-workflow", EncodeQuarantineRequiredWorkflowRequest(req))
+	if csilErr != nil {
+		return csilZero, csilErr
+	}
+	return DecodeQuarantineRequiredWorkflowResponse(csilResp)
+}
+
+func (c *ReactorcideUiClient) UnquarantineRequiredWorkflow(ctx context.Context, req UnquarantineRequiredWorkflowRequest) (UnquarantineRequiredWorkflowResponse, error) {
+	var csilZero UnquarantineRequiredWorkflowResponse
+	csilResp, csilErr := c.transport.Call(ctx, "ReactorcideUi", "unquarantine-required-workflow", EncodeUnquarantineRequiredWorkflowRequest(req))
+	if csilErr != nil {
+		return csilZero, csilErr
+	}
+	return DecodeUnquarantineRequiredWorkflowResponse(csilResp)
+}
+
 func (c *ReactorcideUiClient) GetCapabilities(ctx context.Context, req GetCapabilitiesRequest) (GetCapabilitiesResponse, error) {
 	var csilZero GetCapabilitiesResponse
 	csilResp, csilErr := c.transport.Call(ctx, "ReactorcideUi", "get-capabilities", EncodeGetCapabilitiesRequest(req))
@@ -114,6 +276,240 @@ func (c *ReactorcideUiClient) GetCapabilities(ctx context.Context, req GetCapabi
 		return csilZero, csilErr
 	}
 	return DecodeGetCapabilitiesResponse(csilResp)
+}
+
+func (c *ReactorcideUiClient) ListEnvDefaults(ctx context.Context, req ListEnvDefaultsRequest) (ListEnvDefaultsResponse, error) {
+	var csilZero ListEnvDefaultsResponse
+	csilResp, csilErr := c.transport.Call(ctx, "ReactorcideUi", "list-env-defaults", EncodeListEnvDefaultsRequest(req))
+	if csilErr != nil {
+		return csilZero, csilErr
+	}
+	return DecodeListEnvDefaultsResponse(csilResp)
+}
+
+func (c *ReactorcideUiClient) PutEnvDefault(ctx context.Context, req PutEnvDefaultRequest) (PutEnvDefaultResponse, error) {
+	var csilZero PutEnvDefaultResponse
+	csilResp, csilErr := c.transport.Call(ctx, "ReactorcideUi", "put-env-default", EncodePutEnvDefaultRequest(req))
+	if csilErr != nil {
+		return csilZero, csilErr
+	}
+	return DecodePutEnvDefaultResponse(csilResp)
+}
+
+func (c *ReactorcideUiClient) DeleteEnvDefault(ctx context.Context, req DeleteEnvDefaultRequest) (DeleteEnvDefaultResponse, error) {
+	var csilZero DeleteEnvDefaultResponse
+	csilResp, csilErr := c.transport.Call(ctx, "ReactorcideUi", "delete-env-default", EncodeDeleteEnvDefaultRequest(req))
+	if csilErr != nil {
+		return csilZero, csilErr
+	}
+	return DecodeDeleteEnvDefaultResponse(csilResp)
+}
+
+func (c *ReactorcideUiClient) GetImagePolicy(ctx context.Context, req GetImagePolicyRequest) (GetImagePolicyResponse, error) {
+	var csilZero GetImagePolicyResponse
+	csilResp, csilErr := c.transport.Call(ctx, "ReactorcideUi", "get-image-policy", EncodeGetImagePolicyRequest(req))
+	if csilErr != nil {
+		return csilZero, csilErr
+	}
+	return DecodeGetImagePolicyResponse(csilResp)
+}
+
+func (c *ReactorcideUiClient) PutImagePolicy(ctx context.Context, req PutImagePolicyRequest) (PutImagePolicyResponse, error) {
+	var csilZero PutImagePolicyResponse
+	csilResp, csilErr := c.transport.Call(ctx, "ReactorcideUi", "put-image-policy", EncodePutImagePolicyRequest(req))
+	if csilErr != nil {
+		return csilZero, csilErr
+	}
+	return DecodePutImagePolicyResponse(csilResp)
+}
+
+func (c *ReactorcideUiClient) ListImageAliases(ctx context.Context, req ListImageAliasesRequest) (ListImageAliasesResponse, error) {
+	var csilZero ListImageAliasesResponse
+	csilResp, csilErr := c.transport.Call(ctx, "ReactorcideUi", "list-image-aliases", EncodeListImageAliasesRequest(req))
+	if csilErr != nil {
+		return csilZero, csilErr
+	}
+	return DecodeListImageAliasesResponse(csilResp)
+}
+
+func (c *ReactorcideUiClient) GetImageAlias(ctx context.Context, req GetImageAliasRequest) (GetImageAliasResponse, error) {
+	var csilZero GetImageAliasResponse
+	csilResp, csilErr := c.transport.Call(ctx, "ReactorcideUi", "get-image-alias", EncodeGetImageAliasRequest(req))
+	if csilErr != nil {
+		return csilZero, csilErr
+	}
+	return DecodeGetImageAliasResponse(csilResp)
+}
+
+func (c *ReactorcideUiClient) SetImageAlias(ctx context.Context, req SetImageAliasRequest) (SetImageAliasResponse, error) {
+	var csilZero SetImageAliasResponse
+	csilResp, csilErr := c.transport.Call(ctx, "ReactorcideUi", "set-image-alias", EncodeSetImageAliasRequest(req))
+	if csilErr != nil {
+		return csilZero, csilErr
+	}
+	return DecodeSetImageAliasResponse(csilResp)
+}
+
+func (c *ReactorcideUiClient) DeleteImageAlias(ctx context.Context, req DeleteImageAliasRequest) (DeleteImageAliasResponse, error) {
+	var csilZero DeleteImageAliasResponse
+	csilResp, csilErr := c.transport.Call(ctx, "ReactorcideUi", "delete-image-alias", EncodeDeleteImageAliasRequest(req))
+	if csilErr != nil {
+		return csilZero, csilErr
+	}
+	return DecodeDeleteImageAliasResponse(csilResp)
+}
+
+func (c *ReactorcideUiClient) GetImageRolloutStatus(ctx context.Context, req GetImageRolloutStatusRequest) (GetImageRolloutStatusResponse, error) {
+	var csilZero GetImageRolloutStatusResponse
+	csilResp, csilErr := c.transport.Call(ctx, "ReactorcideUi", "get-image-rollout-status", EncodeGetImageRolloutStatusRequest(req))
+	if csilErr != nil {
+		return csilZero, csilErr
+	}
+	return DecodeGetImageRolloutStatusResponse(csilResp)
+}
+
+func (c *ReactorcideUiClient) GetWorkerImageState(ctx context.Context, req GetWorkerImageStateRequest) (GetWorkerImageStateResponse, error) {
+	var csilZero GetWorkerImageStateResponse
+	csilResp, csilErr := c.transport.Call(ctx, "ReactorcideUi", "get-worker-image-state", EncodeGetWorkerImageStateRequest(req))
+	if csilErr != nil {
+		return csilZero, csilErr
+	}
+	return DecodeGetWorkerImageStateResponse(csilResp)
+}
+
+func (c *ReactorcideUiClient) ListJobLinks(ctx context.Context, req ListJobLinksRequest) (ListJobLinksResponse, error) {
+	var csilZero ListJobLinksResponse
+	csilResp, csilErr := c.transport.Call(ctx, "ReactorcideUi", "list-job-links", EncodeListJobLinksRequest(req))
+	if csilErr != nil {
+		return csilZero, csilErr
+	}
+	return DecodeListJobLinksResponse(csilResp)
+}
+
+func (c *ReactorcideUiClient) ListJobArtifacts(ctx context.Context, req ListJobArtifactsRequest) (ListJobArtifactsResponse, error) {
+	var csilZero ListJobArtifactsResponse
+	csilResp, csilErr := c.transport.Call(ctx, "ReactorcideUi", "list-job-artifacts", EncodeListJobArtifactsRequest(req))
+	if csilErr != nil {
+		return csilZero, csilErr
+	}
+	return DecodeListJobArtifactsResponse(csilResp)
+}
+
+func (c *ReactorcideUiClient) ReadJobArtifact(ctx context.Context, req ReadJobArtifactRequest) (ReadJobArtifactResponse, error) {
+	var csilZero ReadJobArtifactResponse
+	csilResp, csilErr := c.transport.Call(ctx, "ReactorcideUi", "read-job-artifact", EncodeReadJobArtifactRequest(req))
+	if csilErr != nil {
+		return csilZero, csilErr
+	}
+	return DecodeReadJobArtifactResponse(csilResp)
+}
+
+func (c *ReactorcideUiClient) GetJobTestResults(ctx context.Context, req GetJobTestResultsRequest) (GetJobTestResultsResponse, error) {
+	var csilZero GetJobTestResultsResponse
+	csilResp, csilErr := c.transport.Call(ctx, "ReactorcideUi", "get-job-test-results", EncodeGetJobTestResultsRequest(req))
+	if csilErr != nil {
+		return csilZero, csilErr
+	}
+	return DecodeGetJobTestResultsResponse(csilResp)
+}
+
+func (c *ReactorcideUiClient) ListFlakyTests(ctx context.Context, req ListFlakyTestsRequest) (ListFlakyTestsResponse, error) {
+	var csilZero ListFlakyTestsResponse
+	csilResp, csilErr := c.transport.Call(ctx, "ReactorcideUi", "list-flaky-tests", EncodeListFlakyTestsRequest(req))
+	if csilErr != nil {
+		return csilZero, csilErr
+	}
+	return DecodeListFlakyTestsResponse(csilResp)
+}
+
+func (c *ReactorcideUiClient) ListTestQuarantines(ctx context.Context, req ListTestQuarantinesRequest) (ListTestQuarantinesResponse, error) {
+	var csilZero ListTestQuarantinesResponse
+	csilResp, csilErr := c.transport.Call(ctx, "ReactorcideUi", "list-test-quarantines", EncodeListTestQuarantinesRequest(req))
+	if csilErr != nil {
+		return csilZero, csilErr
+	}
+	return DecodeListTestQuarantinesResponse(csilResp)
+}
+
+func (c *ReactorcideUiClient) QuarantineTest(ctx context.Context, req QuarantineTestRequest) (QuarantineTestResponse, error) {
+	var csilZero QuarantineTestResponse
+	csilResp, csilErr := c.transport.Call(ctx, "ReactorcideUi", "quarantine-test", EncodeQuarantineTestRequest(req))
+	if csilErr != nil {
+		return csilZero, csilErr
+	}
+	return DecodeQuarantineTestResponse(csilResp)
+}
+
+func (c *ReactorcideUiClient) UnquarantineTest(ctx context.Context, req UnquarantineTestRequest) (UnquarantineTestResponse, error) {
+	var csilZero UnquarantineTestResponse
+	csilResp, csilErr := c.transport.Call(ctx, "ReactorcideUi", "unquarantine-test", EncodeUnquarantineTestRequest(req))
+	if csilErr != nil {
+		return csilZero, csilErr
+	}
+	return DecodeUnquarantineTestResponse(csilResp)
+}
+
+func (c *ReactorcideUiClient) GetJobProvenance(ctx context.Context, req GetJobProvenanceRequest) (GetJobProvenanceResponse, error) {
+	var csilZero GetJobProvenanceResponse
+	csilResp, csilErr := c.transport.Call(ctx, "ReactorcideUi", "get-job-provenance", EncodeGetJobProvenanceRequest(req))
+	if csilErr != nil {
+		return csilZero, csilErr
+	}
+	return DecodeGetJobProvenanceResponse(csilResp)
+}
+
+func (c *ReactorcideUiClient) ListDiagnoses(ctx context.Context, req ListDiagnosesRequest) (ListDiagnosesResponse, error) {
+	var csilZero ListDiagnosesResponse
+	csilResp, csilErr := c.transport.Call(ctx, "ReactorcideUi", "list-diagnoses", EncodeListDiagnosesRequest(req))
+	if csilErr != nil {
+		return csilZero, csilErr
+	}
+	return DecodeListDiagnosesResponse(csilResp)
+}
+
+func (c *ReactorcideUiClient) PutDiagnosis(ctx context.Context, req PutDiagnosisRequest) (PutDiagnosisResponse, error) {
+	var csilZero PutDiagnosisResponse
+	csilResp, csilErr := c.transport.Call(ctx, "ReactorcideUi", "put-diagnosis", EncodePutDiagnosisRequest(req))
+	if csilErr != nil {
+		return csilZero, csilErr
+	}
+	return DecodePutDiagnosisResponse(csilResp)
+}
+
+func (c *ReactorcideUiClient) ListRefClassRules(ctx context.Context, req ListRefClassRulesRequest) (ListRefClassRulesResponse, error) {
+	var csilZero ListRefClassRulesResponse
+	csilResp, csilErr := c.transport.Call(ctx, "ReactorcideUi", "list-ref-class-rules", EncodeListRefClassRulesRequest(req))
+	if csilErr != nil {
+		return csilZero, csilErr
+	}
+	return DecodeListRefClassRulesResponse(csilResp)
+}
+
+func (c *ReactorcideUiClient) PutRefClassRule(ctx context.Context, req PutRefClassRuleRequest) (PutRefClassRuleResponse, error) {
+	var csilZero PutRefClassRuleResponse
+	csilResp, csilErr := c.transport.Call(ctx, "ReactorcideUi", "put-ref-class-rule", EncodePutRefClassRuleRequest(req))
+	if csilErr != nil {
+		return csilZero, csilErr
+	}
+	return DecodePutRefClassRuleResponse(csilResp)
+}
+
+func (c *ReactorcideUiClient) DeleteRefClassRule(ctx context.Context, req DeleteRefClassRuleRequest) (DeleteRefClassRuleResponse, error) {
+	var csilZero DeleteRefClassRuleResponse
+	csilResp, csilErr := c.transport.Call(ctx, "ReactorcideUi", "delete-ref-class-rule", EncodeDeleteRefClassRuleRequest(req))
+	if csilErr != nil {
+		return csilZero, csilErr
+	}
+	return DecodeDeleteRefClassRuleResponse(csilResp)
+}
+
+func (c *ReactorcideUiClient) ExplainRefClasses(ctx context.Context, req ExplainRefClassesRequest) (ExplainRefClassesResponse, error) {
+	var csilZero ExplainRefClassesResponse
+	csilResp, csilErr := c.transport.Call(ctx, "ReactorcideUi", "explain-ref-classes", EncodeExplainRefClassesRequest(req))
+	if csilErr != nil {
+		return csilZero, csilErr
+	}
+	return DecodeExplainRefClassesResponse(csilResp)
 }
 
 func (c *ReactorcideUiClient) ListOrgs(ctx context.Context, req ListOrgsRequest) (ListOrgsResponse, error) {
@@ -395,6 +791,51 @@ func (c *ReactorcideUiClient) ListGroupMembers(ctx context.Context, req ListGrou
 	return DecodeListGroupMembersResponse(csilResp)
 }
 
+func (c *ReactorcideUiClient) ListGroupMemberDetails(ctx context.Context, req ListGroupMemberDetailsRequest) (ListGroupMemberDetailsResponse, error) {
+	var csilZero ListGroupMemberDetailsResponse
+	csilResp, csilErr := c.transport.Call(ctx, "ReactorcideUi", "list-group-member-details", EncodeListGroupMemberDetailsRequest(req))
+	if csilErr != nil {
+		return csilZero, csilErr
+	}
+	return DecodeListGroupMemberDetailsResponse(csilResp)
+}
+
+func (c *ReactorcideUiClient) ListGroupVcsLinks(ctx context.Context, req ListGroupVcsLinksRequest) (ListGroupVcsLinksResponse, error) {
+	var csilZero ListGroupVcsLinksResponse
+	csilResp, csilErr := c.transport.Call(ctx, "ReactorcideUi", "list-group-vcs-links", EncodeListGroupVcsLinksRequest(req))
+	if csilErr != nil {
+		return csilZero, csilErr
+	}
+	return DecodeListGroupVcsLinksResponse(csilResp)
+}
+
+func (c *ReactorcideUiClient) LinkGroupVcsTeam(ctx context.Context, req LinkGroupVcsTeamRequest) (LinkGroupVcsTeamResponse, error) {
+	var csilZero LinkGroupVcsTeamResponse
+	csilResp, csilErr := c.transport.Call(ctx, "ReactorcideUi", "link-group-vcs-team", EncodeLinkGroupVcsTeamRequest(req))
+	if csilErr != nil {
+		return csilZero, csilErr
+	}
+	return DecodeLinkGroupVcsTeamResponse(csilResp)
+}
+
+func (c *ReactorcideUiClient) UnlinkGroupVcsTeam(ctx context.Context, req UnlinkGroupVcsTeamRequest) (UnlinkGroupVcsTeamResponse, error) {
+	var csilZero UnlinkGroupVcsTeamResponse
+	csilResp, csilErr := c.transport.Call(ctx, "ReactorcideUi", "unlink-group-vcs-team", EncodeUnlinkGroupVcsTeamRequest(req))
+	if csilErr != nil {
+		return csilZero, csilErr
+	}
+	return DecodeUnlinkGroupVcsTeamResponse(csilResp)
+}
+
+func (c *ReactorcideUiClient) SyncGroupVcsTeams(ctx context.Context, req SyncGroupVcsTeamsRequest) (SyncGroupVcsTeamsResponse, error) {
+	var csilZero SyncGroupVcsTeamsResponse
+	csilResp, csilErr := c.transport.Call(ctx, "ReactorcideUi", "sync-group-vcs-teams", EncodeSyncGroupVcsTeamsRequest(req))
+	if csilErr != nil {
+		return csilZero, csilErr
+	}
+	return DecodeSyncGroupVcsTeamsResponse(csilResp)
+}
+
 func (c *ReactorcideUiClient) ListUsers(ctx context.Context, req ListUsersRequest) (ListUsersResponse, error) {
 	var csilZero ListUsersResponse
 	csilResp, csilErr := c.transport.Call(ctx, "ReactorcideUi", "list-users", EncodeListUsersRequest(req))
@@ -620,6 +1061,24 @@ func (c *ReactorcideUiClient) RetryUnsuccessfulJobs(ctx context.Context, req Ret
 	return DecodeRetryUnsuccessfulJobsResponse(csilResp)
 }
 
+func (c *ReactorcideUiClient) RerunWorkflow(ctx context.Context, req RerunWorkflowRequest) (RerunWorkflowResponse, error) {
+	var csilZero RerunWorkflowResponse
+	csilResp, csilErr := c.transport.Call(ctx, "ReactorcideUi", "rerun-workflow", EncodeRerunWorkflowRequest(req))
+	if csilErr != nil {
+		return csilZero, csilErr
+	}
+	return DecodeRerunWorkflowResponse(csilResp)
+}
+
+func (c *ReactorcideUiClient) StartRun(ctx context.Context, req StartRunRequest) (StartRunResponse, error) {
+	var csilZero StartRunResponse
+	csilResp, csilErr := c.transport.Call(ctx, "ReactorcideUi", "start-run", EncodeStartRunRequest(req))
+	if csilErr != nil {
+		return csilZero, csilErr
+	}
+	return DecodeStartRunResponse(csilResp)
+}
+
 func (c *ReactorcideUiClient) GetGlobalSettings(ctx context.Context, req GetGlobalSettingsRequest) (GetGlobalSettingsResponse, error) {
 	var csilZero GetGlobalSettingsResponse
 	csilResp, csilErr := c.transport.Call(ctx, "ReactorcideUi", "get-global-settings", EncodeGetGlobalSettingsRequest(req))
@@ -636,6 +1095,24 @@ func (c *ReactorcideUiClient) UpdateGlobalSettings(ctx context.Context, req Upda
 		return csilZero, csilErr
 	}
 	return DecodeUpdateGlobalSettingsResponse(csilResp)
+}
+
+func (c *ReactorcideUiClient) GetShedState(ctx context.Context, req GetShedStateRequest) (GetShedStateResponse, error) {
+	var csilZero GetShedStateResponse
+	csilResp, csilErr := c.transport.Call(ctx, "ReactorcideUi", "get-shed-state", EncodeGetShedStateRequest(req))
+	if csilErr != nil {
+		return csilZero, csilErr
+	}
+	return DecodeGetShedStateResponse(csilResp)
+}
+
+func (c *ReactorcideUiClient) SetShedLevel(ctx context.Context, req SetShedLevelRequest) (SetShedLevelResponse, error) {
+	var csilZero SetShedLevelResponse
+	csilResp, csilErr := c.transport.Call(ctx, "ReactorcideUi", "set-shed-level", EncodeSetShedLevelRequest(req))
+	if csilErr != nil {
+		return csilZero, csilErr
+	}
+	return DecodeSetShedLevelResponse(csilResp)
 }
 
 func (c *ReactorcideUiClient) ListTrustedIdentities(ctx context.Context, req ListTrustedIdentitiesRequest) (ListTrustedIdentitiesResponse, error) {
@@ -845,6 +1322,33 @@ func (c *ReactorcideUiClient) GetJobResourceHistory(ctx context.Context, req Get
 	return DecodeGetJobResourceHistoryResponse(csilResp)
 }
 
+func (c *ReactorcideUiClient) GetPipelineDashboard(ctx context.Context, req GetPipelineDashboardRequest) (GetPipelineDashboardResponse, error) {
+	var csilZero GetPipelineDashboardResponse
+	csilResp, csilErr := c.transport.Call(ctx, "ReactorcideUi", "get-pipeline-dashboard", EncodeGetPipelineDashboardRequest(req))
+	if csilErr != nil {
+		return csilZero, csilErr
+	}
+	return DecodeGetPipelineDashboardResponse(csilResp)
+}
+
+func (c *ReactorcideUiClient) GetInfraDashboard(ctx context.Context, req GetInfraDashboardRequest) (GetInfraDashboardResponse, error) {
+	var csilZero GetInfraDashboardResponse
+	csilResp, csilErr := c.transport.Call(ctx, "ReactorcideUi", "get-infra-dashboard", EncodeGetInfraDashboardRequest(req))
+	if csilErr != nil {
+		return csilZero, csilErr
+	}
+	return DecodeGetInfraDashboardResponse(csilResp)
+}
+
+func (c *ReactorcideUiClient) GetUsageDashboard(ctx context.Context, req GetUsageDashboardRequest) (GetUsageDashboardResponse, error) {
+	var csilZero GetUsageDashboardResponse
+	csilResp, csilErr := c.transport.Call(ctx, "ReactorcideUi", "get-usage-dashboard", EncodeGetUsageDashboardRequest(req))
+	if csilErr != nil {
+		return csilZero, csilErr
+	}
+	return DecodeGetUsageDashboardResponse(csilResp)
+}
+
 func (c *ReactorcideUiClient) ListSchedules(ctx context.Context, req ListSchedulesRequest) (ListSchedulesResponse, error) {
 	var csilZero ListSchedulesResponse
 	csilResp, csilErr := c.transport.Call(ctx, "ReactorcideUi", "list-schedules", EncodeListSchedulesRequest(req))
@@ -888,6 +1392,87 @@ func (c *ReactorcideUiClient) ListScheduleFires(ctx context.Context, req ListSch
 		return csilZero, csilErr
 	}
 	return DecodeListScheduleFiresResponse(csilResp)
+}
+
+func (c *ReactorcideUiClient) ListEventSubscriptions(ctx context.Context, req ListEventSubscriptionsRequest) (ListEventSubscriptionsResponse, error) {
+	var csilZero ListEventSubscriptionsResponse
+	csilResp, csilErr := c.transport.Call(ctx, "ReactorcideUi", "list-event-subscriptions", EncodeListEventSubscriptionsRequest(req))
+	if csilErr != nil {
+		return csilZero, csilErr
+	}
+	return DecodeListEventSubscriptionsResponse(csilResp)
+}
+
+func (c *ReactorcideUiClient) GetEventSubscription(ctx context.Context, req GetEventSubscriptionRequest) (GetEventSubscriptionResponse, error) {
+	var csilZero GetEventSubscriptionResponse
+	csilResp, csilErr := c.transport.Call(ctx, "ReactorcideUi", "get-event-subscription", EncodeGetEventSubscriptionRequest(req))
+	if csilErr != nil {
+		return csilZero, csilErr
+	}
+	return DecodeGetEventSubscriptionResponse(csilResp)
+}
+
+func (c *ReactorcideUiClient) CreateEventSubscription(ctx context.Context, req CreateEventSubscriptionRequest) (CreateEventSubscriptionResponse, error) {
+	var csilZero CreateEventSubscriptionResponse
+	csilResp, csilErr := c.transport.Call(ctx, "ReactorcideUi", "create-event-subscription", EncodeCreateEventSubscriptionRequest(req))
+	if csilErr != nil {
+		return csilZero, csilErr
+	}
+	return DecodeCreateEventSubscriptionResponse(csilResp)
+}
+
+func (c *ReactorcideUiClient) UpdateEventSubscription(ctx context.Context, req UpdateEventSubscriptionRequest) (UpdateEventSubscriptionResponse, error) {
+	var csilZero UpdateEventSubscriptionResponse
+	csilResp, csilErr := c.transport.Call(ctx, "ReactorcideUi", "update-event-subscription", EncodeUpdateEventSubscriptionRequest(req))
+	if csilErr != nil {
+		return csilZero, csilErr
+	}
+	return DecodeUpdateEventSubscriptionResponse(csilResp)
+}
+
+func (c *ReactorcideUiClient) DeleteEventSubscription(ctx context.Context, req DeleteEventSubscriptionRequest) (DeleteEventSubscriptionResponse, error) {
+	var csilZero DeleteEventSubscriptionResponse
+	csilResp, csilErr := c.transport.Call(ctx, "ReactorcideUi", "delete-event-subscription", EncodeDeleteEventSubscriptionRequest(req))
+	if csilErr != nil {
+		return csilZero, csilErr
+	}
+	return DecodeDeleteEventSubscriptionResponse(csilResp)
+}
+
+func (c *ReactorcideUiClient) ListEventDeliveries(ctx context.Context, req ListEventDeliveriesRequest) (ListEventDeliveriesResponse, error) {
+	var csilZero ListEventDeliveriesResponse
+	csilResp, csilErr := c.transport.Call(ctx, "ReactorcideUi", "list-event-deliveries", EncodeListEventDeliveriesRequest(req))
+	if csilErr != nil {
+		return csilZero, csilErr
+	}
+	return DecodeListEventDeliveriesResponse(csilResp)
+}
+
+func (c *ReactorcideUiClient) GetEventDelivery(ctx context.Context, req GetEventDeliveryRequest) (GetEventDeliveryResponse, error) {
+	var csilZero GetEventDeliveryResponse
+	csilResp, csilErr := c.transport.Call(ctx, "ReactorcideUi", "get-event-delivery", EncodeGetEventDeliveryRequest(req))
+	if csilErr != nil {
+		return csilZero, csilErr
+	}
+	return DecodeGetEventDeliveryResponse(csilResp)
+}
+
+func (c *ReactorcideUiClient) ReplayEventDelivery(ctx context.Context, req ReplayEventDeliveryRequest) (ReplayEventDeliveryResponse, error) {
+	var csilZero ReplayEventDeliveryResponse
+	csilResp, csilErr := c.transport.Call(ctx, "ReactorcideUi", "replay-event-delivery", EncodeReplayEventDeliveryRequest(req))
+	if csilErr != nil {
+		return csilZero, csilErr
+	}
+	return DecodeReplayEventDeliveryResponse(csilResp)
+}
+
+func (c *ReactorcideUiClient) TestEventSubscription(ctx context.Context, req TestEventSubscriptionRequest) (TestEventSubscriptionResponse, error) {
+	var csilZero TestEventSubscriptionResponse
+	csilResp, csilErr := c.transport.Call(ctx, "ReactorcideUi", "test-event-subscription", EncodeTestEventSubscriptionRequest(req))
+	if csilErr != nil {
+		return csilZero, csilErr
+	}
+	return DecodeTestEventSubscriptionResponse(csilResp)
 }
 
 func (c *ReactorcideUiClient) ListJobs(ctx context.Context, req ListJobsRequest) (ListJobsResponse, error) {
@@ -942,4 +1527,319 @@ func (c *ReactorcideUiClient) DescribeFormMetadata(ctx context.Context, req Desc
 		return csilZero, csilErr
 	}
 	return DecodeDescribeFormMetadataResponse(csilResp)
+}
+
+func (c *ReactorcideUiClient) ListPrincipals(ctx context.Context, req ListPrincipalsRequest) (ListPrincipalsResponse, error) {
+	var csilZero ListPrincipalsResponse
+	csilResp, csilErr := c.transport.Call(ctx, "ReactorcideUi", "list-principals", EncodeListPrincipalsRequest(req))
+	if csilErr != nil {
+		return csilZero, csilErr
+	}
+	return DecodeListPrincipalsResponse(csilResp)
+}
+
+func (c *ReactorcideUiClient) GetPrincipal(ctx context.Context, req GetPrincipalRequest) (GetPrincipalResponse, error) {
+	var csilZero GetPrincipalResponse
+	csilResp, csilErr := c.transport.Call(ctx, "ReactorcideUi", "get-principal", EncodeGetPrincipalRequest(req))
+	if csilErr != nil {
+		return csilZero, csilErr
+	}
+	return DecodeGetPrincipalResponse(csilResp)
+}
+
+func (c *ReactorcideUiClient) CreateServicePrincipal(ctx context.Context, req CreateServicePrincipalRequest) (CreateServicePrincipalResponse, error) {
+	var csilZero CreateServicePrincipalResponse
+	csilResp, csilErr := c.transport.Call(ctx, "ReactorcideUi", "create-service-principal", EncodeCreateServicePrincipalRequest(req))
+	if csilErr != nil {
+		return csilZero, csilErr
+	}
+	return DecodeCreateServicePrincipalResponse(csilResp)
+}
+
+func (c *ReactorcideUiClient) SetPrincipalStatus(ctx context.Context, req SetPrincipalStatusRequest) (SetPrincipalStatusResponse, error) {
+	var csilZero SetPrincipalStatusResponse
+	csilResp, csilErr := c.transport.Call(ctx, "ReactorcideUi", "set-principal-status", EncodeSetPrincipalStatusRequest(req))
+	if csilErr != nil {
+		return csilZero, csilErr
+	}
+	return DecodeSetPrincipalStatusResponse(csilResp)
+}
+
+func (c *ReactorcideUiClient) LinkPrincipalIdentity(ctx context.Context, req PrincipalIdentityRequest) (PrincipalIdentityResponse, error) {
+	var csilZero PrincipalIdentityResponse
+	csilResp, csilErr := c.transport.Call(ctx, "ReactorcideUi", "link-principal-identity", EncodePrincipalIdentityRequest(req))
+	if csilErr != nil {
+		return csilZero, csilErr
+	}
+	return DecodePrincipalIdentityResponse(csilResp)
+}
+
+func (c *ReactorcideUiClient) UnlinkPrincipalIdentity(ctx context.Context, req PrincipalIdentityRequest) (PrincipalIdentityResponse, error) {
+	var csilZero PrincipalIdentityResponse
+	csilResp, csilErr := c.transport.Call(ctx, "ReactorcideUi", "unlink-principal-identity", EncodePrincipalIdentityRequest(req))
+	if csilErr != nil {
+		return csilZero, csilErr
+	}
+	return DecodePrincipalIdentityResponse(csilResp)
+}
+
+func (c *ReactorcideUiClient) SetPrincipalGroup(ctx context.Context, req SetPrincipalGroupRequest) (SetPrincipalGroupResponse, error) {
+	var csilZero SetPrincipalGroupResponse
+	csilResp, csilErr := c.transport.Call(ctx, "ReactorcideUi", "set-principal-group", EncodeSetPrincipalGroupRequest(req))
+	if csilErr != nil {
+		return csilZero, csilErr
+	}
+	return DecodeSetPrincipalGroupResponse(csilResp)
+}
+
+func (c *ReactorcideUiClient) IssuePrincipalToken(ctx context.Context, req IssuePrincipalTokenRequest) (IssuePrincipalTokenResponse, error) {
+	var csilZero IssuePrincipalTokenResponse
+	csilResp, csilErr := c.transport.Call(ctx, "ReactorcideUi", "issue-principal-token", EncodeIssuePrincipalTokenRequest(req))
+	if csilErr != nil {
+		return csilZero, csilErr
+	}
+	return DecodeIssuePrincipalTokenResponse(csilResp)
+}
+
+func (c *ReactorcideUiClient) RevokePrincipalToken(ctx context.Context, req RevokePrincipalTokenRequest) (RevokePrincipalTokenResponse, error) {
+	var csilZero RevokePrincipalTokenResponse
+	csilResp, csilErr := c.transport.Call(ctx, "ReactorcideUi", "revoke-principal-token", EncodeRevokePrincipalTokenRequest(req))
+	if csilErr != nil {
+		return csilZero, csilErr
+	}
+	return DecodeRevokePrincipalTokenResponse(csilResp)
+}
+
+func (c *ReactorcideUiClient) ResolvePrincipal(ctx context.Context, req ResolvePrincipalRequest) (ResolvePrincipalResponse, error) {
+	var csilZero ResolvePrincipalResponse
+	csilResp, csilErr := c.transport.Call(ctx, "ReactorcideUi", "resolve-principal", EncodeResolvePrincipalRequest(req))
+	if csilErr != nil {
+		return csilZero, csilErr
+	}
+	return DecodeResolvePrincipalResponse(csilResp)
+}
+
+func (c *ReactorcideUiClient) ListFederationIssuers(ctx context.Context, req ListFederationIssuersRequest) (ListFederationIssuersResponse, error) {
+	var csilZero ListFederationIssuersResponse
+	csilResp, csilErr := c.transport.Call(ctx, "ReactorcideUi", "list-federation-issuers", EncodeListFederationIssuersRequest(req))
+	if csilErr != nil {
+		return csilZero, csilErr
+	}
+	return DecodeListFederationIssuersResponse(csilResp)
+}
+
+func (c *ReactorcideUiClient) SaveFederationIssuer(ctx context.Context, req SaveFederationIssuerRequest) (SaveFederationIssuerResponse, error) {
+	var csilZero SaveFederationIssuerResponse
+	csilResp, csilErr := c.transport.Call(ctx, "ReactorcideUi", "save-federation-issuer", EncodeSaveFederationIssuerRequest(req))
+	if csilErr != nil {
+		return csilZero, csilErr
+	}
+	return DecodeSaveFederationIssuerResponse(csilResp)
+}
+
+func (c *ReactorcideUiClient) DeleteFederationIssuer(ctx context.Context, req DeleteFederationIssuerRequest) (DeleteFederationIssuerResponse, error) {
+	var csilZero DeleteFederationIssuerResponse
+	csilResp, csilErr := c.transport.Call(ctx, "ReactorcideUi", "delete-federation-issuer", EncodeDeleteFederationIssuerRequest(req))
+	if csilErr != nil {
+		return csilZero, csilErr
+	}
+	return DecodeDeleteFederationIssuerResponse(csilResp)
+}
+
+func (c *ReactorcideUiClient) SaveFederationMapping(ctx context.Context, req SaveFederationMappingRequest) (SaveFederationMappingResponse, error) {
+	var csilZero SaveFederationMappingResponse
+	csilResp, csilErr := c.transport.Call(ctx, "ReactorcideUi", "save-federation-mapping", EncodeSaveFederationMappingRequest(req))
+	if csilErr != nil {
+		return csilZero, csilErr
+	}
+	return DecodeSaveFederationMappingResponse(csilResp)
+}
+
+func (c *ReactorcideUiClient) DeleteFederationMapping(ctx context.Context, req DeleteFederationMappingRequest) (DeleteFederationMappingResponse, error) {
+	var csilZero DeleteFederationMappingResponse
+	csilResp, csilErr := c.transport.Call(ctx, "ReactorcideUi", "delete-federation-mapping", EncodeDeleteFederationMappingRequest(req))
+	if csilErr != nil {
+		return csilZero, csilErr
+	}
+	return DecodeDeleteFederationMappingResponse(csilResp)
+}
+
+func (c *ReactorcideUiClient) ListGithubApps(ctx context.Context, req ListGitHubAppsRequest) (ListGitHubAppsResponse, error) {
+	var csilZero ListGitHubAppsResponse
+	csilResp, csilErr := c.transport.Call(ctx, "ReactorcideUi", "list-github-apps", EncodeListGitHubAppsRequest(req))
+	if csilErr != nil {
+		return csilZero, csilErr
+	}
+	return DecodeListGitHubAppsResponse(csilResp)
+}
+
+func (c *ReactorcideUiClient) SetGithubAppEnabled(ctx context.Context, req SetGitHubAppEnabledRequest) (SetGitHubAppEnabledResponse, error) {
+	var csilZero SetGitHubAppEnabledResponse
+	csilResp, csilErr := c.transport.Call(ctx, "ReactorcideUi", "set-github-app-enabled", EncodeSetGitHubAppEnabledRequest(req))
+	if csilErr != nil {
+		return csilZero, csilErr
+	}
+	return DecodeSetGitHubAppEnabledResponse(csilResp)
+}
+
+func (c *ReactorcideUiClient) SyncGithubApp(ctx context.Context, req SyncGitHubAppRequest) (SyncGitHubAppResponse, error) {
+	var csilZero SyncGitHubAppResponse
+	csilResp, csilErr := c.transport.Call(ctx, "ReactorcideUi", "sync-github-app", EncodeSyncGitHubAppRequest(req))
+	if csilErr != nil {
+		return csilZero, csilErr
+	}
+	return DecodeSyncGitHubAppResponse(csilResp)
+}
+
+func (c *ReactorcideUiClient) SetShedActions(ctx context.Context, req SetShedActionsRequest) (SetShedLevelResponse, error) {
+	var csilZero SetShedLevelResponse
+	csilResp, csilErr := c.transport.Call(ctx, "ReactorcideUi", "set-shed-actions", EncodeSetShedActionsRequest(req))
+	if csilErr != nil {
+		return csilZero, csilErr
+	}
+	return DecodeSetShedLevelResponse(csilResp)
+}
+
+func (c *ReactorcideUiClient) GetOrgReportingSettings(ctx context.Context, req GetOrgReportingSettingsRequest) (GetOrgReportingSettingsResponse, error) {
+	var csilZero GetOrgReportingSettingsResponse
+	csilResp, csilErr := c.transport.Call(ctx, "ReactorcideUi", "get-org-reporting-settings", EncodeGetOrgReportingSettingsRequest(req))
+	if csilErr != nil {
+		return csilZero, csilErr
+	}
+	return DecodeGetOrgReportingSettingsResponse(csilResp)
+}
+
+func (c *ReactorcideUiClient) PutOrgReportingSettings(ctx context.Context, req PutOrgReportingSettingsRequest) (GetOrgReportingSettingsResponse, error) {
+	var csilZero GetOrgReportingSettingsResponse
+	csilResp, csilErr := c.transport.Call(ctx, "ReactorcideUi", "put-org-reporting-settings", EncodePutOrgReportingSettingsRequest(req))
+	if csilErr != nil {
+		return csilZero, csilErr
+	}
+	return DecodeGetOrgReportingSettingsResponse(csilResp)
+}
+
+func (c *ReactorcideUiClient) GetRequiredSetOrgSettings(ctx context.Context, req GetRequiredSetOrgSettingsRequest) (GetRequiredSetOrgSettingsResponse, error) {
+	var csilZero GetRequiredSetOrgSettingsResponse
+	csilResp, csilErr := c.transport.Call(ctx, "ReactorcideUi", "get-required-set-org-settings", EncodeGetRequiredSetOrgSettingsRequest(req))
+	if csilErr != nil {
+		return csilZero, csilErr
+	}
+	return DecodeGetRequiredSetOrgSettingsResponse(csilResp)
+}
+
+func (c *ReactorcideUiClient) PutRequiredSetOrgSettings(ctx context.Context, req PutRequiredSetOrgSettingsRequest) (GetRequiredSetOrgSettingsResponse, error) {
+	var csilZero GetRequiredSetOrgSettingsResponse
+	csilResp, csilErr := c.transport.Call(ctx, "ReactorcideUi", "put-required-set-org-settings", EncodePutRequiredSetOrgSettingsRequest(req))
+	if csilErr != nil {
+		return csilZero, csilErr
+	}
+	return DecodeGetRequiredSetOrgSettingsResponse(csilResp)
+}
+
+func (c *ReactorcideUiClient) GetVcsOwnerAllowlist(ctx context.Context, req GetVcsOwnerAllowlistRequest) (VcsOwnerAllowlistResponse, error) {
+	var csilZero VcsOwnerAllowlistResponse
+	csilResp, csilErr := c.transport.Call(ctx, "ReactorcideUi", "get-vcs-owner-allowlist", EncodeGetVcsOwnerAllowlistRequest(req))
+	if csilErr != nil {
+		return csilZero, csilErr
+	}
+	return DecodeVcsOwnerAllowlistResponse(csilResp)
+}
+
+func (c *ReactorcideUiClient) PutVcsOwnerAllowlist(ctx context.Context, req PutVcsOwnerAllowlistRequest) (VcsOwnerAllowlistResponse, error) {
+	var csilZero VcsOwnerAllowlistResponse
+	csilResp, csilErr := c.transport.Call(ctx, "ReactorcideUi", "put-vcs-owner-allowlist", EncodePutVcsOwnerAllowlistRequest(req))
+	if csilErr != nil {
+		return csilZero, csilErr
+	}
+	return DecodeVcsOwnerAllowlistResponse(csilResp)
+}
+
+func (c *ReactorcideUiClient) GetOidcSettings(ctx context.Context, req GetOidcSettingsRequest) (OidcSettingsResponse, error) {
+	var csilZero OidcSettingsResponse
+	csilResp, csilErr := c.transport.Call(ctx, "ReactorcideUi", "get-oidc-settings", EncodeGetOidcSettingsRequest(req))
+	if csilErr != nil {
+		return csilZero, csilErr
+	}
+	return DecodeOidcSettingsResponse(csilResp)
+}
+
+func (c *ReactorcideUiClient) PutOidcSettings(ctx context.Context, req PutOidcSettingsRequest) (OidcSettingsResponse, error) {
+	var csilZero OidcSettingsResponse
+	csilResp, csilErr := c.transport.Call(ctx, "ReactorcideUi", "put-oidc-settings", EncodePutOidcSettingsRequest(req))
+	if csilErr != nil {
+		return csilZero, csilErr
+	}
+	return DecodeOidcSettingsResponse(csilResp)
+}
+
+func (c *ReactorcideUiClient) ListOidcKeys(ctx context.Context, req ListOidcKeysRequest) (ListOidcKeysResponse, error) {
+	var csilZero ListOidcKeysResponse
+	csilResp, csilErr := c.transport.Call(ctx, "ReactorcideUi", "list-oidc-keys", EncodeListOidcKeysRequest(req))
+	if csilErr != nil {
+		return csilZero, csilErr
+	}
+	return DecodeListOidcKeysResponse(csilResp)
+}
+
+func (c *ReactorcideUiClient) RotateOidcKey(ctx context.Context, req RotateOidcKeyRequest) (ListOidcKeysResponse, error) {
+	var csilZero ListOidcKeysResponse
+	csilResp, csilErr := c.transport.Call(ctx, "ReactorcideUi", "rotate-oidc-key", EncodeRotateOidcKeyRequest(req))
+	if csilErr != nil {
+		return csilZero, csilErr
+	}
+	return DecodeListOidcKeysResponse(csilResp)
+}
+
+func (c *ReactorcideUiClient) RetireOidcKey(ctx context.Context, req RetireOidcKeyRequest) (ListOidcKeysResponse, error) {
+	var csilZero ListOidcKeysResponse
+	csilResp, csilErr := c.transport.Call(ctx, "ReactorcideUi", "retire-oidc-key", EncodeRetireOidcKeyRequest(req))
+	if csilErr != nil {
+		return csilZero, csilErr
+	}
+	return DecodeListOidcKeysResponse(csilResp)
+}
+
+func (c *ReactorcideUiClient) ListAlertRules(ctx context.Context, req ListAlertRulesRequest) (ListAlertRulesResponse, error) {
+	var csilZero ListAlertRulesResponse
+	csilResp, csilErr := c.transport.Call(ctx, "ReactorcideUi", "list-alert-rules", EncodeListAlertRulesRequest(req))
+	if csilErr != nil {
+		return csilZero, csilErr
+	}
+	return DecodeListAlertRulesResponse(csilResp)
+}
+
+func (c *ReactorcideUiClient) CreateAlertRule(ctx context.Context, req CreateAlertRuleRequest) (AlertRuleResponse, error) {
+	var csilZero AlertRuleResponse
+	csilResp, csilErr := c.transport.Call(ctx, "ReactorcideUi", "create-alert-rule", EncodeCreateAlertRuleRequest(req))
+	if csilErr != nil {
+		return csilZero, csilErr
+	}
+	return DecodeAlertRuleResponse(csilResp)
+}
+
+func (c *ReactorcideUiClient) UpdateAlertRule(ctx context.Context, req UpdateAlertRuleRequest) (AlertRuleResponse, error) {
+	var csilZero AlertRuleResponse
+	csilResp, csilErr := c.transport.Call(ctx, "ReactorcideUi", "update-alert-rule", EncodeUpdateAlertRuleRequest(req))
+	if csilErr != nil {
+		return csilZero, csilErr
+	}
+	return DecodeAlertRuleResponse(csilResp)
+}
+
+func (c *ReactorcideUiClient) DeleteAlertRule(ctx context.Context, req DeleteAlertRuleRequest) (DeleteAlertRuleResponse, error) {
+	var csilZero DeleteAlertRuleResponse
+	csilResp, csilErr := c.transport.Call(ctx, "ReactorcideUi", "delete-alert-rule", EncodeDeleteAlertRuleRequest(req))
+	if csilErr != nil {
+		return csilZero, csilErr
+	}
+	return DecodeDeleteAlertRuleResponse(csilResp)
+}
+
+func (c *ReactorcideUiClient) DeleteDiagnosis(ctx context.Context, req DeleteDiagnosisRequest) (DeleteDiagnosisResponse, error) {
+	var csilZero DeleteDiagnosisResponse
+	csilResp, csilErr := c.transport.Call(ctx, "ReactorcideUi", "delete-diagnosis", EncodeDeleteDiagnosisRequest(req))
+	if csilErr != nil {
+		return csilZero, csilErr
+	}
+	return DecodeDeleteDiagnosisResponse(csilResp)
 }

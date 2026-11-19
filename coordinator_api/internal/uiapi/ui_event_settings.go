@@ -13,15 +13,29 @@ import (
 // the effective fields absent.
 func (s *UiService) projectDetail(ctx context.Context, project *models.Project) csilapi.ProjectDetail {
 	detail := projectToDetail(project)
-	settings, ok := s.deps.Store.(store.EventSettingsStore)
-	if !ok {
-		return detail
+	if settings, ok := s.deps.Store.(store.EventSettingsStore); ok {
+		if value, err := settings.EffectiveDynamicJobs(ctx, project.OwnershipOrgID(), &project.ProjectID); err == nil {
+			detail.EffectiveDynamicJobs = optionalText(value)
+		}
+		if value, err := settings.EffectiveDuplicateEvents(ctx, project.ProjectID); err == nil {
+			detail.EffectiveDuplicateEvents = optionalText(value)
+		}
 	}
-	if value, err := settings.EffectiveDynamicJobs(ctx, project.OwnershipOrgID(), &project.ProjectID); err == nil {
-		detail.EffectiveDynamicJobs = optionalText(value)
+	if drafts, ok := s.deps.Store.(store.DraftShedStore); ok {
+		if value, err := drafts.EffectiveDraftPRs(ctx, project.ProjectID); err == nil {
+			detail.EffectiveDraftPrs = optionalText(value)
+		}
 	}
-	if value, err := settings.EffectiveDuplicateEvents(ctx, project.ProjectID); err == nil {
-		detail.EffectiveDuplicateEvents = optionalText(value)
+	if retries, ok := s.deps.Store.(store.InfraRetryStore); ok {
+		if value, err := retries.EffectiveInfraRetries(ctx, project.OwnershipOrgID(), &project.ProjectID); err == nil {
+			effective := int64(value)
+			detail.EffectiveInfraRetries = &effective
+		}
+	}
+	if egress, ok := s.deps.Store.(store.EgressControlStore); ok {
+		if value, err := egress.EffectiveEgressControl(ctx, project.OwnershipOrgID(), &project.ProjectID, ""); err == nil {
+			detail.EffectiveEgressControl = optionalBool(value)
+		}
 	}
 	return detail
 }
@@ -82,5 +96,25 @@ func applyOrgEventSettings(org *models.Organization, duplicateEvents, dynamicJob
 	if len(changed) == 0 {
 		return nil, nil
 	}
+	return changed, nil
+}
+
+// applyProjectDraftPRs validates and applies the draft_prs value of an update
+// request and adds the change to the audit details.
+func applyProjectDraftPRs(project *models.Project, draftPRs *string, changed models.JSONB) (models.JSONB, error) {
+	if draftPRs == nil {
+		return changed, nil
+	}
+	if !models.IsValidDraftPRsProjectSetting(*draftPRs) {
+		return nil, NewServiceError("invalid_argument", "draft_prs must be inherit, run, skip or skip_when_shedding")
+	}
+	if project.DraftPRs == *draftPRs {
+		return changed, nil
+	}
+	if changed == nil {
+		changed = models.JSONB{}
+	}
+	changed["draft_prs"] = models.JSONB{"from": project.DraftPRs, "to": *draftPRs}
+	project.DraftPRs = *draftPRs
 	return changed, nil
 }

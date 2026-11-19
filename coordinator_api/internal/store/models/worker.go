@@ -41,6 +41,10 @@ type PoolEnrollmentToken struct {
 	LastUsedAt    *time.Time `gorm:"column:last_used_at" json:"last_used_at,omitempty"`
 	CreatedAt     time.Time  `gorm:"column:created_at;autoCreateTime:false;default:timezone('utc', now())" json:"created_at"`
 	DeactivatedAt *time.Time `gorm:"column:deactivated_at" json:"deactivated_at,omitempty"`
+
+	// ActiveWorkerCount is the count of workers with an active session that
+	// last registered with this token. Only ListPoolEnrollmentTokens sets it.
+	ActiveWorkerCount int64 `gorm:"->;column:active_worker_count;-:migration" json:"-"`
 }
 
 // TableName specifies the table name for the model.
@@ -88,6 +92,48 @@ type Worker struct {
 	LastSeenAt    *time.Time `gorm:"column:last_seen_at" json:"last_seen_at,omitempty"`
 	EnrolledAt    *time.Time `gorm:"column:enrolled_at" json:"enrolled_at,omitempty"`
 	CreatedAt     time.Time  `gorm:"column:created_at;autoCreateTime:false;default:timezone('utc', now())" json:"created_at"`
+
+	// Admission is the newest resources-mode admission report, or nil for a
+	// worker in the default concurrency mode (migration 000059).
+	Admission *WorkerAdmission `gorm:"column:admission;type:jsonb;serializer:json" json:"admission,omitempty"`
+
+	// EnrollmentTokenID is the enrollment token of the newest Register
+	// (migration 000066). Nil for a worker that has not registered since.
+	EnrollmentTokenID *string `gorm:"column:enrollment_token_id;type:uuid" json:"enrollment_token_id,omitempty"`
+
+	// Image set and image state (migration 000068). ImageSetVersion is the
+	// image set version that the coordinator wants the worker to hold, and
+	// ImageSetHash identifies the content of that set. The ImageState*
+	// values and ImageReadyDigests are from the newest heartbeat
+	// image_set_report. They stay nil for a worker that sends no report.
+	ImageSetVersion   int64    `gorm:"column:image_set_version;not null;default:0" json:"image_set_version"`
+	ImageSetHash      *string  `gorm:"column:image_set_hash;type:text" json:"image_set_hash,omitempty"`
+	ImageState        *string  `gorm:"column:image_state;type:text" json:"image_state,omitempty"`
+	ImageStateVersion *int64   `gorm:"column:image_state_version" json:"image_state_version,omitempty"`
+	ImageStateDetail  *string  `gorm:"column:image_state_detail;type:text" json:"image_state_detail,omitempty"`
+	ImageReadyDigests []string `gorm:"column:image_ready_digests;type:jsonb;serializer:json" json:"image_ready_digests,omitempty"`
+	// ImageFailed is the per-image failures of the newest report
+	// (migration 000071). Nil when the report has no failures.
+	ImageFailed []ImageFailure `gorm:"column:image_failed;type:jsonb;serializer:json" json:"image_failed,omitempty"`
+	// ImageRuntime is the job runner backend that the worker sent at
+	// Register (migration 000069): vm, docker, containerd, or kubernetes.
+	// Nil for an older worker.
+	ImageRuntime *string `gorm:"column:image_runtime;type:text" json:"image_runtime,omitempty"`
+
+	// Read-only values that ListWorkers adds with a join. Other reads leave
+	// them empty, and writes ignore them.
+	EnrollmentTokenName   *string `gorm:"->;column:enrollment_token_name;-:migration" json:"-"`
+	EnrollmentTokenActive *bool   `gorm:"->;column:enrollment_token_active;-:migration" json:"-"`
+	// HasActiveSession is true when the worker has a session that is not
+	// revoked and not expired.
+	HasActiveSession bool `gorm:"->;column:has_active_session;-:migration" json:"-"`
+}
+
+// OnDeactivatedEnrollmentToken reports a worker that has an active session
+// from an enrollment token that is now deactivated. The worker runs until it
+// stops, and then it cannot register again with that token.
+func (w *Worker) OnDeactivatedEnrollmentToken() bool {
+	return w.HasActiveSession && w.EnrollmentTokenActive != nil && !*w.EnrollmentTokenActive
 }
 
 // TableName specifies the table name for the model.

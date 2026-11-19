@@ -1,10 +1,12 @@
-import type { CheckBox, PushButton, TextField } from '@catalystcommunity/controls'
+import type { CheckBox, ComboBox, PushButton, TextField } from '@catalystcommunity/controls'
 import { api } from '~/api/client.ts'
 import type { WorkerPoolSummary } from '~/api/csilapi/types.gen.ts'
-import { field } from '~/components/Field.ts'
+import { envDefaultsCard, type EnvDefaultsCard } from '~/components/EnvDefaults.ts'
+import { field, type Field } from '~/components/Field.ts'
 import { ManagedOrgPage } from '~/components/ManagedOrg.ts'
 import { Action, ActionError } from '~/components/ManagementPage.ts'
-import { button, checkBox, clearField, confirmAction, setButtonText, textField } from '~/ui/controls.ts'
+import { classListError, splitList } from '~/components/RefClasses.ts'
+import { button, checkBox, clearField, comboBox, confirmAction, setButtonText, setComboValue, setOptions, textField } from '~/ui/controls.ts'
 import { h, setText, show, syncKeyed } from '~/ui/dom.ts'
 import { define } from '~/ui/element.ts'
 import { Loader } from '~/ui/load.ts'
@@ -41,10 +43,15 @@ export class WorkerClassesPage extends ManagedOrgPage {
   #error!: ActionError
   #nameInput!: TextField
   #protected!: CheckBox
+  #refClasses!: TextField
+  #refClassesField!: Field
   #submit!: PushButton
   #tableWrap!: HTMLElement
   #none!: HTMLElement
   #tbody!: HTMLTableSectionElement
+  #envClass = ''
+  #envClassPicker!: ComboBox
+  #envDefaults!: EnvDefaultsCard
 
   #orgName(): string {
     return this.managed.org()?.name ?? ''
@@ -60,6 +67,12 @@ export class WorkerClassesPage extends ManagedOrgPage {
       },
     })
     this.#protected = checkBox('Protected')
+    this.#refClasses = textField({ mono: true, placeholder: 'production, release', onInput: () => this.invalidate() })
+    this.#refClassesField = field({
+      label: 'Required ref classes',
+      hint: 'A comma list. When set, a workflow can use this class only when its ref has one of these classes. Empty is no condition. Saving an existing name replaces its settings.',
+      control: this.#refClasses,
+    })
     this.#submit = button('Create class', { variant: 'primary', type: 'submit' })
     this.#tbody = h('tbody')
     this.#tableWrap = h(
@@ -68,11 +81,20 @@ export class WorkerClassesPage extends ManagedOrgPage {
       h(
         'table',
         { class: 'table' },
-        h('thead', null, h('tr', null, h('th', null, 'Class'), h('th', null, 'Protected'), h('th', null, 'Pools'), h('th'))),
+        h('thead', null, h('tr', null, h('th', null, 'Class'), h('th', null, 'Protected'), h('th', null, 'Ref classes'), h('th', null, 'Pools'), h('th'))),
         this.#tbody,
       ),
     )
     this.#none = h('div', { class: 'empty' }, 'No worker classes defined.')
+    this.#envClassPicker = comboBox({
+      placeholder: 'Choose a worker class',
+      onChange: (value) => {
+        this.#envClass = value
+        this.invalidate()
+      },
+    })
+    this.#envDefaults = envDefaultsCard({ organization: '' }, 'Environment defaults of the class')
+    this.#envDefaults.hidden = true
 
     return h(
       'div',
@@ -115,10 +137,18 @@ export class WorkerClassesPage extends ManagedOrgPage {
               ),
             ),
           ),
+          this.#refClassesField.el,
           this.#submit,
         ),
       ),
       h('div', { class: 'card' }, h('h3', { class: 'section-title' }, 'Classes'), this.#tableWrap, this.#none),
+      h(
+        'div',
+        { class: 'card' },
+        h('h3', { class: 'section-title' }, 'Worker class environment defaults'),
+        field({ label: 'Worker class', hint: 'Choose a class to see and change its environment defaults.', control: this.#envClassPicker }).el,
+        this.#envDefaults,
+      ),
     )
   }
 
@@ -126,14 +156,17 @@ export class WorkerClassesPage extends ManagedOrgPage {
     event.preventDefault()
     const name = this.#name.trim()
     if (!name) return
+    const refClassesAny = splitList(this.#refClasses.value)
+    if (classListError(refClassesAny, false)) return
     const organization = this.#orgName()
     const ok = await this.#action.run('The worker class could not be saved.', () =>
-      api.putWorkerClass({ organization, workerClass: { name, protected: this.#protected.checked, poolIds: [] } }),
+      api.putWorkerClass({ organization, workerClass: { name, protected: this.#protected.checked, poolIds: [], ...(refClassesAny.length ? { refClassesAny } : {}) } }),
     )
     if (ok && this.isActive()) {
       this.#name = ''
       clearField(this.#nameInput)
       this.#protected.checked = false
+      clearField(this.#refClasses)
       void this.#classes.reload()
     }
   }
@@ -143,12 +176,19 @@ export class WorkerClassesPage extends ManagedOrgPage {
     this.#pools.sync(this.managed.orgId() || undefined)
 
     this.#error.set(this.#action.error)
-    this.#submit.disabled = this.#action.busy || !this.#name.trim()
+    const refClassError = classListError(splitList(this.#refClasses.value), false)
+    this.#refClassesField.setError(refClassError)
+    this.#submit.disabled = this.#action.busy || !this.#name.trim() || Boolean(refClassError)
     setButtonText(this.#submit, this.#action.busy ? 'Saving…' : 'Create class')
 
     const pools = this.#pools.state.data ?? []
     const poolName = (poolId: string): string => pools.find((pool) => pool.poolId === poolId)?.name ?? poolId
     const classes = this.#classes.state.data?.workerClasses ?? []
+    setOptions(this.#envClassPicker, classes.map((workerClass) => ({ value: workerClass.name, label: workerClass.name })))
+    if (this.#envClass && !classes.some((workerClass) => workerClass.name === this.#envClass)) this.#envClass = ''
+    setComboValue(this.#envClassPicker, this.#envClass)
+    show(this.#envDefaults, this.#envClass)
+    this.#envDefaults.setScope(this.#envClass ? { organization: this.#orgName(), workerClass: this.#envClass } : { organization: '' })
     show(this.#tableWrap, classes.length > 0)
     show(this.#none, classes.length === 0)
     syncKeyed(
@@ -181,6 +221,7 @@ export class WorkerClassesPage extends ManagedOrgPage {
             h('span', { class: 'status status-ok class-protected' }, h('span', { class: 'status-glyph', 'aria-hidden': 'true' }, '⚿'), 'Protected'),
             h('span', { class: 'meta class-unprotected' }, 'No'),
           ),
+          h('td', { class: 'mono class-ref-classes' }),
           h('td', { class: 'meta class-pools' }),
           h('td', null, remove),
         )
@@ -189,6 +230,7 @@ export class WorkerClassesPage extends ManagedOrgPage {
         setText(row.querySelector('.class-name')!, workerClass.name)
         show(row.querySelector<HTMLElement>('.class-protected')!, workerClass.protected)
         show(row.querySelector<HTMLElement>('.class-unprotected')!, !workerClass.protected)
+        setText(row.querySelector('.class-ref-classes')!, workerClass.refClassesAny?.length ? workerClass.refClassesAny.join(', ') : 'any')
         setText(row.querySelector('.class-pools')!, workerClass.poolIds.map(poolName).join(', ') || 'no pools assigned')
         ;(row.querySelector('push-button') as PushButton).disabled = this.#action.busy
       },

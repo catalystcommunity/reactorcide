@@ -101,13 +101,6 @@ spec:
                   name: {{ ((.Values.app).apiTokenSecret).name | default .Values.defaults.apiTokenSecretName }}
                   key: {{ ((.Values.app).apiTokenSecret).key | default "token" }}
                   optional: true
-            {{- if and .Values.corndogs.enabled .Values.corndogs.apiKey }}
-            - name: CORNDOGS_API_KEY
-              valueFrom:
-                secretKeyRef:
-                  name: {{ include "app.secretName" . }}
-                  key: CORNDOGS_API_KEY
-            {{- end }}
             {{- if eq .Values.objectStore.type "s3" }}
             - name: AWS_ACCESS_KEY_ID
               valueFrom:
@@ -188,6 +181,9 @@ spec:
                   name: {{ include "app.secretName" . }}
                   key: REACTORCIDE_BOOTSTRAP_ADMIN_TOKEN
             {{- end }}
+            {{- end }}
+            {{- with .Values.app.extraEnv }}
+            {{- toYaml . | nindent 12 }}
             {{- end }}
           {{- if eq .Values.objectStore.type "filesystem" }}
           volumeMounts:

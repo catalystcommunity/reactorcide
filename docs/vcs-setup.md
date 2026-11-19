@@ -7,9 +7,20 @@ webhooks do not start jobs.
 Complete the GitLab adapter or add a different provider with a pull request.
 See [Add a VCS Provider](#add-a-vcs-provider).
 
-Project-scoped clients currently use the public GitHub and GitLab API
+Project-scoped token clients currently use the public GitHub and GitLab API
 endpoints. GitHub Enterprise Server and self-managed GitLab need an adapter
-change for a project-specific API base URL.
+change for a project-specific API base URL. GitHub App calls can use another
+API URL: set `REACTORCIDE_GITHUB_APP_API_URL` (see
+[GitHub App](./github-app.md#configuration)).
+
+## GitHub App (Recommended)
+
+Use a GitHub App for GitHub. The App gives short-lived installation tokens,
+check runs with summaries and a Re-run button, and self-service project
+registration. A deployment can hold many Apps. See [GitHub App](./github-app.md).
+
+The rest of this guide uses a repository webhook and a VCS API token. Use it
+for a project with no App installation.
 
 ## Before You Start
 
@@ -301,6 +312,10 @@ can read the exact repository path.
 Confirm that the VCS token can write commit status and comments. Confirm that
 `vcs.baseURL` or `REACTORCIDE_VCS_BASE_URL` contains the public Reactorcide
 URL.
+
+A project in a GitHub App installation gets check runs, not commit statuses.
+Confirm that the App has the Checks permission. See
+[GitHub App](./github-app.md#troubleshooting).
 
 Reactorcide posts one status per event, with the context
 `Reactorcide Checks`. Set branch protection to require this context. A project

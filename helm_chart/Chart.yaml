@@ -21,6 +21,6 @@ appVersion: 0.1.0
 
 dependencies:
   - name: corndogs
-    version: "0.5.7"
+    version: "0.6.0"
     repository: "file://charts/corndogs"
     condition: corndogs.enabled

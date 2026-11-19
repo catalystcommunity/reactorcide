@@ -34,6 +34,13 @@ jobs:
     environment:
       REACTORCIDE_RELEASE_IMAGE: web
 
+  # The egress proxy image has its own job file: a longer timeout and more
+  # resources than the other images (see release-image-egress.yaml).
+  image-egress:
+    job_file: release-image-egress.yaml
+    depends_on:
+      - prepare
+
   cli-linux-amd64:
     job_file: release-cli.yaml
     depends_on:
@@ -82,6 +89,7 @@ jobs:
       - image-runnerbase
       - images-coordinator-worker
       - image-web
+      - image-egress
       - cli-linux-amd64
       - cli-linux-arm64
       - cli-darwin-amd64

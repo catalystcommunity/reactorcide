@@ -16,9 +16,12 @@ import (
 type fakeClient struct {
 	mu sync.Mutex
 
-	RegisterFunc          func(ctx context.Context, enrollmentToken string, info csilapi.WorkerInfo) (csilapi.RegisterResponse, error)
-	RequestJobFunc        func(ctx context.Context, characteristics csilapi.WorkerCharacteristics) (csilapi.RequestJobResponse, error)
-	HeartbeatFunc         func(ctx context.Context, status string, runningLeases []csilapi.RunningLease) (csilapi.HeartbeatResponse, error)
+	RegisterFunc   func(ctx context.Context, enrollmentToken string, info csilapi.WorkerInfo) (csilapi.RegisterResponse, error)
+	RequestJobFunc func(ctx context.Context, characteristics csilapi.WorkerCharacteristics) (csilapi.RequestJobResponse, error)
+	HeartbeatFunc  func(ctx context.Context, status string, runningLeases []csilapi.RunningLease) (csilapi.HeartbeatResponse, error)
+	// HeartbeatReportFunc, if set, answers HeartbeatWithReport (before
+	// HeartbeatFunc).
+	HeartbeatReportFunc   func(ctx context.Context, report *csilapi.ImageSetReport) (csilapi.HeartbeatResponse, error)
 	AppendLogsFunc        func(ctx context.Context, leaseID, stream, chunk string) (csilapi.AppendLogsResponse, error)
 	AppendLogBatchFunc    func(ctx context.Context, req csilapi.AppendLogBatchRequest) (csilapi.AppendLogBatchResponse, error)
 	AppendMetricBatchFunc func(ctx context.Context, req csilapi.AppendMetricBatchRequest) (csilapi.AppendMetricBatchResponse, error)
@@ -35,6 +38,7 @@ type fakeClient struct {
 type heartbeatCall struct {
 	Status        string
 	RunningLeases []csilapi.RunningLease
+	Report        *csilapi.ImageSetReport
 }
 
 type appendLogsCall struct {
@@ -72,9 +76,16 @@ func (f *fakeClient) RequestJob(ctx context.Context, characteristics csilapi.Wor
 }
 
 func (f *fakeClient) Heartbeat(ctx context.Context, status string, runningLeases []csilapi.RunningLease) (csilapi.HeartbeatResponse, error) {
+	return f.HeartbeatWithReport(ctx, status, runningLeases, nil)
+}
+
+func (f *fakeClient) HeartbeatWithReport(ctx context.Context, status string, runningLeases []csilapi.RunningLease, report *csilapi.ImageSetReport) (csilapi.HeartbeatResponse, error) {
 	f.mu.Lock()
-	f.HeartbeatCalls = append(f.HeartbeatCalls, heartbeatCall{Status: status, RunningLeases: runningLeases})
+	f.HeartbeatCalls = append(f.HeartbeatCalls, heartbeatCall{Status: status, RunningLeases: runningLeases, Report: report})
 	f.mu.Unlock()
+	if f.HeartbeatReportFunc != nil {
+		return f.HeartbeatReportFunc(ctx, report)
+	}
 	if f.HeartbeatFunc != nil {
 		return f.HeartbeatFunc(ctx, status, runningLeases)
 	}

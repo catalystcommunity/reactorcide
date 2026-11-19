@@ -8,6 +8,7 @@ import (
 
 	"github.com/catalystcommunity/app-utils-go/errorutils"
 	"github.com/catalystcommunity/app-utils-go/logging"
+	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/auth"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/config"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/corndogs"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/handlers"
@@ -33,6 +34,15 @@ func Serve() error {
 	deferredStoreFuncs := initStores()
 	for _, deferredFunc := range deferredStoreFuncs {
 		defer deferredFunc()
+	}
+
+	// The login history guard (docs/ui-auth.md "Login history guard"). An
+	// instance that ran with logins must not start in mode none: a lost
+	// REACTORCIDE_UI_AUTH_MODE setting (the default is none) would turn on
+	// every no-login behaviour. Fail closed: no store, no start.
+	historyStore, _ := store.AppStore.(auth.LoginHistoryStore)
+	if err := auth.EnforceLoginHistory(context.Background(), historyStore, config.UIAuthAllowDowngradeToNone); err != nil {
+		return fmt.Errorf("refusing to start: %w", err)
 	}
 
 	// Initialize Corndogs client if configured

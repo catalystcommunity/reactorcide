@@ -30,3 +30,18 @@
 .section-title {
   margin-bottom: var(--space-3);
 }
+
+/* WP15: test results and artifacts on the job page. */
+.job-tests .test-message,
+.provenance-statement {
+  white-space: pre-wrap;
+  overflow: auto;
+  max-height: 10em;
+  margin: var(--space-1, 4px) 0 0;
+}
+.provenance-statement {
+  max-height: 28em;
+}
+.job-tests .test-row + .test-row {
+  margin-top: var(--space-3, 12px);
+}

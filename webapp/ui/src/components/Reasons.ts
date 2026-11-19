@@ -1,4 +1,5 @@
 import type { CIDecisionReason } from '~/api/csilapi/types.gen.ts'
+import { priorityText } from '~/components/priorityText.ts'
 import { fill, h } from '~/ui/dom.ts'
 import { href } from '~/ui/router.ts'
 import './reasons.css'
@@ -76,6 +77,12 @@ export function reasonSentence(r: CIDecisionReason): string {
       return `Not admitted${r.value ? ` (${r.value})` : ''}${r.detail ? `: ${r.detail}` : ''}`
     case 'invalid':
       return `Invalid workflow${r.detail ? `: ${r.detail}` : ''}`
+    case 'priority':
+      return priorityText(r)
+    case 'ref_class': {
+      const rules = r.ruleIds?.length ? ` (from rules ${r.ruleIds.join(', ')})` : ''
+      return `Ref classes: ${list(r.classes)}${rules}`
+    }
     default:
       return `${r.kind || 'reason'}${r.value ? `: ${r.value}` : ''}${detail}`
   }
@@ -89,7 +96,9 @@ function capitalize(text: string): string {
 export function reasonSummary(reasons: readonly CIDecisionReason[] | undefined): string {
   if (!reasons?.length) return ''
   const miss = [...reasons].reverse().find((r) => r.matched === false || r.kind === 'admission' || r.kind === 'invalid')
-  return reasonSentence(miss ?? reasons[reasons.length - 1])
+  // The priority reason tells how soon a job runs, not why it runs.
+  const why = reasons.filter((r) => r.kind !== 'priority')
+  return reasonSentence(miss ?? why[why.length - 1] ?? reasons[reasons.length - 1])
 }
 
 function glyph(r: CIDecisionReason): { text: string; label: string; tone: string } {

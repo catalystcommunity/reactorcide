@@ -22,6 +22,19 @@ type ExecutionProfile struct {
 	TrustedCacheWrites    bool           `gorm:"not null" json:"trusted_cache_writes" yaml:"trusted_cache_writes"`
 	CreatedAt             time.Time      `gorm:"autoCreateTime:false;default:timezone('utc', now())" json:"created_at" yaml:"created_at,omitempty"`
 	UpdatedAt             time.Time      `gorm:"autoUpdateTime:false;default:timezone('utc', now())" json:"updated_at" yaml:"updated_at,omitempty"`
+
+	// EgressControl sends all egress of jobs with this profile through the
+	// egress proxy (docs/egress-proxy.md).
+	EgressControl bool `gorm:"not null;default:false" json:"egress_control" yaml:"egress_control,omitempty"`
+
+	// CacheNamespaceClasses splits the cache namespace by ref class: the
+	// first listed class that the job has is added as a suffix
+	// (docs/builds-and-caches.md). Empty: one namespace for the profile.
+	CacheNamespaceClasses pq.StringArray `gorm:"type:text[];not null;default:'{}'" json:"cache_namespace_classes" yaml:"cache_namespace_classes,omitempty"`
+	// CacheWriteClasses, when not empty, permits cache writes only for a
+	// job with one of the listed ref classes. TrustedCacheWrites must also
+	// be true.
+	CacheWriteClasses pq.StringArray `gorm:"type:text[];not null;default:'{}'" json:"cache_write_classes" yaml:"cache_write_classes,omitempty"`
 }
 
 func (ExecutionProfile) TableName() string { return "execution_profiles" }

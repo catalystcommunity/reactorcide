@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"flag"
 	"os"
@@ -230,6 +231,25 @@ func TestLocalNodeJobSpecPreservesWorkflowExecutionFields(t *testing.T) {
 	}
 }
 
+func TestLocalNodeJobSpecCarriesRunAsAdministrator(t *testing.T) {
+	var node localWorkflowNode
+	if err := json.Unmarshal([]byte(`{"job_name":"w","run_as_administrator":false}`), &node.Spec); err != nil {
+		t.Fatal(err)
+	}
+	spec := localNodeJobSpec(&node, localContext{})
+	if spec.RunAs == nil || spec.RunAs.User != "" || spec.RunAs.Administrator == nil || *spec.RunAs.Administrator {
+		t.Fatalf("run_as = %#v, want administrator false and no user", spec.RunAs)
+	}
+	config := spec.ToJobConfig(t.TempDir(), "j", "local")
+	if config.RunAsAdministrator == nil || *config.RunAsAdministrator {
+		t.Fatalf("JobConfig.RunAsAdministrator = %v, want false", config.RunAsAdministrator)
+	}
+	unset := localNodeJobSpec(&localWorkflowNode{Spec: localTriggerJob{JobName: "w"}}, localContext{})
+	if unset.RunAs != nil {
+		t.Fatalf("unset run_as must stay nil: %#v", unset.RunAs)
+	}
+}
+
 func TestLocalContextLimitsRejectCapabilitiesResourcesAndSecrets(t *testing.T) {
 	ceiling := 30
 	local := localContext{RuntimeCapabilities: []string{"builder"}, ResourceCeilings: map[string]interface{}{"cpu_limit": "1"}, TimeoutCeilingSeconds: &ceiling, DenySecrets: true}
@@ -345,5 +365,30 @@ func TestLocalWorkflowSkipsJobsMarkedSkip(t *testing.T) {
 	}
 	if len(executor.runs) != 1 || executor.runs[0] != "notify" {
 		t.Fatalf("runs = %v, want only notify", executor.runs)
+	}
+}
+
+// A CI tree below a symbolic link (on macOS, t.TempDir() is below /var, a
+// link to /private/var) must not count as outside itself.
+func TestPrepareSelectedCITreeBelowSymlink(t *testing.T) {
+	realRoot := t.TempDir()
+	link := filepath.Join(t.TempDir(), "linked-repo")
+	if err := os.Symlink(realRoot, link); err != nil {
+		t.Skipf("symlinks not available: %v", err)
+	}
+	workflowDir := filepath.Join(realRoot, ".reactorcide", "workflows")
+	if err := os.MkdirAll(workflowDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(workflowDir, "ci.yaml"), []byte("name: ci\njobs: {}\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	prepared, _, cleanup, err := prepareSelectedCITree(link, ".reactorcide/workflows/ci.yaml")
+	if err != nil {
+		t.Fatalf("prepare through a symlinked root: %v", err)
+	}
+	defer cleanup()
+	if _, err := os.Stat(prepared); err != nil {
+		t.Fatal(err)
 	}
 }

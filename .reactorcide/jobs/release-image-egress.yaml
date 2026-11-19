@@ -1,0 +1,28 @@
+name: release-image-egress
+description: "Build and push the Reactorcide egress proxy release image"
+# A separate job from release-image.yaml: a cold release build of the Rust
+# proxy (wasmtime) takes much longer and needs more memory than the Go images.
+# The build runs in the builder sidecar. Under pod-level resources the
+# sidecar shares this budget with the job container.
+job:
+  image: containers.catalystsquad.com/public/reactorcide/runnerbase:latest
+  command: "runnerlib run --job-command true"
+  timeout: 3600
+  priority: 15
+  working_dir: /job
+  disable_run_local: true
+  capabilities:
+    - builder
+  resources:
+    cpu:
+      request: "2"
+      limit: "4"
+    memory:
+      limit: "6Gi"
+environment:
+  REACTORCIDE_RELEASE_JOB: images
+  REACTORCIDE_RELEASE_IMAGE: egress
+  REGISTRY_INTERNAL: "10.16.0.1:5000"
+  GITHUB_PAT: "${secret:catalystcommunity/ci:githubpat}"
+  REGISTRY_USER: "${secret:catalystcommunity/ci:registry_user}"
+  REGISTRY_PASSWORD: "${secret:catalystcommunity/ci:registry_password}"

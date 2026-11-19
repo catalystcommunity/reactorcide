@@ -299,17 +299,19 @@ class PluginManager:
 plugin_manager = PluginManager()
 
 
-def initialize_plugins(plugin_dir: Optional[str] = None) -> None:
+def initialize_plugins(plugin_dir: Optional[str] = None, load_env_dir: bool = True) -> None:
     """Initialize the plugin system.
 
     Args:
         plugin_dir: Optional directory to load custom plugins from
+        load_env_dir: Load REACTORCIDE_PLUGIN_DIR. `runnerlib run` sets this to
+            False and loads that directory itself after its trust check.
     """
     # Load built-in plugins
     plugin_manager.load_builtin_plugins()
 
     # Load custom plugins from environment variable
-    env_plugin_dir = os.environ.get("REACTORCIDE_PLUGIN_DIR")
+    env_plugin_dir = os.environ.get("REACTORCIDE_PLUGIN_DIR") if load_env_dir else None
     if env_plugin_dir:
         plugin_manager.load_plugins_from_directory(env_plugin_dir)
 

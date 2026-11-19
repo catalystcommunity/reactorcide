@@ -6,6 +6,7 @@ import (
 	"net/http"
 
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/audit"
+	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/refclass"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store/models"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/tokencaps"
@@ -66,6 +67,11 @@ func (h *WorkerClassHandler) ServeHTTP(w http.ResponseWriter, r *http.Request, o
 				return
 			}
 			class.OrgID = org.OrgID
+			if err := refclass.ValidateClasses(class.RefClassesAny); err != nil {
+				h.respondWithError(w, 400, err)
+				return
+			}
+			class.RefClassesAny = refclass.Normalize(class.RefClassesAny)
 			if err := h.store.CreateWorkerClass(r.Context(), &class); err != nil {
 				h.respondWithError(w, 400, err)
 				return
@@ -123,17 +129,27 @@ func (h *WorkerClassHandler) ServeHTTP(w http.ResponseWriter, r *http.Request, o
 	case http.MethodPatch, http.MethodPut:
 		var update struct {
 			Protected bool `json:"protected"`
+			// RefClassesAny, when present, replaces the ref class condition
+			// of the class (docs/ref-classes.md). [] removes it.
+			RefClassesAny *[]string `json:"ref_classes_any"`
 		}
 		if json.NewDecoder(r.Body).Decode(&update) != nil {
 			h.respondWithError(w, 400, store.ErrInvalidInput)
 			return
 		}
 		class.Protected = update.Protected
+		if update.RefClassesAny != nil {
+			if err := refclass.ValidateClasses(*update.RefClassesAny); err != nil {
+				h.respondWithError(w, 400, err)
+				return
+			}
+			class.RefClassesAny = refclass.Normalize(*update.RefClassesAny)
+		}
 		if err := h.store.UpdateWorkerClass(r.Context(), class); err != nil {
 			h.respondWithError(w, 400, err)
 			return
 		}
-		audit.Record(r.Context(), h.appStore, org.OrgID, "worker_class.update", "worker_class", class.ClassID, models.JSONB{"protected": class.Protected})
+		audit.Record(r.Context(), h.appStore, org.OrgID, "worker_class.update", "worker_class", class.ClassID, models.JSONB{"protected": class.Protected, "ref_classes_any": []string(class.RefClassesAny)})
 		h.respondWithJSON(w, 200, class)
 	case http.MethodDelete:
 		if err := h.store.DeleteWorkerClass(r.Context(), class.ClassID); err != nil {

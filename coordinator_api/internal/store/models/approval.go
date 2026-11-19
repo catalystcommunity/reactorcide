@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/subjects"
 	"github.com/lib/pq"
 )
 
@@ -36,6 +37,8 @@ const (
 	CIApprovalChannelReview  = "review"
 	CIApprovalChannelAPI     = "api"
 	CIApprovalChannelUI      = "ui"
+	// CIApprovalChannelCheckRun is a GitHub App check run button (a re-run).
+	CIApprovalChannelCheckRun = "check_run"
 )
 
 // SubjectNonAuthor matches any person who is not an author of the change. It
@@ -65,6 +68,9 @@ type CIApproval struct {
 	CreatedAt        time.Time      `gorm:"autoCreateTime:false;default:timezone('utc', now())" json:"created_at"`
 	ExpiresAt        *time.Time     `json:"expires_at,omitempty"`
 	InvalidatedAt    *time.Time     `json:"invalidated_at,omitempty"`
+
+	// ActorPrincipalID is the principal of the person.
+	ActorPrincipalID *string `gorm:"type:uuid;default:null" json:"actor_principal_id,omitempty"`
 }
 
 func (CIApproval) TableName() string { return "ci_approvals" }
@@ -75,27 +81,16 @@ func (a CIApproval) IsActive(now time.Time) bool {
 }
 
 // HasSubject reports whether the person had the subject when they acted.
+// The subject * (anyone) matches every recorded person.
 func (a CIApproval) HasSubject(subject string) bool {
-	for _, value := range a.Subjects {
-		if value == subject {
-			return true
-		}
-	}
-	return false
+	return subjects.Has(a.Subjects, subject)
 }
 
 // ValidApproverSubject reports whether subject is a subject an approval can
-// record. It is the same subject set that coordinator CI policy accepts.
+// record. It is the same subject set that coordinator CI policy accepts (see
+// internal/subjects).
 func ValidApproverSubject(subject string) bool {
-	if subject == "project_owner" || subject == "repository_write" {
-		return true
-	}
-	for _, prefix := range []string{"vcs_user:", "vcs_team:", "reactorcide_group:"} {
-		if strings.HasPrefix(subject, prefix) && len(strings.TrimPrefix(subject, prefix)) > 0 {
-			return true
-		}
-	}
-	return false
+	return subjects.Valid(subject)
 }
 
 // ValidApprovalLabel reports whether label is a valid accept label.
@@ -121,7 +116,7 @@ func (a CIApproval) Validate() error {
 		return fmt.Errorf("the person is required")
 	}
 	switch a.Channel {
-	case CIApprovalChannelComment, CIApprovalChannelReview, CIApprovalChannelAPI, CIApprovalChannelUI:
+	case CIApprovalChannelComment, CIApprovalChannelReview, CIApprovalChannelAPI, CIApprovalChannelUI, CIApprovalChannelCheckRun:
 	default:
 		return fmt.Errorf("approval channel %q is unknown", a.Channel)
 	}

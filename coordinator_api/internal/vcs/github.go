@@ -49,7 +49,7 @@ func NewGitHubClient(config Config) (*GitHubClient, error) {
 	return &GitHubClient{
 		config: config,
 		client: transportsecurity.HTTPClient(
-			&http.Client{}, config.AllowInsecureTransport, "GitHub API",
+			&http.Client{Transport: config.Transport}, config.AllowInsecureTransport, "GitHub API",
 		),
 		logger:     logger,
 		actorCache: make(map[string]actorSubjectCacheEntry),
@@ -198,6 +198,10 @@ func (c *GitHubClient) ParseWebhook(r *http.Request) (*WebhookEvent, error) {
 	case "pull_request_review":
 		if err := c.parsePullRequestReviewEvent(body, event); err != nil {
 			return nil, fmt.Errorf("parsing pull request review event: %w", err)
+		}
+	case "membership", "team":
+		if err := parseGitHubTeamEvent(eventType, body, event); err != nil {
+			return nil, fmt.Errorf("parsing %s event: %w", eventType, err)
 		}
 	case "ping":
 		// Ping event for webhook setup verification
@@ -567,22 +571,17 @@ func (c *GitHubClient) parsePullRequestEvent(body []byte, event *WebhookEvent) e
 		AuthorEmail: "", // Not provided in webhook
 
 		AuthorAssociation: payload.PullRequest.AuthorAssociation,
+		Draft:             payload.PullRequest.Draft,
 	}
 
 	// Cross-repo (fork) PR: the head branch lives on a different repository
 	// than the base. Capture the head repository so downstream code can clone
 	// from the fork to reach HeadRef.
-	headFullName := payload.PullRequest.Head.Repo.FullName
 	baseFullName := payload.PullRequest.Base.Repo.FullName
-	if headFullName != "" && baseFullName != "" && headFullName != baseFullName {
-		event.PullRequest.HeadRepository = &RepositoryInfo{
-			FullName:      payload.PullRequest.Head.Repo.FullName,
-			CloneURL:      payload.PullRequest.Head.Repo.CloneURL,
-			SSHURL:        payload.PullRequest.Head.Repo.SSHURL,
-			HTMLURL:       payload.PullRequest.Head.Repo.HTMLURL,
-			DefaultBranch: payload.PullRequest.Head.Repo.DefaultBranch,
-		}
+	if baseFullName == "" {
+		baseFullName = payload.Repository.FullName
 	}
+	event.PullRequest.HeadRepository = githubHeadRepository(payload.PullRequest.Head.Repo, baseFullName)
 
 	return nil
 }
@@ -766,12 +765,26 @@ func (c *GitHubClient) convertPRInfo(pr githubPullRequest) *PullRequestInfo {
 		AuthorLogin: pr.User.Login,
 
 		AuthorAssociation: pr.AuthorAssociation,
+		Draft:             pr.Draft,
 	}
-	if pr.Head.Repo.FullName != "" && pr.Head.Repo.FullName != pr.Base.Repo.FullName {
-		result.HeadRepository = &RepositoryInfo{FullName: pr.Head.Repo.FullName, CloneURL: pr.Head.Repo.CloneURL,
-			SSHURL: pr.Head.Repo.SSHURL, HTMLURL: pr.Head.Repo.HTMLURL, DefaultBranch: pr.Head.Repo.DefaultBranch}
-	}
+	result.HeadRepository = githubHeadRepository(pr.Head.Repo, pr.Base.Repo.FullName)
 	return result
+}
+
+// githubHeadRepository returns the head repository of a cross-repository
+// (fork) pull request, or nil for a pull request from the base repository.
+//
+// An unknown relation is a fork (fail closed): GitHub sends a null head.repo
+// when the fork was deleted, and a pull request with no base repository name
+// cannot prove that its head is the same repository. A fork with no known
+// repository gets an empty RepositoryInfo; the eval job then fetches the
+// head commit from the base repository (GitHub keeps refs/pull/N/head).
+func githubHeadRepository(head githubRepository, baseFullName string) *RepositoryInfo {
+	if head.FullName != "" && baseFullName != "" && strings.EqualFold(head.FullName, baseFullName) {
+		return nil
+	}
+	return &RepositoryInfo{FullName: head.FullName, CloneURL: head.CloneURL,
+		SSHURL: head.SSHURL, HTMLURL: head.HTMLURL, DefaultBranch: head.DefaultBranch}
 }
 
 // GitHub API structures
@@ -812,6 +825,8 @@ type githubPullRequest struct {
 	User           githubUser `json:"user"`
 	// AuthorAssociation is the relation of the author to the repository.
 	AuthorAssociation string `json:"author_association"`
+	// Draft is true for a draft pull request.
+	Draft bool `json:"draft"`
 }
 
 type githubPullRequestReviewEvent struct {

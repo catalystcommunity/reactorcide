@@ -26,6 +26,7 @@ type WorkerInfo struct {
 	Arch          string                 `json:"arch" yaml:"arch"`
 	WorkerVersion *string                `json:"worker_version,omitempty" yaml:"worker_version,omitempty"`
 	Custom        []CustomCharacteristic `json:"custom" yaml:"custom"`
+	Runtime       *string                `json:"runtime,omitempty" yaml:"runtime,omitempty"`
 }
 
 // RegisterRequest represents a structured data type
@@ -36,9 +37,45 @@ type RegisterRequest struct {
 
 // RegisterResponse represents a structured data type
 type RegisterResponse struct {
-	WorkerSession     string `json:"worker_session" yaml:"worker_session"`
-	WorkerId          string `json:"worker_id" yaml:"worker_id"`
-	HeartbeatInterval int64  `json:"heartbeat_interval" yaml:"heartbeat_interval"`
+	WorkerSession       string    `json:"worker_session" yaml:"worker_session"`
+	WorkerId            string    `json:"worker_id" yaml:"worker_id"`
+	HeartbeatInterval   int64     `json:"heartbeat_interval" yaml:"heartbeat_interval"`
+	EnrollmentTokenId   *string   `json:"enrollment_token_id,omitempty" yaml:"enrollment_token_id,omitempty"`
+	EnrollmentTokenName *string   `json:"enrollment_token_name,omitempty" yaml:"enrollment_token_name,omitempty"`
+	ImageSet            *ImageSet `json:"image_set,omitempty" yaml:"image_set,omitempty"`
+}
+
+// ImageSetEntry represents a structured data type
+type ImageSetEntry struct {
+	Ref     string   `json:"ref" yaml:"ref"`
+	Digest  string   `json:"digest" yaml:"digest"`
+	Kind    string   `json:"kind" yaml:"kind"`
+	Aliases []string `json:"aliases" yaml:"aliases"`
+	Pending *bool    `json:"pending,omitempty" yaml:"pending,omitempty"`
+}
+
+// ImageSet represents a structured data type
+type ImageSet struct {
+	Version int64           `json:"version" yaml:"version"`
+	Images  []ImageSetEntry `json:"images" yaml:"images"`
+}
+
+// ImageFailure represents a structured data type
+type ImageFailure struct {
+	Digest    string `json:"digest" yaml:"digest"`
+	Permanent bool   `json:"permanent" yaml:"permanent"`
+	Detail    string `json:"detail" yaml:"detail"`
+}
+
+// ImageSetReport represents a structured data type
+type ImageSetReport struct {
+	Version       int64          `json:"version" yaml:"version"`
+	State         string         `json:"state" yaml:"state"`
+	Detail        *string        `json:"detail,omitempty" yaml:"detail,omitempty"`
+	ReadyDigests  []string       `json:"ready_digests" yaml:"ready_digests"`
+	FreeBytes     *int64         `json:"free_bytes,omitempty" yaml:"free_bytes,omitempty"`
+	RequiredBytes *int64         `json:"required_bytes,omitempty" yaml:"required_bytes,omitempty"`
+	Failed        []ImageFailure `json:"failed,omitempty" yaml:"failed,omitempty"`
 }
 
 // WorkerCharacteristics represents a structured data type
@@ -48,10 +85,20 @@ type WorkerCharacteristics struct {
 	Custom []CustomCharacteristic `json:"custom" yaml:"custom"`
 }
 
+// AdmissionReport represents a structured data type
+type AdmissionReport struct {
+	Mode                  string `json:"mode" yaml:"mode"`
+	CapacityCpuMillicores int64  `json:"capacity_cpu_millicores" yaml:"capacity_cpu_millicores"`
+	CapacityMemoryBytes   int64  `json:"capacity_memory_bytes" yaml:"capacity_memory_bytes"`
+	HeadroomCpuMillicores int64  `json:"headroom_cpu_millicores" yaml:"headroom_cpu_millicores"`
+	HeadroomMemoryBytes   int64  `json:"headroom_memory_bytes" yaml:"headroom_memory_bytes"`
+}
+
 // RequestJobRequest represents a structured data type
 type RequestJobRequest struct {
 	WorkerCharacteristics  WorkerCharacteristics `json:"worker_characteristics" yaml:"worker_characteristics"`
 	ReportsExecutionTiming *bool                 `json:"reports_execution_timing,omitempty" yaml:"reports_execution_timing,omitempty"`
+	Admission              *AdmissionReport      `json:"admission,omitempty" yaml:"admission,omitempty"`
 }
 
 // EnvVar represents a structured data type
@@ -62,9 +109,11 @@ type EnvVar struct {
 
 // Resources represents a structured data type
 type Resources struct {
-	CpuRequest  string `json:"cpu_request" yaml:"cpu_request"`
-	CpuLimit    string `json:"cpu_limit" yaml:"cpu_limit"`
-	MemoryLimit string `json:"memory_limit" yaml:"memory_limit"`
+	CpuRequest     string  `json:"cpu_request" yaml:"cpu_request"`
+	CpuLimit       string  `json:"cpu_limit" yaml:"cpu_limit"`
+	MemoryLimit    string  `json:"memory_limit" yaml:"memory_limit"`
+	StorageRequest *string `json:"storage_request,omitempty" yaml:"storage_request,omitempty"`
+	StorageLimit   *string `json:"storage_limit,omitempty" yaml:"storage_limit,omitempty"`
 }
 
 // VCSAuth represents a structured data type
@@ -77,20 +126,90 @@ type VCSAuth struct {
 
 // Lease represents a structured data type
 type Lease struct {
-	LeaseId            string    `json:"lease_id" yaml:"lease_id"`
-	JobId              string    `json:"job_id" yaml:"job_id"`
-	Image              string    `json:"image" yaml:"image"`
-	Command            []string  `json:"command" yaml:"command"`
-	WorkingDir         string    `json:"working_dir" yaml:"working_dir"`
-	Env                []EnvVar  `json:"env" yaml:"env"`
-	Secrets            []EnvVar  `json:"secrets" yaml:"secrets"`
-	Resources          Resources `json:"resources" yaml:"resources"`
-	TimeoutSeconds     int64     `json:"timeout_seconds" yaml:"timeout_seconds"`
-	CancelGraceSeconds int64     `json:"cancel_grace_seconds" yaml:"cancel_grace_seconds"`
-	Capabilities       []string  `json:"capabilities" yaml:"capabilities"`
-	ImagePullSecrets   []string  `json:"image_pull_secrets" yaml:"image_pull_secrets"`
-	RunAsUser          string    `json:"run_as_user" yaml:"run_as_user"`
-	VcsAuth            *VCSAuth  `json:"vcs_auth,omitempty" yaml:"vcs_auth,omitempty"`
+	LeaseId            string            `json:"lease_id" yaml:"lease_id"`
+	JobId              string            `json:"job_id" yaml:"job_id"`
+	Image              string            `json:"image" yaml:"image"`
+	Command            []string          `json:"command" yaml:"command"`
+	WorkingDir         string            `json:"working_dir" yaml:"working_dir"`
+	Env                []EnvVar          `json:"env" yaml:"env"`
+	Secrets            []EnvVar          `json:"secrets" yaml:"secrets"`
+	Resources          Resources         `json:"resources" yaml:"resources"`
+	TimeoutSeconds     int64             `json:"timeout_seconds" yaml:"timeout_seconds"`
+	CancelGraceSeconds int64             `json:"cancel_grace_seconds" yaml:"cancel_grace_seconds"`
+	Capabilities       []string          `json:"capabilities" yaml:"capabilities"`
+	ImagePullSecrets   []string          `json:"image_pull_secrets" yaml:"image_pull_secrets"`
+	RunAsUser          string            `json:"run_as_user" yaml:"run_as_user"`
+	RunAsAdministrator *bool             `json:"run_as_administrator,omitempty" yaml:"run_as_administrator,omitempty"`
+	VcsAuth            *VCSAuth          `json:"vcs_auth,omitempty" yaml:"vcs_auth,omitempty"`
+	Egress             *EgressLease      `json:"egress,omitempty" yaml:"egress,omitempty"`
+	Cache              *CacheLease       `json:"cache,omitempty" yaml:"cache,omitempty"`
+	Artifacts          *ArtifactLease    `json:"artifacts,omitempty" yaml:"artifacts,omitempty"`
+	QuarantinedTests   []QuarantinedTest `json:"quarantined_tests,omitempty" yaml:"quarantined_tests,omitempty"`
+	ImageAlias         *string           `json:"image_alias,omitempty" yaml:"image_alias,omitempty"`
+	ImageRetryOf       *string           `json:"image_retry_of,omitempty" yaml:"image_retry_of,omitempty"`
+}
+
+// ArtifactLease represents a structured data type
+type ArtifactLease struct {
+	MaxFileBytes int64 `json:"max_file_bytes" yaml:"max_file_bytes"`
+	MaxJobBytes  int64 `json:"max_job_bytes" yaml:"max_job_bytes"`
+	MaxFiles     int64 `json:"max_files" yaml:"max_files"`
+	ChunkBytes   int64 `json:"chunk_bytes" yaml:"chunk_bytes"`
+}
+
+// QuarantinedTest represents a structured data type
+type QuarantinedTest struct {
+	TestId    string `json:"test_id" yaml:"test_id"`
+	Suite     string `json:"suite" yaml:"suite"`
+	Classname string `json:"classname" yaml:"classname"`
+	Name      string `json:"name" yaml:"name"`
+	ExpiresAt string `json:"expires_at" yaml:"expires_at"`
+}
+
+// CacheLease represents a structured data type
+type CacheLease struct {
+	Namespace         string `json:"namespace" yaml:"namespace"`
+	VolumeKey         string `json:"volume_key" yaml:"volume_key"`
+	Writable          bool   `json:"writable" yaml:"writable"`
+	ArtifactNamespace string `json:"artifact_namespace" yaml:"artifact_namespace"`
+}
+
+// EgressLease represents a structured data type
+type EgressLease struct {
+	Identity     EgressIdentity      `json:"identity" yaml:"identity"`
+	Destinations []EgressDestination `json:"destinations" yaml:"destinations"`
+	Grants       []EgressGrant       `json:"grants" yaml:"grants"`
+}
+
+// EgressIdentity represents a structured data type
+type EgressIdentity struct {
+	OrgId              string   `json:"org_id" yaml:"org_id"`
+	ProjectId          string   `json:"project_id" yaml:"project_id"`
+	WorkflowId         string   `json:"workflow_id" yaml:"workflow_id"`
+	WorkflowSecurityId string   `json:"workflow_security_id" yaml:"workflow_security_id"`
+	Node               string   `json:"node" yaml:"node"`
+	ActorPrincipalId   string   `json:"actor_principal_id" yaml:"actor_principal_id"`
+	ActorIdentity      string   `json:"actor_identity" yaml:"actor_identity"`
+	ExecutionProfile   string   `json:"execution_profile" yaml:"execution_profile"`
+	CiOrigin           string   `json:"ci_origin" yaml:"ci_origin"`
+	RefClasses         []string `json:"ref_classes" yaml:"ref_classes"`
+}
+
+// EgressDestination represents a structured data type
+type EgressDestination struct {
+	Host  string  `json:"host" yaml:"host"`
+	Ports []int64 `json:"ports" yaml:"ports"`
+}
+
+// EgressGrant represents a structured data type
+type EgressGrant struct {
+	Id          string   `json:"id" yaml:"id"`
+	SecretRef   string   `json:"secret_ref" yaml:"secret_ref"`
+	Placeholder string   `json:"placeholder" yaml:"placeholder"`
+	Value       string   `json:"value" yaml:"value"`
+	Hosts       []string `json:"hosts" yaml:"hosts"`
+	Header      string   `json:"header" yaml:"header"`
+	Format      string   `json:"format" yaml:"format"`
 }
 
 // RequestJobResponse represents a structured data type
@@ -107,8 +226,9 @@ type RunningLease struct {
 
 // HeartbeatRequest represents a structured data type
 type HeartbeatRequest struct {
-	Status        string         `json:"status" yaml:"status"`
-	RunningLeases []RunningLease `json:"running_leases" yaml:"running_leases"`
+	Status         string          `json:"status" yaml:"status"`
+	RunningLeases  []RunningLease  `json:"running_leases" yaml:"running_leases"`
+	ImageSetReport *ImageSetReport `json:"image_set_report,omitempty" yaml:"image_set_report,omitempty"`
 }
 
 // Directive represents a structured data type
@@ -121,6 +241,7 @@ type Directive struct {
 type HeartbeatResponse struct {
 	Directives []Directive `json:"directives" yaml:"directives"`
 	Draining   bool        `json:"draining" yaml:"draining"`
+	ImageSet   *ImageSet   `json:"image_set,omitempty" yaml:"image_set,omitempty"`
 }
 
 // AppendLogsRequest represents a structured data type
@@ -213,9 +334,31 @@ type ReportResultRequest struct {
 	WorkflowOutput *string `json:"workflow_output,omitempty" yaml:"workflow_output,omitempty"`
 	StartedAt      *string `json:"started_at,omitempty" yaml:"started_at,omitempty"`
 	FinishedAt     *string `json:"finished_at,omitempty" yaml:"finished_at,omitempty"`
+	FailureClass   *string `json:"failure_class,omitempty" yaml:"failure_class,omitempty"`
+	FailureDetail  *string `json:"failure_detail,omitempty" yaml:"failure_detail,omitempty"`
+	MainStarted    *bool   `json:"main_started,omitempty" yaml:"main_started,omitempty"`
 }
 
 // ReportResultResponse represents a structured data type
 type ReportResultResponse struct {
 	Ok bool `json:"ok" yaml:"ok"`
+}
+
+// UploadArtifactRequest represents a structured data type
+type UploadArtifactRequest struct {
+	LeaseId   string  `json:"lease_id" yaml:"lease_id"`
+	Path      string  `json:"path" yaml:"path"`
+	Offset    int64   `json:"offset" yaml:"offset"`
+	Data      []byte  `json:"data" yaml:"data"`
+	Final     bool    `json:"final" yaml:"final"`
+	MediaType *string `json:"media_type,omitempty" yaml:"media_type,omitempty"`
+	Kind      *string `json:"kind,omitempty" yaml:"kind,omitempty"`
+}
+
+// UploadArtifactResponse represents a structured data type
+type UploadArtifactResponse struct {
+	Ok         bool    `json:"ok" yaml:"ok"`
+	ArtifactId string  `json:"artifact_id" yaml:"artifact_id"`
+	Size       int64   `json:"size" yaml:"size"`
+	Sha256     *string `json:"sha256,omitempty" yaml:"sha256,omitempty"`
 }

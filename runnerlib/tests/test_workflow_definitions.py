@@ -159,6 +159,40 @@ def test_parse_job_file_inline_overrides_win(temp_ci_dir):
     assert job.environment == {"K": "V"}
 
 
+def test_workflow_entry_run_as_merges_field_by_field(temp_ci_dir):
+    _write(
+        temp_ci_dir / ".reactorcide" / "jobs" / "win.yaml",
+        {
+            "name": "win",
+            "job": {
+                "image": "win:1",
+                "command": "echo",
+                "run_as": {"user": "builder", "administrator": True},
+            },
+        },
+    )
+    data = {
+        "name": "wf",
+        "on": {"events": ["push"]},
+        "jobs": {
+            # Flat entry key: sets only administrator.
+            "flat": {"job_file": "win.yaml", "run_as": {"administrator": False}},
+            # Nested under job: sets only user.
+            "nested": {"job_file": "win.yaml", "job": {"run_as": {"user": "root"}}},
+            # An empty user keeps the job file user.
+            "empty": {"job_file": "win.yaml", "run_as": {"user": ""}},
+        },
+    }
+    wf = parse_workflow_definition(data, temp_ci_dir)
+    jobs = {j.name: j.job for j in wf.jobs}
+    assert jobs["flat"].run_as_user == "builder"
+    assert jobs["flat"].run_as_administrator is False
+    assert jobs["nested"].run_as_user == "root"
+    assert jobs["nested"].run_as_administrator is True
+    assert jobs["empty"].run_as_user == "builder"
+    assert jobs["empty"].run_as_administrator is True
+
+
 def test_parse_missing_name_raises(temp_ci_dir):
     with pytest.raises(ValueError, match="missing required 'name'"):
         parse_workflow_definition({"on": {"events": ["push"]}, "jobs": {}}, temp_ci_dir)
@@ -347,7 +381,8 @@ def test_reserved_authority_fields_are_rejected(temp_ci_dir, reserved):
 @pytest.mark.parametrize("reserved", [
     "REACTORCIDE_CI_APPROVALS", "REACTORCIDE_RUN_AUTHORITY", "REACTORCIDE_ACTOR_SUBJECTS",
     "REACTORCIDE_SHA", "REACTORCIDE_DIFF_BASE", "REACTORCIDE_HEAD_ACTOR", "REACTORCIDE_BASE_REF",
-    "REACTORCIDE_PR_NUMBER", "reactorcide_ci_approvals",
+    "REACTORCIDE_PR_NUMBER", "reactorcide_ci_approvals", "REACTORCIDE_REF_CLASSES",
+    "REACTORCIDE_CACHE_NAMESPACE", "REACTORCIDE_CACHE_WRITABLE", "REACTORCIDE_ARTIFACT_NAMESPACE",
 ])
 def test_reserved_event_env_is_rejected(temp_ci_dir, reserved):
     """Repository YAML must not set or replace coordinator event facts (R1)."""

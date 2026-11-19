@@ -16,7 +16,15 @@ func (ps PostgresDbStore) CreateVCSIdentityLink(ctx context.Context, link *model
 	if link.Provider == "" || link.ExternalSubject == "" {
 		return fmt.Errorf("provider and external subject are required")
 	}
-	return ps.getDB(ctx).Create(link).Error
+	if err := ps.getDB(ctx).Create(link).Error; err != nil {
+		if isUniqueViolation(err) {
+			// The link exists, or the VCS login belongs to another
+			// principal (principals_on_vcs_identity_link refuses it).
+			return store.ErrConflict
+		}
+		return err
+	}
+	return nil
 }
 
 func (ps PostgresDbStore) ResolveVCSIdentityLink(ctx context.Context, provider, subject string) (*models.VCSIdentityLink, error) {

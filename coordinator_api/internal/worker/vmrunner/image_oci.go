@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -105,6 +106,15 @@ type OCIImageSource struct {
 	// the same-package OCIImageSource value to exercise digest-mismatch
 	// rejection and artifact-shape handling without a live registry.
 	sourceFactory func(ref registry.Reference) (oras.ReadOnlyTarget, error)
+
+	// s3Clients builds the S3 client of s3:// references on first use.
+	s3Clients *s3ClientCache
+	// s3Factory builds the read-only target of an s3:// reference. Tests
+	// replace it with an in-memory S3 fake.
+	s3Factory func(ctx context.Context, loc s3ImageLocation) (oras.ReadOnlyTarget, error)
+	// requireS3Digest refuses s3:// references without a digest (the
+	// worker; decision I4 and the plan References section).
+	requireS3Digest bool
 }
 
 // OCIImageSourceOption configures optional OCIImageSource behavior.
@@ -131,6 +141,18 @@ func WithPlainHTTPRegistries(hosts ...string) OCIImageSourceOption {
 			s.plainHTTPHosts[h] = struct{}{}
 		}
 	}
+}
+
+// WithS3Config sets the S3 client configuration of s3:// references. If this
+// option is absent, S3ImageStoreConfigFromEnv is used.
+func WithS3Config(cfg S3ImageStoreConfig) OCIImageSourceOption {
+	return func(s *OCIImageSource) { s.s3Clients = &s3ClientCache{cfg: cfg} }
+}
+
+// WithRequireS3Digest refuses an s3:// reference that has no digest. The
+// worker uses it: a tag is a name, not a pin.
+func WithRequireS3Digest() OCIImageSourceOption {
+	return func(s *OCIImageSource) { s.requireS3Digest = true }
 }
 
 // NewOCIImageSource builds an OCIImageSource caching pulled base images
@@ -177,7 +199,11 @@ func NewOCIImageSource(cacheDir string, opts ...OCIImageSourceOption) (*OCIImage
 		}
 	}
 
+	if s.s3Clients == nil {
+		s.s3Clients = &s3ClientCache{cfg: S3ImageStoreConfigFromEnv()}
+	}
 	s.sourceFactory = s.defaultSource
+	s.s3Factory = s.defaultS3Source
 	return s, nil
 }
 
@@ -201,6 +227,10 @@ func (s *OCIImageSource) resolveLocked(ctx context.Context, imageRef string) (st
 	if imageRef == "" {
 		return "", errors.New("vmrunner: image reference must not be empty")
 	}
+	if isS3ImageRef(imageRef) {
+		return s.resolveS3Locked(ctx, imageRef)
+	}
+	imageRef = strings.TrimPrefix(imageRef, ociImageScheme)
 
 	ref, err := registry.ParseReference(imageRef)
 	if err != nil {
@@ -236,6 +266,62 @@ func (s *OCIImageSource) resolveLocked(ctx context.Context, imageRef string) (st
 
 	return s.layerPath(ctx, manifestDesc)
 }
+
+// resolveS3Locked pulls an s3:// reference into the same local cache as a
+// registry pull. A pinned reference is cached under its digest, so the same
+// image from a registry and from S3 is stored once.
+func (s *OCIImageSource) resolveS3Locked(ctx context.Context, imageRef string) (string, error) {
+	loc, err := parseS3ImageRef(imageRef)
+	if err != nil {
+		return "", err
+	}
+	if loc.Digest == "" && s.requireS3Digest {
+		return "", fmt.Errorf("vmrunner: s3 image reference %q has no digest; use the pinned reference (...@sha256:<hex>) that vm-image publish prints", imageRef)
+	}
+	srcRef := loc.Digest.String()
+	cacheRef := srcRef
+	if loc.Digest == "" {
+		srcRef = loc.Tag
+		if srcRef == "" {
+			srcRef = "latest"
+		}
+		unpinned := loc
+		unpinned.Tag = srcRef
+		cacheRef = unpinned.String()
+	}
+	if desc, err := s.cache.Resolve(ctx, cacheRef); err == nil {
+		if path, perr := s.layerPath(ctx, desc); perr == nil {
+			return path, nil
+		}
+	}
+	src, err := s.s3Factory(ctx, loc)
+	if err != nil {
+		return "", err
+	}
+	manifestDesc, err := oras.Copy(ctx, src, srcRef, s.cache, cacheRef, oras.CopyOptions{
+		CopyGraphOptions: oras.CopyGraphOptions{Concurrency: s.copyConcurrency},
+	})
+	if err != nil {
+		return "", fmt.Errorf("vmrunner: pull S3 vm image %q: %w", imageRef, err)
+	}
+	if loc.Digest != "" && manifestDesc.Digest != loc.Digest {
+		return "", fmt.Errorf("vmrunner: S3 vm image %q resolved to %s, expected %s", imageRef, manifestDesc.Digest, loc.Digest)
+	}
+	return s.layerPath(ctx, manifestDesc)
+}
+
+func (s *OCIImageSource) defaultS3Source(ctx context.Context, loc s3ImageLocation) (oras.ReadOnlyTarget, error) {
+	client, err := s.s3Clients.get(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return &s3LayoutTarget{client: client, loc: loc}, nil
+}
+
+// ociImageScheme is the optional scheme of a registry reference
+// (oci://registry/repository:tag@sha256:...). Registry tools do not use it,
+// so it is removed before the reference is parsed.
+const ociImageScheme = "oci://"
 
 // defaultSource builds the real registry/remote.Repository Resolve pulls
 // from for ref, wired with ambient docker-config credentials and plain-HTTP
@@ -409,6 +495,12 @@ func (s *OCIImageSource) touchAccess(desc ocispec.Descriptor) error {
 // Prune removes manifests, blobs, and materialized bundles that have not been
 // resolved within maxUnused. It returns the number of removed images.
 func (s *OCIImageSource) Prune(ctx context.Context, maxUnused time.Duration, now time.Time) (int, error) {
+	return s.PruneKeeping(ctx, maxUnused, now, nil)
+}
+
+// PruneKeeping is Prune, but it never removes an image whose manifest
+// digest keep names (the worker image set, image_set.go).
+func (s *OCIImageSource) PruneKeeping(ctx context.Context, maxUnused time.Duration, now time.Time, keep map[digest.Digest]bool) (int, error) {
 	if maxUnused <= 0 {
 		return 0, nil
 	}
@@ -439,21 +531,11 @@ func (s *OCIImageSource) Prune(ctx context.Context, maxUnused time.Duration, now
 		if err := dgst.Validate(); err != nil {
 			return fmt.Errorf("vmrunner: invalid cache access record %q: %w", path, err)
 		}
-		desc, err := s.cache.Resolve(ctx, dgst.String())
-		if err == nil {
-			if err := s.cache.Delete(ctx, desc); err != nil {
-				return fmt.Errorf("vmrunner: delete cached image %s: %w", dgst, err)
-			}
+		if keep[dgst] {
+			return nil
 		}
-		bundlePath := filepath.Join(s.cacheDir, "bundles", algorithm, entry.Name())
-		if err := os.Chmod(bundlePath, 0o700); err != nil && !os.IsNotExist(err) {
-			return fmt.Errorf("vmrunner: unlock materialized bundle %s: %w", dgst, err)
-		}
-		if err := os.RemoveAll(bundlePath); err != nil {
-			return fmt.Errorf("vmrunner: remove materialized bundle %s: %w", dgst, err)
-		}
-		if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
-			return fmt.Errorf("vmrunner: remove image access record %s: %w", dgst, err)
+		if err := s.removeLocked(ctx, dgst); err != nil {
+			return err
 		}
 		removed++
 		return nil

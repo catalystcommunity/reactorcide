@@ -11,6 +11,7 @@ import (
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/checkauth"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store/models"
+	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/tokencaps"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -130,4 +131,18 @@ func TestGroupHandler_RequiresOrganizationAuthority(t *testing.T) {
 	otherOrg := &checkauth.Principal{CredentialType: "instance_token", OrganizationIDs: []string{"org-2"}, AllCapabilities: true}
 	assert.Equal(t, http.StatusForbidden, groupRequest(t, h, otherOrg, http.MethodGet, "catalyst", "", nil).Code)
 	assert.Equal(t, http.StatusForbidden, groupRequest(t, h, nil, http.MethodGet, "catalyst", "", nil).Code)
+}
+
+// TestGroupHandler_ReadNeedsOrganizationsRead: a GET accepts
+// organizations:read; a change needs organizations:manage.
+func TestGroupHandler_ReadNeedsOrganizationsRead(t *testing.T) {
+	fake := &fakeGroupStore{MockStore: &MockStore{}, members: map[string][]models.User{}, users: map[string]models.User{}}
+	h := NewGroupHandler(fake)
+	readSet, _ := tokencaps.New(tokencaps.OrganizationsRead)
+	reader := &checkauth.Principal{CredentialType: "instance_token", OrganizationIDs: []string{"org-1"}, Capabilities: readSet}
+	assert.Equal(t, http.StatusOK, groupRequest(t, h, reader, http.MethodGet, "catalyst", "", nil).Code)
+	assert.Equal(t, http.StatusForbidden, groupRequest(t, h, reader, http.MethodPost, "catalyst", "", map[string]string{"name": "new"}).Code)
+	jobsSet, _ := tokencaps.New(tokencaps.JobsRead)
+	none := &checkauth.Principal{CredentialType: "instance_token", OrganizationIDs: []string{"org-1"}, Capabilities: jobsSet}
+	assert.Equal(t, http.StatusForbidden, groupRequest(t, h, none, http.MethodGet, "catalyst", "", nil).Code)
 }

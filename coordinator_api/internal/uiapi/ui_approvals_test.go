@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/approvals"
+	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/config"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store/models"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/tokencaps"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/uiapi/csilapi"
@@ -137,5 +138,73 @@ func TestTrustSettings_PolicyTokenManagesOrganization(t *testing.T) {
 	if _, err := svc.PutCiTrustSettings(ctx, csilapi.PutCiTrustSettingsRequest{Organization: "acme",
 		Settings: csilapi.CiTrustSettings{RunGate: []string{models.RunGateForks}}}); err != nil {
 		t.Fatalf("a policies:manage token was refused: %v", err)
+	}
+}
+
+// On a no-login instance only, the admin token and a wide service principal
+// token give pull request commands as the instance administrator.
+func TestPrCommand_InstanceAdminOnNoLoginInstance(t *testing.T) {
+	svc, st, deps, project := seedTrustFixture(t)
+	executor := &fakeExecutor{}
+	deps.Approvals = executor
+	st.apiTokens["admin-token"] = models.APIToken{TokenID: "token-admin", SubjectType: "instance_token",
+		AllOrganizations: true, AllCapabilities: true}
+	principalID := "0190a1b2-c3d4-7e5f-8a9b-0c1d2e3f4a5b"
+	st.apiTokens["wide-token"] = models.APIToken{TokenID: "token-wide", SubjectType: "instance_token",
+		AllOrganizations: true, AllCapabilities: true, PrincipalID: &principalID}
+	command := csilapi.PrCommandRequest{ProjectId: project.ProjectID, PrNumber: 4, Command: "approve-ci"}
+
+	withAuthMode(t, "none")
+	if _, err := svc.PrCommand(WithAuthToken(context.Background(), "admin-token"), command); err != nil {
+		t.Fatalf("the admin token was refused on a no-login instance: %v", err)
+	}
+	if _, err := svc.PrCommand(WithAuthToken(context.Background(), "wide-token"), command); err != nil {
+		t.Fatalf("a wide principal token was refused on a no-login instance: %v", err)
+	}
+	if len(executor.requests) != 2 {
+		t.Fatalf("requests: %+v", executor.requests)
+	}
+	admin, wide := executor.requests[0], executor.requests[1]
+	if !admin.InstanceAdmin || admin.TokenID != "token-admin" || admin.PrincipalID != "" || admin.UserID != "" {
+		t.Fatalf("admin token request: %+v", admin)
+	}
+	if !wide.InstanceAdmin || wide.PrincipalID != principalID || wide.TokenID != "" {
+		t.Fatalf("wide token request: %+v", wide)
+	}
+
+	// The login history guard refused mode none: no instance administrator.
+	config.SetNoLoginGuardPassed(false)
+	_, err := svc.PrCommand(WithAuthToken(context.Background(), "admin-token"), command)
+	requireCode(t, err, "forbidden")
+
+	// A login mode: the admin token has no person.
+	withAuthMode(t, "local-rp")
+	_, err = svc.PrCommand(WithAuthToken(context.Background(), "admin-token"), command)
+	requireCode(t, err, "forbidden")
+	if len(executor.requests) != 2 {
+		t.Fatalf("a refused command reached the approval path: %+v", executor.requests)
+	}
+}
+
+// A token needs workflows:control for a pull request command, as in REST.
+func TestPrCommand_TokenNeedsWorkflowsControl(t *testing.T) {
+	svc, st, deps, project := seedTrustFixture(t)
+	executor := &fakeExecutor{}
+	deps.Approvals = executor
+	user := st.putUser(models.User{UserID: "user-1"})
+	seedProjectMember(st, user.UserID, project.ProjectID)
+	st.apiTokens["read-token"] = models.APIToken{TokenID: "token-read", SubjectType: "user_token", UserID: user.UserID,
+		OrganizationIDs: []string{"org-1"}, Capabilities: []string{tokencaps.ProjectsRead}}
+	st.apiTokens["control-token"] = models.APIToken{TokenID: "token-control", SubjectType: "user_token", UserID: user.UserID,
+		OrganizationIDs: []string{"org-1"}, Capabilities: []string{tokencaps.ProjectsRead, tokencaps.WorkflowsControl}}
+	command := csilapi.PrCommandRequest{ProjectId: project.ProjectID, PrNumber: 4, Command: "accept"}
+
+	_, err := svc.PrCommand(WithAuthToken(context.Background(), "read-token"), command)
+	requireCode(t, err, "forbidden")
+	if _, err := svc.PrCommand(WithAuthToken(context.Background(), "control-token"), command); err != nil {
+		t.Fatalf("a workflows:control token was refused: %v", err)
+	}
+	if len(executor.requests) != 1 || executor.requests[0].UserID != user.UserID || executor.requests[0].InstanceAdmin {
+		t.Fatalf("requests: %+v", executor.requests)
 	}
 }

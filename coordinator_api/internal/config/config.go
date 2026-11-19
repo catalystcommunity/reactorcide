@@ -23,7 +23,6 @@ var (
 	// and /metrics moved to the ops HTTP port CORNDOGS_HTTP_LISTEN (default
 	// :8080).
 	CornDogsBaseURL = env.GetEnvOrDefault("REACTORCIDE_CORNDOGS_BASE_URL", "")
-	CornDogsAPIKey  = env.GetEnvOrDefault("REACTORCIDE_CORNDOGS_API_KEY", "")
 
 	// Default queue settings
 	DefaultQueueName = env.GetEnvOrDefault("REACTORCIDE_DEFAULT_QUEUE_NAME", "reactorcide-jobs")

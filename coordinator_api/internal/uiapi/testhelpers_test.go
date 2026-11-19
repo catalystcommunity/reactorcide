@@ -29,11 +29,18 @@ func newTestDeps(t *testing.T) (*Deps, *fakeStore) {
 // auth.CurrentMode() reads) to the running test, restoring the previous
 // value on cleanup. Needed to exercise the anonymous-may-cancel-in-mode-none
 // vs anonymous-may-not-cancel-in-local-rp/rp-mode permission matrix rows.
+// It also acts as a fresh instance for the login history guard (no
+// logins recorded), so mode none gives the no-login behaviours.
 func withAuthMode(t *testing.T, mode string) {
 	t.Helper()
 	prev := config.UIAuthMode
 	config.UIAuthMode = mode
-	t.Cleanup(func() { config.UIAuthMode = prev })
+	prevGuard := config.NoLoginGuardPassed()
+	config.SetNoLoginGuardPassed(true)
+	t.Cleanup(func() {
+		config.UIAuthMode = prev
+		config.SetNoLoginGuardPassed(prevGuard)
+	})
 }
 
 // mintSessionCtx mints a session for userID and returns a context carrying

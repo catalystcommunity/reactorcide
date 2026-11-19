@@ -95,7 +95,9 @@ func TestProcessTriggersFromData_JobIfSkipsNodeWithReasons(t *testing.T) {
 	if notify.Status != "submitted" || notify.JobID == nil {
 		t.Fatalf("notify = status %q job %v, want submitted", notify.Status, notify.JobID)
 	}
-	if got := notify.DecisionReasons; len(got) != 1 || got[0].Kind != "dependency" || got[0].Condition != "always" || got[0].Matched == nil || !*got[0].Matched {
+	// A submitted node also records its priority (docs/priority.md).
+	if got := notify.DecisionReasons; len(got) != 2 || got[0].Kind != "dependency" || got[0].Condition != "always" || got[0].Matched == nil || !*got[0].Matched ||
+		got[1].Kind != "priority" || got[1].Lane == "" || got[1].Final == nil {
 		t.Fatalf("notify reasons = %#v", got)
 	}
 
@@ -103,8 +105,8 @@ func TestProcessTriggersFromData_JobIfSkipsNodeWithReasons(t *testing.T) {
 	if api.Status != "submitted" {
 		t.Fatalf("api status = %q", api.Status)
 	}
-	if len(api.DecisionReasons) != 2 || api.DecisionReasons[0].Kind != "paths" || api.DecisionReasons[1].Kind != "dependency" {
-		t.Fatalf("api reasons = %#v, want the if reason then the dependency reason", api.DecisionReasons)
+	if len(api.DecisionReasons) != 3 || api.DecisionReasons[0].Kind != "paths" || api.DecisionReasons[1].Kind != "dependency" || api.DecisionReasons[2].Kind != "priority" {
+		t.Fatalf("api reasons = %#v, want the if reason, the dependency reason, then the priority reason", api.DecisionReasons)
 	}
 	if api.DecisionReason != "submitted: 1 changed file matches paths include [api/**]; no dependencies" {
 		t.Fatalf("api summary = %q", api.DecisionReason)

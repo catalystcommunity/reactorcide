@@ -14,20 +14,29 @@ import (
 )
 
 func (ps PostgresDbStore) CreateWorkflowInstance(ctx context.Context, wf *models.WorkflowInstance) error {
+	// A root re-run instance keeps its event in rerun_event_id, never in
+	// event_id (migration 000051).
+	wf.SetCIEventID(wf.CIEventID())
 	if err := ps.getDB(ctx).Create(wf).Error; err != nil {
 		return fmt.Errorf("failed to create workflow instance: %w", err)
 	}
+	refreshActor(ps.getDB(ctx), "workflow_instances", "workflow_id", wf.WorkflowID, &wf.ActorPrincipalID, &wf.ActorIdentity)
+	refreshWorkflowOwnership(ps.getDB(ctx), wf)
+	refreshRefClasses(ps.getDB(ctx), "workflow_instances", "workflow_id", wf.WorkflowID, &wf.RefClasses)
 	return nil
 }
 
 func (ps PostgresDbStore) CreateWorkflowInstanceForTrigger(ctx context.Context, wf *models.WorkflowInstance) error {
-	if wf.EventID != nil && *wf.EventID != "" && wf.ParentWorkflowID == nil {
+	wf.SetCIEventID(wf.CIEventID())
+	if wf.EventID != nil && *wf.EventID != "" && wf.ParentWorkflowID == nil && wf.RerunOfWorkflowID == nil {
 		// A root workflow of a CI event: the (event, security ID) index is the
 		// identity, so two evals of one event (a retry racing the first) end up
 		// with one workflow.
 		result := ps.getDB(ctx).Clauses(clause.OnConflict{
 			Columns: []clause.Column{{Name: "event_id"}, {Name: "workflow_security_id"}},
 			TargetWhere: clause.Where{Exprs: []clause.Expression{
+				// The predicate of migration 000041, unchanged: v0.12.13
+				// and older infer the same index.
 				clause.Expr{SQL: "event_id IS NOT NULL AND parent_workflow_id IS NULL"},
 			}},
 			DoNothing: true,
@@ -36,6 +45,9 @@ func (ps PostgresDbStore) CreateWorkflowInstanceForTrigger(ctx context.Context, 
 			return fmt.Errorf("failed to create workflow instance for event: %w", result.Error)
 		}
 		if result.RowsAffected > 0 {
+			refreshActor(ps.getDB(ctx), "workflow_instances", "workflow_id", wf.WorkflowID, &wf.ActorPrincipalID, &wf.ActorIdentity)
+			refreshWorkflowOwnership(ps.getDB(ctx), wf)
+			refreshRefClasses(ps.getDB(ctx), "workflow_instances", "workflow_id", wf.WorkflowID, &wf.RefClasses)
 			return nil
 		}
 		existing, err := ps.GetRootWorkflowInstanceByEvent(ctx, *wf.EventID, wf.WorkflowSecurityID)
@@ -60,6 +72,9 @@ func (ps PostgresDbStore) CreateWorkflowInstanceForTrigger(ctx context.Context, 
 		return fmt.Errorf("failed to create workflow instance for trigger: %w", result.Error)
 	}
 	if result.RowsAffected > 0 {
+		refreshActor(ps.getDB(ctx), "workflow_instances", "workflow_id", wf.WorkflowID, &wf.ActorPrincipalID, &wf.ActorIdentity)
+		refreshWorkflowOwnership(ps.getDB(ctx), wf)
+		refreshRefClasses(ps.getDB(ctx), "workflow_instances", "workflow_id", wf.WorkflowID, &wf.RefClasses)
 		return nil
 	}
 	existing, err := ps.GetWorkflowInstanceByTriggerOperation(ctx, derefWorkflowString(wf.ParentJobID), wf.TriggerOperationID, wf.WorkflowSecurityID)
@@ -416,7 +431,10 @@ WITH workflow_rows AS (
 		,COALESCE(wi.ci_origin, '') AS ci_origin
 		,COALESCE(wi.execution_profile, '') AS execution_profile
 		,COALESCE(wi.worker_class, '') AS worker_class
-		,wi.event_id
+		,COALESCE(wi.event_id, wi.rerun_event_id) AS event_id
+		,wi.actor_principal_id
+		,COALESCE(wi.actor_identity, '') AS actor_identity
+		,wi.ref_classes
 	FROM workflow_instances wi
 	LEFT JOIN workflow_nodes wn ON wn.workflow_id = wi.workflow_id
 	%s
@@ -457,6 +475,9 @@ loose_rows AS (
 		,COALESCE(j.execution_profile, '') AS execution_profile
 		,COALESCE(j.worker_class, '') AS worker_class
 		,j.event_id
+		,j.actor_principal_id
+		,COALESCE(j.actor_identity, '') AS actor_identity
+		,j.ref_classes
 	FROM jobs j
 	%s
 )
@@ -528,6 +549,8 @@ func (ps PostgresDbStore) GetRootWorkflowInstanceByEvent(ctx context.Context, ev
 		return nil, store.ErrNotFound
 	}
 	var wf models.WorkflowInstance
+	// The first instance: a root re-run keeps its event in rerun_event_id,
+	// so it is not the identity of the event's workflow (migration 000051).
 	err := ps.getDB(ctx).Where("event_id = ? AND workflow_security_id = ? AND parent_workflow_id IS NULL", eventID, securityID).First(&wf).Error
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {

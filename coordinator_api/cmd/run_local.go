@@ -246,7 +246,12 @@ var RunLocalCommand = &cli.Command{
 		&cli.StringFlag{Name: "eval-image", Value: worker.DefaultRunnerImage, Usage: "Image that evaluates a workflow"},
 		&cli.IntFlag{Name: "max-parallel", Value: 1, Usage: "Maximum number of workflow nodes to run at once"},
 		&cli.StringFlag{Name: "context", Usage: "Synchronized local context name"},
+		&cli.BoolFlag{Name: "cache-writable", Usage: "Set REACTORCIDE_CACHE_WRITABLE=true for the job. A local run is read-only by default"},
+		&cli.BoolFlag{Name: "ignore-timeout", Usage: "Do not stop the job at its timeout_seconds (the workers always stop it)"},
 		&cli.StringFlag{Name: "workflow-vars-file", Hidden: true},
+		&cli.StringFlag{Name: "cache-profile", Hidden: true},
+		&cli.StringFlag{Name: "cache-namespace", Hidden: true},
+		&cli.StringFlag{Name: "artifact-namespace", Hidden: true},
 		&cli.StringFlag{Name: "result-dir", Hidden: true},
 	},
 	Action: runLocalAction,
@@ -574,6 +579,14 @@ func runLocalAction(ctx *cli.Context) error {
 	jobConfig.RunAsUser = fmt.Sprintf("%d:%d", uid, gid)
 	jobConfig.ExtraMounts = append(jobConfig.ExtraMounts, fmt.Sprintf("%s:/job/ci:ro", absCIDir))
 	jobConfig.Env["REACTORCIDE_CI_SOURCE_DIR"] = "/job/ci"
+	cacheProfile, fromFlags := cacheProfileFromFlags(ctx)
+	if !fromFlags {
+		cacheProfile = cacheProfileOf(local)
+	}
+	applyLocalReservedEnv(jobConfig, cacheProfile, ctx.Bool("cache-writable"))
+	if ctx.Bool("ignore-timeout") {
+		jobConfig.TimeoutSeconds = 0
+	}
 	if varsFile := strings.TrimSpace(ctx.String("workflow-vars-file")); varsFile != "" {
 		absVarsFile, err := filepath.Abs(varsFile)
 		if err != nil {
@@ -742,6 +755,10 @@ func executeLocalJob(ctx context.Context, runner worker.JobRunner, config *worke
 		return fmt.Errorf("failed to spawn container: %w", err)
 	}
 
+	// Stop the job at its timeout, as the workers do.
+	timeout := startLocalTimeout(runner, containerID, config.TimeoutSeconds)
+	defer timeout.stop()
+
 	// Ensure cleanup
 	defer func() {
 		if cleanupErr := runner.Cleanup(context.Background(), containerID); cleanupErr != nil {
@@ -793,6 +810,9 @@ func executeLocalJob(ctx context.Context, runner worker.JobRunner, config *worke
 	// Wait for completion
 	exitCode, err := runner.WaitForCompletion(ctx, containerID)
 	fmt.Println("---")
+	if timeout.stop() {
+		return cli.Exit(fmt.Sprintf("Job exceeded its timeout of %d seconds", config.TimeoutSeconds), localTimeoutExitCode)
+	}
 
 	if err != nil {
 		return fmt.Errorf("job execution error: %w", err)

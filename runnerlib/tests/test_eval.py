@@ -1087,3 +1087,104 @@ class TestImagePullSecrets:
     def test_rejects_non_list(self):
         with pytest.raises(ValueError, match="must be a list"):
             parse_job_definition({"name": "j", "job": {"command": "true", "image_pull_secrets": "regcred"}})
+
+
+class TestRunAsAdministrator:
+    """run_as.administrator: optional bool, omitted from triggers when unset."""
+
+    def test_parse_true_and_false(self):
+        for value in (True, False):
+            defn = parse_job_definition(
+                {"name": "j", "job": {"command": "true", "run_as": {"user": "runner", "administrator": value}}}
+            )
+            assert defn.job.run_as_administrator is value
+            assert defn.job.run_as_user == "runner"
+
+    def test_unset_is_none(self):
+        defn = parse_job_definition({"name": "j", "job": {"command": "true", "run_as": {"user": "root"}}})
+        assert defn.job.run_as_administrator is None
+
+    @pytest.mark.parametrize("value", ["yes", "false", 1, 0, [], {}])
+    def test_rejects_non_bool(self, value):
+        with pytest.raises(ValueError, match="run_as.administrator must be true or false"):
+            parse_job_definition(
+                {"name": "j", "job": {"command": "true", "run_as": {"administrator": value}}}
+            )
+
+    def test_yaml_bool_parses(self):
+        data = yaml.safe_load("name: j\njob:\n  command: 'true'\n  run_as:\n    administrator: false\n")
+        assert parse_job_definition(data).job.run_as_administrator is False
+
+    def test_trigger_emits_false(self):
+        defs = [JobDefinition(name="w", job=JobConfig(image="a:1", command="true", run_as_administrator=False))]
+        trigger = generate_triggers(defs, EventContext(event_type="push"))[0]
+        assert trigger.run_as_administrator is False
+        assert trigger.to_dict()["run_as_administrator"] is False
+
+    def test_trigger_omitted_when_unset(self):
+        defs = [JobDefinition(name="w", job=JobConfig(image="a:1", command="true"))]
+        trigger = generate_triggers(defs, EventContext(event_type="push"))[0]
+        assert "run_as_administrator" not in trigger.to_dict()
+
+
+# --- Test wrap_job_command quoting ---
+
+
+class TestWrapJobCommandQuoting:
+    """The runnerlib wrap must give the command to runnerlib unchanged."""
+
+    COMMANDS = [
+        "echo 'hello world'",
+        "echo \"it's\" && printf '%s\\n' \"$HOME\"",
+        "multi\nline 'quoted'\n  echo done",
+        "''",
+        "a'b'c",
+    ]
+
+    @pytest.mark.parametrize("command", COMMANDS)
+    def test_posix_wrap_round_trips_through_sh(self, command):
+        import shlex
+        import subprocess
+
+        from src.eval import wrap_job_command
+
+        wrapped = wrap_job_command(JobConfig(image="alpine", command=command))
+        assert wrapped.startswith("runnerlib run --job-command ")
+        # sh parses the wrapped command into words exactly as the worker's
+        # `sh -c` does. The last word must be the original command.
+        out = subprocess.run(
+            ["sh", "-c", 'for a in "$@"; do printf "%s\\0" "$a"; done', "sh"]
+            + shlex.split(wrapped),
+            capture_output=True,
+            check=True,
+        )
+        words = out.stdout.split(b"\0")[:-1]
+        assert words[-1].decode() == command
+        # And shell evaluation of the wrapped text gives the same words.
+        evaluated = subprocess.run(
+            ["sh", "-c", "set -- " + wrapped + '; for a in "$@"; do printf "%s\\0" "$a"; done'],
+            capture_output=True,
+            check=True,
+        )
+        assert evaluated.stdout.split(b"\0")[:-1][-1].decode() == command
+
+    def test_windows_job_uses_powershell_quoting(self):
+        from src.eval import wrap_job_command
+
+        job = JobConfig(image="win", command="Write-Output 'it''s'; echo x", characteristics={"os": "windows"})
+        assert wrap_job_command(job) == "runnerlib run --job-command 'Write-Output ''it''''s''; echo x'"
+
+    def test_shellcmd_override_selects_quoting(self):
+        from src.eval import wrap_job_command
+
+        job = JobConfig(image="win", command="a'b", characteristics={"os": "windows"})
+        assert wrap_job_command(job, {"REACTORCIDE_JOB_SHELLCMD": "sh -c"}) == "runnerlib run --job-command 'a'\"'\"'b'"
+        linux = JobConfig(image="x", command="a'b")
+        assert wrap_job_command(linux, {"REACTORCIDE_JOB_SHELLCMD": "pwsh -Command"}) == "runnerlib run --job-command 'a''b'"
+
+    def test_raw_and_runnerlib_commands_are_not_wrapped(self):
+        from src.eval import wrap_job_command
+
+        assert wrap_job_command(JobConfig(command="echo 'x'", raw_command=True)) == "echo 'x'"
+        assert wrap_job_command(JobConfig(command="runnerlib eval")) == "runnerlib eval"
+        assert wrap_job_command(JobConfig(command="")) is None

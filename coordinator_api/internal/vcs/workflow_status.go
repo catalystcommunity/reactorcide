@@ -6,6 +6,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/requiredset"
+	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store/models"
 )
 
@@ -30,10 +32,21 @@ func (u *JobStatusUpdater) UpdateWorkflowStatus(ctx context.Context, wf *models.
 	// Checks" status. It posts a status of its own only when its definition
 	// declares one (status.context), which the trigger processor stores in
 	// StatusContext; otherwise StatusContext is empty for it.
-	eventScoped := u.eventScoped(wf.EventID)
+	eventScoped := u.eventScoped(wf.CIEventID())
 	contextName := wf.StatusContext
 	if contextName == "" && !eventScoped {
 		contextName = "Reactorcide Jobs"
+	}
+	// An advisory or quarantined workflow (docs/required-set.md) reports in
+	// the PR comment only. It posts no status, also not its own
+	// status.context (owner decision D26).
+	classification := u.workflowClassification(ctx, wf, eventScoped)
+	if !classification.Blocking() {
+		contextName = ""
+	}
+	if contextName != "" && !u.statusesAllowed(ctx, wf.OrgID, wf.ProjectID) {
+		// Report mode silent (docs/reporting-and-ownership.md).
+		contextName = ""
 	}
 	if contextName != "" && contextName != models.CIEventChecksContext {
 		update := StatusUpdate{
@@ -48,8 +61,8 @@ func (u *JobStatusUpdater) UpdateWorkflowStatus(ctx context.Context, wf *models.
 		}
 	}
 	if eventScoped {
-		if err := u.PublishEventChecks(ctx, *wf.EventID); err != nil {
-			u.logger.WithError(err).WithField("event_id", *wf.EventID).Warn("Failed to update event checks status")
+		if err := u.PublishEventChecks(ctx, *wf.CIEventID()); err != nil {
+			u.logger.WithError(err).WithField("event_id", *wf.CIEventID()).Warn("Failed to update event checks status")
 		}
 	}
 	if wf.PRNumber != nil && *wf.PRNumber > 0 {
@@ -67,7 +80,11 @@ func (u *JobStatusUpdater) UpdateWorkflowStatus(ctx context.Context, wf *models.
 			if key == "" {
 				key = wf.WorkflowID
 			}
-			state := models.JSONB{"title": wf.Name, "body": u.renderWorkflowCommentBody(wf, nodes, "")}
+			title, body := wf.Name, markAdvisory(u.renderWorkflowCommentBody(wf, nodes, ""), classification)
+			if label := classification.Label(); label != "" {
+				title = fmt.Sprintf("%s (%s)", wf.Name, label)
+			}
+			state := models.JSONB{"title": title, "body": body}
 			entry := &models.VCSReportEntry{ReportTargetID: target.ReportTargetID, EntryKey: key,
 				WorkflowID: &wf.WorkflowID, Generation: target.CurrentGeneration, Status: wf.Status, StructuredState: state}
 			if err := reports.UpsertVCSReportEntry(ctx, entry); err != nil {
@@ -75,11 +92,14 @@ func (u *JobStatusUpdater) UpdateWorkflowStatus(ctx context.Context, wf *models.
 			}
 			return nil
 		}
+		if !u.commentsAllowed(ctx, wf.OrgID, wf.ProjectID) {
+			return nil
+		}
 		marker := wf.CommentMarker
 		if marker == "" {
 			marker = fmt.Sprintf("<!-- reactorcide:workflows:%s -->", wf.CommitSHA)
 		}
-		body := u.renderWorkflowCommentBody(wf, nodes, marker)
+		body := markAdvisory(u.renderWorkflowCommentBody(wf, nodes, marker), classification)
 		if err := client.UpsertPRCommentByMarker(ctx, wf.VCSRepo, *wf.PRNumber, marker, body); err != nil {
 			u.logger.WithError(err).WithFields(map[string]interface{}{
 				"repo":        wf.VCSRepo,
@@ -179,6 +199,9 @@ func (u *JobStatusUpdater) renderWorkflowCommentBody(wf *models.WorkflowInstance
 	if wf.CIOrigin != "" && wf.ExecutionProfile != "" {
 		fmt.Fprintf(&b, "CI origin `%s` · profile `%s`\n\n", wf.CIOrigin, wf.ExecutionProfile)
 	}
+	if line := renderWorkflowOwnerLine(wf.Ownership()); line != "" {
+		b.WriteString(line + "\n\n")
+	}
 	b.WriteString("| Job | Status | Duration | Reason |\n")
 	b.WriteString("|-----|--------|----------|--------|\n")
 	for i := range nodes {
@@ -194,6 +217,12 @@ func (u *JobStatusUpdater) renderWorkflowCommentBody(wf *models.WorkflowInstance
 	}
 	if authority := renderNodeAuthorityLines(nodes); authority != "" {
 		b.WriteString(authority)
+	}
+	if links := u.renderWorkflowLinkLines(nodes); links != "" {
+		b.WriteString(links)
+	}
+	if tests := u.renderWorkflowTestLines(nodes); tests != "" {
+		b.WriteString(tests)
 	}
 	fmt.Fprintf(&b, "\n<sub>Updated %s · %s</sub>\n", time.Now().UTC().Format(time.RFC3339), marker)
 	return b.String()
@@ -279,4 +308,117 @@ func (u *JobStatusUpdater) getWorkflowURL(workflowID string) string {
 		return ""
 	}
 	return fmt.Sprintf("%s/app/workflows/%s", u.baseURL, workflowID)
+}
+
+type workflowByIDStore interface {
+	GetWorkflowInstance(ctx context.Context, workflowID string) (*models.WorkflowInstance, error)
+}
+
+// workflowClassification returns the required set state of the root
+// workflow of wf for its event. A workflow outside a CI event, or a store
+// that cannot tell, is required.
+func (u *JobStatusUpdater) workflowClassification(ctx context.Context, wf *models.WorkflowInstance, eventScoped bool) requiredset.Classification {
+	if !eventScoped || wf == nil || wf.CIEventID() == nil {
+		return requiredset.Required
+	}
+	securityID := wf.WorkflowSecurityID
+	if wf.ParentWorkflowID != nil && wf.RootWorkflowID != nil && *wf.RootWorkflowID != "" {
+		// A child workflow has the state of its root workflow.
+		workflows, ok := u.store.(workflowByIDStore)
+		if !ok {
+			return requiredset.Required
+		}
+		root, err := workflows.GetWorkflowInstance(ctx, *wf.RootWorkflowID)
+		if err != nil || root == nil {
+			return requiredset.Required
+		}
+		securityID = root.WorkflowSecurityID
+	}
+	events, ok := u.store.(store.CIEventStore)
+	if !ok {
+		return requiredset.Required
+	}
+	event, err := events.GetCIEvent(ctx, *wf.CIEventID())
+	if err != nil {
+		return requiredset.Required
+	}
+	return requiredset.ForEvent(ctx, u.store, event).Classify(securityID)
+}
+
+// markAdvisory adds the advisory line under the heading of a workflow
+// comment body. A required workflow keeps the body as it is.
+func markAdvisory(body string, classification requiredset.Classification) string {
+	label := classification.Label()
+	if label == "" {
+		return body
+	}
+	note := "> **Advisory — not required.** This workflow is not in the required set of the project. Its result does not change `" +
+		models.CIEventChecksContext + "`.\n\n"
+	if classification.State == requiredset.StateQuarantined {
+		note = "> **Quarantined — not required.** The quarantine ends"
+		if classification.QuarantinedUntil != nil {
+			note += " at " + classification.QuarantinedUntil.UTC().Format("2006-01-02 15:04 MST")
+		}
+		note += "; then the workflow is required again."
+		if classification.QuarantineReason != "" {
+			note += " Reason: " + escapeTableCell(classification.QuarantineReason) + "."
+		}
+		note += " Its result does not change `" + models.CIEventChecksContext + "`.\n\n"
+	}
+	if index := strings.Index(body, "\n\n"); index >= 0 {
+		return body[:index+2] + note + body[index+2:]
+	}
+	return note + body
+}
+
+// renderWorkflowOwnerLine shows the owner and contact of the workflow (WP7),
+// read from the trusted CI definition. It returns "" when the owner is
+// unknown or the definition names no owner or contact.
+func renderWorkflowOwnerLine(o models.WorkflowOwnership) string {
+	if !o.Known() {
+		return ""
+	}
+	parts := []string{}
+	if o.HasOwner() {
+		names := []string{}
+		if group := o.GroupName(); group != "" {
+			names = append(names, inlineCode(group))
+		}
+		for _, subject := range o.Subjects {
+			names = append(names, inlineCode(subject))
+		}
+		parts = append(parts, "Owner "+strings.Join(names, ", "))
+	}
+	if o.Contact != nil {
+		if o.Contact.Channel != "" {
+			parts = append(parts, "contact "+inlineCode(o.Contact.Channel))
+		}
+		if o.Contact.Email != "" {
+			parts = append(parts, "email "+inlineCode(o.Contact.Email))
+		}
+		if o.Contact.HelpURL != "" && safeLinkURL(o.Contact.HelpURL) {
+			parts = append(parts, "[help](<"+o.Contact.HelpURL+">)")
+		}
+	}
+	return strings.Join(parts, " · ")
+}
+
+// inlineCode renders value as Markdown inline code. A backtick or a line
+// break cannot close the span: they become a space.
+func inlineCode(value string) string {
+	value = strings.Map(func(r rune) rune {
+		if r == '`' || r == '\n' || r == '\r' || r == '|' {
+			return ' '
+		}
+		return r
+	}, value)
+	return "`" + strings.TrimSpace(value) + "`"
+}
+
+// safeLinkURL reports whether value can go inside a Markdown <...> link.
+func safeLinkURL(value string) bool {
+	if !strings.HasPrefix(value, "https://") && !strings.HasPrefix(value, "http://") {
+		return false
+	}
+	return !strings.ContainsAny(value, "<> \t\n\r`")
 }

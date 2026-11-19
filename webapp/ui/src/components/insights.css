@@ -1,0 +1,232 @@
+/*
+ * Insights charts. Series colors are a fixed order, validated with the
+ * dataviz palette checks (lightness band, chroma, adjacent CVD separation,
+ * normal-vision floor, 3:1 contrast) on the card surface of each theme:
+ * light #1f6bb8, #d1531b, #8a4fbd, #17794c on #ffffff; dark #3f88d2,
+ * #dd6e22, #9473d6, #2f9e6a on #1b2330. Dark mode has its own steps; it is
+ * not an automatic flip. Each series also has a dash pattern and a marker.
+ */
+.insights {
+  --insight-1: #1f6bb8;
+  --insight-2: #d1531b;
+  --insight-3: #8a4fbd;
+  --insight-4: #17794c;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) .insights {
+    --insight-1: #3f88d2;
+    --insight-2: #dd6e22;
+    --insight-3: #9473d6;
+    --insight-4: #2f9e6a;
+  }
+}
+:root[data-theme='dark'] .insights {
+  --insight-1: #3f88d2;
+  --insight-2: #dd6e22;
+  --insight-3: #9473d6;
+  --insight-4: #2f9e6a;
+}
+
+.insights-filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+  margin-bottom: var(--space-4);
+}
+.insights-segment {
+  display: inline-flex;
+  gap: var(--space-1);
+}
+.insights-segment a[aria-current='true'] {
+  border-color: var(--accent);
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.insight-tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr));
+  gap: var(--space-3);
+  margin-bottom: var(--space-4);
+}
+.insight-tile {
+  padding: var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface-raised);
+  min-width: 0;
+}
+.insight-tile-label {
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+}
+.insight-tile-value {
+  font-size: var(--text-xl);
+  font-weight: 600;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+.insight-tile-note {
+  font-size: var(--text-xs);
+  color: var(--text-subtle);
+}
+
+.insight-charts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 22rem), 1fr));
+  gap: var(--space-4);
+}
+.insight-figure {
+  margin: 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.insight-figure figcaption {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+}
+.insight-chart-title {
+  font-weight: 600;
+  color: var(--text);
+}
+.insight-chart-wrap {
+  width: 100%;
+  min-width: 0;
+}
+.insight-chart {
+  display: block;
+  width: 100%;
+  height: auto;
+  overflow: visible;
+}
+.insight-grid {
+  stroke: var(--border);
+  stroke-width: 1;
+}
+.insight-axis {
+  fill: var(--text-muted);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+.insight-line {
+  fill: none;
+  stroke: var(--series-color);
+  stroke-width: 2;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+.insight-marker {
+  fill: var(--series-color);
+  /* A ring in the surface color keeps overlapping markers apart. */
+  stroke: var(--surface-raised);
+  stroke-width: 2;
+}
+.insight-hit {
+  fill: transparent;
+}
+.insight-point:focus-visible .insight-marker,
+.insight-point:hover .insight-marker {
+  stroke: var(--text);
+}
+.insight-point:focus {
+  outline: none;
+}
+.insight-s1 {
+  --series-color: var(--insight-1);
+}
+.insight-s2 {
+  --series-color: var(--insight-2);
+}
+.insight-s2 .insight-line {
+  stroke-dasharray: 6 3;
+}
+.insight-s3 {
+  --series-color: var(--insight-3);
+}
+.insight-s3 .insight-line {
+  stroke-dasharray: 2 3;
+}
+.insight-s4 {
+  --series-color: var(--insight-4);
+}
+.insight-s4 .insight-line {
+  stroke-dasharray: 8 3 2 3;
+}
+
+.insight-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+}
+.insight-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+.insight-swatch {
+  width: 1rem;
+  height: 0;
+  border-top: 2px solid var(--series-color);
+}
+.insight-s2 .insight-swatch {
+  border-top-style: dashed;
+}
+.insight-s3 .insight-swatch {
+  border-top-style: dotted;
+}
+.insight-empty {
+  padding: var(--space-4) 0;
+}
+.insight-table summary {
+  cursor: pointer;
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+}
+
+.insight-spark {
+  width: 80px;
+  height: 20px;
+  vertical-align: middle;
+  margin-left: var(--space-2);
+}
+.insight-spark-line {
+  fill: none;
+  stroke: var(--insight-1);
+  stroke-width: 1.5;
+}
+.insight-bar {
+  display: inline-block;
+  width: 8rem;
+  max-width: 40vw;
+  height: 0.6rem;
+  margin-left: var(--space-2);
+  vertical-align: middle;
+  background: var(--surface-sunken);
+  border-radius: 4px;
+  overflow: hidden;
+}
+.insight-bar-fill {
+  display: block;
+  height: 100%;
+  background: var(--insight-1);
+  border-radius: 0 4px 4px 0;
+}
+
+/* The alert rule form under the rule list. */
+.alert-rule-editor {
+  margin-top: var(--space-4);
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--border);
+}
+.alert-rules-table .alert-description:empty {
+  display: none;
+}

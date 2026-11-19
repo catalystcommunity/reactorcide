@@ -25,6 +25,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync"
 	"testing"
 
@@ -299,7 +300,17 @@ func TestCreateJob_BareCharacteristics_ResolvesDefaultQueueAndSubmits(t *testing
 func TestCreateJob_WindowsCharacteristics_CreatesNewQueueAndSubmits(t *testing.T) {
 	RunTransactionalTest(t, func(ctx context.Context, tx *gorm.DB) {
 		nonce := uniqueName("windows-submit")
-		wantChars, err := characteristics.ParseJobCharacteristics(map[string]any{"os": "windows", "test_run_nonce": nonce})
+		// A Windows VM job must name an image alias (migration 000068). The
+		// alias adds the image_digest characteristic to the queue.
+		org, err := postgres_store.PostgresStore.GetDefaultOrganization(ctx)
+		require.NoError(t, err)
+		aliasName := uniqueName("win-queue")
+		digest := "sha256:" + strings.Repeat("f", 64)
+		require.NoError(t, postgres_store.PostgresStore.CreateImageAlias(ctx, &models.ImageAlias{
+			OrgID: org.OrgID, Name: aliasName, Kind: models.ImageAliasKindVM, OS: "windows", Arch: "amd64",
+			ActiveRef: "registry.example.com/vm/win:1@" + digest, ActiveDigest: digest,
+		}))
+		wantChars, err := characteristics.ParseJobCharacteristics(map[string]any{"os": "windows", "test_run_nonce": nonce, "image_digest": digest})
 		require.NoError(t, err)
 
 		// Sanity: this exact characteristics set (with its unique nonce) has
@@ -325,6 +336,7 @@ func TestCreateJob_WindowsCharacteristics_CreatesNewQueueAndSubmits(t *testing.T
 			"job_command":     "echo hi",
 			"source_type":     "copy",
 			"source_path":     "./",
+			"runner_image":    aliasName,
 			"characteristics": map[string]interface{}{"os": "windows", "test_run_nonce": nonce},
 		})
 

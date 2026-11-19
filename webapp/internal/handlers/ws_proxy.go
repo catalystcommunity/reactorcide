@@ -3,6 +3,7 @@ package handlers
 import (
 	"context"
 	"net/http"
+	"net/url"
 	"strings"
 	"sync"
 	"time"
@@ -23,15 +24,16 @@ type WSProxy struct {
 	logger   *logrus.Logger
 }
 
-// NewWSProxy constructs a proxy. CheckOrigin is permissive because
-// authentication happens at the upstream handshake via the bearer token,
-// not via origin.
+// NewWSProxy constructs a proxy. The browser socket carries the session
+// cookie, so the upgrade checks the origin (wsOriginAllowed): a page of
+// another site must not open a socket with the cookie of the user
+// (cross-site WebSocket hijacking).
 func NewWSProxy() *WSProxy {
 	return &WSProxy{
 		upgrader: websocket.Upgrader{
 			ReadBufferSize:  1024,
 			WriteBufferSize: 1024,
-			CheckOrigin:     func(r *http.Request) bool { return true },
+			CheckOrigin:     wsOriginAllowed,
 		},
 		dialer: &websocket.Dialer{HandshakeTimeout: 15 * time.Second},
 		logger: logrus.New(),
@@ -51,7 +53,31 @@ func NewWSProxy() *WSProxy {
 // unauthorized frames on this side, by making one GetJobMetrics RPC PER EVENT.
 // That was a round trip per event per browser, and it covered only jobs.
 func (p *WSProxy) UIStream(w http.ResponseWriter, r *http.Request) {
+	// Refuse a foreign origin before anything is dialed.
+	if !wsOriginAllowed(r) {
+		http.Error(w, "forbidden origin", http.StatusForbidden)
+		return
+	}
 	p.proxy(w, r, upstreamWSURL(coordinatorUIStreamPath), sessionAuthHeader(r))
+}
+
+// wsOriginAllowed is the origin rule of the browser socket. The Origin
+// header must name the host that serves the request, the same rule as the
+// CSIL-RPC bridge (sameOriginRequest): a sibling subdomain is another
+// origin. A request with no Origin header is not a browser; it is allowed
+// only when it carries no session cookie, so a cookie is never used without
+// an origin check.
+func wsOriginAllowed(r *http.Request) bool {
+	origin := r.Header.Get("Origin")
+	if origin == "" {
+		_, hasSession := sessionTokenFromRequest(r)
+		return !hasSession
+	}
+	parsed, err := url.Parse(origin)
+	if err != nil || parsed.Host == "" {
+		return false
+	}
+	return strings.EqualFold(parsed.Host, r.Host)
 }
 
 // coordinatorUIStreamPath mirrors coordinator handlers.UIStreamPath.
@@ -79,6 +105,13 @@ func (p *WSProxy) proxy(w http.ResponseWriter, r *http.Request, upstream string,
 	}
 
 	upstreamConn, resp, err := p.dialer.DialContext(r.Context(), upstream, header)
+	if err != nil && resp != nil && resp.StatusCode == http.StatusUnauthorized && header.Get("Authorization") != "" {
+		// The coordinator refused the session (expired or revoked). A
+		// logged-out browser keeps the anonymous stream of public data, as
+		// before; the UI notices the expiry through its normal calls.
+		resp.Body.Close()
+		upstreamConn, resp, err = p.dialer.DialContext(r.Context(), upstream, http.Header{})
+	}
 	if err != nil {
 		p.logger.WithError(err).WithField("upstream", upstream).Warn("Upstream WS dial failed")
 		if resp != nil {

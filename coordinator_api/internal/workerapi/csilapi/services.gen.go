@@ -16,4 +16,5 @@ type ReactorcideWorker interface {
 	AppendLogBatch(ctx context.Context, req AppendLogBatchRequest) (AppendLogBatchResponse, error)
 	AppendMetricBatch(ctx context.Context, req AppendMetricBatchRequest) (AppendMetricBatchResponse, error)
 	ReportResult(ctx context.Context, req ReportResultRequest) (ReportResultResponse, error)
+	UploadArtifact(ctx context.Context, req UploadArtifactRequest) (UploadArtifactResponse, error)
 }

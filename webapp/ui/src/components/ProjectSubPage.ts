@@ -12,6 +12,9 @@ export const PROJECT_TABS = [
   { suffix: '', label: 'Project' },
   { suffix: 'trust', label: 'CI trust' },
   { suffix: 'policy', label: 'CI policy' },
+  { suffix: 'execution', label: 'Execution' },
+  { suffix: 'subscriptions', label: 'Subscriptions' },
+  { suffix: 'images', label: 'Images' },
 ] as const
 
 /** The app path of a project page or one of its sub-pages. */

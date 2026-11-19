@@ -93,6 +93,7 @@ export interface BootstrapAdminResponse {
 export interface GetCapabilitiesRequest {
   orgId?: string;
   projectId?: string;
+  workflowId?: string;
 }
 
 export interface GetCapabilitiesResponse {
@@ -113,6 +114,7 @@ export interface GetCapabilitiesResponse {
   isGlobalAdmin: boolean;
   isOrgAdmin: boolean;
   isProjectOwner: boolean;
+  manageWorkflow?: boolean;
 }
 
 /**
@@ -127,6 +129,11 @@ export interface OrgSummary {
   isPrivate: boolean;
   duplicateEvents?: string;
   dynamicJobs?: string;
+  draftPrs?: string;
+  defaultsProfile?: string;
+  shedLevel?: string;
+  infraRetries?: number;
+  egressControl?: boolean;
 }
 
 export interface ListOrgsRequest {
@@ -153,6 +160,9 @@ export interface UpdateOrgRequest {
   status?: string;
   duplicateEvents?: string;
   dynamicJobs?: string;
+  draftPrs?: string;
+  infraRetries?: number;
+  egressControl?: boolean;
 }
 
 export interface UpdateOrgResponse {
@@ -189,6 +199,9 @@ export interface ExecutionProfileSummary {
   cacheNamespace?: string;
   artifactNamespace?: string;
   trustedCacheWrites: boolean;
+  cacheNamespaceClasses?: string[];
+  cacheWriteClasses?: string[];
+  egressControl?: boolean;
 }
 
 export interface ListExecutionProfilesRequest {
@@ -221,6 +234,7 @@ export interface WorkerClassSummary {
   name: string;
   protected: boolean;
   poolIds: string[];
+  refClassesAny?: string[];
 }
 
 export interface ListWorkerClassesRequest {
@@ -271,6 +285,7 @@ export interface PrCommandRequest {
   command: string;
   label?: string;
   headSha?: string;
+  shifts?: RunShifts;
 }
 
 /**
@@ -345,6 +360,14 @@ export interface CiTrustSettings {
   overrideApprovers?: string[];
   overrideProfile?: string;
   requiredReviews?: RequiredReview[];
+  rerunShiftLimits?: RerunShiftLimits;
+}
+
+export interface RerunShiftLimits {
+  maxCpu?: string;
+  maxMemory?: string;
+  maxStorage?: string;
+  maxTimeoutSeconds?: number;
 }
 
 export interface GetCiTrustSettingsRequest {
@@ -414,6 +437,12 @@ export interface ProjectDetail {
   effectiveDuplicateEvents?: string;
   dynamicJobs?: string;
   effectiveDynamicJobs?: string;
+  draftPrs?: string;
+  effectiveDraftPrs?: string;
+  infraRetries?: number;
+  effectiveInfraRetries?: number;
+  egressControl?: boolean;
+  effectiveEgressControl?: boolean;
 }
 
 export interface GetProjectRequest {
@@ -454,6 +483,10 @@ export interface UpdateProjectRequest {
   checkoutMode?: string;
   duplicateEvents?: string;
   dynamicJobs?: string;
+  draftPrs?: string;
+  infraRetries?: number;
+  infraRetriesInherit?: boolean;
+  egressControl?: boolean;
 }
 
 export interface UpdateProjectResponse {
@@ -500,6 +533,21 @@ export interface CiPolicyUse {
 export interface CiPolicyDefaults {
   ciSource?: string;
   profile?: string;
+  byRefClass?: CiPolicyClassProfile[];
+}
+
+/**
+ * A ref class condition (docs/ref-classes.md). any: one of the classes
+ * must be present. none: no listed class may be present.
+ */
+export interface CiPolicyRefClassMatch {
+  any?: string[];
+  none?: string[];
+}
+
+export interface CiPolicyClassProfile {
+  refClasses: CiPolicyRefClassMatch;
+  profile: string;
 }
 
 export interface CiPolicyRule {
@@ -511,6 +559,7 @@ export interface CiPolicyRule {
   baseBranches?: string[];
   headRepository?: string;
   approval?: CiPolicySubjectMatch;
+  refClasses?: CiPolicyRefClassMatch;
   use: CiPolicyUse;
 }
 
@@ -536,6 +585,8 @@ export interface GetCiPolicyRequest {
 
 export interface GetCiPolicyResponse {
   policy: CiPolicyDetail;
+  builtIn?: boolean;
+  builtInReason?: string;
 }
 
 export interface PutCiPolicyRequest {
@@ -562,6 +613,7 @@ export interface GroupSummary {
   orgId: string;
   name: string;
   description?: string;
+  priorityShift?: number;
   createdAt: string;
   updatedAt: string;
 }
@@ -638,6 +690,96 @@ export interface ListGroupMembersResponse {
 }
 
 /**
+ * Groups linked to VCS teams (docs/principals.md). A linked team gives its
+ * members to the group after a sync (source vcs_sync). A sync never
+ * removes a manual member.
+ */
+export interface GroupVcsLink {
+  linkId: string;
+  groupId: string;
+  provider: string;
+  team: string;
+  subject: string;
+  lastSyncedAt?: string;
+  lastAttemptAt?: string;
+  nextSyncAt?: string;
+  lastError: string;
+  failureCount: number;
+  memberCount: number;
+  createdAt: string;
+}
+
+export interface ListGroupVcsLinksRequest {
+  groupId: string;
+}
+
+export interface ListGroupVcsLinksResponse {
+  links: GroupVcsLink[];
+}
+
+export interface LinkGroupVcsTeamRequest {
+  groupId: string;
+  provider?: string;
+  team: string;
+}
+
+export interface LinkGroupVcsTeamResponse {
+  link: GroupVcsLink;
+}
+
+export interface UnlinkGroupVcsTeamRequest {
+  groupId: string;
+  linkId: string;
+}
+
+export interface UnlinkGroupVcsTeamResponse {
+  removed: boolean;
+}
+
+export interface GroupVcsSyncResult {
+  linkId: string;
+  team: string;
+  members: number;
+  added: number;
+  removed: number;
+  error?: string;
+}
+
+export interface SyncGroupVcsTeamsRequest {
+  groupId: string;
+}
+
+export interface SyncGroupVcsTeamsResponse {
+  results: GroupVcsSyncResult[];
+}
+
+/**
+ * One effective member of a group: a manual member, a synced member, or
+ * both. A synced member can be a principal with no user (a VCS login).
+ */
+export interface GroupMemberDetail {
+  principalId: string;
+  kind: string;
+  name: string;
+  displayName: string;
+  userId?: string;
+  username?: string;
+  source: string;
+  manual: boolean;
+  teams: string[];
+  vcsLogins: string[];
+  addedAt: string;
+}
+
+export interface ListGroupMemberDetailsRequest {
+  groupId: string;
+}
+
+export interface ListGroupMemberDetailsResponse {
+  members: GroupMemberDetail[];
+}
+
+/**
  * One user account, for pickers that grant roles or group membership.
  */
 export interface UserSummary {
@@ -663,6 +805,7 @@ export interface RoleAssignment {
   principalId: string;
   scopeType: string;
   scopeId?: string;
+  scopeWorkflow?: string;
   role: string;
   createdAt: string;
   createdBy?: string;
@@ -671,6 +814,7 @@ export interface RoleAssignment {
 export interface ListRoleAssignmentsRequest {
   scopeType?: string;
   scopeId?: string;
+  scopeWorkflow?: string;
   principalId?: string;
 }
 
@@ -683,6 +827,7 @@ export interface AssignRoleRequest {
   principalId: string;
   scopeType: string;
   scopeId?: string;
+  scopeWorkflow?: string;
   role: string;
 }
 
@@ -852,6 +997,12 @@ export interface SecretGrant {
   description?: string;
   createdAt: string;
   updatedAt: string;
+  refClassesAny?: string[];
+  refClassesNone?: string[];
+  delivery?: string;
+  proxyHosts?: string[];
+  proxyHeader?: string;
+  proxyHeaderFormat?: string;
 }
 
 export interface ListSecretGrantsRequest {
@@ -871,6 +1022,12 @@ export interface CreateSecretGrantRequest {
   jobNameMatch?: string;
   jobNamePattern?: string;
   description?: string;
+  refClassesAny?: string[];
+  refClassesNone?: string[];
+  delivery?: string;
+  proxyHosts?: string[];
+  proxyHeader?: string;
+  proxyHeaderFormat?: string;
 }
 
 export interface CreateSecretGrantResponse {
@@ -885,6 +1042,13 @@ export interface UpdateSecretGrantRequest {
   jobNameMatch?: string;
   jobNamePattern?: string;
   description?: string;
+  setRefClasses?: boolean;
+  refClassesAny?: string[];
+  refClassesNone?: string[];
+  delivery?: string;
+  proxyHosts?: string[];
+  proxyHeader?: string;
+  proxyHeaderFormat?: string;
 }
 
 export interface UpdateSecretGrantResponse {
@@ -936,9 +1100,25 @@ export interface CancelWorkflowResponse {
  * cancelled one (old instance untouched); RetryUnsuccessfulJobs bulk-
  * applies RetryJob to every failed/cancelled member job of a workflow, in
  * place. See internal/jobcontrol/retry.go.
+ * RunShifts are the only changes a retry or a re-run can make (D18, D25):
+ * cpu (the CPU limit), cpu_request, memory (the memory limit), storage
+ * (the ephemeral storage limit), storage_request, and timeout (a duration
+ * such as "2h", or whole seconds). The new run keeps the authority of the
+ * original run. An absent field keeps the original value. The
+ * rerun_shift_limits setting bounds the values.
  */
+export interface RunShifts {
+  cpu?: string;
+  cpuRequest?: string;
+  memory?: string;
+  storage?: string;
+  storageRequest?: string;
+  timeout?: string;
+}
+
 export interface RetryJobRequest {
   jobId: string;
+  shifts?: RunShifts;
 }
 
 export interface RetryJobResponse {
@@ -948,6 +1128,7 @@ export interface RetryJobResponse {
 
 export interface RetryWorkflowRequest {
   workflowInstanceId: string;
+  shifts?: RunShifts;
 }
 
 export interface RetryWorkflowResponse {
@@ -957,6 +1138,48 @@ export interface RetryWorkflowResponse {
 
 export interface RetryUnsuccessfulJobsRequest {
   workflowInstanceId: string;
+  shifts?: RunShifts;
+}
+
+/**
+ * RerunWorkflow runs a finished workflow (also a completed one) again as a
+ * new instance, with the recorded authority of the original and optional
+ * shifts. Authorization is the same as RetryWorkflow.
+ */
+export interface RerunWorkflowRequest {
+  workflowInstanceId: string;
+  shifts?: RunShifts;
+}
+
+export interface RerunWorkflowResponse {
+  workflowInstanceId: string;
+  status: string;
+}
+
+/**
+ * StartRun starts a new evaluated run on a ref of a project: a branch name,
+ * refs/heads/NAME, refs/tags/NAME, or a pull request head (pr_number). Give
+ * exactly one of ref and pr_number. The coordinator resolves the commit,
+ * records a manual CI event with the caller as its actor, and evaluates it
+ * with the normal policy of that ref. workflow, when set, is the one
+ * workflow to run (a workflow ID or a path). Authorization is the retry
+ * tier of the project.
+ */
+export interface StartRunRequest {
+  projectId: string;
+  ref?: string;
+  prNumber?: number;
+  workflow?: string;
+}
+
+export interface StartRunResponse {
+  eventId: string;
+  status: string;
+  evalJobId?: string;
+  ref: string;
+  commitSha: string;
+  prNumber?: number;
+  workflow?: string;
 }
 
 export interface RetryUnsuccessfulJobsResponse {
@@ -990,6 +1213,46 @@ export interface UpdateGlobalSettingsRequest {
 export interface UpdateGlobalSettingsResponse {
   newProjectsPrivate: boolean;
   settings: GlobalSettingEntry[];
+}
+
+/**
+ * Shed levels (overload protection). The level in force for an
+ * organization is the higher of the global level and the organization level.
+ */
+export interface ShedActions {
+  skipDrafts: boolean;
+  pauseSchedules: boolean;
+  lowerPrPriority: boolean;
+  skipAdvisory: boolean;
+  refuseManualRuns: boolean;
+}
+
+export interface ShedState {
+  globalLevel: string;
+  orgLevel?: string;
+  level: string;
+  source?: string;
+  actions: ShedActions;
+  degradedActions: ShedActions;
+  criticalActions: ShedActions;
+}
+
+export interface GetShedStateRequest {
+  orgId?: string;
+}
+
+export interface GetShedStateResponse {
+  state: ShedState;
+}
+
+export interface SetShedLevelRequest {
+  level: string;
+  orgId?: string;
+  reason?: string;
+}
+
+export interface SetShedLevelResponse {
+  state: ShedState;
 }
 
 /**
@@ -1095,6 +1358,24 @@ export interface QueueSummary {
   displayName: string;
   isDefault: boolean;
   backlogCount: number;
+  backlogOldestAgeSeconds?: number;
+  backlogCpuRequestMillicores?: number;
+  backlogMemoryLimitBytes?: number;
+}
+
+/**
+ * CharacteristicBacklog is the waiting work of every queue that requires one
+ * characteristic value (for example region=us-east-1), so operators see
+ * where capacity is short. A queue with many characteristics counts in each.
+ */
+export interface CharacteristicBacklog {
+  key: string;
+  value: string;
+  queues: number;
+  count: number;
+  oldestAgeSeconds: number;
+  cpuRequestMillicores: number;
+  memoryLimitBytes: number;
 }
 
 export interface ListQueuesRequest {
@@ -1102,6 +1383,7 @@ export interface ListQueuesRequest {
 
 export interface ListQueuesResponse {
   queues: QueueSummary[];
+  backlogByCharacteristic?: CharacteristicBacklog[];
 }
 
 /**
@@ -1154,10 +1436,37 @@ export interface WorkerSummary {
   status: string;
   lastSeenAt?: string;
   activeLeaseCount: number;
+  admission?: WorkerAdmissionSummary;
+  enrollmentTokenId?: string;
+  enrollmentTokenName?: string;
+  enrollmentTokenActive?: boolean;
+  onDeactivatedToken?: boolean;
+  online?: boolean;
+  imageStatus?: string;
+  imageStatusDetail?: string;
+  imageRuntime?: string;
+  imageSetVersion?: number;
+  imageReportedVersion?: number;
+}
+
+/**
+ * WorkerAdmissionSummary is the capacity and the headroom (capacity less
+ * the resources in use) that a resources-mode worker reported. reported_at
+ * is RFC 3339; the coordinator stores a report at most every 30 seconds.
+ */
+export interface WorkerAdmissionSummary {
+  mode: string;
+  capacityCpuMillicores: number;
+  capacityMemoryBytes: number;
+  headroomCpuMillicores: number;
+  headroomMemoryBytes: number;
+  reportedAt: string;
 }
 
 export interface ListWorkersRequest {
   poolId?: string;
+  enrollmentTokenId?: string;
+  onDeactivatedToken?: boolean;
 }
 
 export interface ListWorkersResponse {
@@ -1254,6 +1563,7 @@ export interface EnrollmentTokenSummary {
   lastUsedAt?: string;
   createdAt: string;
   deactivatedAt?: string;
+  activeWorkerCount?: number;
 }
 
 export interface CreateEnrollmentTokenRequest {
@@ -1279,8 +1589,15 @@ export interface ListEnrollmentTokensResponse {
   tokens: EnrollmentTokenSummary[];
 }
 
+/**
+ * Deactivation is permanent: no operation activates a token again.
+ * confirm_permanent must be true, or the operation fails with
+ * invalid_argument. Workers that run on the token keep their sessions
+ * until they stop (see WorkerSummary.on_deactivated_token).
+ */
 export interface DeactivateEnrollmentTokenRequest {
   tokenId: string;
+  confirmPermanent?: boolean;
 }
 
 export interface DeactivateEnrollmentTokenResponse {
@@ -1430,6 +1747,204 @@ export interface ListScheduleFiresResponse {
 }
 
 /**
+ * scope is "org", "project", "workflow", or "owner_group".
+ */
+export interface EventSubscriptionSummary {
+  subscriptionId: string;
+  orgId: string;
+  name: string;
+  description: string;
+  ownerPrincipalId: string;
+  ownerActive: boolean;
+  scope: string;
+  projectId?: string;
+  workflowSecurityId: string;
+  ownerGroup: string;
+  eventTypes: string[];
+  refClassesAny: string[];
+  results: string[];
+  actorKinds: string[];
+  failureClasses?: string[];
+  sinkType: string;
+  webhookUrl: string;
+  maxAttempts: number;
+  enabled: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/**
+ * status is "pending", "queued", "sending", "delivered", or "dead_letter".
+ */
+export interface EventDeliverySummary {
+  deliveryId: string;
+  subscriptionId: string;
+  eventId: string;
+  eventType: string;
+  orderKey: string;
+  sequence: number;
+  status: string;
+  attempts: number;
+  lastHttpStatus?: number;
+  lastLatencyMs?: number;
+  lastError: string;
+  nextAttemptAt: string;
+  deliveredAt?: string;
+  deadLetteredAt?: string;
+  createdAt: string;
+}
+
+/**
+ * result is "delivered", "failed", or "refused".
+ */
+export interface EventDeliveryAttemptEntry {
+  attempt: number;
+  startedAt: string;
+  finishedAt: string;
+  result: string;
+  httpStatus?: number;
+  latencyMs: number;
+  error: string;
+}
+
+/**
+ * Without project_id: every subscription of the org (org admin). With
+ * project_id: the project and workflow subscriptions of the project
+ * (project owner).
+ */
+export interface ListEventSubscriptionsRequest {
+  orgId: string;
+  projectId?: string;
+}
+
+export interface ListEventSubscriptionsResponse {
+  subscriptions: EventSubscriptionSummary[];
+}
+
+export interface GetEventSubscriptionRequest {
+  subscriptionId: string;
+}
+
+export interface GetEventSubscriptionResponse {
+  subscription: EventSubscriptionSummary;
+}
+
+/**
+ * signing_secret: empty makes a random secret. The answer shows the secret
+ * one time. owner_principal_id: empty means the caller.
+ */
+export interface CreateEventSubscriptionRequest {
+  orgId: string;
+  name: string;
+  description?: string;
+  scope: string;
+  projectId?: string;
+  workflowSecurityId?: string;
+  ownerGroup?: string;
+  eventTypes?: string[];
+  refClassesAny?: string[];
+  results?: string[];
+  actorKinds?: string[];
+  failureClasses?: string[];
+  sinkType?: string;
+  webhookUrl: string;
+  maxAttempts?: number;
+  enabled?: boolean;
+  signingSecret?: string;
+  ownerPrincipalId?: string;
+}
+
+export interface CreateEventSubscriptionResponse {
+  subscription: EventSubscriptionSummary;
+  signingSecret: string;
+}
+
+/**
+ * Only the fields that are present change. rotate_secret makes a new
+ * secret (or uses signing_secret) and shows it one time.
+ */
+export interface UpdateEventSubscriptionRequest {
+  subscriptionId: string;
+  description?: string;
+  eventTypes?: string[];
+  refClassesAny?: string[];
+  results?: string[];
+  actorKinds?: string[];
+  failureClasses?: string[];
+  webhookUrl?: string;
+  maxAttempts?: number;
+  enabled?: boolean;
+  rotateSecret?: boolean;
+  signingSecret?: string;
+  clearFilters?: string[];
+}
+
+export interface UpdateEventSubscriptionResponse {
+  subscription: EventSubscriptionSummary;
+  signingSecret?: string;
+}
+
+export interface DeleteEventSubscriptionRequest {
+  subscriptionId: string;
+}
+
+export interface DeleteEventSubscriptionResponse {
+  ok: boolean;
+}
+
+/**
+ * Newest deliveries first. Default limit 50, maximum 500.
+ */
+export interface ListEventDeliveriesRequest {
+  subscriptionId: string;
+  status?: string;
+  limit?: number;
+}
+
+export interface ListEventDeliveriesResponse {
+  deliveries: EventDeliverySummary[];
+}
+
+export interface GetEventDeliveryRequest {
+  subscriptionId: string;
+  deliveryId: string;
+}
+
+export interface GetEventDeliveryResponse {
+  delivery: EventDeliverySummary;
+  attempts: EventDeliveryAttemptEntry[];
+}
+
+/**
+ * Replays one delivered or dead_letter delivery (delivery_id), or every
+ * dead_letter delivery of the subscription (all_dead_letters).
+ */
+export interface ReplayEventDeliveryRequest {
+  subscriptionId: string;
+  deliveryId?: string;
+  allDeadLetters?: boolean;
+}
+
+export interface ReplayEventDeliveryResponse {
+  replayed: number;
+}
+
+/**
+ * Sends one test.ping event now. Nothing is recorded.
+ */
+export interface TestEventSubscriptionRequest {
+  subscriptionId: string;
+}
+
+export interface TestEventSubscriptionResponse {
+  delivered: boolean;
+  httpStatus?: number;
+  latencyMs: number;
+  error: string;
+  refused: boolean;
+}
+
+/**
  * Resource history across the runs of one job, for capacity planning.
  * A "job" here is every run with the same project and the same name as the
  * job_id given. Values are integer-scaled by unit: millicores and bytes.
@@ -1475,6 +1990,29 @@ export interface GetJobResourceHistoryResponse {
   name: string;
   runs: JobRunResourceSummary[];
   pending: number;
+  suggestion?: ResourceSuggestion;
+}
+
+/**
+ * ResourceSuggestion is a right-sizing suggestion (internal/resourcehistory
+ * Suggest): CPU request = p95 of the per-run CPU p95 plus 20 percent; memory
+ * limit = p95 of the per-run memory peak plus 25 percent. sufficient is
+ * false, and the suggested values are empty, when fewer than min_runs runs
+ * are measured. Reactorcide never applies a suggestion by itself.
+ */
+export interface ResourceSuggestion {
+  runs: number;
+  minRuns: number;
+  sufficient: boolean;
+  cpuP95Millicores: number;
+  memoryPeakP95Bytes: number;
+  oomRuns: number;
+  cpuRequest?: string;
+  cpuRequestMillicores?: number;
+  memoryLimit?: string;
+  memoryLimitBytes?: number;
+  currentCpuRequestMillicores: number;
+  currentMemoryLimitBytes: number;
 }
 
 export interface GetJobLogsRequest {
@@ -1514,13 +2052,22 @@ export interface JobSummary {
   startedAt?: string;
   completedAt?: string;
   exitCode?: number;
+  failureClass?: string;
+  failureDetail?: string;
+  failureOwner?: string;
+  retryCount?: number;
   sourceUrl: string;
   sourceRef: string;
   sourceType: string;
   sourcePath: string;
   runnerImage: string;
+  imageAlias?: string;
+  imageDisplay?: string;
+  imageRetryOf?: string;
   queueName: string;
   priority: number;
+  priorityLane?: string;
+  priorityReason?: CIDecisionReason;
   parentJobId?: string;
   projectId?: string;
   workflowId?: string;
@@ -1528,6 +2075,28 @@ export interface JobSummary {
   ciOrigin: string;
   executionProfile: string;
   workerClass: string;
+  actor?: ActorSummary;
+  shifts?: RunShifts;
+  refClasses?: string[];
+  owner?: WorkflowOwnership;
+}
+
+/**
+ * WP7: the owner and contact of a workflow, read from the TRUSTED CI
+ * definition when the run was created (docs/workflow-design.md). An absent
+ * group with no subjects means the trusted definition names no owner.
+ * source: ci (read from the trusted CI at ci_sha), prior (copied from an
+ * earlier trusted run), parent (the parent workflow), retry.
+ */
+export interface WorkflowOwnership {
+  group?: string;
+  subjects?: string[];
+  channel?: string;
+  helpUrl?: string;
+  email?: string;
+  source?: string;
+  ciSha?: string;
+  trusted?: boolean;
 }
 
 export interface ListJobsRequest {
@@ -1535,6 +2104,7 @@ export interface ListJobsRequest {
   projectId?: string;
   workflowId?: string;
   queueName?: string;
+  failureClass?: string;
   limit?: number;
   offset?: number;
 }
@@ -1617,6 +2187,9 @@ export interface WorkflowSummaryDetail {
   executionProfile: string;
   workerClass: string;
   eventId?: string;
+  actor?: ActorSummary;
+  refClasses?: string[];
+  owner?: WorkflowOwnership;
 }
 
 export interface ListWorkflowsRequest {
@@ -1685,6 +2258,12 @@ export interface CIDecisionReason {
   required?: boolean;
   scheduleId?: string;
   fireTime?: string;
+  classes?: string[];
+  ruleIds?: string[];
+  lane?: string;
+  base?: number;
+  shifts?: PriorityShift[];
+  final?: number;
 }
 
 export interface CIDependencyOutcome {
@@ -1699,6 +2278,9 @@ export interface CIEventWorkflowDecision {
   decision: string;
   reasons: CIDecisionReason[];
   workflowId?: string;
+  owner?: WorkflowOwnership;
+  requiredState?: string;
+  requiredLabel?: string;
 }
 
 export interface CIEventDetail {
@@ -1726,6 +2308,10 @@ export interface CIEventDetail {
   checksState?: string;
   checksDescription?: string;
   checksPublishedAt?: string;
+  actorPrincipal?: ActorSummary;
+  refClasses?: string[];
+  refClassFacts?: RefClassFacts;
+  refClassReasons?: RefClassReason[];
 }
 
 export interface GetEventRequest {
@@ -1765,5 +2351,1883 @@ export interface DescribeFormMetadataResponse {
   workflowStatuses: EnumChoice[];
   ciSourceTypes: EnumChoice[];
   vcsProviders: EnumChoice[];
+}
+
+/**
+ * The display form of an actor. identity is "TYPE:VALUE" of the identity
+ * the actor used (for example vcs:github/octocat or token:UUID).
+ */
+export interface ActorSummary {
+  principalId: string;
+  kind: string;
+  displayName: string;
+  identity?: string;
+}
+
+export interface PrincipalIdentityEntry {
+  identityType: string;
+  identityValue: string;
+  verifiedBy: string;
+  createdAt: string;
+}
+
+/**
+ * A token of a service principal. The token value is never returned here.
+ */
+export interface PrincipalTokenEntry {
+  tokenId: string;
+  name: string;
+  capabilities: string[];
+  createdAt: string;
+  expiresAt?: string;
+  lastUsedAt?: string;
+  isActive: boolean;
+}
+
+export interface PrincipalSummary {
+  principalId: string;
+  kind: string;
+  name: string;
+  displayName: string;
+  status: string;
+  orgId?: string;
+  createdAt: string;
+}
+
+export interface PrincipalDetail {
+  principal: PrincipalSummary;
+  identities: PrincipalIdentityEntry[];
+  groups: string[];
+  tokens: PrincipalTokenEntry[];
+  subjects: string[];
+}
+
+export interface ListPrincipalsRequest {
+  orgId: string;
+  kind?: string;
+}
+
+export interface ListPrincipalsResponse {
+  principals: PrincipalSummary[];
+}
+
+export interface GetPrincipalRequest {
+  orgId: string;
+  principalId: string;
+}
+
+export interface GetPrincipalResponse {
+  principal: PrincipalDetail;
+}
+
+export interface CreateServicePrincipalRequest {
+  orgId: string;
+  name: string;
+  displayName?: string;
+}
+
+export interface CreateServicePrincipalResponse {
+  principal: PrincipalDetail;
+}
+
+export interface SetPrincipalStatusRequest {
+  orgId: string;
+  principalId: string;
+  status: string;
+}
+
+export interface SetPrincipalStatusResponse {
+  principal: PrincipalDetail;
+}
+
+export interface PrincipalIdentityRequest {
+  orgId: string;
+  principalId: string;
+  identityType: string;
+  identityValue: string;
+}
+
+export interface PrincipalIdentityResponse {
+  principal: PrincipalDetail;
+}
+
+export interface SetPrincipalGroupRequest {
+  orgId: string;
+  principalId: string;
+  groupId: string;
+  member: boolean;
+}
+
+export interface SetPrincipalGroupResponse {
+  principal: PrincipalDetail;
+}
+
+export interface IssuePrincipalTokenRequest {
+  orgId: string;
+  principalId: string;
+  name: string;
+  capabilities: string[];
+  expiresAt?: string;
+}
+
+/**
+ * token is shown one time. Store it at once; it cannot be read again.
+ */
+export interface IssuePrincipalTokenResponse {
+  token: string;
+  info: PrincipalTokenEntry;
+}
+
+export interface RevokePrincipalTokenRequest {
+  orgId: string;
+  principalId: string;
+  tokenId: string;
+}
+
+export interface RevokePrincipalTokenResponse {
+  revoked: boolean;
+}
+
+export interface ResolvePrincipalRequest {
+  orgId: string;
+  identityType: string;
+  identityValue: string;
+}
+
+export interface ResolvePrincipalResponse {
+  principal: PrincipalDetail;
+  identity: string;
+}
+
+export interface FederationIssuerEntry {
+  issuerId: string;
+  name: string;
+  issuerUrl: string;
+  jwksUrl: string;
+  audiences: string[];
+  algorithms: string[];
+  clockSkewSeconds: number;
+  status: string;
+  createdAt: string;
+}
+
+/**
+ * One claim condition. op is "equals" or "glob" ("*" matches any run of
+ * characters, "?" one character).
+ */
+export interface FederationConditionEntry {
+  claim: string;
+  op: string;
+  value: string;
+}
+
+export interface FederationMappingEntry {
+  mappingId: string;
+  issuerId: string;
+  name: string;
+  principalId: string;
+  principalName: string;
+  conditions: FederationConditionEntry[];
+  capabilities: string[];
+  tokenTtlSeconds: number;
+  status: string;
+  createdAt: string;
+}
+
+export interface ListFederationIssuersRequest {
+  orgId: string;
+}
+
+export interface ListFederationIssuersResponse {
+  issuers: FederationIssuerEntry[];
+  mappings: FederationMappingEntry[];
+}
+
+/**
+ * Create (issuer_id absent) or update an issuer.
+ */
+export interface SaveFederationIssuerRequest {
+  orgId: string;
+  issuerId?: string;
+  name: string;
+  issuerUrl: string;
+  jwksUrl?: string;
+  audiences: string[];
+  algorithms?: string[];
+  clockSkewSeconds?: number;
+  status?: string;
+}
+
+export interface SaveFederationIssuerResponse {
+  issuer: FederationIssuerEntry;
+}
+
+export interface DeleteFederationIssuerRequest {
+  orgId: string;
+  issuerId: string;
+}
+
+export interface DeleteFederationIssuerResponse {
+  deleted: boolean;
+}
+
+/**
+ * Create (mapping_id absent) or update a mapping. The capabilities are
+ * never empty, and they are intersected with the roles of the principal at
+ * each use of an issued token.
+ */
+export interface SaveFederationMappingRequest {
+  orgId: string;
+  issuerId: string;
+  mappingId?: string;
+  name: string;
+  principalId: string;
+  conditions: FederationConditionEntry[];
+  capabilities: string[];
+  tokenTtlSeconds?: number;
+  status?: string;
+}
+
+export interface SaveFederationMappingResponse {
+  mapping: FederationMappingEntry;
+}
+
+export interface DeleteFederationMappingRequest {
+  orgId: string;
+  mappingId: string;
+}
+
+export interface DeleteFederationMappingResponse {
+  deleted: boolean;
+}
+
+/**
+ * The trusted facts of an event that the classifier used.
+ */
+export interface RefClassFacts {
+  source?: string;
+  eventType?: string;
+  branch?: string;
+  headBranch?: string;
+  tag?: string;
+  baseBranch?: string;
+  defaultBranch?: string;
+  isPr?: boolean;
+  isFork?: boolean;
+  isDefaultBranch?: boolean;
+}
+
+/**
+ * Why one class applies. rule_id is "builtin:NAME" for a built-in rule.
+ * scope is builtin | org | project.
+ */
+export interface RefClassReason {
+  class: string;
+  ruleId: string;
+  ruleName?: string;
+  scope: string;
+}
+
+/**
+ * One operator rule. Absent match fields are no condition. is_pr, is_fork
+ * and is_default_branch absent mean "any".
+ */
+export interface RefClassRule {
+  ruleId?: string;
+  projectId?: string;
+  name: string;
+  position: number;
+  description?: string;
+  eventTypes?: string[];
+  branchGlob?: string;
+  tagGlob?: string;
+  baseBranchGlob?: string;
+  isPr?: boolean;
+  isFork?: boolean;
+  isDefaultBranch?: boolean;
+  classes: string[];
+  enabled: boolean;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface RefClassBuiltin {
+  ruleId: string;
+  classes: string[];
+}
+
+export interface RefClassRuleCheck {
+  ruleId: string;
+  name: string;
+  scope: string;
+  enabled: boolean;
+  matched: boolean;
+  classes: string[];
+}
+
+export interface ListRefClassRulesRequest {
+  organization: string;
+  projectId?: string;
+}
+
+export interface ListRefClassRulesResponse {
+  rules: RefClassRule[];
+  inherited: RefClassRule[];
+  builtin: RefClassBuiltin[];
+  canManage: boolean;
+}
+
+export interface PutRefClassRuleRequest {
+  organization: string;
+  projectId?: string;
+  rule: RefClassRule;
+}
+
+export interface PutRefClassRuleResponse {
+  rule: RefClassRule;
+}
+
+export interface DeleteRefClassRuleRequest {
+  organization: string;
+  projectId?: string;
+  name: string;
+}
+
+export interface DeleteRefClassRuleResponse {
+  deleted: boolean;
+}
+
+export interface ExplainRefClassesRequest {
+  organization: string;
+  projectId?: string;
+  eventId?: string;
+  facts?: RefClassFacts;
+}
+
+export interface ExplainRefClassesResponse {
+  facts: RefClassFacts;
+  classes: string[];
+  reasons: RefClassReason[];
+  ruleIds: string[];
+  rules: RefClassRuleCheck[];
+  storedClasses?: string[];
+}
+
+/**
+ * Image aliases and worker image sets (docs/image-aliases.md).
+ * 
+ * An alias gives a name to one pinned image reference. organization is the
+ * organization name. An absent project_id is the organization scope (needs
+ * organization admin); a project_id is the project scope (needs project
+ * owner). scope is "organization" or "project". kind is "vm" or
+ * "container". characteristics are more worker characteristics that a
+ * worker must satisfy to get the image; the key worker_class names a
+ * worker class that the pool of the worker must serve. Times are RFC 3339.
+ */
+export interface ImageAliasSummary {
+  aliasId: string;
+  orgId: string;
+  projectId?: string;
+  scope: string;
+  name: string;
+  kind: string;
+  os: string;
+  arch: string;
+  characteristics: CharacteristicEntry[];
+  activeRef: string;
+  activeDigest: string;
+  pendingRef?: string;
+  pendingDigest?: string;
+  pendingSince?: string;
+  createdAt: string;
+  updatedAt: string;
+  updatedBy: string;
+}
+
+/**
+ * A project scope list also gives the organization aliases that the
+ * project uses (an organization alias with no project alias of the same
+ * name), with scope "organization".
+ */
+export interface ListImageAliasesRequest {
+  organization: string;
+  projectId?: string;
+}
+
+export interface ListImageAliasesResponse {
+  aliases: ImageAliasSummary[];
+}
+
+export interface GetImageAliasRequest {
+  organization: string;
+  projectId?: string;
+  name: string;
+}
+
+export interface GetImageAliasResponse {
+  alias: ImageAliasSummary;
+}
+
+/**
+ * SetImageAlias creates an alias or changes its pin. ref must be a pinned
+ * reference (@sha256:). A new alias gets ref as its active pin at once.
+ * For an alias that exists, a new digest becomes the pending pin, and the
+ * coordinator promotes it when every online serving worker has the image;
+ * force promotes it at once. os and arch are required for a new alias;
+ * kind defaults to vm for os macos or windows, else container. kind, os,
+ * arch, and characteristics cannot change after the create: for an alias
+ * that exists, a value that is different is refused (failed_precondition).
+ * Use a new alias name for a different platform or constraint. outcome is
+ * "created", "pending", "promoted", "updated", or "unchanged".
+ */
+export interface SetImageAliasRequest {
+  organization: string;
+  projectId?: string;
+  name: string;
+  ref: string;
+  kind?: string;
+  os?: string;
+  arch?: string;
+  characteristics?: CharacteristicEntry[];
+  force?: boolean;
+}
+
+export interface SetImageAliasResponse {
+  alias: ImageAliasSummary;
+  outcome: string;
+}
+
+export interface DeleteImageAliasRequest {
+  organization: string;
+  projectId?: string;
+  name: string;
+}
+
+export interface DeleteImageAliasResponse {
+  deleted: boolean;
+}
+
+/**
+ * An image that a worker could not pull. permanent is true when a retry
+ * with the same reference cannot help (not found, digest mismatch,
+ * unauthorized or denied, reference not valid): the alias owner or the
+ * operator must fix it.
+ */
+export interface ImageFailureSummary {
+  digest: string;
+  permanent: boolean;
+  detail: string;
+}
+
+/**
+ * One image-aware worker that serves an alias. has_active and has_pending
+ * tell whether the worker reported the active and the pending digest as
+ * ready. ready is true when the pending digest is ready (the state of
+ * the other images of the worker does not count). failed gives the
+ * failures of the active and the pending digest of this alias.
+ */
+export interface ImageRolloutWorker {
+  workerId: string;
+  hostname?: string;
+  poolId: string;
+  online: boolean;
+  imageStatus: string;
+  imageStatusDetail?: string;
+  imageSetVersion: number;
+  imageReportedVersion?: number;
+  hasActive: boolean;
+  hasPending: boolean;
+  ready: boolean;
+  failed?: ImageFailureSummary[];
+}
+
+/**
+ * The serving workers of one pool that the caller cannot manage: counts
+ * only, no worker IDs or host names.
+ */
+export interface ImageRolloutPoolSummary {
+  poolName: string;
+  workers: number;
+  onlineWorkers: number;
+  readyWorkers: number;
+  failedWorkers: number;
+}
+
+/**
+ * The rollout of one alias. online_workers and ready_workers count the
+ * online serving workers. blocked tells why a pending pin is not promoted
+ * yet, and is absent when the alias has no pending pin. workers has a row
+ * for each serving worker in a pool that the caller can manage
+ * (manage-workers permission); other_pools gives counts for the other
+ * pools. problems are failures that the alias owner must fix, for
+ * example serving workers that cannot pull the active pin (a permanent
+ * failure).
+ */
+export interface ImageAliasRollout {
+  alias: ImageAliasSummary;
+  workers: ImageRolloutWorker[];
+  onlineWorkers: number;
+  readyWorkers: number;
+  promotable: boolean;
+  blocked?: string;
+  otherPools?: ImageRolloutPoolSummary[];
+  problems?: string[];
+}
+
+/**
+ * An absent name gives the rollout of each alias of the scope.
+ */
+export interface GetImageRolloutStatusRequest {
+  organization: string;
+  projectId?: string;
+  name?: string;
+}
+
+export interface GetImageRolloutStatusResponse {
+  rollouts: ImageAliasRollout[];
+}
+
+/**
+ * One image of the set that the coordinator wants a worker to hold.
+ */
+export interface WorkerImageSetEntrySummary {
+  ref: string;
+  digest: string;
+  kind: string;
+  aliases: string[];
+  ready: boolean;
+  pending?: boolean;
+  failure?: ImageFailureSummary;
+}
+
+/**
+ * The image state of one worker. image_status is absent for a worker that
+ * does not use image sets. state is the state of the newest report
+ * (updating, updated, failed). images is the set that the coordinator
+ * computes now; image_set_version can be older until the next heartbeat.
+ */
+export interface GetWorkerImageStateRequest {
+  workerId: string;
+}
+
+export interface GetWorkerImageStateResponse {
+  workerId: string;
+  imageAware: boolean;
+  imageRuntime?: string;
+  imageStatus?: string;
+  imageStatusDetail?: string;
+  imageSetVersion: number;
+  imageReportedVersion?: number;
+  state?: string;
+  readyDigests: string[];
+  images: WorkerImageSetEntrySummary[];
+  failed?: ImageFailureSummary[];
+}
+
+/**
+ * WP14: environment defaults, the image policy, and job links
+ * (docs/builds-and-caches.md).
+ * Scope: no worker_class and no project_id is the organization; a
+ * worker_class is that worker class; a project_id is that project.
+ */
+export interface EnvDefaultEntry {
+  key: string;
+  value: string;
+  updatedAt?: string;
+}
+
+export interface ListEnvDefaultsRequest {
+  organization: string;
+  workerClass?: string;
+  projectId?: string;
+}
+
+export interface ListEnvDefaultsResponse {
+  scope: string;
+  entries: EnvDefaultEntry[];
+}
+
+export interface PutEnvDefaultRequest {
+  organization: string;
+  workerClass?: string;
+  projectId?: string;
+  key: string;
+  value: string;
+}
+
+export interface PutEnvDefaultResponse {
+  entry: EnvDefaultEntry;
+}
+
+export interface DeleteEnvDefaultRequest {
+  organization: string;
+  workerClass?: string;
+  projectId?: string;
+  key: string;
+}
+
+export interface DeleteEnvDefaultResponse {
+  deleted: boolean;
+}
+
+export interface ImagePolicySummary {
+  enabled: boolean;
+  allowedPrefixes: string[];
+  requireDigest: boolean;
+  updatedAt?: string;
+}
+
+export interface GetImagePolicyRequest {
+  organization: string;
+}
+
+export interface GetImagePolicyResponse {
+  policy: ImagePolicySummary;
+}
+
+export interface PutImagePolicyRequest {
+  organization: string;
+  policy: ImagePolicySummary;
+}
+
+export interface PutImagePolicyResponse {
+  policy: ImagePolicySummary;
+}
+
+export interface JobLinkSummary {
+  name: string;
+  url: string;
+}
+
+export interface ListJobLinksRequest {
+  jobId: string;
+}
+
+export interface ListJobLinksResponse {
+  links: JobLinkSummary[];
+}
+
+/**
+ * WP15: job artifacts, test results, flaky tests, test quarantine, and
+ * provenance (docs/artifacts-and-tests.md, docs/provenance.md). Every read
+ * is authorized by the visibility of the job or the project, so a public
+ * repository is public. status is uploading, complete, or failed; kind is
+ * file, test_report, or provenance.
+ */
+export interface JobArtifactSummary {
+  artifactId: string;
+  path: string;
+  kind: string;
+  mediaType: string;
+  sizeBytes: number;
+  sha256: string;
+  status: string;
+  statusReason?: string;
+  createdAt: string;
+}
+
+export interface ListJobArtifactsRequest {
+  jobId: string;
+}
+
+export interface ListJobArtifactsResponse {
+  artifacts: JobArtifactSummary[];
+}
+
+/**
+ * read-job-artifact returns at most 4 MiB from offset. The browser reads a
+ * file in parts and saves it; eof is true at the end.
+ */
+export interface ReadJobArtifactRequest {
+  jobId: string;
+  artifactId: string;
+  offset: number;
+  length?: number;
+}
+
+export interface ReadJobArtifactResponse {
+  data: Uint8Array;
+  sizeBytes: number;
+  sha256: string;
+  eof: boolean;
+}
+
+export interface JobTestSummaryView {
+  reports: number;
+  total: number;
+  passed: number;
+  failed: number;
+  errored: number;
+  skipped: number;
+  quarantinedFailures: number;
+  flaky: number;
+  truncated: boolean;
+  parseErrors: string[];
+  quarantinePolicy: string;
+  quarantineOverride: boolean;
+}
+
+/**
+ * message has at most 4096 bytes; it is plain text (show it as text).
+ */
+export interface TestResultView {
+  testId: string;
+  suite: string;
+  classname: string;
+  name: string;
+  status: string;
+  durationMs: number;
+  message: string;
+  file: string;
+  line?: number;
+  quarantined: boolean;
+  flaky: boolean;
+}
+
+export interface GetJobTestResultsRequest {
+  jobId: string;
+  failedOnly?: boolean;
+  limit?: number;
+}
+
+export interface GetJobTestResultsResponse {
+  summary?: JobTestSummaryView;
+  results: TestResultView[];
+  projectId?: string;
+  canQuarantine: boolean;
+}
+
+export interface FlakyTestView {
+  testId: string;
+  suite: string;
+  classname: string;
+  name: string;
+  flakyCount: number;
+  totalRuns: number;
+  lastFlakyAt?: string;
+  lastFlakySha?: string;
+}
+
+export interface ListFlakyTestsRequest {
+  projectId: string;
+  days?: number;
+}
+
+export interface ListFlakyTestsResponse {
+  tests: FlakyTestView[];
+  windowDays: number;
+}
+
+export interface TestQuarantineView {
+  quarantineId: string;
+  testId: string;
+  suite: string;
+  classname: string;
+  name: string;
+  ownerPrincipalId: string;
+  reason: string;
+  expiresAt: string;
+  createdAt: string;
+  createdBy?: string;
+  removedAt?: string;
+  removedBy?: string;
+}
+
+export interface ListTestQuarantinesRequest {
+  projectId: string;
+  includeEnded?: boolean;
+}
+
+export interface ListTestQuarantinesResponse {
+  quarantines: TestQuarantineView[];
+  canManage: boolean;
+}
+
+/**
+ * until is an RFC 3339 time or a duration ("72h", "7d"). owner_principal_id
+ * defaults to the principal of the caller.
+ */
+export interface QuarantineTestRequest {
+  projectId: string;
+  testId?: string;
+  suite?: string;
+  classname?: string;
+  name?: string;
+  reason: string;
+  until: string;
+  ownerPrincipalId?: string;
+  workflowSecurityId?: string;
+}
+
+export interface QuarantineTestResponse {
+  quarantine: TestQuarantineView;
+}
+
+export interface UnquarantineTestRequest {
+  projectId: string;
+  quarantineId: string;
+  workflowSecurityId?: string;
+}
+
+export interface UnquarantineTestResponse {
+  done: boolean;
+}
+
+/**
+ * get-job-provenance verifies the stored envelope with the provenance keys
+ * of the coordinator. statement_json is the verified in-toto statement.
+ */
+export interface GetJobProvenanceRequest {
+  jobId: string;
+}
+
+export interface GetJobProvenanceResponse {
+  present: boolean;
+  verified: boolean;
+  keyId?: string;
+  envelopeJson?: string;
+  statementJson?: string;
+  error?: string;
+}
+
+/**
+ * Diagnosis entries from principals (docs/diagnosis.md). A diagnosis tool
+ * is a service principal. One principal has at most one entry for each
+ * target; a new put replaces it. title and body are plain text for the UI:
+ * show them as text, never as HTML. The pull request comment shows a
+ * sanitized form.
+ */
+export interface DiagnosisLinkEntry {
+  name: string;
+  url: string;
+}
+
+export interface DiagnosisSummary {
+  diagnosisId: string;
+  targetType: string;
+  jobId?: string;
+  workflowId?: string;
+  nodeName?: string;
+  author: ActorSummary;
+  title: string;
+  body: string;
+  confidence: string;
+  category: string;
+  links: DiagnosisLinkEntry[];
+  suggestedShifts?: RunShifts;
+  suggestedShiftsText: string;
+  revision: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/**
+ * Name a job (job_id), or a workflow (workflow_id). A workflow also lists
+ * the entries of the jobs of its nodes.
+ */
+export interface ListDiagnosesRequest {
+  jobId?: string;
+  workflowId?: string;
+}
+
+export interface ListDiagnosesResponse {
+  diagnoses: DiagnosisSummary[];
+}
+
+/**
+ * Name a job (job_id), a node (workflow_id and node_name), or a workflow
+ * (workflow_id). Needs diagnosis:write for a token, and a role in the
+ * scope of the job.
+ */
+export interface PutDiagnosisRequest {
+  jobId?: string;
+  workflowId?: string;
+  nodeName?: string;
+  title: string;
+  body?: string;
+  confidence?: string;
+  category?: string;
+  links?: DiagnosisLinkEntry[];
+  suggestedShifts?: RunShifts;
+}
+
+export interface PutDiagnosisResponse {
+  diagnosis: DiagnosisSummary;
+  created: boolean;
+}
+
+/**
+ * Reporting and ownership (docs/reporting-and-ownership.md): report modes,
+ * the agreement report, the code owners import, and owner acceptance of
+ * path dependencies.
+ */
+export interface PathOwnerRule {
+  pattern: string;
+  owners: string[];
+}
+
+/**
+ * The values that apply to a project. A *_source is "project", "org", or
+ * "default".
+ */
+export interface ReportingSettings {
+  reportMode: string;
+  reportModeSource: string;
+  agreementContexts: string[];
+  agreementContextsSource: string;
+  codeownersImport: string;
+  codeownersImportSource: string;
+  codeownersCacheTtlSeconds: number;
+  pathAcceptance: string;
+  pathAcceptanceSource: string;
+  pathOwners: PathOwnerRule[];
+  pathOwnersSource: string;
+}
+
+export interface GetReportingSettingsRequest {
+  projectId: string;
+}
+
+/**
+ * An absent project_* value inherits the organization value.
+ */
+export interface GetReportingSettingsResponse {
+  effective: ReportingSettings;
+  projectReportMode?: string;
+  projectAgreementContexts?: string[];
+  projectCodeownersImport?: string;
+  projectCodeownersCacheTtlSeconds?: number;
+  projectPathAcceptance?: string;
+  projectPathOwners?: PathOwnerRule[];
+  canManageReporting: boolean;
+  canManageOwnership: boolean;
+}
+
+/**
+ * An absent value keeps the stored value. inherit names the values to
+ * clear: report_mode, agreement_contexts, codeowners_import,
+ * codeowners_cache_ttl_seconds, path_acceptance, path_owners.
+ */
+export interface UpdateReportingSettingsRequest {
+  projectId: string;
+  reportMode?: string;
+  agreementContexts?: string[];
+  codeownersImport?: string;
+  codeownersCacheTtlSeconds?: number;
+  pathAcceptance?: string;
+  pathOwners?: PathOwnerRule[];
+  inherit?: string[];
+}
+
+/**
+ * One result of the other CI system: kind "status" or "check"; state
+ * success, failure, or pending.
+ */
+export interface AgreementOtherResult {
+  name: string;
+  kind: string;
+  state: string;
+  raw?: string;
+  targetUrl?: string;
+}
+
+/**
+ * One commit. status: pending, complete, or no_other. agree is absent until
+ * the comparison is complete.
+ */
+export interface AgreementRow {
+  commitSha: string;
+  eventId?: string;
+  prNumber?: number;
+  branch?: string;
+  reactorcideResult: string;
+  otherResult?: string;
+  agree?: boolean;
+  status: string;
+  otherResults: AgreementOtherResult[];
+  reactorcideCompletedAt: string;
+  observedAt?: string;
+  lastError?: string;
+  commitUrl?: string;
+}
+
+/**
+ * since: an RFC 3339 time or a duration back from now ("7d", "72h").
+ */
+export interface GetAgreementReportRequest {
+  projectId: string;
+  since?: string;
+  limit?: number;
+}
+
+export interface GetAgreementReportResponse {
+  contexts: string[];
+  total: number;
+  compared: number;
+  agreed: number;
+  disagreed: number;
+  pending: number;
+  noOther: number;
+  rateBasisPoints?: number;
+  reactorcideFailedOtherPassed: number;
+  reactorcidePassedOtherFailed: number;
+  disagreements: AgreementRow[];
+  rows: AgreementRow[];
+}
+
+/**
+ * state: requested, accepted, rejected, or revoked.
+ */
+export interface PathAcceptanceSummary {
+  acceptanceId: string;
+  workflowSecurityId: string;
+  pathPattern: string;
+  ownerSubject: string;
+  state: string;
+  reason?: string;
+  requestedBy?: string;
+  requestedByName?: string;
+  requestedAt?: string;
+  acceptedBy?: string;
+  acceptedByName?: string;
+  acceptedAt?: string;
+  revokedBy?: string;
+  revokedByName?: string;
+  revokedAt?: string;
+  decisionReason?: string;
+}
+
+export interface ListPathAcceptancesRequest {
+  projectId: string;
+  state?: string;
+}
+
+export interface ListPathAcceptancesResponse {
+  pathAcceptance: string;
+  ownershipSource: string;
+  rows: PathAcceptanceSummary[];
+  canManageOwnership: boolean;
+}
+
+/**
+ * A workflow owner requests; an owner of the path can accept at once with
+ * accept true.
+ */
+export interface RequestPathAcceptanceRequest {
+  projectId: string;
+  workflowSecurityId: string;
+  pathPattern: string;
+  ownerSubject: string;
+  reason?: string;
+  accept?: boolean;
+}
+
+export interface PathAcceptanceResponse {
+  acceptance: PathAcceptanceSummary;
+}
+
+/**
+ * decision: accept, reject, or revoke.
+ */
+export interface DecidePathAcceptanceRequest {
+  projectId: string;
+  acceptanceId: string;
+  decision: string;
+  reason?: string;
+}
+
+/**
+ * Required set (docs/required-set.md). The workflows in the set count
+ * toward "Reactorcide Checks"; the others are advisory.
+ */
+export interface RequiredSetApproverRule {
+  branches: string[];
+  approvers: string[];
+}
+
+/**
+ * One workflow of a project. state: required, advisory, or quarantined.
+ * branch_pattern "" is the entry for every branch. in_set is false for an
+ * advisory workflow with no entry.
+ */
+export interface RequiredSetWorkflow {
+  workflowSecurityId: string;
+  name?: string;
+  branchPattern: string;
+  state: string;
+  inSet: boolean;
+  source?: string;
+  addedBy?: string;
+  addedByName?: string;
+  addedAt?: string;
+  reason?: string;
+  quarantinedUntil?: string;
+  quarantineReason?: string;
+  quarantinedBy?: string;
+  quarantinedByName?: string;
+  lastSeen?: string;
+}
+
+/**
+ * action: promote or demote. state: pending, approved, rejected, withdrawn.
+ */
+export interface RequiredSetProposal {
+  proposalId: string;
+  workflowSecurityId: string;
+  branchPattern: string;
+  action: string;
+  state: string;
+  reason?: string;
+  proposedBy?: string;
+  proposedByName?: string;
+  proposedAt: string;
+  decidedBy?: string;
+  decidedByName?: string;
+  decidedAt?: string;
+  decisionReason?: string;
+}
+
+export interface GetRequiredSetRequest {
+  projectId: string;
+}
+
+export interface GetRequiredSetResponse {
+  enabled: boolean;
+  enabledAt?: string;
+  workflows: RequiredSetWorkflow[];
+  proposals: RequiredSetProposal[];
+  approvers: string[];
+  approversSource: string;
+  approverRules: RequiredSetApproverRule[];
+  approversInherit: boolean;
+  approverRulesInherit: boolean;
+  maxQuarantineDays: number;
+  canPropose: boolean;
+  canManage: boolean;
+  canApproveAllBranches: boolean;
+}
+
+export interface SetRequiredSetEnabledRequest {
+  projectId: string;
+  enabled: boolean;
+}
+
+export interface SetRequiredSetEnabledResponse {
+  enabled: boolean;
+  seeded: string[];
+}
+
+export interface ProposeRequiredSetChangeRequest {
+  projectId: string;
+  action: string;
+  workflowSecurityId: string;
+  branchPattern?: string;
+  reason?: string;
+  approve?: boolean;
+}
+
+export interface ProposeRequiredSetChangeResponse {
+  proposal: RequiredSetProposal;
+}
+
+/**
+ * decision: approve, reject, or withdraw.
+ */
+export interface DecideRequiredSetProposalRequest {
+  projectId: string;
+  proposalId: string;
+  decision: string;
+  reason?: string;
+}
+
+export interface DecideRequiredSetProposalResponse {
+  proposal: RequiredSetProposal;
+}
+
+/**
+ * until: an RFC 3339 time or a duration ("72h", "7d").
+ */
+export interface QuarantineRequiredWorkflowRequest {
+  projectId: string;
+  workflowSecurityId: string;
+  branchPattern?: string;
+  until: string;
+  reason: string;
+}
+
+export interface QuarantineRequiredWorkflowResponse {
+  workflow: RequiredSetWorkflow;
+}
+
+export interface UnquarantineRequiredWorkflowRequest {
+  projectId: string;
+  workflowSecurityId: string;
+  branchPattern?: string;
+}
+
+export interface UnquarantineRequiredWorkflowResponse {
+  done: boolean;
+}
+
+/**
+ * inherit_approvers / inherit_rules true: use the organization value.
+ */
+export interface SetRequiredSetApproversRequest {
+  projectId: string;
+  inheritApprovers: boolean;
+  approvers: string[];
+  inheritRules: boolean;
+  approverRules: RequiredSetApproverRule[];
+}
+
+/**
+ * The match facts of a lane. Absent or empty is no condition. job_kind is
+ * eval or work. retry true makes a lane for retries only.
+ */
+export interface PriorityLaneMatch {
+  classesAny?: string[];
+  classesNone?: string[];
+  eventTypes?: string[];
+  draft?: boolean;
+  jobKind?: string;
+  retry?: boolean;
+}
+
+/**
+ * One lane. scope is builtin | org | project. replaces is the scope of the
+ * lane with the same name that this lane replaces.
+ */
+export interface PriorityLane {
+  laneId?: string;
+  ruleId?: string;
+  projectId?: string;
+  name: string;
+  position: number;
+  description?: string;
+  base: number;
+  match: PriorityLaneMatch;
+  matchText: string;
+  enabled: boolean;
+  scope?: string;
+  replaces?: string;
+}
+
+export interface PriorityBounds {
+  minBase: number;
+  maxBase: number;
+  minGroupShift: number;
+  maxGroupShift: number;
+  maxRequested: number;
+  shedPrShift: number;
+}
+
+/**
+ * One shift of a priority decision. source is group | owner_group |
+ * requested | shed. applied is false for a group shift that is not the
+ * largest.
+ */
+export interface PriorityShift {
+  source: string;
+  group?: string;
+  value: number;
+  applied: boolean;
+}
+
+export interface PriorityDecision {
+  lane: string;
+  ruleId: string;
+  scope: string;
+  base: number;
+  shifts: PriorityShift[];
+  final: number;
+  retainedFrom?: string;
+  summary: string;
+}
+
+export interface PriorityLaneCheck {
+  name: string;
+  scope: string;
+  base: number;
+  enabled: boolean;
+  matched: boolean;
+  matchText: string;
+}
+
+export interface ListPriorityLanesRequest {
+  organization: string;
+  projectId?: string;
+}
+
+export interface ListPriorityLanesResponse {
+  lanes: PriorityLane[];
+  inherited: PriorityLane[];
+  builtin: PriorityLane[];
+  effective: PriorityLane[];
+  bounds: PriorityBounds;
+  canManage: boolean;
+}
+
+export interface PutPriorityLaneRequest {
+  organization: string;
+  projectId?: string;
+  name: string;
+  base: number;
+  position?: number;
+  description?: string;
+  match?: PriorityLaneMatch;
+  enabled?: boolean;
+}
+
+export interface PutPriorityLaneResponse {
+  lane: PriorityLane;
+}
+
+export interface DeletePriorityLaneRequest {
+  organization: string;
+  projectId?: string;
+  name: string;
+}
+
+export interface DeletePriorityLaneResponse {
+  deleted: boolean;
+}
+
+export interface ExplainPriorityRequest {
+  organization: string;
+  projectId?: string;
+  jobId?: string;
+  refClasses?: string[];
+  eventType?: string;
+  draft?: boolean;
+  jobKind?: string;
+  requested?: number;
+}
+
+export interface ExplainPriorityResponse {
+  decision: PriorityDecision;
+  stored?: PriorityDecision;
+  lanes: PriorityLaneCheck[];
+}
+
+export interface SetGroupPriorityShiftRequest {
+  groupId: string;
+  shift: number;
+}
+
+export interface SetGroupPriorityShiftResponse {
+  group: GroupSummary;
+}
+
+/**
+ * WP16 observability dashboards (docs/observability.md). Every op reads
+ * the rollups of the projects that the caller can view: an anonymous
+ * caller sees public projects only. days is 7, 30 (default), or 90. Rates
+ * are fractions (0-1); percentiles of a range are estimates from merged
+ * histograms. Timestamps are RFC3339 UTC text.
+ */
+export interface ObsClassCount {
+  failureClass: string;
+  count: number;
+}
+
+export interface ObsSummary {
+  runs: number;
+  successes: number;
+  pipelineFailures: number;
+  infraFailures: number;
+  cancelled: number;
+  passRate?: number;
+  infraFailureRate?: number;
+  durationP50Seconds?: number;
+  durationP95Seconds?: number;
+  queueWaitP50Seconds?: number;
+  queueWaitP95Seconds?: number;
+  byClass: ObsClassCount[];
+  measuredRuns: number;
+  cpuCoreHours: number;
+  memoryGibHours: number;
+  cpuReservedCoreHours: number;
+  memoryReservedGibHours: number;
+}
+
+export interface ObsTrendPoint {
+  bucketStart: string;
+  runs: number;
+  passRate?: number;
+  durationP95Seconds?: number;
+  queueWaitP95Seconds?: number;
+  infraFailures: number;
+  infraFailureRate?: number;
+  cpuCoreHours: number;
+  evalEvents: number;
+  evalP95Seconds?: number;
+}
+
+export interface ObsWorkflowHealth {
+  projectId?: string;
+  projectName?: string;
+  workflowSecurityId: string;
+  ownerGroup: string;
+  summary: ObsSummary;
+  defaultBranch: ObsSummary;
+  cpuCoreHoursPerRun?: number;
+  trend: ObsTrendPoint[];
+}
+
+export interface ObsFlakyTest {
+  projectId?: string;
+  testId: string;
+  suite: string;
+  classname: string;
+  name: string;
+  flakyCount: number;
+  totalRuns: number;
+  lastFlakyAt?: string;
+}
+
+export interface ObsAlertRule {
+  ruleId: string;
+  name: string;
+  scope: string;
+  projectId?: string;
+  workflowSecurityId?: string;
+  ownerGroup?: string;
+  condition: string;
+  refClassBucket: string;
+  threshold: number;
+  factor: number;
+  windowHours: number;
+  state: string;
+  enabled: boolean;
+  lastValue?: number;
+  lastBaseline?: number;
+  lastRuns: number;
+  lastEvaluatedAt?: string;
+  stateChangedAt?: string;
+  description?: string;
+  baselineDays?: number;
+  minRuns?: number;
+  resolveMargin?: number;
+  fireAfter?: number;
+  resolveAfter?: number;
+  canManage?: boolean;
+}
+
+export interface GetPipelineDashboardRequest {
+  orgId: string;
+  projectId?: string;
+  days?: number;
+}
+
+export interface GetPipelineDashboardResponse {
+  rangeFrom: string;
+  rangeTo: string;
+  days: number;
+  totals: ObsSummary;
+  trend: ObsTrendPoint[];
+  workflows: ObsWorkflowHealth[];
+  flakyTests: ObsFlakyTest[];
+  alerts: ObsAlertRule[];
+}
+
+export interface ObsLaneHealth {
+  lane: string;
+  summary: ObsSummary;
+}
+
+export interface ObsSloStatus {
+  sli: string;
+  lane: string;
+  objective: number;
+  thresholdSeconds: number;
+  windowDays: number;
+  total: number;
+  good: number;
+  compliance?: number;
+  p95Seconds?: number;
+  errorBudgetRemaining: number;
+  budgetState: string;
+  measures: string;
+}
+
+export interface ObsQueueBacklog {
+  queueUuid: string;
+  displayName: string;
+  count: number;
+  oldestAgeSeconds: number;
+}
+
+export interface ObsCapacity {
+  workersTotal: number;
+  workersActive: number;
+  workersQuarantined: number;
+  workersDisabled: number;
+  workersSeen: number;
+  backlogJobs: number;
+  backlogOldestAgeSeconds: number;
+  queues: ObsQueueBacklog[];
+}
+
+export interface GetInfraDashboardRequest {
+  orgId: string;
+  days?: number;
+}
+
+export interface GetInfraDashboardResponse {
+  rangeFrom: string;
+  rangeTo: string;
+  days: number;
+  totals: ObsSummary;
+  lanes: ObsLaneHealth[];
+  evalEvents: number;
+  evalP50Seconds?: number;
+  evalP95Seconds?: number;
+  trend: ObsTrendPoint[];
+  slos: ObsSloStatus[];
+  capacity: ObsCapacity;
+}
+
+export interface ObsUsagePoint {
+  bucketStart: string;
+  runs: number;
+  cpuCoreHours: number;
+}
+
+export interface ObsGroupUsage {
+  group: string;
+  runs: number;
+  successes: number;
+  pipelineFailures: number;
+  infraFailures: number;
+  passRate?: number;
+  cpuCoreHours: number;
+  memoryGibHours: number;
+  cpuReservedCoreHours: number;
+  series: ObsUsagePoint[];
+}
+
+export interface GetUsageDashboardRequest {
+  orgId: string;
+  days?: number;
+  attribution?: string;
+}
+
+export interface GetUsageDashboardResponse {
+  rangeFrom: string;
+  rangeTo: string;
+  days: number;
+  attribution: string;
+  groups: ObsGroupUsage[];
+}
+
+/**
+ * GitHub Apps (WP11, docs/github-app.md). Global admin only. The private
+ * key and the webhook secret are write-only (REST and CLI); no operation
+ * returns them.
+ */
+export interface GitHubAppSummary {
+  appId: number;
+  slug: string;
+  name: string;
+  enabled: boolean;
+  openRegistration: boolean;
+  headroomPercent: number;
+  activeInstallations: number;
+  repositories: number;
+  recommended: boolean;
+  installUrl?: string;
+  ratelimitLimit?: number;
+  ratelimitRemaining?: number;
+  ratelimitResetAt?: string;
+  createdAt: string;
+}
+
+export interface GitHubAppInstallationSummary {
+  installationId: number;
+  appId: number;
+  accountLogin: string;
+  accountType: string;
+  repositorySelection: string;
+  suspended: boolean;
+  deleted: boolean;
+  headroomPercent: number;
+  ratelimitLimit?: number;
+  ratelimitRemaining?: number;
+  ratelimitResetAt?: string;
+  lastSeenAt: string;
+  repositories: string[];
+  pendingRepositories: string[];
+}
+
+export interface ListGitHubAppsRequest {
+}
+
+export interface ListGitHubAppsResponse {
+  apps: GitHubAppSummary[];
+  installations: GitHubAppInstallationSummary[];
+}
+
+export interface SetGitHubAppEnabledRequest {
+  appId: number;
+  enabled: boolean;
+}
+
+export interface SetGitHubAppEnabledResponse {
+  app: GitHubAppSummary;
+}
+
+/**
+ * SyncGitHubApp reads the installations and repositories of the App from
+ * GitHub and registers projects, as the installation webhooks do.
+ */
+export interface SyncGitHubAppRequest {
+  appId: number;
+}
+
+export interface SyncGitHubAppResponse {
+  installations: number;
+  created: number;
+  disabled: number;
+  errors: string[];
+}
+
+/**
+ * The shed actions of an organization (docs/events-and-schedules.md). Absent
+ * degraded or critical keeps the stored actions of that level. reset true
+ * returns the organization to the built-in actions. An org admin.
+ */
+export interface SetShedActionsRequest {
+  orgId: string;
+  degraded?: ShedActions;
+  critical?: ShedActions;
+  reset?: boolean;
+}
+
+/**
+ * The organization reporting defaults (docs/reporting-and-ownership.md).
+ * A project follows them unless it sets its own value.
+ */
+export interface OrgReportingSettingsView {
+  reportMode: string;
+  agreementContexts: string[];
+  codeownersImport: string;
+  codeownersCacheTtlSeconds: number;
+  pathAcceptance: string;
+  pathOwners: PathOwnerRule[];
+}
+
+export interface GetOrgReportingSettingsRequest {
+  organization: string;
+}
+
+/**
+ * can_manage: the caller is an org admin and can change the settings.
+ */
+export interface GetOrgReportingSettingsResponse {
+  settings: OrgReportingSettingsView;
+  canManage: boolean;
+}
+
+/**
+ * Replaces every organization value. An org admin.
+ */
+export interface PutOrgReportingSettingsRequest {
+  organization: string;
+  settings: OrgReportingSettingsView;
+}
+
+/**
+ * The organization required set defaults (docs/required-set.md).
+ */
+export interface GetRequiredSetOrgSettingsRequest {
+  organization: string;
+}
+
+export interface GetRequiredSetOrgSettingsResponse {
+  approvers: string[];
+  approverRules: RequiredSetApproverRule[];
+  maxQuarantineDays: number;
+  canManage: boolean;
+}
+
+/**
+ * Replaces the organization defaults. An org admin.
+ */
+export interface PutRequiredSetOrgSettingsRequest {
+  organization: string;
+  approvers: string[];
+  approverRules: RequiredSetApproverRule[];
+  maxQuarantineDays: number;
+}
+
+/**
+ * The VCS owners whose teams the group VCS sync of the organization may
+ * read with the GLOBAL VCS credential (docs/principals.md). A global admin
+ * only.
+ */
+export interface GetVcsOwnerAllowlistRequest {
+  organization: string;
+}
+
+export interface VcsOwnerAllowlistResponse {
+  owners: string[];
+}
+
+export interface PutVcsOwnerAllowlistRequest {
+  organization: string;
+  owners: string[];
+}
+
+/**
+ * The OIDC issuer settings of an organization or a project (docs/oidc.md).
+ * issuer: "allow" or "deny" ("inherit" also for a project). audience_claims
+ * are the extra claims of a token for one audience.
+ */
+export interface OidcClaim {
+  name: string;
+  value: string;
+}
+
+export interface OidcAudienceClaims {
+  audience: string;
+  claims: OidcClaim[];
+}
+
+export interface GetOidcSettingsRequest {
+  organization: string;
+  projectId?: string;
+}
+
+export interface OidcSettingsResponse {
+  issuer: string;
+  audienceClaims: OidcAudienceClaims[];
+  effectiveEnabled: boolean;
+  issuerConfigured: boolean;
+  issuerUrl?: string;
+  canManage: boolean;
+}
+
+/**
+ * An absent field keeps its value. An org admin.
+ */
+export interface PutOidcSettingsRequest {
+  organization: string;
+  projectId?: string;
+  issuer?: string;
+  audienceClaims?: OidcAudienceClaims[];
+}
+
+/**
+ * state: signing, published, pending, or retired.
+ */
+export interface OidcSigningKey {
+  kid: string;
+  algorithm: string;
+  createdAt: string;
+  activatesAt: string;
+  retiresAt?: string;
+  state: string;
+}
+
+export interface ListOidcKeysRequest {
+}
+
+export interface ListOidcKeysResponse {
+  issuerConfigured: boolean;
+  issuer?: string;
+  keys: OidcSigningKey[];
+}
+
+/**
+ * immediate true signs with the new key at once; otherwise it is
+ * published first and signs after the publish delay. A global admin.
+ */
+export interface RotateOidcKeyRequest {
+  immediate?: boolean;
+}
+
+export interface RetireOidcKeyRequest {
+  kid: string;
+}
+
+/**
+ * Alert rules (docs/observability.md). A rule with a project needs a
+ * project owner; an owner_group rule with no project needs an org admin.
+ * project_id narrows the list to the rules of one project.
+ */
+export interface ListAlertRulesRequest {
+  orgId: string;
+  projectId?: string;
+}
+
+export interface ListAlertRulesResponse {
+  rules: ObsAlertRule[];
+  canCreateOrgRules: boolean;
+}
+
+export interface AlertRuleInput {
+  description?: string;
+  condition?: string;
+  refClassBucket?: string;
+  threshold?: number;
+  factor?: number;
+  windowHours?: number;
+  baselineDays?: number;
+  minRuns?: number;
+  resolveMargin?: number;
+  fireAfter?: number;
+  resolveAfter?: number;
+  enabled?: boolean;
+}
+
+/**
+ * scope: workflow, project, or owner_group.
+ */
+export interface CreateAlertRuleRequest {
+  orgId: string;
+  name: string;
+  scope: string;
+  projectId?: string;
+  workflowSecurityId?: string;
+  ownerGroup?: string;
+  rule: AlertRuleInput;
+}
+
+/**
+ * The scope of a rule cannot change; an absent field keeps its value.
+ */
+export interface UpdateAlertRuleRequest {
+  orgId: string;
+  ruleId: string;
+  rule: AlertRuleInput;
+}
+
+export interface AlertRuleResponse {
+  rule: ObsAlertRule;
+}
+
+export interface DeleteAlertRuleRequest {
+  orgId: string;
+  ruleId: string;
+}
+
+export interface DeleteAlertRuleResponse {
+  deleted: boolean;
+}
+
+/**
+ * Deletes the entry of the caller for a target, and its pull request
+ * comment section (docs/diagnosis.md). Only the author deletes an entry.
+ * Name exactly one of job_id and workflow_id, as in put-diagnosis.
+ */
+export interface DeleteDiagnosisRequest {
+  jobId?: string;
+  workflowId?: string;
+  nodeName?: string;
+}
+
+export interface DeleteDiagnosisResponse {
+  deleted: boolean;
+  diagnosisId?: string;
 }
 

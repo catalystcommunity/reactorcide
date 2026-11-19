@@ -29,7 +29,7 @@ class TestConfigManager:
     def test_defaults(self):
         """Test that default values are properly set."""
         assert self.config_manager.DEFAULTS['code_dir'] == '/job/src'
-        assert self.config_manager.DEFAULTS['runner_image'] == 'quay.io/catalystcommunity/reactorcide_runner'
+        assert self.config_manager.DEFAULTS['runner_image'] == 'containers.catalystsquad.com/public/reactorcide/runnerbase:dev'
         assert self.config_manager.DEFAULTS['checkout_mode'] == 'isolated'
 
     def test_env_var_mappings(self):
@@ -61,7 +61,7 @@ class TestConfigManager:
             assert config.code_dir == "/job/src"
             assert config.job_dir == "/job/src"  # Should default to code_dir
             assert config.job_command == "test-command"
-            assert config.runner_image == "quay.io/catalystcommunity/reactorcide_runner"
+            assert config.runner_image == "containers.catalystsquad.com/public/reactorcide/runnerbase:dev"
             assert config.job_env is None
 
     def test_get_config_with_env_vars(self):

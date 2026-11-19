@@ -15,6 +15,9 @@ type Entry struct {
 	Status     string
 	Body       string
 	Generation int64
+	// Persistent keeps the entry in every generation. The required reviews
+	// entry uses it: it belongs to the pull request head, not to one eval.
+	Persistent bool
 }
 
 var markerUnsafe = regexp.MustCompile(`[^a-zA-Z0-9_.-]+`)
@@ -31,7 +34,7 @@ func MarkerKey(value string) string {
 func Render(entries []Entry, generation int64, generationComplete bool) string {
 	selected := make([]Entry, 0, len(entries))
 	for _, entry := range entries {
-		if generationComplete && entry.Generation != generation {
+		if generationComplete && entry.Generation != generation && !entry.Persistent {
 			continue
 		}
 		selected = append(selected, entry)

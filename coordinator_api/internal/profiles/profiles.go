@@ -39,6 +39,15 @@ func WeakerOrEqual(child, parent *models.ExecutionProfile) error {
 	if parent.ArtifactNamespace != nil && (child.ArtifactNamespace == nil || *child.ArtifactNamespace != *parent.ArtifactNamespace) {
 		return fmt.Errorf("child profile changes the artifact namespace")
 	}
+	// The ref class split of the cache namespace is part of the namespace.
+	if len(parent.CacheNamespaceClasses) > 0 && !sameOrder(child.CacheNamespaceClasses, parent.CacheNamespaceClasses) {
+		return fmt.Errorf("child profile changes the cache namespace classes")
+	}
+	// A write condition can only get stricter: a child keeps a condition
+	// and permits no class that the parent does not permit.
+	if len(parent.CacheWriteClasses) > 0 && (len(child.CacheWriteClasses) == 0 || !subset(child.CacheWriteClasses, parent.CacheWriteClasses)) {
+		return fmt.Errorf("child profile widens the cache write classes")
+	}
 	for _, ceiling := range []struct {
 		key   string
 		parse func(string) (int64, error)
@@ -81,6 +90,18 @@ func subset(child, parent []string) bool {
 	}
 	for _, value := range child {
 		if !allowed[value] {
+			return false
+		}
+	}
+	return true
+}
+
+func sameOrder(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
 			return false
 		}
 	}

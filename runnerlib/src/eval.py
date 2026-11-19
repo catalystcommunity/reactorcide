@@ -117,10 +117,18 @@ class JobConfig:
         job_dir: Container path runnerlib treats as the job directory.
         working_dir: Raw process working directory.
         run_as_user: Container user for deployed workers.
+        run_as_administrator: run_as.administrator. Applies only to Windows
+            VM jobs whose guest daemon creates the job account. None means
+            not set (the guest default is administrator).
         worker_class: Worker policy class for the job.
         characteristics: Worker routing characteristics for the job.
         resources: CPU and memory requests and limits for the job.
         run_local: Local-only execution settings.
+        quarantine_policy: What a failure by quarantined tests means for the
+            workflow node: "report" (default, the node fails) or
+            "ignore_quarantined" (the node succeeds when every failed test
+            of the job's JUnit reports is quarantined). The job exit code
+            does not change.
     """
     image: str = ""
     command: str = ""
@@ -138,10 +146,24 @@ class JobConfig:
     job_dir: str = ""
     working_dir: str = ""
     run_as_user: str = ""
+    run_as_administrator: Optional[bool] = None
     worker_class: str = ""
     characteristics: Dict[str, Any] = field(default_factory=dict)
     resources: Dict[str, Any] = field(default_factory=dict)
     run_local: Dict[str, Any] = field(default_factory=dict)
+    quarantine_policy: str = ""
+
+
+QUARANTINE_POLICIES = ("report", "ignore_quarantined")
+
+
+def _parse_quarantine_policy(data: Any) -> str:
+    """Parse and validate the quarantine_policy job option."""
+    if data is None or data == "":
+        return ""
+    if not isinstance(data, str) or data not in QUARANTINE_POLICIES:
+        raise ValueError(f"quarantine_policy must be one of {list(QUARANTINE_POLICIES)}")
+    return data
 
 
 @dataclass
@@ -188,6 +210,11 @@ class WorkflowDefinition:
             ``status: {context: ...}``). Every workflow counts toward the
             event's "Reactorcide Checks" status; a workflow with a context
             also posts a status of its own under that name.
+        owners: Optional owner (from ``owners: {group, subjects}``), already
+            validated: ``{"group": str, "subjects": [str]}``. The
+            coordinator reads it from the trusted CI definition only.
+        contact: Optional contact (from ``contact: {channel, help_url,
+            email}``), already validated.
     """
     name: str
     workflow_id: str = ""
@@ -199,6 +226,8 @@ class WorkflowDefinition:
     jobs: List[JobDefinition] = field(default_factory=list)
     source_file: Optional[str] = None
     status_context: str = ""
+    owners: Optional[Dict[str, Any]] = None
+    contact: Optional[Dict[str, str]] = None
 
 
 # The aggregate status every event posts. A workflow cannot claim it.
@@ -229,6 +258,125 @@ def _parse_status_context(raw: Any, name: str, where: str) -> str:
 
 
 _SECURITY_ID_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,62}$")
+
+# Owners and contact (docs/workflow-design.md). The coordinator validates
+# them again with the same limits (internal/owners).
+OWNERS_KEYS = ("group", "subjects")
+CONTACT_KEYS = ("channel", "help_url", "email")
+MAX_OWNER_GROUP_LENGTH = 200
+MAX_OWNER_SUBJECTS = 20
+MAX_OWNER_SUBJECT_LENGTH = 200
+MAX_CONTACT_CHANNEL_LENGTH = 100
+MAX_CONTACT_HELP_URL_LENGTH = 500
+MAX_CONTACT_EMAIL_LENGTH = 254
+_GROUP_NAME_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,62}$")
+_TEAM_PART_RE = re.compile(r"^[A-Za-z0-9_.-]{1,100}$")
+_OWNER_SUBJECT_PREFIXES = ("principal:", "service:", "identity:", "vcs_user:", "vcs_team:", "reactorcide_group:")
+_EMAIL_RE = re.compile(r"^[^@\s<>(),;:\"\[\]]+@[^@\s<>(),;:\"\[\]]+\.[^@\s<>(),;:\"\[\]]+$")
+_HELP_URL_RE = re.compile(r"^https?://[^\s/@]+(/\S*)?$")
+
+
+def _owner_text(value: Any, field_name: str, name: str, where: str, limit: int) -> str:
+    if not isinstance(value, str):
+        raise ValueError(f"Workflow '{name}'{where} '{field_name}' must be a string")
+    value = value.strip()
+    if len(value) > limit:
+        raise ValueError(f"Workflow '{name}'{where} '{field_name}' is longer than {limit} characters")
+    if any(ord(ch) < 32 or ord(ch) == 127 for ch in value):
+        raise ValueError(f"Workflow '{name}'{where} '{field_name}' has a control character")
+    return value
+
+
+def _normalize_owner_group(value: str, name: str, where: str) -> str:
+    if value.startswith("reactorcide_group:"):
+        value = value[len("reactorcide_group:"):]
+    if value.startswith("vcs_team:"):
+        team = value[len("vcs_team:"):]
+        org, sep, slug = team.partition("/")
+        if not sep or not _TEAM_PART_RE.fullmatch(org) or not _TEAM_PART_RE.fullmatch(slug):
+            raise ValueError(f"Workflow '{name}'{where} 'owners.group' {value!r} must be vcs_team:ORG/SLUG")
+        return f"vcs_team:{org.lower()}/{slug.lower()}"
+    if not _GROUP_NAME_RE.fullmatch(value):
+        raise ValueError(
+            f"Workflow '{name}'{where} 'owners.group' {value!r} must be a Reactorcide group name "
+            "(lowercase letters, digits, hyphens) or vcs_team:ORG/SLUG"
+        )
+    return value
+
+
+def _parse_owners(raw: Any, name: str, where: str) -> Optional[Dict[str, Any]]:
+    """Parse a workflow's optional ``owners: {group, subjects}`` block.
+
+    ``group`` is one primary group: a Reactorcide group name or a
+    ``vcs_team:ORG/SLUG`` subject. ``subjects`` is an optional list of extra
+    owner subjects (for example ``vcs_user:github/alice``).
+    """
+    if raw is None:
+        return None
+    if not isinstance(raw, dict):
+        raise ValueError(f"Workflow '{name}'{where} has a non-mapping 'owners' field")
+    unknown = sorted(str(key) for key in raw if key not in OWNERS_KEYS)
+    if unknown:
+        raise ValueError(f"Workflow '{name}'{where} 'owners' has unknown field(s): {', '.join(unknown)}")
+    group = ""
+    if raw.get("group") is not None:
+        group = _owner_text(raw.get("group"), "owners.group", name, where, MAX_OWNER_GROUP_LENGTH)
+        if group:
+            group = _normalize_owner_group(group, name, where)
+    subjects_raw = raw.get("subjects")
+    subjects: List[str] = []
+    if subjects_raw is not None:
+        if not isinstance(subjects_raw, list):
+            raise ValueError(f"Workflow '{name}'{where} 'owners.subjects' must be a list")
+        if len(subjects_raw) > MAX_OWNER_SUBJECTS:
+            raise ValueError(f"Workflow '{name}'{where} 'owners.subjects' has more than {MAX_OWNER_SUBJECTS} entries")
+        for item in subjects_raw:
+            subject = _owner_text(item, "owners.subjects", name, where, MAX_OWNER_SUBJECT_LENGTH)
+            prefix = next((p for p in _OWNER_SUBJECT_PREFIXES if subject.startswith(p)), None)
+            if prefix is None or len(subject) == len(prefix):
+                raise ValueError(
+                    f"Workflow '{name}'{where} 'owners.subjects' entry {subject!r} must name people "
+                    f"with one of the prefixes {', '.join(_OWNER_SUBJECT_PREFIXES)}"
+                )
+            if subject not in subjects:
+                subjects.append(subject)
+    if not group and not subjects:
+        raise ValueError(f"Workflow '{name}'{where} 'owners' must set 'group' or 'subjects'")
+    result: Dict[str, Any] = {}
+    if group:
+        result["group"] = group
+    if subjects:
+        result["subjects"] = subjects
+    return result
+
+
+def _parse_contact(raw: Any, name: str, where: str) -> Optional[Dict[str, str]]:
+    """Parse a workflow's optional ``contact: {channel, help_url, email}`` block."""
+    if raw is None:
+        return None
+    if not isinstance(raw, dict):
+        raise ValueError(f"Workflow '{name}'{where} has a non-mapping 'contact' field")
+    unknown = sorted(str(key) for key in raw if key not in CONTACT_KEYS)
+    if unknown:
+        raise ValueError(f"Workflow '{name}'{where} 'contact' has unknown field(s): {', '.join(unknown)}")
+    limits = {
+        "channel": MAX_CONTACT_CHANNEL_LENGTH,
+        "help_url": MAX_CONTACT_HELP_URL_LENGTH,
+        "email": MAX_CONTACT_EMAIL_LENGTH,
+    }
+    result: Dict[str, str] = {}
+    for key in CONTACT_KEYS:
+        if raw.get(key) is None:
+            continue
+        value = _owner_text(raw.get(key), f"contact.{key}", name, where, limits[key])
+        if not value:
+            continue
+        if key == "help_url" and not _HELP_URL_RE.fullmatch(value):
+            raise ValueError(f"Workflow '{name}'{where} 'contact.help_url' must be an http or https URL")
+        if key == "email" and not _EMAIL_RE.fullmatch(value):
+            raise ValueError(f"Workflow '{name}'{where} 'contact.email' must be one plain email address")
+        result[key] = value
+    return result or None
 
 
 def compatibility_workflow_id(source_file: Optional[str]) -> str:
@@ -379,14 +527,60 @@ def _parse_image_pull_secrets(data: Any) -> List[str]:
     return names
 
 
+def _parse_run_as_administrator(value: Any) -> Optional[bool]:
+    """Parse run_as.administrator. It must be a boolean when it is set."""
+    if value is None:
+        return None
+    if not isinstance(value, bool):
+        raise ValueError(f"run_as.administrator must be true or false, not {value!r}")
+    return value
+
+
+def _job_shell_is_powershell(job: "JobConfig", environment: Optional[Dict[str, Any]] = None) -> bool:
+    """Return True when the worker runs the job command through PowerShell.
+
+    This follows the worker shell prefix rule: REACTORCIDE_JOB_SHELLCMD of the
+    job environment, else PowerShell for a job with os: windows, else sh -c.
+    """
+    shell = str((environment or {}).get("REACTORCIDE_JOB_SHELLCMD", "") or "").strip().lower()
+    if shell:
+        first = shell.split()[0].rsplit("/", 1)[-1].rsplit("\\", 1)[-1]
+        return first in ("powershell", "powershell.exe", "pwsh", "pwsh.exe")
+    os_name = str((job.characteristics or {}).get("os", "") or "").strip().lower()
+    return os_name == "windows"
+
+
+def wrap_job_command(job: "JobConfig", environment: Optional[Dict[str, Any]] = None) -> Optional[str]:
+    """Return the job command, wrapped in `runnerlib run --job-command`.
+
+    The command is quoted as one argument for the shell that the worker uses,
+    so a command that contains a single quote (or any other shell character)
+    reaches runnerlib unchanged. A raw_command job, or a command that already
+    starts with `runnerlib `, is not wrapped.
+    """
+    command = job.command or None
+    if not command or job.raw_command or command.strip().startswith("runnerlib "):
+        return command
+    if _job_shell_is_powershell(job, environment):
+        # PowerShell: a single-quoted string doubles each single quote.
+        quoted = "'" + command.replace("'", "''") + "'"
+    else:
+        # POSIX sh: close the quote, add an escaped quote, open it again.
+        # This is the shlex.quote form, but always quoted.
+        quoted = "'" + command.replace("'", "'\"'\"'") + "'"
+    return f"runnerlib run --job-command {quoted}"
+
+
 def _parse_job_config(data: Any) -> JobConfig:
     """Parse job config from YAML data."""
     if not isinstance(data, dict):
         return JobConfig()
     run_as = data.get("run_as") or {}
     run_as_user = ""
+    run_as_administrator = None
     if isinstance(run_as, dict):
         run_as_user = str(run_as.get("user", "") or "")
+        run_as_administrator = _parse_run_as_administrator(run_as.get("administrator"))
     return JobConfig(
         image=data.get("image", "") or "",
         command=data.get("command", "") or "",
@@ -404,10 +598,12 @@ def _parse_job_config(data: Any) -> JobConfig:
         job_dir=data.get("job_dir", "") or "",
         working_dir=data.get("working_dir", "") or "",
         run_as_user=run_as_user,
+        run_as_administrator=run_as_administrator,
         worker_class=data.get("worker_class", "") or "",
         characteristics=data.get("characteristics") or {},
         resources=data.get("resources") or {},
         run_local=data.get("run_local") or {},
+        quarantine_policy=_parse_quarantine_policy(data.get("quarantine_policy")),
     )
 
 
@@ -442,6 +638,11 @@ _RESERVED_EVENT_ENV = frozenset({
     "REACTORCIDE_EVAL_DUAL_CI",
     "REACTORCIDE_REPORT_GENERATION",
     "REACTORCIDE_REPORT_TARGET_ID",
+    "REACTORCIDE_REF_CLASSES",
+    # The cache decision of the coordinator (docs/builds-and-caches.md).
+    "REACTORCIDE_CACHE_NAMESPACE",
+    "REACTORCIDE_CACHE_WRITABLE",
+    "REACTORCIDE_ARTIFACT_NAMESPACE",
 })
 _RESERVED_EVENT_ENV_PREFIXES = ("REACTORCIDE_HEAD_", "REACTORCIDE_BASE_", "REACTORCIDE_PR_")
 
@@ -752,9 +953,7 @@ def generate_triggers(
         # By default, wrap the command with "runnerlib run --job-command" so that
         # runnerlib handles source checkout, CI source checkout, secret resolution,
         # and plugin execution. Job definitions can opt out with raw_command: true.
-        command = defn.job.command or None
-        if command and not defn.job.raw_command and not command.strip().startswith("runnerlib "):
-            command = f"runnerlib run --job-command '{command}'"
+        command = wrap_job_command(defn.job, defn.environment)
 
         trigger = JobTrigger(
             job_name=defn.name,
@@ -771,11 +970,13 @@ def generate_triggers(
             job_dir=defn.job.job_dir or None,
             working_dir=defn.job.working_dir or None,
             run_as_user=defn.job.run_as_user or None,
+            run_as_administrator=defn.job.run_as_administrator,
             worker_class=defn.job.worker_class or None,
             characteristics=defn.job.characteristics or None,
             resources=defn.job.resources or None,
             disable_run_local=True if defn.job.disable_run_local else None,
             run_local=defn.job.run_local or None,
+            quarantine_policy=defn.job.quarantine_policy or None,
             for_each=defn.job.for_each or None,
             item_var=defn.job.item_var or None,
             source_type="git" if event_context.source_url else None,
@@ -930,7 +1131,18 @@ def _parse_workflow_job(
     merged: Dict[str, Any] = dict(base)
     for key, val in inline.items():
         if key in ("job", "environment") and isinstance(val, dict) and isinstance(merged.get(key), dict):
-            merged[key] = {**merged[key], **val}
+            combined = {**merged[key], **val}
+            # run_as merges field by field, as an overlay file does: the
+            # workflow entry changes only the run_as fields that it sets.
+            base_run_as = merged[key].get("run_as")
+            entry_run_as = val.get("run_as")
+            if key == "job" and isinstance(base_run_as, dict) and isinstance(entry_run_as, dict):
+                # An empty or null field keeps the job file value (as Go does).
+                combined["run_as"] = {
+                    **base_run_as,
+                    **{k: v for k, v in entry_run_as.items() if v is not None and v != ""},
+                }
+            merged[key] = combined
         else:
             merged[key] = val
 
@@ -991,6 +1203,8 @@ def parse_workflow_definition(
     if not isinstance(workflow_vars, dict):
         raise ValueError(f"Workflow '{name}'{where} has a non-mapping 'vars' field")
     status_context = _parse_status_context(data.get("status"), str(name), where)
+    owners = _parse_owners(data.get("owners"), str(name), where)
+    contact = _parse_contact(data.get("contact"), str(name), where)
 
     jobs_raw = data.get("jobs")
     job_defs: List[JobDefinition] = []
@@ -1018,6 +1232,8 @@ def parse_workflow_definition(
         jobs=job_defs,
         source_file=source_file,
         status_context=status_context,
+        owners=owners,
+        contact=contact,
     )
 
 

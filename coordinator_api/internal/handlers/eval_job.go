@@ -34,6 +34,12 @@ func BuildEvalJob(project *models.Project, event *vcs.WebhookEvent) *models.Job 
 	isForkPR := false
 	if event.PullRequest != nil && event.PullRequest.HeadRepository != nil {
 		headURL = event.PullRequest.HeadRepository.CloneURL
+		if headURL == "" {
+			// A fork with no known repository (a deleted fork, or a
+			// provider that does not name it). The pull request head commit
+			// is still in the base repository. The job is still a fork job.
+			headURL = upstreamURL
+		}
 		if event.GenericEvent != vcs.EventPullRequestMerged {
 			sourceURL = headURL
 		}
@@ -59,6 +65,14 @@ func BuildEvalJob(project *models.Project, event *vcs.WebhookEvent) *models.Job 
 		checkoutMode = models.CheckoutModeIsolated
 	}
 	envVars["REACTORCIDE_CHECKOUT_MODE"] = checkoutMode
+	if event.Coordinator != nil && event.Coordinator.Source == models.CIEventSourceManual {
+		// A manual run on a ref. With a workflow ref the eval runs only
+		// that workflow, as for a schedule fire.
+		envVars["REACTORCIDE_EVENT_SOURCE"] = models.CIEventSourceManual
+		if event.Coordinator.WorkflowRef != "" {
+			envVars[envWorkflowRef] = event.Coordinator.WorkflowRef
+		}
+	}
 
 	if event.PullRequest != nil {
 		pr := event.PullRequest
@@ -163,7 +177,9 @@ func BuildEvalJob(project *models.Project, event *vcs.WebhookEvent) *models.Job 
 		jobCommand = "runnerlib eval --event-type $REACTORCIDE_EVENT_TYPE --branch $REACTORCIDE_BRANCH"
 	}
 
-	// Determine priority: PRs get higher priority
+	// The eval priority before lanes. priority.Assign replaces it on every
+	// submit path with the eval lanes (eval-pr 10, eval 5; docs/priority.md),
+	// and does not read it as a request. It stays for a path with no store.
 	priority := 5
 	if event.PullRequest != nil {
 		priority = 10

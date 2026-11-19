@@ -5,6 +5,7 @@ import { ResourceView, emptyState, relativeTime } from '~/components/States.ts'
 import { setStatus, statusBadge } from '~/components/StatusBadge.ts'
 import type { ResourceHandle } from '~/store/index.ts'
 import { useFormMetadata, useWorkflows } from '~/store/resources.ts'
+import { actorShort, ownerGroupText } from '~/components/Labels.ts'
 import { h, setAttr, setText, show, syncKeyed } from '~/ui/dom.ts'
 import { define } from '~/ui/element.ts'
 import { href, setQuery } from '~/ui/router.ts'
@@ -79,7 +80,7 @@ function workflowTable(): { node: Node; update(data: ListWorkflowsResponse): voi
       h(
         'thead',
         null,
-        h('tr', null, h('th', null, 'Workflow'), h('th', null, 'Status'), h('th', null, 'Jobs'), h('th', null, 'Repository'), h('th', null, 'Updated')),
+        h('tr', null, h('th', null, 'Workflow'), h('th', null, 'Status'), h('th', null, 'Jobs'), h('th', null, 'Repository'), h('th', null, 'Started by'), h('th', null, 'Updated')),
       ),
       body,
     ),
@@ -93,10 +94,11 @@ function createRow(): HTMLTableRowElement {
   return h(
     'tr',
     null,
-    h('td', null, h('a', { class: 'wf-link' }), h('div', { class: 'meta mono truncate wf-commit' })),
+    h('td', null, h('a', { class: 'wf-link' }), h('div', { class: 'meta mono truncate wf-commit' }), h('div', { class: 'meta truncate wf-owner' })),
     h('td', null, statusBadge()),
     h('td', null, jobCounts()),
     h('td', { class: 'truncate wf-repo' }),
+    h('td', { class: 'meta truncate wf-actor' }),
     h('td', { class: 'meta wf-updated' }),
   )
 }
@@ -114,6 +116,11 @@ function updateRow(row: HTMLTableRowElement, workflow: WorkflowRow): void {
   setStatus(row.querySelector('.status')!, workflow.status)
   updateJobCounts(row.querySelector('.job-counts')!, workflow)
   setText(row.querySelector('.wf-repo')!, workflow.vcsRepo || '—')
+  setText(row.querySelector('.wf-actor')!, actorShort(workflow.actor) || '—')
+  const owner = row.querySelector<HTMLElement>('.wf-owner')!
+  const group = ownerGroupText(workflow.owner)
+  show(owner, group)
+  setText(owner, group ? `Owner ${group}` : '')
   setText(row.querySelector('.wf-updated')!, relativeTime(workflow.updatedAt))
 }
 

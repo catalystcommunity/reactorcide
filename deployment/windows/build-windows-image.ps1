@@ -9,12 +9,23 @@ param(
 
     [string]$ImageName = 'Windows 11 Pro',
 
+    # A windows/amd64 build of cmd/vmguest (the guest daemon):
+    #   GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -o vmguest.exe ./cmd/vmguest
+    [Parameter(Mandatory = $true)]
+    [string]$GuestDaemon,
+
     [string]$OutputDirectory = 'C:\ProgramData\Reactorcide\vm-images\win11-base',
 
     [string]$BuildDirectory,
 
     [ValidatePattern('^[A-Za-z][A-Za-z0-9_-]{0,19}$')]
     [string]$GuestUser = 'reactorcide',
+
+    # By default the guest account is a member of Administrators, as on a
+    # hosted Windows CI runner. Use -StandardGuestUser to make it a standard
+    # user. The guest daemon does not change the groups of an account that
+    # the image has.
+    [switch]$StandardGuestUser,
 
     [string]$SwitchName = 'Default Switch',
 
@@ -52,6 +63,7 @@ if (-not $BuildDirectory) {
 }
 $buildDirectoryRoot = [IO.Path]::GetFullPath($BuildDirectory)
 $resolvedIsoPath = (Resolve-Path -LiteralPath $IsoPath).Path
+$resolvedGuestDaemon = (Resolve-Path -LiteralPath $GuestDaemon).Path
 $actualIsoSha256 = (Get-FileHash -LiteralPath $resolvedIsoPath -Algorithm SHA256).Hash
 if (-not $actualIsoSha256.Equals($IsoSha256, [StringComparison]::OrdinalIgnoreCase)) {
     throw 'The Windows ISO SHA-256 does not match the supplied value.'
@@ -116,6 +128,9 @@ try {
     $guestSetupDirectory = Join-Path $windowsRoot 'ReactorcideSetup'
     New-Item -ItemType Directory -Path $guestSetupDirectory -Force | Out-Null
     Copy-Item -LiteralPath (Join-Path $templateDirectory 'provision-guest.ps1') -Destination $guestSetupDirectory
+    $guestDaemonDirectory = Join-Path $windowsRoot 'Program Files\Reactorcide'
+    New-Item -ItemType Directory -Path $guestDaemonDirectory -Force | Out-Null
+    Copy-Item -LiteralPath $resolvedGuestDaemon -Destination (Join-Path $guestDaemonDirectory 'vmguest.exe')
     if ($ProvisionScript.Count -gt 0) {
         $guestProvisionDirectory = Join-Path $guestSetupDirectory 'provision'
         New-Item -ItemType Directory -Path $guestProvisionDirectory -Force | Out-Null
@@ -126,9 +141,33 @@ try {
         }
     }
 
+    # Job VMs are clones of this disk. Windows 11 turns on BitLocker device
+    # encryption at the first boot of a VM with a virtual TPM. Each job VM
+    # has a new virtual TPM and cannot unlock a disk that another TPM
+    # encrypted. Turn device encryption off before the first boot.
+    $offlineHive = 'HKLM\ReactorcideImageBuild'
+    & reg.exe load $offlineHive (Join-Path $windowsRoot 'Windows\System32\config\SYSTEM') | Out-Null
+    if ($LASTEXITCODE -ne 0) {
+        throw 'The offline SYSTEM hive could not be loaded.'
+    }
+    try {
+        foreach ($controlSet in @('ControlSet001', 'ControlSet002')) {
+            if (Test-Path -LiteralPath ('Registry::' + $offlineHive + '\' + $controlSet)) {
+                & reg.exe add ($offlineHive + '\' + $controlSet + '\Control\BitLocker') /v PreventDeviceEncryption /t REG_DWORD /d 1 /f | Out-Null
+                if ($LASTEXITCODE -ne 0) {
+                    throw 'The BitLocker device encryption policy could not be set.'
+                }
+            }
+        }
+    } finally {
+        [GC]::Collect()
+        & reg.exe unload $offlineHive | Out-Null
+    }
+
     $password = 'R!c9-' + [guid]::NewGuid().ToString('N')
     $unattend = Get-Content -LiteralPath (Join-Path $templateDirectory 'Autounattend.xml.template') -Raw
     $unattend = $unattend.Replace('__GUEST_USER__', $GuestUser)
+    $unattend = $unattend.Replace('__GUEST_STANDARD__', $(if ($StandardGuestUser) { '-StandardUser' } else { '' }))
     $unattend = $unattend.Replace('__BUILD_PASSWORD__', [System.Security.SecurityElement]::Escape($password))
     $unattendDirectory = Join-Path $windowsRoot 'Windows\Panther\Unattend'
     New-Item -ItemType Directory -Path $unattendDirectory -Force | Out-Null
@@ -178,17 +217,18 @@ try {
     if (-not (Test-Path -LiteralPath (Join-Path $windowsRoot 'ReactorcideSetup\complete.txt'))) {
         throw 'The guest shut down before provisioning completed.'
     }
-    if (-not (Test-Path -LiteralPath (Join-Path $windowsRoot 'ReactorcideSetup\generalize-requested.txt'))) {
-        throw 'The guest did not request image generalization.'
+    if (-not (Test-Path -LiteralPath (Join-Path $windowsRoot 'ReactorcideSetup\capture-requested.txt'))) {
+        throw 'The guest did not request image capture.'
     }
     $cachedAnswerFiles = @(Get-ChildItem -LiteralPath (Join-Path $windowsRoot 'Windows\Panther') -Filter '*unattend*.xml' -File -Recurse -ErrorAction SilentlyContinue)
     if ($cachedAnswerFiles.Count -gt 0 -or (Test-Path -LiteralPath (Join-Path $windowsRoot 'Windows\System32\Sysprep\Unattend.xml'))) {
         throw 'The guest did not remove all cached answer files.'
     }
-    $sealedAuthorizedKeys = Join-Path $windowsRoot ("Users\$GuestUser\.ssh\authorized_keys")
-    $sealedHostKeys = @(Get-ChildItem -LiteralPath (Join-Path $windowsRoot 'ProgramData\ssh') -Filter 'ssh_host_*' -File -ErrorAction SilentlyContinue)
-    if ((Test-Path -LiteralPath $sealedAuthorizedKeys) -or $sealedHostKeys.Count -gt 0) {
-        throw 'The guest image still contains SSH keys.'
+    if (-not (Test-Path -LiteralPath (Join-Path $windowsRoot 'Program Files\Reactorcide\vmguest.exe'))) {
+        throw 'The guest image does not contain the Reactorcide guest daemon.'
+    }
+    if (-not (Test-Path -LiteralPath (Join-Path $windowsRoot 'ReactorcideSetup\vmguest-installed.txt'))) {
+        throw 'The guest did not install the Reactorcide guest daemon service.'
     }
     New-Item -ItemType Directory -Path $outputRoot | Out-Null
     Dismount-VHD -Path $buildVHDX

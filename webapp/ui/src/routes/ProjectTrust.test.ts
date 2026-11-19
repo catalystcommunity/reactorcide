@@ -54,7 +54,7 @@ describe('project CI trust page', () => {
     await waitFor(() => expect(api.getCiTrustSettings).toHaveBeenCalledWith({ organization: 'acme', projectId: 'p1' }))
     expect(el.querySelector('h1')?.textContent).toBe('CI trust: Widget')
     const tabs = [...el.querySelectorAll('.tabs a')].map((a) => a.getAttribute('href'))
-    expect(tabs).toEqual(['/app/projects/p1', '/app/projects/p1/trust', '/app/projects/p1/policy'])
+    expect(tabs).toEqual(['/app/projects/p1', '/app/projects/p1/trust', '/app/projects/p1/policy', '/app/projects/p1/execution', '/app/projects/p1/subscriptions', '/app/projects/p1/images'])
   })
 
   it('says so when the organization of the project is not visible', async () => {

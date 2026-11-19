@@ -2,9 +2,6 @@ package vmrunner
 
 import (
 	"context"
-	"crypto/ed25519"
-	"crypto/rand"
-	"encoding/pem"
 	"errors"
 	"fmt"
 	"io"
@@ -16,7 +13,6 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"golang.org/x/crypto/ssh"
 
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/resources"
 )
@@ -63,6 +59,11 @@ type JobConfig struct {
 
 	// JobID labels the VM/clone for debugging and log correlation.
 	JobID string
+
+	// CreateAdministrator applies only when a Windows guest daemon creates
+	// the guest account because the image does not have it: nil or true
+	// makes an administrator, false a standard user (job run_as.administrator).
+	CreateAdministrator *bool
 }
 
 // vmJob is the in-memory record VMRunner keeps per spawned job, keyed by
@@ -105,7 +106,7 @@ type VMRunner struct {
 type Option func(*VMRunner)
 
 // WithConnectTimeout overrides how long SpawnJob waits for the booted
-// guest's transport port to accept a TCP connection before giving up and
+// guest daemon to answer a probe before giving up and
 // destroying the VM. Default: 90s.
 func WithConnectTimeout(d time.Duration) Option {
 	return func(r *VMRunner) { r.connectTimeout = d }
@@ -146,7 +147,8 @@ func New(images ImageSource, lifecycle VMLifecycle, transport GuestTransport, cr
 
 // NewDefaultWithImages builds a VMRunner from this platform's VMLifecycle
 // (newVMLifecycle -- build-tag selected: errors on Linux today via
-// lifecycle_other.go), the SSH GuestTransport, and the given ImageSource, so
+// lifecycle_other.go), the guest daemon GuestTransport (VsockTransport), and
+// the given ImageSource, so
 // callers pick LocalImageSource vs. image_oci.go's OCIImageSource
 // themselves, as internal/worker/vm_adapter.go's REACTORCIDE_VM_IMAGE_SOURCE
 // selection does. newVMLifecycle's error is returned unchanged so callers
@@ -157,8 +159,7 @@ func NewDefaultWithImages(images ImageSource, creds GuestCreds, opts ...Option) 
 	if err != nil {
 		return nil, err
 	}
-	transport := NewSSHTransport()
-	return New(images, lifecycle, transport, creds, opts...), nil
+	return New(images, lifecycle, NewVsockTransport(), creds, opts...), nil
 }
 
 // SpawnJob resolves the base image, boots a guest VM sized from config's
@@ -183,28 +184,14 @@ func (r *VMRunner) SpawnJob(ctx context.Context, config *JobConfig) (string, err
 		MemoryBytes: memoryLimitBytes(config),
 		JobID:       config.JobID,
 		Label:       "reactorcide-job-" + config.JobID,
-		GuestUser:   creds.User,
-	}
-	if lifecycle, ok := r.lifecycle.(EphemeralSSHCredentialLifecycle); ok && lifecycle.UsesEphemeralSSHCredentials() {
-		privateKey, authorizedKey, err := generateEphemeralSSHCredential()
-		if err != nil {
-			return "", fmt.Errorf("generate per-VM SSH credential: %w", err)
-		}
-		creds.PrivateKeyPEM = privateKey
-		creds.Password = ""
-		creds.HostPublicKey = nil
-		spec.GuestAuthorizedKey = authorizedKey
 	}
 
 	handle, addr, err := r.lifecycle.Boot(ctx, basePath, spec)
 	if err != nil {
 		return "", fmt.Errorf("boot vm: %w", err)
 	}
-	if len(addr.HostPublicKey) > 0 {
-		creds.HostPublicKey = addr.HostPublicKey
-	}
 
-	if err := waitTCPReachable(ctx, addr, r.connectTimeout, r.connectRetryInterval); err != nil {
+	if err := waitGuestReachable(ctx, r.transport, addr, r.connectTimeout, r.connectRetryInterval); err != nil {
 		r.destroyBestEffort(handle)
 		return "", fmt.Errorf("guest transport unreachable: %w", err)
 	}
@@ -217,6 +204,9 @@ func (r *VMRunner) SpawnJob(ctx context.Context, config *JobConfig) (string, err
 		Files:      config.Files,
 		Trees:      config.Trees,
 		Results:    config.Results,
+		JobID:      config.JobID,
+
+		CreateAdministrator: config.CreateAdministrator,
 	})
 	if err != nil {
 		r.destroyBestEffort(handle)
@@ -233,22 +223,6 @@ func (r *VMRunner) SpawnJob(ctx context.Context, config *JobConfig) (string, err
 	}
 
 	return id, nil
-}
-
-func generateEphemeralSSHCredential() (privateKeyPEM, authorizedKey []byte, err error) {
-	publicKey, privateKey, err := ed25519.GenerateKey(rand.Reader)
-	if err != nil {
-		return nil, nil, err
-	}
-	block, err := ssh.MarshalPrivateKey(privateKey, "reactorcide ephemeral VM job")
-	if err != nil {
-		return nil, nil, err
-	}
-	signer, err := ssh.NewPublicKey(publicKey)
-	if err != nil {
-		return nil, nil, err
-	}
-	return pem.EncodeToMemory(block), ssh.MarshalAuthorizedKey(signer), nil
 }
 
 // StreamLogs returns the guest session's stdout/stderr as ReadClosers. The
@@ -308,9 +282,8 @@ func (r *VMRunner) Stop(ctx context.Context, jobID string, grace time.Duration) 
 		return r.lifecycle.Destroy(ctx, job.handle)
 	}
 
-	// Best-effort: guest_ssh.go's Signal already falls back to a `kill`
-	// exec when the SSH-protocol signal request is ignored, so a failure
-	// here just means we fall through to the grace-timeout Destroy below.
+	// Best-effort: a failure here just means we fall through to the
+	// grace-timeout Destroy below.
 	_ = job.session.Signal("TERM")
 
 	exited := make(chan struct{})
@@ -326,6 +299,35 @@ func (r *VMRunner) Stop(ctx context.Context, jobID string, grace time.Duration) 
 		return r.lifecycle.Destroy(ctx, job.handle)
 	case <-ctx.Done():
 		return ctx.Err()
+	}
+}
+
+// RunDiagnostic runs one more command in the guest of a job that is not
+// cleaned up yet, as the same account, and returns its stdout and exit code.
+// It is for smoke tests and diagnosis (for example, to check that a stopped
+// job left no process). The command gets no job files or job environment.
+func (r *VMRunner) RunDiagnostic(ctx context.Context, jobID string, args []string) (string, int, error) {
+	job, ok := r.getJob(jobID)
+	if !ok {
+		return "", 0, fmt.Errorf("vmrunner: unknown job %q", jobID)
+	}
+	session, err := r.transport.Start(ctx, job.addr, job.creds, GuestCommand{Platform: job.platform, Args: args, JobID: jobID})
+	if err != nil {
+		return "", 0, fmt.Errorf("vmrunner: start diagnostic command: %w", err)
+	}
+	defer session.Close()
+	out := make(chan []byte, 1)
+	go func() { b, _ := io.ReadAll(session.Stdout()); out <- b }()
+	go func() { _, _ = io.Copy(io.Discard, session.Stderr()) }()
+	code, err := session.Wait()
+	if err != nil {
+		return "", code, err
+	}
+	select {
+	case b := <-out:
+		return string(b), code, nil
+	case <-ctx.Done():
+		return "", code, ctx.Err()
 	}
 }
 
@@ -489,22 +491,30 @@ func memoryLimitBytes(config *JobConfig) int64 {
 	return b
 }
 
-// waitTCPReachable polls addr with plain TCP dials until one succeeds, ctx
-// is canceled, or timeout elapses. This is deliberately transport-agnostic
-// (it only needs GuestAddr's Host/Port) rather than routed through
-// GuestTransport.Start itself, so a guest that's still booting sshd
-// doesn't risk SpawnJob accidentally invoking the job command more than
-// once via retried Start calls.
-func waitTCPReachable(ctx context.Context, addr GuestAddr, timeout, interval time.Duration) error {
-	target := net.JoinHostPort(addr.Host, strconv.Itoa(addr.Port))
+// waitGuestReachable polls the guest until it is ready, ctx is canceled, or
+// timeout elapses. A GuestProber transport checks the guest daemon itself (a
+// hello exchange); other transports get a plain TCP dial of Host:Port. The
+// probe never starts the job command, so a guest that is still booting does
+// not risk SpawnJob invoking the job command more than once via retried
+// Start calls.
+func waitGuestReachable(ctx context.Context, transport GuestTransport, addr GuestAddr, timeout, interval time.Duration) error {
+	probe := func(ctx context.Context) error {
+		if prober, ok := transport.(GuestProber); ok {
+			return prober.Probe(ctx, addr)
+		}
+		d := net.Dialer{Timeout: interval}
+		conn, err := d.DialContext(ctx, "tcp", net.JoinHostPort(addr.Host, strconv.Itoa(addr.Port)))
+		if err == nil {
+			_ = conn.Close()
+		}
+		return err
+	}
 	deadline := time.Now().Add(timeout)
 	var lastErr error
 
 	for {
-		d := net.Dialer{Timeout: interval}
-		conn, err := d.DialContext(ctx, "tcp", target)
+		err := probe(ctx)
 		if err == nil {
-			_ = conn.Close()
 			return nil
 		}
 		lastErr = err
@@ -513,7 +523,7 @@ func waitTCPReachable(ctx context.Context, addr GuestAddr, timeout, interval tim
 			return ctx.Err()
 		}
 		if time.Now().After(deadline) {
-			return fmt.Errorf("guest %s not reachable after %s: %w", target, timeout, lastErr)
+			return fmt.Errorf("guest not reachable after %s: %w", timeout, lastErr)
 		}
 
 		select {

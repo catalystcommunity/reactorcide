@@ -1,6 +1,6 @@
 import type { PushButton, TextField } from '@catalystcommunity/controls'
 import { api } from '~/api/client.ts'
-import type { CiTrustSettings, EnumChoice, GetCiTrustSettingsResponse, RequiredReview } from '~/api/csilapi/types.gen.ts'
+import type { CiTrustSettings, EnumChoice, GetCiTrustSettingsResponse, RequiredReview, RerunShiftLimits } from '~/api/csilapi/types.gen.ts'
 import { ChoiceMultiSelect, ChoiceSelect } from '~/components/ChoiceInput.ts'
 import { ChipList, pathPatternError, securityIdError, subjectError, subjectHint } from '~/components/ChipList.ts'
 import { field, type Field } from '~/components/Field.ts'
@@ -36,7 +36,7 @@ export const AUTHORITY_CHOICES: EnumChoice[] = [
   { value: 'normal', label: 'Normal', description: 'Run the trusted base CI with the normal profile and its secrets.' },
 ]
 
-const DEFAULTS: Required<Omit<CiTrustSettings, 'requiredReviews'>> = {
+const DEFAULTS: Required<Omit<CiTrustSettings, 'requiredReviews' | 'rerunShiftLimits'>> = {
   runGate: [],
   gatedRunAuthority: 'no_secrets',
   runApprovers: ['project_owner', 'repository_write'],
@@ -58,6 +58,79 @@ function gateText(values: string[] | undefined): string {
 function subjectsText(values: string[] | undefined): string {
   if (!values) return '—'
   return values.length ? values.join(', ') : 'Nobody'
+}
+
+/** The text of re-run shift limits, or "No limit" fields. */
+export function limitsText(limits: RerunShiftLimits | undefined): string {
+  if (!limits) return 'No limits'
+  const parts: string[] = []
+  if (limits.maxCpu) parts.push(`cpu ≤ ${limits.maxCpu}`)
+  if (limits.maxMemory) parts.push(`memory ≤ ${limits.maxMemory}`)
+  if (limits.maxStorage) parts.push(`storage ≤ ${limits.maxStorage}`)
+  if (limits.maxTimeoutSeconds !== undefined) parts.push(`timeout ≤ ${limits.maxTimeoutSeconds} s`)
+  return parts.length ? parts.join(', ') : 'No limits'
+}
+
+const QUANTITY = /^[0-9]+(\.[0-9]+)?(m|k|Ki|M|Mi|G|Gi|T|Ti)?$/
+
+/** The editor of re-run shift limits. An empty field is no limit. */
+class LimitsEditor {
+  readonly el: HTMLDivElement
+  readonly cpu: TextField
+  readonly memory: TextField
+  readonly storage: TextField
+  readonly timeout: TextField
+  readonly #fields: Field[]
+
+  constructor(onChange: () => void) {
+    this.cpu = textField({ mono: true, placeholder: '8', onInput: onChange })
+    this.memory = textField({ mono: true, placeholder: '32Gi', onInput: onChange })
+    this.storage = textField({ mono: true, placeholder: '200Gi', onInput: onChange })
+    this.timeout = textField({ mono: true, placeholder: '7200', onInput: onChange })
+    this.#fields = [
+      field({ label: 'Largest cpu', hint: 'Bounds cpu and cpu_request. A Kubernetes quantity.', control: this.cpu }),
+      field({ label: 'Largest memory', hint: 'A Kubernetes quantity, for example 32Gi.', control: this.memory }),
+      field({ label: 'Largest storage', hint: 'Bounds storage and storage_request.', control: this.storage }),
+      field({ label: 'Largest timeout (seconds)', control: this.timeout }),
+    ]
+    this.el = h('div', { class: 'form-row limits-editor' }, this.#fields.map((f) => f.el))
+  }
+
+  set(limits: RerunShiftLimits | undefined): void {
+    this.cpu.value = limits?.maxCpu ?? ''
+    this.memory.value = limits?.maxMemory ?? ''
+    this.storage.value = limits?.maxStorage ?? ''
+    this.timeout.value = limits?.maxTimeoutSeconds !== undefined ? String(limits.maxTimeoutSeconds) : ''
+  }
+
+  value(): RerunShiftLimits {
+    const out: RerunShiftLimits = {}
+    const cpu = this.cpu.value.trim()
+    const memory = this.memory.value.trim()
+    const storage = this.storage.value.trim()
+    const timeout = this.timeout.value.trim()
+    if (cpu) out.maxCpu = cpu
+    if (memory) out.maxMemory = memory
+    if (storage) out.maxStorage = storage
+    if (timeout) out.maxTimeoutSeconds = Number(timeout)
+    return out
+  }
+
+  error(): string | undefined {
+    for (const [name, el] of [['cpu', this.cpu], ['memory', this.memory], ['storage', this.storage]] as const) {
+      const v = el.value.trim()
+      if (v && !QUANTITY.test(v)) return `The largest ${name} is not a quantity (for example 4, 500m, 16Gi).`
+    }
+    const timeout = this.timeout.value.trim()
+    if (timeout && !(/^\d+$/.test(timeout) && Number(timeout) > 0)) return 'The largest timeout is a number of seconds.'
+    return undefined
+  }
+
+  render(showErrors: boolean): void {
+    const error = showErrors ? this.error() : undefined
+    this.#fields[0].setError(undefined)
+    this.#fields[3].setError(error)
+  }
 }
 
 function reviewsText(values: RequiredReview[] | undefined): string {
@@ -309,6 +382,8 @@ export class CiTrustSettingsForm extends RcElement {
   #orgReviews!: HTMLDivElement
   #orgReviewList!: HTMLUListElement
   #orgReviewsNone!: HTMLParagraphElement
+  #limits!: Setting
+  #limitsEditor!: LimitsEditor
 
   setScope(organization: string, projectId?: string): void {
     if (this.organization === organization && this.projectId === projectId) return
@@ -411,6 +486,15 @@ export class CiTrustSettingsForm extends RcElement {
       onChange: rerender,
     })
 
+    this.#limitsEditor = new LimitsEditor(rerender)
+    this.#limits = new Setting({
+      label: 'Re-run shift limits',
+      hint: 'The largest resources and timeout that a retry or a re-run with shifts can ask for. An empty field is no limit.',
+      modes,
+      editor: this.#limitsEditor.el,
+      onChange: rerender,
+    })
+
     this.#intro = h('p', { class: 'meta' })
     this.#stricter = h(
       'div',
@@ -438,6 +522,8 @@ export class CiTrustSettingsForm extends RcElement {
       h('h3', { class: 'section-title' }, 'Required reviews'),
       this.#orgReviews,
       this.#reviews.el,
+      h('h3', { class: 'section-title' }, 'Retries and re-runs'),
+      this.#limits.el,
       h('div', { class: 'row' }, this.#submit),
     )
     this.classList.add('card')
@@ -460,6 +546,8 @@ export class CiTrustSettingsForm extends RcElement {
     this.#profileInput.value = s.overrideProfile ?? fallback.overrideProfile ?? DEFAULTS.overrideProfile
     this.#reviews.setMode(s.requiredReviews !== undefined ? 'set' : 'inherit')
     this.#reviewEditor.set((s.requiredReviews ?? []).map(({ scope: _scope, ...review }) => review))
+    this.#limits.setMode(s.rerunShiftLimits !== undefined ? 'set' : 'inherit')
+    this.#limitsEditor.set(s.rerunShiftLimits ?? fallback.rerunShiftLimits)
     this.#touched = false
   }
 
@@ -472,13 +560,15 @@ export class CiTrustSettingsForm extends RcElement {
     if (this.#overrideApprovers.mode === 'set') out.overrideApprovers = this.#overrideApproverList.values()
     if (this.#profile.mode === 'set') out.overrideProfile = this.#profileInput.value.trim()
     if (this.#reviews.mode === 'set') out.requiredReviews = this.#reviewEditor.values()
+    if (this.#limits.mode === 'set') out.rerunShiftLimits = this.#limitsEditor.value()
     return out
   }
 
-  #errors(): { profile?: string; reviews?: string } {
+  #errors(): { profile?: string; reviews?: string; limits?: string } {
     return {
       profile: this.#profile.mode === 'set' && !this.#profileInput.value.trim() ? 'Name a profile, or choose the other option.' : undefined,
       reviews: this.#reviews.mode === 'set' ? this.#reviewEditor.error() : undefined,
+      limits: this.#limits.mode === 'set' ? this.#limitsEditor.error() : undefined,
     }
   }
 
@@ -491,8 +581,8 @@ export class CiTrustSettingsForm extends RcElement {
     this.#reviewEditor.touched = true
     show(this.#saved, false)
     const errors = this.#errors()
-    if (errors.profile || errors.reviews) {
-      this.#save.error = errors.reviews ?? errors.profile
+    if (errors.profile || errors.reviews || errors.limits) {
+      this.#save.error = errors.reviews ?? errors.profile ?? errors.limits
       this.invalidate()
       return
     }
@@ -549,6 +639,8 @@ export class CiTrustSettingsForm extends RcElement {
     show(this.#orgReviewsNone, project && orgReviews.length === 0)
     this.#reviews.update(org ? reviewsText(org.requiredReviews) : undefined, reviewsText(force.requiredReviews))
     this.#reviewEditor.render()
+    this.#limits.update(org ? limitsText(org.rerunShiftLimits) : undefined, limitsText(force.rerunShiftLimits))
+    this.#limitsEditor.render(this.#touched)
 
     this.#saveError.set(this.#save.error)
     this.#submit.disabled = this.#save.busy

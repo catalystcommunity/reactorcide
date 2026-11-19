@@ -2,14 +2,19 @@ package cmd
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
+	"net/http"
+	"net/url"
 	"os"
 	"sort"
 	"strings"
 
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/cipolicy"
+	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store/models"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/uiapi/csilapi"
+	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/workerclient"
 	"github.com/google/uuid"
 	"github.com/urfave/cli/v2"
 	"gopkg.in/yaml.v3"
@@ -30,6 +35,15 @@ var PolicyCommand = &cli.Command{
 					return err
 				}
 				resp, err := client.GetCiPolicy(ctx.Context, csilapi.GetCiPolicyRequest{ProjectId: projectID})
+				var serviceErr *workerclient.ServiceCallError
+				if errors.As(err, &serviceErr) && serviceErr.Code == "not_found" {
+					// No stored policy: a pull request uses the built-in
+					// policy when the organization has the secure defaults.
+					shown, builtInErr := printBuiltInPolicyIfUsed(ctx, projectID)
+					if builtInErr != nil || shown {
+						return builtInErr
+					}
+				}
 				if err != nil {
 					return err
 				}
@@ -104,7 +118,8 @@ var PolicyCommand = &cli.Command{
 			Usage: "Evaluate a local policy file against supplied facts",
 			Flags: []cli.Flag{&cli.StringFlag{Name: "file", Aliases: []string{"f"}, Required: true},
 				&cli.StringFlag{Name: "workflow"}, &cli.StringSliceFlag{Name: "changed-path"}, &cli.StringFlag{Name: "event", Value: "pull_request_updated"},
-				&cli.StringFlag{Name: "base-branch"}, &cli.StringFlag{Name: "head-repository", Value: "same"}, &cli.StringSliceFlag{Name: "actor"}, &cli.StringSliceFlag{Name: "approval"}},
+				&cli.StringFlag{Name: "base-branch"}, &cli.StringFlag{Name: "head-repository", Value: "same"}, &cli.StringSliceFlag{Name: "actor"}, &cli.StringSliceFlag{Name: "approval"},
+				&cli.StringSliceFlag{Name: "ref-class", Usage: "a ref class of the event (repeat); see reactorcide ref-classes explain"}},
 			Action: explainPolicy,
 		},
 	},
@@ -226,8 +241,13 @@ func explainPolicy(ctx *cli.Context) error {
 		}
 	}
 	fmt.Printf("Policy revision: %s\nChanged CI paths: %s\n", policy.Revision, strings.Join(ctx.StringSlice("changed-path"), ", "))
+	if defaultProfile, entry := policy.DefaultProfileFor(ctx.StringSlice("ref-class")); entry >= 0 {
+		fmt.Printf("Default profile: %s (defaults.by_ref_class[%d])\n", defaultProfile, entry)
+	} else {
+		fmt.Printf("Default profile: %s\n", defaultProfile)
+	}
 	for _, workflowID := range workflowIDs {
-		decision, err := cipolicy.Decide(policy, cipolicy.Facts{WorkflowID: workflowID, ChangedCIPaths: ctx.StringSlice("changed-path"), Event: ctx.String("event"), BaseBranch: ctx.String("base-branch"), HeadRepositoryRelation: ctx.String("head-repository"), ActorSubjects: actors, ApprovalSubjects: approvals})
+		decision, err := cipolicy.Decide(policy, cipolicy.Facts{WorkflowID: workflowID, ChangedCIPaths: ctx.StringSlice("changed-path"), Event: ctx.String("event"), BaseBranch: ctx.String("base-branch"), HeadRepositoryRelation: ctx.String("head-repository"), ActorSubjects: actors, ApprovalSubjects: approvals, RefClasses: ctx.StringSlice("ref-class")})
 		if err != nil {
 			return err
 		}
@@ -248,4 +268,73 @@ func explainPolicy(ctx *cli.Context) error {
 		}
 	}
 	return nil
+}
+
+// builtInPolicyView is the output of "policy get" for a project with no
+// stored policy in an organization with the secure defaults profile.
+type builtInPolicyView struct {
+	ProjectID string                 `json:"project_id" yaml:"project_id"`
+	BuiltIn   bool                   `json:"built_in" yaml:"built_in"`
+	Reason    string                 `json:"reason" yaml:"reason"`
+	Revision  string                 `json:"revision" yaml:"revision"`
+	Document  map[string]interface{} `json:"document" yaml:"document"`
+}
+
+const builtInPolicyReason = "the project stores no CI policy and its organization has the secure defaults profile"
+
+// printBuiltInPolicyIfUsed prints the built-in policy when the project uses
+// it. It returns false (and prints nothing) when the project uses no policy.
+func printBuiltInPolicyIfUsed(ctx *cli.Context, projectID string) (bool, error) {
+	api, err := newAPIClient(ctx)
+	if err != nil {
+		return false, err
+	}
+	var project projectResponse
+	if err := api.doJSON(http.MethodGet, "/api/v1/projects/"+url.PathEscape(projectID), nil, http.StatusOK, &project); err != nil {
+		return false, err
+	}
+	if project.Organization == "" {
+		return false, nil
+	}
+	var org organizationSummary
+	if err := api.doJSON(http.MethodGet, "/api/v1/organizations/"+url.PathEscape(project.Organization), nil, http.StatusOK, &org); err != nil {
+		return false, err
+	}
+	if !models.UsesBuiltInPolicy(org.DefaultsProfile) {
+		return false, nil
+	}
+	policy, document, err := cipolicy.BuiltIn()
+	if err != nil {
+		return false, err
+	}
+	view := builtInPolicyView{ProjectID: projectID, BuiltIn: true, Reason: builtInPolicyReason, Revision: policy.Revision}
+	if err := json.Unmarshal(document, &view.Document); err != nil {
+		return false, err
+	}
+	return true, printBuiltInPolicy(ctx.String("format"), view)
+}
+
+func printBuiltInPolicy(format string, view builtInPolicyView) error {
+	switch format {
+	case "json":
+		return json.NewEncoder(os.Stdout).Encode(view)
+	case "yaml", "table":
+	default:
+		return fmt.Errorf("unsupported format %q", format)
+	}
+	if format == "table" {
+		fmt.Printf("Project: %s\nRevision: %s (built-in)\nBuilt-in: %s\n\n", view.ProjectID, view.Revision, view.Reason)
+		encoded, err := yaml.Marshal(view.Document)
+		if err != nil {
+			return err
+		}
+		_, err = os.Stdout.Write(encoded)
+		return err
+	}
+	encoded, err := yaml.Marshal(view)
+	if err != nil {
+		return err
+	}
+	_, err = os.Stdout.Write(encoded)
+	return err
 }

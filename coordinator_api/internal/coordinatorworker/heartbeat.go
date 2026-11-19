@@ -48,11 +48,12 @@ func heartbeatOnce(ctx context.Context, c client, runner worker.JobRunner, track
 		}
 	}
 
-	resp, err := c.Heartbeat(ctx, status, running)
+	resp, err := c.HeartbeatWithReport(ctx, status, running, tracker.images.heartbeatReport())
 	if err != nil {
 		logging.Log.WithError(err).Warn("coordinatorworker: heartbeat failed")
 		return
 	}
+	tracker.images.offer(resp.ImageSet)
 
 	for _, d := range resp.Directives {
 		applyDirective(runner, tracker, d)

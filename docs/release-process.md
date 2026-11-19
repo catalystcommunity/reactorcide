@@ -40,6 +40,12 @@ workflow must create the matching draft first.
 After the prepare job succeeds, the image and CLI jobs run in parallel. The
 publish job runs after all build jobs succeed.
 
+The egress proxy image has its own node, `image-egress`
+(`.reactorcide/jobs/release-image-egress.yaml`). A cold release build of the
+Rust proxy takes longer and uses more memory than the Go images, so this job
+has a timeout of 3600 seconds and the resources CPU 2 to 4 and memory 6Gi.
+The other image jobs keep 1800 seconds and the default resources.
+
 ## Retry Behavior
 
 If the tag job fails before it pushes the tag, retry that job. The job reuses

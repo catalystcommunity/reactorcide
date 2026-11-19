@@ -319,6 +319,90 @@ def test_web(code_dir: Path) -> None:
     )
 
 
+# The oldest Rust that builds egress_proxy: wasmtime 50 needs 1.97 (edition
+# 2024 needs 1.85). runnerbase installs the current stable Rust, so this is
+# normally a no-op. When the image has an older Rust, the job installs
+# EGRESS_RUST_TOOLCHAIN with rustup (RUSTUP_HOME in runnerbase is writable by
+# every uid) and runs cargo with it. The job never skips the tests.
+EGRESS_RUST_MINIMUM = (1, 97)
+EGRESS_RUST_TOOLCHAIN = "1.98.1"
+# Parallel cargo jobs of the egress tests. The job has a CPU limit of 4
+# (.reactorcide/jobs/test-egress.yaml).
+EGRESS_CARGO_JOBS = "4"
+# The target of the WASM plugins that tests/proxy.rs builds.
+EGRESS_WASM_TARGET = "wasm32-wasip2"
+
+
+def _rust_version(environment: Dict[str, str], cwd: Path) -> Optional[tuple]:
+    """Return the (major, minor) of the default rustc, or None."""
+    try:
+        result = _run(["rustc", "--version"], cwd=cwd, capture_output=True, env=environment)
+    except (FileNotFoundError, subprocess.CalledProcessError):
+        return None
+    match = re.match(r"rustc (\d+)\.(\d+)\.", result.stdout.strip())
+    if not match:
+        return None
+    return (int(match.group(1)), int(match.group(2)))
+
+
+def _cargo_command(environment: Dict[str, str], cwd: Path) -> List[str]:
+    """Return the cargo command, with a pinned toolchain when rustc is old."""
+    version = _rust_version(environment, cwd)
+    if version is not None and version >= EGRESS_RUST_MINIMUM:
+        log_stdout(f"Using the image Rust {version[0]}.{version[1]}")
+        return ["cargo"]
+    log_stdout(
+        f"The image Rust ({version}) is older than "
+        f"{EGRESS_RUST_MINIMUM[0]}.{EGRESS_RUST_MINIMUM[1]}; installing "
+        f"Rust {EGRESS_RUST_TOOLCHAIN} with rustup"
+    )
+    try:
+        _run(
+            ["rustup", "toolchain", "install", EGRESS_RUST_TOOLCHAIN, "--profile", "minimal"],
+            cwd=cwd,
+            env=environment,
+        )
+    except FileNotFoundError as error:
+        raise RuntimeError(
+            "rustup is not in this runner image, so the egress proxy tests "
+            f"cannot get Rust {EGRESS_RUST_TOOLCHAIN}. Use a runnerbase image "
+            "that has rustup (runnerlib/Dockerfile.runner)."
+        ) from error
+    return ["cargo", f"+{EGRESS_RUST_TOOLCHAIN}"]
+
+
+def test_egress(code_dir: Path) -> None:
+    """Test the egress proxy: the Rust proxy and the Go network helper (netd)."""
+    egress_dir = code_dir / "egress_proxy"
+    if not (egress_dir / "Cargo.toml").is_file():
+        raise RuntimeError(f"{egress_dir / 'Cargo.toml'} is missing")
+
+    go_environment = _go_environment()
+    _run(["go", "test", "./...", "-count=1"], cwd=egress_dir / "netd", env=go_environment)
+
+    environment = os.environ.copy()
+    # Debug information makes the wasmtime test binaries large, and parallel
+    # links of them were killed at a 6 GiB memory limit. CI does not need
+    # debug information. cargo can also see the CPUs of the node, not the
+    # CPU limit of the job, so it can start too many parallel compilers.
+    environment.setdefault("CARGO_PROFILE_DEV_DEBUG", "0")
+    environment.setdefault("CARGO_PROFILE_TEST_DEBUG", "0")
+    environment.setdefault("CARGO_BUILD_JOBS", EGRESS_CARGO_JOBS)
+    # tests/proxy.rs builds the test WASM plugins with a nested cargo and
+    # reads them from plugins/target, so a CARGO_TARGET_DIR must not move
+    # that output.
+    environment.pop("CARGO_TARGET_DIR", None)
+    cargo = _cargo_command(environment, egress_dir)
+    _run([*cargo, "--version"], cwd=egress_dir, env=environment)
+    # The test plugins are wasm32-wasip2 components. runnerbase has only the
+    # host target, so add it (a no-op when it is present).
+    rustup = ["rustup", "target", "add", EGRESS_WASM_TARGET]
+    if len(cargo) > 1:
+        rustup += ["--toolchain", EGRESS_RUST_TOOLCHAIN]
+    _run(rustup, cwd=egress_dir, env=environment)
+    _run([*cargo, "test", "--locked"], cwd=egress_dir, env=environment)
+
+
 # The generation scripts that own the csilgen pin, and every path they write.
 # csil-gen-check reads CSILGEN_RELEASE from the scripts, so the pin has one
 # home. The scripts must agree with each other.
@@ -477,6 +561,7 @@ CI_JOBS: Dict[str, Callable[[Path], None]] = {
     "conventional-commits": validate_conventional_commits,
     "csil-gen-check": csil_gen_check,
     "test-go": test_coordinator,
+    "test-egress": test_egress,
     "test-python": test_runnerlib,
     "test-web": test_web,
 }

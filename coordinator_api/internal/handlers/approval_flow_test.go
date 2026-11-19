@@ -21,10 +21,12 @@ import (
 // each login, and lists pull request files and commit authors.
 type resolvingVCSClient struct {
 	*MockVCSClient
-	subjects      map[string][]string
-	files         []string
-	commitLogins  []string
-	statusUpdates []vcs.StatusUpdate
+	subjects     map[string][]string
+	files        []string
+	commitLogins []string
+	// commitLoginsErr, when set, fails ListPRCommitLogins.
+	commitLoginsErr error
+	statusUpdates   []vcs.StatusUpdate
 }
 
 func (c *resolvingVCSClient) ResolveActorSubjects(_ context.Context, _ string, login string) ([]string, error) {
@@ -36,6 +38,9 @@ func (c *resolvingVCSClient) ListPRFiles(context.Context, string, int) ([]string
 }
 
 func (c *resolvingVCSClient) ListPRCommitLogins(context.Context, string, int) ([]string, error) {
+	if c.commitLoginsErr != nil {
+		return nil, c.commitLoginsErr
+	}
 	return append([]string(nil), c.commitLogins...), nil
 }
 
@@ -319,4 +324,58 @@ func TestExecute_HeadChangedIsRefused(t *testing.T) {
 	require.NoError(t, err)
 	encoded, _ := json.Marshal(result)
 	assert.Contains(t, string(encoded), `"effect":"reviews"`)
+}
+
+// A retry or rerun comment with a word that is not a shift does nothing. A
+// rerun with shifts repeats recorded runs; it does not start a new
+// evaluation with new authority.
+func TestRerunAndRetryComments_Shifts(t *testing.T) {
+	h := newApprovalHarness(t, map[string][]string{"maintainer": {"repository_write"}})
+	h.comment(t, "maintainer", "/reactorcide rerun image=evil:latest", 7)
+	h.comment(t, "maintainer", "/reactorcide retry command=sh", 8)
+	assert.Empty(t, h.store.CreateJobCalls, "a refused command starts nothing")
+
+	result, err := h.handler.Execute(context.Background(), approvals.Request{Project: h.project, PRNumber: 42,
+		Command: approvals.Command{Name: approvals.CommandRerun, Shifts: models.RunShifts{MemoryLimit: "8Gi"}},
+		Channel: models.CIApprovalChannelAPI, Login: "maintainer"})
+	require.NoError(t, err)
+	assert.Equal(t, "rerun", result.Effect)
+	assert.Empty(t, h.store.CreateJobCalls, "a rerun with shifts does not evaluate the head again")
+
+	_, err = h.handler.Execute(context.Background(), approvals.Request{Project: h.project, PRNumber: 42,
+		Command: approvals.Command{Name: approvals.CommandRerun, Shifts: models.RunShifts{MemoryLimit: "8Gi"}},
+		Channel: models.CIApprovalChannelAPI, Login: "nobody"})
+	assert.ErrorIs(t, err, approvals.ErrNotAllowed, "shifts need the run approver permission, nothing more")
+}
+
+// The instance administrator of a no-login instance (the admin token) passes
+// the approver check of approve-ci and override-ci. Its person is the token
+// and its approvals record project_owner.
+func TestExecute_InstanceAdmin(t *testing.T) {
+	h := newApprovalHarness(t, map[string][]string{})
+	h.store.OrgTrust = &models.CITrustSettings{RunGate: []string{models.RunGateForks},
+		OverrideApprovers: []string{"reactorcide_group:release"}}
+	h.pr.HeadRepository = &vcs.RepositoryInfo{FullName: "someone/test-repo", CloneURL: "https://github.com/someone/test-repo.git"}
+	h.pullRequestEvent(t)
+	require.Empty(t, h.store.CreateJobCalls)
+
+	request := approvals.Request{Project: h.project, PRNumber: 42, Channel: models.CIApprovalChannelAPI,
+		Command: approvals.Command{Name: approvals.CommandApproveCI}, TokenID: "0190a1b2-c3d4-7e5f-8a9b-0c1d2e3f4a5b"}
+	_, err := h.handler.Execute(context.Background(), request)
+	require.Error(t, err, "a token without InstanceAdmin has no person")
+	require.Empty(t, h.store.CreatedCIApprovals)
+
+	request.InstanceAdmin = true
+	result, err := h.handler.Execute(context.Background(), request)
+	require.NoError(t, err)
+	require.Len(t, result.Recorded, 1)
+	approval := h.store.CreatedCIApprovals[0]
+	assert.Equal(t, "token:0190a1b2-c3d4-7e5f-8a9b-0c1d2e3f4a5b", approval.Person)
+	assert.Equal(t, []string{"project_owner"}, []string(approval.Subjects))
+	require.Len(t, h.store.CreateJobCalls, 1, "approve-ci of the instance administrator releases the gate")
+
+	request.Command = approvals.Command{Name: approvals.CommandOverrideCI}
+	_, err = h.handler.Execute(context.Background(), request)
+	require.NoError(t, err, "the instance administrator passes the override approver check")
+	assert.Equal(t, models.CIApprovalKindHeadCI, h.store.CreatedCIApprovals[len(h.store.CreatedCIApprovals)-1].Kind)
 }

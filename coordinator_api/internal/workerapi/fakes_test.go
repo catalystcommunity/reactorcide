@@ -172,6 +172,10 @@ func (f *fakeStore) UpsertWorkerByKey(ctx context.Context, w *models.Worker) (*m
 		existing.Arch = w.Arch
 		existing.Characteristics = w.Characteristics
 		existing.WorkerVersion = w.WorkerVersion
+		existing.ImageRuntime = w.ImageRuntime
+		if w.EnrollmentTokenID != nil {
+			existing.EnrollmentTokenID = w.EnrollmentTokenID
+		}
 		if w.Status != "" {
 			existing.Status = w.Status
 		}

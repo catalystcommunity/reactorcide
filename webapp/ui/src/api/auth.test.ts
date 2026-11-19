@@ -27,6 +27,7 @@ const GO_CAPABILITY_KEYS = [
   'is_global_admin',
   'is_org_admin',
   'is_project_owner',
+  'manage_workflow',
 ] as const
 
 /** Every camelCase field the SPA reads; must equal the converted Go key set. */
@@ -48,6 +49,7 @@ const TS_CAPABILITY_KEYS: (keyof GetCapabilitiesResponse)[] = [
   'isGlobalAdmin',
   'isOrgAdmin',
   'isProjectOwner',
+  'manageWorkflow',
 ]
 
 describe('decodeSession', () => {

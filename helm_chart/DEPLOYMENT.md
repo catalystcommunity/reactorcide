@@ -172,15 +172,11 @@ worker:
   apiTokenSecret:
     name: reactorcide-api-token
     key: token
-
-web:
-  apiTokenSecret:
-    name: reactorcide-api-token
-    key: token
 ```
 
 Run `helm upgrade` again. This token lets eval jobs submit workflow children.
-It also lets the web application authenticate when you enable it.
+The web application does not use an API token. It sends the session of each
+browser to the coordinator.
 
 ## Production Dependencies
 
@@ -223,6 +219,18 @@ corndogs:
 ```
 
 The value is a CSIL-RPC TCP address. Do not add `http://`.
+
+The subchart is Corndogs chart 0.6.0 (server 0.8.0). Its resilience
+policies stay at `compatibility`.
+
+**Known limit:** do not set `corndogs.resilience.submissionKeyPolicy:
+required` (`CORNDOGS_SUBMISSION_KEY_POLICY=required`). Reactorcide submits
+jobs without a submission key, so a Corndogs server with this policy refuses
+each job. This also applies to an external Corndogs server. Keep the default
+`compatibility`. Back up the file store before you upgrade
+from Corndogs 0.7.x, and stop the old server before the new one starts. A
+downgrade to 0.7.x is not supported after guarded tasks exist. See
+[Upgrade to 0.13](../docs/upgrade-0.13.md#21-corndogs-080).
 
 ### Object storage
 
@@ -323,13 +331,62 @@ worker:
 ```
 
 The worker Role can create and delete Jobs and temporary checkout Secrets. It
-can read Pods, Pod logs, and Pod resource metrics in its namespace. A cluster
-role permits reads from `nodes/proxy` for volume statistics. The worker also
-reads CPU and memory there when metrics-server has no data for a job pod. Review
+can manage the image pre-seed DaemonSets (`apps/daemonsets`), list events, and
+exec into job Pods (`pods/exec`, to read the workflow output). It can read
+Pods, Pod logs, and Pod resource metrics in its namespace. A cluster role
+permits `list` on `nodes` (capacity, topology, and scheduling decisions) and
+reads from `nodes/proxy` for volume statistics. The worker also reads CPU and
+memory there when metrics-server has no data for a job pod. Review
 `templates/rbac-worker.yaml` before you change its namespace or service
 account.
 
-See [Worker Operation](../docs/workers.md).
+Optional worker settings. The defaults keep a fixed lease count and the
+in-cluster connection:
+
+```yaml
+worker:
+  admission:
+    mode: resources        # default: concurrency
+    maxLeases: 64
+    cpu: "64"              # budget; set it when a node autoscaler adds nodes
+    memory: "256Gi"
+  region: us-east-1        # detected from node labels when empty
+  kubeconfig:
+    secretName: reactorcide-remote-kubeconfig   # run jobs in a remote cluster
+```
+
+See [Worker Operation](../docs/workers.md) ("Resource-aware admission",
+"Backlog and autoscaling", "Region, zone, and cloud", and "Remote Kubernetes
+cluster").
+
+### Job Pod Settings
+
+These `worker` values control the Kubernetes Jobs that the worker creates:
+
+| Value | Default | Meaning |
+| --- | --- | --- |
+| `jobNamespace` | empty (the worker namespace) | Namespace of job Pods. |
+| `jobServiceAccount` | the worker service account | Service account of job Pods. |
+| `jobResourceScope` | empty (`auto`) | `auto`, `pod`, or `container`. See "Resources" in [Worker Operation](../docs/workers.md#resources). |
+| `jobStartupTimeout` | `30m` | Maximum wait for the main container to start. |
+| `jobAutoscaling` | `auto` | Set `disabled` only when no node autoscaler can add capacity. See [Kubernetes scheduling decisions](../docs/workers.md#kubernetes-scheduling-decisions). |
+| `jobNodeSelector`, `jobTolerations`, `jobAffinity` | empty | Placement of job Pods and of the image pre-seed DaemonSet. |
+| `imagePreseed.name` | `<worker name>-image-preseed` | DaemonSet name prefix, 52 characters or less. |
+| `imagePreseed.toolsImage`, `.pauseImage`, `.timeout` | empty (`busybox:1.36.1-musl`, `registry.k8s.io/pause:3.10`, `30m`) | Images and timeout of the pre-seed DaemonSet. See [Kubernetes image pre-seed](../docs/workers.md#kubernetes-image-pre-seed). |
+| `jobApiUrl` | this release's coordinator Service | Coordinator API address of job Pods. Set it for a remote cluster. |
+| `extraEnv` | empty | More worker environment variables (`{name, value}` or `{name, valueFrom}`). |
+
+The worker pulls the container images of its image set with the pre-seed
+DaemonSet before it requests jobs that use them.
+
+### Egress Proxy
+
+Set `egressProxy.enabled: true` to run the egress proxy and to give the worker
+its settings. Create the Secret that `egressProxy.secretName` names before you
+install. It must have the keys `ca.crt`, `ca.key`, `job.key`, and
+`control.token`. Do not put these values in a values file. See
+[Egress Proxy](../docs/egress-proxy.md#8-worker-settings) for all
+`egressProxy` values.
 
 ### Private Job Images
 
@@ -371,6 +428,15 @@ builder:
 
 The registry Secret must have a `config.json` key.
 
+Each cache namespace other than the shared one (`standard`) uses the sub path
+`namespaces/<key>` of `cachePvc`. A job with no cache writes gets no cache
+mount. Use a `ReadWriteMany` claim when builder pods run on more than one
+node.
+
+Set `builder.rootless: true` to run the sidecar without privilege (uid 1000,
+`Unconfined` seccomp and AppArmor). The job namespace must permit these
+settings. See [Builds, Caches, and Job Settings](../docs/builds-and-caches.md).
+
 ## Public Routes and TLS
 
 The chart can create Gateway API HTTPRoutes:
@@ -396,7 +462,8 @@ web:
     sectionName: https
 ```
 
-The coordinator route handles `/api/*`. The web route handles other paths.
+The coordinator route handles `/api/*` and `/csil/*`. The web route handles
+other paths.
 The referenced Gateway must provide TLS.
 
 Enable VCS integration:
@@ -439,7 +506,38 @@ Your production values must set:
 Use more than one coordinator replica only after you verify that all selected
 dependencies and session behavior support it.
 
+## Coordinator Settings
+
+The chart has values for the main coordinator settings (`oidc`,
+`rateLimits`, `outboundEvents`, `observability`, `artifacts`, `provenance`,
+`cache`, `groupVcsSync`). An empty value does not set the variable, so the
+coordinator uses its code default. Use `app.extraEnv` and `worker.extraEnv`
+for other variables. Each item is a Kubernetes `EnvVar` with `value` or
+`valueFrom`:
+
+```yaml
+oidc:
+  issuerUrl: "https://ci.example.com/api/v1/oidc"
+rateLimits:
+  webhookPerMinute: 1200
+app:
+  extraEnv:
+    - name: REACTORCIDE_ADMISSION_RESERVE_AFTER
+      value: "10m"
+worker:
+  extraEnv:
+    - name: REACTORCIDE_WORKER_ZONE
+      value: us-east-1a
+```
+
+Set `metrics.prometheusRule.enabled: true` to make a PrometheusRule with the
+CI owner alerts (needs the Prometheus Operator CRD). The table of values and
+defaults is in [Upgrade to 0.13](../docs/upgrade-0.13.md#5-helm-chart-values).
+
 ## Upgrade
+
+Read [Upgrade to 0.13](../docs/upgrade-0.13.md) before you upgrade from
+0.12.x.
 
 Render and review changes:
 

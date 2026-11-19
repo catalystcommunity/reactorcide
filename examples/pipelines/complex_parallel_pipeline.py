@@ -7,7 +7,6 @@ This example demonstrates a sophisticated multi-step pipeline:
 2. If both pass, trigger build job
 3. Build job creates artifacts
 4. If build succeeds and on main branch, conditionally deploy
-5. Check if deploy is already running before triggering
 
 Pipeline Flow:
     ┌─────────┐
@@ -27,11 +26,11 @@ Pipeline Flow:
        └───┬───┘
            ▼
       ┌────────┐
-      │ Deploy │ (conditional: main branch, no deploy running)
+      │ Deploy │ (conditional: main branch)
       └────────┘
 
 Usage:
-    python -m runnerlib.cli run \
+    runnerlib run \
         --source-type git \
         --source-url https://github.com/user/repo.git \
         --source-ref main \
@@ -53,7 +52,6 @@ from workflow import (
     flush_triggers,
     git_info,
     changed_files,
-    is_job_running,
     WorkflowContext,
 )
 
@@ -170,27 +168,23 @@ def main():
 
         # Schedule conditional deploy (depends on build, only on main)
         if ctx.branch == "main":
-            # Check if there's already a deploy running
-            deploy_already_running = is_job_running("deploy-production")
-
-            if deploy_already_running:
-                print("ℹ Deploy already running, skipping deploy trigger")
-            else:
-                print("✓ Scheduling: deploy job (waits for build, main branch only)")
-                trigger_job(
-                    "deploy-production",
-                    env={
-                        "DEPLOY_TARGET": "production",
-                        "BUILD_COMMIT": info["commit"] or "unknown",
-                        "BUILD_TAG": info["tag"] or "",
-                    },
-                    depends_on=["build"],
-                    condition="all_success",
-                    container_image="reactorcide/runner:latest",
-                    job_command="python /job/ci/scripts/deploy.py",
-                    priority=10,  # High priority for production deploys
-                    timeout=1800,  # 30 minute timeout
-                )
+            # The deploy node waits for build in the workflow. The pipeline
+            # script does not query other jobs.
+            print("✓ Scheduling: deploy job (waits for build, main branch only)")
+            trigger_job(
+                "deploy-production",
+                env={
+                    "DEPLOY_TARGET": "production",
+                    "BUILD_COMMIT": info["commit"] or "unknown",
+                    "BUILD_TAG": info["tag"] or "",
+                },
+                depends_on=["build"],
+                condition="all_success",
+                container_image="reactorcide/runner:latest",
+                job_command="python /job/ci/scripts/deploy.py",
+                priority=10,  # High priority for production deploys
+                timeout=1800,  # 30 minute timeout
+            )
         else:
             print(f"ℹ Deploy skipped (not on main branch, current: {ctx.branch})")
 

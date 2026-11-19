@@ -72,26 +72,40 @@ func (ps PostgresDbStore) DeleteGroup(ctx context.Context, groupID string) error
 
 // AddGroupMember adds a user to a group. Idempotent: adding an existing
 // member is a no-op.
+//
+// The human principal of a user has the user's UUID, so the member row's
+// principal_id is the user ID.
 func (ps PostgresDbStore) AddGroupMember(ctx context.Context, groupID, userID string) error {
-	member := &models.GroupMember{GroupID: groupID, UserID: userID}
+	user := userID
+	member := &models.GroupMember{GroupID: groupID, PrincipalID: userID, UserID: &user}
 	if err := ps.getDB(ctx).
 		Where("group_id = ? AND user_id = ?", groupID, userID).
 		FirstOrCreate(member).Error; err != nil {
 		return fmt.Errorf("failed to add group member: %w", err)
 	}
+	// A member that a linked VCS team gave becomes manual (group_vcs_operations.go).
+	if err := makeMembershipManual(ps.getDB(ctx), groupID, member.PrincipalID); err != nil {
+		return fmt.Errorf("failed to add group member: %w", err)
+	}
 	return nil
 }
 
-// RemoveGroupMember removes a user from a group.
+// RemoveGroupMember removes a user from a group. A member that a linked VCS
+// team still has stays as a synced member; a member that only a linked team
+// gives is store.ErrConflict.
 func (ps PostgresDbStore) RemoveGroupMember(ctx context.Context, groupID, userID string) error {
-	result := ps.getDB(ctx).
-		Where("group_id = ? AND user_id = ?", groupID, userID).
-		Delete(&models.GroupMember{})
-	if result.Error != nil {
-		return fmt.Errorf("failed to remove group member: %w", result.Error)
+	var member models.GroupMember
+	if err := ps.getDB(ctx).Where("group_id = ? AND user_id = ?", groupID, userID).First(&member).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return store.ErrNotFound
+		}
+		return fmt.Errorf("failed to remove group member: %w", err)
 	}
-	if result.RowsAffected == 0 {
-		return store.ErrNotFound
+	if err := removeManualMembership(ps.getDB(ctx), groupID, &member); err != nil {
+		if errors.Is(err, store.ErrConflict) {
+			return err
+		}
+		return fmt.Errorf("failed to remove group member: %w", err)
 	}
 	return nil
 }
@@ -183,19 +197,21 @@ func (ps PostgresDbStore) ListRoleAssignmentsByScope(ctx context.Context, scopeT
 }
 
 // ListRoleAssignmentsForPrincipal lists every role assignment that applies to
-// a user, whether granted directly to the user or to any group the user
-// belongs to. This is the hot path for authz resolution.
+// a user, whether granted directly to the user, to the user's principal
+// (which has the user's UUID), or to any group the user belongs to. This is
+// the hot path for authz resolution.
 func (ps PostgresDbStore) ListRoleAssignmentsForPrincipal(ctx context.Context, userID string, groupIDs []string) ([]models.RoleAssignment, error) {
 	db := ps.getDB(ctx)
+	direct := []string{models.PrincipalTypeUser, models.PrincipalTypePrincipal}
 
 	query := db.Where(
-		"(principal_type = ? AND principal_id = ?)",
-		models.PrincipalTypeUser, userID,
+		"(principal_type IN ? AND principal_id = ?)",
+		direct, userID,
 	)
 	if len(groupIDs) > 0 {
 		query = db.Where(
-			"(principal_type = ? AND principal_id = ?) OR (principal_type = ? AND principal_id IN ?)",
-			models.PrincipalTypeUser, userID,
+			"(principal_type IN ? AND principal_id = ?) OR (principal_type = ? AND principal_id IN ?)",
+			direct, userID,
 			models.PrincipalTypeGroup, groupIDs,
 		)
 	}

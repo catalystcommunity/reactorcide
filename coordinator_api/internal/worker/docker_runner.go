@@ -16,6 +16,7 @@ import (
 
 	"github.com/catalystcommunity/app-utils-go/logging"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/resources"
+	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store/models"
 )
 
 // DockerRunner implements JobRunner using the Docker daemon
@@ -51,7 +52,7 @@ func NewDockerRunner() (*DockerRunner, error) {
 // not share a runtime.
 func (dr *DockerRunner) sweepLeaked(ctx context.Context) {
 	logger := logging.Log
-	for _, component := range []string{"builder-sidecar", "job-container"} {
+	for _, component := range []string{"builder-sidecar", "job-container", egressComponent} {
 		f := filters.NewArgs()
 		f.Add("label", "reactorcide.component="+component)
 		list, err := dr.client.ContainerList(ctx, container.ListOptions{All: true, Filters: f})
@@ -84,7 +85,7 @@ func (dr *DockerRunner) SpawnJob(ctx context.Context, config *JobConfig) (string
 	// Pull the image if it doesn't exist locally
 	logger.WithField("image", config.Image).Info("Ensuring Docker image is available")
 	if err := dr.ensureImage(ctx, config.Image); err != nil {
-		return "", fmt.Errorf("failed to ensure image: %w", err)
+		return "", NewFailureError(models.FailureClassImagePull, "image pull", fmt.Errorf("failed to ensure image: %w", err))
 	}
 
 	// If the job requested the builder capability, spawn the buildkitd sidecar
@@ -99,6 +100,12 @@ func (dr *DockerRunner) SpawnJob(ctx context.Context, config *JobConfig) (string
 		}
 		sidecarID = sid
 		sidecarName = sname
+	}
+
+	// Egress control (docker_egress.go): the helper owns the job network.
+	config, egressNetwork, err := dr.prepareEgress(ctx, config)
+	if err != nil {
+		return "", err
 	}
 
 	// Prepare container configuration
@@ -180,6 +187,10 @@ func (dr *DockerRunner) SpawnJob(ctx context.Context, config *JobConfig) (string
 	if wantsBuilder {
 		hostConfig.NetworkMode = container.NetworkMode("container:" + sidecarName)
 	}
+	if egressNetwork != "" {
+		hostConfig.NetworkMode = container.NetworkMode(egressNetwork)
+		hardenDockerEgressJob(hostConfig)
+	}
 
 	// Add resource limits/requests if specified. CPU/memory values are
 	// Kubernetes-style quantity strings (see internal/resources and
@@ -199,6 +210,9 @@ func (dr *DockerRunner) SpawnJob(ctx context.Context, config *JobConfig) (string
 		if sidecarID != "" {
 			dr.client.ContainerRemove(ctx, sidecarID, container.RemoveOptions{Force: true})
 		}
+		if egressNetwork != "" {
+			dr.removeEgress(context.Background(), config.JobID)
+		}
 		return "", fmt.Errorf("failed to create container: %w", err)
 	}
 
@@ -214,6 +228,9 @@ func (dr *DockerRunner) SpawnJob(ctx context.Context, config *JobConfig) (string
 		dr.client.ContainerRemove(ctx, resp.ID, container.RemoveOptions{Force: true})
 		if sidecarID != "" {
 			dr.client.ContainerRemove(ctx, sidecarID, container.RemoveOptions{Force: true})
+		}
+		if egressNetwork != "" {
+			dr.removeEgress(context.Background(), config.JobID)
 		}
 		return "", fmt.Errorf("failed to start container: %w", err)
 	}
@@ -234,10 +251,9 @@ func (dr *DockerRunner) SpawnJob(ctx context.Context, config *JobConfig) (string
 func (dr *DockerRunner) startBuilderSidecar(ctx context.Context, config *JobConfig) (id, name string, err error) {
 	logger := logging.Log.WithField("job_id", config.JobID)
 
-	image := dr.builder.Image
-	if image == "" {
-		image = DefaultBuilderImage
-	}
+	// Image, arguments, mounts, and the cache namespace and write mode of
+	// the coordinator: builder_cache.go.
+	image := dr.builder.image()
 
 	logger.WithField("image", image).Info("Ensuring builder sidecar image")
 	if err := dr.ensureImage(ctx, image); err != nil {
@@ -245,35 +261,23 @@ func (dr *DockerRunner) startBuilderSidecar(ctx context.Context, config *JobConf
 	}
 
 	name = BuilderSidecarName(config.JobID)
-	priv := true
+	priv := !dr.builder.Rootless
+	var securityOpt []string
+	if dr.builder.Rootless {
+		securityOpt = append(securityOpt, rootlessSecurityOpts...)
+	}
 
 	// buildkitd --addr tcp://0.0.0.0:1234 listens on all interfaces within its
 	// own netns; the job container joins that netns and reaches it via
-	// localhost. We pass `--oci-worker=true` explicitly so the image's default
-	// worker choice is deterministic across buildkit versions.
-	cmd := []string{
-		"--addr", fmt.Sprintf("tcp://0.0.0.0:%d", BuilderSidecarPort),
-		"--oci-worker=true",
-	}
-	// When operator supplied a buildkitd.toml, point buildkitd at it.
-	if dr.builder.ConfigPath != "" {
-		cmd = append(cmd, "--config", "/etc/buildkit/buildkitd.toml")
-	}
-
-	var binds []string
-	if dr.builder.ConfigPath != "" {
-		binds = append(binds, fmt.Sprintf("%s:/etc/buildkit/buildkitd.toml:ro", dr.builder.ConfigPath))
-	}
-	if dr.builder.RegistryAuthPath != "" {
-		binds = append(binds, fmt.Sprintf("%s:/root/.docker/config.json:ro", dr.builder.RegistryAuthPath))
-	}
+	// localhost. `--oci-worker=true` keeps the worker choice deterministic
+	// across buildkit versions.
+	cmd := dr.builder.sidecarArgs()
 
 	// Named-volume cache: docker interprets "<volname>:<path>" as a named
-	// volume mount when volname has no leading slash, which is exactly what
-	// operators pass via REACTORCIDE_BUILDER_CACHE_VOLUME.
-	if dr.builder.CacheVolume != "" {
-		binds = append(binds, fmt.Sprintf("%s:/var/lib/buildkit", dr.builder.CacheVolume))
-	}
+	// volume mount when volname has no leading slash, which is what
+	// operators pass via REACTORCIDE_BUILDER_CACHE_VOLUME. Each cache
+	// namespace gets its own volume; a job with no cache writes gets none.
+	binds := dr.builder.builderBinds(config.Cache)
 
 	sidecarCfg := &container.Config{
 		Image: image,
@@ -284,9 +288,10 @@ func (dr *DockerRunner) startBuilderSidecar(ctx context.Context, config *JobConf
 		},
 	}
 	sidecarHost := &container.HostConfig{
-		Binds:      binds,
-		Privileged: priv,
-		AutoRemove: false,
+		Binds:       binds,
+		Privileged:  priv,
+		SecurityOpt: securityOpt,
+		AutoRemove:  false,
 	}
 
 	resp, err := dr.client.ContainerCreate(ctx, sidecarCfg, sidecarHost, nil, nil, name)
@@ -423,6 +428,25 @@ func (dr *DockerRunner) WaitForCompletion(ctx context.Context, containerID strin
 	return -1, fmt.Errorf("unexpected error waiting for container")
 }
 
+// ClassifyExit reports an OOM kill: Docker sets State.OOMKilled when the
+// kernel killed the container for its memory limit. See ExitClassifier.
+func (dr *DockerRunner) ClassifyExit(ctx context.Context, containerID string, exitCode int) (string, string) {
+	inspect, err := dr.client.ContainerInspect(ctx, containerID)
+	if err != nil || inspect.State == nil {
+		return "", ""
+	}
+	return containerExitClass(inspect.State.OOMKilled)
+}
+
+// containerExitClass is the class of a non-zero exit of a container that
+// ran: oom when the runtime reports an OOM kill, else "" (the job).
+func containerExitClass(oomKilled bool) (string, string) {
+	if oomKilled {
+		return models.FailureClassOOM, "OOMKilled"
+	}
+	return "", ""
+}
+
 // Stop requests a graceful shutdown of the job container: the Docker daemon
 // sends SIGTERM to PID 1 and waits up to `grace` before sending SIGKILL.
 // grace == 0 skips the wait and kills immediately (Docker's ContainerStop
@@ -464,7 +488,9 @@ func (dr *DockerRunner) Cleanup(ctx context.Context, containerID string) error {
 	// Remove the job container first. The sidecar holds the netns the job
 	// attached to, so stopping the job before the sidecar avoids a window
 	// where the job briefly loses network before its own exit path runs.
+	removeEgress := dr.egressCleanupFor(ctx, containerID)
 	jobErr := dr.client.ContainerRemove(ctx, containerID, removeOptions)
+	removeEgress()
 
 	dr.sidecarsMu.Lock()
 	sidecarID, hadSidecar := dr.sidecars[containerID]

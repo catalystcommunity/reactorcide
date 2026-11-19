@@ -3,6 +3,7 @@ package models
 import (
 	"time"
 
+	"github.com/lib/pq"
 	"gorm.io/gorm"
 )
 
@@ -30,6 +31,19 @@ const (
 	// CIEventStatusAwaitingApproval: the run gate holds the pull request. The
 	// event has no eval job until a run approver comments approve-ci.
 	CIEventStatusAwaitingApproval = "awaiting_approval"
+	// CIEventStatusRateLimited: the webhook delivery was over the project
+	// rate limit. The event has no eval job. A redelivery evaluates it.
+	CIEventStatusRateLimited = "rate_limited"
+	// CIEventStatusSkipped: the coordinator did not evaluate the event, for
+	// example a draft pull request. Summary.SkipReasons tells why.
+	CIEventStatusSkipped = "skipped"
+)
+
+// Decision reason kinds of an event that the coordinator skipped.
+const (
+	SkipReasonDraft     = "draft"
+	SkipReasonShed      = "shed"
+	SkipReasonRateLimit = "rate_limit"
 )
 
 // Duplicate-event settings. A project value of "inherit" uses the
@@ -51,6 +65,12 @@ const (
 	// event (WorkflowID) instead of running it again.
 	WorkflowDecisionCarried = "carried"
 )
+
+// DecisionReasonBaseDefinition marks a workflow that the TRUSTED base
+// definition of a pull request event matched (the eval read its CI from the
+// base, not from the head). "Reactorcide Checks" fails when such a workflow
+// is required and did not run (docs/required-set.md).
+const DecisionReasonBaseDefinition = "base_definition"
 
 // CIEvent is one incoming event: a webhook delivery, a schedule fire, or a
 // manual submit. Its eval job answers "what must run for this event?".
@@ -84,6 +104,19 @@ type CIEvent struct {
 	ChecksTargetURL      string     `gorm:"type:text;not null;default:''" json:"checks_target_url,omitempty"`
 	ChecksPublishedAt    *time.Time `json:"checks_published_at,omitempty"`
 	PolicyViolationCount int        `gorm:"not null;default:0" json:"policy_violation_count"`
+
+	// The principal of the actor, and the identity it used ("TYPE:VALUE").
+	ActorPrincipalID *string `gorm:"type:uuid;default:null" json:"actor_principal_id,omitempty"`
+	ActorIdentity    string  `gorm:"type:text;not null;default:''" json:"actor_identity,omitempty"`
+
+	// RefClasses are the ref classes of the event (docs/ref-classes.md),
+	// sorted and unique. The coordinator computes them from trusted facts
+	// before it stores the event. Workflows and jobs of the event inherit
+	// them. RefClassFacts and RefClassReasons tell how they were computed.
+	// nil on a save keeps the stored value (a database trigger).
+	RefClasses      pq.StringArray   `gorm:"type:text[]" json:"ref_classes"`
+	RefClassFacts   *RefClassFacts   `gorm:"type:jsonb;serializer:json" json:"ref_class_facts,omitempty"`
+	RefClassReasons []RefClassReason `gorm:"type:jsonb;serializer:json" json:"ref_class_reasons,omitempty"`
 }
 
 // CIEventChecksContext is the commit status context of a CI event's aggregate
@@ -110,6 +143,11 @@ type CIEventSummary struct {
 	Action          string `json:"action,omitempty"`
 	HeadRef         string `json:"head_ref,omitempty"`
 	BaseRef         string `json:"base_ref,omitempty"`
+	// Draft is true when the pull request was a draft at this event.
+	Draft bool `json:"draft,omitempty"`
+	// SkipReasons tells why the coordinator did not evaluate the event
+	// (status skipped or rate_limited). Kind is draft, shed or rate_limit.
+	SkipReasons []DecisionReason `json:"skip_reasons,omitempty"`
 }
 
 // DecisionReason is one structured reason why a workflow (or later a job)
@@ -124,6 +162,8 @@ type CIEventSummary struct {
 //   - invalid:   Detail (the definition error)
 //   - schedule:  Value (cron), Detail
 //   - manual:    Value (actor)
+//   - ref_class: Classes, RuleIDs, Detail
+//   - priority:  Lane, Base, Shifts, Final, RuleID, Value (scope), Detail
 type DecisionReason struct {
 	Kind           string   `json:"kind"`
 	Matched        *bool    `json:"matched,omitempty"`
@@ -151,6 +191,20 @@ type DecisionReason struct {
 	// a schedule fired (Value is the cron expression).
 	ScheduleID string `json:"schedule_id,omitempty"`
 	FireTime   string `json:"fire_time,omitempty"`
+	// Classes and RuleIDs are set for kind "ref_class": the ref classes of
+	// the event, and the operator rules that added classes (built-in rules
+	// are not listed).
+	Classes []string `json:"classes,omitempty"`
+	RuleIDs []string `json:"rule_ids,omitempty"`
+	// Lane, Base, Shifts and Final are set for kind "priority"
+	// (docs/priority.md): the lane of the job, its base priority, the
+	// shifts, and the priority that went to the queue. RuleID is the lane
+	// rule ("builtin:NAME" or the lane UUID), Value the lane scope, and
+	// Detail the summary.
+	Lane   string          `json:"lane,omitempty"`
+	Base   *int            `json:"base,omitempty"`
+	Shifts []PriorityShift `json:"shifts,omitempty"`
+	Final  *int            `json:"final,omitempty"`
 }
 
 // DependencyOutcome is the status of one dependency instance of a node.
@@ -206,6 +260,10 @@ func (o *Organization) BeforeSave(*gorm.DB) error {
 	}
 	if o.DynamicJobs == "" {
 		o.DynamicJobs = DynamicJobsAllow
+	}
+	if o.InfraRetries == nil {
+		value := DefaultInfraRetries
+		o.InfraRetries = &value
 	}
 	return nil
 }

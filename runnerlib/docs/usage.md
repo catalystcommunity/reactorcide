@@ -28,7 +28,9 @@ config
 validate
 eval
 trigger
-git
+git files-changed
+git info
+oidc-token
 ```
 
 Use command help for the current options:
@@ -144,6 +146,10 @@ runnerlib eval \
 
 The coordinator supplies these values in a normal VCS eval job.
 
+Use `--workflow-file` to evaluate one workflow file. Use `--changed-file` one
+time for each changed path to give the changed files instead of a Git diff.
+The event type `schedule` needs `REACTORCIDE_WORKFLOW_REF`.
+
 See [Job Definition Reference](../../docs/job-definitions.md).
 
 ### Pull-request checkout mode
@@ -228,9 +234,18 @@ Grants](../../docs/vcs-credentials-and-secret-grants.md).
 ## Plugins
 
 Put repository lifecycle plugins in `.reactorcide/plugins`. Runnerlib finds
-this directory after it prepares the source. In a fork pull request,
-runnerlib uses plugins from the trusted CI source and does not load plugins
-from the fork.
+this directory after it prepares the source. Runnerlib looks in this order:
+
+1. `.reactorcide/plugins` in the trusted CI source.
+2. `.reactorcide/plugins` in `REACTORCIDE_CI_SOURCE_DIR`.
+3. `.reactorcide/plugins` in the application source.
+
+Runnerlib uses the first directory that it finds. When the trusted CI source
+has a plugins directory, runnerlib does not load plugins from the application
+source (for example, a fork). When the trusted CI source has no plugins
+directory, runnerlib loads the plugins of the application source. To prevent
+this for fork pull requests, keep a `.reactorcide/plugins` directory in the
+trusted CI source.
 
 Set `--plugin-dir` to load an additional trusted plugin directory:
 

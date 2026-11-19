@@ -40,6 +40,10 @@ func (u *JobStatusUpdater) UpdateCIPolicyStatus(ctx context.Context, job *models
 	if client == nil {
 		return nil
 	}
+	if !u.statusesAllowed(ctx, job.OrgID, job.ProjectID) {
+		// Report mode (docs/reporting-and-ownership.md): no VCS status.
+		return u.upsertCIPolicyReport(ctx, job, metadata, violations)
+	}
 	state := StatusSuccess
 	description := "CI changes satisfy coordinator policy"
 	if len(violations) > 0 {
@@ -257,6 +261,12 @@ func (u *JobStatusUpdater) UpdateJobStatus(ctx context.Context, job *models.Job)
 		return nil
 	}
 
+	// Report mode (docs/reporting-and-ownership.md): silent posts nothing,
+	// statuses_only posts no PR comment.
+	if !u.statusesAllowed(ctx, job.OrgID, job.ProjectID) {
+		return nil
+	}
+
 	// Get the appropriate VCS client (per-project token takes priority)
 	provider := Provider(metadata.VCSProvider)
 	client := u.getClientForJob(ctx, job, provider)
@@ -301,7 +311,7 @@ func (u *JobStatusUpdater) UpdateJobStatus(ctx context.Context, job *models.Job)
 	// row alongside its children, so a separate eval-only comment would be
 	// redundant. Runs on every status change, not just completions, so the
 	// PR reflects live progress.
-	if metadata.PRNumber > 0 && !metadata.IsEval {
+	if metadata.PRNumber > 0 && !metadata.IsEval && u.commentsAllowed(ctx, job.OrgID, job.ProjectID) {
 		u.updatePRCommentForJob(ctx, client, job, &metadata)
 	}
 
@@ -345,6 +355,11 @@ func (u *JobStatusUpdater) getStatusDescription(job *models.Job) string {
 		}
 		return fmt.Sprintf("CI build completed with exit code %d", *job.ExitCode)
 	case "failed":
+		if models.IsInfraFailureClass(job.FailureClassValue()) {
+			// The infrastructure failed, not the pipeline: say so first, so
+			// the author does not look for a fault in the change.
+			return truncateWorkflowDescription("Infrastructure failure ("+job.FailureClassValue()+"): "+job.LastError, 140)
+		}
 		if job.LastError != "" {
 			// Truncate error message if too long (accounting for "CI build failed: " prefix)
 			// Target is ~65 chars total, so error message should be ~44 chars + "..."
@@ -395,6 +410,11 @@ func (u *JobStatusUpdater) getProjectClient(ctx context.Context, projectID *stri
 		return nil
 	}
 	ctx = WithOrganization(ctx, project.OwnershipOrgID())
+	// A repository in a GitHub App installation uses the installation
+	// (docs/github-app.md); every other project keeps its token path.
+	if client := appClientForProject(ctx, AppSource(), project, provider); client != nil {
+		return client
+	}
 	if rotationStore, ok := u.store.(statusCredentialRotationStore); ok {
 		rows, listErr := rotationStore.ListActiveProjectVCSCredentials(ctx, project.ProjectID, string(provider))
 		if listErr == nil {

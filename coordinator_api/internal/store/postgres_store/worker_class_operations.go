@@ -44,7 +44,7 @@ func (ps PostgresDbStore) ListWorkerClasses(ctx context.Context, orgID string) (
 }
 
 func (ps PostgresDbStore) UpdateWorkerClass(ctx context.Context, class *models.WorkerClass) error {
-	result := ps.getDB(ctx).Model(&models.WorkerClass{}).Where("class_id = ?", class.ClassID).Updates(map[string]any{"protected": class.Protected, "updated_at": gorm.Expr("timezone('utc', now())")})
+	result := ps.getDB(ctx).Model(&models.WorkerClass{}).Where("class_id = ?", class.ClassID).Updates(map[string]any{"protected": class.Protected, "ref_classes_any": class.RefClassesAny, "updated_at": gorm.Expr("timezone('utc', now())")})
 	if result.Error != nil {
 		return fmt.Errorf("failed to update worker class: %w", result.Error)
 	}

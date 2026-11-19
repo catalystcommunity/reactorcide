@@ -1296,12 +1296,15 @@ func DecodeBootstrapAdminResponse(csilData []byte) (BootstrapAdminResponse, erro
 
 // csilEncGetCapabilitiesRequest builds the canonical CBOR value tree for a GetCapabilitiesRequest.
 func csilEncGetCapabilitiesRequest(csilV GetCapabilitiesRequest) cborValue {
-	csilEntries := make(cborMap, 0, 2)
+	csilEntries := make(cborMap, 0, 3)
 	if csilV.OrgId != nil {
 		csilEntries = append(csilEntries, cborEntry{cborText("org_id"), cborText((*csilV.OrgId))})
 	}
 	if csilV.ProjectId != nil {
 		csilEntries = append(csilEntries, cborEntry{cborText("project_id"), cborText((*csilV.ProjectId))})
+	}
+	if csilV.WorkflowId != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("workflow_id"), cborText((*csilV.WorkflowId))})
 	}
 	return csilEntries
 }
@@ -1323,6 +1326,13 @@ func csilDecGetCapabilitiesRequest(csilRoot cborValue) (GetCapabilitiesRequest, 
 		}
 		csilOut.ProjectId = &csilVal
 	}
+	if csilField, csilOk := cborMapGet(csilRoot, "workflow_id"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.WorkflowId = &csilVal
+	}
 	return csilOut, nil
 }
 
@@ -1343,7 +1353,7 @@ func DecodeGetCapabilitiesRequest(csilData []byte) (GetCapabilitiesRequest, erro
 
 // csilEncGetCapabilitiesResponse builds the canonical CBOR value tree for a GetCapabilitiesResponse.
 func csilEncGetCapabilitiesResponse(csilV GetCapabilitiesResponse) cborValue {
-	csilEntries := make(cborMap, 0, 17)
+	csilEntries := make(cborMap, 0, 18)
 	csilEntries = append(csilEntries, cborEntry{cborText("kill_job"), cborBool(csilV.KillJob)})
 	csilEntries = append(csilEntries, cborEntry{cborText("retry_job"), cborBool(csilV.RetryJob)})
 	csilEntries = append(csilEntries, cborEntry{cborText("cancel_job"), cborBool(csilV.CancelJob)})
@@ -1355,6 +1365,9 @@ func csilEncGetCapabilitiesResponse(csilV GetCapabilitiesResponse) cborValue {
 	csilEntries = append(csilEntries, cborEntry{cborText("manage_secrets"), cborBool(csilV.ManageSecrets)})
 	csilEntries = append(csilEntries, cborEntry{cborText("manage_workers"), cborBool(csilV.ManageWorkers)})
 	csilEntries = append(csilEntries, cborEntry{cborText("is_global_admin"), cborBool(csilV.IsGlobalAdmin)})
+	if csilV.ManageWorkflow != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("manage_workflow"), cborBool((*csilV.ManageWorkflow))})
+	}
 	csilEntries = append(csilEntries, cborEntry{cborText("is_project_owner"), cborBool(csilV.IsProjectOwner)})
 	csilEntries = append(csilEntries, cborEntry{cborText("manage_global_settings"), cborBool(csilV.ManageGlobalSettings)})
 	csilEntries = append(csilEntries, cborEntry{cborText("manage_vcs_credentials"), cborBool(csilV.ManageVcsCredentials)})
@@ -1554,6 +1567,13 @@ func csilDecGetCapabilitiesResponse(csilRoot cborValue) (GetCapabilitiesResponse
 		}
 		csilOut.IsProjectOwner = csilVal
 	}
+	if csilField, csilOk := cborMapGet(csilRoot, "manage_workflow"); csilOk {
+		csilVal, csilErr := (cborAsBool)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.ManageWorkflow = &csilVal
+	}
 	return csilOut, nil
 }
 
@@ -1574,15 +1594,30 @@ func DecodeGetCapabilitiesResponse(csilData []byte) (GetCapabilitiesResponse, er
 
 // csilEncOrgSummary builds the canonical CBOR value tree for a OrgSummary.
 func csilEncOrgSummary(csilV OrgSummary) cborValue {
-	csilEntries := make(cborMap, 0, 8)
+	csilEntries := make(cborMap, 0, 13)
 	csilEntries = append(csilEntries, cborEntry{cborText("name"), cborText(csilV.Name)})
 	csilEntries = append(csilEntries, cborEntry{cborText("org_id"), cborText(csilV.OrgId)})
 	csilEntries = append(csilEntries, cborEntry{cborText("status"), cborText(csilV.Status)})
+	if csilV.DraftPrs != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("draft_prs"), cborText((*csilV.DraftPrs))})
+	}
 	csilEntries = append(csilEntries, cborEntry{cborText("is_default"), cborBool(csilV.IsDefault)})
 	csilEntries = append(csilEntries, cborEntry{cborText("is_private"), cborBool(csilV.IsPrivate)})
+	if csilV.ShedLevel != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("shed_level"), cborText((*csilV.ShedLevel))})
+	}
 	csilEntries = append(csilEntries, cborEntry{cborText("display_name"), cborText(csilV.DisplayName)})
 	if csilV.DynamicJobs != nil {
 		csilEntries = append(csilEntries, cborEntry{cborText("dynamic_jobs"), cborText((*csilV.DynamicJobs))})
+	}
+	if csilV.InfraRetries != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("infra_retries"), cborInt((*csilV.InfraRetries))})
+	}
+	if csilV.EgressControl != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("egress_control"), cborBool((*csilV.EgressControl))})
+	}
+	if csilV.DefaultsProfile != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("defaults_profile"), cborText((*csilV.DefaultsProfile))})
 	}
 	if csilV.DuplicateEvents != nil {
 		csilEntries = append(csilEntries, cborEntry{cborText("duplicate_events"), cborText((*csilV.DuplicateEvents))})
@@ -1672,6 +1707,41 @@ func csilDecOrgSummary(csilRoot cborValue) (OrgSummary, error) {
 			return csilOut, csilErr
 		}
 		csilOut.DynamicJobs = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "draft_prs"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.DraftPrs = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "defaults_profile"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.DefaultsProfile = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "shed_level"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.ShedLevel = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "infra_retries"); csilOk {
+		csilVal, csilErr := (cborAsI64)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.InfraRetries = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "egress_control"); csilOk {
+		csilVal, csilErr := (cborAsBool)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.EgressControl = &csilVal
 	}
 	return csilOut, nil
 }
@@ -1857,10 +1927,13 @@ func DecodeCreateOrgResponse(csilData []byte) (CreateOrgResponse, error) {
 
 // csilEncUpdateOrgRequest builds the canonical CBOR value tree for a UpdateOrgRequest.
 func csilEncUpdateOrgRequest(csilV UpdateOrgRequest) cborValue {
-	csilEntries := make(cborMap, 0, 6)
+	csilEntries := make(cborMap, 0, 9)
 	csilEntries = append(csilEntries, cborEntry{cborText("name"), cborText(csilV.Name)})
 	if csilV.Status != nil {
 		csilEntries = append(csilEntries, cborEntry{cborText("status"), cborText((*csilV.Status))})
+	}
+	if csilV.DraftPrs != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("draft_prs"), cborText((*csilV.DraftPrs))})
 	}
 	if csilV.IsPrivate != nil {
 		csilEntries = append(csilEntries, cborEntry{cborText("is_private"), cborBool((*csilV.IsPrivate))})
@@ -1870,6 +1943,12 @@ func csilEncUpdateOrgRequest(csilV UpdateOrgRequest) cborValue {
 	}
 	if csilV.DynamicJobs != nil {
 		csilEntries = append(csilEntries, cborEntry{cborText("dynamic_jobs"), cborText((*csilV.DynamicJobs))})
+	}
+	if csilV.InfraRetries != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("infra_retries"), cborInt((*csilV.InfraRetries))})
+	}
+	if csilV.EgressControl != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("egress_control"), cborBool((*csilV.EgressControl))})
 	}
 	if csilV.DuplicateEvents != nil {
 		csilEntries = append(csilEntries, cborEntry{cborText("duplicate_events"), cborText((*csilV.DuplicateEvents))})
@@ -1925,6 +2004,27 @@ func csilDecUpdateOrgRequest(csilRoot cborValue) (UpdateOrgRequest, error) {
 			return csilOut, csilErr
 		}
 		csilOut.DynamicJobs = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "draft_prs"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.DraftPrs = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "infra_retries"); csilOk {
+		csilVal, csilErr := (cborAsI64)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.InfraRetries = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "egress_control"); csilOk {
+		csilVal, csilErr := (cborAsBool)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.EgressControl = &csilVal
 	}
 	return csilOut, nil
 }
@@ -2165,9 +2265,12 @@ func DecodeDeleteOrgResponse(csilData []byte) (DeleteOrgResponse, error) {
 
 // csilEncExecutionProfileSummary builds the canonical CBOR value tree for a ExecutionProfileSummary.
 func csilEncExecutionProfileSummary(csilV ExecutionProfileSummary) cborValue {
-	csilEntries := make(cborMap, 0, 11)
+	csilEntries := make(cborMap, 0, 14)
 	csilEntries = append(csilEntries, cborEntry{cborText("name"), cborText(csilV.Name)})
 	csilEntries = append(csilEntries, cborEntry{cborText("deny_secrets"), cborBool(csilV.DenySecrets)})
+	if csilV.EgressControl != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("egress_control"), cborBool((*csilV.EgressControl))})
+	}
 	if csilV.CacheNamespace != nil {
 		csilEntries = append(csilEntries, cborEntry{cborText("cache_namespace"), cborText((*csilV.CacheNamespace))})
 	}
@@ -2176,10 +2279,16 @@ func csilEncExecutionProfileSummary(csilV ExecutionProfileSummary) cborValue {
 	if csilV.ArtifactNamespace != nil {
 		csilEntries = append(csilEntries, cborEntry{cborText("artifact_namespace"), cborText((*csilV.ArtifactNamespace))})
 	}
+	if csilV.CacheWriteClasses != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("cache_write_classes"), cborEncArray(csilV.CacheWriteClasses, func(csilElem string) cborValue { return cborText(csilElem) })})
+	}
 	csilEntries = append(csilEntries, cborEntry{cborText("runtime_capabilities"), cborEncArray(csilV.RuntimeCapabilities, func(csilElem string) cborValue { return cborText(csilElem) })})
 	csilEntries = append(csilEntries, cborEntry{cborText("trusted_cache_writes"), cborBool(csilV.TrustedCacheWrites)})
 	csilEntries = append(csilEntries, cborEntry{cborText("secret_path_allowlist"), cborEncArray(csilV.SecretPathAllowlist, func(csilElem string) cborValue { return cborText(csilElem) })})
 	csilEntries = append(csilEntries, cborEntry{cborText("allowed_worker_classes"), cborEncArray(csilV.AllowedWorkerClasses, func(csilElem string) cborValue { return cborText(csilElem) })})
+	if csilV.CacheNamespaceClasses != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("cache_namespace_classes"), cborEncArray(csilV.CacheNamespaceClasses, func(csilElem string) cborValue { return cborText(csilElem) })})
+	}
 	if csilV.TimeoutCeilingSeconds != nil {
 		csilEntries = append(csilEntries, cborEntry{cborText("timeout_ceiling_seconds"), cborInt((*csilV.TimeoutCeilingSeconds))})
 	}
@@ -2297,6 +2406,27 @@ func csilDecExecutionProfileSummary(csilRoot cborValue) (ExecutionProfileSummary
 			return csilOut, csilErr
 		}
 		csilOut.TrustedCacheWrites = csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "cache_namespace_classes"); csilOk {
+		csilVal, csilErr := (func(csilV cborValue) ([]string, error) { return cborDecArray(csilV, cborAsText) })(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.CacheNamespaceClasses = csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "cache_write_classes"); csilOk {
+		csilVal, csilErr := (func(csilV cborValue) ([]string, error) { return cborDecArray(csilV, cborAsText) })(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.CacheWriteClasses = csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "egress_control"); csilOk {
+		csilVal, csilErr := (cborAsBool)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.EgressControl = &csilVal
 	}
 	return csilOut, nil
 }
@@ -2578,10 +2708,13 @@ func DecodeDeleteExecutionProfileResponse(csilData []byte) (DeleteExecutionProfi
 
 // csilEncWorkerClassSummary builds the canonical CBOR value tree for a WorkerClassSummary.
 func csilEncWorkerClassSummary(csilV WorkerClassSummary) cborValue {
-	csilEntries := make(cborMap, 0, 3)
+	csilEntries := make(cborMap, 0, 4)
 	csilEntries = append(csilEntries, cborEntry{cborText("name"), cborText(csilV.Name)})
 	csilEntries = append(csilEntries, cborEntry{cborText("pool_ids"), cborEncArray(csilV.PoolIds, func(csilElem string) cborValue { return cborText(csilElem) })})
 	csilEntries = append(csilEntries, cborEntry{cborText("protected"), cborBool(csilV.Protected)})
+	if csilV.RefClassesAny != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("ref_classes_any"), cborEncArray(csilV.RefClassesAny, func(csilElem string) cborValue { return cborText(csilElem) })})
+	}
 	return csilEntries
 }
 
@@ -2620,6 +2753,13 @@ func csilDecWorkerClassSummary(csilRoot cborValue) (WorkerClassSummary, error) {
 			return csilOut, csilErr
 		}
 		csilOut.PoolIds = csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "ref_classes_any"); csilOk {
+		csilVal, csilErr := (func(csilV cborValue) ([]string, error) { return cborDecArray(csilV, cborAsText) })(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.RefClassesAny = csilVal
 	}
 	return csilOut, nil
 }
@@ -3015,9 +3155,12 @@ func DecodeSetWorkerClassPoolResponse(csilData []byte) (SetWorkerClassPoolRespon
 
 // csilEncPrCommandRequest builds the canonical CBOR value tree for a PrCommandRequest.
 func csilEncPrCommandRequest(csilV PrCommandRequest) cborValue {
-	csilEntries := make(cborMap, 0, 5)
+	csilEntries := make(cborMap, 0, 6)
 	if csilV.Label != nil {
 		csilEntries = append(csilEntries, cborEntry{cborText("label"), cborText((*csilV.Label))})
+	}
+	if csilV.Shifts != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("shifts"), csilEncRunShifts((*csilV.Shifts))})
 	}
 	csilEntries = append(csilEntries, cborEntry{cborText("command"), cborText(csilV.Command)})
 	if csilV.HeadSha != nil {
@@ -3077,6 +3220,13 @@ func csilDecPrCommandRequest(csilRoot cborValue) (PrCommandRequest, error) {
 			return csilOut, csilErr
 		}
 		csilOut.HeadSha = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "shifts"); csilOk {
+		csilVal, csilErr := (csilDecRunShifts)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Shifts = &csilVal
 	}
 	return csilOut, nil
 }
@@ -3640,7 +3790,7 @@ func DecodeRequiredReview(csilData []byte) (RequiredReview, error) {
 
 // csilEncCiTrustSettings builds the canonical CBOR value tree for a CiTrustSettings.
 func csilEncCiTrustSettings(csilV CiTrustSettings) cborValue {
-	csilEntries := make(cborMap, 0, 6)
+	csilEntries := make(cborMap, 0, 7)
 	if csilV.RunGate != nil {
 		csilEntries = append(csilEntries, cborEntry{cborText("run_gate"), cborEncArray(csilV.RunGate, func(csilElem string) cborValue { return cborText(csilElem) })})
 	}
@@ -3655,6 +3805,9 @@ func csilEncCiTrustSettings(csilV CiTrustSettings) cborValue {
 	}
 	if csilV.OverrideApprovers != nil {
 		csilEntries = append(csilEntries, cborEntry{cborText("override_approvers"), cborEncArray(csilV.OverrideApprovers, func(csilElem string) cborValue { return cborText(csilElem) })})
+	}
+	if csilV.RerunShiftLimits != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("rerun_shift_limits"), csilEncRerunShiftLimits((*csilV.RerunShiftLimits))})
 	}
 	if csilV.GatedRunAuthority != nil {
 		csilEntries = append(csilEntries, cborEntry{cborText("gated_run_authority"), cborText((*csilV.GatedRunAuthority))})
@@ -3707,6 +3860,13 @@ func csilDecCiTrustSettings(csilRoot cborValue) (CiTrustSettings, error) {
 		}
 		csilOut.RequiredReviews = csilVal
 	}
+	if csilField, csilOk := cborMapGet(csilRoot, "rerun_shift_limits"); csilOk {
+		csilVal, csilErr := (csilDecRerunShiftLimits)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.RerunShiftLimits = &csilVal
+	}
 	return csilOut, nil
 }
 
@@ -3723,6 +3883,73 @@ func DecodeCiTrustSettings(csilData []byte) (CiTrustSettings, error) {
 		return csilZero, csilErr
 	}
 	return csilDecCiTrustSettings(csilRoot)
+}
+
+// csilEncRerunShiftLimits builds the canonical CBOR value tree for a RerunShiftLimits.
+func csilEncRerunShiftLimits(csilV RerunShiftLimits) cborValue {
+	csilEntries := make(cborMap, 0, 4)
+	if csilV.MaxCpu != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("max_cpu"), cborText((*csilV.MaxCpu))})
+	}
+	if csilV.MaxMemory != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("max_memory"), cborText((*csilV.MaxMemory))})
+	}
+	if csilV.MaxStorage != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("max_storage"), cborText((*csilV.MaxStorage))})
+	}
+	if csilV.MaxTimeoutSeconds != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("max_timeout_seconds"), cborInt((*csilV.MaxTimeoutSeconds))})
+	}
+	return csilEntries
+}
+
+// csilDecRerunShiftLimits reconstructs a RerunShiftLimits from a decoded CBOR value tree.
+func csilDecRerunShiftLimits(csilRoot cborValue) (RerunShiftLimits, error) {
+	var csilOut RerunShiftLimits
+	if csilField, csilOk := cborMapGet(csilRoot, "max_cpu"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.MaxCpu = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "max_memory"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.MaxMemory = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "max_storage"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.MaxStorage = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "max_timeout_seconds"); csilOk {
+		csilVal, csilErr := (cborAsI64)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.MaxTimeoutSeconds = &csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeRerunShiftLimits encodes a RerunShiftLimits to canonical CSIL CBOR bytes.
+func EncodeRerunShiftLimits(csilV RerunShiftLimits) []byte {
+	return cborEncode(csilEncRerunShiftLimits(csilV))
+}
+
+// DecodeRerunShiftLimits decodes canonical CSIL CBOR bytes into a RerunShiftLimits.
+func DecodeRerunShiftLimits(csilData []byte) (RerunShiftLimits, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero RerunShiftLimits
+		return csilZero, csilErr
+	}
+	return csilDecRerunShiftLimits(csilRoot)
 }
 
 // csilEncGetCiTrustSettingsRequest builds the canonical CBOR value tree for a GetCiTrustSettingsRequest.
@@ -4172,11 +4399,14 @@ func DecodeListProjectsResponse(csilData []byte) (ListProjectsResponse, error) {
 
 // csilEncProjectDetail builds the canonical CBOR value tree for a ProjectDetail.
 func csilEncProjectDetail(csilV ProjectDetail) cborValue {
-	csilEntries := make(cborMap, 0, 23)
+	csilEntries := make(cborMap, 0, 29)
 	csilEntries = append(csilEntries, cborEntry{cborText("name"), cborText(csilV.Name)})
 	csilEntries = append(csilEntries, cborEntry{cborText("org_id"), cborText(csilV.OrgId)})
 	csilEntries = append(csilEntries, cborEntry{cborText("enabled"), cborBool(csilV.Enabled)})
 	csilEntries = append(csilEntries, cborEntry{cborText("repo_url"), cborText(csilV.RepoUrl)})
+	if csilV.DraftPrs != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("draft_prs"), cborText((*csilV.DraftPrs))})
+	}
 	csilEntries = append(csilEntries, cborEntry{cborText("created_at"), cborText(csilV.CreatedAt)})
 	csilEntries = append(csilEntries, cborEntry{cborText("is_private"), cborBool(csilV.IsPrivate)})
 	csilEntries = append(csilEntries, cborEntry{cborText("project_id"), cborText(csilV.ProjectId)})
@@ -4186,6 +4416,12 @@ func csilEncProjectDetail(csilV ProjectDetail) cborValue {
 		csilEntries = append(csilEntries, cborEntry{cborText("dynamic_jobs"), cborText((*csilV.DynamicJobs))})
 	}
 	csilEntries = append(csilEntries, cborEntry{cborText("checkout_mode"), cborText(csilV.CheckoutMode)})
+	if csilV.InfraRetries != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("infra_retries"), cborInt((*csilV.InfraRetries))})
+	}
+	if csilV.EgressControl != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("egress_control"), cborBool((*csilV.EgressControl))})
+	}
 	csilEntries = append(csilEntries, cborEntry{cborText("target_branches"), cborEncArray(csilV.TargetBranches, func(csilElem string) cborValue { return cborText(csilElem) })})
 	if csilV.DuplicateEvents != nil {
 		csilEntries = append(csilEntries, cborEntry{cborText("duplicate_events"), cborText((*csilV.DuplicateEvents))})
@@ -4193,6 +4429,9 @@ func csilEncProjectDetail(csilV ProjectDetail) cborValue {
 	csilEntries = append(csilEntries, cborEntry{cborText("default_queue_name"), cborText(csilV.DefaultQueueName)})
 	csilEntries = append(csilEntries, cborEntry{cborText("allowed_event_types"), cborEncArray(csilV.AllowedEventTypes, func(csilElem string) cborValue { return cborText(csilElem) })})
 	csilEntries = append(csilEntries, cborEntry{cborText("default_job_command"), cborText(csilV.DefaultJobCommand)})
+	if csilV.EffectiveDraftPrs != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("effective_draft_prs"), cborText((*csilV.EffectiveDraftPrs))})
+	}
 	csilEntries = append(csilEntries, cborEntry{cborText("default_runner_image"), cborText(csilV.DefaultRunnerImage)})
 	csilEntries = append(csilEntries, cborEntry{cborText("default_ci_source_ref"), cborText(csilV.DefaultCiSourceRef)})
 	csilEntries = append(csilEntries, cborEntry{cborText("default_ci_source_url"), cborText(csilV.DefaultCiSourceUrl)})
@@ -4201,6 +4440,12 @@ func csilEncProjectDetail(csilV ProjectDetail) cborValue {
 		csilEntries = append(csilEntries, cborEntry{cborText("effective_dynamic_jobs"), cborText((*csilV.EffectiveDynamicJobs))})
 	}
 	csilEntries = append(csilEntries, cborEntry{cborText("default_timeout_seconds"), cborInt(csilV.DefaultTimeoutSeconds)})
+	if csilV.EffectiveInfraRetries != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("effective_infra_retries"), cborInt((*csilV.EffectiveInfraRetries))})
+	}
+	if csilV.EffectiveEgressControl != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("effective_egress_control"), cborBool((*csilV.EffectiveEgressControl))})
+	}
 	if csilV.EffectiveDuplicateEvents != nil {
 		csilEntries = append(csilEntries, cborEntry{cborText("effective_duplicate_events"), cborText((*csilV.EffectiveDuplicateEvents))})
 	}
@@ -4446,6 +4691,48 @@ func csilDecProjectDetail(csilRoot cborValue) (ProjectDetail, error) {
 			return csilOut, csilErr
 		}
 		csilOut.EffectiveDynamicJobs = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "draft_prs"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.DraftPrs = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "effective_draft_prs"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.EffectiveDraftPrs = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "infra_retries"); csilOk {
+		csilVal, csilErr := (cborAsI64)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.InfraRetries = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "effective_infra_retries"); csilOk {
+		csilVal, csilErr := (cborAsI64)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.EffectiveInfraRetries = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "egress_control"); csilOk {
+		csilVal, csilErr := (cborAsBool)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.EgressControl = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "effective_egress_control"); csilOk {
+		csilVal, csilErr := (cborAsBool)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.EffectiveEgressControl = &csilVal
 	}
 	return csilOut, nil
 }
@@ -4697,12 +4984,15 @@ func DecodeCreateProjectResponse(csilData []byte) (CreateProjectResponse, error)
 
 // csilEncUpdateProjectRequest builds the canonical CBOR value tree for a UpdateProjectRequest.
 func csilEncUpdateProjectRequest(csilV UpdateProjectRequest) cborValue {
-	csilEntries := make(cborMap, 0, 14)
+	csilEntries := make(cborMap, 0, 18)
 	if csilV.Name != nil {
 		csilEntries = append(csilEntries, cborEntry{cborText("name"), cborText((*csilV.Name))})
 	}
 	if csilV.Enabled != nil {
 		csilEntries = append(csilEntries, cborEntry{cborText("enabled"), cborBool((*csilV.Enabled))})
+	}
+	if csilV.DraftPrs != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("draft_prs"), cborText((*csilV.DraftPrs))})
 	}
 	if csilV.IsPrivate != nil {
 		csilEntries = append(csilEntries, cborEntry{cborText("is_private"), cborBool((*csilV.IsPrivate))})
@@ -4716,6 +5006,12 @@ func csilEncUpdateProjectRequest(csilV UpdateProjectRequest) cborValue {
 	}
 	if csilV.CheckoutMode != nil {
 		csilEntries = append(csilEntries, cborEntry{cborText("checkout_mode"), cborText((*csilV.CheckoutMode))})
+	}
+	if csilV.InfraRetries != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("infra_retries"), cborInt((*csilV.InfraRetries))})
+	}
+	if csilV.EgressControl != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("egress_control"), cborBool((*csilV.EgressControl))})
 	}
 	if csilV.TargetBranches != nil {
 		csilEntries = append(csilEntries, cborEntry{cborText("target_branches"), cborEncArray(csilV.TargetBranches, func(csilElem string) cborValue { return cborText(csilElem) })})
@@ -4734,6 +5030,9 @@ func csilEncUpdateProjectRequest(csilV UpdateProjectRequest) cborValue {
 	}
 	if csilV.DefaultRunnerImage != nil {
 		csilEntries = append(csilEntries, cborEntry{cborText("default_runner_image"), cborText((*csilV.DefaultRunnerImage))})
+	}
+	if csilV.InfraRetriesInherit != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("infra_retries_inherit"), cborBool((*csilV.InfraRetriesInherit))})
 	}
 	if csilV.DefaultTimeoutSeconds != nil {
 		csilEntries = append(csilEntries, cborEntry{cborText("default_timeout_seconds"), cborInt((*csilV.DefaultTimeoutSeconds))})
@@ -4845,6 +5144,34 @@ func csilDecUpdateProjectRequest(csilRoot cborValue) (UpdateProjectRequest, erro
 			return csilOut, csilErr
 		}
 		csilOut.DynamicJobs = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "draft_prs"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.DraftPrs = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "infra_retries"); csilOk {
+		csilVal, csilErr := (cborAsI64)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.InfraRetries = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "infra_retries_inherit"); csilOk {
+		csilVal, csilErr := (cborAsBool)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.InfraRetriesInherit = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "egress_control"); csilOk {
+		csilVal, csilErr := (cborAsBool)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.EgressControl = &csilVal
 	}
 	return csilOut, nil
 }
@@ -5160,12 +5487,15 @@ func DecodeCiPolicyUse(csilData []byte) (CiPolicyUse, error) {
 
 // csilEncCiPolicyDefaults builds the canonical CBOR value tree for a CiPolicyDefaults.
 func csilEncCiPolicyDefaults(csilV CiPolicyDefaults) cborValue {
-	csilEntries := make(cborMap, 0, 2)
+	csilEntries := make(cborMap, 0, 3)
 	if csilV.Profile != nil {
 		csilEntries = append(csilEntries, cborEntry{cborText("profile"), cborText((*csilV.Profile))})
 	}
 	if csilV.CiSource != nil {
 		csilEntries = append(csilEntries, cborEntry{cborText("ci_source"), cborText((*csilV.CiSource))})
+	}
+	if csilV.ByRefClass != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("by_ref_class"), cborEncArray(csilV.ByRefClass, func(csilElem CiPolicyClassProfile) cborValue { return csilEncCiPolicyClassProfile(csilElem) })})
 	}
 	return csilEntries
 }
@@ -5187,6 +5517,15 @@ func csilDecCiPolicyDefaults(csilRoot cborValue) (CiPolicyDefaults, error) {
 		}
 		csilOut.Profile = &csilVal
 	}
+	if csilField, csilOk := cborMapGet(csilRoot, "by_ref_class"); csilOk {
+		csilVal, csilErr := (func(csilV cborValue) ([]CiPolicyClassProfile, error) {
+			return cborDecArray(csilV, csilDecCiPolicyClassProfile)
+		})(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.ByRefClass = csilVal
+	}
 	return csilOut, nil
 }
 
@@ -5205,9 +5544,107 @@ func DecodeCiPolicyDefaults(csilData []byte) (CiPolicyDefaults, error) {
 	return csilDecCiPolicyDefaults(csilRoot)
 }
 
+// csilEncCiPolicyRefClassMatch builds the canonical CBOR value tree for a CiPolicyRefClassMatch.
+func csilEncCiPolicyRefClassMatch(csilV CiPolicyRefClassMatch) cborValue {
+	csilEntries := make(cborMap, 0, 2)
+	if csilV.Any != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("any"), cborEncArray(csilV.Any, func(csilElem string) cborValue { return cborText(csilElem) })})
+	}
+	if csilV.None != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("none"), cborEncArray(csilV.None, func(csilElem string) cborValue { return cborText(csilElem) })})
+	}
+	return csilEntries
+}
+
+// csilDecCiPolicyRefClassMatch reconstructs a CiPolicyRefClassMatch from a decoded CBOR value tree.
+func csilDecCiPolicyRefClassMatch(csilRoot cborValue) (CiPolicyRefClassMatch, error) {
+	var csilOut CiPolicyRefClassMatch
+	if csilField, csilOk := cborMapGet(csilRoot, "any"); csilOk {
+		csilVal, csilErr := (func(csilV cborValue) ([]string, error) { return cborDecArray(csilV, cborAsText) })(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Any = csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "none"); csilOk {
+		csilVal, csilErr := (func(csilV cborValue) ([]string, error) { return cborDecArray(csilV, cborAsText) })(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.None = csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeCiPolicyRefClassMatch encodes a CiPolicyRefClassMatch to canonical CSIL CBOR bytes.
+func EncodeCiPolicyRefClassMatch(csilV CiPolicyRefClassMatch) []byte {
+	return cborEncode(csilEncCiPolicyRefClassMatch(csilV))
+}
+
+// DecodeCiPolicyRefClassMatch decodes canonical CSIL CBOR bytes into a CiPolicyRefClassMatch.
+func DecodeCiPolicyRefClassMatch(csilData []byte) (CiPolicyRefClassMatch, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero CiPolicyRefClassMatch
+		return csilZero, csilErr
+	}
+	return csilDecCiPolicyRefClassMatch(csilRoot)
+}
+
+// csilEncCiPolicyClassProfile builds the canonical CBOR value tree for a CiPolicyClassProfile.
+func csilEncCiPolicyClassProfile(csilV CiPolicyClassProfile) cborValue {
+	csilEntries := make(cborMap, 0, 2)
+	csilEntries = append(csilEntries, cborEntry{cborText("profile"), cborText(csilV.Profile)})
+	csilEntries = append(csilEntries, cborEntry{cborText("ref_classes"), csilEncCiPolicyRefClassMatch(csilV.RefClasses)})
+	return csilEntries
+}
+
+// csilDecCiPolicyClassProfile reconstructs a CiPolicyClassProfile from a decoded CBOR value tree.
+func csilDecCiPolicyClassProfile(csilRoot cborValue) (CiPolicyClassProfile, error) {
+	var csilOut CiPolicyClassProfile
+	{
+		csilField, csilErr := cborRequire(csilRoot, "ref_classes")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (csilDecCiPolicyRefClassMatch)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.RefClasses = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "profile")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Profile = csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeCiPolicyClassProfile encodes a CiPolicyClassProfile to canonical CSIL CBOR bytes.
+func EncodeCiPolicyClassProfile(csilV CiPolicyClassProfile) []byte {
+	return cborEncode(csilEncCiPolicyClassProfile(csilV))
+}
+
+// DecodeCiPolicyClassProfile decodes canonical CSIL CBOR bytes into a CiPolicyClassProfile.
+func DecodeCiPolicyClassProfile(csilData []byte) (CiPolicyClassProfile, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero CiPolicyClassProfile
+		return csilZero, csilErr
+	}
+	return csilDecCiPolicyClassProfile(csilRoot)
+}
+
 // csilEncCiPolicyRule builds the canonical CBOR value tree for a CiPolicyRule.
 func csilEncCiPolicyRule(csilV CiPolicyRule) cborValue {
-	csilEntries := make(cborMap, 0, 9)
+	csilEntries := make(cborMap, 0, 10)
 	csilEntries = append(csilEntries, cborEntry{cborText("id"), cborText(csilV.Id)})
 	csilEntries = append(csilEntries, cborEntry{cborText("use"), csilEncCiPolicyUse(csilV.Use)})
 	if csilV.Paths != nil {
@@ -5224,6 +5661,9 @@ func csilEncCiPolicyRule(csilV CiPolicyRule) cborValue {
 	}
 	if csilV.Workflows != nil {
 		csilEntries = append(csilEntries, cborEntry{cborText("workflows"), cborEncArray(csilV.Workflows, func(csilElem string) cborValue { return cborText(csilElem) })})
+	}
+	if csilV.RefClasses != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("ref_classes"), csilEncCiPolicyRefClassMatch((*csilV.RefClasses))})
 	}
 	if csilV.BaseBranches != nil {
 		csilEntries = append(csilEntries, cborEntry{cborText("base_branches"), cborEncArray(csilV.BaseBranches, func(csilElem string) cborValue { return cborText(csilElem) })})
@@ -5296,6 +5736,13 @@ func csilDecCiPolicyRule(csilRoot cborValue) (CiPolicyRule, error) {
 			return csilOut, csilErr
 		}
 		csilOut.Approval = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "ref_classes"); csilOk {
+		csilVal, csilErr := (csilDecCiPolicyRefClassMatch)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.RefClasses = &csilVal
 	}
 	{
 		csilField, csilErr := cborRequire(csilRoot, "use")
@@ -5537,8 +5984,14 @@ func DecodeGetCiPolicyRequest(csilData []byte) (GetCiPolicyRequest, error) {
 
 // csilEncGetCiPolicyResponse builds the canonical CBOR value tree for a GetCiPolicyResponse.
 func csilEncGetCiPolicyResponse(csilV GetCiPolicyResponse) cborValue {
-	csilEntries := make(cborMap, 0, 1)
+	csilEntries := make(cborMap, 0, 3)
 	csilEntries = append(csilEntries, cborEntry{cborText("policy"), csilEncCiPolicyDetail(csilV.Policy)})
+	if csilV.BuiltIn != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("built_in"), cborBool((*csilV.BuiltIn))})
+	}
+	if csilV.BuiltInReason != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("built_in_reason"), cborText((*csilV.BuiltInReason))})
+	}
 	return csilEntries
 }
 
@@ -5555,6 +6008,20 @@ func csilDecGetCiPolicyResponse(csilRoot cborValue) (GetCiPolicyResponse, error)
 			return csilOut, csilErr
 		}
 		csilOut.Policy = csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "built_in"); csilOk {
+		csilVal, csilErr := (cborAsBool)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.BuiltIn = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "built_in_reason"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.BuiltInReason = &csilVal
 	}
 	return csilOut, nil
 }
@@ -5764,7 +6231,7 @@ func DecodeDeleteCiPolicyResponse(csilData []byte) (DeleteCiPolicyResponse, erro
 
 // csilEncGroupSummary builds the canonical CBOR value tree for a GroupSummary.
 func csilEncGroupSummary(csilV GroupSummary) cborValue {
-	csilEntries := make(cborMap, 0, 6)
+	csilEntries := make(cborMap, 0, 7)
 	csilEntries = append(csilEntries, cborEntry{cborText("name"), cborText(csilV.Name)})
 	csilEntries = append(csilEntries, cborEntry{cborText("org_id"), cborText(csilV.OrgId)})
 	csilEntries = append(csilEntries, cborEntry{cborText("group_id"), cborText(csilV.GroupId)})
@@ -5772,6 +6239,9 @@ func csilEncGroupSummary(csilV GroupSummary) cborValue {
 	csilEntries = append(csilEntries, cborEntry{cborText("updated_at"), cborText(csilV.UpdatedAt)})
 	if csilV.Description != nil {
 		csilEntries = append(csilEntries, cborEntry{cborText("description"), cborText((*csilV.Description))})
+	}
+	if csilV.PriorityShift != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("priority_shift"), cborInt((*csilV.PriorityShift))})
 	}
 	return csilEntries
 }
@@ -5818,6 +6288,13 @@ func csilDecGroupSummary(csilRoot cborValue) (GroupSummary, error) {
 			return csilOut, csilErr
 		}
 		csilOut.Description = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "priority_shift"); csilOk {
+		csilVal, csilErr := (cborAsI64)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.PriorityShift = &csilVal
 	}
 	{
 		csilField, csilErr := cborRequire(csilRoot, "created_at")
@@ -6522,6 +6999,851 @@ func DecodeListGroupMembersResponse(csilData []byte) (ListGroupMembersResponse, 
 	return csilDecListGroupMembersResponse(csilRoot)
 }
 
+// csilEncGroupVcsLink builds the canonical CBOR value tree for a GroupVcsLink.
+func csilEncGroupVcsLink(csilV GroupVcsLink) cborValue {
+	csilEntries := make(cborMap, 0, 12)
+	csilEntries = append(csilEntries, cborEntry{cborText("team"), cborText(csilV.Team)})
+	csilEntries = append(csilEntries, cborEntry{cborText("link_id"), cborText(csilV.LinkId)})
+	csilEntries = append(csilEntries, cborEntry{cborText("subject"), cborText(csilV.Subject)})
+	csilEntries = append(csilEntries, cborEntry{cborText("group_id"), cborText(csilV.GroupId)})
+	csilEntries = append(csilEntries, cborEntry{cborText("provider"), cborText(csilV.Provider)})
+	csilEntries = append(csilEntries, cborEntry{cborText("created_at"), cborText(csilV.CreatedAt)})
+	csilEntries = append(csilEntries, cborEntry{cborText("last_error"), cborText(csilV.LastError)})
+	csilEntries = append(csilEntries, cborEntry{cborText("member_count"), cborInt(csilV.MemberCount)})
+	if csilV.NextSyncAt != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("next_sync_at"), cborText((*csilV.NextSyncAt))})
+	}
+	csilEntries = append(csilEntries, cborEntry{cborText("failure_count"), cborInt(csilV.FailureCount)})
+	if csilV.LastSyncedAt != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("last_synced_at"), cborText((*csilV.LastSyncedAt))})
+	}
+	if csilV.LastAttemptAt != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("last_attempt_at"), cborText((*csilV.LastAttemptAt))})
+	}
+	return csilEntries
+}
+
+// csilDecGroupVcsLink reconstructs a GroupVcsLink from a decoded CBOR value tree.
+func csilDecGroupVcsLink(csilRoot cborValue) (GroupVcsLink, error) {
+	var csilOut GroupVcsLink
+	{
+		csilField, csilErr := cborRequire(csilRoot, "link_id")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.LinkId = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "group_id")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.GroupId = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "provider")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Provider = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "team")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Team = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "subject")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Subject = csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "last_synced_at"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.LastSyncedAt = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "last_attempt_at"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.LastAttemptAt = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "next_sync_at"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.NextSyncAt = &csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "last_error")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.LastError = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "failure_count")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsI64)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.FailureCount = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "member_count")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsI64)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.MemberCount = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "created_at")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.CreatedAt = csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeGroupVcsLink encodes a GroupVcsLink to canonical CSIL CBOR bytes.
+func EncodeGroupVcsLink(csilV GroupVcsLink) []byte {
+	return cborEncode(csilEncGroupVcsLink(csilV))
+}
+
+// DecodeGroupVcsLink decodes canonical CSIL CBOR bytes into a GroupVcsLink.
+func DecodeGroupVcsLink(csilData []byte) (GroupVcsLink, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero GroupVcsLink
+		return csilZero, csilErr
+	}
+	return csilDecGroupVcsLink(csilRoot)
+}
+
+// csilEncListGroupVcsLinksRequest builds the canonical CBOR value tree for a ListGroupVcsLinksRequest.
+func csilEncListGroupVcsLinksRequest(csilV ListGroupVcsLinksRequest) cborValue {
+	csilEntries := make(cborMap, 0, 1)
+	csilEntries = append(csilEntries, cborEntry{cborText("group_id"), cborText(csilV.GroupId)})
+	return csilEntries
+}
+
+// csilDecListGroupVcsLinksRequest reconstructs a ListGroupVcsLinksRequest from a decoded CBOR value tree.
+func csilDecListGroupVcsLinksRequest(csilRoot cborValue) (ListGroupVcsLinksRequest, error) {
+	var csilOut ListGroupVcsLinksRequest
+	{
+		csilField, csilErr := cborRequire(csilRoot, "group_id")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.GroupId = csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeListGroupVcsLinksRequest encodes a ListGroupVcsLinksRequest to canonical CSIL CBOR bytes.
+func EncodeListGroupVcsLinksRequest(csilV ListGroupVcsLinksRequest) []byte {
+	return cborEncode(csilEncListGroupVcsLinksRequest(csilV))
+}
+
+// DecodeListGroupVcsLinksRequest decodes canonical CSIL CBOR bytes into a ListGroupVcsLinksRequest.
+func DecodeListGroupVcsLinksRequest(csilData []byte) (ListGroupVcsLinksRequest, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero ListGroupVcsLinksRequest
+		return csilZero, csilErr
+	}
+	return csilDecListGroupVcsLinksRequest(csilRoot)
+}
+
+// csilEncListGroupVcsLinksResponse builds the canonical CBOR value tree for a ListGroupVcsLinksResponse.
+func csilEncListGroupVcsLinksResponse(csilV ListGroupVcsLinksResponse) cborValue {
+	csilEntries := make(cborMap, 0, 1)
+	csilEntries = append(csilEntries, cborEntry{cborText("links"), cborEncArray(csilV.Links, func(csilElem GroupVcsLink) cborValue { return csilEncGroupVcsLink(csilElem) })})
+	return csilEntries
+}
+
+// csilDecListGroupVcsLinksResponse reconstructs a ListGroupVcsLinksResponse from a decoded CBOR value tree.
+func csilDecListGroupVcsLinksResponse(csilRoot cborValue) (ListGroupVcsLinksResponse, error) {
+	var csilOut ListGroupVcsLinksResponse
+	{
+		csilField, csilErr := cborRequire(csilRoot, "links")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (func(csilV cborValue) ([]GroupVcsLink, error) { return cborDecArray(csilV, csilDecGroupVcsLink) })(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Links = csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeListGroupVcsLinksResponse encodes a ListGroupVcsLinksResponse to canonical CSIL CBOR bytes.
+func EncodeListGroupVcsLinksResponse(csilV ListGroupVcsLinksResponse) []byte {
+	return cborEncode(csilEncListGroupVcsLinksResponse(csilV))
+}
+
+// DecodeListGroupVcsLinksResponse decodes canonical CSIL CBOR bytes into a ListGroupVcsLinksResponse.
+func DecodeListGroupVcsLinksResponse(csilData []byte) (ListGroupVcsLinksResponse, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero ListGroupVcsLinksResponse
+		return csilZero, csilErr
+	}
+	return csilDecListGroupVcsLinksResponse(csilRoot)
+}
+
+// csilEncLinkGroupVcsTeamRequest builds the canonical CBOR value tree for a LinkGroupVcsTeamRequest.
+func csilEncLinkGroupVcsTeamRequest(csilV LinkGroupVcsTeamRequest) cborValue {
+	csilEntries := make(cborMap, 0, 3)
+	csilEntries = append(csilEntries, cborEntry{cborText("team"), cborText(csilV.Team)})
+	csilEntries = append(csilEntries, cborEntry{cborText("group_id"), cborText(csilV.GroupId)})
+	if csilV.Provider != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("provider"), cborText((*csilV.Provider))})
+	}
+	return csilEntries
+}
+
+// csilDecLinkGroupVcsTeamRequest reconstructs a LinkGroupVcsTeamRequest from a decoded CBOR value tree.
+func csilDecLinkGroupVcsTeamRequest(csilRoot cborValue) (LinkGroupVcsTeamRequest, error) {
+	var csilOut LinkGroupVcsTeamRequest
+	{
+		csilField, csilErr := cborRequire(csilRoot, "group_id")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.GroupId = csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "provider"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Provider = &csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "team")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Team = csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeLinkGroupVcsTeamRequest encodes a LinkGroupVcsTeamRequest to canonical CSIL CBOR bytes.
+func EncodeLinkGroupVcsTeamRequest(csilV LinkGroupVcsTeamRequest) []byte {
+	return cborEncode(csilEncLinkGroupVcsTeamRequest(csilV))
+}
+
+// DecodeLinkGroupVcsTeamRequest decodes canonical CSIL CBOR bytes into a LinkGroupVcsTeamRequest.
+func DecodeLinkGroupVcsTeamRequest(csilData []byte) (LinkGroupVcsTeamRequest, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero LinkGroupVcsTeamRequest
+		return csilZero, csilErr
+	}
+	return csilDecLinkGroupVcsTeamRequest(csilRoot)
+}
+
+// csilEncLinkGroupVcsTeamResponse builds the canonical CBOR value tree for a LinkGroupVcsTeamResponse.
+func csilEncLinkGroupVcsTeamResponse(csilV LinkGroupVcsTeamResponse) cborValue {
+	csilEntries := make(cborMap, 0, 1)
+	csilEntries = append(csilEntries, cborEntry{cborText("link"), csilEncGroupVcsLink(csilV.Link)})
+	return csilEntries
+}
+
+// csilDecLinkGroupVcsTeamResponse reconstructs a LinkGroupVcsTeamResponse from a decoded CBOR value tree.
+func csilDecLinkGroupVcsTeamResponse(csilRoot cborValue) (LinkGroupVcsTeamResponse, error) {
+	var csilOut LinkGroupVcsTeamResponse
+	{
+		csilField, csilErr := cborRequire(csilRoot, "link")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (csilDecGroupVcsLink)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Link = csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeLinkGroupVcsTeamResponse encodes a LinkGroupVcsTeamResponse to canonical CSIL CBOR bytes.
+func EncodeLinkGroupVcsTeamResponse(csilV LinkGroupVcsTeamResponse) []byte {
+	return cborEncode(csilEncLinkGroupVcsTeamResponse(csilV))
+}
+
+// DecodeLinkGroupVcsTeamResponse decodes canonical CSIL CBOR bytes into a LinkGroupVcsTeamResponse.
+func DecodeLinkGroupVcsTeamResponse(csilData []byte) (LinkGroupVcsTeamResponse, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero LinkGroupVcsTeamResponse
+		return csilZero, csilErr
+	}
+	return csilDecLinkGroupVcsTeamResponse(csilRoot)
+}
+
+// csilEncUnlinkGroupVcsTeamRequest builds the canonical CBOR value tree for a UnlinkGroupVcsTeamRequest.
+func csilEncUnlinkGroupVcsTeamRequest(csilV UnlinkGroupVcsTeamRequest) cborValue {
+	csilEntries := make(cborMap, 0, 2)
+	csilEntries = append(csilEntries, cborEntry{cborText("link_id"), cborText(csilV.LinkId)})
+	csilEntries = append(csilEntries, cborEntry{cborText("group_id"), cborText(csilV.GroupId)})
+	return csilEntries
+}
+
+// csilDecUnlinkGroupVcsTeamRequest reconstructs a UnlinkGroupVcsTeamRequest from a decoded CBOR value tree.
+func csilDecUnlinkGroupVcsTeamRequest(csilRoot cborValue) (UnlinkGroupVcsTeamRequest, error) {
+	var csilOut UnlinkGroupVcsTeamRequest
+	{
+		csilField, csilErr := cborRequire(csilRoot, "group_id")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.GroupId = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "link_id")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.LinkId = csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeUnlinkGroupVcsTeamRequest encodes a UnlinkGroupVcsTeamRequest to canonical CSIL CBOR bytes.
+func EncodeUnlinkGroupVcsTeamRequest(csilV UnlinkGroupVcsTeamRequest) []byte {
+	return cborEncode(csilEncUnlinkGroupVcsTeamRequest(csilV))
+}
+
+// DecodeUnlinkGroupVcsTeamRequest decodes canonical CSIL CBOR bytes into a UnlinkGroupVcsTeamRequest.
+func DecodeUnlinkGroupVcsTeamRequest(csilData []byte) (UnlinkGroupVcsTeamRequest, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero UnlinkGroupVcsTeamRequest
+		return csilZero, csilErr
+	}
+	return csilDecUnlinkGroupVcsTeamRequest(csilRoot)
+}
+
+// csilEncUnlinkGroupVcsTeamResponse builds the canonical CBOR value tree for a UnlinkGroupVcsTeamResponse.
+func csilEncUnlinkGroupVcsTeamResponse(csilV UnlinkGroupVcsTeamResponse) cborValue {
+	csilEntries := make(cborMap, 0, 1)
+	csilEntries = append(csilEntries, cborEntry{cborText("removed"), cborBool(csilV.Removed)})
+	return csilEntries
+}
+
+// csilDecUnlinkGroupVcsTeamResponse reconstructs a UnlinkGroupVcsTeamResponse from a decoded CBOR value tree.
+func csilDecUnlinkGroupVcsTeamResponse(csilRoot cborValue) (UnlinkGroupVcsTeamResponse, error) {
+	var csilOut UnlinkGroupVcsTeamResponse
+	{
+		csilField, csilErr := cborRequire(csilRoot, "removed")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsBool)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Removed = csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeUnlinkGroupVcsTeamResponse encodes a UnlinkGroupVcsTeamResponse to canonical CSIL CBOR bytes.
+func EncodeUnlinkGroupVcsTeamResponse(csilV UnlinkGroupVcsTeamResponse) []byte {
+	return cborEncode(csilEncUnlinkGroupVcsTeamResponse(csilV))
+}
+
+// DecodeUnlinkGroupVcsTeamResponse decodes canonical CSIL CBOR bytes into a UnlinkGroupVcsTeamResponse.
+func DecodeUnlinkGroupVcsTeamResponse(csilData []byte) (UnlinkGroupVcsTeamResponse, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero UnlinkGroupVcsTeamResponse
+		return csilZero, csilErr
+	}
+	return csilDecUnlinkGroupVcsTeamResponse(csilRoot)
+}
+
+// csilEncGroupVcsSyncResult builds the canonical CBOR value tree for a GroupVcsSyncResult.
+func csilEncGroupVcsSyncResult(csilV GroupVcsSyncResult) cborValue {
+	csilEntries := make(cborMap, 0, 6)
+	csilEntries = append(csilEntries, cborEntry{cborText("team"), cborText(csilV.Team)})
+	csilEntries = append(csilEntries, cborEntry{cborText("added"), cborInt(csilV.Added)})
+	if csilV.Error != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("error"), cborText((*csilV.Error))})
+	}
+	csilEntries = append(csilEntries, cborEntry{cborText("link_id"), cborText(csilV.LinkId)})
+	csilEntries = append(csilEntries, cborEntry{cborText("members"), cborInt(csilV.Members)})
+	csilEntries = append(csilEntries, cborEntry{cborText("removed"), cborInt(csilV.Removed)})
+	return csilEntries
+}
+
+// csilDecGroupVcsSyncResult reconstructs a GroupVcsSyncResult from a decoded CBOR value tree.
+func csilDecGroupVcsSyncResult(csilRoot cborValue) (GroupVcsSyncResult, error) {
+	var csilOut GroupVcsSyncResult
+	{
+		csilField, csilErr := cborRequire(csilRoot, "link_id")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.LinkId = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "team")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Team = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "members")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsI64)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Members = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "added")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsI64)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Added = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "removed")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsI64)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Removed = csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "error"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Error = &csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeGroupVcsSyncResult encodes a GroupVcsSyncResult to canonical CSIL CBOR bytes.
+func EncodeGroupVcsSyncResult(csilV GroupVcsSyncResult) []byte {
+	return cborEncode(csilEncGroupVcsSyncResult(csilV))
+}
+
+// DecodeGroupVcsSyncResult decodes canonical CSIL CBOR bytes into a GroupVcsSyncResult.
+func DecodeGroupVcsSyncResult(csilData []byte) (GroupVcsSyncResult, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero GroupVcsSyncResult
+		return csilZero, csilErr
+	}
+	return csilDecGroupVcsSyncResult(csilRoot)
+}
+
+// csilEncSyncGroupVcsTeamsRequest builds the canonical CBOR value tree for a SyncGroupVcsTeamsRequest.
+func csilEncSyncGroupVcsTeamsRequest(csilV SyncGroupVcsTeamsRequest) cborValue {
+	csilEntries := make(cborMap, 0, 1)
+	csilEntries = append(csilEntries, cborEntry{cborText("group_id"), cborText(csilV.GroupId)})
+	return csilEntries
+}
+
+// csilDecSyncGroupVcsTeamsRequest reconstructs a SyncGroupVcsTeamsRequest from a decoded CBOR value tree.
+func csilDecSyncGroupVcsTeamsRequest(csilRoot cborValue) (SyncGroupVcsTeamsRequest, error) {
+	var csilOut SyncGroupVcsTeamsRequest
+	{
+		csilField, csilErr := cborRequire(csilRoot, "group_id")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.GroupId = csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeSyncGroupVcsTeamsRequest encodes a SyncGroupVcsTeamsRequest to canonical CSIL CBOR bytes.
+func EncodeSyncGroupVcsTeamsRequest(csilV SyncGroupVcsTeamsRequest) []byte {
+	return cborEncode(csilEncSyncGroupVcsTeamsRequest(csilV))
+}
+
+// DecodeSyncGroupVcsTeamsRequest decodes canonical CSIL CBOR bytes into a SyncGroupVcsTeamsRequest.
+func DecodeSyncGroupVcsTeamsRequest(csilData []byte) (SyncGroupVcsTeamsRequest, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero SyncGroupVcsTeamsRequest
+		return csilZero, csilErr
+	}
+	return csilDecSyncGroupVcsTeamsRequest(csilRoot)
+}
+
+// csilEncSyncGroupVcsTeamsResponse builds the canonical CBOR value tree for a SyncGroupVcsTeamsResponse.
+func csilEncSyncGroupVcsTeamsResponse(csilV SyncGroupVcsTeamsResponse) cborValue {
+	csilEntries := make(cborMap, 0, 1)
+	csilEntries = append(csilEntries, cborEntry{cborText("results"), cborEncArray(csilV.Results, func(csilElem GroupVcsSyncResult) cborValue { return csilEncGroupVcsSyncResult(csilElem) })})
+	return csilEntries
+}
+
+// csilDecSyncGroupVcsTeamsResponse reconstructs a SyncGroupVcsTeamsResponse from a decoded CBOR value tree.
+func csilDecSyncGroupVcsTeamsResponse(csilRoot cborValue) (SyncGroupVcsTeamsResponse, error) {
+	var csilOut SyncGroupVcsTeamsResponse
+	{
+		csilField, csilErr := cborRequire(csilRoot, "results")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (func(csilV cborValue) ([]GroupVcsSyncResult, error) {
+			return cborDecArray(csilV, csilDecGroupVcsSyncResult)
+		})(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Results = csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeSyncGroupVcsTeamsResponse encodes a SyncGroupVcsTeamsResponse to canonical CSIL CBOR bytes.
+func EncodeSyncGroupVcsTeamsResponse(csilV SyncGroupVcsTeamsResponse) []byte {
+	return cborEncode(csilEncSyncGroupVcsTeamsResponse(csilV))
+}
+
+// DecodeSyncGroupVcsTeamsResponse decodes canonical CSIL CBOR bytes into a SyncGroupVcsTeamsResponse.
+func DecodeSyncGroupVcsTeamsResponse(csilData []byte) (SyncGroupVcsTeamsResponse, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero SyncGroupVcsTeamsResponse
+		return csilZero, csilErr
+	}
+	return csilDecSyncGroupVcsTeamsResponse(csilRoot)
+}
+
+// csilEncGroupMemberDetail builds the canonical CBOR value tree for a GroupMemberDetail.
+func csilEncGroupMemberDetail(csilV GroupMemberDetail) cborValue {
+	csilEntries := make(cborMap, 0, 11)
+	csilEntries = append(csilEntries, cborEntry{cborText("kind"), cborText(csilV.Kind)})
+	csilEntries = append(csilEntries, cborEntry{cborText("name"), cborText(csilV.Name)})
+	csilEntries = append(csilEntries, cborEntry{cborText("teams"), cborEncArray(csilV.Teams, func(csilElem string) cborValue { return cborText(csilElem) })})
+	csilEntries = append(csilEntries, cborEntry{cborText("manual"), cborBool(csilV.Manual)})
+	csilEntries = append(csilEntries, cborEntry{cborText("source"), cborText(csilV.Source)})
+	if csilV.UserId != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("user_id"), cborText((*csilV.UserId))})
+	}
+	csilEntries = append(csilEntries, cborEntry{cborText("added_at"), cborText(csilV.AddedAt)})
+	if csilV.Username != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("username"), cborText((*csilV.Username))})
+	}
+	csilEntries = append(csilEntries, cborEntry{cborText("vcs_logins"), cborEncArray(csilV.VcsLogins, func(csilElem string) cborValue { return cborText(csilElem) })})
+	csilEntries = append(csilEntries, cborEntry{cborText("display_name"), cborText(csilV.DisplayName)})
+	csilEntries = append(csilEntries, cborEntry{cborText("principal_id"), cborText(csilV.PrincipalId)})
+	return csilEntries
+}
+
+// csilDecGroupMemberDetail reconstructs a GroupMemberDetail from a decoded CBOR value tree.
+func csilDecGroupMemberDetail(csilRoot cborValue) (GroupMemberDetail, error) {
+	var csilOut GroupMemberDetail
+	{
+		csilField, csilErr := cborRequire(csilRoot, "principal_id")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.PrincipalId = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "kind")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Kind = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "name")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Name = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "display_name")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.DisplayName = csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "user_id"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.UserId = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "username"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Username = &csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "source")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Source = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "manual")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsBool)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Manual = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "teams")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (func(csilV cborValue) ([]string, error) { return cborDecArray(csilV, cborAsText) })(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Teams = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "vcs_logins")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (func(csilV cborValue) ([]string, error) { return cborDecArray(csilV, cborAsText) })(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.VcsLogins = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "added_at")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.AddedAt = csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeGroupMemberDetail encodes a GroupMemberDetail to canonical CSIL CBOR bytes.
+func EncodeGroupMemberDetail(csilV GroupMemberDetail) []byte {
+	return cborEncode(csilEncGroupMemberDetail(csilV))
+}
+
+// DecodeGroupMemberDetail decodes canonical CSIL CBOR bytes into a GroupMemberDetail.
+func DecodeGroupMemberDetail(csilData []byte) (GroupMemberDetail, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero GroupMemberDetail
+		return csilZero, csilErr
+	}
+	return csilDecGroupMemberDetail(csilRoot)
+}
+
+// csilEncListGroupMemberDetailsRequest builds the canonical CBOR value tree for a ListGroupMemberDetailsRequest.
+func csilEncListGroupMemberDetailsRequest(csilV ListGroupMemberDetailsRequest) cborValue {
+	csilEntries := make(cborMap, 0, 1)
+	csilEntries = append(csilEntries, cborEntry{cborText("group_id"), cborText(csilV.GroupId)})
+	return csilEntries
+}
+
+// csilDecListGroupMemberDetailsRequest reconstructs a ListGroupMemberDetailsRequest from a decoded CBOR value tree.
+func csilDecListGroupMemberDetailsRequest(csilRoot cborValue) (ListGroupMemberDetailsRequest, error) {
+	var csilOut ListGroupMemberDetailsRequest
+	{
+		csilField, csilErr := cborRequire(csilRoot, "group_id")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.GroupId = csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeListGroupMemberDetailsRequest encodes a ListGroupMemberDetailsRequest to canonical CSIL CBOR bytes.
+func EncodeListGroupMemberDetailsRequest(csilV ListGroupMemberDetailsRequest) []byte {
+	return cborEncode(csilEncListGroupMemberDetailsRequest(csilV))
+}
+
+// DecodeListGroupMemberDetailsRequest decodes canonical CSIL CBOR bytes into a ListGroupMemberDetailsRequest.
+func DecodeListGroupMemberDetailsRequest(csilData []byte) (ListGroupMemberDetailsRequest, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero ListGroupMemberDetailsRequest
+		return csilZero, csilErr
+	}
+	return csilDecListGroupMemberDetailsRequest(csilRoot)
+}
+
+// csilEncListGroupMemberDetailsResponse builds the canonical CBOR value tree for a ListGroupMemberDetailsResponse.
+func csilEncListGroupMemberDetailsResponse(csilV ListGroupMemberDetailsResponse) cborValue {
+	csilEntries := make(cborMap, 0, 1)
+	csilEntries = append(csilEntries, cborEntry{cborText("members"), cborEncArray(csilV.Members, func(csilElem GroupMemberDetail) cborValue { return csilEncGroupMemberDetail(csilElem) })})
+	return csilEntries
+}
+
+// csilDecListGroupMemberDetailsResponse reconstructs a ListGroupMemberDetailsResponse from a decoded CBOR value tree.
+func csilDecListGroupMemberDetailsResponse(csilRoot cborValue) (ListGroupMemberDetailsResponse, error) {
+	var csilOut ListGroupMemberDetailsResponse
+	{
+		csilField, csilErr := cborRequire(csilRoot, "members")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (func(csilV cborValue) ([]GroupMemberDetail, error) {
+			return cborDecArray(csilV, csilDecGroupMemberDetail)
+		})(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Members = csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeListGroupMemberDetailsResponse encodes a ListGroupMemberDetailsResponse to canonical CSIL CBOR bytes.
+func EncodeListGroupMemberDetailsResponse(csilV ListGroupMemberDetailsResponse) []byte {
+	return cborEncode(csilEncListGroupMemberDetailsResponse(csilV))
+}
+
+// DecodeListGroupMemberDetailsResponse decodes canonical CSIL CBOR bytes into a ListGroupMemberDetailsResponse.
+func DecodeListGroupMemberDetailsResponse(csilData []byte) (ListGroupMemberDetailsResponse, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero ListGroupMemberDetailsResponse
+		return csilZero, csilErr
+	}
+	return csilDecListGroupMemberDetailsResponse(csilRoot)
+}
+
 // csilEncUserSummary builds the canonical CBOR value tree for a UserSummary.
 func csilEncUserSummary(csilV UserSummary) cborValue {
 	csilEntries := make(cborMap, 0, 5)
@@ -6693,7 +8015,7 @@ func DecodeListUsersResponse(csilData []byte) (ListUsersResponse, error) {
 
 // csilEncRoleAssignment builds the canonical CBOR value tree for a RoleAssignment.
 func csilEncRoleAssignment(csilV RoleAssignment) cborValue {
-	csilEntries := make(cborMap, 0, 8)
+	csilEntries := make(cborMap, 0, 9)
 	csilEntries = append(csilEntries, cborEntry{cborText("role"), cborText(csilV.Role)})
 	if csilV.ScopeId != nil {
 		csilEntries = append(csilEntries, cborEntry{cborText("scope_id"), cborText((*csilV.ScopeId))})
@@ -6706,6 +8028,9 @@ func csilEncRoleAssignment(csilV RoleAssignment) cborValue {
 	csilEntries = append(csilEntries, cborEntry{cborText("principal_id"), cborText(csilV.PrincipalId)})
 	csilEntries = append(csilEntries, cborEntry{cborText("assignment_id"), cborText(csilV.AssignmentId)})
 	csilEntries = append(csilEntries, cborEntry{cborText("principal_type"), cborText(csilV.PrincipalType)})
+	if csilV.ScopeWorkflow != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("scope_workflow"), cborText((*csilV.ScopeWorkflow))})
+	}
 	return csilEntries
 }
 
@@ -6763,6 +8088,13 @@ func csilDecRoleAssignment(csilRoot cborValue) (RoleAssignment, error) {
 		}
 		csilOut.ScopeId = &csilVal
 	}
+	if csilField, csilOk := cborMapGet(csilRoot, "scope_workflow"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.ScopeWorkflow = &csilVal
+	}
 	{
 		csilField, csilErr := cborRequire(csilRoot, "role")
 		if csilErr != nil {
@@ -6812,7 +8144,7 @@ func DecodeRoleAssignment(csilData []byte) (RoleAssignment, error) {
 
 // csilEncListRoleAssignmentsRequest builds the canonical CBOR value tree for a ListRoleAssignmentsRequest.
 func csilEncListRoleAssignmentsRequest(csilV ListRoleAssignmentsRequest) cborValue {
-	csilEntries := make(cborMap, 0, 3)
+	csilEntries := make(cborMap, 0, 4)
 	if csilV.ScopeId != nil {
 		csilEntries = append(csilEntries, cborEntry{cborText("scope_id"), cborText((*csilV.ScopeId))})
 	}
@@ -6821,6 +8153,9 @@ func csilEncListRoleAssignmentsRequest(csilV ListRoleAssignmentsRequest) cborVal
 	}
 	if csilV.PrincipalId != nil {
 		csilEntries = append(csilEntries, cborEntry{cborText("principal_id"), cborText((*csilV.PrincipalId))})
+	}
+	if csilV.ScopeWorkflow != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("scope_workflow"), cborText((*csilV.ScopeWorkflow))})
 	}
 	return csilEntries
 }
@@ -6841,6 +8176,13 @@ func csilDecListRoleAssignmentsRequest(csilRoot cborValue) (ListRoleAssignmentsR
 			return csilOut, csilErr
 		}
 		csilOut.ScopeId = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "scope_workflow"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.ScopeWorkflow = &csilVal
 	}
 	if csilField, csilOk := cborMapGet(csilRoot, "principal_id"); csilOk {
 		csilVal, csilErr := (cborAsText)(csilField)
@@ -6908,7 +8250,7 @@ func DecodeListRoleAssignmentsResponse(csilData []byte) (ListRoleAssignmentsResp
 
 // csilEncAssignRoleRequest builds the canonical CBOR value tree for a AssignRoleRequest.
 func csilEncAssignRoleRequest(csilV AssignRoleRequest) cborValue {
-	csilEntries := make(cborMap, 0, 5)
+	csilEntries := make(cborMap, 0, 6)
 	csilEntries = append(csilEntries, cborEntry{cborText("role"), cborText(csilV.Role)})
 	if csilV.ScopeId != nil {
 		csilEntries = append(csilEntries, cborEntry{cborText("scope_id"), cborText((*csilV.ScopeId))})
@@ -6916,6 +8258,9 @@ func csilEncAssignRoleRequest(csilV AssignRoleRequest) cborValue {
 	csilEntries = append(csilEntries, cborEntry{cborText("scope_type"), cborText(csilV.ScopeType)})
 	csilEntries = append(csilEntries, cborEntry{cborText("principal_id"), cborText(csilV.PrincipalId)})
 	csilEntries = append(csilEntries, cborEntry{cborText("principal_type"), cborText(csilV.PrincipalType)})
+	if csilV.ScopeWorkflow != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("scope_workflow"), cborText((*csilV.ScopeWorkflow))})
+	}
 	return csilEntries
 }
 
@@ -6961,6 +8306,13 @@ func csilDecAssignRoleRequest(csilRoot cborValue) (AssignRoleRequest, error) {
 			return csilOut, csilErr
 		}
 		csilOut.ScopeId = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "scope_workflow"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.ScopeWorkflow = &csilVal
 	}
 	{
 		csilField, csilErr := cborRequire(csilRoot, "role")
@@ -8403,9 +9755,12 @@ func DecodeListSecretPathsResponse(csilData []byte) (ListSecretPathsResponse, er
 
 // csilEncSecretGrant builds the canonical CBOR value tree for a SecretGrant.
 func csilEncSecretGrant(csilV SecretGrant) cborValue {
-	csilEntries := make(cborMap, 0, 11)
+	csilEntries := make(cborMap, 0, 17)
 	csilEntries = append(csilEntries, cborEntry{cborText("name"), cborText(csilV.Name)})
 	csilEntries = append(csilEntries, cborEntry{cborText("org_id"), cborText(csilV.OrgId)})
+	if csilV.Delivery != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("delivery"), cborText((*csilV.Delivery))})
+	}
 	csilEntries = append(csilEntries, cborEntry{cborText("grant_id"), cborText(csilV.GrantId)})
 	csilEntries = append(csilEntries, cborEntry{cborText("created_at"), cborText(csilV.CreatedAt)})
 	if csilV.ProjectId != nil {
@@ -8415,11 +9770,26 @@ func csilEncSecretGrant(csilV SecretGrant) cborValue {
 	if csilV.Description != nil {
 		csilEntries = append(csilEntries, cborEntry{cborText("description"), cborText((*csilV.Description))})
 	}
+	if csilV.ProxyHosts != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("proxy_hosts"), cborEncArray(csilV.ProxyHosts, func(csilElem string) cborValue { return cborText(csilElem) })})
+	}
+	if csilV.ProxyHeader != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("proxy_header"), cborText((*csilV.ProxyHeader))})
+	}
 	csilEntries = append(csilEntries, cborEntry{cborText("job_name_match"), cborText(csilV.JobNameMatch)})
+	if csilV.RefClassesAny != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("ref_classes_any"), cborEncArray(csilV.RefClassesAny, func(csilElem string) cborValue { return cborText(csilElem) })})
+	}
 	if csilV.JobNamePattern != nil {
 		csilEntries = append(csilEntries, cborEntry{cborText("job_name_pattern"), cborText((*csilV.JobNamePattern))})
 	}
+	if csilV.RefClassesNone != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("ref_classes_none"), cborEncArray(csilV.RefClassesNone, func(csilElem string) cborValue { return cborText(csilElem) })})
+	}
 	csilEntries = append(csilEntries, cborEntry{cborText("secret_path_match"), cborText(csilV.SecretPathMatch)})
+	if csilV.ProxyHeaderFormat != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("proxy_header_format"), cborText((*csilV.ProxyHeaderFormat))})
+	}
 	csilEntries = append(csilEntries, cborEntry{cborText("secret_path_pattern"), cborText(csilV.SecretPathPattern)})
 	return csilEntries
 }
@@ -8536,6 +9906,48 @@ func csilDecSecretGrant(csilRoot cborValue) (SecretGrant, error) {
 		}
 		csilOut.UpdatedAt = csilVal
 	}
+	if csilField, csilOk := cborMapGet(csilRoot, "ref_classes_any"); csilOk {
+		csilVal, csilErr := (func(csilV cborValue) ([]string, error) { return cborDecArray(csilV, cborAsText) })(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.RefClassesAny = csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "ref_classes_none"); csilOk {
+		csilVal, csilErr := (func(csilV cborValue) ([]string, error) { return cborDecArray(csilV, cborAsText) })(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.RefClassesNone = csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "delivery"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Delivery = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "proxy_hosts"); csilOk {
+		csilVal, csilErr := (func(csilV cborValue) ([]string, error) { return cborDecArray(csilV, cborAsText) })(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.ProxyHosts = csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "proxy_header"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.ProxyHeader = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "proxy_header_format"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.ProxyHeaderFormat = &csilVal
+	}
 	return csilOut, nil
 }
 
@@ -8634,22 +10046,40 @@ func DecodeListSecretGrantsResponse(csilData []byte) (ListSecretGrantsResponse, 
 
 // csilEncCreateSecretGrantRequest builds the canonical CBOR value tree for a CreateSecretGrantRequest.
 func csilEncCreateSecretGrantRequest(csilV CreateSecretGrantRequest) cborValue {
-	csilEntries := make(cborMap, 0, 8)
+	csilEntries := make(cborMap, 0, 14)
 	csilEntries = append(csilEntries, cborEntry{cborText("name"), cborText(csilV.Name)})
 	csilEntries = append(csilEntries, cborEntry{cborText("org_id"), cborText(csilV.OrgId)})
+	if csilV.Delivery != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("delivery"), cborText((*csilV.Delivery))})
+	}
 	if csilV.ProjectId != nil {
 		csilEntries = append(csilEntries, cborEntry{cborText("project_id"), cborText((*csilV.ProjectId))})
 	}
 	if csilV.Description != nil {
 		csilEntries = append(csilEntries, cborEntry{cborText("description"), cborText((*csilV.Description))})
 	}
+	if csilV.ProxyHosts != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("proxy_hosts"), cborEncArray(csilV.ProxyHosts, func(csilElem string) cborValue { return cborText(csilElem) })})
+	}
+	if csilV.ProxyHeader != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("proxy_header"), cborText((*csilV.ProxyHeader))})
+	}
 	if csilV.JobNameMatch != nil {
 		csilEntries = append(csilEntries, cborEntry{cborText("job_name_match"), cborText((*csilV.JobNameMatch))})
+	}
+	if csilV.RefClassesAny != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("ref_classes_any"), cborEncArray(csilV.RefClassesAny, func(csilElem string) cborValue { return cborText(csilElem) })})
 	}
 	if csilV.JobNamePattern != nil {
 		csilEntries = append(csilEntries, cborEntry{cborText("job_name_pattern"), cborText((*csilV.JobNamePattern))})
 	}
+	if csilV.RefClassesNone != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("ref_classes_none"), cborEncArray(csilV.RefClassesNone, func(csilElem string) cborValue { return cborText(csilElem) })})
+	}
 	csilEntries = append(csilEntries, cborEntry{cborText("secret_path_match"), cborText(csilV.SecretPathMatch)})
+	if csilV.ProxyHeaderFormat != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("proxy_header_format"), cborText((*csilV.ProxyHeaderFormat))})
+	}
 	csilEntries = append(csilEntries, cborEntry{cborText("secret_path_pattern"), cborText(csilV.SecretPathPattern)})
 	return csilEntries
 }
@@ -8729,6 +10159,48 @@ func csilDecCreateSecretGrantRequest(csilRoot cborValue) (CreateSecretGrantReque
 		}
 		csilOut.Description = &csilVal
 	}
+	if csilField, csilOk := cborMapGet(csilRoot, "ref_classes_any"); csilOk {
+		csilVal, csilErr := (func(csilV cborValue) ([]string, error) { return cborDecArray(csilV, cborAsText) })(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.RefClassesAny = csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "ref_classes_none"); csilOk {
+		csilVal, csilErr := (func(csilV cborValue) ([]string, error) { return cborDecArray(csilV, cborAsText) })(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.RefClassesNone = csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "delivery"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Delivery = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "proxy_hosts"); csilOk {
+		csilVal, csilErr := (func(csilV cborValue) ([]string, error) { return cborDecArray(csilV, cborAsText) })(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.ProxyHosts = csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "proxy_header"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.ProxyHeader = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "proxy_header_format"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.ProxyHeaderFormat = &csilVal
+	}
 	return csilOut, nil
 }
 
@@ -8788,22 +10260,43 @@ func DecodeCreateSecretGrantResponse(csilData []byte) (CreateSecretGrantResponse
 
 // csilEncUpdateSecretGrantRequest builds the canonical CBOR value tree for a UpdateSecretGrantRequest.
 func csilEncUpdateSecretGrantRequest(csilV UpdateSecretGrantRequest) cborValue {
-	csilEntries := make(cborMap, 0, 7)
+	csilEntries := make(cborMap, 0, 14)
 	if csilV.Name != nil {
 		csilEntries = append(csilEntries, cborEntry{cborText("name"), cborText((*csilV.Name))})
+	}
+	if csilV.Delivery != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("delivery"), cborText((*csilV.Delivery))})
 	}
 	csilEntries = append(csilEntries, cborEntry{cborText("grant_id"), cborText(csilV.GrantId)})
 	if csilV.Description != nil {
 		csilEntries = append(csilEntries, cborEntry{cborText("description"), cborText((*csilV.Description))})
 	}
+	if csilV.ProxyHosts != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("proxy_hosts"), cborEncArray(csilV.ProxyHosts, func(csilElem string) cborValue { return cborText(csilElem) })})
+	}
+	if csilV.ProxyHeader != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("proxy_header"), cborText((*csilV.ProxyHeader))})
+	}
 	if csilV.JobNameMatch != nil {
 		csilEntries = append(csilEntries, cborEntry{cborText("job_name_match"), cborText((*csilV.JobNameMatch))})
+	}
+	if csilV.RefClassesAny != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("ref_classes_any"), cborEncArray(csilV.RefClassesAny, func(csilElem string) cborValue { return cborText(csilElem) })})
+	}
+	if csilV.SetRefClasses != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("set_ref_classes"), cborBool((*csilV.SetRefClasses))})
 	}
 	if csilV.JobNamePattern != nil {
 		csilEntries = append(csilEntries, cborEntry{cborText("job_name_pattern"), cborText((*csilV.JobNamePattern))})
 	}
+	if csilV.RefClassesNone != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("ref_classes_none"), cborEncArray(csilV.RefClassesNone, func(csilElem string) cborValue { return cborText(csilElem) })})
+	}
 	if csilV.SecretPathMatch != nil {
 		csilEntries = append(csilEntries, cborEntry{cborText("secret_path_match"), cborText((*csilV.SecretPathMatch))})
+	}
+	if csilV.ProxyHeaderFormat != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("proxy_header_format"), cborText((*csilV.ProxyHeaderFormat))})
 	}
 	if csilV.SecretPathPattern != nil {
 		csilEntries = append(csilEntries, cborEntry{cborText("secret_path_pattern"), cborText((*csilV.SecretPathPattern))})
@@ -8866,6 +10359,55 @@ func csilDecUpdateSecretGrantRequest(csilRoot cborValue) (UpdateSecretGrantReque
 			return csilOut, csilErr
 		}
 		csilOut.Description = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "set_ref_classes"); csilOk {
+		csilVal, csilErr := (cborAsBool)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.SetRefClasses = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "ref_classes_any"); csilOk {
+		csilVal, csilErr := (func(csilV cborValue) ([]string, error) { return cborDecArray(csilV, cborAsText) })(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.RefClassesAny = csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "ref_classes_none"); csilOk {
+		csilVal, csilErr := (func(csilV cborValue) ([]string, error) { return cborDecArray(csilV, cborAsText) })(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.RefClassesNone = csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "delivery"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Delivery = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "proxy_hosts"); csilOk {
+		csilVal, csilErr := (func(csilV cborValue) ([]string, error) { return cborDecArray(csilV, cborAsText) })(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.ProxyHosts = csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "proxy_header"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.ProxyHeader = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "proxy_header_format"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.ProxyHeaderFormat = &csilVal
 	}
 	return csilOut, nil
 }
@@ -9272,10 +10814,100 @@ func DecodeCancelWorkflowResponse(csilData []byte) (CancelWorkflowResponse, erro
 	return csilDecCancelWorkflowResponse(csilRoot)
 }
 
+// csilEncRunShifts builds the canonical CBOR value tree for a RunShifts.
+func csilEncRunShifts(csilV RunShifts) cborValue {
+	csilEntries := make(cborMap, 0, 6)
+	if csilV.Cpu != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("cpu"), cborText((*csilV.Cpu))})
+	}
+	if csilV.Memory != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("memory"), cborText((*csilV.Memory))})
+	}
+	if csilV.Storage != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("storage"), cborText((*csilV.Storage))})
+	}
+	if csilV.Timeout != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("timeout"), cborText((*csilV.Timeout))})
+	}
+	if csilV.CpuRequest != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("cpu_request"), cborText((*csilV.CpuRequest))})
+	}
+	if csilV.StorageRequest != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("storage_request"), cborText((*csilV.StorageRequest))})
+	}
+	return csilEntries
+}
+
+// csilDecRunShifts reconstructs a RunShifts from a decoded CBOR value tree.
+func csilDecRunShifts(csilRoot cborValue) (RunShifts, error) {
+	var csilOut RunShifts
+	if csilField, csilOk := cborMapGet(csilRoot, "cpu"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Cpu = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "cpu_request"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.CpuRequest = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "memory"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Memory = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "storage"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Storage = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "storage_request"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.StorageRequest = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "timeout"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Timeout = &csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeRunShifts encodes a RunShifts to canonical CSIL CBOR bytes.
+func EncodeRunShifts(csilV RunShifts) []byte {
+	return cborEncode(csilEncRunShifts(csilV))
+}
+
+// DecodeRunShifts decodes canonical CSIL CBOR bytes into a RunShifts.
+func DecodeRunShifts(csilData []byte) (RunShifts, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero RunShifts
+		return csilZero, csilErr
+	}
+	return csilDecRunShifts(csilRoot)
+}
+
 // csilEncRetryJobRequest builds the canonical CBOR value tree for a RetryJobRequest.
 func csilEncRetryJobRequest(csilV RetryJobRequest) cborValue {
-	csilEntries := make(cborMap, 0, 1)
+	csilEntries := make(cborMap, 0, 2)
 	csilEntries = append(csilEntries, cborEntry{cborText("job_id"), cborText(csilV.JobId)})
+	if csilV.Shifts != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("shifts"), csilEncRunShifts((*csilV.Shifts))})
+	}
 	return csilEntries
 }
 
@@ -9292,6 +10924,13 @@ func csilDecRetryJobRequest(csilRoot cborValue) (RetryJobRequest, error) {
 			return csilOut, csilErr
 		}
 		csilOut.JobId = csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "shifts"); csilOk {
+		csilVal, csilErr := (csilDecRunShifts)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Shifts = &csilVal
 	}
 	return csilOut, nil
 }
@@ -9364,7 +11003,10 @@ func DecodeRetryJobResponse(csilData []byte) (RetryJobResponse, error) {
 
 // csilEncRetryWorkflowRequest builds the canonical CBOR value tree for a RetryWorkflowRequest.
 func csilEncRetryWorkflowRequest(csilV RetryWorkflowRequest) cborValue {
-	csilEntries := make(cborMap, 0, 1)
+	csilEntries := make(cborMap, 0, 2)
+	if csilV.Shifts != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("shifts"), csilEncRunShifts((*csilV.Shifts))})
+	}
 	csilEntries = append(csilEntries, cborEntry{cborText("workflow_instance_id"), cborText(csilV.WorkflowInstanceId)})
 	return csilEntries
 }
@@ -9382,6 +11024,13 @@ func csilDecRetryWorkflowRequest(csilRoot cborValue) (RetryWorkflowRequest, erro
 			return csilOut, csilErr
 		}
 		csilOut.WorkflowInstanceId = csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "shifts"); csilOk {
+		csilVal, csilErr := (csilDecRunShifts)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Shifts = &csilVal
 	}
 	return csilOut, nil
 }
@@ -9454,7 +11103,10 @@ func DecodeRetryWorkflowResponse(csilData []byte) (RetryWorkflowResponse, error)
 
 // csilEncRetryUnsuccessfulJobsRequest builds the canonical CBOR value tree for a RetryUnsuccessfulJobsRequest.
 func csilEncRetryUnsuccessfulJobsRequest(csilV RetryUnsuccessfulJobsRequest) cborValue {
-	csilEntries := make(cborMap, 0, 1)
+	csilEntries := make(cborMap, 0, 2)
+	if csilV.Shifts != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("shifts"), csilEncRunShifts((*csilV.Shifts))})
+	}
 	csilEntries = append(csilEntries, cborEntry{cborText("workflow_instance_id"), cborText(csilV.WorkflowInstanceId)})
 	return csilEntries
 }
@@ -9473,6 +11125,13 @@ func csilDecRetryUnsuccessfulJobsRequest(csilRoot cborValue) (RetryUnsuccessfulJ
 		}
 		csilOut.WorkflowInstanceId = csilVal
 	}
+	if csilField, csilOk := cborMapGet(csilRoot, "shifts"); csilOk {
+		csilVal, csilErr := (csilDecRunShifts)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Shifts = &csilVal
+	}
 	return csilOut, nil
 }
 
@@ -9489,6 +11148,280 @@ func DecodeRetryUnsuccessfulJobsRequest(csilData []byte) (RetryUnsuccessfulJobsR
 		return csilZero, csilErr
 	}
 	return csilDecRetryUnsuccessfulJobsRequest(csilRoot)
+}
+
+// csilEncRerunWorkflowRequest builds the canonical CBOR value tree for a RerunWorkflowRequest.
+func csilEncRerunWorkflowRequest(csilV RerunWorkflowRequest) cborValue {
+	csilEntries := make(cborMap, 0, 2)
+	if csilV.Shifts != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("shifts"), csilEncRunShifts((*csilV.Shifts))})
+	}
+	csilEntries = append(csilEntries, cborEntry{cborText("workflow_instance_id"), cborText(csilV.WorkflowInstanceId)})
+	return csilEntries
+}
+
+// csilDecRerunWorkflowRequest reconstructs a RerunWorkflowRequest from a decoded CBOR value tree.
+func csilDecRerunWorkflowRequest(csilRoot cborValue) (RerunWorkflowRequest, error) {
+	var csilOut RerunWorkflowRequest
+	{
+		csilField, csilErr := cborRequire(csilRoot, "workflow_instance_id")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.WorkflowInstanceId = csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "shifts"); csilOk {
+		csilVal, csilErr := (csilDecRunShifts)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Shifts = &csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeRerunWorkflowRequest encodes a RerunWorkflowRequest to canonical CSIL CBOR bytes.
+func EncodeRerunWorkflowRequest(csilV RerunWorkflowRequest) []byte {
+	return cborEncode(csilEncRerunWorkflowRequest(csilV))
+}
+
+// DecodeRerunWorkflowRequest decodes canonical CSIL CBOR bytes into a RerunWorkflowRequest.
+func DecodeRerunWorkflowRequest(csilData []byte) (RerunWorkflowRequest, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero RerunWorkflowRequest
+		return csilZero, csilErr
+	}
+	return csilDecRerunWorkflowRequest(csilRoot)
+}
+
+// csilEncRerunWorkflowResponse builds the canonical CBOR value tree for a RerunWorkflowResponse.
+func csilEncRerunWorkflowResponse(csilV RerunWorkflowResponse) cborValue {
+	csilEntries := make(cborMap, 0, 2)
+	csilEntries = append(csilEntries, cborEntry{cborText("status"), cborText(csilV.Status)})
+	csilEntries = append(csilEntries, cborEntry{cborText("workflow_instance_id"), cborText(csilV.WorkflowInstanceId)})
+	return csilEntries
+}
+
+// csilDecRerunWorkflowResponse reconstructs a RerunWorkflowResponse from a decoded CBOR value tree.
+func csilDecRerunWorkflowResponse(csilRoot cborValue) (RerunWorkflowResponse, error) {
+	var csilOut RerunWorkflowResponse
+	{
+		csilField, csilErr := cborRequire(csilRoot, "workflow_instance_id")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.WorkflowInstanceId = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "status")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Status = csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeRerunWorkflowResponse encodes a RerunWorkflowResponse to canonical CSIL CBOR bytes.
+func EncodeRerunWorkflowResponse(csilV RerunWorkflowResponse) []byte {
+	return cborEncode(csilEncRerunWorkflowResponse(csilV))
+}
+
+// DecodeRerunWorkflowResponse decodes canonical CSIL CBOR bytes into a RerunWorkflowResponse.
+func DecodeRerunWorkflowResponse(csilData []byte) (RerunWorkflowResponse, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero RerunWorkflowResponse
+		return csilZero, csilErr
+	}
+	return csilDecRerunWorkflowResponse(csilRoot)
+}
+
+// csilEncStartRunRequest builds the canonical CBOR value tree for a StartRunRequest.
+func csilEncStartRunRequest(csilV StartRunRequest) cborValue {
+	csilEntries := make(cborMap, 0, 4)
+	if csilV.Ref != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("ref"), cborText((*csilV.Ref))})
+	}
+	if csilV.Workflow != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("workflow"), cborText((*csilV.Workflow))})
+	}
+	if csilV.PrNumber != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("pr_number"), cborInt((*csilV.PrNumber))})
+	}
+	csilEntries = append(csilEntries, cborEntry{cborText("project_id"), cborText(csilV.ProjectId)})
+	return csilEntries
+}
+
+// csilDecStartRunRequest reconstructs a StartRunRequest from a decoded CBOR value tree.
+func csilDecStartRunRequest(csilRoot cborValue) (StartRunRequest, error) {
+	var csilOut StartRunRequest
+	{
+		csilField, csilErr := cborRequire(csilRoot, "project_id")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.ProjectId = csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "ref"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Ref = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "pr_number"); csilOk {
+		csilVal, csilErr := (cborAsI64)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.PrNumber = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "workflow"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Workflow = &csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeStartRunRequest encodes a StartRunRequest to canonical CSIL CBOR bytes.
+func EncodeStartRunRequest(csilV StartRunRequest) []byte {
+	return cborEncode(csilEncStartRunRequest(csilV))
+}
+
+// DecodeStartRunRequest decodes canonical CSIL CBOR bytes into a StartRunRequest.
+func DecodeStartRunRequest(csilData []byte) (StartRunRequest, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero StartRunRequest
+		return csilZero, csilErr
+	}
+	return csilDecStartRunRequest(csilRoot)
+}
+
+// csilEncStartRunResponse builds the canonical CBOR value tree for a StartRunResponse.
+func csilEncStartRunResponse(csilV StartRunResponse) cborValue {
+	csilEntries := make(cborMap, 0, 7)
+	csilEntries = append(csilEntries, cborEntry{cborText("ref"), cborText(csilV.Ref)})
+	csilEntries = append(csilEntries, cborEntry{cborText("status"), cborText(csilV.Status)})
+	csilEntries = append(csilEntries, cborEntry{cborText("event_id"), cborText(csilV.EventId)})
+	if csilV.Workflow != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("workflow"), cborText((*csilV.Workflow))})
+	}
+	if csilV.PrNumber != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("pr_number"), cborInt((*csilV.PrNumber))})
+	}
+	csilEntries = append(csilEntries, cborEntry{cborText("commit_sha"), cborText(csilV.CommitSha)})
+	if csilV.EvalJobId != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("eval_job_id"), cborText((*csilV.EvalJobId))})
+	}
+	return csilEntries
+}
+
+// csilDecStartRunResponse reconstructs a StartRunResponse from a decoded CBOR value tree.
+func csilDecStartRunResponse(csilRoot cborValue) (StartRunResponse, error) {
+	var csilOut StartRunResponse
+	{
+		csilField, csilErr := cborRequire(csilRoot, "event_id")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.EventId = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "status")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Status = csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "eval_job_id"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.EvalJobId = &csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "ref")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Ref = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "commit_sha")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.CommitSha = csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "pr_number"); csilOk {
+		csilVal, csilErr := (cborAsI64)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.PrNumber = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "workflow"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Workflow = &csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeStartRunResponse encodes a StartRunResponse to canonical CSIL CBOR bytes.
+func EncodeStartRunResponse(csilV StartRunResponse) []byte {
+	return cborEncode(csilEncStartRunResponse(csilV))
+}
+
+// DecodeStartRunResponse decodes canonical CSIL CBOR bytes into a StartRunResponse.
+func DecodeStartRunResponse(csilData []byte) (StartRunResponse, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero StartRunResponse
+		return csilZero, csilErr
+	}
+	return csilDecStartRunResponse(csilRoot)
 }
 
 // csilEncRetryUnsuccessfulJobsResponse builds the canonical CBOR value tree for a RetryUnsuccessfulJobsResponse.
@@ -9797,6 +11730,374 @@ func DecodeUpdateGlobalSettingsResponse(csilData []byte) (UpdateGlobalSettingsRe
 		return csilZero, csilErr
 	}
 	return csilDecUpdateGlobalSettingsResponse(csilRoot)
+}
+
+// csilEncShedActions builds the canonical CBOR value tree for a ShedActions.
+func csilEncShedActions(csilV ShedActions) cborValue {
+	csilEntries := make(cborMap, 0, 5)
+	csilEntries = append(csilEntries, cborEntry{cborText("skip_drafts"), cborBool(csilV.SkipDrafts)})
+	csilEntries = append(csilEntries, cborEntry{cborText("skip_advisory"), cborBool(csilV.SkipAdvisory)})
+	csilEntries = append(csilEntries, cborEntry{cborText("pause_schedules"), cborBool(csilV.PauseSchedules)})
+	csilEntries = append(csilEntries, cborEntry{cborText("lower_pr_priority"), cborBool(csilV.LowerPrPriority)})
+	csilEntries = append(csilEntries, cborEntry{cborText("refuse_manual_runs"), cborBool(csilV.RefuseManualRuns)})
+	return csilEntries
+}
+
+// csilDecShedActions reconstructs a ShedActions from a decoded CBOR value tree.
+func csilDecShedActions(csilRoot cborValue) (ShedActions, error) {
+	var csilOut ShedActions
+	{
+		csilField, csilErr := cborRequire(csilRoot, "skip_drafts")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsBool)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.SkipDrafts = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "pause_schedules")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsBool)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.PauseSchedules = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "lower_pr_priority")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsBool)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.LowerPrPriority = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "skip_advisory")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsBool)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.SkipAdvisory = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "refuse_manual_runs")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsBool)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.RefuseManualRuns = csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeShedActions encodes a ShedActions to canonical CSIL CBOR bytes.
+func EncodeShedActions(csilV ShedActions) []byte {
+	return cborEncode(csilEncShedActions(csilV))
+}
+
+// DecodeShedActions decodes canonical CSIL CBOR bytes into a ShedActions.
+func DecodeShedActions(csilData []byte) (ShedActions, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero ShedActions
+		return csilZero, csilErr
+	}
+	return csilDecShedActions(csilRoot)
+}
+
+// csilEncShedState builds the canonical CBOR value tree for a ShedState.
+func csilEncShedState(csilV ShedState) cborValue {
+	csilEntries := make(cborMap, 0, 7)
+	csilEntries = append(csilEntries, cborEntry{cborText("level"), cborText(csilV.Level)})
+	if csilV.Source != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("source"), cborText((*csilV.Source))})
+	}
+	csilEntries = append(csilEntries, cborEntry{cborText("actions"), csilEncShedActions(csilV.Actions)})
+	if csilV.OrgLevel != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("org_level"), cborText((*csilV.OrgLevel))})
+	}
+	csilEntries = append(csilEntries, cborEntry{cborText("global_level"), cborText(csilV.GlobalLevel)})
+	csilEntries = append(csilEntries, cborEntry{cborText("critical_actions"), csilEncShedActions(csilV.CriticalActions)})
+	csilEntries = append(csilEntries, cborEntry{cborText("degraded_actions"), csilEncShedActions(csilV.DegradedActions)})
+	return csilEntries
+}
+
+// csilDecShedState reconstructs a ShedState from a decoded CBOR value tree.
+func csilDecShedState(csilRoot cborValue) (ShedState, error) {
+	var csilOut ShedState
+	{
+		csilField, csilErr := cborRequire(csilRoot, "global_level")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.GlobalLevel = csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "org_level"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.OrgLevel = &csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "level")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Level = csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "source"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Source = &csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "actions")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (csilDecShedActions)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Actions = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "degraded_actions")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (csilDecShedActions)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.DegradedActions = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "critical_actions")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (csilDecShedActions)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.CriticalActions = csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeShedState encodes a ShedState to canonical CSIL CBOR bytes.
+func EncodeShedState(csilV ShedState) []byte {
+	return cborEncode(csilEncShedState(csilV))
+}
+
+// DecodeShedState decodes canonical CSIL CBOR bytes into a ShedState.
+func DecodeShedState(csilData []byte) (ShedState, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero ShedState
+		return csilZero, csilErr
+	}
+	return csilDecShedState(csilRoot)
+}
+
+// csilEncGetShedStateRequest builds the canonical CBOR value tree for a GetShedStateRequest.
+func csilEncGetShedStateRequest(csilV GetShedStateRequest) cborValue {
+	csilEntries := make(cborMap, 0, 1)
+	if csilV.OrgId != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("org_id"), cborText((*csilV.OrgId))})
+	}
+	return csilEntries
+}
+
+// csilDecGetShedStateRequest reconstructs a GetShedStateRequest from a decoded CBOR value tree.
+func csilDecGetShedStateRequest(csilRoot cborValue) (GetShedStateRequest, error) {
+	var csilOut GetShedStateRequest
+	if csilField, csilOk := cborMapGet(csilRoot, "org_id"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.OrgId = &csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeGetShedStateRequest encodes a GetShedStateRequest to canonical CSIL CBOR bytes.
+func EncodeGetShedStateRequest(csilV GetShedStateRequest) []byte {
+	return cborEncode(csilEncGetShedStateRequest(csilV))
+}
+
+// DecodeGetShedStateRequest decodes canonical CSIL CBOR bytes into a GetShedStateRequest.
+func DecodeGetShedStateRequest(csilData []byte) (GetShedStateRequest, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero GetShedStateRequest
+		return csilZero, csilErr
+	}
+	return csilDecGetShedStateRequest(csilRoot)
+}
+
+// csilEncGetShedStateResponse builds the canonical CBOR value tree for a GetShedStateResponse.
+func csilEncGetShedStateResponse(csilV GetShedStateResponse) cborValue {
+	csilEntries := make(cborMap, 0, 1)
+	csilEntries = append(csilEntries, cborEntry{cborText("state"), csilEncShedState(csilV.State)})
+	return csilEntries
+}
+
+// csilDecGetShedStateResponse reconstructs a GetShedStateResponse from a decoded CBOR value tree.
+func csilDecGetShedStateResponse(csilRoot cborValue) (GetShedStateResponse, error) {
+	var csilOut GetShedStateResponse
+	{
+		csilField, csilErr := cborRequire(csilRoot, "state")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (csilDecShedState)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.State = csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeGetShedStateResponse encodes a GetShedStateResponse to canonical CSIL CBOR bytes.
+func EncodeGetShedStateResponse(csilV GetShedStateResponse) []byte {
+	return cborEncode(csilEncGetShedStateResponse(csilV))
+}
+
+// DecodeGetShedStateResponse decodes canonical CSIL CBOR bytes into a GetShedStateResponse.
+func DecodeGetShedStateResponse(csilData []byte) (GetShedStateResponse, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero GetShedStateResponse
+		return csilZero, csilErr
+	}
+	return csilDecGetShedStateResponse(csilRoot)
+}
+
+// csilEncSetShedLevelRequest builds the canonical CBOR value tree for a SetShedLevelRequest.
+func csilEncSetShedLevelRequest(csilV SetShedLevelRequest) cborValue {
+	csilEntries := make(cborMap, 0, 3)
+	csilEntries = append(csilEntries, cborEntry{cborText("level"), cborText(csilV.Level)})
+	if csilV.OrgId != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("org_id"), cborText((*csilV.OrgId))})
+	}
+	if csilV.Reason != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("reason"), cborText((*csilV.Reason))})
+	}
+	return csilEntries
+}
+
+// csilDecSetShedLevelRequest reconstructs a SetShedLevelRequest from a decoded CBOR value tree.
+func csilDecSetShedLevelRequest(csilRoot cborValue) (SetShedLevelRequest, error) {
+	var csilOut SetShedLevelRequest
+	{
+		csilField, csilErr := cborRequire(csilRoot, "level")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Level = csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "org_id"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.OrgId = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "reason"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Reason = &csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeSetShedLevelRequest encodes a SetShedLevelRequest to canonical CSIL CBOR bytes.
+func EncodeSetShedLevelRequest(csilV SetShedLevelRequest) []byte {
+	return cborEncode(csilEncSetShedLevelRequest(csilV))
+}
+
+// DecodeSetShedLevelRequest decodes canonical CSIL CBOR bytes into a SetShedLevelRequest.
+func DecodeSetShedLevelRequest(csilData []byte) (SetShedLevelRequest, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero SetShedLevelRequest
+		return csilZero, csilErr
+	}
+	return csilDecSetShedLevelRequest(csilRoot)
+}
+
+// csilEncSetShedLevelResponse builds the canonical CBOR value tree for a SetShedLevelResponse.
+func csilEncSetShedLevelResponse(csilV SetShedLevelResponse) cborValue {
+	csilEntries := make(cborMap, 0, 1)
+	csilEntries = append(csilEntries, cborEntry{cborText("state"), csilEncShedState(csilV.State)})
+	return csilEntries
+}
+
+// csilDecSetShedLevelResponse reconstructs a SetShedLevelResponse from a decoded CBOR value tree.
+func csilDecSetShedLevelResponse(csilRoot cborValue) (SetShedLevelResponse, error) {
+	var csilOut SetShedLevelResponse
+	{
+		csilField, csilErr := cborRequire(csilRoot, "state")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (csilDecShedState)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.State = csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeSetShedLevelResponse encodes a SetShedLevelResponse to canonical CSIL CBOR bytes.
+func EncodeSetShedLevelResponse(csilV SetShedLevelResponse) []byte {
+	return cborEncode(csilEncSetShedLevelResponse(csilV))
+}
+
+// DecodeSetShedLevelResponse decodes canonical CSIL CBOR bytes into a SetShedLevelResponse.
+func DecodeSetShedLevelResponse(csilData []byte) (SetShedLevelResponse, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero SetShedLevelResponse
+		return csilZero, csilErr
+	}
+	return csilDecSetShedLevelResponse(csilRoot)
 }
 
 // csilEncTrustedIdentity builds the canonical CBOR value tree for a TrustedIdentity.
@@ -10537,13 +12838,22 @@ func DecodeWorkerCharacteristicEntry(csilData []byte) (WorkerCharacteristicEntry
 
 // csilEncQueueSummary builds the canonical CBOR value tree for a QueueSummary.
 func csilEncQueueSummary(csilV QueueSummary) cborValue {
-	csilEntries := make(cborMap, 0, 6)
+	csilEntries := make(cborMap, 0, 9)
 	csilEntries = append(csilEntries, cborEntry{cborText("queue_id"), cborText(csilV.QueueId)})
 	csilEntries = append(csilEntries, cborEntry{cborText("is_default"), cborBool(csilV.IsDefault)})
 	csilEntries = append(csilEntries, cborEntry{cborText("queue_uuid"), cborText(csilV.QueueUuid)})
 	csilEntries = append(csilEntries, cborEntry{cborText("display_name"), cborText(csilV.DisplayName)})
 	csilEntries = append(csilEntries, cborEntry{cborText("backlog_count"), cborInt(csilV.BacklogCount)})
 	csilEntries = append(csilEntries, cborEntry{cborText("characteristics"), cborEncArray(csilV.Characteristics, func(csilElem CharacteristicEntry) cborValue { return csilEncCharacteristicEntry(csilElem) })})
+	if csilV.BacklogMemoryLimitBytes != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("backlog_memory_limit_bytes"), cborInt((*csilV.BacklogMemoryLimitBytes))})
+	}
+	if csilV.BacklogOldestAgeSeconds != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("backlog_oldest_age_seconds"), cborInt((*csilV.BacklogOldestAgeSeconds))})
+	}
+	if csilV.BacklogCpuRequestMillicores != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("backlog_cpu_request_millicores"), cborInt((*csilV.BacklogCpuRequestMillicores))})
+	}
 	return csilEntries
 }
 
@@ -10618,6 +12928,27 @@ func csilDecQueueSummary(csilRoot cborValue) (QueueSummary, error) {
 		}
 		csilOut.BacklogCount = csilVal
 	}
+	if csilField, csilOk := cborMapGet(csilRoot, "backlog_oldest_age_seconds"); csilOk {
+		csilVal, csilErr := (cborAsI64)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.BacklogOldestAgeSeconds = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "backlog_cpu_request_millicores"); csilOk {
+		csilVal, csilErr := (cborAsI64)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.BacklogCpuRequestMillicores = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "backlog_memory_limit_bytes"); csilOk {
+		csilVal, csilErr := (cborAsI64)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.BacklogMemoryLimitBytes = &csilVal
+	}
 	return csilOut, nil
 }
 
@@ -10634,6 +12965,117 @@ func DecodeQueueSummary(csilData []byte) (QueueSummary, error) {
 		return csilZero, csilErr
 	}
 	return csilDecQueueSummary(csilRoot)
+}
+
+// csilEncCharacteristicBacklog builds the canonical CBOR value tree for a CharacteristicBacklog.
+func csilEncCharacteristicBacklog(csilV CharacteristicBacklog) cborValue {
+	csilEntries := make(cborMap, 0, 7)
+	csilEntries = append(csilEntries, cborEntry{cborText("key"), cborText(csilV.Key)})
+	csilEntries = append(csilEntries, cborEntry{cborText("count"), cborInt(csilV.Count)})
+	csilEntries = append(csilEntries, cborEntry{cborText("value"), cborText(csilV.Value)})
+	csilEntries = append(csilEntries, cborEntry{cborText("queues"), cborInt(csilV.Queues)})
+	csilEntries = append(csilEntries, cborEntry{cborText("memory_limit_bytes"), cborInt(csilV.MemoryLimitBytes)})
+	csilEntries = append(csilEntries, cborEntry{cborText("oldest_age_seconds"), cborInt(csilV.OldestAgeSeconds)})
+	csilEntries = append(csilEntries, cborEntry{cborText("cpu_request_millicores"), cborInt(csilV.CpuRequestMillicores)})
+	return csilEntries
+}
+
+// csilDecCharacteristicBacklog reconstructs a CharacteristicBacklog from a decoded CBOR value tree.
+func csilDecCharacteristicBacklog(csilRoot cborValue) (CharacteristicBacklog, error) {
+	var csilOut CharacteristicBacklog
+	{
+		csilField, csilErr := cborRequire(csilRoot, "key")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Key = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "value")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Value = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "queues")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsI64)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Queues = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "count")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsI64)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Count = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "oldest_age_seconds")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsI64)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.OldestAgeSeconds = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "cpu_request_millicores")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsI64)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.CpuRequestMillicores = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "memory_limit_bytes")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsI64)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.MemoryLimitBytes = csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeCharacteristicBacklog encodes a CharacteristicBacklog to canonical CSIL CBOR bytes.
+func EncodeCharacteristicBacklog(csilV CharacteristicBacklog) []byte {
+	return cborEncode(csilEncCharacteristicBacklog(csilV))
+}
+
+// DecodeCharacteristicBacklog decodes canonical CSIL CBOR bytes into a CharacteristicBacklog.
+func DecodeCharacteristicBacklog(csilData []byte) (CharacteristicBacklog, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero CharacteristicBacklog
+		return csilZero, csilErr
+	}
+	return csilDecCharacteristicBacklog(csilRoot)
 }
 
 // csilEncListQueuesRequest builds the canonical CBOR value tree for a ListQueuesRequest.
@@ -10665,8 +13107,11 @@ func DecodeListQueuesRequest(csilData []byte) (ListQueuesRequest, error) {
 
 // csilEncListQueuesResponse builds the canonical CBOR value tree for a ListQueuesResponse.
 func csilEncListQueuesResponse(csilV ListQueuesResponse) cborValue {
-	csilEntries := make(cborMap, 0, 1)
+	csilEntries := make(cborMap, 0, 2)
 	csilEntries = append(csilEntries, cborEntry{cborText("queues"), cborEncArray(csilV.Queues, func(csilElem QueueSummary) cborValue { return csilEncQueueSummary(csilElem) })})
+	if csilV.BacklogByCharacteristic != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("backlog_by_characteristic"), cborEncArray(csilV.BacklogByCharacteristic, func(csilElem CharacteristicBacklog) cborValue { return csilEncCharacteristicBacklog(csilElem) })})
+	}
 	return csilEntries
 }
 
@@ -10683,6 +13128,15 @@ func csilDecListQueuesResponse(csilRoot cborValue) (ListQueuesResponse, error) {
 			return csilOut, csilErr
 		}
 		csilOut.Queues = csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "backlog_by_characteristic"); csilOk {
+		csilVal, csilErr := (func(csilV cborValue) ([]CharacteristicBacklog, error) {
+			return cborDecArray(csilV, csilDecCharacteristicBacklog)
+		})(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.BacklogByCharacteristic = csilVal
 	}
 	return csilOut, nil
 }
@@ -10974,24 +13428,57 @@ func DecodeDeleteQueueResponse(csilData []byte) (DeleteQueueResponse, error) {
 
 // csilEncWorkerSummary builds the canonical CBOR value tree for a WorkerSummary.
 func csilEncWorkerSummary(csilV WorkerSummary) cborValue {
-	csilEntries := make(cborMap, 0, 11)
+	csilEntries := make(cborMap, 0, 22)
 	csilEntries = append(csilEntries, cborEntry{cborText("os"), cborText(csilV.Os)})
 	csilEntries = append(csilEntries, cborEntry{cborText("arch"), cborText(csilV.Arch)})
+	if csilV.Online != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("online"), cborBool((*csilV.Online))})
+	}
 	csilEntries = append(csilEntries, cborEntry{cborText("status"), cborText(csilV.Status)})
 	csilEntries = append(csilEntries, cborEntry{cborText("pool_id"), cborText(csilV.PoolId)})
 	if csilV.Hostname != nil {
 		csilEntries = append(csilEntries, cborEntry{cborText("hostname"), cborText((*csilV.Hostname))})
 	}
+	if csilV.Admission != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("admission"), csilEncWorkerAdmissionSummary((*csilV.Admission))})
+	}
 	csilEntries = append(csilEntries, cborEntry{cborText("worker_id"), cborText(csilV.WorkerId)})
 	csilEntries = append(csilEntries, cborEntry{cborText("worker_key"), cborText(csilV.WorkerKey)})
+	if csilV.ImageStatus != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("image_status"), cborText((*csilV.ImageStatus))})
+	}
 	if csilV.LastSeenAt != nil {
 		csilEntries = append(csilEntries, cborEntry{cborText("last_seen_at"), cborText((*csilV.LastSeenAt))})
+	}
+	if csilV.ImageRuntime != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("image_runtime"), cborText((*csilV.ImageRuntime))})
 	}
 	if csilV.WorkerVersion != nil {
 		csilEntries = append(csilEntries, cborEntry{cborText("worker_version"), cborText((*csilV.WorkerVersion))})
 	}
 	csilEntries = append(csilEntries, cborEntry{cborText("characteristics"), cborEncArray(csilV.Characteristics, func(csilElem WorkerCharacteristicEntry) cborValue { return csilEncWorkerCharacteristicEntry(csilElem) })})
+	if csilV.ImageSetVersion != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("image_set_version"), cborInt((*csilV.ImageSetVersion))})
+	}
 	csilEntries = append(csilEntries, cborEntry{cborText("active_lease_count"), cborInt(csilV.ActiveLeaseCount)})
+	if csilV.EnrollmentTokenId != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("enrollment_token_id"), cborText((*csilV.EnrollmentTokenId))})
+	}
+	if csilV.ImageStatusDetail != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("image_status_detail"), cborText((*csilV.ImageStatusDetail))})
+	}
+	if csilV.OnDeactivatedToken != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("on_deactivated_token"), cborBool((*csilV.OnDeactivatedToken))})
+	}
+	if csilV.EnrollmentTokenName != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("enrollment_token_name"), cborText((*csilV.EnrollmentTokenName))})
+	}
+	if csilV.ImageReportedVersion != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("image_reported_version"), cborInt((*csilV.ImageReportedVersion))})
+	}
+	if csilV.EnrollmentTokenActive != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("enrollment_token_active"), cborBool((*csilV.EnrollmentTokenActive))})
+	}
 	return csilEntries
 }
 
@@ -11109,6 +13596,83 @@ func csilDecWorkerSummary(csilRoot cborValue) (WorkerSummary, error) {
 		}
 		csilOut.ActiveLeaseCount = csilVal
 	}
+	if csilField, csilOk := cborMapGet(csilRoot, "admission"); csilOk {
+		csilVal, csilErr := (csilDecWorkerAdmissionSummary)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Admission = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "enrollment_token_id"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.EnrollmentTokenId = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "enrollment_token_name"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.EnrollmentTokenName = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "enrollment_token_active"); csilOk {
+		csilVal, csilErr := (cborAsBool)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.EnrollmentTokenActive = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "on_deactivated_token"); csilOk {
+		csilVal, csilErr := (cborAsBool)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.OnDeactivatedToken = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "online"); csilOk {
+		csilVal, csilErr := (cborAsBool)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Online = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "image_status"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.ImageStatus = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "image_status_detail"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.ImageStatusDetail = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "image_runtime"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.ImageRuntime = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "image_set_version"); csilOk {
+		csilVal, csilErr := (cborAsI64)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.ImageSetVersion = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "image_reported_version"); csilOk {
+		csilVal, csilErr := (cborAsI64)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.ImageReportedVersion = &csilVal
+	}
 	return csilOut, nil
 }
 
@@ -11127,11 +13691,116 @@ func DecodeWorkerSummary(csilData []byte) (WorkerSummary, error) {
 	return csilDecWorkerSummary(csilRoot)
 }
 
+// csilEncWorkerAdmissionSummary builds the canonical CBOR value tree for a WorkerAdmissionSummary.
+func csilEncWorkerAdmissionSummary(csilV WorkerAdmissionSummary) cborValue {
+	csilEntries := make(cborMap, 0, 6)
+	csilEntries = append(csilEntries, cborEntry{cborText("mode"), cborText(csilV.Mode)})
+	csilEntries = append(csilEntries, cborEntry{cborText("reported_at"), cborText(csilV.ReportedAt)})
+	csilEntries = append(csilEntries, cborEntry{cborText("capacity_memory_bytes"), cborInt(csilV.CapacityMemoryBytes)})
+	csilEntries = append(csilEntries, cborEntry{cborText("headroom_memory_bytes"), cborInt(csilV.HeadroomMemoryBytes)})
+	csilEntries = append(csilEntries, cborEntry{cborText("capacity_cpu_millicores"), cborInt(csilV.CapacityCpuMillicores)})
+	csilEntries = append(csilEntries, cborEntry{cborText("headroom_cpu_millicores"), cborInt(csilV.HeadroomCpuMillicores)})
+	return csilEntries
+}
+
+// csilDecWorkerAdmissionSummary reconstructs a WorkerAdmissionSummary from a decoded CBOR value tree.
+func csilDecWorkerAdmissionSummary(csilRoot cborValue) (WorkerAdmissionSummary, error) {
+	var csilOut WorkerAdmissionSummary
+	{
+		csilField, csilErr := cborRequire(csilRoot, "mode")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Mode = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "capacity_cpu_millicores")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsI64)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.CapacityCpuMillicores = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "capacity_memory_bytes")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsI64)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.CapacityMemoryBytes = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "headroom_cpu_millicores")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsI64)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.HeadroomCpuMillicores = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "headroom_memory_bytes")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsI64)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.HeadroomMemoryBytes = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "reported_at")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.ReportedAt = csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeWorkerAdmissionSummary encodes a WorkerAdmissionSummary to canonical CSIL CBOR bytes.
+func EncodeWorkerAdmissionSummary(csilV WorkerAdmissionSummary) []byte {
+	return cborEncode(csilEncWorkerAdmissionSummary(csilV))
+}
+
+// DecodeWorkerAdmissionSummary decodes canonical CSIL CBOR bytes into a WorkerAdmissionSummary.
+func DecodeWorkerAdmissionSummary(csilData []byte) (WorkerAdmissionSummary, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero WorkerAdmissionSummary
+		return csilZero, csilErr
+	}
+	return csilDecWorkerAdmissionSummary(csilRoot)
+}
+
 // csilEncListWorkersRequest builds the canonical CBOR value tree for a ListWorkersRequest.
 func csilEncListWorkersRequest(csilV ListWorkersRequest) cborValue {
-	csilEntries := make(cborMap, 0, 1)
+	csilEntries := make(cborMap, 0, 3)
 	if csilV.PoolId != nil {
 		csilEntries = append(csilEntries, cborEntry{cborText("pool_id"), cborText((*csilV.PoolId))})
+	}
+	if csilV.EnrollmentTokenId != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("enrollment_token_id"), cborText((*csilV.EnrollmentTokenId))})
+	}
+	if csilV.OnDeactivatedToken != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("on_deactivated_token"), cborBool((*csilV.OnDeactivatedToken))})
 	}
 	return csilEntries
 }
@@ -11145,6 +13814,20 @@ func csilDecListWorkersRequest(csilRoot cborValue) (ListWorkersRequest, error) {
 			return csilOut, csilErr
 		}
 		csilOut.PoolId = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "enrollment_token_id"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.EnrollmentTokenId = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "on_deactivated_token"); csilOk {
+		csilVal, csilErr := (cborAsBool)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.OnDeactivatedToken = &csilVal
 	}
 	return csilOut, nil
 }
@@ -11820,7 +14503,7 @@ func DecodeDeletePoolResponse(csilData []byte) (DeletePoolResponse, error) {
 
 // csilEncEnrollmentTokenSummary builds the canonical CBOR value tree for a EnrollmentTokenSummary.
 func csilEncEnrollmentTokenSummary(csilV EnrollmentTokenSummary) cborValue {
-	csilEntries := make(cborMap, 0, 7)
+	csilEntries := make(cborMap, 0, 8)
 	if csilV.Name != nil {
 		csilEntries = append(csilEntries, cborEntry{cborText("name"), cborText((*csilV.Name))})
 	}
@@ -11833,6 +14516,9 @@ func csilEncEnrollmentTokenSummary(csilV EnrollmentTokenSummary) cborValue {
 	}
 	if csilV.DeactivatedAt != nil {
 		csilEntries = append(csilEntries, cborEntry{cborText("deactivated_at"), cborText((*csilV.DeactivatedAt))})
+	}
+	if csilV.ActiveWorkerCount != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("active_worker_count"), cborInt((*csilV.ActiveWorkerCount))})
 	}
 	return csilEntries
 }
@@ -11904,6 +14590,13 @@ func csilDecEnrollmentTokenSummary(csilRoot cborValue) (EnrollmentTokenSummary, 
 			return csilOut, csilErr
 		}
 		csilOut.DeactivatedAt = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "active_worker_count"); csilOk {
+		csilVal, csilErr := (cborAsI64)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.ActiveWorkerCount = &csilVal
 	}
 	return csilOut, nil
 }
@@ -12105,8 +14798,11 @@ func DecodeListEnrollmentTokensResponse(csilData []byte) (ListEnrollmentTokensRe
 
 // csilEncDeactivateEnrollmentTokenRequest builds the canonical CBOR value tree for a DeactivateEnrollmentTokenRequest.
 func csilEncDeactivateEnrollmentTokenRequest(csilV DeactivateEnrollmentTokenRequest) cborValue {
-	csilEntries := make(cborMap, 0, 1)
+	csilEntries := make(cborMap, 0, 2)
 	csilEntries = append(csilEntries, cborEntry{cborText("token_id"), cborText(csilV.TokenId)})
+	if csilV.ConfirmPermanent != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("confirm_permanent"), cborBool((*csilV.ConfirmPermanent))})
+	}
 	return csilEntries
 }
 
@@ -12123,6 +14819,13 @@ func csilDecDeactivateEnrollmentTokenRequest(csilRoot cborValue) (DeactivateEnro
 			return csilOut, csilErr
 		}
 		csilOut.TokenId = csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "confirm_permanent"); csilOk {
+		csilVal, csilErr := (cborAsBool)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.ConfirmPermanent = &csilVal
 	}
 	return csilOut, nil
 }
@@ -13455,6 +16158,1735 @@ func DecodeListScheduleFiresResponse(csilData []byte) (ListScheduleFiresResponse
 	return csilDecListScheduleFiresResponse(csilRoot)
 }
 
+// csilEncEventSubscriptionSummary builds the canonical CBOR value tree for a EventSubscriptionSummary.
+func csilEncEventSubscriptionSummary(csilV EventSubscriptionSummary) cborValue {
+	csilEntries := make(cborMap, 0, 21)
+	csilEntries = append(csilEntries, cborEntry{cborText("name"), cborText(csilV.Name)})
+	csilEntries = append(csilEntries, cborEntry{cborText("scope"), cborText(csilV.Scope)})
+	csilEntries = append(csilEntries, cborEntry{cborText("org_id"), cborText(csilV.OrgId)})
+	csilEntries = append(csilEntries, cborEntry{cborText("enabled"), cborBool(csilV.Enabled)})
+	csilEntries = append(csilEntries, cborEntry{cborText("results"), cborEncArray(csilV.Results, func(csilElem string) cborValue { return cborText(csilElem) })})
+	csilEntries = append(csilEntries, cborEntry{cborText("sink_type"), cborText(csilV.SinkType)})
+	csilEntries = append(csilEntries, cborEntry{cborText("created_at"), cborText(csilV.CreatedAt)})
+	if csilV.ProjectId != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("project_id"), cborText((*csilV.ProjectId))})
+	}
+	csilEntries = append(csilEntries, cborEntry{cborText("updated_at"), cborText(csilV.UpdatedAt)})
+	csilEntries = append(csilEntries, cborEntry{cborText("actor_kinds"), cborEncArray(csilV.ActorKinds, func(csilElem string) cborValue { return cborText(csilElem) })})
+	csilEntries = append(csilEntries, cborEntry{cborText("description"), cborText(csilV.Description)})
+	csilEntries = append(csilEntries, cborEntry{cborText("event_types"), cborEncArray(csilV.EventTypes, func(csilElem string) cborValue { return cborText(csilElem) })})
+	csilEntries = append(csilEntries, cborEntry{cborText("owner_group"), cborText(csilV.OwnerGroup)})
+	csilEntries = append(csilEntries, cborEntry{cborText("webhook_url"), cborText(csilV.WebhookUrl)})
+	csilEntries = append(csilEntries, cborEntry{cborText("max_attempts"), cborInt(csilV.MaxAttempts)})
+	csilEntries = append(csilEntries, cborEntry{cborText("owner_active"), cborBool(csilV.OwnerActive)})
+	if csilV.FailureClasses != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("failure_classes"), cborEncArray(csilV.FailureClasses, func(csilElem string) cborValue { return cborText(csilElem) })})
+	}
+	csilEntries = append(csilEntries, cborEntry{cborText("ref_classes_any"), cborEncArray(csilV.RefClassesAny, func(csilElem string) cborValue { return cborText(csilElem) })})
+	csilEntries = append(csilEntries, cborEntry{cborText("subscription_id"), cborText(csilV.SubscriptionId)})
+	csilEntries = append(csilEntries, cborEntry{cborText("owner_principal_id"), cborText(csilV.OwnerPrincipalId)})
+	csilEntries = append(csilEntries, cborEntry{cborText("workflow_security_id"), cborText(csilV.WorkflowSecurityId)})
+	return csilEntries
+}
+
+// csilDecEventSubscriptionSummary reconstructs a EventSubscriptionSummary from a decoded CBOR value tree.
+func csilDecEventSubscriptionSummary(csilRoot cborValue) (EventSubscriptionSummary, error) {
+	var csilOut EventSubscriptionSummary
+	{
+		csilField, csilErr := cborRequire(csilRoot, "subscription_id")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.SubscriptionId = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "org_id")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.OrgId = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "name")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Name = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "description")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Description = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "owner_principal_id")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.OwnerPrincipalId = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "owner_active")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsBool)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.OwnerActive = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "scope")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Scope = csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "project_id"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.ProjectId = &csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "workflow_security_id")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.WorkflowSecurityId = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "owner_group")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.OwnerGroup = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "event_types")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (func(csilV cborValue) ([]string, error) { return cborDecArray(csilV, cborAsText) })(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.EventTypes = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "ref_classes_any")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (func(csilV cborValue) ([]string, error) { return cborDecArray(csilV, cborAsText) })(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.RefClassesAny = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "results")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (func(csilV cborValue) ([]string, error) { return cborDecArray(csilV, cborAsText) })(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Results = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "actor_kinds")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (func(csilV cborValue) ([]string, error) { return cborDecArray(csilV, cborAsText) })(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.ActorKinds = csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "failure_classes"); csilOk {
+		csilVal, csilErr := (func(csilV cborValue) ([]string, error) { return cborDecArray(csilV, cborAsText) })(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.FailureClasses = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "sink_type")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.SinkType = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "webhook_url")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.WebhookUrl = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "max_attempts")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsI64)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.MaxAttempts = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "enabled")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsBool)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Enabled = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "created_at")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.CreatedAt = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "updated_at")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.UpdatedAt = csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeEventSubscriptionSummary encodes a EventSubscriptionSummary to canonical CSIL CBOR bytes.
+func EncodeEventSubscriptionSummary(csilV EventSubscriptionSummary) []byte {
+	return cborEncode(csilEncEventSubscriptionSummary(csilV))
+}
+
+// DecodeEventSubscriptionSummary decodes canonical CSIL CBOR bytes into a EventSubscriptionSummary.
+func DecodeEventSubscriptionSummary(csilData []byte) (EventSubscriptionSummary, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero EventSubscriptionSummary
+		return csilZero, csilErr
+	}
+	return csilDecEventSubscriptionSummary(csilRoot)
+}
+
+// csilEncEventDeliverySummary builds the canonical CBOR value tree for a EventDeliverySummary.
+func csilEncEventDeliverySummary(csilV EventDeliverySummary) cborValue {
+	csilEntries := make(cborMap, 0, 15)
+	csilEntries = append(csilEntries, cborEntry{cborText("status"), cborText(csilV.Status)})
+	csilEntries = append(csilEntries, cborEntry{cborText("attempts"), cborInt(csilV.Attempts)})
+	csilEntries = append(csilEntries, cborEntry{cborText("event_id"), cborText(csilV.EventId)})
+	csilEntries = append(csilEntries, cborEntry{cborText("sequence"), cborInt(csilV.Sequence)})
+	csilEntries = append(csilEntries, cborEntry{cborText("order_key"), cborText(csilV.OrderKey)})
+	csilEntries = append(csilEntries, cborEntry{cborText("created_at"), cborText(csilV.CreatedAt)})
+	csilEntries = append(csilEntries, cborEntry{cborText("event_type"), cborText(csilV.EventType)})
+	csilEntries = append(csilEntries, cborEntry{cborText("last_error"), cborText(csilV.LastError)})
+	csilEntries = append(csilEntries, cborEntry{cborText("delivery_id"), cborText(csilV.DeliveryId)})
+	if csilV.DeliveredAt != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("delivered_at"), cborText((*csilV.DeliveredAt))})
+	}
+	if csilV.LastLatencyMs != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("last_latency_ms"), cborInt((*csilV.LastLatencyMs))})
+	}
+	csilEntries = append(csilEntries, cborEntry{cborText("next_attempt_at"), cborText(csilV.NextAttemptAt)})
+	csilEntries = append(csilEntries, cborEntry{cborText("subscription_id"), cborText(csilV.SubscriptionId)})
+	if csilV.DeadLetteredAt != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("dead_lettered_at"), cborText((*csilV.DeadLetteredAt))})
+	}
+	if csilV.LastHttpStatus != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("last_http_status"), cborInt((*csilV.LastHttpStatus))})
+	}
+	return csilEntries
+}
+
+// csilDecEventDeliverySummary reconstructs a EventDeliverySummary from a decoded CBOR value tree.
+func csilDecEventDeliverySummary(csilRoot cborValue) (EventDeliverySummary, error) {
+	var csilOut EventDeliverySummary
+	{
+		csilField, csilErr := cborRequire(csilRoot, "delivery_id")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.DeliveryId = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "subscription_id")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.SubscriptionId = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "event_id")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.EventId = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "event_type")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.EventType = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "order_key")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.OrderKey = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "sequence")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsI64)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Sequence = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "status")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Status = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "attempts")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsI64)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Attempts = csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "last_http_status"); csilOk {
+		csilVal, csilErr := (cborAsI64)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.LastHttpStatus = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "last_latency_ms"); csilOk {
+		csilVal, csilErr := (cborAsI64)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.LastLatencyMs = &csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "last_error")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.LastError = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "next_attempt_at")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.NextAttemptAt = csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "delivered_at"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.DeliveredAt = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "dead_lettered_at"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.DeadLetteredAt = &csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "created_at")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.CreatedAt = csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeEventDeliverySummary encodes a EventDeliverySummary to canonical CSIL CBOR bytes.
+func EncodeEventDeliverySummary(csilV EventDeliverySummary) []byte {
+	return cborEncode(csilEncEventDeliverySummary(csilV))
+}
+
+// DecodeEventDeliverySummary decodes canonical CSIL CBOR bytes into a EventDeliverySummary.
+func DecodeEventDeliverySummary(csilData []byte) (EventDeliverySummary, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero EventDeliverySummary
+		return csilZero, csilErr
+	}
+	return csilDecEventDeliverySummary(csilRoot)
+}
+
+// csilEncEventDeliveryAttemptEntry builds the canonical CBOR value tree for a EventDeliveryAttemptEntry.
+func csilEncEventDeliveryAttemptEntry(csilV EventDeliveryAttemptEntry) cborValue {
+	csilEntries := make(cborMap, 0, 7)
+	csilEntries = append(csilEntries, cborEntry{cborText("error"), cborText(csilV.Error)})
+	csilEntries = append(csilEntries, cborEntry{cborText("result"), cborText(csilV.Result)})
+	csilEntries = append(csilEntries, cborEntry{cborText("attempt"), cborInt(csilV.Attempt)})
+	csilEntries = append(csilEntries, cborEntry{cborText("latency_ms"), cborInt(csilV.LatencyMs)})
+	csilEntries = append(csilEntries, cborEntry{cborText("started_at"), cborText(csilV.StartedAt)})
+	csilEntries = append(csilEntries, cborEntry{cborText("finished_at"), cborText(csilV.FinishedAt)})
+	if csilV.HttpStatus != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("http_status"), cborInt((*csilV.HttpStatus))})
+	}
+	return csilEntries
+}
+
+// csilDecEventDeliveryAttemptEntry reconstructs a EventDeliveryAttemptEntry from a decoded CBOR value tree.
+func csilDecEventDeliveryAttemptEntry(csilRoot cborValue) (EventDeliveryAttemptEntry, error) {
+	var csilOut EventDeliveryAttemptEntry
+	{
+		csilField, csilErr := cborRequire(csilRoot, "attempt")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsI64)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Attempt = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "started_at")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.StartedAt = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "finished_at")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.FinishedAt = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "result")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Result = csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "http_status"); csilOk {
+		csilVal, csilErr := (cborAsI64)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.HttpStatus = &csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "latency_ms")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsI64)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.LatencyMs = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "error")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Error = csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeEventDeliveryAttemptEntry encodes a EventDeliveryAttemptEntry to canonical CSIL CBOR bytes.
+func EncodeEventDeliveryAttemptEntry(csilV EventDeliveryAttemptEntry) []byte {
+	return cborEncode(csilEncEventDeliveryAttemptEntry(csilV))
+}
+
+// DecodeEventDeliveryAttemptEntry decodes canonical CSIL CBOR bytes into a EventDeliveryAttemptEntry.
+func DecodeEventDeliveryAttemptEntry(csilData []byte) (EventDeliveryAttemptEntry, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero EventDeliveryAttemptEntry
+		return csilZero, csilErr
+	}
+	return csilDecEventDeliveryAttemptEntry(csilRoot)
+}
+
+// csilEncListEventSubscriptionsRequest builds the canonical CBOR value tree for a ListEventSubscriptionsRequest.
+func csilEncListEventSubscriptionsRequest(csilV ListEventSubscriptionsRequest) cborValue {
+	csilEntries := make(cborMap, 0, 2)
+	csilEntries = append(csilEntries, cborEntry{cborText("org_id"), cborText(csilV.OrgId)})
+	if csilV.ProjectId != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("project_id"), cborText((*csilV.ProjectId))})
+	}
+	return csilEntries
+}
+
+// csilDecListEventSubscriptionsRequest reconstructs a ListEventSubscriptionsRequest from a decoded CBOR value tree.
+func csilDecListEventSubscriptionsRequest(csilRoot cborValue) (ListEventSubscriptionsRequest, error) {
+	var csilOut ListEventSubscriptionsRequest
+	{
+		csilField, csilErr := cborRequire(csilRoot, "org_id")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.OrgId = csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "project_id"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.ProjectId = &csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeListEventSubscriptionsRequest encodes a ListEventSubscriptionsRequest to canonical CSIL CBOR bytes.
+func EncodeListEventSubscriptionsRequest(csilV ListEventSubscriptionsRequest) []byte {
+	return cborEncode(csilEncListEventSubscriptionsRequest(csilV))
+}
+
+// DecodeListEventSubscriptionsRequest decodes canonical CSIL CBOR bytes into a ListEventSubscriptionsRequest.
+func DecodeListEventSubscriptionsRequest(csilData []byte) (ListEventSubscriptionsRequest, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero ListEventSubscriptionsRequest
+		return csilZero, csilErr
+	}
+	return csilDecListEventSubscriptionsRequest(csilRoot)
+}
+
+// csilEncListEventSubscriptionsResponse builds the canonical CBOR value tree for a ListEventSubscriptionsResponse.
+func csilEncListEventSubscriptionsResponse(csilV ListEventSubscriptionsResponse) cborValue {
+	csilEntries := make(cborMap, 0, 1)
+	csilEntries = append(csilEntries, cborEntry{cborText("subscriptions"), cborEncArray(csilV.Subscriptions, func(csilElem EventSubscriptionSummary) cborValue { return csilEncEventSubscriptionSummary(csilElem) })})
+	return csilEntries
+}
+
+// csilDecListEventSubscriptionsResponse reconstructs a ListEventSubscriptionsResponse from a decoded CBOR value tree.
+func csilDecListEventSubscriptionsResponse(csilRoot cborValue) (ListEventSubscriptionsResponse, error) {
+	var csilOut ListEventSubscriptionsResponse
+	{
+		csilField, csilErr := cborRequire(csilRoot, "subscriptions")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (func(csilV cborValue) ([]EventSubscriptionSummary, error) {
+			return cborDecArray(csilV, csilDecEventSubscriptionSummary)
+		})(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Subscriptions = csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeListEventSubscriptionsResponse encodes a ListEventSubscriptionsResponse to canonical CSIL CBOR bytes.
+func EncodeListEventSubscriptionsResponse(csilV ListEventSubscriptionsResponse) []byte {
+	return cborEncode(csilEncListEventSubscriptionsResponse(csilV))
+}
+
+// DecodeListEventSubscriptionsResponse decodes canonical CSIL CBOR bytes into a ListEventSubscriptionsResponse.
+func DecodeListEventSubscriptionsResponse(csilData []byte) (ListEventSubscriptionsResponse, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero ListEventSubscriptionsResponse
+		return csilZero, csilErr
+	}
+	return csilDecListEventSubscriptionsResponse(csilRoot)
+}
+
+// csilEncGetEventSubscriptionRequest builds the canonical CBOR value tree for a GetEventSubscriptionRequest.
+func csilEncGetEventSubscriptionRequest(csilV GetEventSubscriptionRequest) cborValue {
+	csilEntries := make(cborMap, 0, 1)
+	csilEntries = append(csilEntries, cborEntry{cborText("subscription_id"), cborText(csilV.SubscriptionId)})
+	return csilEntries
+}
+
+// csilDecGetEventSubscriptionRequest reconstructs a GetEventSubscriptionRequest from a decoded CBOR value tree.
+func csilDecGetEventSubscriptionRequest(csilRoot cborValue) (GetEventSubscriptionRequest, error) {
+	var csilOut GetEventSubscriptionRequest
+	{
+		csilField, csilErr := cborRequire(csilRoot, "subscription_id")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.SubscriptionId = csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeGetEventSubscriptionRequest encodes a GetEventSubscriptionRequest to canonical CSIL CBOR bytes.
+func EncodeGetEventSubscriptionRequest(csilV GetEventSubscriptionRequest) []byte {
+	return cborEncode(csilEncGetEventSubscriptionRequest(csilV))
+}
+
+// DecodeGetEventSubscriptionRequest decodes canonical CSIL CBOR bytes into a GetEventSubscriptionRequest.
+func DecodeGetEventSubscriptionRequest(csilData []byte) (GetEventSubscriptionRequest, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero GetEventSubscriptionRequest
+		return csilZero, csilErr
+	}
+	return csilDecGetEventSubscriptionRequest(csilRoot)
+}
+
+// csilEncGetEventSubscriptionResponse builds the canonical CBOR value tree for a GetEventSubscriptionResponse.
+func csilEncGetEventSubscriptionResponse(csilV GetEventSubscriptionResponse) cborValue {
+	csilEntries := make(cborMap, 0, 1)
+	csilEntries = append(csilEntries, cborEntry{cborText("subscription"), csilEncEventSubscriptionSummary(csilV.Subscription)})
+	return csilEntries
+}
+
+// csilDecGetEventSubscriptionResponse reconstructs a GetEventSubscriptionResponse from a decoded CBOR value tree.
+func csilDecGetEventSubscriptionResponse(csilRoot cborValue) (GetEventSubscriptionResponse, error) {
+	var csilOut GetEventSubscriptionResponse
+	{
+		csilField, csilErr := cborRequire(csilRoot, "subscription")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (csilDecEventSubscriptionSummary)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Subscription = csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeGetEventSubscriptionResponse encodes a GetEventSubscriptionResponse to canonical CSIL CBOR bytes.
+func EncodeGetEventSubscriptionResponse(csilV GetEventSubscriptionResponse) []byte {
+	return cborEncode(csilEncGetEventSubscriptionResponse(csilV))
+}
+
+// DecodeGetEventSubscriptionResponse decodes canonical CSIL CBOR bytes into a GetEventSubscriptionResponse.
+func DecodeGetEventSubscriptionResponse(csilData []byte) (GetEventSubscriptionResponse, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero GetEventSubscriptionResponse
+		return csilZero, csilErr
+	}
+	return csilDecGetEventSubscriptionResponse(csilRoot)
+}
+
+// csilEncCreateEventSubscriptionRequest builds the canonical CBOR value tree for a CreateEventSubscriptionRequest.
+func csilEncCreateEventSubscriptionRequest(csilV CreateEventSubscriptionRequest) cborValue {
+	csilEntries := make(cborMap, 0, 18)
+	csilEntries = append(csilEntries, cborEntry{cborText("name"), cborText(csilV.Name)})
+	csilEntries = append(csilEntries, cborEntry{cborText("scope"), cborText(csilV.Scope)})
+	csilEntries = append(csilEntries, cborEntry{cborText("org_id"), cborText(csilV.OrgId)})
+	if csilV.Enabled != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("enabled"), cborBool((*csilV.Enabled))})
+	}
+	if csilV.Results != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("results"), cborEncArray(csilV.Results, func(csilElem string) cborValue { return cborText(csilElem) })})
+	}
+	if csilV.SinkType != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("sink_type"), cborText((*csilV.SinkType))})
+	}
+	if csilV.ProjectId != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("project_id"), cborText((*csilV.ProjectId))})
+	}
+	if csilV.ActorKinds != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("actor_kinds"), cborEncArray(csilV.ActorKinds, func(csilElem string) cborValue { return cborText(csilElem) })})
+	}
+	if csilV.Description != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("description"), cborText((*csilV.Description))})
+	}
+	if csilV.EventTypes != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("event_types"), cborEncArray(csilV.EventTypes, func(csilElem string) cborValue { return cborText(csilElem) })})
+	}
+	if csilV.OwnerGroup != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("owner_group"), cborText((*csilV.OwnerGroup))})
+	}
+	csilEntries = append(csilEntries, cborEntry{cborText("webhook_url"), cborText(csilV.WebhookUrl)})
+	if csilV.MaxAttempts != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("max_attempts"), cborInt((*csilV.MaxAttempts))})
+	}
+	if csilV.SigningSecret != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("signing_secret"), cborText((*csilV.SigningSecret))})
+	}
+	if csilV.FailureClasses != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("failure_classes"), cborEncArray(csilV.FailureClasses, func(csilElem string) cborValue { return cborText(csilElem) })})
+	}
+	if csilV.RefClassesAny != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("ref_classes_any"), cborEncArray(csilV.RefClassesAny, func(csilElem string) cborValue { return cborText(csilElem) })})
+	}
+	if csilV.OwnerPrincipalId != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("owner_principal_id"), cborText((*csilV.OwnerPrincipalId))})
+	}
+	if csilV.WorkflowSecurityId != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("workflow_security_id"), cborText((*csilV.WorkflowSecurityId))})
+	}
+	return csilEntries
+}
+
+// csilDecCreateEventSubscriptionRequest reconstructs a CreateEventSubscriptionRequest from a decoded CBOR value tree.
+func csilDecCreateEventSubscriptionRequest(csilRoot cborValue) (CreateEventSubscriptionRequest, error) {
+	var csilOut CreateEventSubscriptionRequest
+	{
+		csilField, csilErr := cborRequire(csilRoot, "org_id")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.OrgId = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "name")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Name = csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "description"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Description = &csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "scope")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Scope = csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "project_id"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.ProjectId = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "workflow_security_id"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.WorkflowSecurityId = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "owner_group"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.OwnerGroup = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "event_types"); csilOk {
+		csilVal, csilErr := (func(csilV cborValue) ([]string, error) { return cborDecArray(csilV, cborAsText) })(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.EventTypes = csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "ref_classes_any"); csilOk {
+		csilVal, csilErr := (func(csilV cborValue) ([]string, error) { return cborDecArray(csilV, cborAsText) })(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.RefClassesAny = csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "results"); csilOk {
+		csilVal, csilErr := (func(csilV cborValue) ([]string, error) { return cborDecArray(csilV, cborAsText) })(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Results = csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "actor_kinds"); csilOk {
+		csilVal, csilErr := (func(csilV cborValue) ([]string, error) { return cborDecArray(csilV, cborAsText) })(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.ActorKinds = csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "failure_classes"); csilOk {
+		csilVal, csilErr := (func(csilV cborValue) ([]string, error) { return cborDecArray(csilV, cborAsText) })(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.FailureClasses = csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "sink_type"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.SinkType = &csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "webhook_url")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.WebhookUrl = csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "max_attempts"); csilOk {
+		csilVal, csilErr := (cborAsI64)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.MaxAttempts = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "enabled"); csilOk {
+		csilVal, csilErr := (cborAsBool)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Enabled = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "signing_secret"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.SigningSecret = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "owner_principal_id"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.OwnerPrincipalId = &csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeCreateEventSubscriptionRequest encodes a CreateEventSubscriptionRequest to canonical CSIL CBOR bytes.
+func EncodeCreateEventSubscriptionRequest(csilV CreateEventSubscriptionRequest) []byte {
+	return cborEncode(csilEncCreateEventSubscriptionRequest(csilV))
+}
+
+// DecodeCreateEventSubscriptionRequest decodes canonical CSIL CBOR bytes into a CreateEventSubscriptionRequest.
+func DecodeCreateEventSubscriptionRequest(csilData []byte) (CreateEventSubscriptionRequest, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero CreateEventSubscriptionRequest
+		return csilZero, csilErr
+	}
+	return csilDecCreateEventSubscriptionRequest(csilRoot)
+}
+
+// csilEncCreateEventSubscriptionResponse builds the canonical CBOR value tree for a CreateEventSubscriptionResponse.
+func csilEncCreateEventSubscriptionResponse(csilV CreateEventSubscriptionResponse) cborValue {
+	csilEntries := make(cborMap, 0, 2)
+	csilEntries = append(csilEntries, cborEntry{cborText("subscription"), csilEncEventSubscriptionSummary(csilV.Subscription)})
+	csilEntries = append(csilEntries, cborEntry{cborText("signing_secret"), cborText(csilV.SigningSecret)})
+	return csilEntries
+}
+
+// csilDecCreateEventSubscriptionResponse reconstructs a CreateEventSubscriptionResponse from a decoded CBOR value tree.
+func csilDecCreateEventSubscriptionResponse(csilRoot cborValue) (CreateEventSubscriptionResponse, error) {
+	var csilOut CreateEventSubscriptionResponse
+	{
+		csilField, csilErr := cborRequire(csilRoot, "subscription")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (csilDecEventSubscriptionSummary)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Subscription = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "signing_secret")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.SigningSecret = csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeCreateEventSubscriptionResponse encodes a CreateEventSubscriptionResponse to canonical CSIL CBOR bytes.
+func EncodeCreateEventSubscriptionResponse(csilV CreateEventSubscriptionResponse) []byte {
+	return cborEncode(csilEncCreateEventSubscriptionResponse(csilV))
+}
+
+// DecodeCreateEventSubscriptionResponse decodes canonical CSIL CBOR bytes into a CreateEventSubscriptionResponse.
+func DecodeCreateEventSubscriptionResponse(csilData []byte) (CreateEventSubscriptionResponse, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero CreateEventSubscriptionResponse
+		return csilZero, csilErr
+	}
+	return csilDecCreateEventSubscriptionResponse(csilRoot)
+}
+
+// csilEncUpdateEventSubscriptionRequest builds the canonical CBOR value tree for a UpdateEventSubscriptionRequest.
+func csilEncUpdateEventSubscriptionRequest(csilV UpdateEventSubscriptionRequest) cborValue {
+	csilEntries := make(cborMap, 0, 13)
+	if csilV.Enabled != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("enabled"), cborBool((*csilV.Enabled))})
+	}
+	if csilV.Results != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("results"), cborEncArray(csilV.Results, func(csilElem string) cborValue { return cborText(csilElem) })})
+	}
+	if csilV.ActorKinds != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("actor_kinds"), cborEncArray(csilV.ActorKinds, func(csilElem string) cborValue { return cborText(csilElem) })})
+	}
+	if csilV.Description != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("description"), cborText((*csilV.Description))})
+	}
+	if csilV.EventTypes != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("event_types"), cborEncArray(csilV.EventTypes, func(csilElem string) cborValue { return cborText(csilElem) })})
+	}
+	if csilV.WebhookUrl != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("webhook_url"), cborText((*csilV.WebhookUrl))})
+	}
+	if csilV.MaxAttempts != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("max_attempts"), cborInt((*csilV.MaxAttempts))})
+	}
+	if csilV.ClearFilters != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("clear_filters"), cborEncArray(csilV.ClearFilters, func(csilElem string) cborValue { return cborText(csilElem) })})
+	}
+	if csilV.RotateSecret != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("rotate_secret"), cborBool((*csilV.RotateSecret))})
+	}
+	if csilV.SigningSecret != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("signing_secret"), cborText((*csilV.SigningSecret))})
+	}
+	if csilV.FailureClasses != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("failure_classes"), cborEncArray(csilV.FailureClasses, func(csilElem string) cborValue { return cborText(csilElem) })})
+	}
+	if csilV.RefClassesAny != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("ref_classes_any"), cborEncArray(csilV.RefClassesAny, func(csilElem string) cborValue { return cborText(csilElem) })})
+	}
+	csilEntries = append(csilEntries, cborEntry{cborText("subscription_id"), cborText(csilV.SubscriptionId)})
+	return csilEntries
+}
+
+// csilDecUpdateEventSubscriptionRequest reconstructs a UpdateEventSubscriptionRequest from a decoded CBOR value tree.
+func csilDecUpdateEventSubscriptionRequest(csilRoot cborValue) (UpdateEventSubscriptionRequest, error) {
+	var csilOut UpdateEventSubscriptionRequest
+	{
+		csilField, csilErr := cborRequire(csilRoot, "subscription_id")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.SubscriptionId = csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "description"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Description = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "event_types"); csilOk {
+		csilVal, csilErr := (func(csilV cborValue) ([]string, error) { return cborDecArray(csilV, cborAsText) })(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.EventTypes = csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "ref_classes_any"); csilOk {
+		csilVal, csilErr := (func(csilV cborValue) ([]string, error) { return cborDecArray(csilV, cborAsText) })(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.RefClassesAny = csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "results"); csilOk {
+		csilVal, csilErr := (func(csilV cborValue) ([]string, error) { return cborDecArray(csilV, cborAsText) })(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Results = csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "actor_kinds"); csilOk {
+		csilVal, csilErr := (func(csilV cborValue) ([]string, error) { return cborDecArray(csilV, cborAsText) })(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.ActorKinds = csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "failure_classes"); csilOk {
+		csilVal, csilErr := (func(csilV cborValue) ([]string, error) { return cborDecArray(csilV, cborAsText) })(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.FailureClasses = csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "webhook_url"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.WebhookUrl = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "max_attempts"); csilOk {
+		csilVal, csilErr := (cborAsI64)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.MaxAttempts = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "enabled"); csilOk {
+		csilVal, csilErr := (cborAsBool)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Enabled = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "rotate_secret"); csilOk {
+		csilVal, csilErr := (cborAsBool)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.RotateSecret = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "signing_secret"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.SigningSecret = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "clear_filters"); csilOk {
+		csilVal, csilErr := (func(csilV cborValue) ([]string, error) { return cborDecArray(csilV, cborAsText) })(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.ClearFilters = csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeUpdateEventSubscriptionRequest encodes a UpdateEventSubscriptionRequest to canonical CSIL CBOR bytes.
+func EncodeUpdateEventSubscriptionRequest(csilV UpdateEventSubscriptionRequest) []byte {
+	return cborEncode(csilEncUpdateEventSubscriptionRequest(csilV))
+}
+
+// DecodeUpdateEventSubscriptionRequest decodes canonical CSIL CBOR bytes into a UpdateEventSubscriptionRequest.
+func DecodeUpdateEventSubscriptionRequest(csilData []byte) (UpdateEventSubscriptionRequest, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero UpdateEventSubscriptionRequest
+		return csilZero, csilErr
+	}
+	return csilDecUpdateEventSubscriptionRequest(csilRoot)
+}
+
+// csilEncUpdateEventSubscriptionResponse builds the canonical CBOR value tree for a UpdateEventSubscriptionResponse.
+func csilEncUpdateEventSubscriptionResponse(csilV UpdateEventSubscriptionResponse) cborValue {
+	csilEntries := make(cborMap, 0, 2)
+	csilEntries = append(csilEntries, cborEntry{cborText("subscription"), csilEncEventSubscriptionSummary(csilV.Subscription)})
+	if csilV.SigningSecret != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("signing_secret"), cborText((*csilV.SigningSecret))})
+	}
+	return csilEntries
+}
+
+// csilDecUpdateEventSubscriptionResponse reconstructs a UpdateEventSubscriptionResponse from a decoded CBOR value tree.
+func csilDecUpdateEventSubscriptionResponse(csilRoot cborValue) (UpdateEventSubscriptionResponse, error) {
+	var csilOut UpdateEventSubscriptionResponse
+	{
+		csilField, csilErr := cborRequire(csilRoot, "subscription")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (csilDecEventSubscriptionSummary)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Subscription = csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "signing_secret"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.SigningSecret = &csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeUpdateEventSubscriptionResponse encodes a UpdateEventSubscriptionResponse to canonical CSIL CBOR bytes.
+func EncodeUpdateEventSubscriptionResponse(csilV UpdateEventSubscriptionResponse) []byte {
+	return cborEncode(csilEncUpdateEventSubscriptionResponse(csilV))
+}
+
+// DecodeUpdateEventSubscriptionResponse decodes canonical CSIL CBOR bytes into a UpdateEventSubscriptionResponse.
+func DecodeUpdateEventSubscriptionResponse(csilData []byte) (UpdateEventSubscriptionResponse, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero UpdateEventSubscriptionResponse
+		return csilZero, csilErr
+	}
+	return csilDecUpdateEventSubscriptionResponse(csilRoot)
+}
+
+// csilEncDeleteEventSubscriptionRequest builds the canonical CBOR value tree for a DeleteEventSubscriptionRequest.
+func csilEncDeleteEventSubscriptionRequest(csilV DeleteEventSubscriptionRequest) cborValue {
+	csilEntries := make(cborMap, 0, 1)
+	csilEntries = append(csilEntries, cborEntry{cborText("subscription_id"), cborText(csilV.SubscriptionId)})
+	return csilEntries
+}
+
+// csilDecDeleteEventSubscriptionRequest reconstructs a DeleteEventSubscriptionRequest from a decoded CBOR value tree.
+func csilDecDeleteEventSubscriptionRequest(csilRoot cborValue) (DeleteEventSubscriptionRequest, error) {
+	var csilOut DeleteEventSubscriptionRequest
+	{
+		csilField, csilErr := cborRequire(csilRoot, "subscription_id")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.SubscriptionId = csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeDeleteEventSubscriptionRequest encodes a DeleteEventSubscriptionRequest to canonical CSIL CBOR bytes.
+func EncodeDeleteEventSubscriptionRequest(csilV DeleteEventSubscriptionRequest) []byte {
+	return cborEncode(csilEncDeleteEventSubscriptionRequest(csilV))
+}
+
+// DecodeDeleteEventSubscriptionRequest decodes canonical CSIL CBOR bytes into a DeleteEventSubscriptionRequest.
+func DecodeDeleteEventSubscriptionRequest(csilData []byte) (DeleteEventSubscriptionRequest, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero DeleteEventSubscriptionRequest
+		return csilZero, csilErr
+	}
+	return csilDecDeleteEventSubscriptionRequest(csilRoot)
+}
+
+// csilEncDeleteEventSubscriptionResponse builds the canonical CBOR value tree for a DeleteEventSubscriptionResponse.
+func csilEncDeleteEventSubscriptionResponse(csilV DeleteEventSubscriptionResponse) cborValue {
+	csilEntries := make(cborMap, 0, 1)
+	csilEntries = append(csilEntries, cborEntry{cborText("ok"), cborBool(csilV.Ok)})
+	return csilEntries
+}
+
+// csilDecDeleteEventSubscriptionResponse reconstructs a DeleteEventSubscriptionResponse from a decoded CBOR value tree.
+func csilDecDeleteEventSubscriptionResponse(csilRoot cborValue) (DeleteEventSubscriptionResponse, error) {
+	var csilOut DeleteEventSubscriptionResponse
+	{
+		csilField, csilErr := cborRequire(csilRoot, "ok")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsBool)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Ok = csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeDeleteEventSubscriptionResponse encodes a DeleteEventSubscriptionResponse to canonical CSIL CBOR bytes.
+func EncodeDeleteEventSubscriptionResponse(csilV DeleteEventSubscriptionResponse) []byte {
+	return cborEncode(csilEncDeleteEventSubscriptionResponse(csilV))
+}
+
+// DecodeDeleteEventSubscriptionResponse decodes canonical CSIL CBOR bytes into a DeleteEventSubscriptionResponse.
+func DecodeDeleteEventSubscriptionResponse(csilData []byte) (DeleteEventSubscriptionResponse, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero DeleteEventSubscriptionResponse
+		return csilZero, csilErr
+	}
+	return csilDecDeleteEventSubscriptionResponse(csilRoot)
+}
+
+// csilEncListEventDeliveriesRequest builds the canonical CBOR value tree for a ListEventDeliveriesRequest.
+func csilEncListEventDeliveriesRequest(csilV ListEventDeliveriesRequest) cborValue {
+	csilEntries := make(cborMap, 0, 3)
+	if csilV.Limit != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("limit"), cborInt((*csilV.Limit))})
+	}
+	if csilV.Status != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("status"), cborText((*csilV.Status))})
+	}
+	csilEntries = append(csilEntries, cborEntry{cborText("subscription_id"), cborText(csilV.SubscriptionId)})
+	return csilEntries
+}
+
+// csilDecListEventDeliveriesRequest reconstructs a ListEventDeliveriesRequest from a decoded CBOR value tree.
+func csilDecListEventDeliveriesRequest(csilRoot cborValue) (ListEventDeliveriesRequest, error) {
+	var csilOut ListEventDeliveriesRequest
+	{
+		csilField, csilErr := cborRequire(csilRoot, "subscription_id")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.SubscriptionId = csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "status"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Status = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "limit"); csilOk {
+		csilVal, csilErr := (cborAsI64)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Limit = &csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeListEventDeliveriesRequest encodes a ListEventDeliveriesRequest to canonical CSIL CBOR bytes.
+func EncodeListEventDeliveriesRequest(csilV ListEventDeliveriesRequest) []byte {
+	return cborEncode(csilEncListEventDeliveriesRequest(csilV))
+}
+
+// DecodeListEventDeliveriesRequest decodes canonical CSIL CBOR bytes into a ListEventDeliveriesRequest.
+func DecodeListEventDeliveriesRequest(csilData []byte) (ListEventDeliveriesRequest, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero ListEventDeliveriesRequest
+		return csilZero, csilErr
+	}
+	return csilDecListEventDeliveriesRequest(csilRoot)
+}
+
+// csilEncListEventDeliveriesResponse builds the canonical CBOR value tree for a ListEventDeliveriesResponse.
+func csilEncListEventDeliveriesResponse(csilV ListEventDeliveriesResponse) cborValue {
+	csilEntries := make(cborMap, 0, 1)
+	csilEntries = append(csilEntries, cborEntry{cborText("deliveries"), cborEncArray(csilV.Deliveries, func(csilElem EventDeliverySummary) cborValue { return csilEncEventDeliverySummary(csilElem) })})
+	return csilEntries
+}
+
+// csilDecListEventDeliveriesResponse reconstructs a ListEventDeliveriesResponse from a decoded CBOR value tree.
+func csilDecListEventDeliveriesResponse(csilRoot cborValue) (ListEventDeliveriesResponse, error) {
+	var csilOut ListEventDeliveriesResponse
+	{
+		csilField, csilErr := cborRequire(csilRoot, "deliveries")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (func(csilV cborValue) ([]EventDeliverySummary, error) {
+			return cborDecArray(csilV, csilDecEventDeliverySummary)
+		})(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Deliveries = csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeListEventDeliveriesResponse encodes a ListEventDeliveriesResponse to canonical CSIL CBOR bytes.
+func EncodeListEventDeliveriesResponse(csilV ListEventDeliveriesResponse) []byte {
+	return cborEncode(csilEncListEventDeliveriesResponse(csilV))
+}
+
+// DecodeListEventDeliveriesResponse decodes canonical CSIL CBOR bytes into a ListEventDeliveriesResponse.
+func DecodeListEventDeliveriesResponse(csilData []byte) (ListEventDeliveriesResponse, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero ListEventDeliveriesResponse
+		return csilZero, csilErr
+	}
+	return csilDecListEventDeliveriesResponse(csilRoot)
+}
+
+// csilEncGetEventDeliveryRequest builds the canonical CBOR value tree for a GetEventDeliveryRequest.
+func csilEncGetEventDeliveryRequest(csilV GetEventDeliveryRequest) cborValue {
+	csilEntries := make(cborMap, 0, 2)
+	csilEntries = append(csilEntries, cborEntry{cborText("delivery_id"), cborText(csilV.DeliveryId)})
+	csilEntries = append(csilEntries, cborEntry{cborText("subscription_id"), cborText(csilV.SubscriptionId)})
+	return csilEntries
+}
+
+// csilDecGetEventDeliveryRequest reconstructs a GetEventDeliveryRequest from a decoded CBOR value tree.
+func csilDecGetEventDeliveryRequest(csilRoot cborValue) (GetEventDeliveryRequest, error) {
+	var csilOut GetEventDeliveryRequest
+	{
+		csilField, csilErr := cborRequire(csilRoot, "subscription_id")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.SubscriptionId = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "delivery_id")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.DeliveryId = csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeGetEventDeliveryRequest encodes a GetEventDeliveryRequest to canonical CSIL CBOR bytes.
+func EncodeGetEventDeliveryRequest(csilV GetEventDeliveryRequest) []byte {
+	return cborEncode(csilEncGetEventDeliveryRequest(csilV))
+}
+
+// DecodeGetEventDeliveryRequest decodes canonical CSIL CBOR bytes into a GetEventDeliveryRequest.
+func DecodeGetEventDeliveryRequest(csilData []byte) (GetEventDeliveryRequest, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero GetEventDeliveryRequest
+		return csilZero, csilErr
+	}
+	return csilDecGetEventDeliveryRequest(csilRoot)
+}
+
+// csilEncGetEventDeliveryResponse builds the canonical CBOR value tree for a GetEventDeliveryResponse.
+func csilEncGetEventDeliveryResponse(csilV GetEventDeliveryResponse) cborValue {
+	csilEntries := make(cborMap, 0, 2)
+	csilEntries = append(csilEntries, cborEntry{cborText("attempts"), cborEncArray(csilV.Attempts, func(csilElem EventDeliveryAttemptEntry) cborValue { return csilEncEventDeliveryAttemptEntry(csilElem) })})
+	csilEntries = append(csilEntries, cborEntry{cborText("delivery"), csilEncEventDeliverySummary(csilV.Delivery)})
+	return csilEntries
+}
+
+// csilDecGetEventDeliveryResponse reconstructs a GetEventDeliveryResponse from a decoded CBOR value tree.
+func csilDecGetEventDeliveryResponse(csilRoot cborValue) (GetEventDeliveryResponse, error) {
+	var csilOut GetEventDeliveryResponse
+	{
+		csilField, csilErr := cborRequire(csilRoot, "delivery")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (csilDecEventDeliverySummary)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Delivery = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "attempts")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (func(csilV cborValue) ([]EventDeliveryAttemptEntry, error) {
+			return cborDecArray(csilV, csilDecEventDeliveryAttemptEntry)
+		})(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Attempts = csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeGetEventDeliveryResponse encodes a GetEventDeliveryResponse to canonical CSIL CBOR bytes.
+func EncodeGetEventDeliveryResponse(csilV GetEventDeliveryResponse) []byte {
+	return cborEncode(csilEncGetEventDeliveryResponse(csilV))
+}
+
+// DecodeGetEventDeliveryResponse decodes canonical CSIL CBOR bytes into a GetEventDeliveryResponse.
+func DecodeGetEventDeliveryResponse(csilData []byte) (GetEventDeliveryResponse, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero GetEventDeliveryResponse
+		return csilZero, csilErr
+	}
+	return csilDecGetEventDeliveryResponse(csilRoot)
+}
+
+// csilEncReplayEventDeliveryRequest builds the canonical CBOR value tree for a ReplayEventDeliveryRequest.
+func csilEncReplayEventDeliveryRequest(csilV ReplayEventDeliveryRequest) cborValue {
+	csilEntries := make(cborMap, 0, 3)
+	if csilV.DeliveryId != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("delivery_id"), cborText((*csilV.DeliveryId))})
+	}
+	csilEntries = append(csilEntries, cborEntry{cborText("subscription_id"), cborText(csilV.SubscriptionId)})
+	if csilV.AllDeadLetters != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("all_dead_letters"), cborBool((*csilV.AllDeadLetters))})
+	}
+	return csilEntries
+}
+
+// csilDecReplayEventDeliveryRequest reconstructs a ReplayEventDeliveryRequest from a decoded CBOR value tree.
+func csilDecReplayEventDeliveryRequest(csilRoot cborValue) (ReplayEventDeliveryRequest, error) {
+	var csilOut ReplayEventDeliveryRequest
+	{
+		csilField, csilErr := cborRequire(csilRoot, "subscription_id")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.SubscriptionId = csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "delivery_id"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.DeliveryId = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "all_dead_letters"); csilOk {
+		csilVal, csilErr := (cborAsBool)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.AllDeadLetters = &csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeReplayEventDeliveryRequest encodes a ReplayEventDeliveryRequest to canonical CSIL CBOR bytes.
+func EncodeReplayEventDeliveryRequest(csilV ReplayEventDeliveryRequest) []byte {
+	return cborEncode(csilEncReplayEventDeliveryRequest(csilV))
+}
+
+// DecodeReplayEventDeliveryRequest decodes canonical CSIL CBOR bytes into a ReplayEventDeliveryRequest.
+func DecodeReplayEventDeliveryRequest(csilData []byte) (ReplayEventDeliveryRequest, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero ReplayEventDeliveryRequest
+		return csilZero, csilErr
+	}
+	return csilDecReplayEventDeliveryRequest(csilRoot)
+}
+
+// csilEncReplayEventDeliveryResponse builds the canonical CBOR value tree for a ReplayEventDeliveryResponse.
+func csilEncReplayEventDeliveryResponse(csilV ReplayEventDeliveryResponse) cborValue {
+	csilEntries := make(cborMap, 0, 1)
+	csilEntries = append(csilEntries, cborEntry{cborText("replayed"), cborInt(csilV.Replayed)})
+	return csilEntries
+}
+
+// csilDecReplayEventDeliveryResponse reconstructs a ReplayEventDeliveryResponse from a decoded CBOR value tree.
+func csilDecReplayEventDeliveryResponse(csilRoot cborValue) (ReplayEventDeliveryResponse, error) {
+	var csilOut ReplayEventDeliveryResponse
+	{
+		csilField, csilErr := cborRequire(csilRoot, "replayed")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsI64)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Replayed = csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeReplayEventDeliveryResponse encodes a ReplayEventDeliveryResponse to canonical CSIL CBOR bytes.
+func EncodeReplayEventDeliveryResponse(csilV ReplayEventDeliveryResponse) []byte {
+	return cborEncode(csilEncReplayEventDeliveryResponse(csilV))
+}
+
+// DecodeReplayEventDeliveryResponse decodes canonical CSIL CBOR bytes into a ReplayEventDeliveryResponse.
+func DecodeReplayEventDeliveryResponse(csilData []byte) (ReplayEventDeliveryResponse, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero ReplayEventDeliveryResponse
+		return csilZero, csilErr
+	}
+	return csilDecReplayEventDeliveryResponse(csilRoot)
+}
+
+// csilEncTestEventSubscriptionRequest builds the canonical CBOR value tree for a TestEventSubscriptionRequest.
+func csilEncTestEventSubscriptionRequest(csilV TestEventSubscriptionRequest) cborValue {
+	csilEntries := make(cborMap, 0, 1)
+	csilEntries = append(csilEntries, cborEntry{cborText("subscription_id"), cborText(csilV.SubscriptionId)})
+	return csilEntries
+}
+
+// csilDecTestEventSubscriptionRequest reconstructs a TestEventSubscriptionRequest from a decoded CBOR value tree.
+func csilDecTestEventSubscriptionRequest(csilRoot cborValue) (TestEventSubscriptionRequest, error) {
+	var csilOut TestEventSubscriptionRequest
+	{
+		csilField, csilErr := cborRequire(csilRoot, "subscription_id")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.SubscriptionId = csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeTestEventSubscriptionRequest encodes a TestEventSubscriptionRequest to canonical CSIL CBOR bytes.
+func EncodeTestEventSubscriptionRequest(csilV TestEventSubscriptionRequest) []byte {
+	return cborEncode(csilEncTestEventSubscriptionRequest(csilV))
+}
+
+// DecodeTestEventSubscriptionRequest decodes canonical CSIL CBOR bytes into a TestEventSubscriptionRequest.
+func DecodeTestEventSubscriptionRequest(csilData []byte) (TestEventSubscriptionRequest, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero TestEventSubscriptionRequest
+		return csilZero, csilErr
+	}
+	return csilDecTestEventSubscriptionRequest(csilRoot)
+}
+
+// csilEncTestEventSubscriptionResponse builds the canonical CBOR value tree for a TestEventSubscriptionResponse.
+func csilEncTestEventSubscriptionResponse(csilV TestEventSubscriptionResponse) cborValue {
+	csilEntries := make(cborMap, 0, 5)
+	csilEntries = append(csilEntries, cborEntry{cborText("error"), cborText(csilV.Error)})
+	csilEntries = append(csilEntries, cborEntry{cborText("refused"), cborBool(csilV.Refused)})
+	csilEntries = append(csilEntries, cborEntry{cborText("delivered"), cborBool(csilV.Delivered)})
+	csilEntries = append(csilEntries, cborEntry{cborText("latency_ms"), cborInt(csilV.LatencyMs)})
+	if csilV.HttpStatus != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("http_status"), cborInt((*csilV.HttpStatus))})
+	}
+	return csilEntries
+}
+
+// csilDecTestEventSubscriptionResponse reconstructs a TestEventSubscriptionResponse from a decoded CBOR value tree.
+func csilDecTestEventSubscriptionResponse(csilRoot cborValue) (TestEventSubscriptionResponse, error) {
+	var csilOut TestEventSubscriptionResponse
+	{
+		csilField, csilErr := cborRequire(csilRoot, "delivered")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsBool)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Delivered = csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "http_status"); csilOk {
+		csilVal, csilErr := (cborAsI64)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.HttpStatus = &csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "latency_ms")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsI64)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.LatencyMs = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "error")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Error = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "refused")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsBool)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Refused = csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeTestEventSubscriptionResponse encodes a TestEventSubscriptionResponse to canonical CSIL CBOR bytes.
+func EncodeTestEventSubscriptionResponse(csilV TestEventSubscriptionResponse) []byte {
+	return cborEncode(csilEncTestEventSubscriptionResponse(csilV))
+}
+
+// DecodeTestEventSubscriptionResponse decodes canonical CSIL CBOR bytes into a TestEventSubscriptionResponse.
+func DecodeTestEventSubscriptionResponse(csilData []byte) (TestEventSubscriptionResponse, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero TestEventSubscriptionResponse
+		return csilZero, csilErr
+	}
+	return csilDecTestEventSubscriptionResponse(csilRoot)
+}
+
 // csilEncGetJobResourceHistoryRequest builds the canonical CBOR value tree for a GetJobResourceHistoryRequest.
 func csilEncGetJobResourceHistoryRequest(csilV GetJobResourceHistoryRequest) cborValue {
 	csilEntries := make(cborMap, 0, 4)
@@ -13771,12 +18203,15 @@ func DecodeJobRunResourceSummary(csilData []byte) (JobRunResourceSummary, error)
 
 // csilEncGetJobResourceHistoryResponse builds the canonical CBOR value tree for a GetJobResourceHistoryResponse.
 func csilEncGetJobResourceHistoryResponse(csilV GetJobResourceHistoryResponse) cborValue {
-	csilEntries := make(cborMap, 0, 4)
+	csilEntries := make(cborMap, 0, 5)
 	csilEntries = append(csilEntries, cborEntry{cborText("name"), cborText(csilV.Name)})
 	csilEntries = append(csilEntries, cborEntry{cborText("runs"), cborEncArray(csilV.Runs, func(csilElem JobRunResourceSummary) cborValue { return csilEncJobRunResourceSummary(csilElem) })})
 	csilEntries = append(csilEntries, cborEntry{cborText("pending"), cborInt(csilV.Pending)})
 	if csilV.ProjectId != nil {
 		csilEntries = append(csilEntries, cborEntry{cborText("project_id"), cborText((*csilV.ProjectId))})
+	}
+	if csilV.Suggestion != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("suggestion"), csilEncResourceSuggestion((*csilV.Suggestion))})
 	}
 	return csilEntries
 }
@@ -13826,6 +18261,13 @@ func csilDecGetJobResourceHistoryResponse(csilRoot cborValue) (GetJobResourceHis
 		}
 		csilOut.Pending = csilVal
 	}
+	if csilField, csilOk := cborMapGet(csilRoot, "suggestion"); csilOk {
+		csilVal, csilErr := (csilDecResourceSuggestion)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Suggestion = &csilVal
+	}
 	return csilOut, nil
 }
 
@@ -13842,6 +18284,169 @@ func DecodeGetJobResourceHistoryResponse(csilData []byte) (GetJobResourceHistory
 		return csilZero, csilErr
 	}
 	return csilDecGetJobResourceHistoryResponse(csilRoot)
+}
+
+// csilEncResourceSuggestion builds the canonical CBOR value tree for a ResourceSuggestion.
+func csilEncResourceSuggestion(csilV ResourceSuggestion) cborValue {
+	csilEntries := make(cborMap, 0, 12)
+	csilEntries = append(csilEntries, cborEntry{cborText("runs"), cborInt(csilV.Runs)})
+	csilEntries = append(csilEntries, cborEntry{cborText("min_runs"), cborInt(csilV.MinRuns)})
+	csilEntries = append(csilEntries, cborEntry{cborText("oom_runs"), cborInt(csilV.OomRuns)})
+	csilEntries = append(csilEntries, cborEntry{cborText("sufficient"), cborBool(csilV.Sufficient)})
+	if csilV.CpuRequest != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("cpu_request"), cborText((*csilV.CpuRequest))})
+	}
+	if csilV.MemoryLimit != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("memory_limit"), cborText((*csilV.MemoryLimit))})
+	}
+	csilEntries = append(csilEntries, cborEntry{cborText("cpu_p95_millicores"), cborInt(csilV.CpuP95Millicores)})
+	if csilV.MemoryLimitBytes != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("memory_limit_bytes"), cborInt((*csilV.MemoryLimitBytes))})
+	}
+	csilEntries = append(csilEntries, cborEntry{cborText("memory_peak_p95_bytes"), cborInt(csilV.MemoryPeakP95Bytes)})
+	if csilV.CpuRequestMillicores != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("cpu_request_millicores"), cborInt((*csilV.CpuRequestMillicores))})
+	}
+	csilEntries = append(csilEntries, cborEntry{cborText("current_memory_limit_bytes"), cborInt(csilV.CurrentMemoryLimitBytes)})
+	csilEntries = append(csilEntries, cborEntry{cborText("current_cpu_request_millicores"), cborInt(csilV.CurrentCpuRequestMillicores)})
+	return csilEntries
+}
+
+// csilDecResourceSuggestion reconstructs a ResourceSuggestion from a decoded CBOR value tree.
+func csilDecResourceSuggestion(csilRoot cborValue) (ResourceSuggestion, error) {
+	var csilOut ResourceSuggestion
+	{
+		csilField, csilErr := cborRequire(csilRoot, "runs")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsI64)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Runs = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "min_runs")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsI64)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.MinRuns = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "sufficient")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsBool)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Sufficient = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "cpu_p95_millicores")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsI64)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.CpuP95Millicores = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "memory_peak_p95_bytes")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsI64)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.MemoryPeakP95Bytes = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "oom_runs")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsI64)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.OomRuns = csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "cpu_request"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.CpuRequest = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "cpu_request_millicores"); csilOk {
+		csilVal, csilErr := (cborAsI64)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.CpuRequestMillicores = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "memory_limit"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.MemoryLimit = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "memory_limit_bytes"); csilOk {
+		csilVal, csilErr := (cborAsI64)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.MemoryLimitBytes = &csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "current_cpu_request_millicores")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsI64)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.CurrentCpuRequestMillicores = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "current_memory_limit_bytes")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsI64)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.CurrentMemoryLimitBytes = csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeResourceSuggestion encodes a ResourceSuggestion to canonical CSIL CBOR bytes.
+func EncodeResourceSuggestion(csilV ResourceSuggestion) []byte {
+	return cborEncode(csilEncResourceSuggestion(csilV))
+}
+
+// DecodeResourceSuggestion decodes canonical CSIL CBOR bytes into a ResourceSuggestion.
+func DecodeResourceSuggestion(csilData []byte) (ResourceSuggestion, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero ResourceSuggestion
+		return csilZero, csilErr
+	}
+	return csilDecResourceSuggestion(csilRoot)
 }
 
 // csilEncGetJobLogsRequest builds the canonical CBOR value tree for a GetJobLogsRequest.
@@ -14061,9 +18666,18 @@ func DecodeGetJobLogsResponse(csilData []byte) (GetJobLogsResponse, error) {
 
 // csilEncJobSummary builds the canonical CBOR value tree for a JobSummary.
 func csilEncJobSummary(csilV JobSummary) cborValue {
-	csilEntries := make(cborMap, 0, 25)
+	csilEntries := make(cborMap, 0, 38)
 	csilEntries = append(csilEntries, cborEntry{cborText("name"), cborText(csilV.Name)})
+	if csilV.Actor != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("actor"), csilEncActorSummary((*csilV.Actor))})
+	}
+	if csilV.Owner != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("owner"), csilEncWorkflowOwnership((*csilV.Owner))})
+	}
 	csilEntries = append(csilEntries, cborEntry{cborText("job_id"), cborText(csilV.JobId)})
+	if csilV.Shifts != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("shifts"), csilEncRunShifts((*csilV.Shifts))})
+	}
 	csilEntries = append(csilEntries, cborEntry{cborText("status"), cborText(csilV.Status)})
 	csilEntries = append(csilEntries, cborEntry{cborText("priority"), cborInt(csilV.Priority)})
 	csilEntries = append(csilEntries, cborEntry{cborText("ci_origin"), cborText(csilV.CiOrigin)})
@@ -14083,6 +18697,15 @@ func csilEncJobSummary(csilV JobSummary) cborValue {
 	}
 	csilEntries = append(csilEntries, cborEntry{cborText("updated_at"), cborText(csilV.UpdatedAt)})
 	csilEntries = append(csilEntries, cborEntry{cborText("description"), cborText(csilV.Description)})
+	if csilV.ImageAlias != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("image_alias"), cborText((*csilV.ImageAlias))})
+	}
+	if csilV.RefClasses != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("ref_classes"), cborEncArray(csilV.RefClasses, func(csilElem string) cborValue { return cborText(csilElem) })})
+	}
+	if csilV.RetryCount != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("retry_count"), cborInt((*csilV.RetryCount))})
+	}
 	csilEntries = append(csilEntries, cborEntry{cborText("source_path"), cborText(csilV.SourcePath)})
 	csilEntries = append(csilEntries, cborEntry{cborText("source_type"), cborText(csilV.SourceType)})
 	if csilV.WorkflowId != nil {
@@ -14093,8 +18716,29 @@ func csilEncJobSummary(csilV JobSummary) cborValue {
 	}
 	csilEntries = append(csilEntries, cborEntry{cborText("runner_image"), cborText(csilV.RunnerImage)})
 	csilEntries = append(csilEntries, cborEntry{cborText("worker_class"), cborText(csilV.WorkerClass)})
+	if csilV.FailureClass != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("failure_class"), cborText((*csilV.FailureClass))})
+	}
+	if csilV.FailureOwner != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("failure_owner"), cborText((*csilV.FailureOwner))})
+	}
+	if csilV.ImageDisplay != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("image_display"), cborText((*csilV.ImageDisplay))})
+	}
 	if csilV.ParentJobId != nil {
 		csilEntries = append(csilEntries, cborEntry{cborText("parent_job_id"), cborText((*csilV.ParentJobId))})
+	}
+	if csilV.PriorityLane != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("priority_lane"), cborText((*csilV.PriorityLane))})
+	}
+	if csilV.FailureDetail != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("failure_detail"), cborText((*csilV.FailureDetail))})
+	}
+	if csilV.ImageRetryOf != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("image_retry_of"), cborText((*csilV.ImageRetryOf))})
+	}
+	if csilV.PriorityReason != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("priority_reason"), csilEncCIDecisionReason((*csilV.PriorityReason))})
 	}
 	csilEntries = append(csilEntries, cborEntry{cborText("execution_profile"), cborText(csilV.ExecutionProfile)})
 	csilEntries = append(csilEntries, cborEntry{cborText("workflow_node_name"), cborText(csilV.WorkflowNodeName)})
@@ -14212,6 +18856,34 @@ func csilDecJobSummary(csilRoot cborValue) (JobSummary, error) {
 		}
 		csilOut.ExitCode = &csilVal
 	}
+	if csilField, csilOk := cborMapGet(csilRoot, "failure_class"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.FailureClass = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "failure_detail"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.FailureDetail = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "failure_owner"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.FailureOwner = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "retry_count"); csilOk {
+		csilVal, csilErr := (cborAsI64)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.RetryCount = &csilVal
+	}
 	{
 		csilField, csilErr := cborRequire(csilRoot, "source_url")
 		if csilErr != nil {
@@ -14267,6 +18939,27 @@ func csilDecJobSummary(csilRoot cborValue) (JobSummary, error) {
 		}
 		csilOut.RunnerImage = csilVal
 	}
+	if csilField, csilOk := cborMapGet(csilRoot, "image_alias"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.ImageAlias = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "image_display"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.ImageDisplay = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "image_retry_of"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.ImageRetryOf = &csilVal
+	}
 	{
 		csilField, csilErr := cborRequire(csilRoot, "queue_name")
 		if csilErr != nil {
@@ -14288,6 +18981,20 @@ func csilDecJobSummary(csilRoot cborValue) (JobSummary, error) {
 			return csilOut, csilErr
 		}
 		csilOut.Priority = csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "priority_lane"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.PriorityLane = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "priority_reason"); csilOk {
+		csilVal, csilErr := (csilDecCIDecisionReason)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.PriorityReason = &csilVal
 	}
 	if csilField, csilOk := cborMapGet(csilRoot, "parent_job_id"); csilOk {
 		csilVal, csilErr := (cborAsText)(csilField)
@@ -14354,6 +19061,34 @@ func csilDecJobSummary(csilRoot cborValue) (JobSummary, error) {
 		}
 		csilOut.WorkerClass = csilVal
 	}
+	if csilField, csilOk := cborMapGet(csilRoot, "actor"); csilOk {
+		csilVal, csilErr := (csilDecActorSummary)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Actor = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "shifts"); csilOk {
+		csilVal, csilErr := (csilDecRunShifts)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Shifts = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "ref_classes"); csilOk {
+		csilVal, csilErr := (func(csilV cborValue) ([]string, error) { return cborDecArray(csilV, cborAsText) })(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.RefClasses = csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "owner"); csilOk {
+		csilVal, csilErr := (csilDecWorkflowOwnership)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Owner = &csilVal
+	}
 	return csilOut, nil
 }
 
@@ -14372,9 +19107,116 @@ func DecodeJobSummary(csilData []byte) (JobSummary, error) {
 	return csilDecJobSummary(csilRoot)
 }
 
+// csilEncWorkflowOwnership builds the canonical CBOR value tree for a WorkflowOwnership.
+func csilEncWorkflowOwnership(csilV WorkflowOwnership) cborValue {
+	csilEntries := make(cborMap, 0, 8)
+	if csilV.Email != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("email"), cborText((*csilV.Email))})
+	}
+	if csilV.Group != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("group"), cborText((*csilV.Group))})
+	}
+	if csilV.CiSha != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("ci_sha"), cborText((*csilV.CiSha))})
+	}
+	if csilV.Source != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("source"), cborText((*csilV.Source))})
+	}
+	if csilV.Channel != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("channel"), cborText((*csilV.Channel))})
+	}
+	if csilV.Trusted != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("trusted"), cborBool((*csilV.Trusted))})
+	}
+	if csilV.HelpUrl != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("help_url"), cborText((*csilV.HelpUrl))})
+	}
+	if csilV.Subjects != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("subjects"), cborEncArray(csilV.Subjects, func(csilElem string) cborValue { return cborText(csilElem) })})
+	}
+	return csilEntries
+}
+
+// csilDecWorkflowOwnership reconstructs a WorkflowOwnership from a decoded CBOR value tree.
+func csilDecWorkflowOwnership(csilRoot cborValue) (WorkflowOwnership, error) {
+	var csilOut WorkflowOwnership
+	if csilField, csilOk := cborMapGet(csilRoot, "group"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Group = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "subjects"); csilOk {
+		csilVal, csilErr := (func(csilV cborValue) ([]string, error) { return cborDecArray(csilV, cborAsText) })(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Subjects = csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "channel"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Channel = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "help_url"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.HelpUrl = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "email"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Email = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "source"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Source = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "ci_sha"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.CiSha = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "trusted"); csilOk {
+		csilVal, csilErr := (cborAsBool)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Trusted = &csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeWorkflowOwnership encodes a WorkflowOwnership to canonical CSIL CBOR bytes.
+func EncodeWorkflowOwnership(csilV WorkflowOwnership) []byte {
+	return cborEncode(csilEncWorkflowOwnership(csilV))
+}
+
+// DecodeWorkflowOwnership decodes canonical CSIL CBOR bytes into a WorkflowOwnership.
+func DecodeWorkflowOwnership(csilData []byte) (WorkflowOwnership, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero WorkflowOwnership
+		return csilZero, csilErr
+	}
+	return csilDecWorkflowOwnership(csilRoot)
+}
+
 // csilEncListJobsRequest builds the canonical CBOR value tree for a ListJobsRequest.
 func csilEncListJobsRequest(csilV ListJobsRequest) cborValue {
-	csilEntries := make(cborMap, 0, 6)
+	csilEntries := make(cborMap, 0, 7)
 	if csilV.Limit != nil {
 		csilEntries = append(csilEntries, cborEntry{cborText("limit"), cborInt((*csilV.Limit))})
 	}
@@ -14392,6 +19234,9 @@ func csilEncListJobsRequest(csilV ListJobsRequest) cborValue {
 	}
 	if csilV.WorkflowId != nil {
 		csilEntries = append(csilEntries, cborEntry{cborText("workflow_id"), cborText((*csilV.WorkflowId))})
+	}
+	if csilV.FailureClass != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("failure_class"), cborText((*csilV.FailureClass))})
 	}
 	return csilEntries
 }
@@ -14426,6 +19271,13 @@ func csilDecListJobsRequest(csilRoot cborValue) (ListJobsRequest, error) {
 			return csilOut, csilErr
 		}
 		csilOut.QueueName = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "failure_class"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.FailureClass = &csilVal
 	}
 	if csilField, csilOk := cborMapGet(csilRoot, "limit"); csilOk {
 		csilVal, csilErr := (cborAsI64)(csilField)
@@ -14884,9 +19736,15 @@ func DecodeWorkflowEventSummary(csilData []byte) (WorkflowEventSummary, error) {
 
 // csilEncWorkflowSummaryDetail builds the canonical CBOR value tree for a WorkflowSummaryDetail.
 func csilEncWorkflowSummaryDetail(csilV WorkflowSummaryDetail) cborValue {
-	csilEntries := make(cborMap, 0, 30)
+	csilEntries := make(cborMap, 0, 33)
 	csilEntries = append(csilEntries, cborEntry{cborText("kind"), cborText(csilV.Kind)})
 	csilEntries = append(csilEntries, cborEntry{cborText("name"), cborText(csilV.Name)})
+	if csilV.Actor != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("actor"), csilEncActorSummary((*csilV.Actor))})
+	}
+	if csilV.Owner != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("owner"), csilEncWorkflowOwnership((*csilV.Owner))})
+	}
 	csilEntries = append(csilEntries, cborEntry{cborText("status"), cborText(csilV.Status)})
 	if csilV.EventId != nil {
 		csilEntries = append(csilEntries, cborEntry{cborText("event_id"), cborText((*csilV.EventId))})
@@ -14905,6 +19763,9 @@ func csilEncWorkflowSummaryDetail(csilV WorkflowSummaryDetail) cborValue {
 	csilEntries = append(csilEntries, cborEntry{cborText("queue_name"), cborText(csilV.QueueName)})
 	csilEntries = append(csilEntries, cborEntry{cborText("updated_at"), cborText(csilV.UpdatedAt)})
 	csilEntries = append(csilEntries, cborEntry{cborText("origin_type"), cborText(csilV.OriginType)})
+	if csilV.RefClasses != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("ref_classes"), cborEncArray(csilV.RefClasses, func(csilElem string) cborValue { return cborText(csilElem) })})
+	}
 	csilEntries = append(csilEntries, cborEntry{cborText("workflow_id"), cborText(csilV.WorkflowId)})
 	if csilV.CompletedAt != nil {
 		csilEntries = append(csilEntries, cborEntry{cborText("completed_at"), cborText((*csilV.CompletedAt))})
@@ -15231,6 +20092,27 @@ func csilDecWorkflowSummaryDetail(csilRoot cborValue) (WorkflowSummaryDetail, er
 		}
 		csilOut.EventId = &csilVal
 	}
+	if csilField, csilOk := cborMapGet(csilRoot, "actor"); csilOk {
+		csilVal, csilErr := (csilDecActorSummary)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Actor = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "ref_classes"); csilOk {
+		csilVal, csilErr := (func(csilV cborValue) ([]string, error) { return cborDecArray(csilV, cborAsText) })(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.RefClasses = csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "owner"); csilOk {
+		csilVal, csilErr := (csilDecWorkflowOwnership)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Owner = &csilVal
+	}
 	return csilOut, nil
 }
 
@@ -15521,16 +20403,31 @@ func DecodeGetWorkflowResponse(csilData []byte) (GetWorkflowResponse, error) {
 
 // csilEncCIDecisionReason builds the canonical CBOR value tree for a CIDecisionReason.
 func csilEncCIDecisionReason(csilV CIDecisionReason) cborValue {
-	csilEntries := make(cborMap, 0, 20)
+	csilEntries := make(cborMap, 0, 26)
+	if csilV.Base != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("base"), cborInt((*csilV.Base))})
+	}
 	if csilV.Deps != nil {
 		csilEntries = append(csilEntries, cborEntry{cborText("deps"), cborEncArray(csilV.Deps, func(csilElem CIDependencyOutcome) cborValue { return csilEncCIDependencyOutcome(csilElem) })})
 	}
 	csilEntries = append(csilEntries, cborEntry{cborText("kind"), cborText(csilV.Kind)})
+	if csilV.Lane != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("lane"), cborText((*csilV.Lane))})
+	}
+	if csilV.Final != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("final"), cborInt((*csilV.Final))})
+	}
 	if csilV.Value != nil {
 		csilEntries = append(csilEntries, cborEntry{cborText("value"), cborText((*csilV.Value))})
 	}
 	if csilV.Detail != nil {
 		csilEntries = append(csilEntries, cborEntry{cborText("detail"), cborText((*csilV.Detail))})
+	}
+	if csilV.Shifts != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("shifts"), cborEncArray(csilV.Shifts, func(csilElem PriorityShift) cborValue { return csilEncPriorityShift(csilElem) })})
+	}
+	if csilV.Classes != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("classes"), cborEncArray(csilV.Classes, func(csilElem string) cborValue { return cborText(csilElem) })})
 	}
 	if csilV.Matched != nil {
 		csilEntries = append(csilEntries, cborEntry{cborText("matched"), cborBool((*csilV.Matched))})
@@ -15549,6 +20446,9 @@ func csilEncCIDecisionReason(csilV CIDecisionReason) cborValue {
 	}
 	if csilV.Required != nil {
 		csilEntries = append(csilEntries, cborEntry{cborText("required"), cborBool((*csilV.Required))})
+	}
+	if csilV.RuleIds != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("rule_ids"), cborEncArray(csilV.RuleIds, func(csilElem string) cborValue { return cborText(csilElem) })})
 	}
 	if csilV.CiOrigin != nil {
 		csilEntries = append(csilEntries, cborEntry{cborText("ci_origin"), cborText((*csilV.CiOrigin))})
@@ -15732,6 +20632,48 @@ func csilDecCIDecisionReason(csilRoot cborValue) (CIDecisionReason, error) {
 		}
 		csilOut.FireTime = &csilVal
 	}
+	if csilField, csilOk := cborMapGet(csilRoot, "classes"); csilOk {
+		csilVal, csilErr := (func(csilV cborValue) ([]string, error) { return cborDecArray(csilV, cborAsText) })(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Classes = csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "rule_ids"); csilOk {
+		csilVal, csilErr := (func(csilV cborValue) ([]string, error) { return cborDecArray(csilV, cborAsText) })(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.RuleIds = csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "lane"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Lane = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "base"); csilOk {
+		csilVal, csilErr := (cborAsI64)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Base = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "shifts"); csilOk {
+		csilVal, csilErr := (func(csilV cborValue) ([]PriorityShift, error) { return cborDecArray(csilV, csilDecPriorityShift) })(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Shifts = csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "final"); csilOk {
+		csilVal, csilErr := (cborAsI64)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Final = &csilVal
+	}
 	return csilOut, nil
 }
 
@@ -15803,7 +20745,10 @@ func DecodeCIDependencyOutcome(csilData []byte) (CIDependencyOutcome, error) {
 
 // csilEncCIEventWorkflowDecision builds the canonical CBOR value tree for a CIEventWorkflowDecision.
 func csilEncCIEventWorkflowDecision(csilV CIEventWorkflowDecision) cborValue {
-	csilEntries := make(cborMap, 0, 6)
+	csilEntries := make(cborMap, 0, 9)
+	if csilV.Owner != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("owner"), csilEncWorkflowOwnership((*csilV.Owner))})
+	}
 	csilEntries = append(csilEntries, cborEntry{cborText("reasons"), cborEncArray(csilV.Reasons, func(csilElem CIDecisionReason) cborValue { return csilEncCIDecisionReason(csilElem) })})
 	csilEntries = append(csilEntries, cborEntry{cborText("decision"), cborText(csilV.Decision)})
 	if csilV.SourceFile != nil {
@@ -15813,6 +20758,12 @@ func csilEncCIEventWorkflowDecision(csilV CIEventWorkflowDecision) cborValue {
 		csilEntries = append(csilEntries, cborEntry{cborText("workflow_id"), cborText((*csilV.WorkflowId))})
 	}
 	csilEntries = append(csilEntries, cborEntry{cborText("workflow_name"), cborText(csilV.WorkflowName)})
+	if csilV.RequiredLabel != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("required_label"), cborText((*csilV.RequiredLabel))})
+	}
+	if csilV.RequiredState != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("required_state"), cborText((*csilV.RequiredState))})
+	}
 	csilEntries = append(csilEntries, cborEntry{cborText("workflow_security_id"), cborText(csilV.WorkflowSecurityId)})
 	return csilEntries
 }
@@ -15878,6 +20829,27 @@ func csilDecCIEventWorkflowDecision(csilRoot cborValue) (CIEventWorkflowDecision
 		}
 		csilOut.WorkflowId = &csilVal
 	}
+	if csilField, csilOk := cborMapGet(csilRoot, "owner"); csilOk {
+		csilVal, csilErr := (csilDecWorkflowOwnership)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Owner = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "required_state"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.RequiredState = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "required_label"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.RequiredLabel = &csilVal
+	}
 	return csilOut, nil
 }
 
@@ -15898,7 +20870,7 @@ func DecodeCIEventWorkflowDecision(csilData []byte) (CIEventWorkflowDecision, er
 
 // csilEncCIEventDetail builds the canonical CBOR value tree for a CIEventDetail.
 func csilEncCIEventDetail(csilV CIEventDetail) cborValue {
-	csilEntries := make(cborMap, 0, 24)
+	csilEntries := make(cborMap, 0, 28)
 	if csilV.Ref != nil {
 		csilEntries = append(csilEntries, cborEntry{cborText("ref"), cborText((*csilV.Ref))})
 	}
@@ -15934,11 +20906,23 @@ func csilEncCIEventDetail(csilV CIEventDetail) cborValue {
 		csilEntries = append(csilEntries, cborEntry{cborText("eval_job_id"), cborText((*csilV.EvalJobId))})
 	}
 	csilEntries = append(csilEntries, cborEntry{cborText("received_at"), cborText(csilV.ReceivedAt)})
+	if csilV.RefClasses != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("ref_classes"), cborEncArray(csilV.RefClasses, func(csilElem string) cborValue { return cborText(csilElem) })})
+	}
 	if csilV.ScheduleId != nil {
 		csilEntries = append(csilEntries, cborEntry{cborText("schedule_id"), cborText((*csilV.ScheduleId))})
 	}
 	if csilV.ChecksState != nil {
 		csilEntries = append(csilEntries, cborEntry{cborText("checks_state"), cborText((*csilV.ChecksState))})
+	}
+	if csilV.ActorPrincipal != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("actor_principal"), csilEncActorSummary((*csilV.ActorPrincipal))})
+	}
+	if csilV.RefClassFacts != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("ref_class_facts"), csilEncRefClassFacts((*csilV.RefClassFacts))})
+	}
+	if csilV.RefClassReasons != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("ref_class_reasons"), cborEncArray(csilV.RefClassReasons, func(csilElem RefClassReason) cborValue { return csilEncRefClassReason(csilElem) })})
 	}
 	if csilV.ChecksDescription != nil {
 		csilEntries = append(csilEntries, cborEntry{cborText("checks_description"), cborText((*csilV.ChecksDescription))})
@@ -16164,6 +21148,34 @@ func csilDecCIEventDetail(csilRoot cborValue) (CIEventDetail, error) {
 			return csilOut, csilErr
 		}
 		csilOut.ChecksPublishedAt = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "actor_principal"); csilOk {
+		csilVal, csilErr := (csilDecActorSummary)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.ActorPrincipal = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "ref_classes"); csilOk {
+		csilVal, csilErr := (func(csilV cborValue) ([]string, error) { return cborDecArray(csilV, cborAsText) })(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.RefClasses = csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "ref_class_facts"); csilOk {
+		csilVal, csilErr := (csilDecRefClassFacts)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.RefClassFacts = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "ref_class_reasons"); csilOk {
+		csilVal, csilErr := (func(csilV cborValue) ([]RefClassReason, error) { return cborDecArray(csilV, csilDecRefClassReason) })(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.RefClassReasons = csilVal
 	}
 	return csilOut, nil
 }
@@ -16486,6 +21498,16637 @@ func DecodeDescribeFormMetadataResponse(csilData []byte) (DescribeFormMetadataRe
 		return csilZero, csilErr
 	}
 	return csilDecDescribeFormMetadataResponse(csilRoot)
+}
+
+// csilEncActorSummary builds the canonical CBOR value tree for a ActorSummary.
+func csilEncActorSummary(csilV ActorSummary) cborValue {
+	csilEntries := make(cborMap, 0, 4)
+	csilEntries = append(csilEntries, cborEntry{cborText("kind"), cborText(csilV.Kind)})
+	if csilV.Identity != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("identity"), cborText((*csilV.Identity))})
+	}
+	csilEntries = append(csilEntries, cborEntry{cborText("display_name"), cborText(csilV.DisplayName)})
+	csilEntries = append(csilEntries, cborEntry{cborText("principal_id"), cborText(csilV.PrincipalId)})
+	return csilEntries
+}
+
+// csilDecActorSummary reconstructs a ActorSummary from a decoded CBOR value tree.
+func csilDecActorSummary(csilRoot cborValue) (ActorSummary, error) {
+	var csilOut ActorSummary
+	{
+		csilField, csilErr := cborRequire(csilRoot, "principal_id")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.PrincipalId = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "kind")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Kind = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "display_name")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.DisplayName = csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "identity"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Identity = &csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeActorSummary encodes a ActorSummary to canonical CSIL CBOR bytes.
+func EncodeActorSummary(csilV ActorSummary) []byte {
+	return cborEncode(csilEncActorSummary(csilV))
+}
+
+// DecodeActorSummary decodes canonical CSIL CBOR bytes into a ActorSummary.
+func DecodeActorSummary(csilData []byte) (ActorSummary, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero ActorSummary
+		return csilZero, csilErr
+	}
+	return csilDecActorSummary(csilRoot)
+}
+
+// csilEncPrincipalIdentityEntry builds the canonical CBOR value tree for a PrincipalIdentityEntry.
+func csilEncPrincipalIdentityEntry(csilV PrincipalIdentityEntry) cborValue {
+	csilEntries := make(cborMap, 0, 4)
+	csilEntries = append(csilEntries, cborEntry{cborText("created_at"), cborText(csilV.CreatedAt)})
+	csilEntries = append(csilEntries, cborEntry{cborText("verified_by"), cborText(csilV.VerifiedBy)})
+	csilEntries = append(csilEntries, cborEntry{cborText("identity_type"), cborText(csilV.IdentityType)})
+	csilEntries = append(csilEntries, cborEntry{cborText("identity_value"), cborText(csilV.IdentityValue)})
+	return csilEntries
+}
+
+// csilDecPrincipalIdentityEntry reconstructs a PrincipalIdentityEntry from a decoded CBOR value tree.
+func csilDecPrincipalIdentityEntry(csilRoot cborValue) (PrincipalIdentityEntry, error) {
+	var csilOut PrincipalIdentityEntry
+	{
+		csilField, csilErr := cborRequire(csilRoot, "identity_type")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.IdentityType = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "identity_value")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.IdentityValue = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "verified_by")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.VerifiedBy = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "created_at")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.CreatedAt = csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodePrincipalIdentityEntry encodes a PrincipalIdentityEntry to canonical CSIL CBOR bytes.
+func EncodePrincipalIdentityEntry(csilV PrincipalIdentityEntry) []byte {
+	return cborEncode(csilEncPrincipalIdentityEntry(csilV))
+}
+
+// DecodePrincipalIdentityEntry decodes canonical CSIL CBOR bytes into a PrincipalIdentityEntry.
+func DecodePrincipalIdentityEntry(csilData []byte) (PrincipalIdentityEntry, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero PrincipalIdentityEntry
+		return csilZero, csilErr
+	}
+	return csilDecPrincipalIdentityEntry(csilRoot)
+}
+
+// csilEncPrincipalTokenEntry builds the canonical CBOR value tree for a PrincipalTokenEntry.
+func csilEncPrincipalTokenEntry(csilV PrincipalTokenEntry) cborValue {
+	csilEntries := make(cborMap, 0, 7)
+	csilEntries = append(csilEntries, cborEntry{cborText("name"), cborText(csilV.Name)})
+	csilEntries = append(csilEntries, cborEntry{cborText("token_id"), cborText(csilV.TokenId)})
+	csilEntries = append(csilEntries, cborEntry{cborText("is_active"), cborBool(csilV.IsActive)})
+	csilEntries = append(csilEntries, cborEntry{cborText("created_at"), cborText(csilV.CreatedAt)})
+	if csilV.ExpiresAt != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("expires_at"), cborText((*csilV.ExpiresAt))})
+	}
+	csilEntries = append(csilEntries, cborEntry{cborText("capabilities"), cborEncArray(csilV.Capabilities, func(csilElem string) cborValue { return cborText(csilElem) })})
+	if csilV.LastUsedAt != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("last_used_at"), cborText((*csilV.LastUsedAt))})
+	}
+	return csilEntries
+}
+
+// csilDecPrincipalTokenEntry reconstructs a PrincipalTokenEntry from a decoded CBOR value tree.
+func csilDecPrincipalTokenEntry(csilRoot cborValue) (PrincipalTokenEntry, error) {
+	var csilOut PrincipalTokenEntry
+	{
+		csilField, csilErr := cborRequire(csilRoot, "token_id")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.TokenId = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "name")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Name = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "capabilities")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (func(csilV cborValue) ([]string, error) { return cborDecArray(csilV, cborAsText) })(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Capabilities = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "created_at")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.CreatedAt = csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "expires_at"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.ExpiresAt = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "last_used_at"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.LastUsedAt = &csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "is_active")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsBool)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.IsActive = csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodePrincipalTokenEntry encodes a PrincipalTokenEntry to canonical CSIL CBOR bytes.
+func EncodePrincipalTokenEntry(csilV PrincipalTokenEntry) []byte {
+	return cborEncode(csilEncPrincipalTokenEntry(csilV))
+}
+
+// DecodePrincipalTokenEntry decodes canonical CSIL CBOR bytes into a PrincipalTokenEntry.
+func DecodePrincipalTokenEntry(csilData []byte) (PrincipalTokenEntry, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero PrincipalTokenEntry
+		return csilZero, csilErr
+	}
+	return csilDecPrincipalTokenEntry(csilRoot)
+}
+
+// csilEncPrincipalSummary builds the canonical CBOR value tree for a PrincipalSummary.
+func csilEncPrincipalSummary(csilV PrincipalSummary) cborValue {
+	csilEntries := make(cborMap, 0, 7)
+	csilEntries = append(csilEntries, cborEntry{cborText("kind"), cborText(csilV.Kind)})
+	csilEntries = append(csilEntries, cborEntry{cborText("name"), cborText(csilV.Name)})
+	if csilV.OrgId != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("org_id"), cborText((*csilV.OrgId))})
+	}
+	csilEntries = append(csilEntries, cborEntry{cborText("status"), cborText(csilV.Status)})
+	csilEntries = append(csilEntries, cborEntry{cborText("created_at"), cborText(csilV.CreatedAt)})
+	csilEntries = append(csilEntries, cborEntry{cborText("display_name"), cborText(csilV.DisplayName)})
+	csilEntries = append(csilEntries, cborEntry{cborText("principal_id"), cborText(csilV.PrincipalId)})
+	return csilEntries
+}
+
+// csilDecPrincipalSummary reconstructs a PrincipalSummary from a decoded CBOR value tree.
+func csilDecPrincipalSummary(csilRoot cborValue) (PrincipalSummary, error) {
+	var csilOut PrincipalSummary
+	{
+		csilField, csilErr := cborRequire(csilRoot, "principal_id")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.PrincipalId = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "kind")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Kind = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "name")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Name = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "display_name")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.DisplayName = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "status")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Status = csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "org_id"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.OrgId = &csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "created_at")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.CreatedAt = csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodePrincipalSummary encodes a PrincipalSummary to canonical CSIL CBOR bytes.
+func EncodePrincipalSummary(csilV PrincipalSummary) []byte {
+	return cborEncode(csilEncPrincipalSummary(csilV))
+}
+
+// DecodePrincipalSummary decodes canonical CSIL CBOR bytes into a PrincipalSummary.
+func DecodePrincipalSummary(csilData []byte) (PrincipalSummary, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero PrincipalSummary
+		return csilZero, csilErr
+	}
+	return csilDecPrincipalSummary(csilRoot)
+}
+
+// csilEncPrincipalDetail builds the canonical CBOR value tree for a PrincipalDetail.
+func csilEncPrincipalDetail(csilV PrincipalDetail) cborValue {
+	csilEntries := make(cborMap, 0, 5)
+	csilEntries = append(csilEntries, cborEntry{cborText("groups"), cborEncArray(csilV.Groups, func(csilElem string) cborValue { return cborText(csilElem) })})
+	csilEntries = append(csilEntries, cborEntry{cborText("tokens"), cborEncArray(csilV.Tokens, func(csilElem PrincipalTokenEntry) cborValue { return csilEncPrincipalTokenEntry(csilElem) })})
+	csilEntries = append(csilEntries, cborEntry{cborText("subjects"), cborEncArray(csilV.Subjects, func(csilElem string) cborValue { return cborText(csilElem) })})
+	csilEntries = append(csilEntries, cborEntry{cborText("principal"), csilEncPrincipalSummary(csilV.Principal)})
+	csilEntries = append(csilEntries, cborEntry{cborText("identities"), cborEncArray(csilV.Identities, func(csilElem PrincipalIdentityEntry) cborValue { return csilEncPrincipalIdentityEntry(csilElem) })})
+	return csilEntries
+}
+
+// csilDecPrincipalDetail reconstructs a PrincipalDetail from a decoded CBOR value tree.
+func csilDecPrincipalDetail(csilRoot cborValue) (PrincipalDetail, error) {
+	var csilOut PrincipalDetail
+	{
+		csilField, csilErr := cborRequire(csilRoot, "principal")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (csilDecPrincipalSummary)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Principal = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "identities")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (func(csilV cborValue) ([]PrincipalIdentityEntry, error) {
+			return cborDecArray(csilV, csilDecPrincipalIdentityEntry)
+		})(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Identities = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "groups")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (func(csilV cborValue) ([]string, error) { return cborDecArray(csilV, cborAsText) })(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Groups = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "tokens")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (func(csilV cborValue) ([]PrincipalTokenEntry, error) {
+			return cborDecArray(csilV, csilDecPrincipalTokenEntry)
+		})(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Tokens = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "subjects")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (func(csilV cborValue) ([]string, error) { return cborDecArray(csilV, cborAsText) })(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Subjects = csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodePrincipalDetail encodes a PrincipalDetail to canonical CSIL CBOR bytes.
+func EncodePrincipalDetail(csilV PrincipalDetail) []byte {
+	return cborEncode(csilEncPrincipalDetail(csilV))
+}
+
+// DecodePrincipalDetail decodes canonical CSIL CBOR bytes into a PrincipalDetail.
+func DecodePrincipalDetail(csilData []byte) (PrincipalDetail, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero PrincipalDetail
+		return csilZero, csilErr
+	}
+	return csilDecPrincipalDetail(csilRoot)
+}
+
+// csilEncListPrincipalsRequest builds the canonical CBOR value tree for a ListPrincipalsRequest.
+func csilEncListPrincipalsRequest(csilV ListPrincipalsRequest) cborValue {
+	csilEntries := make(cborMap, 0, 2)
+	if csilV.Kind != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("kind"), cborText((*csilV.Kind))})
+	}
+	csilEntries = append(csilEntries, cborEntry{cborText("org_id"), cborText(csilV.OrgId)})
+	return csilEntries
+}
+
+// csilDecListPrincipalsRequest reconstructs a ListPrincipalsRequest from a decoded CBOR value tree.
+func csilDecListPrincipalsRequest(csilRoot cborValue) (ListPrincipalsRequest, error) {
+	var csilOut ListPrincipalsRequest
+	{
+		csilField, csilErr := cborRequire(csilRoot, "org_id")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.OrgId = csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "kind"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Kind = &csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeListPrincipalsRequest encodes a ListPrincipalsRequest to canonical CSIL CBOR bytes.
+func EncodeListPrincipalsRequest(csilV ListPrincipalsRequest) []byte {
+	return cborEncode(csilEncListPrincipalsRequest(csilV))
+}
+
+// DecodeListPrincipalsRequest decodes canonical CSIL CBOR bytes into a ListPrincipalsRequest.
+func DecodeListPrincipalsRequest(csilData []byte) (ListPrincipalsRequest, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero ListPrincipalsRequest
+		return csilZero, csilErr
+	}
+	return csilDecListPrincipalsRequest(csilRoot)
+}
+
+// csilEncListPrincipalsResponse builds the canonical CBOR value tree for a ListPrincipalsResponse.
+func csilEncListPrincipalsResponse(csilV ListPrincipalsResponse) cborValue {
+	csilEntries := make(cborMap, 0, 1)
+	csilEntries = append(csilEntries, cborEntry{cborText("principals"), cborEncArray(csilV.Principals, func(csilElem PrincipalSummary) cborValue { return csilEncPrincipalSummary(csilElem) })})
+	return csilEntries
+}
+
+// csilDecListPrincipalsResponse reconstructs a ListPrincipalsResponse from a decoded CBOR value tree.
+func csilDecListPrincipalsResponse(csilRoot cborValue) (ListPrincipalsResponse, error) {
+	var csilOut ListPrincipalsResponse
+	{
+		csilField, csilErr := cborRequire(csilRoot, "principals")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (func(csilV cborValue) ([]PrincipalSummary, error) { return cborDecArray(csilV, csilDecPrincipalSummary) })(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Principals = csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeListPrincipalsResponse encodes a ListPrincipalsResponse to canonical CSIL CBOR bytes.
+func EncodeListPrincipalsResponse(csilV ListPrincipalsResponse) []byte {
+	return cborEncode(csilEncListPrincipalsResponse(csilV))
+}
+
+// DecodeListPrincipalsResponse decodes canonical CSIL CBOR bytes into a ListPrincipalsResponse.
+func DecodeListPrincipalsResponse(csilData []byte) (ListPrincipalsResponse, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero ListPrincipalsResponse
+		return csilZero, csilErr
+	}
+	return csilDecListPrincipalsResponse(csilRoot)
+}
+
+// csilEncGetPrincipalRequest builds the canonical CBOR value tree for a GetPrincipalRequest.
+func csilEncGetPrincipalRequest(csilV GetPrincipalRequest) cborValue {
+	csilEntries := make(cborMap, 0, 2)
+	csilEntries = append(csilEntries, cborEntry{cborText("org_id"), cborText(csilV.OrgId)})
+	csilEntries = append(csilEntries, cborEntry{cborText("principal_id"), cborText(csilV.PrincipalId)})
+	return csilEntries
+}
+
+// csilDecGetPrincipalRequest reconstructs a GetPrincipalRequest from a decoded CBOR value tree.
+func csilDecGetPrincipalRequest(csilRoot cborValue) (GetPrincipalRequest, error) {
+	var csilOut GetPrincipalRequest
+	{
+		csilField, csilErr := cborRequire(csilRoot, "org_id")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.OrgId = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "principal_id")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.PrincipalId = csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeGetPrincipalRequest encodes a GetPrincipalRequest to canonical CSIL CBOR bytes.
+func EncodeGetPrincipalRequest(csilV GetPrincipalRequest) []byte {
+	return cborEncode(csilEncGetPrincipalRequest(csilV))
+}
+
+// DecodeGetPrincipalRequest decodes canonical CSIL CBOR bytes into a GetPrincipalRequest.
+func DecodeGetPrincipalRequest(csilData []byte) (GetPrincipalRequest, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero GetPrincipalRequest
+		return csilZero, csilErr
+	}
+	return csilDecGetPrincipalRequest(csilRoot)
+}
+
+// csilEncGetPrincipalResponse builds the canonical CBOR value tree for a GetPrincipalResponse.
+func csilEncGetPrincipalResponse(csilV GetPrincipalResponse) cborValue {
+	csilEntries := make(cborMap, 0, 1)
+	csilEntries = append(csilEntries, cborEntry{cborText("principal"), csilEncPrincipalDetail(csilV.Principal)})
+	return csilEntries
+}
+
+// csilDecGetPrincipalResponse reconstructs a GetPrincipalResponse from a decoded CBOR value tree.
+func csilDecGetPrincipalResponse(csilRoot cborValue) (GetPrincipalResponse, error) {
+	var csilOut GetPrincipalResponse
+	{
+		csilField, csilErr := cborRequire(csilRoot, "principal")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (csilDecPrincipalDetail)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Principal = csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeGetPrincipalResponse encodes a GetPrincipalResponse to canonical CSIL CBOR bytes.
+func EncodeGetPrincipalResponse(csilV GetPrincipalResponse) []byte {
+	return cborEncode(csilEncGetPrincipalResponse(csilV))
+}
+
+// DecodeGetPrincipalResponse decodes canonical CSIL CBOR bytes into a GetPrincipalResponse.
+func DecodeGetPrincipalResponse(csilData []byte) (GetPrincipalResponse, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero GetPrincipalResponse
+		return csilZero, csilErr
+	}
+	return csilDecGetPrincipalResponse(csilRoot)
+}
+
+// csilEncCreateServicePrincipalRequest builds the canonical CBOR value tree for a CreateServicePrincipalRequest.
+func csilEncCreateServicePrincipalRequest(csilV CreateServicePrincipalRequest) cborValue {
+	csilEntries := make(cborMap, 0, 3)
+	csilEntries = append(csilEntries, cborEntry{cborText("name"), cborText(csilV.Name)})
+	csilEntries = append(csilEntries, cborEntry{cborText("org_id"), cborText(csilV.OrgId)})
+	if csilV.DisplayName != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("display_name"), cborText((*csilV.DisplayName))})
+	}
+	return csilEntries
+}
+
+// csilDecCreateServicePrincipalRequest reconstructs a CreateServicePrincipalRequest from a decoded CBOR value tree.
+func csilDecCreateServicePrincipalRequest(csilRoot cborValue) (CreateServicePrincipalRequest, error) {
+	var csilOut CreateServicePrincipalRequest
+	{
+		csilField, csilErr := cborRequire(csilRoot, "org_id")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.OrgId = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "name")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Name = csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "display_name"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.DisplayName = &csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeCreateServicePrincipalRequest encodes a CreateServicePrincipalRequest to canonical CSIL CBOR bytes.
+func EncodeCreateServicePrincipalRequest(csilV CreateServicePrincipalRequest) []byte {
+	return cborEncode(csilEncCreateServicePrincipalRequest(csilV))
+}
+
+// DecodeCreateServicePrincipalRequest decodes canonical CSIL CBOR bytes into a CreateServicePrincipalRequest.
+func DecodeCreateServicePrincipalRequest(csilData []byte) (CreateServicePrincipalRequest, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero CreateServicePrincipalRequest
+		return csilZero, csilErr
+	}
+	return csilDecCreateServicePrincipalRequest(csilRoot)
+}
+
+// csilEncCreateServicePrincipalResponse builds the canonical CBOR value tree for a CreateServicePrincipalResponse.
+func csilEncCreateServicePrincipalResponse(csilV CreateServicePrincipalResponse) cborValue {
+	csilEntries := make(cborMap, 0, 1)
+	csilEntries = append(csilEntries, cborEntry{cborText("principal"), csilEncPrincipalDetail(csilV.Principal)})
+	return csilEntries
+}
+
+// csilDecCreateServicePrincipalResponse reconstructs a CreateServicePrincipalResponse from a decoded CBOR value tree.
+func csilDecCreateServicePrincipalResponse(csilRoot cborValue) (CreateServicePrincipalResponse, error) {
+	var csilOut CreateServicePrincipalResponse
+	{
+		csilField, csilErr := cborRequire(csilRoot, "principal")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (csilDecPrincipalDetail)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Principal = csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeCreateServicePrincipalResponse encodes a CreateServicePrincipalResponse to canonical CSIL CBOR bytes.
+func EncodeCreateServicePrincipalResponse(csilV CreateServicePrincipalResponse) []byte {
+	return cborEncode(csilEncCreateServicePrincipalResponse(csilV))
+}
+
+// DecodeCreateServicePrincipalResponse decodes canonical CSIL CBOR bytes into a CreateServicePrincipalResponse.
+func DecodeCreateServicePrincipalResponse(csilData []byte) (CreateServicePrincipalResponse, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero CreateServicePrincipalResponse
+		return csilZero, csilErr
+	}
+	return csilDecCreateServicePrincipalResponse(csilRoot)
+}
+
+// csilEncSetPrincipalStatusRequest builds the canonical CBOR value tree for a SetPrincipalStatusRequest.
+func csilEncSetPrincipalStatusRequest(csilV SetPrincipalStatusRequest) cborValue {
+	csilEntries := make(cborMap, 0, 3)
+	csilEntries = append(csilEntries, cborEntry{cborText("org_id"), cborText(csilV.OrgId)})
+	csilEntries = append(csilEntries, cborEntry{cborText("status"), cborText(csilV.Status)})
+	csilEntries = append(csilEntries, cborEntry{cborText("principal_id"), cborText(csilV.PrincipalId)})
+	return csilEntries
+}
+
+// csilDecSetPrincipalStatusRequest reconstructs a SetPrincipalStatusRequest from a decoded CBOR value tree.
+func csilDecSetPrincipalStatusRequest(csilRoot cborValue) (SetPrincipalStatusRequest, error) {
+	var csilOut SetPrincipalStatusRequest
+	{
+		csilField, csilErr := cborRequire(csilRoot, "org_id")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.OrgId = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "principal_id")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.PrincipalId = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "status")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Status = csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeSetPrincipalStatusRequest encodes a SetPrincipalStatusRequest to canonical CSIL CBOR bytes.
+func EncodeSetPrincipalStatusRequest(csilV SetPrincipalStatusRequest) []byte {
+	return cborEncode(csilEncSetPrincipalStatusRequest(csilV))
+}
+
+// DecodeSetPrincipalStatusRequest decodes canonical CSIL CBOR bytes into a SetPrincipalStatusRequest.
+func DecodeSetPrincipalStatusRequest(csilData []byte) (SetPrincipalStatusRequest, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero SetPrincipalStatusRequest
+		return csilZero, csilErr
+	}
+	return csilDecSetPrincipalStatusRequest(csilRoot)
+}
+
+// csilEncSetPrincipalStatusResponse builds the canonical CBOR value tree for a SetPrincipalStatusResponse.
+func csilEncSetPrincipalStatusResponse(csilV SetPrincipalStatusResponse) cborValue {
+	csilEntries := make(cborMap, 0, 1)
+	csilEntries = append(csilEntries, cborEntry{cborText("principal"), csilEncPrincipalDetail(csilV.Principal)})
+	return csilEntries
+}
+
+// csilDecSetPrincipalStatusResponse reconstructs a SetPrincipalStatusResponse from a decoded CBOR value tree.
+func csilDecSetPrincipalStatusResponse(csilRoot cborValue) (SetPrincipalStatusResponse, error) {
+	var csilOut SetPrincipalStatusResponse
+	{
+		csilField, csilErr := cborRequire(csilRoot, "principal")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (csilDecPrincipalDetail)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Principal = csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeSetPrincipalStatusResponse encodes a SetPrincipalStatusResponse to canonical CSIL CBOR bytes.
+func EncodeSetPrincipalStatusResponse(csilV SetPrincipalStatusResponse) []byte {
+	return cborEncode(csilEncSetPrincipalStatusResponse(csilV))
+}
+
+// DecodeSetPrincipalStatusResponse decodes canonical CSIL CBOR bytes into a SetPrincipalStatusResponse.
+func DecodeSetPrincipalStatusResponse(csilData []byte) (SetPrincipalStatusResponse, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero SetPrincipalStatusResponse
+		return csilZero, csilErr
+	}
+	return csilDecSetPrincipalStatusResponse(csilRoot)
+}
+
+// csilEncPrincipalIdentityRequest builds the canonical CBOR value tree for a PrincipalIdentityRequest.
+func csilEncPrincipalIdentityRequest(csilV PrincipalIdentityRequest) cborValue {
+	csilEntries := make(cborMap, 0, 4)
+	csilEntries = append(csilEntries, cborEntry{cborText("org_id"), cborText(csilV.OrgId)})
+	csilEntries = append(csilEntries, cborEntry{cborText("principal_id"), cborText(csilV.PrincipalId)})
+	csilEntries = append(csilEntries, cborEntry{cborText("identity_type"), cborText(csilV.IdentityType)})
+	csilEntries = append(csilEntries, cborEntry{cborText("identity_value"), cborText(csilV.IdentityValue)})
+	return csilEntries
+}
+
+// csilDecPrincipalIdentityRequest reconstructs a PrincipalIdentityRequest from a decoded CBOR value tree.
+func csilDecPrincipalIdentityRequest(csilRoot cborValue) (PrincipalIdentityRequest, error) {
+	var csilOut PrincipalIdentityRequest
+	{
+		csilField, csilErr := cborRequire(csilRoot, "org_id")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.OrgId = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "principal_id")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.PrincipalId = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "identity_type")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.IdentityType = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "identity_value")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.IdentityValue = csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodePrincipalIdentityRequest encodes a PrincipalIdentityRequest to canonical CSIL CBOR bytes.
+func EncodePrincipalIdentityRequest(csilV PrincipalIdentityRequest) []byte {
+	return cborEncode(csilEncPrincipalIdentityRequest(csilV))
+}
+
+// DecodePrincipalIdentityRequest decodes canonical CSIL CBOR bytes into a PrincipalIdentityRequest.
+func DecodePrincipalIdentityRequest(csilData []byte) (PrincipalIdentityRequest, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero PrincipalIdentityRequest
+		return csilZero, csilErr
+	}
+	return csilDecPrincipalIdentityRequest(csilRoot)
+}
+
+// csilEncPrincipalIdentityResponse builds the canonical CBOR value tree for a PrincipalIdentityResponse.
+func csilEncPrincipalIdentityResponse(csilV PrincipalIdentityResponse) cborValue {
+	csilEntries := make(cborMap, 0, 1)
+	csilEntries = append(csilEntries, cborEntry{cborText("principal"), csilEncPrincipalDetail(csilV.Principal)})
+	return csilEntries
+}
+
+// csilDecPrincipalIdentityResponse reconstructs a PrincipalIdentityResponse from a decoded CBOR value tree.
+func csilDecPrincipalIdentityResponse(csilRoot cborValue) (PrincipalIdentityResponse, error) {
+	var csilOut PrincipalIdentityResponse
+	{
+		csilField, csilErr := cborRequire(csilRoot, "principal")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (csilDecPrincipalDetail)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Principal = csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodePrincipalIdentityResponse encodes a PrincipalIdentityResponse to canonical CSIL CBOR bytes.
+func EncodePrincipalIdentityResponse(csilV PrincipalIdentityResponse) []byte {
+	return cborEncode(csilEncPrincipalIdentityResponse(csilV))
+}
+
+// DecodePrincipalIdentityResponse decodes canonical CSIL CBOR bytes into a PrincipalIdentityResponse.
+func DecodePrincipalIdentityResponse(csilData []byte) (PrincipalIdentityResponse, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero PrincipalIdentityResponse
+		return csilZero, csilErr
+	}
+	return csilDecPrincipalIdentityResponse(csilRoot)
+}
+
+// csilEncSetPrincipalGroupRequest builds the canonical CBOR value tree for a SetPrincipalGroupRequest.
+func csilEncSetPrincipalGroupRequest(csilV SetPrincipalGroupRequest) cborValue {
+	csilEntries := make(cborMap, 0, 4)
+	csilEntries = append(csilEntries, cborEntry{cborText("member"), cborBool(csilV.Member)})
+	csilEntries = append(csilEntries, cborEntry{cborText("org_id"), cborText(csilV.OrgId)})
+	csilEntries = append(csilEntries, cborEntry{cborText("group_id"), cborText(csilV.GroupId)})
+	csilEntries = append(csilEntries, cborEntry{cborText("principal_id"), cborText(csilV.PrincipalId)})
+	return csilEntries
+}
+
+// csilDecSetPrincipalGroupRequest reconstructs a SetPrincipalGroupRequest from a decoded CBOR value tree.
+func csilDecSetPrincipalGroupRequest(csilRoot cborValue) (SetPrincipalGroupRequest, error) {
+	var csilOut SetPrincipalGroupRequest
+	{
+		csilField, csilErr := cborRequire(csilRoot, "org_id")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.OrgId = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "principal_id")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.PrincipalId = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "group_id")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.GroupId = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "member")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsBool)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Member = csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeSetPrincipalGroupRequest encodes a SetPrincipalGroupRequest to canonical CSIL CBOR bytes.
+func EncodeSetPrincipalGroupRequest(csilV SetPrincipalGroupRequest) []byte {
+	return cborEncode(csilEncSetPrincipalGroupRequest(csilV))
+}
+
+// DecodeSetPrincipalGroupRequest decodes canonical CSIL CBOR bytes into a SetPrincipalGroupRequest.
+func DecodeSetPrincipalGroupRequest(csilData []byte) (SetPrincipalGroupRequest, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero SetPrincipalGroupRequest
+		return csilZero, csilErr
+	}
+	return csilDecSetPrincipalGroupRequest(csilRoot)
+}
+
+// csilEncSetPrincipalGroupResponse builds the canonical CBOR value tree for a SetPrincipalGroupResponse.
+func csilEncSetPrincipalGroupResponse(csilV SetPrincipalGroupResponse) cborValue {
+	csilEntries := make(cborMap, 0, 1)
+	csilEntries = append(csilEntries, cborEntry{cborText("principal"), csilEncPrincipalDetail(csilV.Principal)})
+	return csilEntries
+}
+
+// csilDecSetPrincipalGroupResponse reconstructs a SetPrincipalGroupResponse from a decoded CBOR value tree.
+func csilDecSetPrincipalGroupResponse(csilRoot cborValue) (SetPrincipalGroupResponse, error) {
+	var csilOut SetPrincipalGroupResponse
+	{
+		csilField, csilErr := cborRequire(csilRoot, "principal")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (csilDecPrincipalDetail)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Principal = csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeSetPrincipalGroupResponse encodes a SetPrincipalGroupResponse to canonical CSIL CBOR bytes.
+func EncodeSetPrincipalGroupResponse(csilV SetPrincipalGroupResponse) []byte {
+	return cborEncode(csilEncSetPrincipalGroupResponse(csilV))
+}
+
+// DecodeSetPrincipalGroupResponse decodes canonical CSIL CBOR bytes into a SetPrincipalGroupResponse.
+func DecodeSetPrincipalGroupResponse(csilData []byte) (SetPrincipalGroupResponse, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero SetPrincipalGroupResponse
+		return csilZero, csilErr
+	}
+	return csilDecSetPrincipalGroupResponse(csilRoot)
+}
+
+// csilEncIssuePrincipalTokenRequest builds the canonical CBOR value tree for a IssuePrincipalTokenRequest.
+func csilEncIssuePrincipalTokenRequest(csilV IssuePrincipalTokenRequest) cborValue {
+	csilEntries := make(cborMap, 0, 5)
+	csilEntries = append(csilEntries, cborEntry{cborText("name"), cborText(csilV.Name)})
+	csilEntries = append(csilEntries, cborEntry{cborText("org_id"), cborText(csilV.OrgId)})
+	if csilV.ExpiresAt != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("expires_at"), cborText((*csilV.ExpiresAt))})
+	}
+	csilEntries = append(csilEntries, cborEntry{cborText("capabilities"), cborEncArray(csilV.Capabilities, func(csilElem string) cborValue { return cborText(csilElem) })})
+	csilEntries = append(csilEntries, cborEntry{cborText("principal_id"), cborText(csilV.PrincipalId)})
+	return csilEntries
+}
+
+// csilDecIssuePrincipalTokenRequest reconstructs a IssuePrincipalTokenRequest from a decoded CBOR value tree.
+func csilDecIssuePrincipalTokenRequest(csilRoot cborValue) (IssuePrincipalTokenRequest, error) {
+	var csilOut IssuePrincipalTokenRequest
+	{
+		csilField, csilErr := cborRequire(csilRoot, "org_id")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.OrgId = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "principal_id")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.PrincipalId = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "name")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Name = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "capabilities")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (func(csilV cborValue) ([]string, error) { return cborDecArray(csilV, cborAsText) })(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Capabilities = csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "expires_at"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.ExpiresAt = &csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeIssuePrincipalTokenRequest encodes a IssuePrincipalTokenRequest to canonical CSIL CBOR bytes.
+func EncodeIssuePrincipalTokenRequest(csilV IssuePrincipalTokenRequest) []byte {
+	return cborEncode(csilEncIssuePrincipalTokenRequest(csilV))
+}
+
+// DecodeIssuePrincipalTokenRequest decodes canonical CSIL CBOR bytes into a IssuePrincipalTokenRequest.
+func DecodeIssuePrincipalTokenRequest(csilData []byte) (IssuePrincipalTokenRequest, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero IssuePrincipalTokenRequest
+		return csilZero, csilErr
+	}
+	return csilDecIssuePrincipalTokenRequest(csilRoot)
+}
+
+// csilEncIssuePrincipalTokenResponse builds the canonical CBOR value tree for a IssuePrincipalTokenResponse.
+func csilEncIssuePrincipalTokenResponse(csilV IssuePrincipalTokenResponse) cborValue {
+	csilEntries := make(cborMap, 0, 2)
+	csilEntries = append(csilEntries, cborEntry{cborText("info"), csilEncPrincipalTokenEntry(csilV.Info)})
+	csilEntries = append(csilEntries, cborEntry{cborText("token"), cborText(csilV.Token)})
+	return csilEntries
+}
+
+// csilDecIssuePrincipalTokenResponse reconstructs a IssuePrincipalTokenResponse from a decoded CBOR value tree.
+func csilDecIssuePrincipalTokenResponse(csilRoot cborValue) (IssuePrincipalTokenResponse, error) {
+	var csilOut IssuePrincipalTokenResponse
+	{
+		csilField, csilErr := cborRequire(csilRoot, "token")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Token = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "info")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (csilDecPrincipalTokenEntry)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Info = csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeIssuePrincipalTokenResponse encodes a IssuePrincipalTokenResponse to canonical CSIL CBOR bytes.
+func EncodeIssuePrincipalTokenResponse(csilV IssuePrincipalTokenResponse) []byte {
+	return cborEncode(csilEncIssuePrincipalTokenResponse(csilV))
+}
+
+// DecodeIssuePrincipalTokenResponse decodes canonical CSIL CBOR bytes into a IssuePrincipalTokenResponse.
+func DecodeIssuePrincipalTokenResponse(csilData []byte) (IssuePrincipalTokenResponse, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero IssuePrincipalTokenResponse
+		return csilZero, csilErr
+	}
+	return csilDecIssuePrincipalTokenResponse(csilRoot)
+}
+
+// csilEncRevokePrincipalTokenRequest builds the canonical CBOR value tree for a RevokePrincipalTokenRequest.
+func csilEncRevokePrincipalTokenRequest(csilV RevokePrincipalTokenRequest) cborValue {
+	csilEntries := make(cborMap, 0, 3)
+	csilEntries = append(csilEntries, cborEntry{cborText("org_id"), cborText(csilV.OrgId)})
+	csilEntries = append(csilEntries, cborEntry{cborText("token_id"), cborText(csilV.TokenId)})
+	csilEntries = append(csilEntries, cborEntry{cborText("principal_id"), cborText(csilV.PrincipalId)})
+	return csilEntries
+}
+
+// csilDecRevokePrincipalTokenRequest reconstructs a RevokePrincipalTokenRequest from a decoded CBOR value tree.
+func csilDecRevokePrincipalTokenRequest(csilRoot cborValue) (RevokePrincipalTokenRequest, error) {
+	var csilOut RevokePrincipalTokenRequest
+	{
+		csilField, csilErr := cborRequire(csilRoot, "org_id")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.OrgId = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "principal_id")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.PrincipalId = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "token_id")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.TokenId = csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeRevokePrincipalTokenRequest encodes a RevokePrincipalTokenRequest to canonical CSIL CBOR bytes.
+func EncodeRevokePrincipalTokenRequest(csilV RevokePrincipalTokenRequest) []byte {
+	return cborEncode(csilEncRevokePrincipalTokenRequest(csilV))
+}
+
+// DecodeRevokePrincipalTokenRequest decodes canonical CSIL CBOR bytes into a RevokePrincipalTokenRequest.
+func DecodeRevokePrincipalTokenRequest(csilData []byte) (RevokePrincipalTokenRequest, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero RevokePrincipalTokenRequest
+		return csilZero, csilErr
+	}
+	return csilDecRevokePrincipalTokenRequest(csilRoot)
+}
+
+// csilEncRevokePrincipalTokenResponse builds the canonical CBOR value tree for a RevokePrincipalTokenResponse.
+func csilEncRevokePrincipalTokenResponse(csilV RevokePrincipalTokenResponse) cborValue {
+	csilEntries := make(cborMap, 0, 1)
+	csilEntries = append(csilEntries, cborEntry{cborText("revoked"), cborBool(csilV.Revoked)})
+	return csilEntries
+}
+
+// csilDecRevokePrincipalTokenResponse reconstructs a RevokePrincipalTokenResponse from a decoded CBOR value tree.
+func csilDecRevokePrincipalTokenResponse(csilRoot cborValue) (RevokePrincipalTokenResponse, error) {
+	var csilOut RevokePrincipalTokenResponse
+	{
+		csilField, csilErr := cborRequire(csilRoot, "revoked")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsBool)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Revoked = csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeRevokePrincipalTokenResponse encodes a RevokePrincipalTokenResponse to canonical CSIL CBOR bytes.
+func EncodeRevokePrincipalTokenResponse(csilV RevokePrincipalTokenResponse) []byte {
+	return cborEncode(csilEncRevokePrincipalTokenResponse(csilV))
+}
+
+// DecodeRevokePrincipalTokenResponse decodes canonical CSIL CBOR bytes into a RevokePrincipalTokenResponse.
+func DecodeRevokePrincipalTokenResponse(csilData []byte) (RevokePrincipalTokenResponse, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero RevokePrincipalTokenResponse
+		return csilZero, csilErr
+	}
+	return csilDecRevokePrincipalTokenResponse(csilRoot)
+}
+
+// csilEncResolvePrincipalRequest builds the canonical CBOR value tree for a ResolvePrincipalRequest.
+func csilEncResolvePrincipalRequest(csilV ResolvePrincipalRequest) cborValue {
+	csilEntries := make(cborMap, 0, 3)
+	csilEntries = append(csilEntries, cborEntry{cborText("org_id"), cborText(csilV.OrgId)})
+	csilEntries = append(csilEntries, cborEntry{cborText("identity_type"), cborText(csilV.IdentityType)})
+	csilEntries = append(csilEntries, cborEntry{cborText("identity_value"), cborText(csilV.IdentityValue)})
+	return csilEntries
+}
+
+// csilDecResolvePrincipalRequest reconstructs a ResolvePrincipalRequest from a decoded CBOR value tree.
+func csilDecResolvePrincipalRequest(csilRoot cborValue) (ResolvePrincipalRequest, error) {
+	var csilOut ResolvePrincipalRequest
+	{
+		csilField, csilErr := cborRequire(csilRoot, "org_id")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.OrgId = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "identity_type")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.IdentityType = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "identity_value")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.IdentityValue = csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeResolvePrincipalRequest encodes a ResolvePrincipalRequest to canonical CSIL CBOR bytes.
+func EncodeResolvePrincipalRequest(csilV ResolvePrincipalRequest) []byte {
+	return cborEncode(csilEncResolvePrincipalRequest(csilV))
+}
+
+// DecodeResolvePrincipalRequest decodes canonical CSIL CBOR bytes into a ResolvePrincipalRequest.
+func DecodeResolvePrincipalRequest(csilData []byte) (ResolvePrincipalRequest, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero ResolvePrincipalRequest
+		return csilZero, csilErr
+	}
+	return csilDecResolvePrincipalRequest(csilRoot)
+}
+
+// csilEncResolvePrincipalResponse builds the canonical CBOR value tree for a ResolvePrincipalResponse.
+func csilEncResolvePrincipalResponse(csilV ResolvePrincipalResponse) cborValue {
+	csilEntries := make(cborMap, 0, 2)
+	csilEntries = append(csilEntries, cborEntry{cborText("identity"), cborText(csilV.Identity)})
+	csilEntries = append(csilEntries, cborEntry{cborText("principal"), csilEncPrincipalDetail(csilV.Principal)})
+	return csilEntries
+}
+
+// csilDecResolvePrincipalResponse reconstructs a ResolvePrincipalResponse from a decoded CBOR value tree.
+func csilDecResolvePrincipalResponse(csilRoot cborValue) (ResolvePrincipalResponse, error) {
+	var csilOut ResolvePrincipalResponse
+	{
+		csilField, csilErr := cborRequire(csilRoot, "principal")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (csilDecPrincipalDetail)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Principal = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "identity")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Identity = csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeResolvePrincipalResponse encodes a ResolvePrincipalResponse to canonical CSIL CBOR bytes.
+func EncodeResolvePrincipalResponse(csilV ResolvePrincipalResponse) []byte {
+	return cborEncode(csilEncResolvePrincipalResponse(csilV))
+}
+
+// DecodeResolvePrincipalResponse decodes canonical CSIL CBOR bytes into a ResolvePrincipalResponse.
+func DecodeResolvePrincipalResponse(csilData []byte) (ResolvePrincipalResponse, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero ResolvePrincipalResponse
+		return csilZero, csilErr
+	}
+	return csilDecResolvePrincipalResponse(csilRoot)
+}
+
+// csilEncFederationIssuerEntry builds the canonical CBOR value tree for a FederationIssuerEntry.
+func csilEncFederationIssuerEntry(csilV FederationIssuerEntry) cborValue {
+	csilEntries := make(cborMap, 0, 9)
+	csilEntries = append(csilEntries, cborEntry{cborText("name"), cborText(csilV.Name)})
+	csilEntries = append(csilEntries, cborEntry{cborText("status"), cborText(csilV.Status)})
+	csilEntries = append(csilEntries, cborEntry{cborText("jwks_url"), cborText(csilV.JwksUrl)})
+	csilEntries = append(csilEntries, cborEntry{cborText("audiences"), cborEncArray(csilV.Audiences, func(csilElem string) cborValue { return cborText(csilElem) })})
+	csilEntries = append(csilEntries, cborEntry{cborText("issuer_id"), cborText(csilV.IssuerId)})
+	csilEntries = append(csilEntries, cborEntry{cborText("algorithms"), cborEncArray(csilV.Algorithms, func(csilElem string) cborValue { return cborText(csilElem) })})
+	csilEntries = append(csilEntries, cborEntry{cborText("created_at"), cborText(csilV.CreatedAt)})
+	csilEntries = append(csilEntries, cborEntry{cborText("issuer_url"), cborText(csilV.IssuerUrl)})
+	csilEntries = append(csilEntries, cborEntry{cborText("clock_skew_seconds"), cborInt(csilV.ClockSkewSeconds)})
+	return csilEntries
+}
+
+// csilDecFederationIssuerEntry reconstructs a FederationIssuerEntry from a decoded CBOR value tree.
+func csilDecFederationIssuerEntry(csilRoot cborValue) (FederationIssuerEntry, error) {
+	var csilOut FederationIssuerEntry
+	{
+		csilField, csilErr := cborRequire(csilRoot, "issuer_id")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.IssuerId = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "name")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Name = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "issuer_url")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.IssuerUrl = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "jwks_url")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.JwksUrl = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "audiences")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (func(csilV cborValue) ([]string, error) { return cborDecArray(csilV, cborAsText) })(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Audiences = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "algorithms")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (func(csilV cborValue) ([]string, error) { return cborDecArray(csilV, cborAsText) })(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Algorithms = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "clock_skew_seconds")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsI64)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.ClockSkewSeconds = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "status")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Status = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "created_at")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.CreatedAt = csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeFederationIssuerEntry encodes a FederationIssuerEntry to canonical CSIL CBOR bytes.
+func EncodeFederationIssuerEntry(csilV FederationIssuerEntry) []byte {
+	return cborEncode(csilEncFederationIssuerEntry(csilV))
+}
+
+// DecodeFederationIssuerEntry decodes canonical CSIL CBOR bytes into a FederationIssuerEntry.
+func DecodeFederationIssuerEntry(csilData []byte) (FederationIssuerEntry, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero FederationIssuerEntry
+		return csilZero, csilErr
+	}
+	return csilDecFederationIssuerEntry(csilRoot)
+}
+
+// csilEncFederationConditionEntry builds the canonical CBOR value tree for a FederationConditionEntry.
+func csilEncFederationConditionEntry(csilV FederationConditionEntry) cborValue {
+	csilEntries := make(cborMap, 0, 3)
+	csilEntries = append(csilEntries, cborEntry{cborText("op"), cborText(csilV.Op)})
+	csilEntries = append(csilEntries, cborEntry{cborText("claim"), cborText(csilV.Claim)})
+	csilEntries = append(csilEntries, cborEntry{cborText("value"), cborText(csilV.Value)})
+	return csilEntries
+}
+
+// csilDecFederationConditionEntry reconstructs a FederationConditionEntry from a decoded CBOR value tree.
+func csilDecFederationConditionEntry(csilRoot cborValue) (FederationConditionEntry, error) {
+	var csilOut FederationConditionEntry
+	{
+		csilField, csilErr := cborRequire(csilRoot, "claim")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Claim = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "op")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Op = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "value")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Value = csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeFederationConditionEntry encodes a FederationConditionEntry to canonical CSIL CBOR bytes.
+func EncodeFederationConditionEntry(csilV FederationConditionEntry) []byte {
+	return cborEncode(csilEncFederationConditionEntry(csilV))
+}
+
+// DecodeFederationConditionEntry decodes canonical CSIL CBOR bytes into a FederationConditionEntry.
+func DecodeFederationConditionEntry(csilData []byte) (FederationConditionEntry, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero FederationConditionEntry
+		return csilZero, csilErr
+	}
+	return csilDecFederationConditionEntry(csilRoot)
+}
+
+// csilEncFederationMappingEntry builds the canonical CBOR value tree for a FederationMappingEntry.
+func csilEncFederationMappingEntry(csilV FederationMappingEntry) cborValue {
+	csilEntries := make(cborMap, 0, 10)
+	csilEntries = append(csilEntries, cborEntry{cborText("name"), cborText(csilV.Name)})
+	csilEntries = append(csilEntries, cborEntry{cborText("status"), cborText(csilV.Status)})
+	csilEntries = append(csilEntries, cborEntry{cborText("issuer_id"), cborText(csilV.IssuerId)})
+	csilEntries = append(csilEntries, cborEntry{cborText("conditions"), cborEncArray(csilV.Conditions, func(csilElem FederationConditionEntry) cborValue { return csilEncFederationConditionEntry(csilElem) })})
+	csilEntries = append(csilEntries, cborEntry{cborText("created_at"), cborText(csilV.CreatedAt)})
+	csilEntries = append(csilEntries, cborEntry{cborText("mapping_id"), cborText(csilV.MappingId)})
+	csilEntries = append(csilEntries, cborEntry{cborText("capabilities"), cborEncArray(csilV.Capabilities, func(csilElem string) cborValue { return cborText(csilElem) })})
+	csilEntries = append(csilEntries, cborEntry{cborText("principal_id"), cborText(csilV.PrincipalId)})
+	csilEntries = append(csilEntries, cborEntry{cborText("principal_name"), cborText(csilV.PrincipalName)})
+	csilEntries = append(csilEntries, cborEntry{cborText("token_ttl_seconds"), cborInt(csilV.TokenTtlSeconds)})
+	return csilEntries
+}
+
+// csilDecFederationMappingEntry reconstructs a FederationMappingEntry from a decoded CBOR value tree.
+func csilDecFederationMappingEntry(csilRoot cborValue) (FederationMappingEntry, error) {
+	var csilOut FederationMappingEntry
+	{
+		csilField, csilErr := cborRequire(csilRoot, "mapping_id")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.MappingId = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "issuer_id")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.IssuerId = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "name")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Name = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "principal_id")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.PrincipalId = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "principal_name")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.PrincipalName = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "conditions")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (func(csilV cborValue) ([]FederationConditionEntry, error) {
+			return cborDecArray(csilV, csilDecFederationConditionEntry)
+		})(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Conditions = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "capabilities")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (func(csilV cborValue) ([]string, error) { return cborDecArray(csilV, cborAsText) })(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Capabilities = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "token_ttl_seconds")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsI64)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.TokenTtlSeconds = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "status")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Status = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "created_at")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.CreatedAt = csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeFederationMappingEntry encodes a FederationMappingEntry to canonical CSIL CBOR bytes.
+func EncodeFederationMappingEntry(csilV FederationMappingEntry) []byte {
+	return cborEncode(csilEncFederationMappingEntry(csilV))
+}
+
+// DecodeFederationMappingEntry decodes canonical CSIL CBOR bytes into a FederationMappingEntry.
+func DecodeFederationMappingEntry(csilData []byte) (FederationMappingEntry, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero FederationMappingEntry
+		return csilZero, csilErr
+	}
+	return csilDecFederationMappingEntry(csilRoot)
+}
+
+// csilEncListFederationIssuersRequest builds the canonical CBOR value tree for a ListFederationIssuersRequest.
+func csilEncListFederationIssuersRequest(csilV ListFederationIssuersRequest) cborValue {
+	csilEntries := make(cborMap, 0, 1)
+	csilEntries = append(csilEntries, cborEntry{cborText("org_id"), cborText(csilV.OrgId)})
+	return csilEntries
+}
+
+// csilDecListFederationIssuersRequest reconstructs a ListFederationIssuersRequest from a decoded CBOR value tree.
+func csilDecListFederationIssuersRequest(csilRoot cborValue) (ListFederationIssuersRequest, error) {
+	var csilOut ListFederationIssuersRequest
+	{
+		csilField, csilErr := cborRequire(csilRoot, "org_id")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.OrgId = csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeListFederationIssuersRequest encodes a ListFederationIssuersRequest to canonical CSIL CBOR bytes.
+func EncodeListFederationIssuersRequest(csilV ListFederationIssuersRequest) []byte {
+	return cborEncode(csilEncListFederationIssuersRequest(csilV))
+}
+
+// DecodeListFederationIssuersRequest decodes canonical CSIL CBOR bytes into a ListFederationIssuersRequest.
+func DecodeListFederationIssuersRequest(csilData []byte) (ListFederationIssuersRequest, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero ListFederationIssuersRequest
+		return csilZero, csilErr
+	}
+	return csilDecListFederationIssuersRequest(csilRoot)
+}
+
+// csilEncListFederationIssuersResponse builds the canonical CBOR value tree for a ListFederationIssuersResponse.
+func csilEncListFederationIssuersResponse(csilV ListFederationIssuersResponse) cborValue {
+	csilEntries := make(cborMap, 0, 2)
+	csilEntries = append(csilEntries, cborEntry{cborText("issuers"), cborEncArray(csilV.Issuers, func(csilElem FederationIssuerEntry) cborValue { return csilEncFederationIssuerEntry(csilElem) })})
+	csilEntries = append(csilEntries, cborEntry{cborText("mappings"), cborEncArray(csilV.Mappings, func(csilElem FederationMappingEntry) cborValue { return csilEncFederationMappingEntry(csilElem) })})
+	return csilEntries
+}
+
+// csilDecListFederationIssuersResponse reconstructs a ListFederationIssuersResponse from a decoded CBOR value tree.
+func csilDecListFederationIssuersResponse(csilRoot cborValue) (ListFederationIssuersResponse, error) {
+	var csilOut ListFederationIssuersResponse
+	{
+		csilField, csilErr := cborRequire(csilRoot, "issuers")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (func(csilV cborValue) ([]FederationIssuerEntry, error) {
+			return cborDecArray(csilV, csilDecFederationIssuerEntry)
+		})(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Issuers = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "mappings")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (func(csilV cborValue) ([]FederationMappingEntry, error) {
+			return cborDecArray(csilV, csilDecFederationMappingEntry)
+		})(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Mappings = csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeListFederationIssuersResponse encodes a ListFederationIssuersResponse to canonical CSIL CBOR bytes.
+func EncodeListFederationIssuersResponse(csilV ListFederationIssuersResponse) []byte {
+	return cborEncode(csilEncListFederationIssuersResponse(csilV))
+}
+
+// DecodeListFederationIssuersResponse decodes canonical CSIL CBOR bytes into a ListFederationIssuersResponse.
+func DecodeListFederationIssuersResponse(csilData []byte) (ListFederationIssuersResponse, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero ListFederationIssuersResponse
+		return csilZero, csilErr
+	}
+	return csilDecListFederationIssuersResponse(csilRoot)
+}
+
+// csilEncSaveFederationIssuerRequest builds the canonical CBOR value tree for a SaveFederationIssuerRequest.
+func csilEncSaveFederationIssuerRequest(csilV SaveFederationIssuerRequest) cborValue {
+	csilEntries := make(cborMap, 0, 9)
+	csilEntries = append(csilEntries, cborEntry{cborText("name"), cborText(csilV.Name)})
+	csilEntries = append(csilEntries, cborEntry{cborText("org_id"), cborText(csilV.OrgId)})
+	if csilV.Status != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("status"), cborText((*csilV.Status))})
+	}
+	if csilV.JwksUrl != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("jwks_url"), cborText((*csilV.JwksUrl))})
+	}
+	csilEntries = append(csilEntries, cborEntry{cborText("audiences"), cborEncArray(csilV.Audiences, func(csilElem string) cborValue { return cborText(csilElem) })})
+	if csilV.IssuerId != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("issuer_id"), cborText((*csilV.IssuerId))})
+	}
+	if csilV.Algorithms != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("algorithms"), cborEncArray(csilV.Algorithms, func(csilElem string) cborValue { return cborText(csilElem) })})
+	}
+	csilEntries = append(csilEntries, cborEntry{cborText("issuer_url"), cborText(csilV.IssuerUrl)})
+	if csilV.ClockSkewSeconds != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("clock_skew_seconds"), cborInt((*csilV.ClockSkewSeconds))})
+	}
+	return csilEntries
+}
+
+// csilDecSaveFederationIssuerRequest reconstructs a SaveFederationIssuerRequest from a decoded CBOR value tree.
+func csilDecSaveFederationIssuerRequest(csilRoot cborValue) (SaveFederationIssuerRequest, error) {
+	var csilOut SaveFederationIssuerRequest
+	{
+		csilField, csilErr := cborRequire(csilRoot, "org_id")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.OrgId = csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "issuer_id"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.IssuerId = &csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "name")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Name = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "issuer_url")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.IssuerUrl = csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "jwks_url"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.JwksUrl = &csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "audiences")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (func(csilV cborValue) ([]string, error) { return cborDecArray(csilV, cborAsText) })(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Audiences = csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "algorithms"); csilOk {
+		csilVal, csilErr := (func(csilV cborValue) ([]string, error) { return cborDecArray(csilV, cborAsText) })(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Algorithms = csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "clock_skew_seconds"); csilOk {
+		csilVal, csilErr := (cborAsI64)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.ClockSkewSeconds = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "status"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Status = &csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeSaveFederationIssuerRequest encodes a SaveFederationIssuerRequest to canonical CSIL CBOR bytes.
+func EncodeSaveFederationIssuerRequest(csilV SaveFederationIssuerRequest) []byte {
+	return cborEncode(csilEncSaveFederationIssuerRequest(csilV))
+}
+
+// DecodeSaveFederationIssuerRequest decodes canonical CSIL CBOR bytes into a SaveFederationIssuerRequest.
+func DecodeSaveFederationIssuerRequest(csilData []byte) (SaveFederationIssuerRequest, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero SaveFederationIssuerRequest
+		return csilZero, csilErr
+	}
+	return csilDecSaveFederationIssuerRequest(csilRoot)
+}
+
+// csilEncSaveFederationIssuerResponse builds the canonical CBOR value tree for a SaveFederationIssuerResponse.
+func csilEncSaveFederationIssuerResponse(csilV SaveFederationIssuerResponse) cborValue {
+	csilEntries := make(cborMap, 0, 1)
+	csilEntries = append(csilEntries, cborEntry{cborText("issuer"), csilEncFederationIssuerEntry(csilV.Issuer)})
+	return csilEntries
+}
+
+// csilDecSaveFederationIssuerResponse reconstructs a SaveFederationIssuerResponse from a decoded CBOR value tree.
+func csilDecSaveFederationIssuerResponse(csilRoot cborValue) (SaveFederationIssuerResponse, error) {
+	var csilOut SaveFederationIssuerResponse
+	{
+		csilField, csilErr := cborRequire(csilRoot, "issuer")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (csilDecFederationIssuerEntry)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Issuer = csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeSaveFederationIssuerResponse encodes a SaveFederationIssuerResponse to canonical CSIL CBOR bytes.
+func EncodeSaveFederationIssuerResponse(csilV SaveFederationIssuerResponse) []byte {
+	return cborEncode(csilEncSaveFederationIssuerResponse(csilV))
+}
+
+// DecodeSaveFederationIssuerResponse decodes canonical CSIL CBOR bytes into a SaveFederationIssuerResponse.
+func DecodeSaveFederationIssuerResponse(csilData []byte) (SaveFederationIssuerResponse, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero SaveFederationIssuerResponse
+		return csilZero, csilErr
+	}
+	return csilDecSaveFederationIssuerResponse(csilRoot)
+}
+
+// csilEncDeleteFederationIssuerRequest builds the canonical CBOR value tree for a DeleteFederationIssuerRequest.
+func csilEncDeleteFederationIssuerRequest(csilV DeleteFederationIssuerRequest) cborValue {
+	csilEntries := make(cborMap, 0, 2)
+	csilEntries = append(csilEntries, cborEntry{cborText("org_id"), cborText(csilV.OrgId)})
+	csilEntries = append(csilEntries, cborEntry{cborText("issuer_id"), cborText(csilV.IssuerId)})
+	return csilEntries
+}
+
+// csilDecDeleteFederationIssuerRequest reconstructs a DeleteFederationIssuerRequest from a decoded CBOR value tree.
+func csilDecDeleteFederationIssuerRequest(csilRoot cborValue) (DeleteFederationIssuerRequest, error) {
+	var csilOut DeleteFederationIssuerRequest
+	{
+		csilField, csilErr := cborRequire(csilRoot, "org_id")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.OrgId = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "issuer_id")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.IssuerId = csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeDeleteFederationIssuerRequest encodes a DeleteFederationIssuerRequest to canonical CSIL CBOR bytes.
+func EncodeDeleteFederationIssuerRequest(csilV DeleteFederationIssuerRequest) []byte {
+	return cborEncode(csilEncDeleteFederationIssuerRequest(csilV))
+}
+
+// DecodeDeleteFederationIssuerRequest decodes canonical CSIL CBOR bytes into a DeleteFederationIssuerRequest.
+func DecodeDeleteFederationIssuerRequest(csilData []byte) (DeleteFederationIssuerRequest, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero DeleteFederationIssuerRequest
+		return csilZero, csilErr
+	}
+	return csilDecDeleteFederationIssuerRequest(csilRoot)
+}
+
+// csilEncDeleteFederationIssuerResponse builds the canonical CBOR value tree for a DeleteFederationIssuerResponse.
+func csilEncDeleteFederationIssuerResponse(csilV DeleteFederationIssuerResponse) cborValue {
+	csilEntries := make(cborMap, 0, 1)
+	csilEntries = append(csilEntries, cborEntry{cborText("deleted"), cborBool(csilV.Deleted)})
+	return csilEntries
+}
+
+// csilDecDeleteFederationIssuerResponse reconstructs a DeleteFederationIssuerResponse from a decoded CBOR value tree.
+func csilDecDeleteFederationIssuerResponse(csilRoot cborValue) (DeleteFederationIssuerResponse, error) {
+	var csilOut DeleteFederationIssuerResponse
+	{
+		csilField, csilErr := cborRequire(csilRoot, "deleted")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsBool)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Deleted = csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeDeleteFederationIssuerResponse encodes a DeleteFederationIssuerResponse to canonical CSIL CBOR bytes.
+func EncodeDeleteFederationIssuerResponse(csilV DeleteFederationIssuerResponse) []byte {
+	return cborEncode(csilEncDeleteFederationIssuerResponse(csilV))
+}
+
+// DecodeDeleteFederationIssuerResponse decodes canonical CSIL CBOR bytes into a DeleteFederationIssuerResponse.
+func DecodeDeleteFederationIssuerResponse(csilData []byte) (DeleteFederationIssuerResponse, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero DeleteFederationIssuerResponse
+		return csilZero, csilErr
+	}
+	return csilDecDeleteFederationIssuerResponse(csilRoot)
+}
+
+// csilEncSaveFederationMappingRequest builds the canonical CBOR value tree for a SaveFederationMappingRequest.
+func csilEncSaveFederationMappingRequest(csilV SaveFederationMappingRequest) cborValue {
+	csilEntries := make(cborMap, 0, 9)
+	csilEntries = append(csilEntries, cborEntry{cborText("name"), cborText(csilV.Name)})
+	csilEntries = append(csilEntries, cborEntry{cborText("org_id"), cborText(csilV.OrgId)})
+	if csilV.Status != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("status"), cborText((*csilV.Status))})
+	}
+	csilEntries = append(csilEntries, cborEntry{cborText("issuer_id"), cborText(csilV.IssuerId)})
+	csilEntries = append(csilEntries, cborEntry{cborText("conditions"), cborEncArray(csilV.Conditions, func(csilElem FederationConditionEntry) cborValue { return csilEncFederationConditionEntry(csilElem) })})
+	if csilV.MappingId != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("mapping_id"), cborText((*csilV.MappingId))})
+	}
+	csilEntries = append(csilEntries, cborEntry{cborText("capabilities"), cborEncArray(csilV.Capabilities, func(csilElem string) cborValue { return cborText(csilElem) })})
+	csilEntries = append(csilEntries, cborEntry{cborText("principal_id"), cborText(csilV.PrincipalId)})
+	if csilV.TokenTtlSeconds != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("token_ttl_seconds"), cborInt((*csilV.TokenTtlSeconds))})
+	}
+	return csilEntries
+}
+
+// csilDecSaveFederationMappingRequest reconstructs a SaveFederationMappingRequest from a decoded CBOR value tree.
+func csilDecSaveFederationMappingRequest(csilRoot cborValue) (SaveFederationMappingRequest, error) {
+	var csilOut SaveFederationMappingRequest
+	{
+		csilField, csilErr := cborRequire(csilRoot, "org_id")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.OrgId = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "issuer_id")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.IssuerId = csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "mapping_id"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.MappingId = &csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "name")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Name = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "principal_id")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.PrincipalId = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "conditions")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (func(csilV cborValue) ([]FederationConditionEntry, error) {
+			return cborDecArray(csilV, csilDecFederationConditionEntry)
+		})(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Conditions = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "capabilities")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (func(csilV cborValue) ([]string, error) { return cborDecArray(csilV, cborAsText) })(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Capabilities = csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "token_ttl_seconds"); csilOk {
+		csilVal, csilErr := (cborAsI64)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.TokenTtlSeconds = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "status"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Status = &csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeSaveFederationMappingRequest encodes a SaveFederationMappingRequest to canonical CSIL CBOR bytes.
+func EncodeSaveFederationMappingRequest(csilV SaveFederationMappingRequest) []byte {
+	return cborEncode(csilEncSaveFederationMappingRequest(csilV))
+}
+
+// DecodeSaveFederationMappingRequest decodes canonical CSIL CBOR bytes into a SaveFederationMappingRequest.
+func DecodeSaveFederationMappingRequest(csilData []byte) (SaveFederationMappingRequest, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero SaveFederationMappingRequest
+		return csilZero, csilErr
+	}
+	return csilDecSaveFederationMappingRequest(csilRoot)
+}
+
+// csilEncSaveFederationMappingResponse builds the canonical CBOR value tree for a SaveFederationMappingResponse.
+func csilEncSaveFederationMappingResponse(csilV SaveFederationMappingResponse) cborValue {
+	csilEntries := make(cborMap, 0, 1)
+	csilEntries = append(csilEntries, cborEntry{cborText("mapping"), csilEncFederationMappingEntry(csilV.Mapping)})
+	return csilEntries
+}
+
+// csilDecSaveFederationMappingResponse reconstructs a SaveFederationMappingResponse from a decoded CBOR value tree.
+func csilDecSaveFederationMappingResponse(csilRoot cborValue) (SaveFederationMappingResponse, error) {
+	var csilOut SaveFederationMappingResponse
+	{
+		csilField, csilErr := cborRequire(csilRoot, "mapping")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (csilDecFederationMappingEntry)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Mapping = csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeSaveFederationMappingResponse encodes a SaveFederationMappingResponse to canonical CSIL CBOR bytes.
+func EncodeSaveFederationMappingResponse(csilV SaveFederationMappingResponse) []byte {
+	return cborEncode(csilEncSaveFederationMappingResponse(csilV))
+}
+
+// DecodeSaveFederationMappingResponse decodes canonical CSIL CBOR bytes into a SaveFederationMappingResponse.
+func DecodeSaveFederationMappingResponse(csilData []byte) (SaveFederationMappingResponse, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero SaveFederationMappingResponse
+		return csilZero, csilErr
+	}
+	return csilDecSaveFederationMappingResponse(csilRoot)
+}
+
+// csilEncDeleteFederationMappingRequest builds the canonical CBOR value tree for a DeleteFederationMappingRequest.
+func csilEncDeleteFederationMappingRequest(csilV DeleteFederationMappingRequest) cborValue {
+	csilEntries := make(cborMap, 0, 2)
+	csilEntries = append(csilEntries, cborEntry{cborText("org_id"), cborText(csilV.OrgId)})
+	csilEntries = append(csilEntries, cborEntry{cborText("mapping_id"), cborText(csilV.MappingId)})
+	return csilEntries
+}
+
+// csilDecDeleteFederationMappingRequest reconstructs a DeleteFederationMappingRequest from a decoded CBOR value tree.
+func csilDecDeleteFederationMappingRequest(csilRoot cborValue) (DeleteFederationMappingRequest, error) {
+	var csilOut DeleteFederationMappingRequest
+	{
+		csilField, csilErr := cborRequire(csilRoot, "org_id")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.OrgId = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "mapping_id")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.MappingId = csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeDeleteFederationMappingRequest encodes a DeleteFederationMappingRequest to canonical CSIL CBOR bytes.
+func EncodeDeleteFederationMappingRequest(csilV DeleteFederationMappingRequest) []byte {
+	return cborEncode(csilEncDeleteFederationMappingRequest(csilV))
+}
+
+// DecodeDeleteFederationMappingRequest decodes canonical CSIL CBOR bytes into a DeleteFederationMappingRequest.
+func DecodeDeleteFederationMappingRequest(csilData []byte) (DeleteFederationMappingRequest, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero DeleteFederationMappingRequest
+		return csilZero, csilErr
+	}
+	return csilDecDeleteFederationMappingRequest(csilRoot)
+}
+
+// csilEncDeleteFederationMappingResponse builds the canonical CBOR value tree for a DeleteFederationMappingResponse.
+func csilEncDeleteFederationMappingResponse(csilV DeleteFederationMappingResponse) cborValue {
+	csilEntries := make(cborMap, 0, 1)
+	csilEntries = append(csilEntries, cborEntry{cborText("deleted"), cborBool(csilV.Deleted)})
+	return csilEntries
+}
+
+// csilDecDeleteFederationMappingResponse reconstructs a DeleteFederationMappingResponse from a decoded CBOR value tree.
+func csilDecDeleteFederationMappingResponse(csilRoot cborValue) (DeleteFederationMappingResponse, error) {
+	var csilOut DeleteFederationMappingResponse
+	{
+		csilField, csilErr := cborRequire(csilRoot, "deleted")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsBool)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Deleted = csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeDeleteFederationMappingResponse encodes a DeleteFederationMappingResponse to canonical CSIL CBOR bytes.
+func EncodeDeleteFederationMappingResponse(csilV DeleteFederationMappingResponse) []byte {
+	return cborEncode(csilEncDeleteFederationMappingResponse(csilV))
+}
+
+// DecodeDeleteFederationMappingResponse decodes canonical CSIL CBOR bytes into a DeleteFederationMappingResponse.
+func DecodeDeleteFederationMappingResponse(csilData []byte) (DeleteFederationMappingResponse, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero DeleteFederationMappingResponse
+		return csilZero, csilErr
+	}
+	return csilDecDeleteFederationMappingResponse(csilRoot)
+}
+
+// csilEncRefClassFacts builds the canonical CBOR value tree for a RefClassFacts.
+func csilEncRefClassFacts(csilV RefClassFacts) cborValue {
+	csilEntries := make(cborMap, 0, 10)
+	if csilV.Tag != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("tag"), cborText((*csilV.Tag))})
+	}
+	if csilV.IsPr != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("is_pr"), cborBool((*csilV.IsPr))})
+	}
+	if csilV.Branch != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("branch"), cborText((*csilV.Branch))})
+	}
+	if csilV.Source != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("source"), cborText((*csilV.Source))})
+	}
+	if csilV.IsFork != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("is_fork"), cborBool((*csilV.IsFork))})
+	}
+	if csilV.EventType != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("event_type"), cborText((*csilV.EventType))})
+	}
+	if csilV.BaseBranch != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("base_branch"), cborText((*csilV.BaseBranch))})
+	}
+	if csilV.HeadBranch != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("head_branch"), cborText((*csilV.HeadBranch))})
+	}
+	if csilV.DefaultBranch != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("default_branch"), cborText((*csilV.DefaultBranch))})
+	}
+	if csilV.IsDefaultBranch != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("is_default_branch"), cborBool((*csilV.IsDefaultBranch))})
+	}
+	return csilEntries
+}
+
+// csilDecRefClassFacts reconstructs a RefClassFacts from a decoded CBOR value tree.
+func csilDecRefClassFacts(csilRoot cborValue) (RefClassFacts, error) {
+	var csilOut RefClassFacts
+	if csilField, csilOk := cborMapGet(csilRoot, "source"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Source = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "event_type"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.EventType = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "branch"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Branch = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "head_branch"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.HeadBranch = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "tag"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Tag = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "base_branch"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.BaseBranch = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "default_branch"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.DefaultBranch = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "is_pr"); csilOk {
+		csilVal, csilErr := (cborAsBool)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.IsPr = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "is_fork"); csilOk {
+		csilVal, csilErr := (cborAsBool)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.IsFork = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "is_default_branch"); csilOk {
+		csilVal, csilErr := (cborAsBool)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.IsDefaultBranch = &csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeRefClassFacts encodes a RefClassFacts to canonical CSIL CBOR bytes.
+func EncodeRefClassFacts(csilV RefClassFacts) []byte {
+	return cborEncode(csilEncRefClassFacts(csilV))
+}
+
+// DecodeRefClassFacts decodes canonical CSIL CBOR bytes into a RefClassFacts.
+func DecodeRefClassFacts(csilData []byte) (RefClassFacts, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero RefClassFacts
+		return csilZero, csilErr
+	}
+	return csilDecRefClassFacts(csilRoot)
+}
+
+// csilEncRefClassReason builds the canonical CBOR value tree for a RefClassReason.
+func csilEncRefClassReason(csilV RefClassReason) cborValue {
+	csilEntries := make(cborMap, 0, 4)
+	csilEntries = append(csilEntries, cborEntry{cborText("class"), cborText(csilV.Class)})
+	csilEntries = append(csilEntries, cborEntry{cborText("scope"), cborText(csilV.Scope)})
+	csilEntries = append(csilEntries, cborEntry{cborText("rule_id"), cborText(csilV.RuleId)})
+	if csilV.RuleName != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("rule_name"), cborText((*csilV.RuleName))})
+	}
+	return csilEntries
+}
+
+// csilDecRefClassReason reconstructs a RefClassReason from a decoded CBOR value tree.
+func csilDecRefClassReason(csilRoot cborValue) (RefClassReason, error) {
+	var csilOut RefClassReason
+	{
+		csilField, csilErr := cborRequire(csilRoot, "class")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Class = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "rule_id")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.RuleId = csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "rule_name"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.RuleName = &csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "scope")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Scope = csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeRefClassReason encodes a RefClassReason to canonical CSIL CBOR bytes.
+func EncodeRefClassReason(csilV RefClassReason) []byte {
+	return cborEncode(csilEncRefClassReason(csilV))
+}
+
+// DecodeRefClassReason decodes canonical CSIL CBOR bytes into a RefClassReason.
+func DecodeRefClassReason(csilData []byte) (RefClassReason, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero RefClassReason
+		return csilZero, csilErr
+	}
+	return csilDecRefClassReason(csilRoot)
+}
+
+// csilEncRefClassRule builds the canonical CBOR value tree for a RefClassRule.
+func csilEncRefClassRule(csilV RefClassRule) cborValue {
+	csilEntries := make(cborMap, 0, 16)
+	csilEntries = append(csilEntries, cborEntry{cborText("name"), cborText(csilV.Name)})
+	if csilV.IsPr != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("is_pr"), cborBool((*csilV.IsPr))})
+	}
+	csilEntries = append(csilEntries, cborEntry{cborText("classes"), cborEncArray(csilV.Classes, func(csilElem string) cborValue { return cborText(csilElem) })})
+	csilEntries = append(csilEntries, cborEntry{cborText("enabled"), cborBool(csilV.Enabled)})
+	if csilV.IsFork != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("is_fork"), cborBool((*csilV.IsFork))})
+	}
+	if csilV.RuleId != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("rule_id"), cborText((*csilV.RuleId))})
+	}
+	csilEntries = append(csilEntries, cborEntry{cborText("position"), cborInt(csilV.Position)})
+	if csilV.TagGlob != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("tag_glob"), cborText((*csilV.TagGlob))})
+	}
+	if csilV.CreatedAt != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("created_at"), cborText((*csilV.CreatedAt))})
+	}
+	if csilV.ProjectId != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("project_id"), cborText((*csilV.ProjectId))})
+	}
+	if csilV.UpdatedAt != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("updated_at"), cborText((*csilV.UpdatedAt))})
+	}
+	if csilV.BranchGlob != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("branch_glob"), cborText((*csilV.BranchGlob))})
+	}
+	if csilV.Description != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("description"), cborText((*csilV.Description))})
+	}
+	if csilV.EventTypes != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("event_types"), cborEncArray(csilV.EventTypes, func(csilElem string) cborValue { return cborText(csilElem) })})
+	}
+	if csilV.BaseBranchGlob != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("base_branch_glob"), cborText((*csilV.BaseBranchGlob))})
+	}
+	if csilV.IsDefaultBranch != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("is_default_branch"), cborBool((*csilV.IsDefaultBranch))})
+	}
+	return csilEntries
+}
+
+// csilDecRefClassRule reconstructs a RefClassRule from a decoded CBOR value tree.
+func csilDecRefClassRule(csilRoot cborValue) (RefClassRule, error) {
+	var csilOut RefClassRule
+	if csilField, csilOk := cborMapGet(csilRoot, "rule_id"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.RuleId = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "project_id"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.ProjectId = &csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "name")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Name = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "position")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsI64)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Position = csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "description"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Description = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "event_types"); csilOk {
+		csilVal, csilErr := (func(csilV cborValue) ([]string, error) { return cborDecArray(csilV, cborAsText) })(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.EventTypes = csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "branch_glob"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.BranchGlob = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "tag_glob"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.TagGlob = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "base_branch_glob"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.BaseBranchGlob = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "is_pr"); csilOk {
+		csilVal, csilErr := (cborAsBool)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.IsPr = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "is_fork"); csilOk {
+		csilVal, csilErr := (cborAsBool)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.IsFork = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "is_default_branch"); csilOk {
+		csilVal, csilErr := (cborAsBool)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.IsDefaultBranch = &csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "classes")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (func(csilV cborValue) ([]string, error) { return cborDecArray(csilV, cborAsText) })(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Classes = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "enabled")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsBool)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Enabled = csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "created_at"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.CreatedAt = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "updated_at"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.UpdatedAt = &csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeRefClassRule encodes a RefClassRule to canonical CSIL CBOR bytes.
+func EncodeRefClassRule(csilV RefClassRule) []byte {
+	return cborEncode(csilEncRefClassRule(csilV))
+}
+
+// DecodeRefClassRule decodes canonical CSIL CBOR bytes into a RefClassRule.
+func DecodeRefClassRule(csilData []byte) (RefClassRule, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero RefClassRule
+		return csilZero, csilErr
+	}
+	return csilDecRefClassRule(csilRoot)
+}
+
+// csilEncRefClassBuiltin builds the canonical CBOR value tree for a RefClassBuiltin.
+func csilEncRefClassBuiltin(csilV RefClassBuiltin) cborValue {
+	csilEntries := make(cborMap, 0, 2)
+	csilEntries = append(csilEntries, cborEntry{cborText("classes"), cborEncArray(csilV.Classes, func(csilElem string) cborValue { return cborText(csilElem) })})
+	csilEntries = append(csilEntries, cborEntry{cborText("rule_id"), cborText(csilV.RuleId)})
+	return csilEntries
+}
+
+// csilDecRefClassBuiltin reconstructs a RefClassBuiltin from a decoded CBOR value tree.
+func csilDecRefClassBuiltin(csilRoot cborValue) (RefClassBuiltin, error) {
+	var csilOut RefClassBuiltin
+	{
+		csilField, csilErr := cborRequire(csilRoot, "rule_id")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.RuleId = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "classes")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (func(csilV cborValue) ([]string, error) { return cborDecArray(csilV, cborAsText) })(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Classes = csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeRefClassBuiltin encodes a RefClassBuiltin to canonical CSIL CBOR bytes.
+func EncodeRefClassBuiltin(csilV RefClassBuiltin) []byte {
+	return cborEncode(csilEncRefClassBuiltin(csilV))
+}
+
+// DecodeRefClassBuiltin decodes canonical CSIL CBOR bytes into a RefClassBuiltin.
+func DecodeRefClassBuiltin(csilData []byte) (RefClassBuiltin, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero RefClassBuiltin
+		return csilZero, csilErr
+	}
+	return csilDecRefClassBuiltin(csilRoot)
+}
+
+// csilEncRefClassRuleCheck builds the canonical CBOR value tree for a RefClassRuleCheck.
+func csilEncRefClassRuleCheck(csilV RefClassRuleCheck) cborValue {
+	csilEntries := make(cborMap, 0, 6)
+	csilEntries = append(csilEntries, cborEntry{cborText("name"), cborText(csilV.Name)})
+	csilEntries = append(csilEntries, cborEntry{cborText("scope"), cborText(csilV.Scope)})
+	csilEntries = append(csilEntries, cborEntry{cborText("classes"), cborEncArray(csilV.Classes, func(csilElem string) cborValue { return cborText(csilElem) })})
+	csilEntries = append(csilEntries, cborEntry{cborText("enabled"), cborBool(csilV.Enabled)})
+	csilEntries = append(csilEntries, cborEntry{cborText("matched"), cborBool(csilV.Matched)})
+	csilEntries = append(csilEntries, cborEntry{cborText("rule_id"), cborText(csilV.RuleId)})
+	return csilEntries
+}
+
+// csilDecRefClassRuleCheck reconstructs a RefClassRuleCheck from a decoded CBOR value tree.
+func csilDecRefClassRuleCheck(csilRoot cborValue) (RefClassRuleCheck, error) {
+	var csilOut RefClassRuleCheck
+	{
+		csilField, csilErr := cborRequire(csilRoot, "rule_id")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.RuleId = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "name")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Name = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "scope")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Scope = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "enabled")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsBool)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Enabled = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "matched")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsBool)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Matched = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "classes")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (func(csilV cborValue) ([]string, error) { return cborDecArray(csilV, cborAsText) })(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Classes = csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeRefClassRuleCheck encodes a RefClassRuleCheck to canonical CSIL CBOR bytes.
+func EncodeRefClassRuleCheck(csilV RefClassRuleCheck) []byte {
+	return cborEncode(csilEncRefClassRuleCheck(csilV))
+}
+
+// DecodeRefClassRuleCheck decodes canonical CSIL CBOR bytes into a RefClassRuleCheck.
+func DecodeRefClassRuleCheck(csilData []byte) (RefClassRuleCheck, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero RefClassRuleCheck
+		return csilZero, csilErr
+	}
+	return csilDecRefClassRuleCheck(csilRoot)
+}
+
+// csilEncListRefClassRulesRequest builds the canonical CBOR value tree for a ListRefClassRulesRequest.
+func csilEncListRefClassRulesRequest(csilV ListRefClassRulesRequest) cborValue {
+	csilEntries := make(cborMap, 0, 2)
+	if csilV.ProjectId != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("project_id"), cborText((*csilV.ProjectId))})
+	}
+	csilEntries = append(csilEntries, cborEntry{cborText("organization"), cborText(csilV.Organization)})
+	return csilEntries
+}
+
+// csilDecListRefClassRulesRequest reconstructs a ListRefClassRulesRequest from a decoded CBOR value tree.
+func csilDecListRefClassRulesRequest(csilRoot cborValue) (ListRefClassRulesRequest, error) {
+	var csilOut ListRefClassRulesRequest
+	{
+		csilField, csilErr := cborRequire(csilRoot, "organization")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Organization = csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "project_id"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.ProjectId = &csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeListRefClassRulesRequest encodes a ListRefClassRulesRequest to canonical CSIL CBOR bytes.
+func EncodeListRefClassRulesRequest(csilV ListRefClassRulesRequest) []byte {
+	return cborEncode(csilEncListRefClassRulesRequest(csilV))
+}
+
+// DecodeListRefClassRulesRequest decodes canonical CSIL CBOR bytes into a ListRefClassRulesRequest.
+func DecodeListRefClassRulesRequest(csilData []byte) (ListRefClassRulesRequest, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero ListRefClassRulesRequest
+		return csilZero, csilErr
+	}
+	return csilDecListRefClassRulesRequest(csilRoot)
+}
+
+// csilEncListRefClassRulesResponse builds the canonical CBOR value tree for a ListRefClassRulesResponse.
+func csilEncListRefClassRulesResponse(csilV ListRefClassRulesResponse) cborValue {
+	csilEntries := make(cborMap, 0, 4)
+	csilEntries = append(csilEntries, cborEntry{cborText("rules"), cborEncArray(csilV.Rules, func(csilElem RefClassRule) cborValue { return csilEncRefClassRule(csilElem) })})
+	csilEntries = append(csilEntries, cborEntry{cborText("builtin"), cborEncArray(csilV.Builtin, func(csilElem RefClassBuiltin) cborValue { return csilEncRefClassBuiltin(csilElem) })})
+	csilEntries = append(csilEntries, cborEntry{cborText("inherited"), cborEncArray(csilV.Inherited, func(csilElem RefClassRule) cborValue { return csilEncRefClassRule(csilElem) })})
+	csilEntries = append(csilEntries, cborEntry{cborText("can_manage"), cborBool(csilV.CanManage)})
+	return csilEntries
+}
+
+// csilDecListRefClassRulesResponse reconstructs a ListRefClassRulesResponse from a decoded CBOR value tree.
+func csilDecListRefClassRulesResponse(csilRoot cborValue) (ListRefClassRulesResponse, error) {
+	var csilOut ListRefClassRulesResponse
+	{
+		csilField, csilErr := cborRequire(csilRoot, "rules")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (func(csilV cborValue) ([]RefClassRule, error) { return cborDecArray(csilV, csilDecRefClassRule) })(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Rules = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "inherited")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (func(csilV cborValue) ([]RefClassRule, error) { return cborDecArray(csilV, csilDecRefClassRule) })(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Inherited = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "builtin")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (func(csilV cborValue) ([]RefClassBuiltin, error) { return cborDecArray(csilV, csilDecRefClassBuiltin) })(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Builtin = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "can_manage")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsBool)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.CanManage = csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeListRefClassRulesResponse encodes a ListRefClassRulesResponse to canonical CSIL CBOR bytes.
+func EncodeListRefClassRulesResponse(csilV ListRefClassRulesResponse) []byte {
+	return cborEncode(csilEncListRefClassRulesResponse(csilV))
+}
+
+// DecodeListRefClassRulesResponse decodes canonical CSIL CBOR bytes into a ListRefClassRulesResponse.
+func DecodeListRefClassRulesResponse(csilData []byte) (ListRefClassRulesResponse, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero ListRefClassRulesResponse
+		return csilZero, csilErr
+	}
+	return csilDecListRefClassRulesResponse(csilRoot)
+}
+
+// csilEncPutRefClassRuleRequest builds the canonical CBOR value tree for a PutRefClassRuleRequest.
+func csilEncPutRefClassRuleRequest(csilV PutRefClassRuleRequest) cborValue {
+	csilEntries := make(cborMap, 0, 3)
+	csilEntries = append(csilEntries, cborEntry{cborText("rule"), csilEncRefClassRule(csilV.Rule)})
+	if csilV.ProjectId != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("project_id"), cborText((*csilV.ProjectId))})
+	}
+	csilEntries = append(csilEntries, cborEntry{cborText("organization"), cborText(csilV.Organization)})
+	return csilEntries
+}
+
+// csilDecPutRefClassRuleRequest reconstructs a PutRefClassRuleRequest from a decoded CBOR value tree.
+func csilDecPutRefClassRuleRequest(csilRoot cborValue) (PutRefClassRuleRequest, error) {
+	var csilOut PutRefClassRuleRequest
+	{
+		csilField, csilErr := cborRequire(csilRoot, "organization")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Organization = csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "project_id"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.ProjectId = &csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "rule")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (csilDecRefClassRule)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Rule = csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodePutRefClassRuleRequest encodes a PutRefClassRuleRequest to canonical CSIL CBOR bytes.
+func EncodePutRefClassRuleRequest(csilV PutRefClassRuleRequest) []byte {
+	return cborEncode(csilEncPutRefClassRuleRequest(csilV))
+}
+
+// DecodePutRefClassRuleRequest decodes canonical CSIL CBOR bytes into a PutRefClassRuleRequest.
+func DecodePutRefClassRuleRequest(csilData []byte) (PutRefClassRuleRequest, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero PutRefClassRuleRequest
+		return csilZero, csilErr
+	}
+	return csilDecPutRefClassRuleRequest(csilRoot)
+}
+
+// csilEncPutRefClassRuleResponse builds the canonical CBOR value tree for a PutRefClassRuleResponse.
+func csilEncPutRefClassRuleResponse(csilV PutRefClassRuleResponse) cborValue {
+	csilEntries := make(cborMap, 0, 1)
+	csilEntries = append(csilEntries, cborEntry{cborText("rule"), csilEncRefClassRule(csilV.Rule)})
+	return csilEntries
+}
+
+// csilDecPutRefClassRuleResponse reconstructs a PutRefClassRuleResponse from a decoded CBOR value tree.
+func csilDecPutRefClassRuleResponse(csilRoot cborValue) (PutRefClassRuleResponse, error) {
+	var csilOut PutRefClassRuleResponse
+	{
+		csilField, csilErr := cborRequire(csilRoot, "rule")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (csilDecRefClassRule)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Rule = csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodePutRefClassRuleResponse encodes a PutRefClassRuleResponse to canonical CSIL CBOR bytes.
+func EncodePutRefClassRuleResponse(csilV PutRefClassRuleResponse) []byte {
+	return cborEncode(csilEncPutRefClassRuleResponse(csilV))
+}
+
+// DecodePutRefClassRuleResponse decodes canonical CSIL CBOR bytes into a PutRefClassRuleResponse.
+func DecodePutRefClassRuleResponse(csilData []byte) (PutRefClassRuleResponse, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero PutRefClassRuleResponse
+		return csilZero, csilErr
+	}
+	return csilDecPutRefClassRuleResponse(csilRoot)
+}
+
+// csilEncDeleteRefClassRuleRequest builds the canonical CBOR value tree for a DeleteRefClassRuleRequest.
+func csilEncDeleteRefClassRuleRequest(csilV DeleteRefClassRuleRequest) cborValue {
+	csilEntries := make(cborMap, 0, 3)
+	csilEntries = append(csilEntries, cborEntry{cborText("name"), cborText(csilV.Name)})
+	if csilV.ProjectId != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("project_id"), cborText((*csilV.ProjectId))})
+	}
+	csilEntries = append(csilEntries, cborEntry{cborText("organization"), cborText(csilV.Organization)})
+	return csilEntries
+}
+
+// csilDecDeleteRefClassRuleRequest reconstructs a DeleteRefClassRuleRequest from a decoded CBOR value tree.
+func csilDecDeleteRefClassRuleRequest(csilRoot cborValue) (DeleteRefClassRuleRequest, error) {
+	var csilOut DeleteRefClassRuleRequest
+	{
+		csilField, csilErr := cborRequire(csilRoot, "organization")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Organization = csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "project_id"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.ProjectId = &csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "name")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Name = csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeDeleteRefClassRuleRequest encodes a DeleteRefClassRuleRequest to canonical CSIL CBOR bytes.
+func EncodeDeleteRefClassRuleRequest(csilV DeleteRefClassRuleRequest) []byte {
+	return cborEncode(csilEncDeleteRefClassRuleRequest(csilV))
+}
+
+// DecodeDeleteRefClassRuleRequest decodes canonical CSIL CBOR bytes into a DeleteRefClassRuleRequest.
+func DecodeDeleteRefClassRuleRequest(csilData []byte) (DeleteRefClassRuleRequest, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero DeleteRefClassRuleRequest
+		return csilZero, csilErr
+	}
+	return csilDecDeleteRefClassRuleRequest(csilRoot)
+}
+
+// csilEncDeleteRefClassRuleResponse builds the canonical CBOR value tree for a DeleteRefClassRuleResponse.
+func csilEncDeleteRefClassRuleResponse(csilV DeleteRefClassRuleResponse) cborValue {
+	csilEntries := make(cborMap, 0, 1)
+	csilEntries = append(csilEntries, cborEntry{cborText("deleted"), cborBool(csilV.Deleted)})
+	return csilEntries
+}
+
+// csilDecDeleteRefClassRuleResponse reconstructs a DeleteRefClassRuleResponse from a decoded CBOR value tree.
+func csilDecDeleteRefClassRuleResponse(csilRoot cborValue) (DeleteRefClassRuleResponse, error) {
+	var csilOut DeleteRefClassRuleResponse
+	{
+		csilField, csilErr := cborRequire(csilRoot, "deleted")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsBool)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Deleted = csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeDeleteRefClassRuleResponse encodes a DeleteRefClassRuleResponse to canonical CSIL CBOR bytes.
+func EncodeDeleteRefClassRuleResponse(csilV DeleteRefClassRuleResponse) []byte {
+	return cborEncode(csilEncDeleteRefClassRuleResponse(csilV))
+}
+
+// DecodeDeleteRefClassRuleResponse decodes canonical CSIL CBOR bytes into a DeleteRefClassRuleResponse.
+func DecodeDeleteRefClassRuleResponse(csilData []byte) (DeleteRefClassRuleResponse, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero DeleteRefClassRuleResponse
+		return csilZero, csilErr
+	}
+	return csilDecDeleteRefClassRuleResponse(csilRoot)
+}
+
+// csilEncExplainRefClassesRequest builds the canonical CBOR value tree for a ExplainRefClassesRequest.
+func csilEncExplainRefClassesRequest(csilV ExplainRefClassesRequest) cborValue {
+	csilEntries := make(cborMap, 0, 4)
+	if csilV.Facts != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("facts"), csilEncRefClassFacts((*csilV.Facts))})
+	}
+	if csilV.EventId != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("event_id"), cborText((*csilV.EventId))})
+	}
+	if csilV.ProjectId != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("project_id"), cborText((*csilV.ProjectId))})
+	}
+	csilEntries = append(csilEntries, cborEntry{cborText("organization"), cborText(csilV.Organization)})
+	return csilEntries
+}
+
+// csilDecExplainRefClassesRequest reconstructs a ExplainRefClassesRequest from a decoded CBOR value tree.
+func csilDecExplainRefClassesRequest(csilRoot cborValue) (ExplainRefClassesRequest, error) {
+	var csilOut ExplainRefClassesRequest
+	{
+		csilField, csilErr := cborRequire(csilRoot, "organization")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Organization = csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "project_id"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.ProjectId = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "event_id"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.EventId = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "facts"); csilOk {
+		csilVal, csilErr := (csilDecRefClassFacts)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Facts = &csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeExplainRefClassesRequest encodes a ExplainRefClassesRequest to canonical CSIL CBOR bytes.
+func EncodeExplainRefClassesRequest(csilV ExplainRefClassesRequest) []byte {
+	return cborEncode(csilEncExplainRefClassesRequest(csilV))
+}
+
+// DecodeExplainRefClassesRequest decodes canonical CSIL CBOR bytes into a ExplainRefClassesRequest.
+func DecodeExplainRefClassesRequest(csilData []byte) (ExplainRefClassesRequest, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero ExplainRefClassesRequest
+		return csilZero, csilErr
+	}
+	return csilDecExplainRefClassesRequest(csilRoot)
+}
+
+// csilEncExplainRefClassesResponse builds the canonical CBOR value tree for a ExplainRefClassesResponse.
+func csilEncExplainRefClassesResponse(csilV ExplainRefClassesResponse) cborValue {
+	csilEntries := make(cborMap, 0, 6)
+	csilEntries = append(csilEntries, cborEntry{cborText("facts"), csilEncRefClassFacts(csilV.Facts)})
+	csilEntries = append(csilEntries, cborEntry{cborText("rules"), cborEncArray(csilV.Rules, func(csilElem RefClassRuleCheck) cborValue { return csilEncRefClassRuleCheck(csilElem) })})
+	csilEntries = append(csilEntries, cborEntry{cborText("classes"), cborEncArray(csilV.Classes, func(csilElem string) cborValue { return cborText(csilElem) })})
+	csilEntries = append(csilEntries, cborEntry{cborText("reasons"), cborEncArray(csilV.Reasons, func(csilElem RefClassReason) cborValue { return csilEncRefClassReason(csilElem) })})
+	csilEntries = append(csilEntries, cborEntry{cborText("rule_ids"), cborEncArray(csilV.RuleIds, func(csilElem string) cborValue { return cborText(csilElem) })})
+	if csilV.StoredClasses != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("stored_classes"), cborEncArray(csilV.StoredClasses, func(csilElem string) cborValue { return cborText(csilElem) })})
+	}
+	return csilEntries
+}
+
+// csilDecExplainRefClassesResponse reconstructs a ExplainRefClassesResponse from a decoded CBOR value tree.
+func csilDecExplainRefClassesResponse(csilRoot cborValue) (ExplainRefClassesResponse, error) {
+	var csilOut ExplainRefClassesResponse
+	{
+		csilField, csilErr := cborRequire(csilRoot, "facts")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (csilDecRefClassFacts)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Facts = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "classes")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (func(csilV cborValue) ([]string, error) { return cborDecArray(csilV, cborAsText) })(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Classes = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "reasons")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (func(csilV cborValue) ([]RefClassReason, error) { return cborDecArray(csilV, csilDecRefClassReason) })(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Reasons = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "rule_ids")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (func(csilV cborValue) ([]string, error) { return cborDecArray(csilV, cborAsText) })(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.RuleIds = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "rules")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (func(csilV cborValue) ([]RefClassRuleCheck, error) {
+			return cborDecArray(csilV, csilDecRefClassRuleCheck)
+		})(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Rules = csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "stored_classes"); csilOk {
+		csilVal, csilErr := (func(csilV cborValue) ([]string, error) { return cborDecArray(csilV, cborAsText) })(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.StoredClasses = csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeExplainRefClassesResponse encodes a ExplainRefClassesResponse to canonical CSIL CBOR bytes.
+func EncodeExplainRefClassesResponse(csilV ExplainRefClassesResponse) []byte {
+	return cborEncode(csilEncExplainRefClassesResponse(csilV))
+}
+
+// DecodeExplainRefClassesResponse decodes canonical CSIL CBOR bytes into a ExplainRefClassesResponse.
+func DecodeExplainRefClassesResponse(csilData []byte) (ExplainRefClassesResponse, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero ExplainRefClassesResponse
+		return csilZero, csilErr
+	}
+	return csilDecExplainRefClassesResponse(csilRoot)
+}
+
+// csilEncImageAliasSummary builds the canonical CBOR value tree for a ImageAliasSummary.
+func csilEncImageAliasSummary(csilV ImageAliasSummary) cborValue {
+	csilEntries := make(cborMap, 0, 17)
+	csilEntries = append(csilEntries, cborEntry{cborText("os"), cborText(csilV.Os)})
+	csilEntries = append(csilEntries, cborEntry{cborText("arch"), cborText(csilV.Arch)})
+	csilEntries = append(csilEntries, cborEntry{cborText("kind"), cborText(csilV.Kind)})
+	csilEntries = append(csilEntries, cborEntry{cborText("name"), cborText(csilV.Name)})
+	csilEntries = append(csilEntries, cborEntry{cborText("scope"), cborText(csilV.Scope)})
+	csilEntries = append(csilEntries, cborEntry{cborText("org_id"), cborText(csilV.OrgId)})
+	csilEntries = append(csilEntries, cborEntry{cborText("alias_id"), cborText(csilV.AliasId)})
+	csilEntries = append(csilEntries, cborEntry{cborText("active_ref"), cborText(csilV.ActiveRef)})
+	csilEntries = append(csilEntries, cborEntry{cborText("created_at"), cborText(csilV.CreatedAt)})
+	if csilV.ProjectId != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("project_id"), cborText((*csilV.ProjectId))})
+	}
+	csilEntries = append(csilEntries, cborEntry{cborText("updated_at"), cborText(csilV.UpdatedAt)})
+	csilEntries = append(csilEntries, cborEntry{cborText("updated_by"), cborText(csilV.UpdatedBy)})
+	if csilV.PendingRef != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("pending_ref"), cborText((*csilV.PendingRef))})
+	}
+	csilEntries = append(csilEntries, cborEntry{cborText("active_digest"), cborText(csilV.ActiveDigest)})
+	if csilV.PendingSince != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("pending_since"), cborText((*csilV.PendingSince))})
+	}
+	if csilV.PendingDigest != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("pending_digest"), cborText((*csilV.PendingDigest))})
+	}
+	csilEntries = append(csilEntries, cborEntry{cborText("characteristics"), cborEncArray(csilV.Characteristics, func(csilElem CharacteristicEntry) cborValue { return csilEncCharacteristicEntry(csilElem) })})
+	return csilEntries
+}
+
+// csilDecImageAliasSummary reconstructs a ImageAliasSummary from a decoded CBOR value tree.
+func csilDecImageAliasSummary(csilRoot cborValue) (ImageAliasSummary, error) {
+	var csilOut ImageAliasSummary
+	{
+		csilField, csilErr := cborRequire(csilRoot, "alias_id")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.AliasId = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "org_id")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.OrgId = csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "project_id"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.ProjectId = &csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "scope")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Scope = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "name")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Name = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "kind")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Kind = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "os")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Os = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "arch")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Arch = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "characteristics")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (func(csilV cborValue) ([]CharacteristicEntry, error) {
+			return cborDecArray(csilV, csilDecCharacteristicEntry)
+		})(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Characteristics = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "active_ref")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.ActiveRef = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "active_digest")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.ActiveDigest = csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "pending_ref"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.PendingRef = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "pending_digest"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.PendingDigest = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "pending_since"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.PendingSince = &csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "created_at")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.CreatedAt = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "updated_at")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.UpdatedAt = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "updated_by")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.UpdatedBy = csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeImageAliasSummary encodes a ImageAliasSummary to canonical CSIL CBOR bytes.
+func EncodeImageAliasSummary(csilV ImageAliasSummary) []byte {
+	return cborEncode(csilEncImageAliasSummary(csilV))
+}
+
+// DecodeImageAliasSummary decodes canonical CSIL CBOR bytes into a ImageAliasSummary.
+func DecodeImageAliasSummary(csilData []byte) (ImageAliasSummary, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero ImageAliasSummary
+		return csilZero, csilErr
+	}
+	return csilDecImageAliasSummary(csilRoot)
+}
+
+// csilEncListImageAliasesRequest builds the canonical CBOR value tree for a ListImageAliasesRequest.
+func csilEncListImageAliasesRequest(csilV ListImageAliasesRequest) cborValue {
+	csilEntries := make(cborMap, 0, 2)
+	if csilV.ProjectId != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("project_id"), cborText((*csilV.ProjectId))})
+	}
+	csilEntries = append(csilEntries, cborEntry{cborText("organization"), cborText(csilV.Organization)})
+	return csilEntries
+}
+
+// csilDecListImageAliasesRequest reconstructs a ListImageAliasesRequest from a decoded CBOR value tree.
+func csilDecListImageAliasesRequest(csilRoot cborValue) (ListImageAliasesRequest, error) {
+	var csilOut ListImageAliasesRequest
+	{
+		csilField, csilErr := cborRequire(csilRoot, "organization")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Organization = csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "project_id"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.ProjectId = &csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeListImageAliasesRequest encodes a ListImageAliasesRequest to canonical CSIL CBOR bytes.
+func EncodeListImageAliasesRequest(csilV ListImageAliasesRequest) []byte {
+	return cborEncode(csilEncListImageAliasesRequest(csilV))
+}
+
+// DecodeListImageAliasesRequest decodes canonical CSIL CBOR bytes into a ListImageAliasesRequest.
+func DecodeListImageAliasesRequest(csilData []byte) (ListImageAliasesRequest, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero ListImageAliasesRequest
+		return csilZero, csilErr
+	}
+	return csilDecListImageAliasesRequest(csilRoot)
+}
+
+// csilEncListImageAliasesResponse builds the canonical CBOR value tree for a ListImageAliasesResponse.
+func csilEncListImageAliasesResponse(csilV ListImageAliasesResponse) cborValue {
+	csilEntries := make(cborMap, 0, 1)
+	csilEntries = append(csilEntries, cborEntry{cborText("aliases"), cborEncArray(csilV.Aliases, func(csilElem ImageAliasSummary) cborValue { return csilEncImageAliasSummary(csilElem) })})
+	return csilEntries
+}
+
+// csilDecListImageAliasesResponse reconstructs a ListImageAliasesResponse from a decoded CBOR value tree.
+func csilDecListImageAliasesResponse(csilRoot cborValue) (ListImageAliasesResponse, error) {
+	var csilOut ListImageAliasesResponse
+	{
+		csilField, csilErr := cborRequire(csilRoot, "aliases")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (func(csilV cborValue) ([]ImageAliasSummary, error) {
+			return cborDecArray(csilV, csilDecImageAliasSummary)
+		})(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Aliases = csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeListImageAliasesResponse encodes a ListImageAliasesResponse to canonical CSIL CBOR bytes.
+func EncodeListImageAliasesResponse(csilV ListImageAliasesResponse) []byte {
+	return cborEncode(csilEncListImageAliasesResponse(csilV))
+}
+
+// DecodeListImageAliasesResponse decodes canonical CSIL CBOR bytes into a ListImageAliasesResponse.
+func DecodeListImageAliasesResponse(csilData []byte) (ListImageAliasesResponse, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero ListImageAliasesResponse
+		return csilZero, csilErr
+	}
+	return csilDecListImageAliasesResponse(csilRoot)
+}
+
+// csilEncGetImageAliasRequest builds the canonical CBOR value tree for a GetImageAliasRequest.
+func csilEncGetImageAliasRequest(csilV GetImageAliasRequest) cborValue {
+	csilEntries := make(cborMap, 0, 3)
+	csilEntries = append(csilEntries, cborEntry{cborText("name"), cborText(csilV.Name)})
+	if csilV.ProjectId != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("project_id"), cborText((*csilV.ProjectId))})
+	}
+	csilEntries = append(csilEntries, cborEntry{cborText("organization"), cborText(csilV.Organization)})
+	return csilEntries
+}
+
+// csilDecGetImageAliasRequest reconstructs a GetImageAliasRequest from a decoded CBOR value tree.
+func csilDecGetImageAliasRequest(csilRoot cborValue) (GetImageAliasRequest, error) {
+	var csilOut GetImageAliasRequest
+	{
+		csilField, csilErr := cborRequire(csilRoot, "organization")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Organization = csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "project_id"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.ProjectId = &csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "name")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Name = csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeGetImageAliasRequest encodes a GetImageAliasRequest to canonical CSIL CBOR bytes.
+func EncodeGetImageAliasRequest(csilV GetImageAliasRequest) []byte {
+	return cborEncode(csilEncGetImageAliasRequest(csilV))
+}
+
+// DecodeGetImageAliasRequest decodes canonical CSIL CBOR bytes into a GetImageAliasRequest.
+func DecodeGetImageAliasRequest(csilData []byte) (GetImageAliasRequest, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero GetImageAliasRequest
+		return csilZero, csilErr
+	}
+	return csilDecGetImageAliasRequest(csilRoot)
+}
+
+// csilEncGetImageAliasResponse builds the canonical CBOR value tree for a GetImageAliasResponse.
+func csilEncGetImageAliasResponse(csilV GetImageAliasResponse) cborValue {
+	csilEntries := make(cborMap, 0, 1)
+	csilEntries = append(csilEntries, cborEntry{cborText("alias"), csilEncImageAliasSummary(csilV.Alias)})
+	return csilEntries
+}
+
+// csilDecGetImageAliasResponse reconstructs a GetImageAliasResponse from a decoded CBOR value tree.
+func csilDecGetImageAliasResponse(csilRoot cborValue) (GetImageAliasResponse, error) {
+	var csilOut GetImageAliasResponse
+	{
+		csilField, csilErr := cborRequire(csilRoot, "alias")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (csilDecImageAliasSummary)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Alias = csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeGetImageAliasResponse encodes a GetImageAliasResponse to canonical CSIL CBOR bytes.
+func EncodeGetImageAliasResponse(csilV GetImageAliasResponse) []byte {
+	return cborEncode(csilEncGetImageAliasResponse(csilV))
+}
+
+// DecodeGetImageAliasResponse decodes canonical CSIL CBOR bytes into a GetImageAliasResponse.
+func DecodeGetImageAliasResponse(csilData []byte) (GetImageAliasResponse, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero GetImageAliasResponse
+		return csilZero, csilErr
+	}
+	return csilDecGetImageAliasResponse(csilRoot)
+}
+
+// csilEncSetImageAliasRequest builds the canonical CBOR value tree for a SetImageAliasRequest.
+func csilEncSetImageAliasRequest(csilV SetImageAliasRequest) cborValue {
+	csilEntries := make(cborMap, 0, 9)
+	if csilV.Os != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("os"), cborText((*csilV.Os))})
+	}
+	csilEntries = append(csilEntries, cborEntry{cborText("ref"), cborText(csilV.Ref)})
+	if csilV.Arch != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("arch"), cborText((*csilV.Arch))})
+	}
+	if csilV.Kind != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("kind"), cborText((*csilV.Kind))})
+	}
+	csilEntries = append(csilEntries, cborEntry{cborText("name"), cborText(csilV.Name)})
+	if csilV.Force != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("force"), cborBool((*csilV.Force))})
+	}
+	if csilV.ProjectId != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("project_id"), cborText((*csilV.ProjectId))})
+	}
+	csilEntries = append(csilEntries, cborEntry{cborText("organization"), cborText(csilV.Organization)})
+	if csilV.Characteristics != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("characteristics"), cborEncArray(csilV.Characteristics, func(csilElem CharacteristicEntry) cborValue { return csilEncCharacteristicEntry(csilElem) })})
+	}
+	return csilEntries
+}
+
+// csilDecSetImageAliasRequest reconstructs a SetImageAliasRequest from a decoded CBOR value tree.
+func csilDecSetImageAliasRequest(csilRoot cborValue) (SetImageAliasRequest, error) {
+	var csilOut SetImageAliasRequest
+	{
+		csilField, csilErr := cborRequire(csilRoot, "organization")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Organization = csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "project_id"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.ProjectId = &csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "name")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Name = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "ref")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Ref = csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "kind"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Kind = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "os"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Os = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "arch"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Arch = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "characteristics"); csilOk {
+		csilVal, csilErr := (func(csilV cborValue) ([]CharacteristicEntry, error) {
+			return cborDecArray(csilV, csilDecCharacteristicEntry)
+		})(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Characteristics = csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "force"); csilOk {
+		csilVal, csilErr := (cborAsBool)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Force = &csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeSetImageAliasRequest encodes a SetImageAliasRequest to canonical CSIL CBOR bytes.
+func EncodeSetImageAliasRequest(csilV SetImageAliasRequest) []byte {
+	return cborEncode(csilEncSetImageAliasRequest(csilV))
+}
+
+// DecodeSetImageAliasRequest decodes canonical CSIL CBOR bytes into a SetImageAliasRequest.
+func DecodeSetImageAliasRequest(csilData []byte) (SetImageAliasRequest, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero SetImageAliasRequest
+		return csilZero, csilErr
+	}
+	return csilDecSetImageAliasRequest(csilRoot)
+}
+
+// csilEncSetImageAliasResponse builds the canonical CBOR value tree for a SetImageAliasResponse.
+func csilEncSetImageAliasResponse(csilV SetImageAliasResponse) cborValue {
+	csilEntries := make(cborMap, 0, 2)
+	csilEntries = append(csilEntries, cborEntry{cborText("alias"), csilEncImageAliasSummary(csilV.Alias)})
+	csilEntries = append(csilEntries, cborEntry{cborText("outcome"), cborText(csilV.Outcome)})
+	return csilEntries
+}
+
+// csilDecSetImageAliasResponse reconstructs a SetImageAliasResponse from a decoded CBOR value tree.
+func csilDecSetImageAliasResponse(csilRoot cborValue) (SetImageAliasResponse, error) {
+	var csilOut SetImageAliasResponse
+	{
+		csilField, csilErr := cborRequire(csilRoot, "alias")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (csilDecImageAliasSummary)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Alias = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "outcome")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Outcome = csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeSetImageAliasResponse encodes a SetImageAliasResponse to canonical CSIL CBOR bytes.
+func EncodeSetImageAliasResponse(csilV SetImageAliasResponse) []byte {
+	return cborEncode(csilEncSetImageAliasResponse(csilV))
+}
+
+// DecodeSetImageAliasResponse decodes canonical CSIL CBOR bytes into a SetImageAliasResponse.
+func DecodeSetImageAliasResponse(csilData []byte) (SetImageAliasResponse, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero SetImageAliasResponse
+		return csilZero, csilErr
+	}
+	return csilDecSetImageAliasResponse(csilRoot)
+}
+
+// csilEncDeleteImageAliasRequest builds the canonical CBOR value tree for a DeleteImageAliasRequest.
+func csilEncDeleteImageAliasRequest(csilV DeleteImageAliasRequest) cborValue {
+	csilEntries := make(cborMap, 0, 3)
+	csilEntries = append(csilEntries, cborEntry{cborText("name"), cborText(csilV.Name)})
+	if csilV.ProjectId != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("project_id"), cborText((*csilV.ProjectId))})
+	}
+	csilEntries = append(csilEntries, cborEntry{cborText("organization"), cborText(csilV.Organization)})
+	return csilEntries
+}
+
+// csilDecDeleteImageAliasRequest reconstructs a DeleteImageAliasRequest from a decoded CBOR value tree.
+func csilDecDeleteImageAliasRequest(csilRoot cborValue) (DeleteImageAliasRequest, error) {
+	var csilOut DeleteImageAliasRequest
+	{
+		csilField, csilErr := cborRequire(csilRoot, "organization")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Organization = csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "project_id"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.ProjectId = &csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "name")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Name = csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeDeleteImageAliasRequest encodes a DeleteImageAliasRequest to canonical CSIL CBOR bytes.
+func EncodeDeleteImageAliasRequest(csilV DeleteImageAliasRequest) []byte {
+	return cborEncode(csilEncDeleteImageAliasRequest(csilV))
+}
+
+// DecodeDeleteImageAliasRequest decodes canonical CSIL CBOR bytes into a DeleteImageAliasRequest.
+func DecodeDeleteImageAliasRequest(csilData []byte) (DeleteImageAliasRequest, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero DeleteImageAliasRequest
+		return csilZero, csilErr
+	}
+	return csilDecDeleteImageAliasRequest(csilRoot)
+}
+
+// csilEncDeleteImageAliasResponse builds the canonical CBOR value tree for a DeleteImageAliasResponse.
+func csilEncDeleteImageAliasResponse(csilV DeleteImageAliasResponse) cborValue {
+	csilEntries := make(cborMap, 0, 1)
+	csilEntries = append(csilEntries, cborEntry{cborText("deleted"), cborBool(csilV.Deleted)})
+	return csilEntries
+}
+
+// csilDecDeleteImageAliasResponse reconstructs a DeleteImageAliasResponse from a decoded CBOR value tree.
+func csilDecDeleteImageAliasResponse(csilRoot cborValue) (DeleteImageAliasResponse, error) {
+	var csilOut DeleteImageAliasResponse
+	{
+		csilField, csilErr := cborRequire(csilRoot, "deleted")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsBool)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Deleted = csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeDeleteImageAliasResponse encodes a DeleteImageAliasResponse to canonical CSIL CBOR bytes.
+func EncodeDeleteImageAliasResponse(csilV DeleteImageAliasResponse) []byte {
+	return cborEncode(csilEncDeleteImageAliasResponse(csilV))
+}
+
+// DecodeDeleteImageAliasResponse decodes canonical CSIL CBOR bytes into a DeleteImageAliasResponse.
+func DecodeDeleteImageAliasResponse(csilData []byte) (DeleteImageAliasResponse, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero DeleteImageAliasResponse
+		return csilZero, csilErr
+	}
+	return csilDecDeleteImageAliasResponse(csilRoot)
+}
+
+// csilEncImageFailureSummary builds the canonical CBOR value tree for a ImageFailureSummary.
+func csilEncImageFailureSummary(csilV ImageFailureSummary) cborValue {
+	csilEntries := make(cborMap, 0, 3)
+	csilEntries = append(csilEntries, cborEntry{cborText("detail"), cborText(csilV.Detail)})
+	csilEntries = append(csilEntries, cborEntry{cborText("digest"), cborText(csilV.Digest)})
+	csilEntries = append(csilEntries, cborEntry{cborText("permanent"), cborBool(csilV.Permanent)})
+	return csilEntries
+}
+
+// csilDecImageFailureSummary reconstructs a ImageFailureSummary from a decoded CBOR value tree.
+func csilDecImageFailureSummary(csilRoot cborValue) (ImageFailureSummary, error) {
+	var csilOut ImageFailureSummary
+	{
+		csilField, csilErr := cborRequire(csilRoot, "digest")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Digest = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "permanent")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsBool)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Permanent = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "detail")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Detail = csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeImageFailureSummary encodes a ImageFailureSummary to canonical CSIL CBOR bytes.
+func EncodeImageFailureSummary(csilV ImageFailureSummary) []byte {
+	return cborEncode(csilEncImageFailureSummary(csilV))
+}
+
+// DecodeImageFailureSummary decodes canonical CSIL CBOR bytes into a ImageFailureSummary.
+func DecodeImageFailureSummary(csilData []byte) (ImageFailureSummary, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero ImageFailureSummary
+		return csilZero, csilErr
+	}
+	return csilDecImageFailureSummary(csilRoot)
+}
+
+// csilEncImageRolloutWorker builds the canonical CBOR value tree for a ImageRolloutWorker.
+func csilEncImageRolloutWorker(csilV ImageRolloutWorker) cborValue {
+	csilEntries := make(cborMap, 0, 12)
+	csilEntries = append(csilEntries, cborEntry{cborText("ready"), cborBool(csilV.Ready)})
+	if csilV.Failed != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("failed"), cborEncArray(csilV.Failed, func(csilElem ImageFailureSummary) cborValue { return csilEncImageFailureSummary(csilElem) })})
+	}
+	csilEntries = append(csilEntries, cborEntry{cborText("online"), cborBool(csilV.Online)})
+	csilEntries = append(csilEntries, cborEntry{cborText("pool_id"), cborText(csilV.PoolId)})
+	if csilV.Hostname != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("hostname"), cborText((*csilV.Hostname))})
+	}
+	csilEntries = append(csilEntries, cborEntry{cborText("worker_id"), cborText(csilV.WorkerId)})
+	csilEntries = append(csilEntries, cborEntry{cborText("has_active"), cborBool(csilV.HasActive)})
+	csilEntries = append(csilEntries, cborEntry{cborText("has_pending"), cborBool(csilV.HasPending)})
+	csilEntries = append(csilEntries, cborEntry{cborText("image_status"), cborText(csilV.ImageStatus)})
+	csilEntries = append(csilEntries, cborEntry{cborText("image_set_version"), cborInt(csilV.ImageSetVersion)})
+	if csilV.ImageStatusDetail != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("image_status_detail"), cborText((*csilV.ImageStatusDetail))})
+	}
+	if csilV.ImageReportedVersion != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("image_reported_version"), cborInt((*csilV.ImageReportedVersion))})
+	}
+	return csilEntries
+}
+
+// csilDecImageRolloutWorker reconstructs a ImageRolloutWorker from a decoded CBOR value tree.
+func csilDecImageRolloutWorker(csilRoot cborValue) (ImageRolloutWorker, error) {
+	var csilOut ImageRolloutWorker
+	{
+		csilField, csilErr := cborRequire(csilRoot, "worker_id")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.WorkerId = csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "hostname"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Hostname = &csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "pool_id")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.PoolId = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "online")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsBool)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Online = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "image_status")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.ImageStatus = csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "image_status_detail"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.ImageStatusDetail = &csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "image_set_version")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsI64)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.ImageSetVersion = csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "image_reported_version"); csilOk {
+		csilVal, csilErr := (cborAsI64)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.ImageReportedVersion = &csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "has_active")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsBool)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.HasActive = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "has_pending")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsBool)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.HasPending = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "ready")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsBool)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Ready = csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "failed"); csilOk {
+		csilVal, csilErr := (func(csilV cborValue) ([]ImageFailureSummary, error) {
+			return cborDecArray(csilV, csilDecImageFailureSummary)
+		})(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Failed = csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeImageRolloutWorker encodes a ImageRolloutWorker to canonical CSIL CBOR bytes.
+func EncodeImageRolloutWorker(csilV ImageRolloutWorker) []byte {
+	return cborEncode(csilEncImageRolloutWorker(csilV))
+}
+
+// DecodeImageRolloutWorker decodes canonical CSIL CBOR bytes into a ImageRolloutWorker.
+func DecodeImageRolloutWorker(csilData []byte) (ImageRolloutWorker, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero ImageRolloutWorker
+		return csilZero, csilErr
+	}
+	return csilDecImageRolloutWorker(csilRoot)
+}
+
+// csilEncImageRolloutPoolSummary builds the canonical CBOR value tree for a ImageRolloutPoolSummary.
+func csilEncImageRolloutPoolSummary(csilV ImageRolloutPoolSummary) cborValue {
+	csilEntries := make(cborMap, 0, 5)
+	csilEntries = append(csilEntries, cborEntry{cborText("workers"), cborInt(csilV.Workers)})
+	csilEntries = append(csilEntries, cborEntry{cborText("pool_name"), cborText(csilV.PoolName)})
+	csilEntries = append(csilEntries, cborEntry{cborText("ready_workers"), cborInt(csilV.ReadyWorkers)})
+	csilEntries = append(csilEntries, cborEntry{cborText("failed_workers"), cborInt(csilV.FailedWorkers)})
+	csilEntries = append(csilEntries, cborEntry{cborText("online_workers"), cborInt(csilV.OnlineWorkers)})
+	return csilEntries
+}
+
+// csilDecImageRolloutPoolSummary reconstructs a ImageRolloutPoolSummary from a decoded CBOR value tree.
+func csilDecImageRolloutPoolSummary(csilRoot cborValue) (ImageRolloutPoolSummary, error) {
+	var csilOut ImageRolloutPoolSummary
+	{
+		csilField, csilErr := cborRequire(csilRoot, "pool_name")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.PoolName = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "workers")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsI64)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Workers = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "online_workers")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsI64)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.OnlineWorkers = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "ready_workers")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsI64)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.ReadyWorkers = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "failed_workers")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsI64)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.FailedWorkers = csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeImageRolloutPoolSummary encodes a ImageRolloutPoolSummary to canonical CSIL CBOR bytes.
+func EncodeImageRolloutPoolSummary(csilV ImageRolloutPoolSummary) []byte {
+	return cborEncode(csilEncImageRolloutPoolSummary(csilV))
+}
+
+// DecodeImageRolloutPoolSummary decodes canonical CSIL CBOR bytes into a ImageRolloutPoolSummary.
+func DecodeImageRolloutPoolSummary(csilData []byte) (ImageRolloutPoolSummary, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero ImageRolloutPoolSummary
+		return csilZero, csilErr
+	}
+	return csilDecImageRolloutPoolSummary(csilRoot)
+}
+
+// csilEncImageAliasRollout builds the canonical CBOR value tree for a ImageAliasRollout.
+func csilEncImageAliasRollout(csilV ImageAliasRollout) cborValue {
+	csilEntries := make(cborMap, 0, 8)
+	csilEntries = append(csilEntries, cborEntry{cborText("alias"), csilEncImageAliasSummary(csilV.Alias)})
+	if csilV.Blocked != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("blocked"), cborText((*csilV.Blocked))})
+	}
+	csilEntries = append(csilEntries, cborEntry{cborText("workers"), cborEncArray(csilV.Workers, func(csilElem ImageRolloutWorker) cborValue { return csilEncImageRolloutWorker(csilElem) })})
+	if csilV.Problems != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("problems"), cborEncArray(csilV.Problems, func(csilElem string) cborValue { return cborText(csilElem) })})
+	}
+	csilEntries = append(csilEntries, cborEntry{cborText("promotable"), cborBool(csilV.Promotable)})
+	if csilV.OtherPools != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("other_pools"), cborEncArray(csilV.OtherPools, func(csilElem ImageRolloutPoolSummary) cborValue { return csilEncImageRolloutPoolSummary(csilElem) })})
+	}
+	csilEntries = append(csilEntries, cborEntry{cborText("ready_workers"), cborInt(csilV.ReadyWorkers)})
+	csilEntries = append(csilEntries, cborEntry{cborText("online_workers"), cborInt(csilV.OnlineWorkers)})
+	return csilEntries
+}
+
+// csilDecImageAliasRollout reconstructs a ImageAliasRollout from a decoded CBOR value tree.
+func csilDecImageAliasRollout(csilRoot cborValue) (ImageAliasRollout, error) {
+	var csilOut ImageAliasRollout
+	{
+		csilField, csilErr := cborRequire(csilRoot, "alias")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (csilDecImageAliasSummary)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Alias = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "workers")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (func(csilV cborValue) ([]ImageRolloutWorker, error) {
+			return cborDecArray(csilV, csilDecImageRolloutWorker)
+		})(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Workers = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "online_workers")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsI64)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.OnlineWorkers = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "ready_workers")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsI64)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.ReadyWorkers = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "promotable")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsBool)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Promotable = csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "blocked"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Blocked = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "other_pools"); csilOk {
+		csilVal, csilErr := (func(csilV cborValue) ([]ImageRolloutPoolSummary, error) {
+			return cborDecArray(csilV, csilDecImageRolloutPoolSummary)
+		})(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.OtherPools = csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "problems"); csilOk {
+		csilVal, csilErr := (func(csilV cborValue) ([]string, error) { return cborDecArray(csilV, cborAsText) })(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Problems = csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeImageAliasRollout encodes a ImageAliasRollout to canonical CSIL CBOR bytes.
+func EncodeImageAliasRollout(csilV ImageAliasRollout) []byte {
+	return cborEncode(csilEncImageAliasRollout(csilV))
+}
+
+// DecodeImageAliasRollout decodes canonical CSIL CBOR bytes into a ImageAliasRollout.
+func DecodeImageAliasRollout(csilData []byte) (ImageAliasRollout, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero ImageAliasRollout
+		return csilZero, csilErr
+	}
+	return csilDecImageAliasRollout(csilRoot)
+}
+
+// csilEncGetImageRolloutStatusRequest builds the canonical CBOR value tree for a GetImageRolloutStatusRequest.
+func csilEncGetImageRolloutStatusRequest(csilV GetImageRolloutStatusRequest) cborValue {
+	csilEntries := make(cborMap, 0, 3)
+	if csilV.Name != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("name"), cborText((*csilV.Name))})
+	}
+	if csilV.ProjectId != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("project_id"), cborText((*csilV.ProjectId))})
+	}
+	csilEntries = append(csilEntries, cborEntry{cborText("organization"), cborText(csilV.Organization)})
+	return csilEntries
+}
+
+// csilDecGetImageRolloutStatusRequest reconstructs a GetImageRolloutStatusRequest from a decoded CBOR value tree.
+func csilDecGetImageRolloutStatusRequest(csilRoot cborValue) (GetImageRolloutStatusRequest, error) {
+	var csilOut GetImageRolloutStatusRequest
+	{
+		csilField, csilErr := cborRequire(csilRoot, "organization")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Organization = csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "project_id"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.ProjectId = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "name"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Name = &csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeGetImageRolloutStatusRequest encodes a GetImageRolloutStatusRequest to canonical CSIL CBOR bytes.
+func EncodeGetImageRolloutStatusRequest(csilV GetImageRolloutStatusRequest) []byte {
+	return cborEncode(csilEncGetImageRolloutStatusRequest(csilV))
+}
+
+// DecodeGetImageRolloutStatusRequest decodes canonical CSIL CBOR bytes into a GetImageRolloutStatusRequest.
+func DecodeGetImageRolloutStatusRequest(csilData []byte) (GetImageRolloutStatusRequest, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero GetImageRolloutStatusRequest
+		return csilZero, csilErr
+	}
+	return csilDecGetImageRolloutStatusRequest(csilRoot)
+}
+
+// csilEncGetImageRolloutStatusResponse builds the canonical CBOR value tree for a GetImageRolloutStatusResponse.
+func csilEncGetImageRolloutStatusResponse(csilV GetImageRolloutStatusResponse) cborValue {
+	csilEntries := make(cborMap, 0, 1)
+	csilEntries = append(csilEntries, cborEntry{cborText("rollouts"), cborEncArray(csilV.Rollouts, func(csilElem ImageAliasRollout) cborValue { return csilEncImageAliasRollout(csilElem) })})
+	return csilEntries
+}
+
+// csilDecGetImageRolloutStatusResponse reconstructs a GetImageRolloutStatusResponse from a decoded CBOR value tree.
+func csilDecGetImageRolloutStatusResponse(csilRoot cborValue) (GetImageRolloutStatusResponse, error) {
+	var csilOut GetImageRolloutStatusResponse
+	{
+		csilField, csilErr := cborRequire(csilRoot, "rollouts")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (func(csilV cborValue) ([]ImageAliasRollout, error) {
+			return cborDecArray(csilV, csilDecImageAliasRollout)
+		})(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Rollouts = csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeGetImageRolloutStatusResponse encodes a GetImageRolloutStatusResponse to canonical CSIL CBOR bytes.
+func EncodeGetImageRolloutStatusResponse(csilV GetImageRolloutStatusResponse) []byte {
+	return cborEncode(csilEncGetImageRolloutStatusResponse(csilV))
+}
+
+// DecodeGetImageRolloutStatusResponse decodes canonical CSIL CBOR bytes into a GetImageRolloutStatusResponse.
+func DecodeGetImageRolloutStatusResponse(csilData []byte) (GetImageRolloutStatusResponse, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero GetImageRolloutStatusResponse
+		return csilZero, csilErr
+	}
+	return csilDecGetImageRolloutStatusResponse(csilRoot)
+}
+
+// csilEncWorkerImageSetEntrySummary builds the canonical CBOR value tree for a WorkerImageSetEntrySummary.
+func csilEncWorkerImageSetEntrySummary(csilV WorkerImageSetEntrySummary) cborValue {
+	csilEntries := make(cborMap, 0, 7)
+	csilEntries = append(csilEntries, cborEntry{cborText("ref"), cborText(csilV.Ref)})
+	csilEntries = append(csilEntries, cborEntry{cborText("kind"), cborText(csilV.Kind)})
+	csilEntries = append(csilEntries, cborEntry{cborText("ready"), cborBool(csilV.Ready)})
+	csilEntries = append(csilEntries, cborEntry{cborText("digest"), cborText(csilV.Digest)})
+	csilEntries = append(csilEntries, cborEntry{cborText("aliases"), cborEncArray(csilV.Aliases, func(csilElem string) cborValue { return cborText(csilElem) })})
+	if csilV.Failure != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("failure"), csilEncImageFailureSummary((*csilV.Failure))})
+	}
+	if csilV.Pending != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("pending"), cborBool((*csilV.Pending))})
+	}
+	return csilEntries
+}
+
+// csilDecWorkerImageSetEntrySummary reconstructs a WorkerImageSetEntrySummary from a decoded CBOR value tree.
+func csilDecWorkerImageSetEntrySummary(csilRoot cborValue) (WorkerImageSetEntrySummary, error) {
+	var csilOut WorkerImageSetEntrySummary
+	{
+		csilField, csilErr := cborRequire(csilRoot, "ref")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Ref = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "digest")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Digest = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "kind")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Kind = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "aliases")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (func(csilV cborValue) ([]string, error) { return cborDecArray(csilV, cborAsText) })(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Aliases = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "ready")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsBool)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Ready = csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "pending"); csilOk {
+		csilVal, csilErr := (cborAsBool)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Pending = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "failure"); csilOk {
+		csilVal, csilErr := (csilDecImageFailureSummary)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Failure = &csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeWorkerImageSetEntrySummary encodes a WorkerImageSetEntrySummary to canonical CSIL CBOR bytes.
+func EncodeWorkerImageSetEntrySummary(csilV WorkerImageSetEntrySummary) []byte {
+	return cborEncode(csilEncWorkerImageSetEntrySummary(csilV))
+}
+
+// DecodeWorkerImageSetEntrySummary decodes canonical CSIL CBOR bytes into a WorkerImageSetEntrySummary.
+func DecodeWorkerImageSetEntrySummary(csilData []byte) (WorkerImageSetEntrySummary, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero WorkerImageSetEntrySummary
+		return csilZero, csilErr
+	}
+	return csilDecWorkerImageSetEntrySummary(csilRoot)
+}
+
+// csilEncGetWorkerImageStateRequest builds the canonical CBOR value tree for a GetWorkerImageStateRequest.
+func csilEncGetWorkerImageStateRequest(csilV GetWorkerImageStateRequest) cborValue {
+	csilEntries := make(cborMap, 0, 1)
+	csilEntries = append(csilEntries, cborEntry{cborText("worker_id"), cborText(csilV.WorkerId)})
+	return csilEntries
+}
+
+// csilDecGetWorkerImageStateRequest reconstructs a GetWorkerImageStateRequest from a decoded CBOR value tree.
+func csilDecGetWorkerImageStateRequest(csilRoot cborValue) (GetWorkerImageStateRequest, error) {
+	var csilOut GetWorkerImageStateRequest
+	{
+		csilField, csilErr := cborRequire(csilRoot, "worker_id")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.WorkerId = csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeGetWorkerImageStateRequest encodes a GetWorkerImageStateRequest to canonical CSIL CBOR bytes.
+func EncodeGetWorkerImageStateRequest(csilV GetWorkerImageStateRequest) []byte {
+	return cborEncode(csilEncGetWorkerImageStateRequest(csilV))
+}
+
+// DecodeGetWorkerImageStateRequest decodes canonical CSIL CBOR bytes into a GetWorkerImageStateRequest.
+func DecodeGetWorkerImageStateRequest(csilData []byte) (GetWorkerImageStateRequest, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero GetWorkerImageStateRequest
+		return csilZero, csilErr
+	}
+	return csilDecGetWorkerImageStateRequest(csilRoot)
+}
+
+// csilEncGetWorkerImageStateResponse builds the canonical CBOR value tree for a GetWorkerImageStateResponse.
+func csilEncGetWorkerImageStateResponse(csilV GetWorkerImageStateResponse) cborValue {
+	csilEntries := make(cborMap, 0, 11)
+	if csilV.State != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("state"), cborText((*csilV.State))})
+	}
+	if csilV.Failed != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("failed"), cborEncArray(csilV.Failed, func(csilElem ImageFailureSummary) cborValue { return csilEncImageFailureSummary(csilElem) })})
+	}
+	csilEntries = append(csilEntries, cborEntry{cborText("images"), cborEncArray(csilV.Images, func(csilElem WorkerImageSetEntrySummary) cborValue {
+		return csilEncWorkerImageSetEntrySummary(csilElem)
+	})})
+	csilEntries = append(csilEntries, cborEntry{cborText("worker_id"), cborText(csilV.WorkerId)})
+	csilEntries = append(csilEntries, cborEntry{cborText("image_aware"), cborBool(csilV.ImageAware)})
+	if csilV.ImageStatus != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("image_status"), cborText((*csilV.ImageStatus))})
+	}
+	if csilV.ImageRuntime != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("image_runtime"), cborText((*csilV.ImageRuntime))})
+	}
+	csilEntries = append(csilEntries, cborEntry{cborText("ready_digests"), cborEncArray(csilV.ReadyDigests, func(csilElem string) cborValue { return cborText(csilElem) })})
+	csilEntries = append(csilEntries, cborEntry{cborText("image_set_version"), cborInt(csilV.ImageSetVersion)})
+	if csilV.ImageStatusDetail != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("image_status_detail"), cborText((*csilV.ImageStatusDetail))})
+	}
+	if csilV.ImageReportedVersion != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("image_reported_version"), cborInt((*csilV.ImageReportedVersion))})
+	}
+	return csilEntries
+}
+
+// csilDecGetWorkerImageStateResponse reconstructs a GetWorkerImageStateResponse from a decoded CBOR value tree.
+func csilDecGetWorkerImageStateResponse(csilRoot cborValue) (GetWorkerImageStateResponse, error) {
+	var csilOut GetWorkerImageStateResponse
+	{
+		csilField, csilErr := cborRequire(csilRoot, "worker_id")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.WorkerId = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "image_aware")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsBool)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.ImageAware = csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "image_runtime"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.ImageRuntime = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "image_status"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.ImageStatus = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "image_status_detail"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.ImageStatusDetail = &csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "image_set_version")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsI64)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.ImageSetVersion = csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "image_reported_version"); csilOk {
+		csilVal, csilErr := (cborAsI64)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.ImageReportedVersion = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "state"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.State = &csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "ready_digests")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (func(csilV cborValue) ([]string, error) { return cborDecArray(csilV, cborAsText) })(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.ReadyDigests = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "images")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (func(csilV cborValue) ([]WorkerImageSetEntrySummary, error) {
+			return cborDecArray(csilV, csilDecWorkerImageSetEntrySummary)
+		})(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Images = csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "failed"); csilOk {
+		csilVal, csilErr := (func(csilV cborValue) ([]ImageFailureSummary, error) {
+			return cborDecArray(csilV, csilDecImageFailureSummary)
+		})(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Failed = csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeGetWorkerImageStateResponse encodes a GetWorkerImageStateResponse to canonical CSIL CBOR bytes.
+func EncodeGetWorkerImageStateResponse(csilV GetWorkerImageStateResponse) []byte {
+	return cborEncode(csilEncGetWorkerImageStateResponse(csilV))
+}
+
+// DecodeGetWorkerImageStateResponse decodes canonical CSIL CBOR bytes into a GetWorkerImageStateResponse.
+func DecodeGetWorkerImageStateResponse(csilData []byte) (GetWorkerImageStateResponse, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero GetWorkerImageStateResponse
+		return csilZero, csilErr
+	}
+	return csilDecGetWorkerImageStateResponse(csilRoot)
+}
+
+// csilEncEnvDefaultEntry builds the canonical CBOR value tree for a EnvDefaultEntry.
+func csilEncEnvDefaultEntry(csilV EnvDefaultEntry) cborValue {
+	csilEntries := make(cborMap, 0, 3)
+	csilEntries = append(csilEntries, cborEntry{cborText("key"), cborText(csilV.Key)})
+	csilEntries = append(csilEntries, cborEntry{cborText("value"), cborText(csilV.Value)})
+	if csilV.UpdatedAt != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("updated_at"), cborText((*csilV.UpdatedAt))})
+	}
+	return csilEntries
+}
+
+// csilDecEnvDefaultEntry reconstructs a EnvDefaultEntry from a decoded CBOR value tree.
+func csilDecEnvDefaultEntry(csilRoot cborValue) (EnvDefaultEntry, error) {
+	var csilOut EnvDefaultEntry
+	{
+		csilField, csilErr := cborRequire(csilRoot, "key")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Key = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "value")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Value = csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "updated_at"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.UpdatedAt = &csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeEnvDefaultEntry encodes a EnvDefaultEntry to canonical CSIL CBOR bytes.
+func EncodeEnvDefaultEntry(csilV EnvDefaultEntry) []byte {
+	return cborEncode(csilEncEnvDefaultEntry(csilV))
+}
+
+// DecodeEnvDefaultEntry decodes canonical CSIL CBOR bytes into a EnvDefaultEntry.
+func DecodeEnvDefaultEntry(csilData []byte) (EnvDefaultEntry, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero EnvDefaultEntry
+		return csilZero, csilErr
+	}
+	return csilDecEnvDefaultEntry(csilRoot)
+}
+
+// csilEncListEnvDefaultsRequest builds the canonical CBOR value tree for a ListEnvDefaultsRequest.
+func csilEncListEnvDefaultsRequest(csilV ListEnvDefaultsRequest) cborValue {
+	csilEntries := make(cborMap, 0, 3)
+	if csilV.ProjectId != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("project_id"), cborText((*csilV.ProjectId))})
+	}
+	csilEntries = append(csilEntries, cborEntry{cborText("organization"), cborText(csilV.Organization)})
+	if csilV.WorkerClass != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("worker_class"), cborText((*csilV.WorkerClass))})
+	}
+	return csilEntries
+}
+
+// csilDecListEnvDefaultsRequest reconstructs a ListEnvDefaultsRequest from a decoded CBOR value tree.
+func csilDecListEnvDefaultsRequest(csilRoot cborValue) (ListEnvDefaultsRequest, error) {
+	var csilOut ListEnvDefaultsRequest
+	{
+		csilField, csilErr := cborRequire(csilRoot, "organization")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Organization = csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "worker_class"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.WorkerClass = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "project_id"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.ProjectId = &csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeListEnvDefaultsRequest encodes a ListEnvDefaultsRequest to canonical CSIL CBOR bytes.
+func EncodeListEnvDefaultsRequest(csilV ListEnvDefaultsRequest) []byte {
+	return cborEncode(csilEncListEnvDefaultsRequest(csilV))
+}
+
+// DecodeListEnvDefaultsRequest decodes canonical CSIL CBOR bytes into a ListEnvDefaultsRequest.
+func DecodeListEnvDefaultsRequest(csilData []byte) (ListEnvDefaultsRequest, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero ListEnvDefaultsRequest
+		return csilZero, csilErr
+	}
+	return csilDecListEnvDefaultsRequest(csilRoot)
+}
+
+// csilEncListEnvDefaultsResponse builds the canonical CBOR value tree for a ListEnvDefaultsResponse.
+func csilEncListEnvDefaultsResponse(csilV ListEnvDefaultsResponse) cborValue {
+	csilEntries := make(cborMap, 0, 2)
+	csilEntries = append(csilEntries, cborEntry{cborText("scope"), cborText(csilV.Scope)})
+	csilEntries = append(csilEntries, cborEntry{cborText("entries"), cborEncArray(csilV.Entries, func(csilElem EnvDefaultEntry) cborValue { return csilEncEnvDefaultEntry(csilElem) })})
+	return csilEntries
+}
+
+// csilDecListEnvDefaultsResponse reconstructs a ListEnvDefaultsResponse from a decoded CBOR value tree.
+func csilDecListEnvDefaultsResponse(csilRoot cborValue) (ListEnvDefaultsResponse, error) {
+	var csilOut ListEnvDefaultsResponse
+	{
+		csilField, csilErr := cborRequire(csilRoot, "scope")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Scope = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "entries")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (func(csilV cborValue) ([]EnvDefaultEntry, error) { return cborDecArray(csilV, csilDecEnvDefaultEntry) })(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Entries = csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeListEnvDefaultsResponse encodes a ListEnvDefaultsResponse to canonical CSIL CBOR bytes.
+func EncodeListEnvDefaultsResponse(csilV ListEnvDefaultsResponse) []byte {
+	return cborEncode(csilEncListEnvDefaultsResponse(csilV))
+}
+
+// DecodeListEnvDefaultsResponse decodes canonical CSIL CBOR bytes into a ListEnvDefaultsResponse.
+func DecodeListEnvDefaultsResponse(csilData []byte) (ListEnvDefaultsResponse, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero ListEnvDefaultsResponse
+		return csilZero, csilErr
+	}
+	return csilDecListEnvDefaultsResponse(csilRoot)
+}
+
+// csilEncPutEnvDefaultRequest builds the canonical CBOR value tree for a PutEnvDefaultRequest.
+func csilEncPutEnvDefaultRequest(csilV PutEnvDefaultRequest) cborValue {
+	csilEntries := make(cborMap, 0, 5)
+	csilEntries = append(csilEntries, cborEntry{cborText("key"), cborText(csilV.Key)})
+	csilEntries = append(csilEntries, cborEntry{cborText("value"), cborText(csilV.Value)})
+	if csilV.ProjectId != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("project_id"), cborText((*csilV.ProjectId))})
+	}
+	csilEntries = append(csilEntries, cborEntry{cborText("organization"), cborText(csilV.Organization)})
+	if csilV.WorkerClass != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("worker_class"), cborText((*csilV.WorkerClass))})
+	}
+	return csilEntries
+}
+
+// csilDecPutEnvDefaultRequest reconstructs a PutEnvDefaultRequest from a decoded CBOR value tree.
+func csilDecPutEnvDefaultRequest(csilRoot cborValue) (PutEnvDefaultRequest, error) {
+	var csilOut PutEnvDefaultRequest
+	{
+		csilField, csilErr := cborRequire(csilRoot, "organization")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Organization = csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "worker_class"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.WorkerClass = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "project_id"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.ProjectId = &csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "key")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Key = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "value")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Value = csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodePutEnvDefaultRequest encodes a PutEnvDefaultRequest to canonical CSIL CBOR bytes.
+func EncodePutEnvDefaultRequest(csilV PutEnvDefaultRequest) []byte {
+	return cborEncode(csilEncPutEnvDefaultRequest(csilV))
+}
+
+// DecodePutEnvDefaultRequest decodes canonical CSIL CBOR bytes into a PutEnvDefaultRequest.
+func DecodePutEnvDefaultRequest(csilData []byte) (PutEnvDefaultRequest, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero PutEnvDefaultRequest
+		return csilZero, csilErr
+	}
+	return csilDecPutEnvDefaultRequest(csilRoot)
+}
+
+// csilEncPutEnvDefaultResponse builds the canonical CBOR value tree for a PutEnvDefaultResponse.
+func csilEncPutEnvDefaultResponse(csilV PutEnvDefaultResponse) cborValue {
+	csilEntries := make(cborMap, 0, 1)
+	csilEntries = append(csilEntries, cborEntry{cborText("entry"), csilEncEnvDefaultEntry(csilV.Entry)})
+	return csilEntries
+}
+
+// csilDecPutEnvDefaultResponse reconstructs a PutEnvDefaultResponse from a decoded CBOR value tree.
+func csilDecPutEnvDefaultResponse(csilRoot cborValue) (PutEnvDefaultResponse, error) {
+	var csilOut PutEnvDefaultResponse
+	{
+		csilField, csilErr := cborRequire(csilRoot, "entry")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (csilDecEnvDefaultEntry)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Entry = csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodePutEnvDefaultResponse encodes a PutEnvDefaultResponse to canonical CSIL CBOR bytes.
+func EncodePutEnvDefaultResponse(csilV PutEnvDefaultResponse) []byte {
+	return cborEncode(csilEncPutEnvDefaultResponse(csilV))
+}
+
+// DecodePutEnvDefaultResponse decodes canonical CSIL CBOR bytes into a PutEnvDefaultResponse.
+func DecodePutEnvDefaultResponse(csilData []byte) (PutEnvDefaultResponse, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero PutEnvDefaultResponse
+		return csilZero, csilErr
+	}
+	return csilDecPutEnvDefaultResponse(csilRoot)
+}
+
+// csilEncDeleteEnvDefaultRequest builds the canonical CBOR value tree for a DeleteEnvDefaultRequest.
+func csilEncDeleteEnvDefaultRequest(csilV DeleteEnvDefaultRequest) cborValue {
+	csilEntries := make(cborMap, 0, 4)
+	csilEntries = append(csilEntries, cborEntry{cborText("key"), cborText(csilV.Key)})
+	if csilV.ProjectId != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("project_id"), cborText((*csilV.ProjectId))})
+	}
+	csilEntries = append(csilEntries, cborEntry{cborText("organization"), cborText(csilV.Organization)})
+	if csilV.WorkerClass != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("worker_class"), cborText((*csilV.WorkerClass))})
+	}
+	return csilEntries
+}
+
+// csilDecDeleteEnvDefaultRequest reconstructs a DeleteEnvDefaultRequest from a decoded CBOR value tree.
+func csilDecDeleteEnvDefaultRequest(csilRoot cborValue) (DeleteEnvDefaultRequest, error) {
+	var csilOut DeleteEnvDefaultRequest
+	{
+		csilField, csilErr := cborRequire(csilRoot, "organization")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Organization = csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "worker_class"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.WorkerClass = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "project_id"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.ProjectId = &csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "key")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Key = csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeDeleteEnvDefaultRequest encodes a DeleteEnvDefaultRequest to canonical CSIL CBOR bytes.
+func EncodeDeleteEnvDefaultRequest(csilV DeleteEnvDefaultRequest) []byte {
+	return cborEncode(csilEncDeleteEnvDefaultRequest(csilV))
+}
+
+// DecodeDeleteEnvDefaultRequest decodes canonical CSIL CBOR bytes into a DeleteEnvDefaultRequest.
+func DecodeDeleteEnvDefaultRequest(csilData []byte) (DeleteEnvDefaultRequest, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero DeleteEnvDefaultRequest
+		return csilZero, csilErr
+	}
+	return csilDecDeleteEnvDefaultRequest(csilRoot)
+}
+
+// csilEncDeleteEnvDefaultResponse builds the canonical CBOR value tree for a DeleteEnvDefaultResponse.
+func csilEncDeleteEnvDefaultResponse(csilV DeleteEnvDefaultResponse) cborValue {
+	csilEntries := make(cborMap, 0, 1)
+	csilEntries = append(csilEntries, cborEntry{cborText("deleted"), cborBool(csilV.Deleted)})
+	return csilEntries
+}
+
+// csilDecDeleteEnvDefaultResponse reconstructs a DeleteEnvDefaultResponse from a decoded CBOR value tree.
+func csilDecDeleteEnvDefaultResponse(csilRoot cborValue) (DeleteEnvDefaultResponse, error) {
+	var csilOut DeleteEnvDefaultResponse
+	{
+		csilField, csilErr := cborRequire(csilRoot, "deleted")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsBool)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Deleted = csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeDeleteEnvDefaultResponse encodes a DeleteEnvDefaultResponse to canonical CSIL CBOR bytes.
+func EncodeDeleteEnvDefaultResponse(csilV DeleteEnvDefaultResponse) []byte {
+	return cborEncode(csilEncDeleteEnvDefaultResponse(csilV))
+}
+
+// DecodeDeleteEnvDefaultResponse decodes canonical CSIL CBOR bytes into a DeleteEnvDefaultResponse.
+func DecodeDeleteEnvDefaultResponse(csilData []byte) (DeleteEnvDefaultResponse, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero DeleteEnvDefaultResponse
+		return csilZero, csilErr
+	}
+	return csilDecDeleteEnvDefaultResponse(csilRoot)
+}
+
+// csilEncImagePolicySummary builds the canonical CBOR value tree for a ImagePolicySummary.
+func csilEncImagePolicySummary(csilV ImagePolicySummary) cborValue {
+	csilEntries := make(cborMap, 0, 4)
+	csilEntries = append(csilEntries, cborEntry{cborText("enabled"), cborBool(csilV.Enabled)})
+	if csilV.UpdatedAt != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("updated_at"), cborText((*csilV.UpdatedAt))})
+	}
+	csilEntries = append(csilEntries, cborEntry{cborText("require_digest"), cborBool(csilV.RequireDigest)})
+	csilEntries = append(csilEntries, cborEntry{cborText("allowed_prefixes"), cborEncArray(csilV.AllowedPrefixes, func(csilElem string) cborValue { return cborText(csilElem) })})
+	return csilEntries
+}
+
+// csilDecImagePolicySummary reconstructs a ImagePolicySummary from a decoded CBOR value tree.
+func csilDecImagePolicySummary(csilRoot cborValue) (ImagePolicySummary, error) {
+	var csilOut ImagePolicySummary
+	{
+		csilField, csilErr := cborRequire(csilRoot, "enabled")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsBool)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Enabled = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "allowed_prefixes")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (func(csilV cborValue) ([]string, error) { return cborDecArray(csilV, cborAsText) })(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.AllowedPrefixes = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "require_digest")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsBool)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.RequireDigest = csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "updated_at"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.UpdatedAt = &csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeImagePolicySummary encodes a ImagePolicySummary to canonical CSIL CBOR bytes.
+func EncodeImagePolicySummary(csilV ImagePolicySummary) []byte {
+	return cborEncode(csilEncImagePolicySummary(csilV))
+}
+
+// DecodeImagePolicySummary decodes canonical CSIL CBOR bytes into a ImagePolicySummary.
+func DecodeImagePolicySummary(csilData []byte) (ImagePolicySummary, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero ImagePolicySummary
+		return csilZero, csilErr
+	}
+	return csilDecImagePolicySummary(csilRoot)
+}
+
+// csilEncGetImagePolicyRequest builds the canonical CBOR value tree for a GetImagePolicyRequest.
+func csilEncGetImagePolicyRequest(csilV GetImagePolicyRequest) cborValue {
+	csilEntries := make(cborMap, 0, 1)
+	csilEntries = append(csilEntries, cborEntry{cborText("organization"), cborText(csilV.Organization)})
+	return csilEntries
+}
+
+// csilDecGetImagePolicyRequest reconstructs a GetImagePolicyRequest from a decoded CBOR value tree.
+func csilDecGetImagePolicyRequest(csilRoot cborValue) (GetImagePolicyRequest, error) {
+	var csilOut GetImagePolicyRequest
+	{
+		csilField, csilErr := cborRequire(csilRoot, "organization")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Organization = csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeGetImagePolicyRequest encodes a GetImagePolicyRequest to canonical CSIL CBOR bytes.
+func EncodeGetImagePolicyRequest(csilV GetImagePolicyRequest) []byte {
+	return cborEncode(csilEncGetImagePolicyRequest(csilV))
+}
+
+// DecodeGetImagePolicyRequest decodes canonical CSIL CBOR bytes into a GetImagePolicyRequest.
+func DecodeGetImagePolicyRequest(csilData []byte) (GetImagePolicyRequest, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero GetImagePolicyRequest
+		return csilZero, csilErr
+	}
+	return csilDecGetImagePolicyRequest(csilRoot)
+}
+
+// csilEncGetImagePolicyResponse builds the canonical CBOR value tree for a GetImagePolicyResponse.
+func csilEncGetImagePolicyResponse(csilV GetImagePolicyResponse) cborValue {
+	csilEntries := make(cborMap, 0, 1)
+	csilEntries = append(csilEntries, cborEntry{cborText("policy"), csilEncImagePolicySummary(csilV.Policy)})
+	return csilEntries
+}
+
+// csilDecGetImagePolicyResponse reconstructs a GetImagePolicyResponse from a decoded CBOR value tree.
+func csilDecGetImagePolicyResponse(csilRoot cborValue) (GetImagePolicyResponse, error) {
+	var csilOut GetImagePolicyResponse
+	{
+		csilField, csilErr := cborRequire(csilRoot, "policy")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (csilDecImagePolicySummary)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Policy = csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeGetImagePolicyResponse encodes a GetImagePolicyResponse to canonical CSIL CBOR bytes.
+func EncodeGetImagePolicyResponse(csilV GetImagePolicyResponse) []byte {
+	return cborEncode(csilEncGetImagePolicyResponse(csilV))
+}
+
+// DecodeGetImagePolicyResponse decodes canonical CSIL CBOR bytes into a GetImagePolicyResponse.
+func DecodeGetImagePolicyResponse(csilData []byte) (GetImagePolicyResponse, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero GetImagePolicyResponse
+		return csilZero, csilErr
+	}
+	return csilDecGetImagePolicyResponse(csilRoot)
+}
+
+// csilEncPutImagePolicyRequest builds the canonical CBOR value tree for a PutImagePolicyRequest.
+func csilEncPutImagePolicyRequest(csilV PutImagePolicyRequest) cborValue {
+	csilEntries := make(cborMap, 0, 2)
+	csilEntries = append(csilEntries, cborEntry{cborText("policy"), csilEncImagePolicySummary(csilV.Policy)})
+	csilEntries = append(csilEntries, cborEntry{cborText("organization"), cborText(csilV.Organization)})
+	return csilEntries
+}
+
+// csilDecPutImagePolicyRequest reconstructs a PutImagePolicyRequest from a decoded CBOR value tree.
+func csilDecPutImagePolicyRequest(csilRoot cborValue) (PutImagePolicyRequest, error) {
+	var csilOut PutImagePolicyRequest
+	{
+		csilField, csilErr := cborRequire(csilRoot, "organization")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Organization = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "policy")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (csilDecImagePolicySummary)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Policy = csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodePutImagePolicyRequest encodes a PutImagePolicyRequest to canonical CSIL CBOR bytes.
+func EncodePutImagePolicyRequest(csilV PutImagePolicyRequest) []byte {
+	return cborEncode(csilEncPutImagePolicyRequest(csilV))
+}
+
+// DecodePutImagePolicyRequest decodes canonical CSIL CBOR bytes into a PutImagePolicyRequest.
+func DecodePutImagePolicyRequest(csilData []byte) (PutImagePolicyRequest, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero PutImagePolicyRequest
+		return csilZero, csilErr
+	}
+	return csilDecPutImagePolicyRequest(csilRoot)
+}
+
+// csilEncPutImagePolicyResponse builds the canonical CBOR value tree for a PutImagePolicyResponse.
+func csilEncPutImagePolicyResponse(csilV PutImagePolicyResponse) cborValue {
+	csilEntries := make(cborMap, 0, 1)
+	csilEntries = append(csilEntries, cborEntry{cborText("policy"), csilEncImagePolicySummary(csilV.Policy)})
+	return csilEntries
+}
+
+// csilDecPutImagePolicyResponse reconstructs a PutImagePolicyResponse from a decoded CBOR value tree.
+func csilDecPutImagePolicyResponse(csilRoot cborValue) (PutImagePolicyResponse, error) {
+	var csilOut PutImagePolicyResponse
+	{
+		csilField, csilErr := cborRequire(csilRoot, "policy")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (csilDecImagePolicySummary)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Policy = csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodePutImagePolicyResponse encodes a PutImagePolicyResponse to canonical CSIL CBOR bytes.
+func EncodePutImagePolicyResponse(csilV PutImagePolicyResponse) []byte {
+	return cborEncode(csilEncPutImagePolicyResponse(csilV))
+}
+
+// DecodePutImagePolicyResponse decodes canonical CSIL CBOR bytes into a PutImagePolicyResponse.
+func DecodePutImagePolicyResponse(csilData []byte) (PutImagePolicyResponse, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero PutImagePolicyResponse
+		return csilZero, csilErr
+	}
+	return csilDecPutImagePolicyResponse(csilRoot)
+}
+
+// csilEncJobLinkSummary builds the canonical CBOR value tree for a JobLinkSummary.
+func csilEncJobLinkSummary(csilV JobLinkSummary) cborValue {
+	csilEntries := make(cborMap, 0, 2)
+	csilEntries = append(csilEntries, cborEntry{cborText("url"), cborText(csilV.Url)})
+	csilEntries = append(csilEntries, cborEntry{cborText("name"), cborText(csilV.Name)})
+	return csilEntries
+}
+
+// csilDecJobLinkSummary reconstructs a JobLinkSummary from a decoded CBOR value tree.
+func csilDecJobLinkSummary(csilRoot cborValue) (JobLinkSummary, error) {
+	var csilOut JobLinkSummary
+	{
+		csilField, csilErr := cborRequire(csilRoot, "name")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Name = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "url")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Url = csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeJobLinkSummary encodes a JobLinkSummary to canonical CSIL CBOR bytes.
+func EncodeJobLinkSummary(csilV JobLinkSummary) []byte {
+	return cborEncode(csilEncJobLinkSummary(csilV))
+}
+
+// DecodeJobLinkSummary decodes canonical CSIL CBOR bytes into a JobLinkSummary.
+func DecodeJobLinkSummary(csilData []byte) (JobLinkSummary, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero JobLinkSummary
+		return csilZero, csilErr
+	}
+	return csilDecJobLinkSummary(csilRoot)
+}
+
+// csilEncListJobLinksRequest builds the canonical CBOR value tree for a ListJobLinksRequest.
+func csilEncListJobLinksRequest(csilV ListJobLinksRequest) cborValue {
+	csilEntries := make(cborMap, 0, 1)
+	csilEntries = append(csilEntries, cborEntry{cborText("job_id"), cborText(csilV.JobId)})
+	return csilEntries
+}
+
+// csilDecListJobLinksRequest reconstructs a ListJobLinksRequest from a decoded CBOR value tree.
+func csilDecListJobLinksRequest(csilRoot cborValue) (ListJobLinksRequest, error) {
+	var csilOut ListJobLinksRequest
+	{
+		csilField, csilErr := cborRequire(csilRoot, "job_id")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.JobId = csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeListJobLinksRequest encodes a ListJobLinksRequest to canonical CSIL CBOR bytes.
+func EncodeListJobLinksRequest(csilV ListJobLinksRequest) []byte {
+	return cborEncode(csilEncListJobLinksRequest(csilV))
+}
+
+// DecodeListJobLinksRequest decodes canonical CSIL CBOR bytes into a ListJobLinksRequest.
+func DecodeListJobLinksRequest(csilData []byte) (ListJobLinksRequest, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero ListJobLinksRequest
+		return csilZero, csilErr
+	}
+	return csilDecListJobLinksRequest(csilRoot)
+}
+
+// csilEncListJobLinksResponse builds the canonical CBOR value tree for a ListJobLinksResponse.
+func csilEncListJobLinksResponse(csilV ListJobLinksResponse) cborValue {
+	csilEntries := make(cborMap, 0, 1)
+	csilEntries = append(csilEntries, cborEntry{cborText("links"), cborEncArray(csilV.Links, func(csilElem JobLinkSummary) cborValue { return csilEncJobLinkSummary(csilElem) })})
+	return csilEntries
+}
+
+// csilDecListJobLinksResponse reconstructs a ListJobLinksResponse from a decoded CBOR value tree.
+func csilDecListJobLinksResponse(csilRoot cborValue) (ListJobLinksResponse, error) {
+	var csilOut ListJobLinksResponse
+	{
+		csilField, csilErr := cborRequire(csilRoot, "links")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (func(csilV cborValue) ([]JobLinkSummary, error) { return cborDecArray(csilV, csilDecJobLinkSummary) })(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Links = csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeListJobLinksResponse encodes a ListJobLinksResponse to canonical CSIL CBOR bytes.
+func EncodeListJobLinksResponse(csilV ListJobLinksResponse) []byte {
+	return cborEncode(csilEncListJobLinksResponse(csilV))
+}
+
+// DecodeListJobLinksResponse decodes canonical CSIL CBOR bytes into a ListJobLinksResponse.
+func DecodeListJobLinksResponse(csilData []byte) (ListJobLinksResponse, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero ListJobLinksResponse
+		return csilZero, csilErr
+	}
+	return csilDecListJobLinksResponse(csilRoot)
+}
+
+// csilEncJobArtifactSummary builds the canonical CBOR value tree for a JobArtifactSummary.
+func csilEncJobArtifactSummary(csilV JobArtifactSummary) cborValue {
+	csilEntries := make(cborMap, 0, 9)
+	csilEntries = append(csilEntries, cborEntry{cborText("kind"), cborText(csilV.Kind)})
+	csilEntries = append(csilEntries, cborEntry{cborText("path"), cborText(csilV.Path)})
+	csilEntries = append(csilEntries, cborEntry{cborText("sha256"), cborText(csilV.Sha256)})
+	csilEntries = append(csilEntries, cborEntry{cborText("status"), cborText(csilV.Status)})
+	csilEntries = append(csilEntries, cborEntry{cborText("created_at"), cborText(csilV.CreatedAt)})
+	csilEntries = append(csilEntries, cborEntry{cborText("media_type"), cborText(csilV.MediaType)})
+	csilEntries = append(csilEntries, cborEntry{cborText("size_bytes"), cborInt(csilV.SizeBytes)})
+	csilEntries = append(csilEntries, cborEntry{cborText("artifact_id"), cborText(csilV.ArtifactId)})
+	if csilV.StatusReason != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("status_reason"), cborText((*csilV.StatusReason))})
+	}
+	return csilEntries
+}
+
+// csilDecJobArtifactSummary reconstructs a JobArtifactSummary from a decoded CBOR value tree.
+func csilDecJobArtifactSummary(csilRoot cborValue) (JobArtifactSummary, error) {
+	var csilOut JobArtifactSummary
+	{
+		csilField, csilErr := cborRequire(csilRoot, "artifact_id")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.ArtifactId = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "path")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Path = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "kind")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Kind = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "media_type")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.MediaType = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "size_bytes")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsI64)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.SizeBytes = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "sha256")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Sha256 = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "status")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Status = csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "status_reason"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.StatusReason = &csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "created_at")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.CreatedAt = csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeJobArtifactSummary encodes a JobArtifactSummary to canonical CSIL CBOR bytes.
+func EncodeJobArtifactSummary(csilV JobArtifactSummary) []byte {
+	return cborEncode(csilEncJobArtifactSummary(csilV))
+}
+
+// DecodeJobArtifactSummary decodes canonical CSIL CBOR bytes into a JobArtifactSummary.
+func DecodeJobArtifactSummary(csilData []byte) (JobArtifactSummary, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero JobArtifactSummary
+		return csilZero, csilErr
+	}
+	return csilDecJobArtifactSummary(csilRoot)
+}
+
+// csilEncListJobArtifactsRequest builds the canonical CBOR value tree for a ListJobArtifactsRequest.
+func csilEncListJobArtifactsRequest(csilV ListJobArtifactsRequest) cborValue {
+	csilEntries := make(cborMap, 0, 1)
+	csilEntries = append(csilEntries, cborEntry{cborText("job_id"), cborText(csilV.JobId)})
+	return csilEntries
+}
+
+// csilDecListJobArtifactsRequest reconstructs a ListJobArtifactsRequest from a decoded CBOR value tree.
+func csilDecListJobArtifactsRequest(csilRoot cborValue) (ListJobArtifactsRequest, error) {
+	var csilOut ListJobArtifactsRequest
+	{
+		csilField, csilErr := cborRequire(csilRoot, "job_id")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.JobId = csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeListJobArtifactsRequest encodes a ListJobArtifactsRequest to canonical CSIL CBOR bytes.
+func EncodeListJobArtifactsRequest(csilV ListJobArtifactsRequest) []byte {
+	return cborEncode(csilEncListJobArtifactsRequest(csilV))
+}
+
+// DecodeListJobArtifactsRequest decodes canonical CSIL CBOR bytes into a ListJobArtifactsRequest.
+func DecodeListJobArtifactsRequest(csilData []byte) (ListJobArtifactsRequest, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero ListJobArtifactsRequest
+		return csilZero, csilErr
+	}
+	return csilDecListJobArtifactsRequest(csilRoot)
+}
+
+// csilEncListJobArtifactsResponse builds the canonical CBOR value tree for a ListJobArtifactsResponse.
+func csilEncListJobArtifactsResponse(csilV ListJobArtifactsResponse) cborValue {
+	csilEntries := make(cborMap, 0, 1)
+	csilEntries = append(csilEntries, cborEntry{cborText("artifacts"), cborEncArray(csilV.Artifacts, func(csilElem JobArtifactSummary) cborValue { return csilEncJobArtifactSummary(csilElem) })})
+	return csilEntries
+}
+
+// csilDecListJobArtifactsResponse reconstructs a ListJobArtifactsResponse from a decoded CBOR value tree.
+func csilDecListJobArtifactsResponse(csilRoot cborValue) (ListJobArtifactsResponse, error) {
+	var csilOut ListJobArtifactsResponse
+	{
+		csilField, csilErr := cborRequire(csilRoot, "artifacts")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (func(csilV cborValue) ([]JobArtifactSummary, error) {
+			return cborDecArray(csilV, csilDecJobArtifactSummary)
+		})(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Artifacts = csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeListJobArtifactsResponse encodes a ListJobArtifactsResponse to canonical CSIL CBOR bytes.
+func EncodeListJobArtifactsResponse(csilV ListJobArtifactsResponse) []byte {
+	return cborEncode(csilEncListJobArtifactsResponse(csilV))
+}
+
+// DecodeListJobArtifactsResponse decodes canonical CSIL CBOR bytes into a ListJobArtifactsResponse.
+func DecodeListJobArtifactsResponse(csilData []byte) (ListJobArtifactsResponse, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero ListJobArtifactsResponse
+		return csilZero, csilErr
+	}
+	return csilDecListJobArtifactsResponse(csilRoot)
+}
+
+// csilEncReadJobArtifactRequest builds the canonical CBOR value tree for a ReadJobArtifactRequest.
+func csilEncReadJobArtifactRequest(csilV ReadJobArtifactRequest) cborValue {
+	csilEntries := make(cborMap, 0, 4)
+	csilEntries = append(csilEntries, cborEntry{cborText("job_id"), cborText(csilV.JobId)})
+	if csilV.Length != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("length"), cborInt((*csilV.Length))})
+	}
+	csilEntries = append(csilEntries, cborEntry{cborText("offset"), cborInt(csilV.Offset)})
+	csilEntries = append(csilEntries, cborEntry{cborText("artifact_id"), cborText(csilV.ArtifactId)})
+	return csilEntries
+}
+
+// csilDecReadJobArtifactRequest reconstructs a ReadJobArtifactRequest from a decoded CBOR value tree.
+func csilDecReadJobArtifactRequest(csilRoot cborValue) (ReadJobArtifactRequest, error) {
+	var csilOut ReadJobArtifactRequest
+	{
+		csilField, csilErr := cborRequire(csilRoot, "job_id")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.JobId = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "artifact_id")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.ArtifactId = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "offset")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsI64)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Offset = csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "length"); csilOk {
+		csilVal, csilErr := (cborAsI64)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Length = &csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeReadJobArtifactRequest encodes a ReadJobArtifactRequest to canonical CSIL CBOR bytes.
+func EncodeReadJobArtifactRequest(csilV ReadJobArtifactRequest) []byte {
+	return cborEncode(csilEncReadJobArtifactRequest(csilV))
+}
+
+// DecodeReadJobArtifactRequest decodes canonical CSIL CBOR bytes into a ReadJobArtifactRequest.
+func DecodeReadJobArtifactRequest(csilData []byte) (ReadJobArtifactRequest, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero ReadJobArtifactRequest
+		return csilZero, csilErr
+	}
+	return csilDecReadJobArtifactRequest(csilRoot)
+}
+
+// csilEncReadJobArtifactResponse builds the canonical CBOR value tree for a ReadJobArtifactResponse.
+func csilEncReadJobArtifactResponse(csilV ReadJobArtifactResponse) cborValue {
+	csilEntries := make(cborMap, 0, 4)
+	csilEntries = append(csilEntries, cborEntry{cborText("eof"), cborBool(csilV.Eof)})
+	csilEntries = append(csilEntries, cborEntry{cborText("data"), cborBytes(csilV.Data)})
+	csilEntries = append(csilEntries, cborEntry{cborText("sha256"), cborText(csilV.Sha256)})
+	csilEntries = append(csilEntries, cborEntry{cborText("size_bytes"), cborInt(csilV.SizeBytes)})
+	return csilEntries
+}
+
+// csilDecReadJobArtifactResponse reconstructs a ReadJobArtifactResponse from a decoded CBOR value tree.
+func csilDecReadJobArtifactResponse(csilRoot cborValue) (ReadJobArtifactResponse, error) {
+	var csilOut ReadJobArtifactResponse
+	{
+		csilField, csilErr := cborRequire(csilRoot, "data")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsBytes)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Data = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "size_bytes")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsI64)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.SizeBytes = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "sha256")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Sha256 = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "eof")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsBool)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Eof = csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeReadJobArtifactResponse encodes a ReadJobArtifactResponse to canonical CSIL CBOR bytes.
+func EncodeReadJobArtifactResponse(csilV ReadJobArtifactResponse) []byte {
+	return cborEncode(csilEncReadJobArtifactResponse(csilV))
+}
+
+// DecodeReadJobArtifactResponse decodes canonical CSIL CBOR bytes into a ReadJobArtifactResponse.
+func DecodeReadJobArtifactResponse(csilData []byte) (ReadJobArtifactResponse, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero ReadJobArtifactResponse
+		return csilZero, csilErr
+	}
+	return csilDecReadJobArtifactResponse(csilRoot)
+}
+
+// csilEncJobTestSummaryView builds the canonical CBOR value tree for a JobTestSummaryView.
+func csilEncJobTestSummaryView(csilV JobTestSummaryView) cborValue {
+	csilEntries := make(cborMap, 0, 12)
+	csilEntries = append(csilEntries, cborEntry{cborText("flaky"), cborInt(csilV.Flaky)})
+	csilEntries = append(csilEntries, cborEntry{cborText("total"), cborInt(csilV.Total)})
+	csilEntries = append(csilEntries, cborEntry{cborText("failed"), cborInt(csilV.Failed)})
+	csilEntries = append(csilEntries, cborEntry{cborText("passed"), cborInt(csilV.Passed)})
+	csilEntries = append(csilEntries, cborEntry{cborText("errored"), cborInt(csilV.Errored)})
+	csilEntries = append(csilEntries, cborEntry{cborText("reports"), cborInt(csilV.Reports)})
+	csilEntries = append(csilEntries, cborEntry{cborText("skipped"), cborInt(csilV.Skipped)})
+	csilEntries = append(csilEntries, cborEntry{cborText("truncated"), cborBool(csilV.Truncated)})
+	csilEntries = append(csilEntries, cborEntry{cborText("parse_errors"), cborEncArray(csilV.ParseErrors, func(csilElem string) cborValue { return cborText(csilElem) })})
+	csilEntries = append(csilEntries, cborEntry{cborText("quarantine_policy"), cborText(csilV.QuarantinePolicy)})
+	csilEntries = append(csilEntries, cborEntry{cborText("quarantine_override"), cborBool(csilV.QuarantineOverride)})
+	csilEntries = append(csilEntries, cborEntry{cborText("quarantined_failures"), cborInt(csilV.QuarantinedFailures)})
+	return csilEntries
+}
+
+// csilDecJobTestSummaryView reconstructs a JobTestSummaryView from a decoded CBOR value tree.
+func csilDecJobTestSummaryView(csilRoot cborValue) (JobTestSummaryView, error) {
+	var csilOut JobTestSummaryView
+	{
+		csilField, csilErr := cborRequire(csilRoot, "reports")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsI64)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Reports = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "total")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsI64)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Total = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "passed")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsI64)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Passed = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "failed")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsI64)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Failed = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "errored")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsI64)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Errored = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "skipped")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsI64)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Skipped = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "quarantined_failures")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsI64)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.QuarantinedFailures = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "flaky")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsI64)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Flaky = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "truncated")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsBool)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Truncated = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "parse_errors")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (func(csilV cborValue) ([]string, error) { return cborDecArray(csilV, cborAsText) })(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.ParseErrors = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "quarantine_policy")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.QuarantinePolicy = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "quarantine_override")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsBool)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.QuarantineOverride = csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeJobTestSummaryView encodes a JobTestSummaryView to canonical CSIL CBOR bytes.
+func EncodeJobTestSummaryView(csilV JobTestSummaryView) []byte {
+	return cborEncode(csilEncJobTestSummaryView(csilV))
+}
+
+// DecodeJobTestSummaryView decodes canonical CSIL CBOR bytes into a JobTestSummaryView.
+func DecodeJobTestSummaryView(csilData []byte) (JobTestSummaryView, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero JobTestSummaryView
+		return csilZero, csilErr
+	}
+	return csilDecJobTestSummaryView(csilRoot)
+}
+
+// csilEncTestResultView builds the canonical CBOR value tree for a TestResultView.
+func csilEncTestResultView(csilV TestResultView) cborValue {
+	csilEntries := make(cborMap, 0, 11)
+	csilEntries = append(csilEntries, cborEntry{cborText("file"), cborText(csilV.File)})
+	if csilV.Line != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("line"), cborInt((*csilV.Line))})
+	}
+	csilEntries = append(csilEntries, cborEntry{cborText("name"), cborText(csilV.Name)})
+	csilEntries = append(csilEntries, cborEntry{cborText("flaky"), cborBool(csilV.Flaky)})
+	csilEntries = append(csilEntries, cborEntry{cborText("suite"), cborText(csilV.Suite)})
+	csilEntries = append(csilEntries, cborEntry{cborText("status"), cborText(csilV.Status)})
+	csilEntries = append(csilEntries, cborEntry{cborText("message"), cborText(csilV.Message)})
+	csilEntries = append(csilEntries, cborEntry{cborText("test_id"), cborText(csilV.TestId)})
+	csilEntries = append(csilEntries, cborEntry{cborText("classname"), cborText(csilV.Classname)})
+	csilEntries = append(csilEntries, cborEntry{cborText("duration_ms"), cborInt(csilV.DurationMs)})
+	csilEntries = append(csilEntries, cborEntry{cborText("quarantined"), cborBool(csilV.Quarantined)})
+	return csilEntries
+}
+
+// csilDecTestResultView reconstructs a TestResultView from a decoded CBOR value tree.
+func csilDecTestResultView(csilRoot cborValue) (TestResultView, error) {
+	var csilOut TestResultView
+	{
+		csilField, csilErr := cborRequire(csilRoot, "test_id")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.TestId = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "suite")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Suite = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "classname")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Classname = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "name")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Name = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "status")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Status = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "duration_ms")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsI64)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.DurationMs = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "message")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Message = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "file")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.File = csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "line"); csilOk {
+		csilVal, csilErr := (cborAsI64)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Line = &csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "quarantined")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsBool)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Quarantined = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "flaky")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsBool)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Flaky = csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeTestResultView encodes a TestResultView to canonical CSIL CBOR bytes.
+func EncodeTestResultView(csilV TestResultView) []byte {
+	return cborEncode(csilEncTestResultView(csilV))
+}
+
+// DecodeTestResultView decodes canonical CSIL CBOR bytes into a TestResultView.
+func DecodeTestResultView(csilData []byte) (TestResultView, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero TestResultView
+		return csilZero, csilErr
+	}
+	return csilDecTestResultView(csilRoot)
+}
+
+// csilEncGetJobTestResultsRequest builds the canonical CBOR value tree for a GetJobTestResultsRequest.
+func csilEncGetJobTestResultsRequest(csilV GetJobTestResultsRequest) cborValue {
+	csilEntries := make(cborMap, 0, 3)
+	if csilV.Limit != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("limit"), cborInt((*csilV.Limit))})
+	}
+	csilEntries = append(csilEntries, cborEntry{cborText("job_id"), cborText(csilV.JobId)})
+	if csilV.FailedOnly != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("failed_only"), cborBool((*csilV.FailedOnly))})
+	}
+	return csilEntries
+}
+
+// csilDecGetJobTestResultsRequest reconstructs a GetJobTestResultsRequest from a decoded CBOR value tree.
+func csilDecGetJobTestResultsRequest(csilRoot cborValue) (GetJobTestResultsRequest, error) {
+	var csilOut GetJobTestResultsRequest
+	{
+		csilField, csilErr := cborRequire(csilRoot, "job_id")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.JobId = csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "failed_only"); csilOk {
+		csilVal, csilErr := (cborAsBool)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.FailedOnly = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "limit"); csilOk {
+		csilVal, csilErr := (cborAsI64)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Limit = &csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeGetJobTestResultsRequest encodes a GetJobTestResultsRequest to canonical CSIL CBOR bytes.
+func EncodeGetJobTestResultsRequest(csilV GetJobTestResultsRequest) []byte {
+	return cborEncode(csilEncGetJobTestResultsRequest(csilV))
+}
+
+// DecodeGetJobTestResultsRequest decodes canonical CSIL CBOR bytes into a GetJobTestResultsRequest.
+func DecodeGetJobTestResultsRequest(csilData []byte) (GetJobTestResultsRequest, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero GetJobTestResultsRequest
+		return csilZero, csilErr
+	}
+	return csilDecGetJobTestResultsRequest(csilRoot)
+}
+
+// csilEncGetJobTestResultsResponse builds the canonical CBOR value tree for a GetJobTestResultsResponse.
+func csilEncGetJobTestResultsResponse(csilV GetJobTestResultsResponse) cborValue {
+	csilEntries := make(cborMap, 0, 4)
+	csilEntries = append(csilEntries, cborEntry{cborText("results"), cborEncArray(csilV.Results, func(csilElem TestResultView) cborValue { return csilEncTestResultView(csilElem) })})
+	if csilV.Summary != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("summary"), csilEncJobTestSummaryView((*csilV.Summary))})
+	}
+	if csilV.ProjectId != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("project_id"), cborText((*csilV.ProjectId))})
+	}
+	csilEntries = append(csilEntries, cborEntry{cborText("can_quarantine"), cborBool(csilV.CanQuarantine)})
+	return csilEntries
+}
+
+// csilDecGetJobTestResultsResponse reconstructs a GetJobTestResultsResponse from a decoded CBOR value tree.
+func csilDecGetJobTestResultsResponse(csilRoot cborValue) (GetJobTestResultsResponse, error) {
+	var csilOut GetJobTestResultsResponse
+	if csilField, csilOk := cborMapGet(csilRoot, "summary"); csilOk {
+		csilVal, csilErr := (csilDecJobTestSummaryView)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Summary = &csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "results")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (func(csilV cborValue) ([]TestResultView, error) { return cborDecArray(csilV, csilDecTestResultView) })(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Results = csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "project_id"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.ProjectId = &csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "can_quarantine")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsBool)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.CanQuarantine = csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeGetJobTestResultsResponse encodes a GetJobTestResultsResponse to canonical CSIL CBOR bytes.
+func EncodeGetJobTestResultsResponse(csilV GetJobTestResultsResponse) []byte {
+	return cborEncode(csilEncGetJobTestResultsResponse(csilV))
+}
+
+// DecodeGetJobTestResultsResponse decodes canonical CSIL CBOR bytes into a GetJobTestResultsResponse.
+func DecodeGetJobTestResultsResponse(csilData []byte) (GetJobTestResultsResponse, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero GetJobTestResultsResponse
+		return csilZero, csilErr
+	}
+	return csilDecGetJobTestResultsResponse(csilRoot)
+}
+
+// csilEncFlakyTestView builds the canonical CBOR value tree for a FlakyTestView.
+func csilEncFlakyTestView(csilV FlakyTestView) cborValue {
+	csilEntries := make(cborMap, 0, 8)
+	csilEntries = append(csilEntries, cborEntry{cborText("name"), cborText(csilV.Name)})
+	csilEntries = append(csilEntries, cborEntry{cborText("suite"), cborText(csilV.Suite)})
+	csilEntries = append(csilEntries, cborEntry{cborText("test_id"), cborText(csilV.TestId)})
+	csilEntries = append(csilEntries, cborEntry{cborText("classname"), cborText(csilV.Classname)})
+	csilEntries = append(csilEntries, cborEntry{cborText("total_runs"), cborInt(csilV.TotalRuns)})
+	csilEntries = append(csilEntries, cborEntry{cborText("flaky_count"), cborInt(csilV.FlakyCount)})
+	if csilV.LastFlakyAt != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("last_flaky_at"), cborText((*csilV.LastFlakyAt))})
+	}
+	if csilV.LastFlakySha != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("last_flaky_sha"), cborText((*csilV.LastFlakySha))})
+	}
+	return csilEntries
+}
+
+// csilDecFlakyTestView reconstructs a FlakyTestView from a decoded CBOR value tree.
+func csilDecFlakyTestView(csilRoot cborValue) (FlakyTestView, error) {
+	var csilOut FlakyTestView
+	{
+		csilField, csilErr := cborRequire(csilRoot, "test_id")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.TestId = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "suite")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Suite = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "classname")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Classname = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "name")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Name = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "flaky_count")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsI64)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.FlakyCount = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "total_runs")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsI64)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.TotalRuns = csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "last_flaky_at"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.LastFlakyAt = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "last_flaky_sha"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.LastFlakySha = &csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeFlakyTestView encodes a FlakyTestView to canonical CSIL CBOR bytes.
+func EncodeFlakyTestView(csilV FlakyTestView) []byte {
+	return cborEncode(csilEncFlakyTestView(csilV))
+}
+
+// DecodeFlakyTestView decodes canonical CSIL CBOR bytes into a FlakyTestView.
+func DecodeFlakyTestView(csilData []byte) (FlakyTestView, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero FlakyTestView
+		return csilZero, csilErr
+	}
+	return csilDecFlakyTestView(csilRoot)
+}
+
+// csilEncListFlakyTestsRequest builds the canonical CBOR value tree for a ListFlakyTestsRequest.
+func csilEncListFlakyTestsRequest(csilV ListFlakyTestsRequest) cborValue {
+	csilEntries := make(cborMap, 0, 2)
+	if csilV.Days != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("days"), cborInt((*csilV.Days))})
+	}
+	csilEntries = append(csilEntries, cborEntry{cborText("project_id"), cborText(csilV.ProjectId)})
+	return csilEntries
+}
+
+// csilDecListFlakyTestsRequest reconstructs a ListFlakyTestsRequest from a decoded CBOR value tree.
+func csilDecListFlakyTestsRequest(csilRoot cborValue) (ListFlakyTestsRequest, error) {
+	var csilOut ListFlakyTestsRequest
+	{
+		csilField, csilErr := cborRequire(csilRoot, "project_id")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.ProjectId = csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "days"); csilOk {
+		csilVal, csilErr := (cborAsI64)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Days = &csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeListFlakyTestsRequest encodes a ListFlakyTestsRequest to canonical CSIL CBOR bytes.
+func EncodeListFlakyTestsRequest(csilV ListFlakyTestsRequest) []byte {
+	return cborEncode(csilEncListFlakyTestsRequest(csilV))
+}
+
+// DecodeListFlakyTestsRequest decodes canonical CSIL CBOR bytes into a ListFlakyTestsRequest.
+func DecodeListFlakyTestsRequest(csilData []byte) (ListFlakyTestsRequest, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero ListFlakyTestsRequest
+		return csilZero, csilErr
+	}
+	return csilDecListFlakyTestsRequest(csilRoot)
+}
+
+// csilEncListFlakyTestsResponse builds the canonical CBOR value tree for a ListFlakyTestsResponse.
+func csilEncListFlakyTestsResponse(csilV ListFlakyTestsResponse) cborValue {
+	csilEntries := make(cborMap, 0, 2)
+	csilEntries = append(csilEntries, cborEntry{cborText("tests"), cborEncArray(csilV.Tests, func(csilElem FlakyTestView) cborValue { return csilEncFlakyTestView(csilElem) })})
+	csilEntries = append(csilEntries, cborEntry{cborText("window_days"), cborInt(csilV.WindowDays)})
+	return csilEntries
+}
+
+// csilDecListFlakyTestsResponse reconstructs a ListFlakyTestsResponse from a decoded CBOR value tree.
+func csilDecListFlakyTestsResponse(csilRoot cborValue) (ListFlakyTestsResponse, error) {
+	var csilOut ListFlakyTestsResponse
+	{
+		csilField, csilErr := cborRequire(csilRoot, "tests")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (func(csilV cborValue) ([]FlakyTestView, error) { return cborDecArray(csilV, csilDecFlakyTestView) })(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Tests = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "window_days")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsI64)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.WindowDays = csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeListFlakyTestsResponse encodes a ListFlakyTestsResponse to canonical CSIL CBOR bytes.
+func EncodeListFlakyTestsResponse(csilV ListFlakyTestsResponse) []byte {
+	return cborEncode(csilEncListFlakyTestsResponse(csilV))
+}
+
+// DecodeListFlakyTestsResponse decodes canonical CSIL CBOR bytes into a ListFlakyTestsResponse.
+func DecodeListFlakyTestsResponse(csilData []byte) (ListFlakyTestsResponse, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero ListFlakyTestsResponse
+		return csilZero, csilErr
+	}
+	return csilDecListFlakyTestsResponse(csilRoot)
+}
+
+// csilEncTestQuarantineView builds the canonical CBOR value tree for a TestQuarantineView.
+func csilEncTestQuarantineView(csilV TestQuarantineView) cborValue {
+	csilEntries := make(cborMap, 0, 12)
+	csilEntries = append(csilEntries, cborEntry{cborText("name"), cborText(csilV.Name)})
+	csilEntries = append(csilEntries, cborEntry{cborText("suite"), cborText(csilV.Suite)})
+	csilEntries = append(csilEntries, cborEntry{cborText("reason"), cborText(csilV.Reason)})
+	csilEntries = append(csilEntries, cborEntry{cborText("test_id"), cborText(csilV.TestId)})
+	csilEntries = append(csilEntries, cborEntry{cborText("classname"), cborText(csilV.Classname)})
+	csilEntries = append(csilEntries, cborEntry{cborText("created_at"), cborText(csilV.CreatedAt)})
+	if csilV.CreatedBy != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("created_by"), cborText((*csilV.CreatedBy))})
+	}
+	csilEntries = append(csilEntries, cborEntry{cborText("expires_at"), cborText(csilV.ExpiresAt)})
+	if csilV.RemovedAt != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("removed_at"), cborText((*csilV.RemovedAt))})
+	}
+	if csilV.RemovedBy != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("removed_by"), cborText((*csilV.RemovedBy))})
+	}
+	csilEntries = append(csilEntries, cborEntry{cborText("quarantine_id"), cborText(csilV.QuarantineId)})
+	csilEntries = append(csilEntries, cborEntry{cborText("owner_principal_id"), cborText(csilV.OwnerPrincipalId)})
+	return csilEntries
+}
+
+// csilDecTestQuarantineView reconstructs a TestQuarantineView from a decoded CBOR value tree.
+func csilDecTestQuarantineView(csilRoot cborValue) (TestQuarantineView, error) {
+	var csilOut TestQuarantineView
+	{
+		csilField, csilErr := cborRequire(csilRoot, "quarantine_id")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.QuarantineId = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "test_id")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.TestId = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "suite")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Suite = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "classname")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Classname = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "name")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Name = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "owner_principal_id")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.OwnerPrincipalId = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "reason")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Reason = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "expires_at")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.ExpiresAt = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "created_at")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.CreatedAt = csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "created_by"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.CreatedBy = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "removed_at"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.RemovedAt = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "removed_by"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.RemovedBy = &csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeTestQuarantineView encodes a TestQuarantineView to canonical CSIL CBOR bytes.
+func EncodeTestQuarantineView(csilV TestQuarantineView) []byte {
+	return cborEncode(csilEncTestQuarantineView(csilV))
+}
+
+// DecodeTestQuarantineView decodes canonical CSIL CBOR bytes into a TestQuarantineView.
+func DecodeTestQuarantineView(csilData []byte) (TestQuarantineView, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero TestQuarantineView
+		return csilZero, csilErr
+	}
+	return csilDecTestQuarantineView(csilRoot)
+}
+
+// csilEncListTestQuarantinesRequest builds the canonical CBOR value tree for a ListTestQuarantinesRequest.
+func csilEncListTestQuarantinesRequest(csilV ListTestQuarantinesRequest) cborValue {
+	csilEntries := make(cborMap, 0, 2)
+	csilEntries = append(csilEntries, cborEntry{cborText("project_id"), cborText(csilV.ProjectId)})
+	if csilV.IncludeEnded != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("include_ended"), cborBool((*csilV.IncludeEnded))})
+	}
+	return csilEntries
+}
+
+// csilDecListTestQuarantinesRequest reconstructs a ListTestQuarantinesRequest from a decoded CBOR value tree.
+func csilDecListTestQuarantinesRequest(csilRoot cborValue) (ListTestQuarantinesRequest, error) {
+	var csilOut ListTestQuarantinesRequest
+	{
+		csilField, csilErr := cborRequire(csilRoot, "project_id")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.ProjectId = csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "include_ended"); csilOk {
+		csilVal, csilErr := (cborAsBool)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.IncludeEnded = &csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeListTestQuarantinesRequest encodes a ListTestQuarantinesRequest to canonical CSIL CBOR bytes.
+func EncodeListTestQuarantinesRequest(csilV ListTestQuarantinesRequest) []byte {
+	return cborEncode(csilEncListTestQuarantinesRequest(csilV))
+}
+
+// DecodeListTestQuarantinesRequest decodes canonical CSIL CBOR bytes into a ListTestQuarantinesRequest.
+func DecodeListTestQuarantinesRequest(csilData []byte) (ListTestQuarantinesRequest, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero ListTestQuarantinesRequest
+		return csilZero, csilErr
+	}
+	return csilDecListTestQuarantinesRequest(csilRoot)
+}
+
+// csilEncListTestQuarantinesResponse builds the canonical CBOR value tree for a ListTestQuarantinesResponse.
+func csilEncListTestQuarantinesResponse(csilV ListTestQuarantinesResponse) cborValue {
+	csilEntries := make(cborMap, 0, 2)
+	csilEntries = append(csilEntries, cborEntry{cborText("can_manage"), cborBool(csilV.CanManage)})
+	csilEntries = append(csilEntries, cborEntry{cborText("quarantines"), cborEncArray(csilV.Quarantines, func(csilElem TestQuarantineView) cborValue { return csilEncTestQuarantineView(csilElem) })})
+	return csilEntries
+}
+
+// csilDecListTestQuarantinesResponse reconstructs a ListTestQuarantinesResponse from a decoded CBOR value tree.
+func csilDecListTestQuarantinesResponse(csilRoot cborValue) (ListTestQuarantinesResponse, error) {
+	var csilOut ListTestQuarantinesResponse
+	{
+		csilField, csilErr := cborRequire(csilRoot, "quarantines")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (func(csilV cborValue) ([]TestQuarantineView, error) {
+			return cborDecArray(csilV, csilDecTestQuarantineView)
+		})(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Quarantines = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "can_manage")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsBool)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.CanManage = csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeListTestQuarantinesResponse encodes a ListTestQuarantinesResponse to canonical CSIL CBOR bytes.
+func EncodeListTestQuarantinesResponse(csilV ListTestQuarantinesResponse) []byte {
+	return cborEncode(csilEncListTestQuarantinesResponse(csilV))
+}
+
+// DecodeListTestQuarantinesResponse decodes canonical CSIL CBOR bytes into a ListTestQuarantinesResponse.
+func DecodeListTestQuarantinesResponse(csilData []byte) (ListTestQuarantinesResponse, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero ListTestQuarantinesResponse
+		return csilZero, csilErr
+	}
+	return csilDecListTestQuarantinesResponse(csilRoot)
+}
+
+// csilEncQuarantineTestRequest builds the canonical CBOR value tree for a QuarantineTestRequest.
+func csilEncQuarantineTestRequest(csilV QuarantineTestRequest) cborValue {
+	csilEntries := make(cborMap, 0, 9)
+	if csilV.Name != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("name"), cborText((*csilV.Name))})
+	}
+	if csilV.Suite != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("suite"), cborText((*csilV.Suite))})
+	}
+	csilEntries = append(csilEntries, cborEntry{cborText("until"), cborText(csilV.Until)})
+	csilEntries = append(csilEntries, cborEntry{cborText("reason"), cborText(csilV.Reason)})
+	if csilV.TestId != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("test_id"), cborText((*csilV.TestId))})
+	}
+	if csilV.Classname != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("classname"), cborText((*csilV.Classname))})
+	}
+	csilEntries = append(csilEntries, cborEntry{cborText("project_id"), cborText(csilV.ProjectId)})
+	if csilV.OwnerPrincipalId != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("owner_principal_id"), cborText((*csilV.OwnerPrincipalId))})
+	}
+	if csilV.WorkflowSecurityId != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("workflow_security_id"), cborText((*csilV.WorkflowSecurityId))})
+	}
+	return csilEntries
+}
+
+// csilDecQuarantineTestRequest reconstructs a QuarantineTestRequest from a decoded CBOR value tree.
+func csilDecQuarantineTestRequest(csilRoot cborValue) (QuarantineTestRequest, error) {
+	var csilOut QuarantineTestRequest
+	{
+		csilField, csilErr := cborRequire(csilRoot, "project_id")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.ProjectId = csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "test_id"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.TestId = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "suite"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Suite = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "classname"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Classname = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "name"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Name = &csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "reason")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Reason = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "until")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Until = csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "owner_principal_id"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.OwnerPrincipalId = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "workflow_security_id"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.WorkflowSecurityId = &csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeQuarantineTestRequest encodes a QuarantineTestRequest to canonical CSIL CBOR bytes.
+func EncodeQuarantineTestRequest(csilV QuarantineTestRequest) []byte {
+	return cborEncode(csilEncQuarantineTestRequest(csilV))
+}
+
+// DecodeQuarantineTestRequest decodes canonical CSIL CBOR bytes into a QuarantineTestRequest.
+func DecodeQuarantineTestRequest(csilData []byte) (QuarantineTestRequest, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero QuarantineTestRequest
+		return csilZero, csilErr
+	}
+	return csilDecQuarantineTestRequest(csilRoot)
+}
+
+// csilEncQuarantineTestResponse builds the canonical CBOR value tree for a QuarantineTestResponse.
+func csilEncQuarantineTestResponse(csilV QuarantineTestResponse) cborValue {
+	csilEntries := make(cborMap, 0, 1)
+	csilEntries = append(csilEntries, cborEntry{cborText("quarantine"), csilEncTestQuarantineView(csilV.Quarantine)})
+	return csilEntries
+}
+
+// csilDecQuarantineTestResponse reconstructs a QuarantineTestResponse from a decoded CBOR value tree.
+func csilDecQuarantineTestResponse(csilRoot cborValue) (QuarantineTestResponse, error) {
+	var csilOut QuarantineTestResponse
+	{
+		csilField, csilErr := cborRequire(csilRoot, "quarantine")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (csilDecTestQuarantineView)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Quarantine = csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeQuarantineTestResponse encodes a QuarantineTestResponse to canonical CSIL CBOR bytes.
+func EncodeQuarantineTestResponse(csilV QuarantineTestResponse) []byte {
+	return cborEncode(csilEncQuarantineTestResponse(csilV))
+}
+
+// DecodeQuarantineTestResponse decodes canonical CSIL CBOR bytes into a QuarantineTestResponse.
+func DecodeQuarantineTestResponse(csilData []byte) (QuarantineTestResponse, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero QuarantineTestResponse
+		return csilZero, csilErr
+	}
+	return csilDecQuarantineTestResponse(csilRoot)
+}
+
+// csilEncUnquarantineTestRequest builds the canonical CBOR value tree for a UnquarantineTestRequest.
+func csilEncUnquarantineTestRequest(csilV UnquarantineTestRequest) cborValue {
+	csilEntries := make(cborMap, 0, 3)
+	csilEntries = append(csilEntries, cborEntry{cborText("project_id"), cborText(csilV.ProjectId)})
+	csilEntries = append(csilEntries, cborEntry{cborText("quarantine_id"), cborText(csilV.QuarantineId)})
+	if csilV.WorkflowSecurityId != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("workflow_security_id"), cborText((*csilV.WorkflowSecurityId))})
+	}
+	return csilEntries
+}
+
+// csilDecUnquarantineTestRequest reconstructs a UnquarantineTestRequest from a decoded CBOR value tree.
+func csilDecUnquarantineTestRequest(csilRoot cborValue) (UnquarantineTestRequest, error) {
+	var csilOut UnquarantineTestRequest
+	{
+		csilField, csilErr := cborRequire(csilRoot, "project_id")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.ProjectId = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "quarantine_id")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.QuarantineId = csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "workflow_security_id"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.WorkflowSecurityId = &csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeUnquarantineTestRequest encodes a UnquarantineTestRequest to canonical CSIL CBOR bytes.
+func EncodeUnquarantineTestRequest(csilV UnquarantineTestRequest) []byte {
+	return cborEncode(csilEncUnquarantineTestRequest(csilV))
+}
+
+// DecodeUnquarantineTestRequest decodes canonical CSIL CBOR bytes into a UnquarantineTestRequest.
+func DecodeUnquarantineTestRequest(csilData []byte) (UnquarantineTestRequest, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero UnquarantineTestRequest
+		return csilZero, csilErr
+	}
+	return csilDecUnquarantineTestRequest(csilRoot)
+}
+
+// csilEncUnquarantineTestResponse builds the canonical CBOR value tree for a UnquarantineTestResponse.
+func csilEncUnquarantineTestResponse(csilV UnquarantineTestResponse) cborValue {
+	csilEntries := make(cborMap, 0, 1)
+	csilEntries = append(csilEntries, cborEntry{cborText("done"), cborBool(csilV.Done)})
+	return csilEntries
+}
+
+// csilDecUnquarantineTestResponse reconstructs a UnquarantineTestResponse from a decoded CBOR value tree.
+func csilDecUnquarantineTestResponse(csilRoot cborValue) (UnquarantineTestResponse, error) {
+	var csilOut UnquarantineTestResponse
+	{
+		csilField, csilErr := cborRequire(csilRoot, "done")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsBool)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Done = csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeUnquarantineTestResponse encodes a UnquarantineTestResponse to canonical CSIL CBOR bytes.
+func EncodeUnquarantineTestResponse(csilV UnquarantineTestResponse) []byte {
+	return cborEncode(csilEncUnquarantineTestResponse(csilV))
+}
+
+// DecodeUnquarantineTestResponse decodes canonical CSIL CBOR bytes into a UnquarantineTestResponse.
+func DecodeUnquarantineTestResponse(csilData []byte) (UnquarantineTestResponse, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero UnquarantineTestResponse
+		return csilZero, csilErr
+	}
+	return csilDecUnquarantineTestResponse(csilRoot)
+}
+
+// csilEncGetJobProvenanceRequest builds the canonical CBOR value tree for a GetJobProvenanceRequest.
+func csilEncGetJobProvenanceRequest(csilV GetJobProvenanceRequest) cborValue {
+	csilEntries := make(cborMap, 0, 1)
+	csilEntries = append(csilEntries, cborEntry{cborText("job_id"), cborText(csilV.JobId)})
+	return csilEntries
+}
+
+// csilDecGetJobProvenanceRequest reconstructs a GetJobProvenanceRequest from a decoded CBOR value tree.
+func csilDecGetJobProvenanceRequest(csilRoot cborValue) (GetJobProvenanceRequest, error) {
+	var csilOut GetJobProvenanceRequest
+	{
+		csilField, csilErr := cborRequire(csilRoot, "job_id")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.JobId = csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeGetJobProvenanceRequest encodes a GetJobProvenanceRequest to canonical CSIL CBOR bytes.
+func EncodeGetJobProvenanceRequest(csilV GetJobProvenanceRequest) []byte {
+	return cborEncode(csilEncGetJobProvenanceRequest(csilV))
+}
+
+// DecodeGetJobProvenanceRequest decodes canonical CSIL CBOR bytes into a GetJobProvenanceRequest.
+func DecodeGetJobProvenanceRequest(csilData []byte) (GetJobProvenanceRequest, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero GetJobProvenanceRequest
+		return csilZero, csilErr
+	}
+	return csilDecGetJobProvenanceRequest(csilRoot)
+}
+
+// csilEncGetJobProvenanceResponse builds the canonical CBOR value tree for a GetJobProvenanceResponse.
+func csilEncGetJobProvenanceResponse(csilV GetJobProvenanceResponse) cborValue {
+	csilEntries := make(cborMap, 0, 6)
+	if csilV.Error != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("error"), cborText((*csilV.Error))})
+	}
+	if csilV.KeyId != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("key_id"), cborText((*csilV.KeyId))})
+	}
+	csilEntries = append(csilEntries, cborEntry{cborText("present"), cborBool(csilV.Present)})
+	csilEntries = append(csilEntries, cborEntry{cborText("verified"), cborBool(csilV.Verified)})
+	if csilV.EnvelopeJson != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("envelope_json"), cborText((*csilV.EnvelopeJson))})
+	}
+	if csilV.StatementJson != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("statement_json"), cborText((*csilV.StatementJson))})
+	}
+	return csilEntries
+}
+
+// csilDecGetJobProvenanceResponse reconstructs a GetJobProvenanceResponse from a decoded CBOR value tree.
+func csilDecGetJobProvenanceResponse(csilRoot cborValue) (GetJobProvenanceResponse, error) {
+	var csilOut GetJobProvenanceResponse
+	{
+		csilField, csilErr := cborRequire(csilRoot, "present")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsBool)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Present = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "verified")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsBool)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Verified = csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "key_id"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.KeyId = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "envelope_json"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.EnvelopeJson = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "statement_json"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.StatementJson = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "error"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Error = &csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeGetJobProvenanceResponse encodes a GetJobProvenanceResponse to canonical CSIL CBOR bytes.
+func EncodeGetJobProvenanceResponse(csilV GetJobProvenanceResponse) []byte {
+	return cborEncode(csilEncGetJobProvenanceResponse(csilV))
+}
+
+// DecodeGetJobProvenanceResponse decodes canonical CSIL CBOR bytes into a GetJobProvenanceResponse.
+func DecodeGetJobProvenanceResponse(csilData []byte) (GetJobProvenanceResponse, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero GetJobProvenanceResponse
+		return csilZero, csilErr
+	}
+	return csilDecGetJobProvenanceResponse(csilRoot)
+}
+
+// csilEncDiagnosisLinkEntry builds the canonical CBOR value tree for a DiagnosisLinkEntry.
+func csilEncDiagnosisLinkEntry(csilV DiagnosisLinkEntry) cborValue {
+	csilEntries := make(cborMap, 0, 2)
+	csilEntries = append(csilEntries, cborEntry{cborText("url"), cborText(csilV.Url)})
+	csilEntries = append(csilEntries, cborEntry{cborText("name"), cborText(csilV.Name)})
+	return csilEntries
+}
+
+// csilDecDiagnosisLinkEntry reconstructs a DiagnosisLinkEntry from a decoded CBOR value tree.
+func csilDecDiagnosisLinkEntry(csilRoot cborValue) (DiagnosisLinkEntry, error) {
+	var csilOut DiagnosisLinkEntry
+	{
+		csilField, csilErr := cborRequire(csilRoot, "name")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Name = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "url")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Url = csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeDiagnosisLinkEntry encodes a DiagnosisLinkEntry to canonical CSIL CBOR bytes.
+func EncodeDiagnosisLinkEntry(csilV DiagnosisLinkEntry) []byte {
+	return cborEncode(csilEncDiagnosisLinkEntry(csilV))
+}
+
+// DecodeDiagnosisLinkEntry decodes canonical CSIL CBOR bytes into a DiagnosisLinkEntry.
+func DecodeDiagnosisLinkEntry(csilData []byte) (DiagnosisLinkEntry, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero DiagnosisLinkEntry
+		return csilZero, csilErr
+	}
+	return csilDecDiagnosisLinkEntry(csilRoot)
+}
+
+// csilEncDiagnosisSummary builds the canonical CBOR value tree for a DiagnosisSummary.
+func csilEncDiagnosisSummary(csilV DiagnosisSummary) cborValue {
+	csilEntries := make(cborMap, 0, 16)
+	csilEntries = append(csilEntries, cborEntry{cborText("body"), cborText(csilV.Body)})
+	csilEntries = append(csilEntries, cborEntry{cborText("links"), cborEncArray(csilV.Links, func(csilElem DiagnosisLinkEntry) cborValue { return csilEncDiagnosisLinkEntry(csilElem) })})
+	csilEntries = append(csilEntries, cborEntry{cborText("title"), cborText(csilV.Title)})
+	csilEntries = append(csilEntries, cborEntry{cborText("author"), csilEncActorSummary(csilV.Author)})
+	if csilV.JobId != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("job_id"), cborText((*csilV.JobId))})
+	}
+	csilEntries = append(csilEntries, cborEntry{cborText("category"), cborText(csilV.Category)})
+	csilEntries = append(csilEntries, cborEntry{cborText("revision"), cborInt(csilV.Revision)})
+	if csilV.NodeName != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("node_name"), cborText((*csilV.NodeName))})
+	}
+	csilEntries = append(csilEntries, cborEntry{cborText("confidence"), cborText(csilV.Confidence)})
+	csilEntries = append(csilEntries, cborEntry{cborText("created_at"), cborText(csilV.CreatedAt)})
+	csilEntries = append(csilEntries, cborEntry{cborText("updated_at"), cborText(csilV.UpdatedAt)})
+	csilEntries = append(csilEntries, cborEntry{cborText("target_type"), cborText(csilV.TargetType)})
+	if csilV.WorkflowId != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("workflow_id"), cborText((*csilV.WorkflowId))})
+	}
+	csilEntries = append(csilEntries, cborEntry{cborText("diagnosis_id"), cborText(csilV.DiagnosisId)})
+	if csilV.SuggestedShifts != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("suggested_shifts"), csilEncRunShifts((*csilV.SuggestedShifts))})
+	}
+	csilEntries = append(csilEntries, cborEntry{cborText("suggested_shifts_text"), cborText(csilV.SuggestedShiftsText)})
+	return csilEntries
+}
+
+// csilDecDiagnosisSummary reconstructs a DiagnosisSummary from a decoded CBOR value tree.
+func csilDecDiagnosisSummary(csilRoot cborValue) (DiagnosisSummary, error) {
+	var csilOut DiagnosisSummary
+	{
+		csilField, csilErr := cborRequire(csilRoot, "diagnosis_id")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.DiagnosisId = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "target_type")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.TargetType = csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "job_id"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.JobId = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "workflow_id"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.WorkflowId = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "node_name"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.NodeName = &csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "author")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (csilDecActorSummary)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Author = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "title")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Title = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "body")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Body = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "confidence")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Confidence = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "category")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Category = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "links")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (func(csilV cborValue) ([]DiagnosisLinkEntry, error) {
+			return cborDecArray(csilV, csilDecDiagnosisLinkEntry)
+		})(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Links = csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "suggested_shifts"); csilOk {
+		csilVal, csilErr := (csilDecRunShifts)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.SuggestedShifts = &csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "suggested_shifts_text")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.SuggestedShiftsText = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "revision")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsI64)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Revision = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "created_at")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.CreatedAt = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "updated_at")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.UpdatedAt = csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeDiagnosisSummary encodes a DiagnosisSummary to canonical CSIL CBOR bytes.
+func EncodeDiagnosisSummary(csilV DiagnosisSummary) []byte {
+	return cborEncode(csilEncDiagnosisSummary(csilV))
+}
+
+// DecodeDiagnosisSummary decodes canonical CSIL CBOR bytes into a DiagnosisSummary.
+func DecodeDiagnosisSummary(csilData []byte) (DiagnosisSummary, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero DiagnosisSummary
+		return csilZero, csilErr
+	}
+	return csilDecDiagnosisSummary(csilRoot)
+}
+
+// csilEncListDiagnosesRequest builds the canonical CBOR value tree for a ListDiagnosesRequest.
+func csilEncListDiagnosesRequest(csilV ListDiagnosesRequest) cborValue {
+	csilEntries := make(cborMap, 0, 2)
+	if csilV.JobId != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("job_id"), cborText((*csilV.JobId))})
+	}
+	if csilV.WorkflowId != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("workflow_id"), cborText((*csilV.WorkflowId))})
+	}
+	return csilEntries
+}
+
+// csilDecListDiagnosesRequest reconstructs a ListDiagnosesRequest from a decoded CBOR value tree.
+func csilDecListDiagnosesRequest(csilRoot cborValue) (ListDiagnosesRequest, error) {
+	var csilOut ListDiagnosesRequest
+	if csilField, csilOk := cborMapGet(csilRoot, "job_id"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.JobId = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "workflow_id"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.WorkflowId = &csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeListDiagnosesRequest encodes a ListDiagnosesRequest to canonical CSIL CBOR bytes.
+func EncodeListDiagnosesRequest(csilV ListDiagnosesRequest) []byte {
+	return cborEncode(csilEncListDiagnosesRequest(csilV))
+}
+
+// DecodeListDiagnosesRequest decodes canonical CSIL CBOR bytes into a ListDiagnosesRequest.
+func DecodeListDiagnosesRequest(csilData []byte) (ListDiagnosesRequest, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero ListDiagnosesRequest
+		return csilZero, csilErr
+	}
+	return csilDecListDiagnosesRequest(csilRoot)
+}
+
+// csilEncListDiagnosesResponse builds the canonical CBOR value tree for a ListDiagnosesResponse.
+func csilEncListDiagnosesResponse(csilV ListDiagnosesResponse) cborValue {
+	csilEntries := make(cborMap, 0, 1)
+	csilEntries = append(csilEntries, cborEntry{cborText("diagnoses"), cborEncArray(csilV.Diagnoses, func(csilElem DiagnosisSummary) cborValue { return csilEncDiagnosisSummary(csilElem) })})
+	return csilEntries
+}
+
+// csilDecListDiagnosesResponse reconstructs a ListDiagnosesResponse from a decoded CBOR value tree.
+func csilDecListDiagnosesResponse(csilRoot cborValue) (ListDiagnosesResponse, error) {
+	var csilOut ListDiagnosesResponse
+	{
+		csilField, csilErr := cborRequire(csilRoot, "diagnoses")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (func(csilV cborValue) ([]DiagnosisSummary, error) { return cborDecArray(csilV, csilDecDiagnosisSummary) })(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Diagnoses = csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeListDiagnosesResponse encodes a ListDiagnosesResponse to canonical CSIL CBOR bytes.
+func EncodeListDiagnosesResponse(csilV ListDiagnosesResponse) []byte {
+	return cborEncode(csilEncListDiagnosesResponse(csilV))
+}
+
+// DecodeListDiagnosesResponse decodes canonical CSIL CBOR bytes into a ListDiagnosesResponse.
+func DecodeListDiagnosesResponse(csilData []byte) (ListDiagnosesResponse, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero ListDiagnosesResponse
+		return csilZero, csilErr
+	}
+	return csilDecListDiagnosesResponse(csilRoot)
+}
+
+// csilEncPutDiagnosisRequest builds the canonical CBOR value tree for a PutDiagnosisRequest.
+func csilEncPutDiagnosisRequest(csilV PutDiagnosisRequest) cborValue {
+	csilEntries := make(cborMap, 0, 9)
+	if csilV.Body != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("body"), cborText((*csilV.Body))})
+	}
+	if csilV.Links != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("links"), cborEncArray(csilV.Links, func(csilElem DiagnosisLinkEntry) cborValue { return csilEncDiagnosisLinkEntry(csilElem) })})
+	}
+	csilEntries = append(csilEntries, cborEntry{cborText("title"), cborText(csilV.Title)})
+	if csilV.JobId != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("job_id"), cborText((*csilV.JobId))})
+	}
+	if csilV.Category != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("category"), cborText((*csilV.Category))})
+	}
+	if csilV.NodeName != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("node_name"), cborText((*csilV.NodeName))})
+	}
+	if csilV.Confidence != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("confidence"), cborText((*csilV.Confidence))})
+	}
+	if csilV.WorkflowId != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("workflow_id"), cborText((*csilV.WorkflowId))})
+	}
+	if csilV.SuggestedShifts != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("suggested_shifts"), csilEncRunShifts((*csilV.SuggestedShifts))})
+	}
+	return csilEntries
+}
+
+// csilDecPutDiagnosisRequest reconstructs a PutDiagnosisRequest from a decoded CBOR value tree.
+func csilDecPutDiagnosisRequest(csilRoot cborValue) (PutDiagnosisRequest, error) {
+	var csilOut PutDiagnosisRequest
+	if csilField, csilOk := cborMapGet(csilRoot, "job_id"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.JobId = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "workflow_id"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.WorkflowId = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "node_name"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.NodeName = &csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "title")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Title = csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "body"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Body = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "confidence"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Confidence = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "category"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Category = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "links"); csilOk {
+		csilVal, csilErr := (func(csilV cborValue) ([]DiagnosisLinkEntry, error) {
+			return cborDecArray(csilV, csilDecDiagnosisLinkEntry)
+		})(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Links = csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "suggested_shifts"); csilOk {
+		csilVal, csilErr := (csilDecRunShifts)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.SuggestedShifts = &csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodePutDiagnosisRequest encodes a PutDiagnosisRequest to canonical CSIL CBOR bytes.
+func EncodePutDiagnosisRequest(csilV PutDiagnosisRequest) []byte {
+	return cborEncode(csilEncPutDiagnosisRequest(csilV))
+}
+
+// DecodePutDiagnosisRequest decodes canonical CSIL CBOR bytes into a PutDiagnosisRequest.
+func DecodePutDiagnosisRequest(csilData []byte) (PutDiagnosisRequest, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero PutDiagnosisRequest
+		return csilZero, csilErr
+	}
+	return csilDecPutDiagnosisRequest(csilRoot)
+}
+
+// csilEncPutDiagnosisResponse builds the canonical CBOR value tree for a PutDiagnosisResponse.
+func csilEncPutDiagnosisResponse(csilV PutDiagnosisResponse) cborValue {
+	csilEntries := make(cborMap, 0, 2)
+	csilEntries = append(csilEntries, cborEntry{cborText("created"), cborBool(csilV.Created)})
+	csilEntries = append(csilEntries, cborEntry{cborText("diagnosis"), csilEncDiagnosisSummary(csilV.Diagnosis)})
+	return csilEntries
+}
+
+// csilDecPutDiagnosisResponse reconstructs a PutDiagnosisResponse from a decoded CBOR value tree.
+func csilDecPutDiagnosisResponse(csilRoot cborValue) (PutDiagnosisResponse, error) {
+	var csilOut PutDiagnosisResponse
+	{
+		csilField, csilErr := cborRequire(csilRoot, "diagnosis")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (csilDecDiagnosisSummary)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Diagnosis = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "created")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsBool)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Created = csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodePutDiagnosisResponse encodes a PutDiagnosisResponse to canonical CSIL CBOR bytes.
+func EncodePutDiagnosisResponse(csilV PutDiagnosisResponse) []byte {
+	return cborEncode(csilEncPutDiagnosisResponse(csilV))
+}
+
+// DecodePutDiagnosisResponse decodes canonical CSIL CBOR bytes into a PutDiagnosisResponse.
+func DecodePutDiagnosisResponse(csilData []byte) (PutDiagnosisResponse, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero PutDiagnosisResponse
+		return csilZero, csilErr
+	}
+	return csilDecPutDiagnosisResponse(csilRoot)
+}
+
+// csilEncPathOwnerRule builds the canonical CBOR value tree for a PathOwnerRule.
+func csilEncPathOwnerRule(csilV PathOwnerRule) cborValue {
+	csilEntries := make(cborMap, 0, 2)
+	csilEntries = append(csilEntries, cborEntry{cborText("owners"), cborEncArray(csilV.Owners, func(csilElem string) cborValue { return cborText(csilElem) })})
+	csilEntries = append(csilEntries, cborEntry{cborText("pattern"), cborText(csilV.Pattern)})
+	return csilEntries
+}
+
+// csilDecPathOwnerRule reconstructs a PathOwnerRule from a decoded CBOR value tree.
+func csilDecPathOwnerRule(csilRoot cborValue) (PathOwnerRule, error) {
+	var csilOut PathOwnerRule
+	{
+		csilField, csilErr := cborRequire(csilRoot, "pattern")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Pattern = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "owners")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (func(csilV cborValue) ([]string, error) { return cborDecArray(csilV, cborAsText) })(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Owners = csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodePathOwnerRule encodes a PathOwnerRule to canonical CSIL CBOR bytes.
+func EncodePathOwnerRule(csilV PathOwnerRule) []byte {
+	return cborEncode(csilEncPathOwnerRule(csilV))
+}
+
+// DecodePathOwnerRule decodes canonical CSIL CBOR bytes into a PathOwnerRule.
+func DecodePathOwnerRule(csilData []byte) (PathOwnerRule, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero PathOwnerRule
+		return csilZero, csilErr
+	}
+	return csilDecPathOwnerRule(csilRoot)
+}
+
+// csilEncReportingSettings builds the canonical CBOR value tree for a ReportingSettings.
+func csilEncReportingSettings(csilV ReportingSettings) cborValue {
+	csilEntries := make(cborMap, 0, 11)
+	csilEntries = append(csilEntries, cborEntry{cborText("path_owners"), cborEncArray(csilV.PathOwners, func(csilElem PathOwnerRule) cborValue { return csilEncPathOwnerRule(csilElem) })})
+	csilEntries = append(csilEntries, cborEntry{cborText("report_mode"), cborText(csilV.ReportMode)})
+	csilEntries = append(csilEntries, cborEntry{cborText("path_acceptance"), cborText(csilV.PathAcceptance)})
+	csilEntries = append(csilEntries, cborEntry{cborText("codeowners_import"), cborText(csilV.CodeownersImport)})
+	csilEntries = append(csilEntries, cborEntry{cborText("agreement_contexts"), cborEncArray(csilV.AgreementContexts, func(csilElem string) cborValue { return cborText(csilElem) })})
+	csilEntries = append(csilEntries, cborEntry{cborText("path_owners_source"), cborText(csilV.PathOwnersSource)})
+	csilEntries = append(csilEntries, cborEntry{cborText("report_mode_source"), cborText(csilV.ReportModeSource)})
+	csilEntries = append(csilEntries, cborEntry{cborText("path_acceptance_source"), cborText(csilV.PathAcceptanceSource)})
+	csilEntries = append(csilEntries, cborEntry{cborText("codeowners_import_source"), cborText(csilV.CodeownersImportSource)})
+	csilEntries = append(csilEntries, cborEntry{cborText("agreement_contexts_source"), cborText(csilV.AgreementContextsSource)})
+	csilEntries = append(csilEntries, cborEntry{cborText("codeowners_cache_ttl_seconds"), cborInt(csilV.CodeownersCacheTtlSeconds)})
+	return csilEntries
+}
+
+// csilDecReportingSettings reconstructs a ReportingSettings from a decoded CBOR value tree.
+func csilDecReportingSettings(csilRoot cborValue) (ReportingSettings, error) {
+	var csilOut ReportingSettings
+	{
+		csilField, csilErr := cborRequire(csilRoot, "report_mode")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.ReportMode = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "report_mode_source")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.ReportModeSource = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "agreement_contexts")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (func(csilV cborValue) ([]string, error) { return cborDecArray(csilV, cborAsText) })(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.AgreementContexts = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "agreement_contexts_source")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.AgreementContextsSource = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "codeowners_import")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.CodeownersImport = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "codeowners_import_source")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.CodeownersImportSource = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "codeowners_cache_ttl_seconds")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsI64)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.CodeownersCacheTtlSeconds = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "path_acceptance")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.PathAcceptance = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "path_acceptance_source")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.PathAcceptanceSource = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "path_owners")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (func(csilV cborValue) ([]PathOwnerRule, error) { return cborDecArray(csilV, csilDecPathOwnerRule) })(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.PathOwners = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "path_owners_source")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.PathOwnersSource = csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeReportingSettings encodes a ReportingSettings to canonical CSIL CBOR bytes.
+func EncodeReportingSettings(csilV ReportingSettings) []byte {
+	return cborEncode(csilEncReportingSettings(csilV))
+}
+
+// DecodeReportingSettings decodes canonical CSIL CBOR bytes into a ReportingSettings.
+func DecodeReportingSettings(csilData []byte) (ReportingSettings, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero ReportingSettings
+		return csilZero, csilErr
+	}
+	return csilDecReportingSettings(csilRoot)
+}
+
+// csilEncGetReportingSettingsRequest builds the canonical CBOR value tree for a GetReportingSettingsRequest.
+func csilEncGetReportingSettingsRequest(csilV GetReportingSettingsRequest) cborValue {
+	csilEntries := make(cborMap, 0, 1)
+	csilEntries = append(csilEntries, cborEntry{cborText("project_id"), cborText(csilV.ProjectId)})
+	return csilEntries
+}
+
+// csilDecGetReportingSettingsRequest reconstructs a GetReportingSettingsRequest from a decoded CBOR value tree.
+func csilDecGetReportingSettingsRequest(csilRoot cborValue) (GetReportingSettingsRequest, error) {
+	var csilOut GetReportingSettingsRequest
+	{
+		csilField, csilErr := cborRequire(csilRoot, "project_id")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.ProjectId = csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeGetReportingSettingsRequest encodes a GetReportingSettingsRequest to canonical CSIL CBOR bytes.
+func EncodeGetReportingSettingsRequest(csilV GetReportingSettingsRequest) []byte {
+	return cborEncode(csilEncGetReportingSettingsRequest(csilV))
+}
+
+// DecodeGetReportingSettingsRequest decodes canonical CSIL CBOR bytes into a GetReportingSettingsRequest.
+func DecodeGetReportingSettingsRequest(csilData []byte) (GetReportingSettingsRequest, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero GetReportingSettingsRequest
+		return csilZero, csilErr
+	}
+	return csilDecGetReportingSettingsRequest(csilRoot)
+}
+
+// csilEncGetReportingSettingsResponse builds the canonical CBOR value tree for a GetReportingSettingsResponse.
+func csilEncGetReportingSettingsResponse(csilV GetReportingSettingsResponse) cborValue {
+	csilEntries := make(cborMap, 0, 9)
+	csilEntries = append(csilEntries, cborEntry{cborText("effective"), csilEncReportingSettings(csilV.Effective)})
+	if csilV.ProjectPathOwners != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("project_path_owners"), cborEncArray(csilV.ProjectPathOwners, func(csilElem PathOwnerRule) cborValue { return csilEncPathOwnerRule(csilElem) })})
+	}
+	if csilV.ProjectReportMode != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("project_report_mode"), cborText((*csilV.ProjectReportMode))})
+	}
+	csilEntries = append(csilEntries, cborEntry{cborText("can_manage_ownership"), cborBool(csilV.CanManageOwnership)})
+	csilEntries = append(csilEntries, cborEntry{cborText("can_manage_reporting"), cborBool(csilV.CanManageReporting)})
+	if csilV.ProjectPathAcceptance != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("project_path_acceptance"), cborText((*csilV.ProjectPathAcceptance))})
+	}
+	if csilV.ProjectCodeownersImport != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("project_codeowners_import"), cborText((*csilV.ProjectCodeownersImport))})
+	}
+	if csilV.ProjectAgreementContexts != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("project_agreement_contexts"), cborEncArray(csilV.ProjectAgreementContexts, func(csilElem string) cborValue { return cborText(csilElem) })})
+	}
+	if csilV.ProjectCodeownersCacheTtlSeconds != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("project_codeowners_cache_ttl_seconds"), cborInt((*csilV.ProjectCodeownersCacheTtlSeconds))})
+	}
+	return csilEntries
+}
+
+// csilDecGetReportingSettingsResponse reconstructs a GetReportingSettingsResponse from a decoded CBOR value tree.
+func csilDecGetReportingSettingsResponse(csilRoot cborValue) (GetReportingSettingsResponse, error) {
+	var csilOut GetReportingSettingsResponse
+	{
+		csilField, csilErr := cborRequire(csilRoot, "effective")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (csilDecReportingSettings)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Effective = csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "project_report_mode"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.ProjectReportMode = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "project_agreement_contexts"); csilOk {
+		csilVal, csilErr := (func(csilV cborValue) ([]string, error) { return cborDecArray(csilV, cborAsText) })(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.ProjectAgreementContexts = csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "project_codeowners_import"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.ProjectCodeownersImport = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "project_codeowners_cache_ttl_seconds"); csilOk {
+		csilVal, csilErr := (cborAsI64)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.ProjectCodeownersCacheTtlSeconds = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "project_path_acceptance"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.ProjectPathAcceptance = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "project_path_owners"); csilOk {
+		csilVal, csilErr := (func(csilV cborValue) ([]PathOwnerRule, error) { return cborDecArray(csilV, csilDecPathOwnerRule) })(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.ProjectPathOwners = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "can_manage_reporting")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsBool)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.CanManageReporting = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "can_manage_ownership")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsBool)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.CanManageOwnership = csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeGetReportingSettingsResponse encodes a GetReportingSettingsResponse to canonical CSIL CBOR bytes.
+func EncodeGetReportingSettingsResponse(csilV GetReportingSettingsResponse) []byte {
+	return cborEncode(csilEncGetReportingSettingsResponse(csilV))
+}
+
+// DecodeGetReportingSettingsResponse decodes canonical CSIL CBOR bytes into a GetReportingSettingsResponse.
+func DecodeGetReportingSettingsResponse(csilData []byte) (GetReportingSettingsResponse, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero GetReportingSettingsResponse
+		return csilZero, csilErr
+	}
+	return csilDecGetReportingSettingsResponse(csilRoot)
+}
+
+// csilEncUpdateReportingSettingsRequest builds the canonical CBOR value tree for a UpdateReportingSettingsRequest.
+func csilEncUpdateReportingSettingsRequest(csilV UpdateReportingSettingsRequest) cborValue {
+	csilEntries := make(cborMap, 0, 8)
+	if csilV.Inherit != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("inherit"), cborEncArray(csilV.Inherit, func(csilElem string) cborValue { return cborText(csilElem) })})
+	}
+	csilEntries = append(csilEntries, cborEntry{cborText("project_id"), cborText(csilV.ProjectId)})
+	if csilV.PathOwners != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("path_owners"), cborEncArray(csilV.PathOwners, func(csilElem PathOwnerRule) cborValue { return csilEncPathOwnerRule(csilElem) })})
+	}
+	if csilV.ReportMode != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("report_mode"), cborText((*csilV.ReportMode))})
+	}
+	if csilV.PathAcceptance != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("path_acceptance"), cborText((*csilV.PathAcceptance))})
+	}
+	if csilV.CodeownersImport != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("codeowners_import"), cborText((*csilV.CodeownersImport))})
+	}
+	if csilV.AgreementContexts != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("agreement_contexts"), cborEncArray(csilV.AgreementContexts, func(csilElem string) cborValue { return cborText(csilElem) })})
+	}
+	if csilV.CodeownersCacheTtlSeconds != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("codeowners_cache_ttl_seconds"), cborInt((*csilV.CodeownersCacheTtlSeconds))})
+	}
+	return csilEntries
+}
+
+// csilDecUpdateReportingSettingsRequest reconstructs a UpdateReportingSettingsRequest from a decoded CBOR value tree.
+func csilDecUpdateReportingSettingsRequest(csilRoot cborValue) (UpdateReportingSettingsRequest, error) {
+	var csilOut UpdateReportingSettingsRequest
+	{
+		csilField, csilErr := cborRequire(csilRoot, "project_id")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.ProjectId = csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "report_mode"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.ReportMode = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "agreement_contexts"); csilOk {
+		csilVal, csilErr := (func(csilV cborValue) ([]string, error) { return cborDecArray(csilV, cborAsText) })(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.AgreementContexts = csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "codeowners_import"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.CodeownersImport = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "codeowners_cache_ttl_seconds"); csilOk {
+		csilVal, csilErr := (cborAsI64)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.CodeownersCacheTtlSeconds = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "path_acceptance"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.PathAcceptance = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "path_owners"); csilOk {
+		csilVal, csilErr := (func(csilV cborValue) ([]PathOwnerRule, error) { return cborDecArray(csilV, csilDecPathOwnerRule) })(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.PathOwners = csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "inherit"); csilOk {
+		csilVal, csilErr := (func(csilV cborValue) ([]string, error) { return cborDecArray(csilV, cborAsText) })(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Inherit = csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeUpdateReportingSettingsRequest encodes a UpdateReportingSettingsRequest to canonical CSIL CBOR bytes.
+func EncodeUpdateReportingSettingsRequest(csilV UpdateReportingSettingsRequest) []byte {
+	return cborEncode(csilEncUpdateReportingSettingsRequest(csilV))
+}
+
+// DecodeUpdateReportingSettingsRequest decodes canonical CSIL CBOR bytes into a UpdateReportingSettingsRequest.
+func DecodeUpdateReportingSettingsRequest(csilData []byte) (UpdateReportingSettingsRequest, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero UpdateReportingSettingsRequest
+		return csilZero, csilErr
+	}
+	return csilDecUpdateReportingSettingsRequest(csilRoot)
+}
+
+// csilEncAgreementOtherResult builds the canonical CBOR value tree for a AgreementOtherResult.
+func csilEncAgreementOtherResult(csilV AgreementOtherResult) cborValue {
+	csilEntries := make(cborMap, 0, 5)
+	if csilV.Raw != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("raw"), cborText((*csilV.Raw))})
+	}
+	csilEntries = append(csilEntries, cborEntry{cborText("kind"), cborText(csilV.Kind)})
+	csilEntries = append(csilEntries, cborEntry{cborText("name"), cborText(csilV.Name)})
+	csilEntries = append(csilEntries, cborEntry{cborText("state"), cborText(csilV.State)})
+	if csilV.TargetUrl != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("target_url"), cborText((*csilV.TargetUrl))})
+	}
+	return csilEntries
+}
+
+// csilDecAgreementOtherResult reconstructs a AgreementOtherResult from a decoded CBOR value tree.
+func csilDecAgreementOtherResult(csilRoot cborValue) (AgreementOtherResult, error) {
+	var csilOut AgreementOtherResult
+	{
+		csilField, csilErr := cborRequire(csilRoot, "name")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Name = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "kind")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Kind = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "state")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.State = csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "raw"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Raw = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "target_url"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.TargetUrl = &csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeAgreementOtherResult encodes a AgreementOtherResult to canonical CSIL CBOR bytes.
+func EncodeAgreementOtherResult(csilV AgreementOtherResult) []byte {
+	return cborEncode(csilEncAgreementOtherResult(csilV))
+}
+
+// DecodeAgreementOtherResult decodes canonical CSIL CBOR bytes into a AgreementOtherResult.
+func DecodeAgreementOtherResult(csilData []byte) (AgreementOtherResult, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero AgreementOtherResult
+		return csilZero, csilErr
+	}
+	return csilDecAgreementOtherResult(csilRoot)
+}
+
+// csilEncAgreementRow builds the canonical CBOR value tree for a AgreementRow.
+func csilEncAgreementRow(csilV AgreementRow) cborValue {
+	csilEntries := make(cborMap, 0, 13)
+	if csilV.Agree != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("agree"), cborBool((*csilV.Agree))})
+	}
+	if csilV.Branch != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("branch"), cborText((*csilV.Branch))})
+	}
+	csilEntries = append(csilEntries, cborEntry{cborText("status"), cborText(csilV.Status)})
+	if csilV.EventId != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("event_id"), cborText((*csilV.EventId))})
+	}
+	if csilV.PrNumber != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("pr_number"), cborInt((*csilV.PrNumber))})
+	}
+	csilEntries = append(csilEntries, cborEntry{cborText("commit_sha"), cborText(csilV.CommitSha)})
+	if csilV.CommitUrl != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("commit_url"), cborText((*csilV.CommitUrl))})
+	}
+	if csilV.LastError != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("last_error"), cborText((*csilV.LastError))})
+	}
+	if csilV.ObservedAt != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("observed_at"), cborText((*csilV.ObservedAt))})
+	}
+	if csilV.OtherResult != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("other_result"), cborText((*csilV.OtherResult))})
+	}
+	csilEntries = append(csilEntries, cborEntry{cborText("other_results"), cborEncArray(csilV.OtherResults, func(csilElem AgreementOtherResult) cborValue { return csilEncAgreementOtherResult(csilElem) })})
+	csilEntries = append(csilEntries, cborEntry{cborText("reactorcide_result"), cborText(csilV.ReactorcideResult)})
+	csilEntries = append(csilEntries, cborEntry{cborText("reactorcide_completed_at"), cborText(csilV.ReactorcideCompletedAt)})
+	return csilEntries
+}
+
+// csilDecAgreementRow reconstructs a AgreementRow from a decoded CBOR value tree.
+func csilDecAgreementRow(csilRoot cborValue) (AgreementRow, error) {
+	var csilOut AgreementRow
+	{
+		csilField, csilErr := cborRequire(csilRoot, "commit_sha")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.CommitSha = csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "event_id"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.EventId = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "pr_number"); csilOk {
+		csilVal, csilErr := (cborAsI64)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.PrNumber = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "branch"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Branch = &csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "reactorcide_result")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.ReactorcideResult = csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "other_result"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.OtherResult = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "agree"); csilOk {
+		csilVal, csilErr := (cborAsBool)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Agree = &csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "status")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Status = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "other_results")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (func(csilV cborValue) ([]AgreementOtherResult, error) {
+			return cborDecArray(csilV, csilDecAgreementOtherResult)
+		})(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.OtherResults = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "reactorcide_completed_at")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.ReactorcideCompletedAt = csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "observed_at"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.ObservedAt = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "last_error"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.LastError = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "commit_url"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.CommitUrl = &csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeAgreementRow encodes a AgreementRow to canonical CSIL CBOR bytes.
+func EncodeAgreementRow(csilV AgreementRow) []byte {
+	return cborEncode(csilEncAgreementRow(csilV))
+}
+
+// DecodeAgreementRow decodes canonical CSIL CBOR bytes into a AgreementRow.
+func DecodeAgreementRow(csilData []byte) (AgreementRow, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero AgreementRow
+		return csilZero, csilErr
+	}
+	return csilDecAgreementRow(csilRoot)
+}
+
+// csilEncGetAgreementReportRequest builds the canonical CBOR value tree for a GetAgreementReportRequest.
+func csilEncGetAgreementReportRequest(csilV GetAgreementReportRequest) cborValue {
+	csilEntries := make(cborMap, 0, 3)
+	if csilV.Limit != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("limit"), cborInt((*csilV.Limit))})
+	}
+	if csilV.Since != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("since"), cborText((*csilV.Since))})
+	}
+	csilEntries = append(csilEntries, cborEntry{cborText("project_id"), cborText(csilV.ProjectId)})
+	return csilEntries
+}
+
+// csilDecGetAgreementReportRequest reconstructs a GetAgreementReportRequest from a decoded CBOR value tree.
+func csilDecGetAgreementReportRequest(csilRoot cborValue) (GetAgreementReportRequest, error) {
+	var csilOut GetAgreementReportRequest
+	{
+		csilField, csilErr := cborRequire(csilRoot, "project_id")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.ProjectId = csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "since"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Since = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "limit"); csilOk {
+		csilVal, csilErr := (cborAsI64)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Limit = &csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeGetAgreementReportRequest encodes a GetAgreementReportRequest to canonical CSIL CBOR bytes.
+func EncodeGetAgreementReportRequest(csilV GetAgreementReportRequest) []byte {
+	return cborEncode(csilEncGetAgreementReportRequest(csilV))
+}
+
+// DecodeGetAgreementReportRequest decodes canonical CSIL CBOR bytes into a GetAgreementReportRequest.
+func DecodeGetAgreementReportRequest(csilData []byte) (GetAgreementReportRequest, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero GetAgreementReportRequest
+		return csilZero, csilErr
+	}
+	return csilDecGetAgreementReportRequest(csilRoot)
+}
+
+// csilEncGetAgreementReportResponse builds the canonical CBOR value tree for a GetAgreementReportResponse.
+func csilEncGetAgreementReportResponse(csilV GetAgreementReportResponse) cborValue {
+	csilEntries := make(cborMap, 0, 12)
+	csilEntries = append(csilEntries, cborEntry{cborText("rows"), cborEncArray(csilV.Rows, func(csilElem AgreementRow) cborValue { return csilEncAgreementRow(csilElem) })})
+	csilEntries = append(csilEntries, cborEntry{cborText("total"), cborInt(csilV.Total)})
+	csilEntries = append(csilEntries, cborEntry{cborText("agreed"), cborInt(csilV.Agreed)})
+	csilEntries = append(csilEntries, cborEntry{cborText("pending"), cborInt(csilV.Pending)})
+	csilEntries = append(csilEntries, cborEntry{cborText("compared"), cborInt(csilV.Compared)})
+	csilEntries = append(csilEntries, cborEntry{cborText("contexts"), cborEncArray(csilV.Contexts, func(csilElem string) cborValue { return cborText(csilElem) })})
+	csilEntries = append(csilEntries, cborEntry{cborText("no_other"), cborInt(csilV.NoOther)})
+	csilEntries = append(csilEntries, cborEntry{cborText("disagreed"), cborInt(csilV.Disagreed)})
+	csilEntries = append(csilEntries, cborEntry{cborText("disagreements"), cborEncArray(csilV.Disagreements, func(csilElem AgreementRow) cborValue { return csilEncAgreementRow(csilElem) })})
+	if csilV.RateBasisPoints != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("rate_basis_points"), cborInt((*csilV.RateBasisPoints))})
+	}
+	csilEntries = append(csilEntries, cborEntry{cborText("reactorcide_failed_other_passed"), cborInt(csilV.ReactorcideFailedOtherPassed)})
+	csilEntries = append(csilEntries, cborEntry{cborText("reactorcide_passed_other_failed"), cborInt(csilV.ReactorcidePassedOtherFailed)})
+	return csilEntries
+}
+
+// csilDecGetAgreementReportResponse reconstructs a GetAgreementReportResponse from a decoded CBOR value tree.
+func csilDecGetAgreementReportResponse(csilRoot cborValue) (GetAgreementReportResponse, error) {
+	var csilOut GetAgreementReportResponse
+	{
+		csilField, csilErr := cborRequire(csilRoot, "contexts")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (func(csilV cborValue) ([]string, error) { return cborDecArray(csilV, cborAsText) })(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Contexts = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "total")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsI64)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Total = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "compared")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsI64)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Compared = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "agreed")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsI64)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Agreed = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "disagreed")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsI64)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Disagreed = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "pending")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsI64)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Pending = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "no_other")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsI64)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.NoOther = csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "rate_basis_points"); csilOk {
+		csilVal, csilErr := (cborAsI64)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.RateBasisPoints = &csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "reactorcide_failed_other_passed")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsI64)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.ReactorcideFailedOtherPassed = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "reactorcide_passed_other_failed")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsI64)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.ReactorcidePassedOtherFailed = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "disagreements")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (func(csilV cborValue) ([]AgreementRow, error) { return cborDecArray(csilV, csilDecAgreementRow) })(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Disagreements = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "rows")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (func(csilV cborValue) ([]AgreementRow, error) { return cborDecArray(csilV, csilDecAgreementRow) })(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Rows = csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeGetAgreementReportResponse encodes a GetAgreementReportResponse to canonical CSIL CBOR bytes.
+func EncodeGetAgreementReportResponse(csilV GetAgreementReportResponse) []byte {
+	return cborEncode(csilEncGetAgreementReportResponse(csilV))
+}
+
+// DecodeGetAgreementReportResponse decodes canonical CSIL CBOR bytes into a GetAgreementReportResponse.
+func DecodeGetAgreementReportResponse(csilData []byte) (GetAgreementReportResponse, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero GetAgreementReportResponse
+		return csilZero, csilErr
+	}
+	return csilDecGetAgreementReportResponse(csilRoot)
+}
+
+// csilEncPathAcceptanceSummary builds the canonical CBOR value tree for a PathAcceptanceSummary.
+func csilEncPathAcceptanceSummary(csilV PathAcceptanceSummary) cborValue {
+	csilEntries := make(cborMap, 0, 16)
+	csilEntries = append(csilEntries, cborEntry{cborText("state"), cborText(csilV.State)})
+	if csilV.Reason != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("reason"), cborText((*csilV.Reason))})
+	}
+	if csilV.RevokedAt != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("revoked_at"), cborText((*csilV.RevokedAt))})
+	}
+	if csilV.RevokedBy != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("revoked_by"), cborText((*csilV.RevokedBy))})
+	}
+	if csilV.AcceptedAt != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("accepted_at"), cborText((*csilV.AcceptedAt))})
+	}
+	if csilV.AcceptedBy != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("accepted_by"), cborText((*csilV.AcceptedBy))})
+	}
+	csilEntries = append(csilEntries, cborEntry{cborText("path_pattern"), cborText(csilV.PathPattern)})
+	if csilV.RequestedAt != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("requested_at"), cborText((*csilV.RequestedAt))})
+	}
+	if csilV.RequestedBy != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("requested_by"), cborText((*csilV.RequestedBy))})
+	}
+	csilEntries = append(csilEntries, cborEntry{cborText("acceptance_id"), cborText(csilV.AcceptanceId)})
+	csilEntries = append(csilEntries, cborEntry{cborText("owner_subject"), cborText(csilV.OwnerSubject)})
+	if csilV.DecisionReason != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("decision_reason"), cborText((*csilV.DecisionReason))})
+	}
+	if csilV.RevokedByName != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("revoked_by_name"), cborText((*csilV.RevokedByName))})
+	}
+	if csilV.AcceptedByName != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("accepted_by_name"), cborText((*csilV.AcceptedByName))})
+	}
+	if csilV.RequestedByName != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("requested_by_name"), cborText((*csilV.RequestedByName))})
+	}
+	csilEntries = append(csilEntries, cborEntry{cborText("workflow_security_id"), cborText(csilV.WorkflowSecurityId)})
+	return csilEntries
+}
+
+// csilDecPathAcceptanceSummary reconstructs a PathAcceptanceSummary from a decoded CBOR value tree.
+func csilDecPathAcceptanceSummary(csilRoot cborValue) (PathAcceptanceSummary, error) {
+	var csilOut PathAcceptanceSummary
+	{
+		csilField, csilErr := cborRequire(csilRoot, "acceptance_id")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.AcceptanceId = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "workflow_security_id")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.WorkflowSecurityId = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "path_pattern")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.PathPattern = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "owner_subject")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.OwnerSubject = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "state")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.State = csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "reason"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Reason = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "requested_by"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.RequestedBy = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "requested_by_name"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.RequestedByName = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "requested_at"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.RequestedAt = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "accepted_by"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.AcceptedBy = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "accepted_by_name"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.AcceptedByName = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "accepted_at"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.AcceptedAt = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "revoked_by"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.RevokedBy = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "revoked_by_name"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.RevokedByName = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "revoked_at"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.RevokedAt = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "decision_reason"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.DecisionReason = &csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodePathAcceptanceSummary encodes a PathAcceptanceSummary to canonical CSIL CBOR bytes.
+func EncodePathAcceptanceSummary(csilV PathAcceptanceSummary) []byte {
+	return cborEncode(csilEncPathAcceptanceSummary(csilV))
+}
+
+// DecodePathAcceptanceSummary decodes canonical CSIL CBOR bytes into a PathAcceptanceSummary.
+func DecodePathAcceptanceSummary(csilData []byte) (PathAcceptanceSummary, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero PathAcceptanceSummary
+		return csilZero, csilErr
+	}
+	return csilDecPathAcceptanceSummary(csilRoot)
+}
+
+// csilEncListPathAcceptancesRequest builds the canonical CBOR value tree for a ListPathAcceptancesRequest.
+func csilEncListPathAcceptancesRequest(csilV ListPathAcceptancesRequest) cborValue {
+	csilEntries := make(cborMap, 0, 2)
+	if csilV.State != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("state"), cborText((*csilV.State))})
+	}
+	csilEntries = append(csilEntries, cborEntry{cborText("project_id"), cborText(csilV.ProjectId)})
+	return csilEntries
+}
+
+// csilDecListPathAcceptancesRequest reconstructs a ListPathAcceptancesRequest from a decoded CBOR value tree.
+func csilDecListPathAcceptancesRequest(csilRoot cborValue) (ListPathAcceptancesRequest, error) {
+	var csilOut ListPathAcceptancesRequest
+	{
+		csilField, csilErr := cborRequire(csilRoot, "project_id")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.ProjectId = csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "state"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.State = &csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeListPathAcceptancesRequest encodes a ListPathAcceptancesRequest to canonical CSIL CBOR bytes.
+func EncodeListPathAcceptancesRequest(csilV ListPathAcceptancesRequest) []byte {
+	return cborEncode(csilEncListPathAcceptancesRequest(csilV))
+}
+
+// DecodeListPathAcceptancesRequest decodes canonical CSIL CBOR bytes into a ListPathAcceptancesRequest.
+func DecodeListPathAcceptancesRequest(csilData []byte) (ListPathAcceptancesRequest, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero ListPathAcceptancesRequest
+		return csilZero, csilErr
+	}
+	return csilDecListPathAcceptancesRequest(csilRoot)
+}
+
+// csilEncListPathAcceptancesResponse builds the canonical CBOR value tree for a ListPathAcceptancesResponse.
+func csilEncListPathAcceptancesResponse(csilV ListPathAcceptancesResponse) cborValue {
+	csilEntries := make(cborMap, 0, 4)
+	csilEntries = append(csilEntries, cborEntry{cborText("rows"), cborEncArray(csilV.Rows, func(csilElem PathAcceptanceSummary) cborValue { return csilEncPathAcceptanceSummary(csilElem) })})
+	csilEntries = append(csilEntries, cborEntry{cborText("path_acceptance"), cborText(csilV.PathAcceptance)})
+	csilEntries = append(csilEntries, cborEntry{cborText("ownership_source"), cborText(csilV.OwnershipSource)})
+	csilEntries = append(csilEntries, cborEntry{cborText("can_manage_ownership"), cborBool(csilV.CanManageOwnership)})
+	return csilEntries
+}
+
+// csilDecListPathAcceptancesResponse reconstructs a ListPathAcceptancesResponse from a decoded CBOR value tree.
+func csilDecListPathAcceptancesResponse(csilRoot cborValue) (ListPathAcceptancesResponse, error) {
+	var csilOut ListPathAcceptancesResponse
+	{
+		csilField, csilErr := cborRequire(csilRoot, "path_acceptance")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.PathAcceptance = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "ownership_source")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.OwnershipSource = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "rows")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (func(csilV cborValue) ([]PathAcceptanceSummary, error) {
+			return cborDecArray(csilV, csilDecPathAcceptanceSummary)
+		})(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Rows = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "can_manage_ownership")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsBool)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.CanManageOwnership = csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeListPathAcceptancesResponse encodes a ListPathAcceptancesResponse to canonical CSIL CBOR bytes.
+func EncodeListPathAcceptancesResponse(csilV ListPathAcceptancesResponse) []byte {
+	return cborEncode(csilEncListPathAcceptancesResponse(csilV))
+}
+
+// DecodeListPathAcceptancesResponse decodes canonical CSIL CBOR bytes into a ListPathAcceptancesResponse.
+func DecodeListPathAcceptancesResponse(csilData []byte) (ListPathAcceptancesResponse, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero ListPathAcceptancesResponse
+		return csilZero, csilErr
+	}
+	return csilDecListPathAcceptancesResponse(csilRoot)
+}
+
+// csilEncRequestPathAcceptanceRequest builds the canonical CBOR value tree for a RequestPathAcceptanceRequest.
+func csilEncRequestPathAcceptanceRequest(csilV RequestPathAcceptanceRequest) cborValue {
+	csilEntries := make(cborMap, 0, 6)
+	if csilV.Accept != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("accept"), cborBool((*csilV.Accept))})
+	}
+	if csilV.Reason != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("reason"), cborText((*csilV.Reason))})
+	}
+	csilEntries = append(csilEntries, cborEntry{cborText("project_id"), cborText(csilV.ProjectId)})
+	csilEntries = append(csilEntries, cborEntry{cborText("path_pattern"), cborText(csilV.PathPattern)})
+	csilEntries = append(csilEntries, cborEntry{cborText("owner_subject"), cborText(csilV.OwnerSubject)})
+	csilEntries = append(csilEntries, cborEntry{cborText("workflow_security_id"), cborText(csilV.WorkflowSecurityId)})
+	return csilEntries
+}
+
+// csilDecRequestPathAcceptanceRequest reconstructs a RequestPathAcceptanceRequest from a decoded CBOR value tree.
+func csilDecRequestPathAcceptanceRequest(csilRoot cborValue) (RequestPathAcceptanceRequest, error) {
+	var csilOut RequestPathAcceptanceRequest
+	{
+		csilField, csilErr := cborRequire(csilRoot, "project_id")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.ProjectId = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "workflow_security_id")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.WorkflowSecurityId = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "path_pattern")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.PathPattern = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "owner_subject")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.OwnerSubject = csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "reason"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Reason = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "accept"); csilOk {
+		csilVal, csilErr := (cborAsBool)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Accept = &csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeRequestPathAcceptanceRequest encodes a RequestPathAcceptanceRequest to canonical CSIL CBOR bytes.
+func EncodeRequestPathAcceptanceRequest(csilV RequestPathAcceptanceRequest) []byte {
+	return cborEncode(csilEncRequestPathAcceptanceRequest(csilV))
+}
+
+// DecodeRequestPathAcceptanceRequest decodes canonical CSIL CBOR bytes into a RequestPathAcceptanceRequest.
+func DecodeRequestPathAcceptanceRequest(csilData []byte) (RequestPathAcceptanceRequest, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero RequestPathAcceptanceRequest
+		return csilZero, csilErr
+	}
+	return csilDecRequestPathAcceptanceRequest(csilRoot)
+}
+
+// csilEncPathAcceptanceResponse builds the canonical CBOR value tree for a PathAcceptanceResponse.
+func csilEncPathAcceptanceResponse(csilV PathAcceptanceResponse) cborValue {
+	csilEntries := make(cborMap, 0, 1)
+	csilEntries = append(csilEntries, cborEntry{cborText("acceptance"), csilEncPathAcceptanceSummary(csilV.Acceptance)})
+	return csilEntries
+}
+
+// csilDecPathAcceptanceResponse reconstructs a PathAcceptanceResponse from a decoded CBOR value tree.
+func csilDecPathAcceptanceResponse(csilRoot cborValue) (PathAcceptanceResponse, error) {
+	var csilOut PathAcceptanceResponse
+	{
+		csilField, csilErr := cborRequire(csilRoot, "acceptance")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (csilDecPathAcceptanceSummary)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Acceptance = csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodePathAcceptanceResponse encodes a PathAcceptanceResponse to canonical CSIL CBOR bytes.
+func EncodePathAcceptanceResponse(csilV PathAcceptanceResponse) []byte {
+	return cborEncode(csilEncPathAcceptanceResponse(csilV))
+}
+
+// DecodePathAcceptanceResponse decodes canonical CSIL CBOR bytes into a PathAcceptanceResponse.
+func DecodePathAcceptanceResponse(csilData []byte) (PathAcceptanceResponse, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero PathAcceptanceResponse
+		return csilZero, csilErr
+	}
+	return csilDecPathAcceptanceResponse(csilRoot)
+}
+
+// csilEncDecidePathAcceptanceRequest builds the canonical CBOR value tree for a DecidePathAcceptanceRequest.
+func csilEncDecidePathAcceptanceRequest(csilV DecidePathAcceptanceRequest) cborValue {
+	csilEntries := make(cborMap, 0, 4)
+	if csilV.Reason != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("reason"), cborText((*csilV.Reason))})
+	}
+	csilEntries = append(csilEntries, cborEntry{cborText("decision"), cborText(csilV.Decision)})
+	csilEntries = append(csilEntries, cborEntry{cborText("project_id"), cborText(csilV.ProjectId)})
+	csilEntries = append(csilEntries, cborEntry{cborText("acceptance_id"), cborText(csilV.AcceptanceId)})
+	return csilEntries
+}
+
+// csilDecDecidePathAcceptanceRequest reconstructs a DecidePathAcceptanceRequest from a decoded CBOR value tree.
+func csilDecDecidePathAcceptanceRequest(csilRoot cborValue) (DecidePathAcceptanceRequest, error) {
+	var csilOut DecidePathAcceptanceRequest
+	{
+		csilField, csilErr := cborRequire(csilRoot, "project_id")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.ProjectId = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "acceptance_id")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.AcceptanceId = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "decision")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Decision = csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "reason"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Reason = &csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeDecidePathAcceptanceRequest encodes a DecidePathAcceptanceRequest to canonical CSIL CBOR bytes.
+func EncodeDecidePathAcceptanceRequest(csilV DecidePathAcceptanceRequest) []byte {
+	return cborEncode(csilEncDecidePathAcceptanceRequest(csilV))
+}
+
+// DecodeDecidePathAcceptanceRequest decodes canonical CSIL CBOR bytes into a DecidePathAcceptanceRequest.
+func DecodeDecidePathAcceptanceRequest(csilData []byte) (DecidePathAcceptanceRequest, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero DecidePathAcceptanceRequest
+		return csilZero, csilErr
+	}
+	return csilDecDecidePathAcceptanceRequest(csilRoot)
+}
+
+// csilEncRequiredSetApproverRule builds the canonical CBOR value tree for a RequiredSetApproverRule.
+func csilEncRequiredSetApproverRule(csilV RequiredSetApproverRule) cborValue {
+	csilEntries := make(cborMap, 0, 2)
+	csilEntries = append(csilEntries, cborEntry{cborText("branches"), cborEncArray(csilV.Branches, func(csilElem string) cborValue { return cborText(csilElem) })})
+	csilEntries = append(csilEntries, cborEntry{cborText("approvers"), cborEncArray(csilV.Approvers, func(csilElem string) cborValue { return cborText(csilElem) })})
+	return csilEntries
+}
+
+// csilDecRequiredSetApproverRule reconstructs a RequiredSetApproverRule from a decoded CBOR value tree.
+func csilDecRequiredSetApproverRule(csilRoot cborValue) (RequiredSetApproverRule, error) {
+	var csilOut RequiredSetApproverRule
+	{
+		csilField, csilErr := cborRequire(csilRoot, "branches")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (func(csilV cborValue) ([]string, error) { return cborDecArray(csilV, cborAsText) })(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Branches = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "approvers")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (func(csilV cborValue) ([]string, error) { return cborDecArray(csilV, cborAsText) })(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Approvers = csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeRequiredSetApproverRule encodes a RequiredSetApproverRule to canonical CSIL CBOR bytes.
+func EncodeRequiredSetApproverRule(csilV RequiredSetApproverRule) []byte {
+	return cborEncode(csilEncRequiredSetApproverRule(csilV))
+}
+
+// DecodeRequiredSetApproverRule decodes canonical CSIL CBOR bytes into a RequiredSetApproverRule.
+func DecodeRequiredSetApproverRule(csilData []byte) (RequiredSetApproverRule, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero RequiredSetApproverRule
+		return csilZero, csilErr
+	}
+	return csilDecRequiredSetApproverRule(csilRoot)
+}
+
+// csilEncRequiredSetWorkflow builds the canonical CBOR value tree for a RequiredSetWorkflow.
+func csilEncRequiredSetWorkflow(csilV RequiredSetWorkflow) cborValue {
+	csilEntries := make(cborMap, 0, 15)
+	if csilV.Name != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("name"), cborText((*csilV.Name))})
+	}
+	csilEntries = append(csilEntries, cborEntry{cborText("state"), cborText(csilV.State)})
+	csilEntries = append(csilEntries, cborEntry{cborText("in_set"), cborBool(csilV.InSet)})
+	if csilV.Reason != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("reason"), cborText((*csilV.Reason))})
+	}
+	if csilV.Source != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("source"), cborText((*csilV.Source))})
+	}
+	if csilV.AddedAt != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("added_at"), cborText((*csilV.AddedAt))})
+	}
+	if csilV.AddedBy != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("added_by"), cborText((*csilV.AddedBy))})
+	}
+	if csilV.LastSeen != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("last_seen"), cborText((*csilV.LastSeen))})
+	}
+	if csilV.AddedByName != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("added_by_name"), cborText((*csilV.AddedByName))})
+	}
+	csilEntries = append(csilEntries, cborEntry{cborText("branch_pattern"), cborText(csilV.BranchPattern)})
+	if csilV.QuarantinedBy != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("quarantined_by"), cborText((*csilV.QuarantinedBy))})
+	}
+	if csilV.QuarantineReason != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("quarantine_reason"), cborText((*csilV.QuarantineReason))})
+	}
+	if csilV.QuarantinedUntil != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("quarantined_until"), cborText((*csilV.QuarantinedUntil))})
+	}
+	if csilV.QuarantinedByName != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("quarantined_by_name"), cborText((*csilV.QuarantinedByName))})
+	}
+	csilEntries = append(csilEntries, cborEntry{cborText("workflow_security_id"), cborText(csilV.WorkflowSecurityId)})
+	return csilEntries
+}
+
+// csilDecRequiredSetWorkflow reconstructs a RequiredSetWorkflow from a decoded CBOR value tree.
+func csilDecRequiredSetWorkflow(csilRoot cborValue) (RequiredSetWorkflow, error) {
+	var csilOut RequiredSetWorkflow
+	{
+		csilField, csilErr := cborRequire(csilRoot, "workflow_security_id")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.WorkflowSecurityId = csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "name"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Name = &csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "branch_pattern")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.BranchPattern = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "state")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.State = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "in_set")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsBool)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.InSet = csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "source"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Source = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "added_by"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.AddedBy = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "added_by_name"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.AddedByName = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "added_at"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.AddedAt = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "reason"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Reason = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "quarantined_until"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.QuarantinedUntil = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "quarantine_reason"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.QuarantineReason = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "quarantined_by"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.QuarantinedBy = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "quarantined_by_name"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.QuarantinedByName = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "last_seen"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.LastSeen = &csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeRequiredSetWorkflow encodes a RequiredSetWorkflow to canonical CSIL CBOR bytes.
+func EncodeRequiredSetWorkflow(csilV RequiredSetWorkflow) []byte {
+	return cborEncode(csilEncRequiredSetWorkflow(csilV))
+}
+
+// DecodeRequiredSetWorkflow decodes canonical CSIL CBOR bytes into a RequiredSetWorkflow.
+func DecodeRequiredSetWorkflow(csilData []byte) (RequiredSetWorkflow, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero RequiredSetWorkflow
+		return csilZero, csilErr
+	}
+	return csilDecRequiredSetWorkflow(csilRoot)
+}
+
+// csilEncRequiredSetProposal builds the canonical CBOR value tree for a RequiredSetProposal.
+func csilEncRequiredSetProposal(csilV RequiredSetProposal) cborValue {
+	csilEntries := make(cborMap, 0, 13)
+	csilEntries = append(csilEntries, cborEntry{cborText("state"), cborText(csilV.State)})
+	csilEntries = append(csilEntries, cborEntry{cborText("action"), cborText(csilV.Action)})
+	if csilV.Reason != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("reason"), cborText((*csilV.Reason))})
+	}
+	if csilV.DecidedAt != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("decided_at"), cborText((*csilV.DecidedAt))})
+	}
+	if csilV.DecidedBy != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("decided_by"), cborText((*csilV.DecidedBy))})
+	}
+	csilEntries = append(csilEntries, cborEntry{cborText("proposal_id"), cborText(csilV.ProposalId)})
+	csilEntries = append(csilEntries, cborEntry{cborText("proposed_at"), cborText(csilV.ProposedAt)})
+	if csilV.ProposedBy != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("proposed_by"), cborText((*csilV.ProposedBy))})
+	}
+	csilEntries = append(csilEntries, cborEntry{cborText("branch_pattern"), cborText(csilV.BranchPattern)})
+	if csilV.DecidedByName != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("decided_by_name"), cborText((*csilV.DecidedByName))})
+	}
+	if csilV.DecisionReason != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("decision_reason"), cborText((*csilV.DecisionReason))})
+	}
+	if csilV.ProposedByName != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("proposed_by_name"), cborText((*csilV.ProposedByName))})
+	}
+	csilEntries = append(csilEntries, cborEntry{cborText("workflow_security_id"), cborText(csilV.WorkflowSecurityId)})
+	return csilEntries
+}
+
+// csilDecRequiredSetProposal reconstructs a RequiredSetProposal from a decoded CBOR value tree.
+func csilDecRequiredSetProposal(csilRoot cborValue) (RequiredSetProposal, error) {
+	var csilOut RequiredSetProposal
+	{
+		csilField, csilErr := cborRequire(csilRoot, "proposal_id")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.ProposalId = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "workflow_security_id")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.WorkflowSecurityId = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "branch_pattern")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.BranchPattern = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "action")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Action = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "state")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.State = csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "reason"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Reason = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "proposed_by"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.ProposedBy = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "proposed_by_name"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.ProposedByName = &csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "proposed_at")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.ProposedAt = csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "decided_by"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.DecidedBy = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "decided_by_name"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.DecidedByName = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "decided_at"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.DecidedAt = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "decision_reason"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.DecisionReason = &csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeRequiredSetProposal encodes a RequiredSetProposal to canonical CSIL CBOR bytes.
+func EncodeRequiredSetProposal(csilV RequiredSetProposal) []byte {
+	return cborEncode(csilEncRequiredSetProposal(csilV))
+}
+
+// DecodeRequiredSetProposal decodes canonical CSIL CBOR bytes into a RequiredSetProposal.
+func DecodeRequiredSetProposal(csilData []byte) (RequiredSetProposal, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero RequiredSetProposal
+		return csilZero, csilErr
+	}
+	return csilDecRequiredSetProposal(csilRoot)
+}
+
+// csilEncGetRequiredSetRequest builds the canonical CBOR value tree for a GetRequiredSetRequest.
+func csilEncGetRequiredSetRequest(csilV GetRequiredSetRequest) cborValue {
+	csilEntries := make(cborMap, 0, 1)
+	csilEntries = append(csilEntries, cborEntry{cborText("project_id"), cborText(csilV.ProjectId)})
+	return csilEntries
+}
+
+// csilDecGetRequiredSetRequest reconstructs a GetRequiredSetRequest from a decoded CBOR value tree.
+func csilDecGetRequiredSetRequest(csilRoot cborValue) (GetRequiredSetRequest, error) {
+	var csilOut GetRequiredSetRequest
+	{
+		csilField, csilErr := cborRequire(csilRoot, "project_id")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.ProjectId = csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeGetRequiredSetRequest encodes a GetRequiredSetRequest to canonical CSIL CBOR bytes.
+func EncodeGetRequiredSetRequest(csilV GetRequiredSetRequest) []byte {
+	return cborEncode(csilEncGetRequiredSetRequest(csilV))
+}
+
+// DecodeGetRequiredSetRequest decodes canonical CSIL CBOR bytes into a GetRequiredSetRequest.
+func DecodeGetRequiredSetRequest(csilData []byte) (GetRequiredSetRequest, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero GetRequiredSetRequest
+		return csilZero, csilErr
+	}
+	return csilDecGetRequiredSetRequest(csilRoot)
+}
+
+// csilEncGetRequiredSetResponse builds the canonical CBOR value tree for a GetRequiredSetResponse.
+func csilEncGetRequiredSetResponse(csilV GetRequiredSetResponse) cborValue {
+	csilEntries := make(cborMap, 0, 13)
+	csilEntries = append(csilEntries, cborEntry{cborText("enabled"), cborBool(csilV.Enabled)})
+	csilEntries = append(csilEntries, cborEntry{cborText("approvers"), cborEncArray(csilV.Approvers, func(csilElem string) cborValue { return cborText(csilElem) })})
+	csilEntries = append(csilEntries, cborEntry{cborText("proposals"), cborEncArray(csilV.Proposals, func(csilElem RequiredSetProposal) cborValue { return csilEncRequiredSetProposal(csilElem) })})
+	csilEntries = append(csilEntries, cborEntry{cborText("workflows"), cborEncArray(csilV.Workflows, func(csilElem RequiredSetWorkflow) cborValue { return csilEncRequiredSetWorkflow(csilElem) })})
+	csilEntries = append(csilEntries, cborEntry{cborText("can_manage"), cborBool(csilV.CanManage)})
+	if csilV.EnabledAt != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("enabled_at"), cborText((*csilV.EnabledAt))})
+	}
+	csilEntries = append(csilEntries, cborEntry{cborText("can_propose"), cborBool(csilV.CanPropose)})
+	csilEntries = append(csilEntries, cborEntry{cborText("approver_rules"), cborEncArray(csilV.ApproverRules, func(csilElem RequiredSetApproverRule) cborValue { return csilEncRequiredSetApproverRule(csilElem) })})
+	csilEntries = append(csilEntries, cborEntry{cborText("approvers_source"), cborText(csilV.ApproversSource)})
+	csilEntries = append(csilEntries, cborEntry{cborText("approvers_inherit"), cborBool(csilV.ApproversInherit)})
+	csilEntries = append(csilEntries, cborEntry{cborText("max_quarantine_days"), cborInt(csilV.MaxQuarantineDays)})
+	csilEntries = append(csilEntries, cborEntry{cborText("approver_rules_inherit"), cborBool(csilV.ApproverRulesInherit)})
+	csilEntries = append(csilEntries, cborEntry{cborText("can_approve_all_branches"), cborBool(csilV.CanApproveAllBranches)})
+	return csilEntries
+}
+
+// csilDecGetRequiredSetResponse reconstructs a GetRequiredSetResponse from a decoded CBOR value tree.
+func csilDecGetRequiredSetResponse(csilRoot cborValue) (GetRequiredSetResponse, error) {
+	var csilOut GetRequiredSetResponse
+	{
+		csilField, csilErr := cborRequire(csilRoot, "enabled")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsBool)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Enabled = csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "enabled_at"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.EnabledAt = &csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "workflows")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (func(csilV cborValue) ([]RequiredSetWorkflow, error) {
+			return cborDecArray(csilV, csilDecRequiredSetWorkflow)
+		})(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Workflows = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "proposals")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (func(csilV cborValue) ([]RequiredSetProposal, error) {
+			return cborDecArray(csilV, csilDecRequiredSetProposal)
+		})(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Proposals = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "approvers")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (func(csilV cborValue) ([]string, error) { return cborDecArray(csilV, cborAsText) })(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Approvers = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "approvers_source")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.ApproversSource = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "approver_rules")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (func(csilV cborValue) ([]RequiredSetApproverRule, error) {
+			return cborDecArray(csilV, csilDecRequiredSetApproverRule)
+		})(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.ApproverRules = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "approvers_inherit")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsBool)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.ApproversInherit = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "approver_rules_inherit")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsBool)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.ApproverRulesInherit = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "max_quarantine_days")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsI64)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.MaxQuarantineDays = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "can_propose")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsBool)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.CanPropose = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "can_manage")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsBool)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.CanManage = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "can_approve_all_branches")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsBool)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.CanApproveAllBranches = csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeGetRequiredSetResponse encodes a GetRequiredSetResponse to canonical CSIL CBOR bytes.
+func EncodeGetRequiredSetResponse(csilV GetRequiredSetResponse) []byte {
+	return cborEncode(csilEncGetRequiredSetResponse(csilV))
+}
+
+// DecodeGetRequiredSetResponse decodes canonical CSIL CBOR bytes into a GetRequiredSetResponse.
+func DecodeGetRequiredSetResponse(csilData []byte) (GetRequiredSetResponse, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero GetRequiredSetResponse
+		return csilZero, csilErr
+	}
+	return csilDecGetRequiredSetResponse(csilRoot)
+}
+
+// csilEncSetRequiredSetEnabledRequest builds the canonical CBOR value tree for a SetRequiredSetEnabledRequest.
+func csilEncSetRequiredSetEnabledRequest(csilV SetRequiredSetEnabledRequest) cborValue {
+	csilEntries := make(cborMap, 0, 2)
+	csilEntries = append(csilEntries, cborEntry{cborText("enabled"), cborBool(csilV.Enabled)})
+	csilEntries = append(csilEntries, cborEntry{cborText("project_id"), cborText(csilV.ProjectId)})
+	return csilEntries
+}
+
+// csilDecSetRequiredSetEnabledRequest reconstructs a SetRequiredSetEnabledRequest from a decoded CBOR value tree.
+func csilDecSetRequiredSetEnabledRequest(csilRoot cborValue) (SetRequiredSetEnabledRequest, error) {
+	var csilOut SetRequiredSetEnabledRequest
+	{
+		csilField, csilErr := cborRequire(csilRoot, "project_id")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.ProjectId = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "enabled")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsBool)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Enabled = csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeSetRequiredSetEnabledRequest encodes a SetRequiredSetEnabledRequest to canonical CSIL CBOR bytes.
+func EncodeSetRequiredSetEnabledRequest(csilV SetRequiredSetEnabledRequest) []byte {
+	return cborEncode(csilEncSetRequiredSetEnabledRequest(csilV))
+}
+
+// DecodeSetRequiredSetEnabledRequest decodes canonical CSIL CBOR bytes into a SetRequiredSetEnabledRequest.
+func DecodeSetRequiredSetEnabledRequest(csilData []byte) (SetRequiredSetEnabledRequest, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero SetRequiredSetEnabledRequest
+		return csilZero, csilErr
+	}
+	return csilDecSetRequiredSetEnabledRequest(csilRoot)
+}
+
+// csilEncSetRequiredSetEnabledResponse builds the canonical CBOR value tree for a SetRequiredSetEnabledResponse.
+func csilEncSetRequiredSetEnabledResponse(csilV SetRequiredSetEnabledResponse) cborValue {
+	csilEntries := make(cborMap, 0, 2)
+	csilEntries = append(csilEntries, cborEntry{cborText("seeded"), cborEncArray(csilV.Seeded, func(csilElem string) cborValue { return cborText(csilElem) })})
+	csilEntries = append(csilEntries, cborEntry{cborText("enabled"), cborBool(csilV.Enabled)})
+	return csilEntries
+}
+
+// csilDecSetRequiredSetEnabledResponse reconstructs a SetRequiredSetEnabledResponse from a decoded CBOR value tree.
+func csilDecSetRequiredSetEnabledResponse(csilRoot cborValue) (SetRequiredSetEnabledResponse, error) {
+	var csilOut SetRequiredSetEnabledResponse
+	{
+		csilField, csilErr := cborRequire(csilRoot, "enabled")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsBool)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Enabled = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "seeded")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (func(csilV cborValue) ([]string, error) { return cborDecArray(csilV, cborAsText) })(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Seeded = csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeSetRequiredSetEnabledResponse encodes a SetRequiredSetEnabledResponse to canonical CSIL CBOR bytes.
+func EncodeSetRequiredSetEnabledResponse(csilV SetRequiredSetEnabledResponse) []byte {
+	return cborEncode(csilEncSetRequiredSetEnabledResponse(csilV))
+}
+
+// DecodeSetRequiredSetEnabledResponse decodes canonical CSIL CBOR bytes into a SetRequiredSetEnabledResponse.
+func DecodeSetRequiredSetEnabledResponse(csilData []byte) (SetRequiredSetEnabledResponse, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero SetRequiredSetEnabledResponse
+		return csilZero, csilErr
+	}
+	return csilDecSetRequiredSetEnabledResponse(csilRoot)
+}
+
+// csilEncProposeRequiredSetChangeRequest builds the canonical CBOR value tree for a ProposeRequiredSetChangeRequest.
+func csilEncProposeRequiredSetChangeRequest(csilV ProposeRequiredSetChangeRequest) cborValue {
+	csilEntries := make(cborMap, 0, 6)
+	csilEntries = append(csilEntries, cborEntry{cborText("action"), cborText(csilV.Action)})
+	if csilV.Reason != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("reason"), cborText((*csilV.Reason))})
+	}
+	if csilV.Approve != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("approve"), cborBool((*csilV.Approve))})
+	}
+	csilEntries = append(csilEntries, cborEntry{cborText("project_id"), cborText(csilV.ProjectId)})
+	if csilV.BranchPattern != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("branch_pattern"), cborText((*csilV.BranchPattern))})
+	}
+	csilEntries = append(csilEntries, cborEntry{cborText("workflow_security_id"), cborText(csilV.WorkflowSecurityId)})
+	return csilEntries
+}
+
+// csilDecProposeRequiredSetChangeRequest reconstructs a ProposeRequiredSetChangeRequest from a decoded CBOR value tree.
+func csilDecProposeRequiredSetChangeRequest(csilRoot cborValue) (ProposeRequiredSetChangeRequest, error) {
+	var csilOut ProposeRequiredSetChangeRequest
+	{
+		csilField, csilErr := cborRequire(csilRoot, "project_id")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.ProjectId = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "action")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Action = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "workflow_security_id")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.WorkflowSecurityId = csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "branch_pattern"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.BranchPattern = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "reason"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Reason = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "approve"); csilOk {
+		csilVal, csilErr := (cborAsBool)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Approve = &csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeProposeRequiredSetChangeRequest encodes a ProposeRequiredSetChangeRequest to canonical CSIL CBOR bytes.
+func EncodeProposeRequiredSetChangeRequest(csilV ProposeRequiredSetChangeRequest) []byte {
+	return cborEncode(csilEncProposeRequiredSetChangeRequest(csilV))
+}
+
+// DecodeProposeRequiredSetChangeRequest decodes canonical CSIL CBOR bytes into a ProposeRequiredSetChangeRequest.
+func DecodeProposeRequiredSetChangeRequest(csilData []byte) (ProposeRequiredSetChangeRequest, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero ProposeRequiredSetChangeRequest
+		return csilZero, csilErr
+	}
+	return csilDecProposeRequiredSetChangeRequest(csilRoot)
+}
+
+// csilEncProposeRequiredSetChangeResponse builds the canonical CBOR value tree for a ProposeRequiredSetChangeResponse.
+func csilEncProposeRequiredSetChangeResponse(csilV ProposeRequiredSetChangeResponse) cborValue {
+	csilEntries := make(cborMap, 0, 1)
+	csilEntries = append(csilEntries, cborEntry{cborText("proposal"), csilEncRequiredSetProposal(csilV.Proposal)})
+	return csilEntries
+}
+
+// csilDecProposeRequiredSetChangeResponse reconstructs a ProposeRequiredSetChangeResponse from a decoded CBOR value tree.
+func csilDecProposeRequiredSetChangeResponse(csilRoot cborValue) (ProposeRequiredSetChangeResponse, error) {
+	var csilOut ProposeRequiredSetChangeResponse
+	{
+		csilField, csilErr := cborRequire(csilRoot, "proposal")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (csilDecRequiredSetProposal)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Proposal = csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeProposeRequiredSetChangeResponse encodes a ProposeRequiredSetChangeResponse to canonical CSIL CBOR bytes.
+func EncodeProposeRequiredSetChangeResponse(csilV ProposeRequiredSetChangeResponse) []byte {
+	return cborEncode(csilEncProposeRequiredSetChangeResponse(csilV))
+}
+
+// DecodeProposeRequiredSetChangeResponse decodes canonical CSIL CBOR bytes into a ProposeRequiredSetChangeResponse.
+func DecodeProposeRequiredSetChangeResponse(csilData []byte) (ProposeRequiredSetChangeResponse, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero ProposeRequiredSetChangeResponse
+		return csilZero, csilErr
+	}
+	return csilDecProposeRequiredSetChangeResponse(csilRoot)
+}
+
+// csilEncDecideRequiredSetProposalRequest builds the canonical CBOR value tree for a DecideRequiredSetProposalRequest.
+func csilEncDecideRequiredSetProposalRequest(csilV DecideRequiredSetProposalRequest) cborValue {
+	csilEntries := make(cborMap, 0, 4)
+	if csilV.Reason != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("reason"), cborText((*csilV.Reason))})
+	}
+	csilEntries = append(csilEntries, cborEntry{cborText("decision"), cborText(csilV.Decision)})
+	csilEntries = append(csilEntries, cborEntry{cborText("project_id"), cborText(csilV.ProjectId)})
+	csilEntries = append(csilEntries, cborEntry{cborText("proposal_id"), cborText(csilV.ProposalId)})
+	return csilEntries
+}
+
+// csilDecDecideRequiredSetProposalRequest reconstructs a DecideRequiredSetProposalRequest from a decoded CBOR value tree.
+func csilDecDecideRequiredSetProposalRequest(csilRoot cborValue) (DecideRequiredSetProposalRequest, error) {
+	var csilOut DecideRequiredSetProposalRequest
+	{
+		csilField, csilErr := cborRequire(csilRoot, "project_id")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.ProjectId = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "proposal_id")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.ProposalId = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "decision")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Decision = csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "reason"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Reason = &csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeDecideRequiredSetProposalRequest encodes a DecideRequiredSetProposalRequest to canonical CSIL CBOR bytes.
+func EncodeDecideRequiredSetProposalRequest(csilV DecideRequiredSetProposalRequest) []byte {
+	return cborEncode(csilEncDecideRequiredSetProposalRequest(csilV))
+}
+
+// DecodeDecideRequiredSetProposalRequest decodes canonical CSIL CBOR bytes into a DecideRequiredSetProposalRequest.
+func DecodeDecideRequiredSetProposalRequest(csilData []byte) (DecideRequiredSetProposalRequest, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero DecideRequiredSetProposalRequest
+		return csilZero, csilErr
+	}
+	return csilDecDecideRequiredSetProposalRequest(csilRoot)
+}
+
+// csilEncDecideRequiredSetProposalResponse builds the canonical CBOR value tree for a DecideRequiredSetProposalResponse.
+func csilEncDecideRequiredSetProposalResponse(csilV DecideRequiredSetProposalResponse) cborValue {
+	csilEntries := make(cborMap, 0, 1)
+	csilEntries = append(csilEntries, cborEntry{cborText("proposal"), csilEncRequiredSetProposal(csilV.Proposal)})
+	return csilEntries
+}
+
+// csilDecDecideRequiredSetProposalResponse reconstructs a DecideRequiredSetProposalResponse from a decoded CBOR value tree.
+func csilDecDecideRequiredSetProposalResponse(csilRoot cborValue) (DecideRequiredSetProposalResponse, error) {
+	var csilOut DecideRequiredSetProposalResponse
+	{
+		csilField, csilErr := cborRequire(csilRoot, "proposal")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (csilDecRequiredSetProposal)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Proposal = csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeDecideRequiredSetProposalResponse encodes a DecideRequiredSetProposalResponse to canonical CSIL CBOR bytes.
+func EncodeDecideRequiredSetProposalResponse(csilV DecideRequiredSetProposalResponse) []byte {
+	return cborEncode(csilEncDecideRequiredSetProposalResponse(csilV))
+}
+
+// DecodeDecideRequiredSetProposalResponse decodes canonical CSIL CBOR bytes into a DecideRequiredSetProposalResponse.
+func DecodeDecideRequiredSetProposalResponse(csilData []byte) (DecideRequiredSetProposalResponse, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero DecideRequiredSetProposalResponse
+		return csilZero, csilErr
+	}
+	return csilDecDecideRequiredSetProposalResponse(csilRoot)
+}
+
+// csilEncQuarantineRequiredWorkflowRequest builds the canonical CBOR value tree for a QuarantineRequiredWorkflowRequest.
+func csilEncQuarantineRequiredWorkflowRequest(csilV QuarantineRequiredWorkflowRequest) cborValue {
+	csilEntries := make(cborMap, 0, 5)
+	csilEntries = append(csilEntries, cborEntry{cborText("until"), cborText(csilV.Until)})
+	csilEntries = append(csilEntries, cborEntry{cborText("reason"), cborText(csilV.Reason)})
+	csilEntries = append(csilEntries, cborEntry{cborText("project_id"), cborText(csilV.ProjectId)})
+	if csilV.BranchPattern != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("branch_pattern"), cborText((*csilV.BranchPattern))})
+	}
+	csilEntries = append(csilEntries, cborEntry{cborText("workflow_security_id"), cborText(csilV.WorkflowSecurityId)})
+	return csilEntries
+}
+
+// csilDecQuarantineRequiredWorkflowRequest reconstructs a QuarantineRequiredWorkflowRequest from a decoded CBOR value tree.
+func csilDecQuarantineRequiredWorkflowRequest(csilRoot cborValue) (QuarantineRequiredWorkflowRequest, error) {
+	var csilOut QuarantineRequiredWorkflowRequest
+	{
+		csilField, csilErr := cborRequire(csilRoot, "project_id")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.ProjectId = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "workflow_security_id")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.WorkflowSecurityId = csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "branch_pattern"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.BranchPattern = &csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "until")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Until = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "reason")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Reason = csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeQuarantineRequiredWorkflowRequest encodes a QuarantineRequiredWorkflowRequest to canonical CSIL CBOR bytes.
+func EncodeQuarantineRequiredWorkflowRequest(csilV QuarantineRequiredWorkflowRequest) []byte {
+	return cborEncode(csilEncQuarantineRequiredWorkflowRequest(csilV))
+}
+
+// DecodeQuarantineRequiredWorkflowRequest decodes canonical CSIL CBOR bytes into a QuarantineRequiredWorkflowRequest.
+func DecodeQuarantineRequiredWorkflowRequest(csilData []byte) (QuarantineRequiredWorkflowRequest, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero QuarantineRequiredWorkflowRequest
+		return csilZero, csilErr
+	}
+	return csilDecQuarantineRequiredWorkflowRequest(csilRoot)
+}
+
+// csilEncQuarantineRequiredWorkflowResponse builds the canonical CBOR value tree for a QuarantineRequiredWorkflowResponse.
+func csilEncQuarantineRequiredWorkflowResponse(csilV QuarantineRequiredWorkflowResponse) cborValue {
+	csilEntries := make(cborMap, 0, 1)
+	csilEntries = append(csilEntries, cborEntry{cborText("workflow"), csilEncRequiredSetWorkflow(csilV.Workflow)})
+	return csilEntries
+}
+
+// csilDecQuarantineRequiredWorkflowResponse reconstructs a QuarantineRequiredWorkflowResponse from a decoded CBOR value tree.
+func csilDecQuarantineRequiredWorkflowResponse(csilRoot cborValue) (QuarantineRequiredWorkflowResponse, error) {
+	var csilOut QuarantineRequiredWorkflowResponse
+	{
+		csilField, csilErr := cborRequire(csilRoot, "workflow")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (csilDecRequiredSetWorkflow)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Workflow = csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeQuarantineRequiredWorkflowResponse encodes a QuarantineRequiredWorkflowResponse to canonical CSIL CBOR bytes.
+func EncodeQuarantineRequiredWorkflowResponse(csilV QuarantineRequiredWorkflowResponse) []byte {
+	return cborEncode(csilEncQuarantineRequiredWorkflowResponse(csilV))
+}
+
+// DecodeQuarantineRequiredWorkflowResponse decodes canonical CSIL CBOR bytes into a QuarantineRequiredWorkflowResponse.
+func DecodeQuarantineRequiredWorkflowResponse(csilData []byte) (QuarantineRequiredWorkflowResponse, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero QuarantineRequiredWorkflowResponse
+		return csilZero, csilErr
+	}
+	return csilDecQuarantineRequiredWorkflowResponse(csilRoot)
+}
+
+// csilEncUnquarantineRequiredWorkflowRequest builds the canonical CBOR value tree for a UnquarantineRequiredWorkflowRequest.
+func csilEncUnquarantineRequiredWorkflowRequest(csilV UnquarantineRequiredWorkflowRequest) cborValue {
+	csilEntries := make(cborMap, 0, 3)
+	csilEntries = append(csilEntries, cborEntry{cborText("project_id"), cborText(csilV.ProjectId)})
+	if csilV.BranchPattern != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("branch_pattern"), cborText((*csilV.BranchPattern))})
+	}
+	csilEntries = append(csilEntries, cborEntry{cborText("workflow_security_id"), cborText(csilV.WorkflowSecurityId)})
+	return csilEntries
+}
+
+// csilDecUnquarantineRequiredWorkflowRequest reconstructs a UnquarantineRequiredWorkflowRequest from a decoded CBOR value tree.
+func csilDecUnquarantineRequiredWorkflowRequest(csilRoot cborValue) (UnquarantineRequiredWorkflowRequest, error) {
+	var csilOut UnquarantineRequiredWorkflowRequest
+	{
+		csilField, csilErr := cborRequire(csilRoot, "project_id")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.ProjectId = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "workflow_security_id")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.WorkflowSecurityId = csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "branch_pattern"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.BranchPattern = &csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeUnquarantineRequiredWorkflowRequest encodes a UnquarantineRequiredWorkflowRequest to canonical CSIL CBOR bytes.
+func EncodeUnquarantineRequiredWorkflowRequest(csilV UnquarantineRequiredWorkflowRequest) []byte {
+	return cborEncode(csilEncUnquarantineRequiredWorkflowRequest(csilV))
+}
+
+// DecodeUnquarantineRequiredWorkflowRequest decodes canonical CSIL CBOR bytes into a UnquarantineRequiredWorkflowRequest.
+func DecodeUnquarantineRequiredWorkflowRequest(csilData []byte) (UnquarantineRequiredWorkflowRequest, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero UnquarantineRequiredWorkflowRequest
+		return csilZero, csilErr
+	}
+	return csilDecUnquarantineRequiredWorkflowRequest(csilRoot)
+}
+
+// csilEncUnquarantineRequiredWorkflowResponse builds the canonical CBOR value tree for a UnquarantineRequiredWorkflowResponse.
+func csilEncUnquarantineRequiredWorkflowResponse(csilV UnquarantineRequiredWorkflowResponse) cborValue {
+	csilEntries := make(cborMap, 0, 1)
+	csilEntries = append(csilEntries, cborEntry{cborText("done"), cborBool(csilV.Done)})
+	return csilEntries
+}
+
+// csilDecUnquarantineRequiredWorkflowResponse reconstructs a UnquarantineRequiredWorkflowResponse from a decoded CBOR value tree.
+func csilDecUnquarantineRequiredWorkflowResponse(csilRoot cborValue) (UnquarantineRequiredWorkflowResponse, error) {
+	var csilOut UnquarantineRequiredWorkflowResponse
+	{
+		csilField, csilErr := cborRequire(csilRoot, "done")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsBool)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Done = csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeUnquarantineRequiredWorkflowResponse encodes a UnquarantineRequiredWorkflowResponse to canonical CSIL CBOR bytes.
+func EncodeUnquarantineRequiredWorkflowResponse(csilV UnquarantineRequiredWorkflowResponse) []byte {
+	return cborEncode(csilEncUnquarantineRequiredWorkflowResponse(csilV))
+}
+
+// DecodeUnquarantineRequiredWorkflowResponse decodes canonical CSIL CBOR bytes into a UnquarantineRequiredWorkflowResponse.
+func DecodeUnquarantineRequiredWorkflowResponse(csilData []byte) (UnquarantineRequiredWorkflowResponse, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero UnquarantineRequiredWorkflowResponse
+		return csilZero, csilErr
+	}
+	return csilDecUnquarantineRequiredWorkflowResponse(csilRoot)
+}
+
+// csilEncSetRequiredSetApproversRequest builds the canonical CBOR value tree for a SetRequiredSetApproversRequest.
+func csilEncSetRequiredSetApproversRequest(csilV SetRequiredSetApproversRequest) cborValue {
+	csilEntries := make(cborMap, 0, 5)
+	csilEntries = append(csilEntries, cborEntry{cborText("approvers"), cborEncArray(csilV.Approvers, func(csilElem string) cborValue { return cborText(csilElem) })})
+	csilEntries = append(csilEntries, cborEntry{cborText("project_id"), cborText(csilV.ProjectId)})
+	csilEntries = append(csilEntries, cborEntry{cborText("inherit_rules"), cborBool(csilV.InheritRules)})
+	csilEntries = append(csilEntries, cborEntry{cborText("approver_rules"), cborEncArray(csilV.ApproverRules, func(csilElem RequiredSetApproverRule) cborValue { return csilEncRequiredSetApproverRule(csilElem) })})
+	csilEntries = append(csilEntries, cborEntry{cborText("inherit_approvers"), cborBool(csilV.InheritApprovers)})
+	return csilEntries
+}
+
+// csilDecSetRequiredSetApproversRequest reconstructs a SetRequiredSetApproversRequest from a decoded CBOR value tree.
+func csilDecSetRequiredSetApproversRequest(csilRoot cborValue) (SetRequiredSetApproversRequest, error) {
+	var csilOut SetRequiredSetApproversRequest
+	{
+		csilField, csilErr := cborRequire(csilRoot, "project_id")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.ProjectId = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "inherit_approvers")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsBool)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.InheritApprovers = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "approvers")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (func(csilV cborValue) ([]string, error) { return cborDecArray(csilV, cborAsText) })(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Approvers = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "inherit_rules")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsBool)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.InheritRules = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "approver_rules")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (func(csilV cborValue) ([]RequiredSetApproverRule, error) {
+			return cborDecArray(csilV, csilDecRequiredSetApproverRule)
+		})(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.ApproverRules = csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeSetRequiredSetApproversRequest encodes a SetRequiredSetApproversRequest to canonical CSIL CBOR bytes.
+func EncodeSetRequiredSetApproversRequest(csilV SetRequiredSetApproversRequest) []byte {
+	return cborEncode(csilEncSetRequiredSetApproversRequest(csilV))
+}
+
+// DecodeSetRequiredSetApproversRequest decodes canonical CSIL CBOR bytes into a SetRequiredSetApproversRequest.
+func DecodeSetRequiredSetApproversRequest(csilData []byte) (SetRequiredSetApproversRequest, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero SetRequiredSetApproversRequest
+		return csilZero, csilErr
+	}
+	return csilDecSetRequiredSetApproversRequest(csilRoot)
+}
+
+// csilEncPriorityLaneMatch builds the canonical CBOR value tree for a PriorityLaneMatch.
+func csilEncPriorityLaneMatch(csilV PriorityLaneMatch) cborValue {
+	csilEntries := make(cborMap, 0, 6)
+	if csilV.Draft != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("draft"), cborBool((*csilV.Draft))})
+	}
+	if csilV.Retry != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("retry"), cborBool((*csilV.Retry))})
+	}
+	if csilV.JobKind != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("job_kind"), cborText((*csilV.JobKind))})
+	}
+	if csilV.ClassesAny != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("classes_any"), cborEncArray(csilV.ClassesAny, func(csilElem string) cborValue { return cborText(csilElem) })})
+	}
+	if csilV.EventTypes != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("event_types"), cborEncArray(csilV.EventTypes, func(csilElem string) cborValue { return cborText(csilElem) })})
+	}
+	if csilV.ClassesNone != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("classes_none"), cborEncArray(csilV.ClassesNone, func(csilElem string) cborValue { return cborText(csilElem) })})
+	}
+	return csilEntries
+}
+
+// csilDecPriorityLaneMatch reconstructs a PriorityLaneMatch from a decoded CBOR value tree.
+func csilDecPriorityLaneMatch(csilRoot cborValue) (PriorityLaneMatch, error) {
+	var csilOut PriorityLaneMatch
+	if csilField, csilOk := cborMapGet(csilRoot, "classes_any"); csilOk {
+		csilVal, csilErr := (func(csilV cborValue) ([]string, error) { return cborDecArray(csilV, cborAsText) })(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.ClassesAny = csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "classes_none"); csilOk {
+		csilVal, csilErr := (func(csilV cborValue) ([]string, error) { return cborDecArray(csilV, cborAsText) })(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.ClassesNone = csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "event_types"); csilOk {
+		csilVal, csilErr := (func(csilV cborValue) ([]string, error) { return cborDecArray(csilV, cborAsText) })(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.EventTypes = csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "draft"); csilOk {
+		csilVal, csilErr := (cborAsBool)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Draft = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "job_kind"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.JobKind = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "retry"); csilOk {
+		csilVal, csilErr := (cborAsBool)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Retry = &csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodePriorityLaneMatch encodes a PriorityLaneMatch to canonical CSIL CBOR bytes.
+func EncodePriorityLaneMatch(csilV PriorityLaneMatch) []byte {
+	return cborEncode(csilEncPriorityLaneMatch(csilV))
+}
+
+// DecodePriorityLaneMatch decodes canonical CSIL CBOR bytes into a PriorityLaneMatch.
+func DecodePriorityLaneMatch(csilData []byte) (PriorityLaneMatch, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero PriorityLaneMatch
+		return csilZero, csilErr
+	}
+	return csilDecPriorityLaneMatch(csilRoot)
+}
+
+// csilEncPriorityLane builds the canonical CBOR value tree for a PriorityLane.
+func csilEncPriorityLane(csilV PriorityLane) cborValue {
+	csilEntries := make(cborMap, 0, 12)
+	csilEntries = append(csilEntries, cborEntry{cborText("base"), cborInt(csilV.Base)})
+	csilEntries = append(csilEntries, cborEntry{cborText("name"), cborText(csilV.Name)})
+	csilEntries = append(csilEntries, cborEntry{cborText("match"), csilEncPriorityLaneMatch(csilV.Match)})
+	if csilV.Scope != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("scope"), cborText((*csilV.Scope))})
+	}
+	csilEntries = append(csilEntries, cborEntry{cborText("enabled"), cborBool(csilV.Enabled)})
+	if csilV.LaneId != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("lane_id"), cborText((*csilV.LaneId))})
+	}
+	if csilV.RuleId != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("rule_id"), cborText((*csilV.RuleId))})
+	}
+	csilEntries = append(csilEntries, cborEntry{cborText("position"), cborInt(csilV.Position)})
+	if csilV.Replaces != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("replaces"), cborText((*csilV.Replaces))})
+	}
+	csilEntries = append(csilEntries, cborEntry{cborText("match_text"), cborText(csilV.MatchText)})
+	if csilV.ProjectId != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("project_id"), cborText((*csilV.ProjectId))})
+	}
+	if csilV.Description != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("description"), cborText((*csilV.Description))})
+	}
+	return csilEntries
+}
+
+// csilDecPriorityLane reconstructs a PriorityLane from a decoded CBOR value tree.
+func csilDecPriorityLane(csilRoot cborValue) (PriorityLane, error) {
+	var csilOut PriorityLane
+	if csilField, csilOk := cborMapGet(csilRoot, "lane_id"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.LaneId = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "rule_id"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.RuleId = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "project_id"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.ProjectId = &csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "name")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Name = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "position")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsI64)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Position = csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "description"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Description = &csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "base")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsI64)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Base = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "match")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (csilDecPriorityLaneMatch)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Match = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "match_text")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.MatchText = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "enabled")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsBool)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Enabled = csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "scope"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Scope = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "replaces"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Replaces = &csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodePriorityLane encodes a PriorityLane to canonical CSIL CBOR bytes.
+func EncodePriorityLane(csilV PriorityLane) []byte {
+	return cborEncode(csilEncPriorityLane(csilV))
+}
+
+// DecodePriorityLane decodes canonical CSIL CBOR bytes into a PriorityLane.
+func DecodePriorityLane(csilData []byte) (PriorityLane, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero PriorityLane
+		return csilZero, csilErr
+	}
+	return csilDecPriorityLane(csilRoot)
+}
+
+// csilEncPriorityBounds builds the canonical CBOR value tree for a PriorityBounds.
+func csilEncPriorityBounds(csilV PriorityBounds) cborValue {
+	csilEntries := make(cborMap, 0, 6)
+	csilEntries = append(csilEntries, cborEntry{cborText("max_base"), cborInt(csilV.MaxBase)})
+	csilEntries = append(csilEntries, cborEntry{cborText("min_base"), cborInt(csilV.MinBase)})
+	csilEntries = append(csilEntries, cborEntry{cborText("max_requested"), cborInt(csilV.MaxRequested)})
+	csilEntries = append(csilEntries, cborEntry{cborText("shed_pr_shift"), cborInt(csilV.ShedPrShift)})
+	csilEntries = append(csilEntries, cborEntry{cborText("max_group_shift"), cborInt(csilV.MaxGroupShift)})
+	csilEntries = append(csilEntries, cborEntry{cborText("min_group_shift"), cborInt(csilV.MinGroupShift)})
+	return csilEntries
+}
+
+// csilDecPriorityBounds reconstructs a PriorityBounds from a decoded CBOR value tree.
+func csilDecPriorityBounds(csilRoot cborValue) (PriorityBounds, error) {
+	var csilOut PriorityBounds
+	{
+		csilField, csilErr := cborRequire(csilRoot, "min_base")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsI64)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.MinBase = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "max_base")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsI64)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.MaxBase = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "min_group_shift")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsI64)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.MinGroupShift = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "max_group_shift")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsI64)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.MaxGroupShift = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "max_requested")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsI64)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.MaxRequested = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "shed_pr_shift")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsI64)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.ShedPrShift = csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodePriorityBounds encodes a PriorityBounds to canonical CSIL CBOR bytes.
+func EncodePriorityBounds(csilV PriorityBounds) []byte {
+	return cborEncode(csilEncPriorityBounds(csilV))
+}
+
+// DecodePriorityBounds decodes canonical CSIL CBOR bytes into a PriorityBounds.
+func DecodePriorityBounds(csilData []byte) (PriorityBounds, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero PriorityBounds
+		return csilZero, csilErr
+	}
+	return csilDecPriorityBounds(csilRoot)
+}
+
+// csilEncPriorityShift builds the canonical CBOR value tree for a PriorityShift.
+func csilEncPriorityShift(csilV PriorityShift) cborValue {
+	csilEntries := make(cborMap, 0, 4)
+	if csilV.Group != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("group"), cborText((*csilV.Group))})
+	}
+	csilEntries = append(csilEntries, cborEntry{cborText("value"), cborInt(csilV.Value)})
+	csilEntries = append(csilEntries, cborEntry{cborText("source"), cborText(csilV.Source)})
+	csilEntries = append(csilEntries, cborEntry{cborText("applied"), cborBool(csilV.Applied)})
+	return csilEntries
+}
+
+// csilDecPriorityShift reconstructs a PriorityShift from a decoded CBOR value tree.
+func csilDecPriorityShift(csilRoot cborValue) (PriorityShift, error) {
+	var csilOut PriorityShift
+	{
+		csilField, csilErr := cborRequire(csilRoot, "source")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Source = csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "group"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Group = &csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "value")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsI64)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Value = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "applied")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsBool)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Applied = csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodePriorityShift encodes a PriorityShift to canonical CSIL CBOR bytes.
+func EncodePriorityShift(csilV PriorityShift) []byte {
+	return cborEncode(csilEncPriorityShift(csilV))
+}
+
+// DecodePriorityShift decodes canonical CSIL CBOR bytes into a PriorityShift.
+func DecodePriorityShift(csilData []byte) (PriorityShift, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero PriorityShift
+		return csilZero, csilErr
+	}
+	return csilDecPriorityShift(csilRoot)
+}
+
+// csilEncPriorityDecision builds the canonical CBOR value tree for a PriorityDecision.
+func csilEncPriorityDecision(csilV PriorityDecision) cborValue {
+	csilEntries := make(cborMap, 0, 8)
+	csilEntries = append(csilEntries, cborEntry{cborText("base"), cborInt(csilV.Base)})
+	csilEntries = append(csilEntries, cborEntry{cborText("lane"), cborText(csilV.Lane)})
+	csilEntries = append(csilEntries, cborEntry{cborText("final"), cborInt(csilV.Final)})
+	csilEntries = append(csilEntries, cborEntry{cborText("scope"), cborText(csilV.Scope)})
+	csilEntries = append(csilEntries, cborEntry{cborText("shifts"), cborEncArray(csilV.Shifts, func(csilElem PriorityShift) cborValue { return csilEncPriorityShift(csilElem) })})
+	csilEntries = append(csilEntries, cborEntry{cborText("rule_id"), cborText(csilV.RuleId)})
+	csilEntries = append(csilEntries, cborEntry{cborText("summary"), cborText(csilV.Summary)})
+	if csilV.RetainedFrom != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("retained_from"), cborText((*csilV.RetainedFrom))})
+	}
+	return csilEntries
+}
+
+// csilDecPriorityDecision reconstructs a PriorityDecision from a decoded CBOR value tree.
+func csilDecPriorityDecision(csilRoot cborValue) (PriorityDecision, error) {
+	var csilOut PriorityDecision
+	{
+		csilField, csilErr := cborRequire(csilRoot, "lane")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Lane = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "rule_id")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.RuleId = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "scope")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Scope = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "base")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsI64)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Base = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "shifts")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (func(csilV cborValue) ([]PriorityShift, error) { return cborDecArray(csilV, csilDecPriorityShift) })(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Shifts = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "final")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsI64)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Final = csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "retained_from"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.RetainedFrom = &csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "summary")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Summary = csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodePriorityDecision encodes a PriorityDecision to canonical CSIL CBOR bytes.
+func EncodePriorityDecision(csilV PriorityDecision) []byte {
+	return cborEncode(csilEncPriorityDecision(csilV))
+}
+
+// DecodePriorityDecision decodes canonical CSIL CBOR bytes into a PriorityDecision.
+func DecodePriorityDecision(csilData []byte) (PriorityDecision, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero PriorityDecision
+		return csilZero, csilErr
+	}
+	return csilDecPriorityDecision(csilRoot)
+}
+
+// csilEncPriorityLaneCheck builds the canonical CBOR value tree for a PriorityLaneCheck.
+func csilEncPriorityLaneCheck(csilV PriorityLaneCheck) cborValue {
+	csilEntries := make(cborMap, 0, 6)
+	csilEntries = append(csilEntries, cborEntry{cborText("base"), cborInt(csilV.Base)})
+	csilEntries = append(csilEntries, cborEntry{cborText("name"), cborText(csilV.Name)})
+	csilEntries = append(csilEntries, cborEntry{cborText("scope"), cborText(csilV.Scope)})
+	csilEntries = append(csilEntries, cborEntry{cborText("enabled"), cborBool(csilV.Enabled)})
+	csilEntries = append(csilEntries, cborEntry{cborText("matched"), cborBool(csilV.Matched)})
+	csilEntries = append(csilEntries, cborEntry{cborText("match_text"), cborText(csilV.MatchText)})
+	return csilEntries
+}
+
+// csilDecPriorityLaneCheck reconstructs a PriorityLaneCheck from a decoded CBOR value tree.
+func csilDecPriorityLaneCheck(csilRoot cborValue) (PriorityLaneCheck, error) {
+	var csilOut PriorityLaneCheck
+	{
+		csilField, csilErr := cborRequire(csilRoot, "name")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Name = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "scope")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Scope = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "base")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsI64)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Base = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "enabled")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsBool)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Enabled = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "matched")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsBool)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Matched = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "match_text")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.MatchText = csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodePriorityLaneCheck encodes a PriorityLaneCheck to canonical CSIL CBOR bytes.
+func EncodePriorityLaneCheck(csilV PriorityLaneCheck) []byte {
+	return cborEncode(csilEncPriorityLaneCheck(csilV))
+}
+
+// DecodePriorityLaneCheck decodes canonical CSIL CBOR bytes into a PriorityLaneCheck.
+func DecodePriorityLaneCheck(csilData []byte) (PriorityLaneCheck, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero PriorityLaneCheck
+		return csilZero, csilErr
+	}
+	return csilDecPriorityLaneCheck(csilRoot)
+}
+
+// csilEncListPriorityLanesRequest builds the canonical CBOR value tree for a ListPriorityLanesRequest.
+func csilEncListPriorityLanesRequest(csilV ListPriorityLanesRequest) cborValue {
+	csilEntries := make(cborMap, 0, 2)
+	if csilV.ProjectId != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("project_id"), cborText((*csilV.ProjectId))})
+	}
+	csilEntries = append(csilEntries, cborEntry{cborText("organization"), cborText(csilV.Organization)})
+	return csilEntries
+}
+
+// csilDecListPriorityLanesRequest reconstructs a ListPriorityLanesRequest from a decoded CBOR value tree.
+func csilDecListPriorityLanesRequest(csilRoot cborValue) (ListPriorityLanesRequest, error) {
+	var csilOut ListPriorityLanesRequest
+	{
+		csilField, csilErr := cborRequire(csilRoot, "organization")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Organization = csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "project_id"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.ProjectId = &csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeListPriorityLanesRequest encodes a ListPriorityLanesRequest to canonical CSIL CBOR bytes.
+func EncodeListPriorityLanesRequest(csilV ListPriorityLanesRequest) []byte {
+	return cborEncode(csilEncListPriorityLanesRequest(csilV))
+}
+
+// DecodeListPriorityLanesRequest decodes canonical CSIL CBOR bytes into a ListPriorityLanesRequest.
+func DecodeListPriorityLanesRequest(csilData []byte) (ListPriorityLanesRequest, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero ListPriorityLanesRequest
+		return csilZero, csilErr
+	}
+	return csilDecListPriorityLanesRequest(csilRoot)
+}
+
+// csilEncListPriorityLanesResponse builds the canonical CBOR value tree for a ListPriorityLanesResponse.
+func csilEncListPriorityLanesResponse(csilV ListPriorityLanesResponse) cborValue {
+	csilEntries := make(cborMap, 0, 6)
+	csilEntries = append(csilEntries, cborEntry{cborText("lanes"), cborEncArray(csilV.Lanes, func(csilElem PriorityLane) cborValue { return csilEncPriorityLane(csilElem) })})
+	csilEntries = append(csilEntries, cborEntry{cborText("bounds"), csilEncPriorityBounds(csilV.Bounds)})
+	csilEntries = append(csilEntries, cborEntry{cborText("builtin"), cborEncArray(csilV.Builtin, func(csilElem PriorityLane) cborValue { return csilEncPriorityLane(csilElem) })})
+	csilEntries = append(csilEntries, cborEntry{cborText("effective"), cborEncArray(csilV.Effective, func(csilElem PriorityLane) cborValue { return csilEncPriorityLane(csilElem) })})
+	csilEntries = append(csilEntries, cborEntry{cborText("inherited"), cborEncArray(csilV.Inherited, func(csilElem PriorityLane) cborValue { return csilEncPriorityLane(csilElem) })})
+	csilEntries = append(csilEntries, cborEntry{cborText("can_manage"), cborBool(csilV.CanManage)})
+	return csilEntries
+}
+
+// csilDecListPriorityLanesResponse reconstructs a ListPriorityLanesResponse from a decoded CBOR value tree.
+func csilDecListPriorityLanesResponse(csilRoot cborValue) (ListPriorityLanesResponse, error) {
+	var csilOut ListPriorityLanesResponse
+	{
+		csilField, csilErr := cborRequire(csilRoot, "lanes")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (func(csilV cborValue) ([]PriorityLane, error) { return cborDecArray(csilV, csilDecPriorityLane) })(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Lanes = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "inherited")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (func(csilV cborValue) ([]PriorityLane, error) { return cborDecArray(csilV, csilDecPriorityLane) })(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Inherited = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "builtin")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (func(csilV cborValue) ([]PriorityLane, error) { return cborDecArray(csilV, csilDecPriorityLane) })(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Builtin = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "effective")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (func(csilV cborValue) ([]PriorityLane, error) { return cborDecArray(csilV, csilDecPriorityLane) })(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Effective = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "bounds")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (csilDecPriorityBounds)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Bounds = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "can_manage")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsBool)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.CanManage = csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeListPriorityLanesResponse encodes a ListPriorityLanesResponse to canonical CSIL CBOR bytes.
+func EncodeListPriorityLanesResponse(csilV ListPriorityLanesResponse) []byte {
+	return cborEncode(csilEncListPriorityLanesResponse(csilV))
+}
+
+// DecodeListPriorityLanesResponse decodes canonical CSIL CBOR bytes into a ListPriorityLanesResponse.
+func DecodeListPriorityLanesResponse(csilData []byte) (ListPriorityLanesResponse, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero ListPriorityLanesResponse
+		return csilZero, csilErr
+	}
+	return csilDecListPriorityLanesResponse(csilRoot)
+}
+
+// csilEncPutPriorityLaneRequest builds the canonical CBOR value tree for a PutPriorityLaneRequest.
+func csilEncPutPriorityLaneRequest(csilV PutPriorityLaneRequest) cborValue {
+	csilEntries := make(cborMap, 0, 8)
+	csilEntries = append(csilEntries, cborEntry{cborText("base"), cborInt(csilV.Base)})
+	csilEntries = append(csilEntries, cborEntry{cborText("name"), cborText(csilV.Name)})
+	if csilV.Match != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("match"), csilEncPriorityLaneMatch((*csilV.Match))})
+	}
+	if csilV.Enabled != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("enabled"), cborBool((*csilV.Enabled))})
+	}
+	if csilV.Position != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("position"), cborInt((*csilV.Position))})
+	}
+	if csilV.ProjectId != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("project_id"), cborText((*csilV.ProjectId))})
+	}
+	if csilV.Description != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("description"), cborText((*csilV.Description))})
+	}
+	csilEntries = append(csilEntries, cborEntry{cborText("organization"), cborText(csilV.Organization)})
+	return csilEntries
+}
+
+// csilDecPutPriorityLaneRequest reconstructs a PutPriorityLaneRequest from a decoded CBOR value tree.
+func csilDecPutPriorityLaneRequest(csilRoot cborValue) (PutPriorityLaneRequest, error) {
+	var csilOut PutPriorityLaneRequest
+	{
+		csilField, csilErr := cborRequire(csilRoot, "organization")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Organization = csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "project_id"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.ProjectId = &csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "name")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Name = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "base")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsI64)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Base = csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "position"); csilOk {
+		csilVal, csilErr := (cborAsI64)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Position = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "description"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Description = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "match"); csilOk {
+		csilVal, csilErr := (csilDecPriorityLaneMatch)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Match = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "enabled"); csilOk {
+		csilVal, csilErr := (cborAsBool)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Enabled = &csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodePutPriorityLaneRequest encodes a PutPriorityLaneRequest to canonical CSIL CBOR bytes.
+func EncodePutPriorityLaneRequest(csilV PutPriorityLaneRequest) []byte {
+	return cborEncode(csilEncPutPriorityLaneRequest(csilV))
+}
+
+// DecodePutPriorityLaneRequest decodes canonical CSIL CBOR bytes into a PutPriorityLaneRequest.
+func DecodePutPriorityLaneRequest(csilData []byte) (PutPriorityLaneRequest, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero PutPriorityLaneRequest
+		return csilZero, csilErr
+	}
+	return csilDecPutPriorityLaneRequest(csilRoot)
+}
+
+// csilEncPutPriorityLaneResponse builds the canonical CBOR value tree for a PutPriorityLaneResponse.
+func csilEncPutPriorityLaneResponse(csilV PutPriorityLaneResponse) cborValue {
+	csilEntries := make(cborMap, 0, 1)
+	csilEntries = append(csilEntries, cborEntry{cborText("lane"), csilEncPriorityLane(csilV.Lane)})
+	return csilEntries
+}
+
+// csilDecPutPriorityLaneResponse reconstructs a PutPriorityLaneResponse from a decoded CBOR value tree.
+func csilDecPutPriorityLaneResponse(csilRoot cborValue) (PutPriorityLaneResponse, error) {
+	var csilOut PutPriorityLaneResponse
+	{
+		csilField, csilErr := cborRequire(csilRoot, "lane")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (csilDecPriorityLane)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Lane = csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodePutPriorityLaneResponse encodes a PutPriorityLaneResponse to canonical CSIL CBOR bytes.
+func EncodePutPriorityLaneResponse(csilV PutPriorityLaneResponse) []byte {
+	return cborEncode(csilEncPutPriorityLaneResponse(csilV))
+}
+
+// DecodePutPriorityLaneResponse decodes canonical CSIL CBOR bytes into a PutPriorityLaneResponse.
+func DecodePutPriorityLaneResponse(csilData []byte) (PutPriorityLaneResponse, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero PutPriorityLaneResponse
+		return csilZero, csilErr
+	}
+	return csilDecPutPriorityLaneResponse(csilRoot)
+}
+
+// csilEncDeletePriorityLaneRequest builds the canonical CBOR value tree for a DeletePriorityLaneRequest.
+func csilEncDeletePriorityLaneRequest(csilV DeletePriorityLaneRequest) cborValue {
+	csilEntries := make(cborMap, 0, 3)
+	csilEntries = append(csilEntries, cborEntry{cborText("name"), cborText(csilV.Name)})
+	if csilV.ProjectId != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("project_id"), cborText((*csilV.ProjectId))})
+	}
+	csilEntries = append(csilEntries, cborEntry{cborText("organization"), cborText(csilV.Organization)})
+	return csilEntries
+}
+
+// csilDecDeletePriorityLaneRequest reconstructs a DeletePriorityLaneRequest from a decoded CBOR value tree.
+func csilDecDeletePriorityLaneRequest(csilRoot cborValue) (DeletePriorityLaneRequest, error) {
+	var csilOut DeletePriorityLaneRequest
+	{
+		csilField, csilErr := cborRequire(csilRoot, "organization")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Organization = csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "project_id"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.ProjectId = &csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "name")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Name = csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeDeletePriorityLaneRequest encodes a DeletePriorityLaneRequest to canonical CSIL CBOR bytes.
+func EncodeDeletePriorityLaneRequest(csilV DeletePriorityLaneRequest) []byte {
+	return cborEncode(csilEncDeletePriorityLaneRequest(csilV))
+}
+
+// DecodeDeletePriorityLaneRequest decodes canonical CSIL CBOR bytes into a DeletePriorityLaneRequest.
+func DecodeDeletePriorityLaneRequest(csilData []byte) (DeletePriorityLaneRequest, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero DeletePriorityLaneRequest
+		return csilZero, csilErr
+	}
+	return csilDecDeletePriorityLaneRequest(csilRoot)
+}
+
+// csilEncDeletePriorityLaneResponse builds the canonical CBOR value tree for a DeletePriorityLaneResponse.
+func csilEncDeletePriorityLaneResponse(csilV DeletePriorityLaneResponse) cborValue {
+	csilEntries := make(cborMap, 0, 1)
+	csilEntries = append(csilEntries, cborEntry{cborText("deleted"), cborBool(csilV.Deleted)})
+	return csilEntries
+}
+
+// csilDecDeletePriorityLaneResponse reconstructs a DeletePriorityLaneResponse from a decoded CBOR value tree.
+func csilDecDeletePriorityLaneResponse(csilRoot cborValue) (DeletePriorityLaneResponse, error) {
+	var csilOut DeletePriorityLaneResponse
+	{
+		csilField, csilErr := cborRequire(csilRoot, "deleted")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsBool)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Deleted = csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeDeletePriorityLaneResponse encodes a DeletePriorityLaneResponse to canonical CSIL CBOR bytes.
+func EncodeDeletePriorityLaneResponse(csilV DeletePriorityLaneResponse) []byte {
+	return cborEncode(csilEncDeletePriorityLaneResponse(csilV))
+}
+
+// DecodeDeletePriorityLaneResponse decodes canonical CSIL CBOR bytes into a DeletePriorityLaneResponse.
+func DecodeDeletePriorityLaneResponse(csilData []byte) (DeletePriorityLaneResponse, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero DeletePriorityLaneResponse
+		return csilZero, csilErr
+	}
+	return csilDecDeletePriorityLaneResponse(csilRoot)
+}
+
+// csilEncExplainPriorityRequest builds the canonical CBOR value tree for a ExplainPriorityRequest.
+func csilEncExplainPriorityRequest(csilV ExplainPriorityRequest) cborValue {
+	csilEntries := make(cborMap, 0, 8)
+	if csilV.Draft != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("draft"), cborBool((*csilV.Draft))})
+	}
+	if csilV.JobId != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("job_id"), cborText((*csilV.JobId))})
+	}
+	if csilV.JobKind != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("job_kind"), cborText((*csilV.JobKind))})
+	}
+	if csilV.Requested != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("requested"), cborInt((*csilV.Requested))})
+	}
+	if csilV.EventType != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("event_type"), cborText((*csilV.EventType))})
+	}
+	if csilV.ProjectId != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("project_id"), cborText((*csilV.ProjectId))})
+	}
+	if csilV.RefClasses != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("ref_classes"), cborEncArray(csilV.RefClasses, func(csilElem string) cborValue { return cborText(csilElem) })})
+	}
+	csilEntries = append(csilEntries, cborEntry{cborText("organization"), cborText(csilV.Organization)})
+	return csilEntries
+}
+
+// csilDecExplainPriorityRequest reconstructs a ExplainPriorityRequest from a decoded CBOR value tree.
+func csilDecExplainPriorityRequest(csilRoot cborValue) (ExplainPriorityRequest, error) {
+	var csilOut ExplainPriorityRequest
+	{
+		csilField, csilErr := cborRequire(csilRoot, "organization")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Organization = csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "project_id"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.ProjectId = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "job_id"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.JobId = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "ref_classes"); csilOk {
+		csilVal, csilErr := (func(csilV cborValue) ([]string, error) { return cborDecArray(csilV, cborAsText) })(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.RefClasses = csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "event_type"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.EventType = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "draft"); csilOk {
+		csilVal, csilErr := (cborAsBool)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Draft = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "job_kind"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.JobKind = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "requested"); csilOk {
+		csilVal, csilErr := (cborAsI64)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Requested = &csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeExplainPriorityRequest encodes a ExplainPriorityRequest to canonical CSIL CBOR bytes.
+func EncodeExplainPriorityRequest(csilV ExplainPriorityRequest) []byte {
+	return cborEncode(csilEncExplainPriorityRequest(csilV))
+}
+
+// DecodeExplainPriorityRequest decodes canonical CSIL CBOR bytes into a ExplainPriorityRequest.
+func DecodeExplainPriorityRequest(csilData []byte) (ExplainPriorityRequest, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero ExplainPriorityRequest
+		return csilZero, csilErr
+	}
+	return csilDecExplainPriorityRequest(csilRoot)
+}
+
+// csilEncExplainPriorityResponse builds the canonical CBOR value tree for a ExplainPriorityResponse.
+func csilEncExplainPriorityResponse(csilV ExplainPriorityResponse) cborValue {
+	csilEntries := make(cborMap, 0, 3)
+	csilEntries = append(csilEntries, cborEntry{cborText("lanes"), cborEncArray(csilV.Lanes, func(csilElem PriorityLaneCheck) cborValue { return csilEncPriorityLaneCheck(csilElem) })})
+	if csilV.Stored != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("stored"), csilEncPriorityDecision((*csilV.Stored))})
+	}
+	csilEntries = append(csilEntries, cborEntry{cborText("decision"), csilEncPriorityDecision(csilV.Decision)})
+	return csilEntries
+}
+
+// csilDecExplainPriorityResponse reconstructs a ExplainPriorityResponse from a decoded CBOR value tree.
+func csilDecExplainPriorityResponse(csilRoot cborValue) (ExplainPriorityResponse, error) {
+	var csilOut ExplainPriorityResponse
+	{
+		csilField, csilErr := cborRequire(csilRoot, "decision")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (csilDecPriorityDecision)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Decision = csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "stored"); csilOk {
+		csilVal, csilErr := (csilDecPriorityDecision)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Stored = &csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "lanes")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (func(csilV cborValue) ([]PriorityLaneCheck, error) {
+			return cborDecArray(csilV, csilDecPriorityLaneCheck)
+		})(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Lanes = csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeExplainPriorityResponse encodes a ExplainPriorityResponse to canonical CSIL CBOR bytes.
+func EncodeExplainPriorityResponse(csilV ExplainPriorityResponse) []byte {
+	return cborEncode(csilEncExplainPriorityResponse(csilV))
+}
+
+// DecodeExplainPriorityResponse decodes canonical CSIL CBOR bytes into a ExplainPriorityResponse.
+func DecodeExplainPriorityResponse(csilData []byte) (ExplainPriorityResponse, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero ExplainPriorityResponse
+		return csilZero, csilErr
+	}
+	return csilDecExplainPriorityResponse(csilRoot)
+}
+
+// csilEncSetGroupPriorityShiftRequest builds the canonical CBOR value tree for a SetGroupPriorityShiftRequest.
+func csilEncSetGroupPriorityShiftRequest(csilV SetGroupPriorityShiftRequest) cborValue {
+	csilEntries := make(cborMap, 0, 2)
+	csilEntries = append(csilEntries, cborEntry{cborText("shift"), cborInt(csilV.Shift)})
+	csilEntries = append(csilEntries, cborEntry{cborText("group_id"), cborText(csilV.GroupId)})
+	return csilEntries
+}
+
+// csilDecSetGroupPriorityShiftRequest reconstructs a SetGroupPriorityShiftRequest from a decoded CBOR value tree.
+func csilDecSetGroupPriorityShiftRequest(csilRoot cborValue) (SetGroupPriorityShiftRequest, error) {
+	var csilOut SetGroupPriorityShiftRequest
+	{
+		csilField, csilErr := cborRequire(csilRoot, "group_id")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.GroupId = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "shift")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsI64)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Shift = csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeSetGroupPriorityShiftRequest encodes a SetGroupPriorityShiftRequest to canonical CSIL CBOR bytes.
+func EncodeSetGroupPriorityShiftRequest(csilV SetGroupPriorityShiftRequest) []byte {
+	return cborEncode(csilEncSetGroupPriorityShiftRequest(csilV))
+}
+
+// DecodeSetGroupPriorityShiftRequest decodes canonical CSIL CBOR bytes into a SetGroupPriorityShiftRequest.
+func DecodeSetGroupPriorityShiftRequest(csilData []byte) (SetGroupPriorityShiftRequest, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero SetGroupPriorityShiftRequest
+		return csilZero, csilErr
+	}
+	return csilDecSetGroupPriorityShiftRequest(csilRoot)
+}
+
+// csilEncSetGroupPriorityShiftResponse builds the canonical CBOR value tree for a SetGroupPriorityShiftResponse.
+func csilEncSetGroupPriorityShiftResponse(csilV SetGroupPriorityShiftResponse) cborValue {
+	csilEntries := make(cborMap, 0, 1)
+	csilEntries = append(csilEntries, cborEntry{cborText("group"), csilEncGroupSummary(csilV.Group)})
+	return csilEntries
+}
+
+// csilDecSetGroupPriorityShiftResponse reconstructs a SetGroupPriorityShiftResponse from a decoded CBOR value tree.
+func csilDecSetGroupPriorityShiftResponse(csilRoot cborValue) (SetGroupPriorityShiftResponse, error) {
+	var csilOut SetGroupPriorityShiftResponse
+	{
+		csilField, csilErr := cborRequire(csilRoot, "group")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (csilDecGroupSummary)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Group = csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeSetGroupPriorityShiftResponse encodes a SetGroupPriorityShiftResponse to canonical CSIL CBOR bytes.
+func EncodeSetGroupPriorityShiftResponse(csilV SetGroupPriorityShiftResponse) []byte {
+	return cborEncode(csilEncSetGroupPriorityShiftResponse(csilV))
+}
+
+// DecodeSetGroupPriorityShiftResponse decodes canonical CSIL CBOR bytes into a SetGroupPriorityShiftResponse.
+func DecodeSetGroupPriorityShiftResponse(csilData []byte) (SetGroupPriorityShiftResponse, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero SetGroupPriorityShiftResponse
+		return csilZero, csilErr
+	}
+	return csilDecSetGroupPriorityShiftResponse(csilRoot)
+}
+
+// csilEncObsClassCount builds the canonical CBOR value tree for a ObsClassCount.
+func csilEncObsClassCount(csilV ObsClassCount) cborValue {
+	csilEntries := make(cborMap, 0, 2)
+	csilEntries = append(csilEntries, cborEntry{cborText("count"), cborInt(csilV.Count)})
+	csilEntries = append(csilEntries, cborEntry{cborText("failure_class"), cborText(csilV.FailureClass)})
+	return csilEntries
+}
+
+// csilDecObsClassCount reconstructs a ObsClassCount from a decoded CBOR value tree.
+func csilDecObsClassCount(csilRoot cborValue) (ObsClassCount, error) {
+	var csilOut ObsClassCount
+	{
+		csilField, csilErr := cborRequire(csilRoot, "failure_class")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.FailureClass = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "count")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsI64)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Count = csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeObsClassCount encodes a ObsClassCount to canonical CSIL CBOR bytes.
+func EncodeObsClassCount(csilV ObsClassCount) []byte {
+	return cborEncode(csilEncObsClassCount(csilV))
+}
+
+// DecodeObsClassCount decodes canonical CSIL CBOR bytes into a ObsClassCount.
+func DecodeObsClassCount(csilData []byte) (ObsClassCount, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero ObsClassCount
+		return csilZero, csilErr
+	}
+	return csilDecObsClassCount(csilRoot)
+}
+
+// csilEncObsSummary builds the canonical CBOR value tree for a ObsSummary.
+func csilEncObsSummary(csilV ObsSummary) cborValue {
+	csilEntries := make(cborMap, 0, 17)
+	csilEntries = append(csilEntries, cborEntry{cborText("runs"), cborInt(csilV.Runs)})
+	csilEntries = append(csilEntries, cborEntry{cborText("by_class"), cborEncArray(csilV.ByClass, func(csilElem ObsClassCount) cborValue { return csilEncObsClassCount(csilElem) })})
+	csilEntries = append(csilEntries, cborEntry{cborText("cancelled"), cborInt(csilV.Cancelled)})
+	if csilV.PassRate != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("pass_rate"), cborFloat((*csilV.PassRate))})
+	}
+	csilEntries = append(csilEntries, cborEntry{cborText("successes"), cborInt(csilV.Successes)})
+	csilEntries = append(csilEntries, cborEntry{cborText("measured_runs"), cborInt(csilV.MeasuredRuns)})
+	csilEntries = append(csilEntries, cborEntry{cborText("cpu_core_hours"), cborFloat(csilV.CpuCoreHours)})
+	csilEntries = append(csilEntries, cborEntry{cborText("infra_failures"), cborInt(csilV.InfraFailures)})
+	csilEntries = append(csilEntries, cborEntry{cborText("memory_gib_hours"), cborFloat(csilV.MemoryGibHours)})
+	csilEntries = append(csilEntries, cborEntry{cborText("pipeline_failures"), cborInt(csilV.PipelineFailures)})
+	if csilV.InfraFailureRate != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("infra_failure_rate"), cborFloat((*csilV.InfraFailureRate))})
+	}
+	if csilV.DurationP50Seconds != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("duration_p50_seconds"), cborFloat((*csilV.DurationP50Seconds))})
+	}
+	if csilV.DurationP95Seconds != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("duration_p95_seconds"), cborFloat((*csilV.DurationP95Seconds))})
+	}
+	if csilV.QueueWaitP50Seconds != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("queue_wait_p50_seconds"), cborFloat((*csilV.QueueWaitP50Seconds))})
+	}
+	if csilV.QueueWaitP95Seconds != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("queue_wait_p95_seconds"), cborFloat((*csilV.QueueWaitP95Seconds))})
+	}
+	csilEntries = append(csilEntries, cborEntry{cborText("cpu_reserved_core_hours"), cborFloat(csilV.CpuReservedCoreHours)})
+	csilEntries = append(csilEntries, cborEntry{cborText("memory_reserved_gib_hours"), cborFloat(csilV.MemoryReservedGibHours)})
+	return csilEntries
+}
+
+// csilDecObsSummary reconstructs a ObsSummary from a decoded CBOR value tree.
+func csilDecObsSummary(csilRoot cborValue) (ObsSummary, error) {
+	var csilOut ObsSummary
+	{
+		csilField, csilErr := cborRequire(csilRoot, "runs")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsI64)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Runs = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "successes")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsI64)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Successes = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "pipeline_failures")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsI64)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.PipelineFailures = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "infra_failures")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsI64)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.InfraFailures = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "cancelled")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsI64)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Cancelled = csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "pass_rate"); csilOk {
+		csilVal, csilErr := (cborAsF64)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.PassRate = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "infra_failure_rate"); csilOk {
+		csilVal, csilErr := (cborAsF64)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.InfraFailureRate = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "duration_p50_seconds"); csilOk {
+		csilVal, csilErr := (cborAsF64)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.DurationP50Seconds = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "duration_p95_seconds"); csilOk {
+		csilVal, csilErr := (cborAsF64)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.DurationP95Seconds = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "queue_wait_p50_seconds"); csilOk {
+		csilVal, csilErr := (cborAsF64)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.QueueWaitP50Seconds = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "queue_wait_p95_seconds"); csilOk {
+		csilVal, csilErr := (cborAsF64)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.QueueWaitP95Seconds = &csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "by_class")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (func(csilV cborValue) ([]ObsClassCount, error) { return cborDecArray(csilV, csilDecObsClassCount) })(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.ByClass = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "measured_runs")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsI64)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.MeasuredRuns = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "cpu_core_hours")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsF64)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.CpuCoreHours = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "memory_gib_hours")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsF64)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.MemoryGibHours = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "cpu_reserved_core_hours")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsF64)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.CpuReservedCoreHours = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "memory_reserved_gib_hours")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsF64)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.MemoryReservedGibHours = csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeObsSummary encodes a ObsSummary to canonical CSIL CBOR bytes.
+func EncodeObsSummary(csilV ObsSummary) []byte {
+	return cborEncode(csilEncObsSummary(csilV))
+}
+
+// DecodeObsSummary decodes canonical CSIL CBOR bytes into a ObsSummary.
+func DecodeObsSummary(csilData []byte) (ObsSummary, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero ObsSummary
+		return csilZero, csilErr
+	}
+	return csilDecObsSummary(csilRoot)
+}
+
+// csilEncObsTrendPoint builds the canonical CBOR value tree for a ObsTrendPoint.
+func csilEncObsTrendPoint(csilV ObsTrendPoint) cborValue {
+	csilEntries := make(cborMap, 0, 10)
+	csilEntries = append(csilEntries, cborEntry{cborText("runs"), cborInt(csilV.Runs)})
+	if csilV.PassRate != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("pass_rate"), cborFloat((*csilV.PassRate))})
+	}
+	csilEntries = append(csilEntries, cborEntry{cborText("eval_events"), cborInt(csilV.EvalEvents)})
+	csilEntries = append(csilEntries, cborEntry{cborText("bucket_start"), cborText(csilV.BucketStart)})
+	csilEntries = append(csilEntries, cborEntry{cborText("cpu_core_hours"), cborFloat(csilV.CpuCoreHours)})
+	csilEntries = append(csilEntries, cborEntry{cborText("infra_failures"), cborInt(csilV.InfraFailures)})
+	if csilV.EvalP95Seconds != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("eval_p95_seconds"), cborFloat((*csilV.EvalP95Seconds))})
+	}
+	if csilV.InfraFailureRate != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("infra_failure_rate"), cborFloat((*csilV.InfraFailureRate))})
+	}
+	if csilV.DurationP95Seconds != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("duration_p95_seconds"), cborFloat((*csilV.DurationP95Seconds))})
+	}
+	if csilV.QueueWaitP95Seconds != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("queue_wait_p95_seconds"), cborFloat((*csilV.QueueWaitP95Seconds))})
+	}
+	return csilEntries
+}
+
+// csilDecObsTrendPoint reconstructs a ObsTrendPoint from a decoded CBOR value tree.
+func csilDecObsTrendPoint(csilRoot cborValue) (ObsTrendPoint, error) {
+	var csilOut ObsTrendPoint
+	{
+		csilField, csilErr := cborRequire(csilRoot, "bucket_start")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.BucketStart = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "runs")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsI64)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Runs = csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "pass_rate"); csilOk {
+		csilVal, csilErr := (cborAsF64)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.PassRate = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "duration_p95_seconds"); csilOk {
+		csilVal, csilErr := (cborAsF64)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.DurationP95Seconds = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "queue_wait_p95_seconds"); csilOk {
+		csilVal, csilErr := (cborAsF64)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.QueueWaitP95Seconds = &csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "infra_failures")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsI64)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.InfraFailures = csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "infra_failure_rate"); csilOk {
+		csilVal, csilErr := (cborAsF64)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.InfraFailureRate = &csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "cpu_core_hours")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsF64)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.CpuCoreHours = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "eval_events")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsI64)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.EvalEvents = csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "eval_p95_seconds"); csilOk {
+		csilVal, csilErr := (cborAsF64)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.EvalP95Seconds = &csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeObsTrendPoint encodes a ObsTrendPoint to canonical CSIL CBOR bytes.
+func EncodeObsTrendPoint(csilV ObsTrendPoint) []byte {
+	return cborEncode(csilEncObsTrendPoint(csilV))
+}
+
+// DecodeObsTrendPoint decodes canonical CSIL CBOR bytes into a ObsTrendPoint.
+func DecodeObsTrendPoint(csilData []byte) (ObsTrendPoint, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero ObsTrendPoint
+		return csilZero, csilErr
+	}
+	return csilDecObsTrendPoint(csilRoot)
+}
+
+// csilEncObsWorkflowHealth builds the canonical CBOR value tree for a ObsWorkflowHealth.
+func csilEncObsWorkflowHealth(csilV ObsWorkflowHealth) cborValue {
+	csilEntries := make(cborMap, 0, 8)
+	csilEntries = append(csilEntries, cborEntry{cborText("trend"), cborEncArray(csilV.Trend, func(csilElem ObsTrendPoint) cborValue { return csilEncObsTrendPoint(csilElem) })})
+	csilEntries = append(csilEntries, cborEntry{cborText("summary"), csilEncObsSummary(csilV.Summary)})
+	if csilV.ProjectId != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("project_id"), cborText((*csilV.ProjectId))})
+	}
+	csilEntries = append(csilEntries, cborEntry{cborText("owner_group"), cborText(csilV.OwnerGroup)})
+	if csilV.ProjectName != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("project_name"), cborText((*csilV.ProjectName))})
+	}
+	csilEntries = append(csilEntries, cborEntry{cborText("default_branch"), csilEncObsSummary(csilV.DefaultBranch)})
+	csilEntries = append(csilEntries, cborEntry{cborText("workflow_security_id"), cborText(csilV.WorkflowSecurityId)})
+	if csilV.CpuCoreHoursPerRun != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("cpu_core_hours_per_run"), cborFloat((*csilV.CpuCoreHoursPerRun))})
+	}
+	return csilEntries
+}
+
+// csilDecObsWorkflowHealth reconstructs a ObsWorkflowHealth from a decoded CBOR value tree.
+func csilDecObsWorkflowHealth(csilRoot cborValue) (ObsWorkflowHealth, error) {
+	var csilOut ObsWorkflowHealth
+	if csilField, csilOk := cborMapGet(csilRoot, "project_id"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.ProjectId = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "project_name"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.ProjectName = &csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "workflow_security_id")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.WorkflowSecurityId = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "owner_group")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.OwnerGroup = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "summary")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (csilDecObsSummary)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Summary = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "default_branch")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (csilDecObsSummary)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.DefaultBranch = csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "cpu_core_hours_per_run"); csilOk {
+		csilVal, csilErr := (cborAsF64)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.CpuCoreHoursPerRun = &csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "trend")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (func(csilV cborValue) ([]ObsTrendPoint, error) { return cborDecArray(csilV, csilDecObsTrendPoint) })(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Trend = csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeObsWorkflowHealth encodes a ObsWorkflowHealth to canonical CSIL CBOR bytes.
+func EncodeObsWorkflowHealth(csilV ObsWorkflowHealth) []byte {
+	return cborEncode(csilEncObsWorkflowHealth(csilV))
+}
+
+// DecodeObsWorkflowHealth decodes canonical CSIL CBOR bytes into a ObsWorkflowHealth.
+func DecodeObsWorkflowHealth(csilData []byte) (ObsWorkflowHealth, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero ObsWorkflowHealth
+		return csilZero, csilErr
+	}
+	return csilDecObsWorkflowHealth(csilRoot)
+}
+
+// csilEncObsFlakyTest builds the canonical CBOR value tree for a ObsFlakyTest.
+func csilEncObsFlakyTest(csilV ObsFlakyTest) cborValue {
+	csilEntries := make(cborMap, 0, 8)
+	csilEntries = append(csilEntries, cborEntry{cborText("name"), cborText(csilV.Name)})
+	csilEntries = append(csilEntries, cborEntry{cborText("suite"), cborText(csilV.Suite)})
+	csilEntries = append(csilEntries, cborEntry{cborText("test_id"), cborText(csilV.TestId)})
+	csilEntries = append(csilEntries, cborEntry{cborText("classname"), cborText(csilV.Classname)})
+	if csilV.ProjectId != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("project_id"), cborText((*csilV.ProjectId))})
+	}
+	csilEntries = append(csilEntries, cborEntry{cborText("total_runs"), cborInt(csilV.TotalRuns)})
+	csilEntries = append(csilEntries, cborEntry{cborText("flaky_count"), cborInt(csilV.FlakyCount)})
+	if csilV.LastFlakyAt != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("last_flaky_at"), cborText((*csilV.LastFlakyAt))})
+	}
+	return csilEntries
+}
+
+// csilDecObsFlakyTest reconstructs a ObsFlakyTest from a decoded CBOR value tree.
+func csilDecObsFlakyTest(csilRoot cborValue) (ObsFlakyTest, error) {
+	var csilOut ObsFlakyTest
+	if csilField, csilOk := cborMapGet(csilRoot, "project_id"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.ProjectId = &csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "test_id")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.TestId = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "suite")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Suite = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "classname")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Classname = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "name")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Name = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "flaky_count")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsI64)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.FlakyCount = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "total_runs")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsI64)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.TotalRuns = csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "last_flaky_at"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.LastFlakyAt = &csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeObsFlakyTest encodes a ObsFlakyTest to canonical CSIL CBOR bytes.
+func EncodeObsFlakyTest(csilV ObsFlakyTest) []byte {
+	return cborEncode(csilEncObsFlakyTest(csilV))
+}
+
+// DecodeObsFlakyTest decodes canonical CSIL CBOR bytes into a ObsFlakyTest.
+func DecodeObsFlakyTest(csilData []byte) (ObsFlakyTest, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero ObsFlakyTest
+		return csilZero, csilErr
+	}
+	return csilDecObsFlakyTest(csilRoot)
+}
+
+// csilEncObsAlertRule builds the canonical CBOR value tree for a ObsAlertRule.
+func csilEncObsAlertRule(csilV ObsAlertRule) cborValue {
+	csilEntries := make(cborMap, 0, 25)
+	csilEntries = append(csilEntries, cborEntry{cborText("name"), cborText(csilV.Name)})
+	csilEntries = append(csilEntries, cborEntry{cborText("scope"), cborText(csilV.Scope)})
+	csilEntries = append(csilEntries, cborEntry{cborText("state"), cborText(csilV.State)})
+	csilEntries = append(csilEntries, cborEntry{cborText("factor"), cborFloat(csilV.Factor)})
+	csilEntries = append(csilEntries, cborEntry{cborText("enabled"), cborBool(csilV.Enabled)})
+	csilEntries = append(csilEntries, cborEntry{cborText("rule_id"), cborText(csilV.RuleId)})
+	if csilV.MinRuns != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("min_runs"), cborInt((*csilV.MinRuns))})
+	}
+	csilEntries = append(csilEntries, cborEntry{cborText("condition"), cborText(csilV.Condition)})
+	csilEntries = append(csilEntries, cborEntry{cborText("last_runs"), cborInt(csilV.LastRuns)})
+	csilEntries = append(csilEntries, cborEntry{cborText("threshold"), cborFloat(csilV.Threshold)})
+	if csilV.CanManage != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("can_manage"), cborBool((*csilV.CanManage))})
+	}
+	if csilV.FireAfter != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("fire_after"), cborInt((*csilV.FireAfter))})
+	}
+	if csilV.LastValue != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("last_value"), cborFloat((*csilV.LastValue))})
+	}
+	if csilV.ProjectId != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("project_id"), cborText((*csilV.ProjectId))})
+	}
+	if csilV.Description != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("description"), cborText((*csilV.Description))})
+	}
+	if csilV.OwnerGroup != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("owner_group"), cborText((*csilV.OwnerGroup))})
+	}
+	csilEntries = append(csilEntries, cborEntry{cborText("window_hours"), cborInt(csilV.WindowHours)})
+	if csilV.BaselineDays != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("baseline_days"), cborInt((*csilV.BaselineDays))})
+	}
+	if csilV.LastBaseline != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("last_baseline"), cborFloat((*csilV.LastBaseline))})
+	}
+	if csilV.ResolveAfter != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("resolve_after"), cborInt((*csilV.ResolveAfter))})
+	}
+	if csilV.ResolveMargin != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("resolve_margin"), cborFloat((*csilV.ResolveMargin))})
+	}
+	csilEntries = append(csilEntries, cborEntry{cborText("ref_class_bucket"), cborText(csilV.RefClassBucket)})
+	if csilV.StateChangedAt != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("state_changed_at"), cborText((*csilV.StateChangedAt))})
+	}
+	if csilV.LastEvaluatedAt != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("last_evaluated_at"), cborText((*csilV.LastEvaluatedAt))})
+	}
+	if csilV.WorkflowSecurityId != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("workflow_security_id"), cborText((*csilV.WorkflowSecurityId))})
+	}
+	return csilEntries
+}
+
+// csilDecObsAlertRule reconstructs a ObsAlertRule from a decoded CBOR value tree.
+func csilDecObsAlertRule(csilRoot cborValue) (ObsAlertRule, error) {
+	var csilOut ObsAlertRule
+	{
+		csilField, csilErr := cborRequire(csilRoot, "rule_id")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.RuleId = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "name")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Name = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "scope")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Scope = csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "project_id"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.ProjectId = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "workflow_security_id"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.WorkflowSecurityId = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "owner_group"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.OwnerGroup = &csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "condition")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Condition = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "ref_class_bucket")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.RefClassBucket = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "threshold")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsF64)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Threshold = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "factor")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsF64)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Factor = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "window_hours")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsI64)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.WindowHours = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "state")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.State = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "enabled")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsBool)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Enabled = csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "last_value"); csilOk {
+		csilVal, csilErr := (cborAsF64)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.LastValue = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "last_baseline"); csilOk {
+		csilVal, csilErr := (cborAsF64)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.LastBaseline = &csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "last_runs")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsI64)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.LastRuns = csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "last_evaluated_at"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.LastEvaluatedAt = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "state_changed_at"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.StateChangedAt = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "description"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Description = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "baseline_days"); csilOk {
+		csilVal, csilErr := (cborAsI64)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.BaselineDays = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "min_runs"); csilOk {
+		csilVal, csilErr := (cborAsI64)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.MinRuns = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "resolve_margin"); csilOk {
+		csilVal, csilErr := (cborAsF64)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.ResolveMargin = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "fire_after"); csilOk {
+		csilVal, csilErr := (cborAsI64)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.FireAfter = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "resolve_after"); csilOk {
+		csilVal, csilErr := (cborAsI64)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.ResolveAfter = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "can_manage"); csilOk {
+		csilVal, csilErr := (cborAsBool)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.CanManage = &csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeObsAlertRule encodes a ObsAlertRule to canonical CSIL CBOR bytes.
+func EncodeObsAlertRule(csilV ObsAlertRule) []byte {
+	return cborEncode(csilEncObsAlertRule(csilV))
+}
+
+// DecodeObsAlertRule decodes canonical CSIL CBOR bytes into a ObsAlertRule.
+func DecodeObsAlertRule(csilData []byte) (ObsAlertRule, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero ObsAlertRule
+		return csilZero, csilErr
+	}
+	return csilDecObsAlertRule(csilRoot)
+}
+
+// csilEncGetPipelineDashboardRequest builds the canonical CBOR value tree for a GetPipelineDashboardRequest.
+func csilEncGetPipelineDashboardRequest(csilV GetPipelineDashboardRequest) cborValue {
+	csilEntries := make(cborMap, 0, 3)
+	if csilV.Days != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("days"), cborInt((*csilV.Days))})
+	}
+	csilEntries = append(csilEntries, cborEntry{cborText("org_id"), cborText(csilV.OrgId)})
+	if csilV.ProjectId != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("project_id"), cborText((*csilV.ProjectId))})
+	}
+	return csilEntries
+}
+
+// csilDecGetPipelineDashboardRequest reconstructs a GetPipelineDashboardRequest from a decoded CBOR value tree.
+func csilDecGetPipelineDashboardRequest(csilRoot cborValue) (GetPipelineDashboardRequest, error) {
+	var csilOut GetPipelineDashboardRequest
+	{
+		csilField, csilErr := cborRequire(csilRoot, "org_id")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.OrgId = csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "project_id"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.ProjectId = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "days"); csilOk {
+		csilVal, csilErr := (cborAsI64)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Days = &csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeGetPipelineDashboardRequest encodes a GetPipelineDashboardRequest to canonical CSIL CBOR bytes.
+func EncodeGetPipelineDashboardRequest(csilV GetPipelineDashboardRequest) []byte {
+	return cborEncode(csilEncGetPipelineDashboardRequest(csilV))
+}
+
+// DecodeGetPipelineDashboardRequest decodes canonical CSIL CBOR bytes into a GetPipelineDashboardRequest.
+func DecodeGetPipelineDashboardRequest(csilData []byte) (GetPipelineDashboardRequest, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero GetPipelineDashboardRequest
+		return csilZero, csilErr
+	}
+	return csilDecGetPipelineDashboardRequest(csilRoot)
+}
+
+// csilEncGetPipelineDashboardResponse builds the canonical CBOR value tree for a GetPipelineDashboardResponse.
+func csilEncGetPipelineDashboardResponse(csilV GetPipelineDashboardResponse) cborValue {
+	csilEntries := make(cborMap, 0, 8)
+	csilEntries = append(csilEntries, cborEntry{cborText("days"), cborInt(csilV.Days)})
+	csilEntries = append(csilEntries, cborEntry{cborText("trend"), cborEncArray(csilV.Trend, func(csilElem ObsTrendPoint) cborValue { return csilEncObsTrendPoint(csilElem) })})
+	csilEntries = append(csilEntries, cborEntry{cborText("alerts"), cborEncArray(csilV.Alerts, func(csilElem ObsAlertRule) cborValue { return csilEncObsAlertRule(csilElem) })})
+	csilEntries = append(csilEntries, cborEntry{cborText("totals"), csilEncObsSummary(csilV.Totals)})
+	csilEntries = append(csilEntries, cborEntry{cborText("range_to"), cborText(csilV.RangeTo)})
+	csilEntries = append(csilEntries, cborEntry{cborText("workflows"), cborEncArray(csilV.Workflows, func(csilElem ObsWorkflowHealth) cborValue { return csilEncObsWorkflowHealth(csilElem) })})
+	csilEntries = append(csilEntries, cborEntry{cborText("range_from"), cborText(csilV.RangeFrom)})
+	csilEntries = append(csilEntries, cborEntry{cborText("flaky_tests"), cborEncArray(csilV.FlakyTests, func(csilElem ObsFlakyTest) cborValue { return csilEncObsFlakyTest(csilElem) })})
+	return csilEntries
+}
+
+// csilDecGetPipelineDashboardResponse reconstructs a GetPipelineDashboardResponse from a decoded CBOR value tree.
+func csilDecGetPipelineDashboardResponse(csilRoot cborValue) (GetPipelineDashboardResponse, error) {
+	var csilOut GetPipelineDashboardResponse
+	{
+		csilField, csilErr := cborRequire(csilRoot, "range_from")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.RangeFrom = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "range_to")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.RangeTo = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "days")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsI64)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Days = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "totals")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (csilDecObsSummary)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Totals = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "trend")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (func(csilV cborValue) ([]ObsTrendPoint, error) { return cborDecArray(csilV, csilDecObsTrendPoint) })(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Trend = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "workflows")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (func(csilV cborValue) ([]ObsWorkflowHealth, error) {
+			return cborDecArray(csilV, csilDecObsWorkflowHealth)
+		})(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Workflows = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "flaky_tests")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (func(csilV cborValue) ([]ObsFlakyTest, error) { return cborDecArray(csilV, csilDecObsFlakyTest) })(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.FlakyTests = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "alerts")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (func(csilV cborValue) ([]ObsAlertRule, error) { return cborDecArray(csilV, csilDecObsAlertRule) })(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Alerts = csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeGetPipelineDashboardResponse encodes a GetPipelineDashboardResponse to canonical CSIL CBOR bytes.
+func EncodeGetPipelineDashboardResponse(csilV GetPipelineDashboardResponse) []byte {
+	return cborEncode(csilEncGetPipelineDashboardResponse(csilV))
+}
+
+// DecodeGetPipelineDashboardResponse decodes canonical CSIL CBOR bytes into a GetPipelineDashboardResponse.
+func DecodeGetPipelineDashboardResponse(csilData []byte) (GetPipelineDashboardResponse, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero GetPipelineDashboardResponse
+		return csilZero, csilErr
+	}
+	return csilDecGetPipelineDashboardResponse(csilRoot)
+}
+
+// csilEncObsLaneHealth builds the canonical CBOR value tree for a ObsLaneHealth.
+func csilEncObsLaneHealth(csilV ObsLaneHealth) cborValue {
+	csilEntries := make(cborMap, 0, 2)
+	csilEntries = append(csilEntries, cborEntry{cborText("lane"), cborText(csilV.Lane)})
+	csilEntries = append(csilEntries, cborEntry{cborText("summary"), csilEncObsSummary(csilV.Summary)})
+	return csilEntries
+}
+
+// csilDecObsLaneHealth reconstructs a ObsLaneHealth from a decoded CBOR value tree.
+func csilDecObsLaneHealth(csilRoot cborValue) (ObsLaneHealth, error) {
+	var csilOut ObsLaneHealth
+	{
+		csilField, csilErr := cborRequire(csilRoot, "lane")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Lane = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "summary")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (csilDecObsSummary)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Summary = csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeObsLaneHealth encodes a ObsLaneHealth to canonical CSIL CBOR bytes.
+func EncodeObsLaneHealth(csilV ObsLaneHealth) []byte {
+	return cborEncode(csilEncObsLaneHealth(csilV))
+}
+
+// DecodeObsLaneHealth decodes canonical CSIL CBOR bytes into a ObsLaneHealth.
+func DecodeObsLaneHealth(csilData []byte) (ObsLaneHealth, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero ObsLaneHealth
+		return csilZero, csilErr
+	}
+	return csilDecObsLaneHealth(csilRoot)
+}
+
+// csilEncObsSloStatus builds the canonical CBOR value tree for a ObsSloStatus.
+func csilEncObsSloStatus(csilV ObsSloStatus) cborValue {
+	csilEntries := make(cborMap, 0, 12)
+	csilEntries = append(csilEntries, cborEntry{cborText("sli"), cborText(csilV.Sli)})
+	csilEntries = append(csilEntries, cborEntry{cborText("good"), cborFloat(csilV.Good)})
+	csilEntries = append(csilEntries, cborEntry{cborText("lane"), cborText(csilV.Lane)})
+	csilEntries = append(csilEntries, cborEntry{cborText("total"), cborFloat(csilV.Total)})
+	csilEntries = append(csilEntries, cborEntry{cborText("measures"), cborText(csilV.Measures)})
+	csilEntries = append(csilEntries, cborEntry{cborText("objective"), cborFloat(csilV.Objective)})
+	if csilV.Compliance != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("compliance"), cborFloat((*csilV.Compliance))})
+	}
+	if csilV.P95Seconds != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("p95_seconds"), cborFloat((*csilV.P95Seconds))})
+	}
+	csilEntries = append(csilEntries, cborEntry{cborText("window_days"), cborInt(csilV.WindowDays)})
+	csilEntries = append(csilEntries, cborEntry{cborText("budget_state"), cborText(csilV.BudgetState)})
+	csilEntries = append(csilEntries, cborEntry{cborText("threshold_seconds"), cborFloat(csilV.ThresholdSeconds)})
+	csilEntries = append(csilEntries, cborEntry{cborText("error_budget_remaining"), cborFloat(csilV.ErrorBudgetRemaining)})
+	return csilEntries
+}
+
+// csilDecObsSloStatus reconstructs a ObsSloStatus from a decoded CBOR value tree.
+func csilDecObsSloStatus(csilRoot cborValue) (ObsSloStatus, error) {
+	var csilOut ObsSloStatus
+	{
+		csilField, csilErr := cborRequire(csilRoot, "sli")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Sli = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "lane")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Lane = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "objective")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsF64)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Objective = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "threshold_seconds")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsF64)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.ThresholdSeconds = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "window_days")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsI64)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.WindowDays = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "total")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsF64)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Total = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "good")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsF64)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Good = csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "compliance"); csilOk {
+		csilVal, csilErr := (cborAsF64)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Compliance = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "p95_seconds"); csilOk {
+		csilVal, csilErr := (cborAsF64)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.P95Seconds = &csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "error_budget_remaining")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsF64)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.ErrorBudgetRemaining = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "budget_state")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.BudgetState = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "measures")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Measures = csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeObsSloStatus encodes a ObsSloStatus to canonical CSIL CBOR bytes.
+func EncodeObsSloStatus(csilV ObsSloStatus) []byte {
+	return cborEncode(csilEncObsSloStatus(csilV))
+}
+
+// DecodeObsSloStatus decodes canonical CSIL CBOR bytes into a ObsSloStatus.
+func DecodeObsSloStatus(csilData []byte) (ObsSloStatus, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero ObsSloStatus
+		return csilZero, csilErr
+	}
+	return csilDecObsSloStatus(csilRoot)
+}
+
+// csilEncObsQueueBacklog builds the canonical CBOR value tree for a ObsQueueBacklog.
+func csilEncObsQueueBacklog(csilV ObsQueueBacklog) cborValue {
+	csilEntries := make(cborMap, 0, 4)
+	csilEntries = append(csilEntries, cborEntry{cborText("count"), cborInt(csilV.Count)})
+	csilEntries = append(csilEntries, cborEntry{cborText("queue_uuid"), cborText(csilV.QueueUuid)})
+	csilEntries = append(csilEntries, cborEntry{cborText("display_name"), cborText(csilV.DisplayName)})
+	csilEntries = append(csilEntries, cborEntry{cborText("oldest_age_seconds"), cborInt(csilV.OldestAgeSeconds)})
+	return csilEntries
+}
+
+// csilDecObsQueueBacklog reconstructs a ObsQueueBacklog from a decoded CBOR value tree.
+func csilDecObsQueueBacklog(csilRoot cborValue) (ObsQueueBacklog, error) {
+	var csilOut ObsQueueBacklog
+	{
+		csilField, csilErr := cborRequire(csilRoot, "queue_uuid")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.QueueUuid = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "display_name")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.DisplayName = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "count")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsI64)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Count = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "oldest_age_seconds")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsI64)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.OldestAgeSeconds = csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeObsQueueBacklog encodes a ObsQueueBacklog to canonical CSIL CBOR bytes.
+func EncodeObsQueueBacklog(csilV ObsQueueBacklog) []byte {
+	return cborEncode(csilEncObsQueueBacklog(csilV))
+}
+
+// DecodeObsQueueBacklog decodes canonical CSIL CBOR bytes into a ObsQueueBacklog.
+func DecodeObsQueueBacklog(csilData []byte) (ObsQueueBacklog, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero ObsQueueBacklog
+		return csilZero, csilErr
+	}
+	return csilDecObsQueueBacklog(csilRoot)
+}
+
+// csilEncObsCapacity builds the canonical CBOR value tree for a ObsCapacity.
+func csilEncObsCapacity(csilV ObsCapacity) cborValue {
+	csilEntries := make(cborMap, 0, 8)
+	csilEntries = append(csilEntries, cborEntry{cborText("queues"), cborEncArray(csilV.Queues, func(csilElem ObsQueueBacklog) cborValue { return csilEncObsQueueBacklog(csilElem) })})
+	csilEntries = append(csilEntries, cborEntry{cborText("backlog_jobs"), cborInt(csilV.BacklogJobs)})
+	csilEntries = append(csilEntries, cborEntry{cborText("workers_seen"), cborInt(csilV.WorkersSeen)})
+	csilEntries = append(csilEntries, cborEntry{cborText("workers_total"), cborInt(csilV.WorkersTotal)})
+	csilEntries = append(csilEntries, cborEntry{cborText("workers_active"), cborInt(csilV.WorkersActive)})
+	csilEntries = append(csilEntries, cborEntry{cborText("workers_disabled"), cborInt(csilV.WorkersDisabled)})
+	csilEntries = append(csilEntries, cborEntry{cborText("workers_quarantined"), cborInt(csilV.WorkersQuarantined)})
+	csilEntries = append(csilEntries, cborEntry{cborText("backlog_oldest_age_seconds"), cborInt(csilV.BacklogOldestAgeSeconds)})
+	return csilEntries
+}
+
+// csilDecObsCapacity reconstructs a ObsCapacity from a decoded CBOR value tree.
+func csilDecObsCapacity(csilRoot cborValue) (ObsCapacity, error) {
+	var csilOut ObsCapacity
+	{
+		csilField, csilErr := cborRequire(csilRoot, "workers_total")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsI64)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.WorkersTotal = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "workers_active")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsI64)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.WorkersActive = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "workers_quarantined")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsI64)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.WorkersQuarantined = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "workers_disabled")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsI64)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.WorkersDisabled = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "workers_seen")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsI64)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.WorkersSeen = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "backlog_jobs")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsI64)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.BacklogJobs = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "backlog_oldest_age_seconds")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsI64)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.BacklogOldestAgeSeconds = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "queues")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (func(csilV cborValue) ([]ObsQueueBacklog, error) { return cborDecArray(csilV, csilDecObsQueueBacklog) })(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Queues = csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeObsCapacity encodes a ObsCapacity to canonical CSIL CBOR bytes.
+func EncodeObsCapacity(csilV ObsCapacity) []byte {
+	return cborEncode(csilEncObsCapacity(csilV))
+}
+
+// DecodeObsCapacity decodes canonical CSIL CBOR bytes into a ObsCapacity.
+func DecodeObsCapacity(csilData []byte) (ObsCapacity, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero ObsCapacity
+		return csilZero, csilErr
+	}
+	return csilDecObsCapacity(csilRoot)
+}
+
+// csilEncGetInfraDashboardRequest builds the canonical CBOR value tree for a GetInfraDashboardRequest.
+func csilEncGetInfraDashboardRequest(csilV GetInfraDashboardRequest) cborValue {
+	csilEntries := make(cborMap, 0, 2)
+	if csilV.Days != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("days"), cborInt((*csilV.Days))})
+	}
+	csilEntries = append(csilEntries, cborEntry{cborText("org_id"), cborText(csilV.OrgId)})
+	return csilEntries
+}
+
+// csilDecGetInfraDashboardRequest reconstructs a GetInfraDashboardRequest from a decoded CBOR value tree.
+func csilDecGetInfraDashboardRequest(csilRoot cborValue) (GetInfraDashboardRequest, error) {
+	var csilOut GetInfraDashboardRequest
+	{
+		csilField, csilErr := cborRequire(csilRoot, "org_id")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.OrgId = csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "days"); csilOk {
+		csilVal, csilErr := (cborAsI64)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Days = &csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeGetInfraDashboardRequest encodes a GetInfraDashboardRequest to canonical CSIL CBOR bytes.
+func EncodeGetInfraDashboardRequest(csilV GetInfraDashboardRequest) []byte {
+	return cborEncode(csilEncGetInfraDashboardRequest(csilV))
+}
+
+// DecodeGetInfraDashboardRequest decodes canonical CSIL CBOR bytes into a GetInfraDashboardRequest.
+func DecodeGetInfraDashboardRequest(csilData []byte) (GetInfraDashboardRequest, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero GetInfraDashboardRequest
+		return csilZero, csilErr
+	}
+	return csilDecGetInfraDashboardRequest(csilRoot)
+}
+
+// csilEncGetInfraDashboardResponse builds the canonical CBOR value tree for a GetInfraDashboardResponse.
+func csilEncGetInfraDashboardResponse(csilV GetInfraDashboardResponse) cborValue {
+	csilEntries := make(cborMap, 0, 11)
+	csilEntries = append(csilEntries, cborEntry{cborText("days"), cborInt(csilV.Days)})
+	csilEntries = append(csilEntries, cborEntry{cborText("slos"), cborEncArray(csilV.Slos, func(csilElem ObsSloStatus) cborValue { return csilEncObsSloStatus(csilElem) })})
+	csilEntries = append(csilEntries, cborEntry{cborText("lanes"), cborEncArray(csilV.Lanes, func(csilElem ObsLaneHealth) cborValue { return csilEncObsLaneHealth(csilElem) })})
+	csilEntries = append(csilEntries, cborEntry{cborText("trend"), cborEncArray(csilV.Trend, func(csilElem ObsTrendPoint) cborValue { return csilEncObsTrendPoint(csilElem) })})
+	csilEntries = append(csilEntries, cborEntry{cborText("totals"), csilEncObsSummary(csilV.Totals)})
+	csilEntries = append(csilEntries, cborEntry{cborText("capacity"), csilEncObsCapacity(csilV.Capacity)})
+	csilEntries = append(csilEntries, cborEntry{cborText("range_to"), cborText(csilV.RangeTo)})
+	csilEntries = append(csilEntries, cborEntry{cborText("range_from"), cborText(csilV.RangeFrom)})
+	csilEntries = append(csilEntries, cborEntry{cborText("eval_events"), cborInt(csilV.EvalEvents)})
+	if csilV.EvalP50Seconds != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("eval_p50_seconds"), cborFloat((*csilV.EvalP50Seconds))})
+	}
+	if csilV.EvalP95Seconds != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("eval_p95_seconds"), cborFloat((*csilV.EvalP95Seconds))})
+	}
+	return csilEntries
+}
+
+// csilDecGetInfraDashboardResponse reconstructs a GetInfraDashboardResponse from a decoded CBOR value tree.
+func csilDecGetInfraDashboardResponse(csilRoot cborValue) (GetInfraDashboardResponse, error) {
+	var csilOut GetInfraDashboardResponse
+	{
+		csilField, csilErr := cborRequire(csilRoot, "range_from")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.RangeFrom = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "range_to")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.RangeTo = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "days")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsI64)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Days = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "totals")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (csilDecObsSummary)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Totals = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "lanes")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (func(csilV cborValue) ([]ObsLaneHealth, error) { return cborDecArray(csilV, csilDecObsLaneHealth) })(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Lanes = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "eval_events")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsI64)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.EvalEvents = csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "eval_p50_seconds"); csilOk {
+		csilVal, csilErr := (cborAsF64)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.EvalP50Seconds = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "eval_p95_seconds"); csilOk {
+		csilVal, csilErr := (cborAsF64)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.EvalP95Seconds = &csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "trend")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (func(csilV cborValue) ([]ObsTrendPoint, error) { return cborDecArray(csilV, csilDecObsTrendPoint) })(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Trend = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "slos")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (func(csilV cborValue) ([]ObsSloStatus, error) { return cborDecArray(csilV, csilDecObsSloStatus) })(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Slos = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "capacity")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (csilDecObsCapacity)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Capacity = csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeGetInfraDashboardResponse encodes a GetInfraDashboardResponse to canonical CSIL CBOR bytes.
+func EncodeGetInfraDashboardResponse(csilV GetInfraDashboardResponse) []byte {
+	return cborEncode(csilEncGetInfraDashboardResponse(csilV))
+}
+
+// DecodeGetInfraDashboardResponse decodes canonical CSIL CBOR bytes into a GetInfraDashboardResponse.
+func DecodeGetInfraDashboardResponse(csilData []byte) (GetInfraDashboardResponse, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero GetInfraDashboardResponse
+		return csilZero, csilErr
+	}
+	return csilDecGetInfraDashboardResponse(csilRoot)
+}
+
+// csilEncObsUsagePoint builds the canonical CBOR value tree for a ObsUsagePoint.
+func csilEncObsUsagePoint(csilV ObsUsagePoint) cborValue {
+	csilEntries := make(cborMap, 0, 3)
+	csilEntries = append(csilEntries, cborEntry{cborText("runs"), cborInt(csilV.Runs)})
+	csilEntries = append(csilEntries, cborEntry{cborText("bucket_start"), cborText(csilV.BucketStart)})
+	csilEntries = append(csilEntries, cborEntry{cborText("cpu_core_hours"), cborFloat(csilV.CpuCoreHours)})
+	return csilEntries
+}
+
+// csilDecObsUsagePoint reconstructs a ObsUsagePoint from a decoded CBOR value tree.
+func csilDecObsUsagePoint(csilRoot cborValue) (ObsUsagePoint, error) {
+	var csilOut ObsUsagePoint
+	{
+		csilField, csilErr := cborRequire(csilRoot, "bucket_start")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.BucketStart = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "runs")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsI64)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Runs = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "cpu_core_hours")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsF64)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.CpuCoreHours = csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeObsUsagePoint encodes a ObsUsagePoint to canonical CSIL CBOR bytes.
+func EncodeObsUsagePoint(csilV ObsUsagePoint) []byte {
+	return cborEncode(csilEncObsUsagePoint(csilV))
+}
+
+// DecodeObsUsagePoint decodes canonical CSIL CBOR bytes into a ObsUsagePoint.
+func DecodeObsUsagePoint(csilData []byte) (ObsUsagePoint, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero ObsUsagePoint
+		return csilZero, csilErr
+	}
+	return csilDecObsUsagePoint(csilRoot)
+}
+
+// csilEncObsGroupUsage builds the canonical CBOR value tree for a ObsGroupUsage.
+func csilEncObsGroupUsage(csilV ObsGroupUsage) cborValue {
+	csilEntries := make(cborMap, 0, 10)
+	csilEntries = append(csilEntries, cborEntry{cborText("runs"), cborInt(csilV.Runs)})
+	csilEntries = append(csilEntries, cborEntry{cborText("group"), cborText(csilV.Group)})
+	csilEntries = append(csilEntries, cborEntry{cborText("series"), cborEncArray(csilV.Series, func(csilElem ObsUsagePoint) cborValue { return csilEncObsUsagePoint(csilElem) })})
+	if csilV.PassRate != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("pass_rate"), cborFloat((*csilV.PassRate))})
+	}
+	csilEntries = append(csilEntries, cborEntry{cborText("successes"), cborInt(csilV.Successes)})
+	csilEntries = append(csilEntries, cborEntry{cborText("cpu_core_hours"), cborFloat(csilV.CpuCoreHours)})
+	csilEntries = append(csilEntries, cborEntry{cborText("infra_failures"), cborInt(csilV.InfraFailures)})
+	csilEntries = append(csilEntries, cborEntry{cborText("memory_gib_hours"), cborFloat(csilV.MemoryGibHours)})
+	csilEntries = append(csilEntries, cborEntry{cborText("pipeline_failures"), cborInt(csilV.PipelineFailures)})
+	csilEntries = append(csilEntries, cborEntry{cborText("cpu_reserved_core_hours"), cborFloat(csilV.CpuReservedCoreHours)})
+	return csilEntries
+}
+
+// csilDecObsGroupUsage reconstructs a ObsGroupUsage from a decoded CBOR value tree.
+func csilDecObsGroupUsage(csilRoot cborValue) (ObsGroupUsage, error) {
+	var csilOut ObsGroupUsage
+	{
+		csilField, csilErr := cborRequire(csilRoot, "group")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Group = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "runs")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsI64)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Runs = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "successes")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsI64)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Successes = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "pipeline_failures")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsI64)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.PipelineFailures = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "infra_failures")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsI64)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.InfraFailures = csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "pass_rate"); csilOk {
+		csilVal, csilErr := (cborAsF64)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.PassRate = &csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "cpu_core_hours")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsF64)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.CpuCoreHours = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "memory_gib_hours")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsF64)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.MemoryGibHours = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "cpu_reserved_core_hours")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsF64)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.CpuReservedCoreHours = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "series")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (func(csilV cborValue) ([]ObsUsagePoint, error) { return cborDecArray(csilV, csilDecObsUsagePoint) })(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Series = csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeObsGroupUsage encodes a ObsGroupUsage to canonical CSIL CBOR bytes.
+func EncodeObsGroupUsage(csilV ObsGroupUsage) []byte {
+	return cborEncode(csilEncObsGroupUsage(csilV))
+}
+
+// DecodeObsGroupUsage decodes canonical CSIL CBOR bytes into a ObsGroupUsage.
+func DecodeObsGroupUsage(csilData []byte) (ObsGroupUsage, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero ObsGroupUsage
+		return csilZero, csilErr
+	}
+	return csilDecObsGroupUsage(csilRoot)
+}
+
+// csilEncGetUsageDashboardRequest builds the canonical CBOR value tree for a GetUsageDashboardRequest.
+func csilEncGetUsageDashboardRequest(csilV GetUsageDashboardRequest) cborValue {
+	csilEntries := make(cborMap, 0, 3)
+	if csilV.Days != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("days"), cborInt((*csilV.Days))})
+	}
+	csilEntries = append(csilEntries, cborEntry{cborText("org_id"), cborText(csilV.OrgId)})
+	if csilV.Attribution != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("attribution"), cborText((*csilV.Attribution))})
+	}
+	return csilEntries
+}
+
+// csilDecGetUsageDashboardRequest reconstructs a GetUsageDashboardRequest from a decoded CBOR value tree.
+func csilDecGetUsageDashboardRequest(csilRoot cborValue) (GetUsageDashboardRequest, error) {
+	var csilOut GetUsageDashboardRequest
+	{
+		csilField, csilErr := cborRequire(csilRoot, "org_id")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.OrgId = csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "days"); csilOk {
+		csilVal, csilErr := (cborAsI64)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Days = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "attribution"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Attribution = &csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeGetUsageDashboardRequest encodes a GetUsageDashboardRequest to canonical CSIL CBOR bytes.
+func EncodeGetUsageDashboardRequest(csilV GetUsageDashboardRequest) []byte {
+	return cborEncode(csilEncGetUsageDashboardRequest(csilV))
+}
+
+// DecodeGetUsageDashboardRequest decodes canonical CSIL CBOR bytes into a GetUsageDashboardRequest.
+func DecodeGetUsageDashboardRequest(csilData []byte) (GetUsageDashboardRequest, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero GetUsageDashboardRequest
+		return csilZero, csilErr
+	}
+	return csilDecGetUsageDashboardRequest(csilRoot)
+}
+
+// csilEncGetUsageDashboardResponse builds the canonical CBOR value tree for a GetUsageDashboardResponse.
+func csilEncGetUsageDashboardResponse(csilV GetUsageDashboardResponse) cborValue {
+	csilEntries := make(cborMap, 0, 5)
+	csilEntries = append(csilEntries, cborEntry{cborText("days"), cborInt(csilV.Days)})
+	csilEntries = append(csilEntries, cborEntry{cborText("groups"), cborEncArray(csilV.Groups, func(csilElem ObsGroupUsage) cborValue { return csilEncObsGroupUsage(csilElem) })})
+	csilEntries = append(csilEntries, cborEntry{cborText("range_to"), cborText(csilV.RangeTo)})
+	csilEntries = append(csilEntries, cborEntry{cborText("range_from"), cborText(csilV.RangeFrom)})
+	csilEntries = append(csilEntries, cborEntry{cborText("attribution"), cborText(csilV.Attribution)})
+	return csilEntries
+}
+
+// csilDecGetUsageDashboardResponse reconstructs a GetUsageDashboardResponse from a decoded CBOR value tree.
+func csilDecGetUsageDashboardResponse(csilRoot cborValue) (GetUsageDashboardResponse, error) {
+	var csilOut GetUsageDashboardResponse
+	{
+		csilField, csilErr := cborRequire(csilRoot, "range_from")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.RangeFrom = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "range_to")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.RangeTo = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "days")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsI64)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Days = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "attribution")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Attribution = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "groups")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (func(csilV cborValue) ([]ObsGroupUsage, error) { return cborDecArray(csilV, csilDecObsGroupUsage) })(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Groups = csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeGetUsageDashboardResponse encodes a GetUsageDashboardResponse to canonical CSIL CBOR bytes.
+func EncodeGetUsageDashboardResponse(csilV GetUsageDashboardResponse) []byte {
+	return cborEncode(csilEncGetUsageDashboardResponse(csilV))
+}
+
+// DecodeGetUsageDashboardResponse decodes canonical CSIL CBOR bytes into a GetUsageDashboardResponse.
+func DecodeGetUsageDashboardResponse(csilData []byte) (GetUsageDashboardResponse, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero GetUsageDashboardResponse
+		return csilZero, csilErr
+	}
+	return csilDecGetUsageDashboardResponse(csilRoot)
+}
+
+// csilEncGitHubAppSummary builds the canonical CBOR value tree for a GitHubAppSummary.
+func csilEncGitHubAppSummary(csilV GitHubAppSummary) cborValue {
+	csilEntries := make(cborMap, 0, 14)
+	csilEntries = append(csilEntries, cborEntry{cborText("name"), cborText(csilV.Name)})
+	csilEntries = append(csilEntries, cborEntry{cborText("slug"), cborText(csilV.Slug)})
+	csilEntries = append(csilEntries, cborEntry{cborText("app_id"), cborInt(csilV.AppId)})
+	csilEntries = append(csilEntries, cborEntry{cborText("enabled"), cborBool(csilV.Enabled)})
+	csilEntries = append(csilEntries, cborEntry{cborText("created_at"), cborText(csilV.CreatedAt)})
+	if csilV.InstallUrl != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("install_url"), cborText((*csilV.InstallUrl))})
+	}
+	csilEntries = append(csilEntries, cborEntry{cborText("recommended"), cborBool(csilV.Recommended)})
+	csilEntries = append(csilEntries, cborEntry{cborText("repositories"), cborInt(csilV.Repositories)})
+	if csilV.RatelimitLimit != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("ratelimit_limit"), cborInt((*csilV.RatelimitLimit))})
+	}
+	csilEntries = append(csilEntries, cborEntry{cborText("headroom_percent"), cborInt(csilV.HeadroomPercent)})
+	csilEntries = append(csilEntries, cborEntry{cborText("open_registration"), cborBool(csilV.OpenRegistration)})
+	if csilV.RatelimitResetAt != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("ratelimit_reset_at"), cborText((*csilV.RatelimitResetAt))})
+	}
+	if csilV.RatelimitRemaining != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("ratelimit_remaining"), cborInt((*csilV.RatelimitRemaining))})
+	}
+	csilEntries = append(csilEntries, cborEntry{cborText("active_installations"), cborInt(csilV.ActiveInstallations)})
+	return csilEntries
+}
+
+// csilDecGitHubAppSummary reconstructs a GitHubAppSummary from a decoded CBOR value tree.
+func csilDecGitHubAppSummary(csilRoot cborValue) (GitHubAppSummary, error) {
+	var csilOut GitHubAppSummary
+	{
+		csilField, csilErr := cborRequire(csilRoot, "app_id")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsI64)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.AppId = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "slug")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Slug = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "name")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Name = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "enabled")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsBool)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Enabled = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "open_registration")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsBool)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.OpenRegistration = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "headroom_percent")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsI64)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.HeadroomPercent = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "active_installations")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsI64)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.ActiveInstallations = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "repositories")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsI64)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Repositories = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "recommended")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsBool)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Recommended = csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "install_url"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.InstallUrl = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "ratelimit_limit"); csilOk {
+		csilVal, csilErr := (cborAsI64)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.RatelimitLimit = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "ratelimit_remaining"); csilOk {
+		csilVal, csilErr := (cborAsI64)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.RatelimitRemaining = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "ratelimit_reset_at"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.RatelimitResetAt = &csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "created_at")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.CreatedAt = csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeGitHubAppSummary encodes a GitHubAppSummary to canonical CSIL CBOR bytes.
+func EncodeGitHubAppSummary(csilV GitHubAppSummary) []byte {
+	return cborEncode(csilEncGitHubAppSummary(csilV))
+}
+
+// DecodeGitHubAppSummary decodes canonical CSIL CBOR bytes into a GitHubAppSummary.
+func DecodeGitHubAppSummary(csilData []byte) (GitHubAppSummary, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero GitHubAppSummary
+		return csilZero, csilErr
+	}
+	return csilDecGitHubAppSummary(csilRoot)
+}
+
+// csilEncGitHubAppInstallationSummary builds the canonical CBOR value tree for a GitHubAppInstallationSummary.
+func csilEncGitHubAppInstallationSummary(csilV GitHubAppInstallationSummary) cborValue {
+	csilEntries := make(cborMap, 0, 14)
+	csilEntries = append(csilEntries, cborEntry{cborText("app_id"), cborInt(csilV.AppId)})
+	csilEntries = append(csilEntries, cborEntry{cborText("deleted"), cborBool(csilV.Deleted)})
+	csilEntries = append(csilEntries, cborEntry{cborText("suspended"), cborBool(csilV.Suspended)})
+	csilEntries = append(csilEntries, cborEntry{cborText("account_type"), cborText(csilV.AccountType)})
+	csilEntries = append(csilEntries, cborEntry{cborText("last_seen_at"), cborText(csilV.LastSeenAt)})
+	csilEntries = append(csilEntries, cborEntry{cborText("repositories"), cborEncArray(csilV.Repositories, func(csilElem string) cborValue { return cborText(csilElem) })})
+	csilEntries = append(csilEntries, cborEntry{cborText("account_login"), cborText(csilV.AccountLogin)})
+	csilEntries = append(csilEntries, cborEntry{cborText("installation_id"), cborInt(csilV.InstallationId)})
+	if csilV.RatelimitLimit != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("ratelimit_limit"), cborInt((*csilV.RatelimitLimit))})
+	}
+	csilEntries = append(csilEntries, cborEntry{cborText("headroom_percent"), cborInt(csilV.HeadroomPercent)})
+	if csilV.RatelimitResetAt != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("ratelimit_reset_at"), cborText((*csilV.RatelimitResetAt))})
+	}
+	if csilV.RatelimitRemaining != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("ratelimit_remaining"), cborInt((*csilV.RatelimitRemaining))})
+	}
+	csilEntries = append(csilEntries, cborEntry{cborText("pending_repositories"), cborEncArray(csilV.PendingRepositories, func(csilElem string) cborValue { return cborText(csilElem) })})
+	csilEntries = append(csilEntries, cborEntry{cborText("repository_selection"), cborText(csilV.RepositorySelection)})
+	return csilEntries
+}
+
+// csilDecGitHubAppInstallationSummary reconstructs a GitHubAppInstallationSummary from a decoded CBOR value tree.
+func csilDecGitHubAppInstallationSummary(csilRoot cborValue) (GitHubAppInstallationSummary, error) {
+	var csilOut GitHubAppInstallationSummary
+	{
+		csilField, csilErr := cborRequire(csilRoot, "installation_id")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsI64)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.InstallationId = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "app_id")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsI64)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.AppId = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "account_login")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.AccountLogin = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "account_type")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.AccountType = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "repository_selection")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.RepositorySelection = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "suspended")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsBool)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Suspended = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "deleted")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsBool)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Deleted = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "headroom_percent")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsI64)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.HeadroomPercent = csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "ratelimit_limit"); csilOk {
+		csilVal, csilErr := (cborAsI64)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.RatelimitLimit = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "ratelimit_remaining"); csilOk {
+		csilVal, csilErr := (cborAsI64)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.RatelimitRemaining = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "ratelimit_reset_at"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.RatelimitResetAt = &csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "last_seen_at")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.LastSeenAt = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "repositories")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (func(csilV cborValue) ([]string, error) { return cborDecArray(csilV, cborAsText) })(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Repositories = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "pending_repositories")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (func(csilV cborValue) ([]string, error) { return cborDecArray(csilV, cborAsText) })(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.PendingRepositories = csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeGitHubAppInstallationSummary encodes a GitHubAppInstallationSummary to canonical CSIL CBOR bytes.
+func EncodeGitHubAppInstallationSummary(csilV GitHubAppInstallationSummary) []byte {
+	return cborEncode(csilEncGitHubAppInstallationSummary(csilV))
+}
+
+// DecodeGitHubAppInstallationSummary decodes canonical CSIL CBOR bytes into a GitHubAppInstallationSummary.
+func DecodeGitHubAppInstallationSummary(csilData []byte) (GitHubAppInstallationSummary, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero GitHubAppInstallationSummary
+		return csilZero, csilErr
+	}
+	return csilDecGitHubAppInstallationSummary(csilRoot)
+}
+
+// csilEncListGitHubAppsRequest builds the canonical CBOR value tree for a ListGitHubAppsRequest.
+func csilEncListGitHubAppsRequest(csilV ListGitHubAppsRequest) cborValue {
+	csilEntries := make(cborMap, 0, 0)
+	return csilEntries
+}
+
+// csilDecListGitHubAppsRequest reconstructs a ListGitHubAppsRequest from a decoded CBOR value tree.
+func csilDecListGitHubAppsRequest(csilRoot cborValue) (ListGitHubAppsRequest, error) {
+	var csilOut ListGitHubAppsRequest
+	return csilOut, nil
+}
+
+// EncodeListGitHubAppsRequest encodes a ListGitHubAppsRequest to canonical CSIL CBOR bytes.
+func EncodeListGitHubAppsRequest(csilV ListGitHubAppsRequest) []byte {
+	return cborEncode(csilEncListGitHubAppsRequest(csilV))
+}
+
+// DecodeListGitHubAppsRequest decodes canonical CSIL CBOR bytes into a ListGitHubAppsRequest.
+func DecodeListGitHubAppsRequest(csilData []byte) (ListGitHubAppsRequest, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero ListGitHubAppsRequest
+		return csilZero, csilErr
+	}
+	return csilDecListGitHubAppsRequest(csilRoot)
+}
+
+// csilEncListGitHubAppsResponse builds the canonical CBOR value tree for a ListGitHubAppsResponse.
+func csilEncListGitHubAppsResponse(csilV ListGitHubAppsResponse) cborValue {
+	csilEntries := make(cborMap, 0, 2)
+	csilEntries = append(csilEntries, cborEntry{cborText("apps"), cborEncArray(csilV.Apps, func(csilElem GitHubAppSummary) cborValue { return csilEncGitHubAppSummary(csilElem) })})
+	csilEntries = append(csilEntries, cborEntry{cborText("installations"), cborEncArray(csilV.Installations, func(csilElem GitHubAppInstallationSummary) cborValue {
+		return csilEncGitHubAppInstallationSummary(csilElem)
+	})})
+	return csilEntries
+}
+
+// csilDecListGitHubAppsResponse reconstructs a ListGitHubAppsResponse from a decoded CBOR value tree.
+func csilDecListGitHubAppsResponse(csilRoot cborValue) (ListGitHubAppsResponse, error) {
+	var csilOut ListGitHubAppsResponse
+	{
+		csilField, csilErr := cborRequire(csilRoot, "apps")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (func(csilV cborValue) ([]GitHubAppSummary, error) { return cborDecArray(csilV, csilDecGitHubAppSummary) })(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Apps = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "installations")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (func(csilV cborValue) ([]GitHubAppInstallationSummary, error) {
+			return cborDecArray(csilV, csilDecGitHubAppInstallationSummary)
+		})(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Installations = csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeListGitHubAppsResponse encodes a ListGitHubAppsResponse to canonical CSIL CBOR bytes.
+func EncodeListGitHubAppsResponse(csilV ListGitHubAppsResponse) []byte {
+	return cborEncode(csilEncListGitHubAppsResponse(csilV))
+}
+
+// DecodeListGitHubAppsResponse decodes canonical CSIL CBOR bytes into a ListGitHubAppsResponse.
+func DecodeListGitHubAppsResponse(csilData []byte) (ListGitHubAppsResponse, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero ListGitHubAppsResponse
+		return csilZero, csilErr
+	}
+	return csilDecListGitHubAppsResponse(csilRoot)
+}
+
+// csilEncSetGitHubAppEnabledRequest builds the canonical CBOR value tree for a SetGitHubAppEnabledRequest.
+func csilEncSetGitHubAppEnabledRequest(csilV SetGitHubAppEnabledRequest) cborValue {
+	csilEntries := make(cborMap, 0, 2)
+	csilEntries = append(csilEntries, cborEntry{cborText("app_id"), cborInt(csilV.AppId)})
+	csilEntries = append(csilEntries, cborEntry{cborText("enabled"), cborBool(csilV.Enabled)})
+	return csilEntries
+}
+
+// csilDecSetGitHubAppEnabledRequest reconstructs a SetGitHubAppEnabledRequest from a decoded CBOR value tree.
+func csilDecSetGitHubAppEnabledRequest(csilRoot cborValue) (SetGitHubAppEnabledRequest, error) {
+	var csilOut SetGitHubAppEnabledRequest
+	{
+		csilField, csilErr := cborRequire(csilRoot, "app_id")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsI64)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.AppId = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "enabled")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsBool)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Enabled = csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeSetGitHubAppEnabledRequest encodes a SetGitHubAppEnabledRequest to canonical CSIL CBOR bytes.
+func EncodeSetGitHubAppEnabledRequest(csilV SetGitHubAppEnabledRequest) []byte {
+	return cborEncode(csilEncSetGitHubAppEnabledRequest(csilV))
+}
+
+// DecodeSetGitHubAppEnabledRequest decodes canonical CSIL CBOR bytes into a SetGitHubAppEnabledRequest.
+func DecodeSetGitHubAppEnabledRequest(csilData []byte) (SetGitHubAppEnabledRequest, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero SetGitHubAppEnabledRequest
+		return csilZero, csilErr
+	}
+	return csilDecSetGitHubAppEnabledRequest(csilRoot)
+}
+
+// csilEncSetGitHubAppEnabledResponse builds the canonical CBOR value tree for a SetGitHubAppEnabledResponse.
+func csilEncSetGitHubAppEnabledResponse(csilV SetGitHubAppEnabledResponse) cborValue {
+	csilEntries := make(cborMap, 0, 1)
+	csilEntries = append(csilEntries, cborEntry{cborText("app"), csilEncGitHubAppSummary(csilV.App)})
+	return csilEntries
+}
+
+// csilDecSetGitHubAppEnabledResponse reconstructs a SetGitHubAppEnabledResponse from a decoded CBOR value tree.
+func csilDecSetGitHubAppEnabledResponse(csilRoot cborValue) (SetGitHubAppEnabledResponse, error) {
+	var csilOut SetGitHubAppEnabledResponse
+	{
+		csilField, csilErr := cborRequire(csilRoot, "app")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (csilDecGitHubAppSummary)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.App = csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeSetGitHubAppEnabledResponse encodes a SetGitHubAppEnabledResponse to canonical CSIL CBOR bytes.
+func EncodeSetGitHubAppEnabledResponse(csilV SetGitHubAppEnabledResponse) []byte {
+	return cborEncode(csilEncSetGitHubAppEnabledResponse(csilV))
+}
+
+// DecodeSetGitHubAppEnabledResponse decodes canonical CSIL CBOR bytes into a SetGitHubAppEnabledResponse.
+func DecodeSetGitHubAppEnabledResponse(csilData []byte) (SetGitHubAppEnabledResponse, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero SetGitHubAppEnabledResponse
+		return csilZero, csilErr
+	}
+	return csilDecSetGitHubAppEnabledResponse(csilRoot)
+}
+
+// csilEncSyncGitHubAppRequest builds the canonical CBOR value tree for a SyncGitHubAppRequest.
+func csilEncSyncGitHubAppRequest(csilV SyncGitHubAppRequest) cborValue {
+	csilEntries := make(cborMap, 0, 1)
+	csilEntries = append(csilEntries, cborEntry{cborText("app_id"), cborInt(csilV.AppId)})
+	return csilEntries
+}
+
+// csilDecSyncGitHubAppRequest reconstructs a SyncGitHubAppRequest from a decoded CBOR value tree.
+func csilDecSyncGitHubAppRequest(csilRoot cborValue) (SyncGitHubAppRequest, error) {
+	var csilOut SyncGitHubAppRequest
+	{
+		csilField, csilErr := cborRequire(csilRoot, "app_id")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsI64)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.AppId = csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeSyncGitHubAppRequest encodes a SyncGitHubAppRequest to canonical CSIL CBOR bytes.
+func EncodeSyncGitHubAppRequest(csilV SyncGitHubAppRequest) []byte {
+	return cborEncode(csilEncSyncGitHubAppRequest(csilV))
+}
+
+// DecodeSyncGitHubAppRequest decodes canonical CSIL CBOR bytes into a SyncGitHubAppRequest.
+func DecodeSyncGitHubAppRequest(csilData []byte) (SyncGitHubAppRequest, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero SyncGitHubAppRequest
+		return csilZero, csilErr
+	}
+	return csilDecSyncGitHubAppRequest(csilRoot)
+}
+
+// csilEncSyncGitHubAppResponse builds the canonical CBOR value tree for a SyncGitHubAppResponse.
+func csilEncSyncGitHubAppResponse(csilV SyncGitHubAppResponse) cborValue {
+	csilEntries := make(cborMap, 0, 4)
+	csilEntries = append(csilEntries, cborEntry{cborText("errors"), cborEncArray(csilV.Errors, func(csilElem string) cborValue { return cborText(csilElem) })})
+	csilEntries = append(csilEntries, cborEntry{cborText("created"), cborInt(csilV.Created)})
+	csilEntries = append(csilEntries, cborEntry{cborText("disabled"), cborInt(csilV.Disabled)})
+	csilEntries = append(csilEntries, cborEntry{cborText("installations"), cborInt(csilV.Installations)})
+	return csilEntries
+}
+
+// csilDecSyncGitHubAppResponse reconstructs a SyncGitHubAppResponse from a decoded CBOR value tree.
+func csilDecSyncGitHubAppResponse(csilRoot cborValue) (SyncGitHubAppResponse, error) {
+	var csilOut SyncGitHubAppResponse
+	{
+		csilField, csilErr := cborRequire(csilRoot, "installations")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsI64)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Installations = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "created")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsI64)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Created = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "disabled")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsI64)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Disabled = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "errors")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (func(csilV cborValue) ([]string, error) { return cborDecArray(csilV, cborAsText) })(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Errors = csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeSyncGitHubAppResponse encodes a SyncGitHubAppResponse to canonical CSIL CBOR bytes.
+func EncodeSyncGitHubAppResponse(csilV SyncGitHubAppResponse) []byte {
+	return cborEncode(csilEncSyncGitHubAppResponse(csilV))
+}
+
+// DecodeSyncGitHubAppResponse decodes canonical CSIL CBOR bytes into a SyncGitHubAppResponse.
+func DecodeSyncGitHubAppResponse(csilData []byte) (SyncGitHubAppResponse, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero SyncGitHubAppResponse
+		return csilZero, csilErr
+	}
+	return csilDecSyncGitHubAppResponse(csilRoot)
+}
+
+// csilEncSetShedActionsRequest builds the canonical CBOR value tree for a SetShedActionsRequest.
+func csilEncSetShedActionsRequest(csilV SetShedActionsRequest) cborValue {
+	csilEntries := make(cborMap, 0, 4)
+	if csilV.Reset != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("reset"), cborBool((*csilV.Reset))})
+	}
+	csilEntries = append(csilEntries, cborEntry{cborText("org_id"), cborText(csilV.OrgId)})
+	if csilV.Critical != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("critical"), csilEncShedActions((*csilV.Critical))})
+	}
+	if csilV.Degraded != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("degraded"), csilEncShedActions((*csilV.Degraded))})
+	}
+	return csilEntries
+}
+
+// csilDecSetShedActionsRequest reconstructs a SetShedActionsRequest from a decoded CBOR value tree.
+func csilDecSetShedActionsRequest(csilRoot cborValue) (SetShedActionsRequest, error) {
+	var csilOut SetShedActionsRequest
+	{
+		csilField, csilErr := cborRequire(csilRoot, "org_id")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.OrgId = csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "degraded"); csilOk {
+		csilVal, csilErr := (csilDecShedActions)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Degraded = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "critical"); csilOk {
+		csilVal, csilErr := (csilDecShedActions)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Critical = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "reset"); csilOk {
+		csilVal, csilErr := (cborAsBool)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Reset = &csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeSetShedActionsRequest encodes a SetShedActionsRequest to canonical CSIL CBOR bytes.
+func EncodeSetShedActionsRequest(csilV SetShedActionsRequest) []byte {
+	return cborEncode(csilEncSetShedActionsRequest(csilV))
+}
+
+// DecodeSetShedActionsRequest decodes canonical CSIL CBOR bytes into a SetShedActionsRequest.
+func DecodeSetShedActionsRequest(csilData []byte) (SetShedActionsRequest, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero SetShedActionsRequest
+		return csilZero, csilErr
+	}
+	return csilDecSetShedActionsRequest(csilRoot)
+}
+
+// csilEncOrgReportingSettingsView builds the canonical CBOR value tree for a OrgReportingSettingsView.
+func csilEncOrgReportingSettingsView(csilV OrgReportingSettingsView) cborValue {
+	csilEntries := make(cborMap, 0, 6)
+	csilEntries = append(csilEntries, cborEntry{cborText("path_owners"), cborEncArray(csilV.PathOwners, func(csilElem PathOwnerRule) cborValue { return csilEncPathOwnerRule(csilElem) })})
+	csilEntries = append(csilEntries, cborEntry{cborText("report_mode"), cborText(csilV.ReportMode)})
+	csilEntries = append(csilEntries, cborEntry{cborText("path_acceptance"), cborText(csilV.PathAcceptance)})
+	csilEntries = append(csilEntries, cborEntry{cborText("codeowners_import"), cborText(csilV.CodeownersImport)})
+	csilEntries = append(csilEntries, cborEntry{cborText("agreement_contexts"), cborEncArray(csilV.AgreementContexts, func(csilElem string) cborValue { return cborText(csilElem) })})
+	csilEntries = append(csilEntries, cborEntry{cborText("codeowners_cache_ttl_seconds"), cborInt(csilV.CodeownersCacheTtlSeconds)})
+	return csilEntries
+}
+
+// csilDecOrgReportingSettingsView reconstructs a OrgReportingSettingsView from a decoded CBOR value tree.
+func csilDecOrgReportingSettingsView(csilRoot cborValue) (OrgReportingSettingsView, error) {
+	var csilOut OrgReportingSettingsView
+	{
+		csilField, csilErr := cborRequire(csilRoot, "report_mode")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.ReportMode = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "agreement_contexts")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (func(csilV cborValue) ([]string, error) { return cborDecArray(csilV, cborAsText) })(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.AgreementContexts = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "codeowners_import")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.CodeownersImport = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "codeowners_cache_ttl_seconds")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsI64)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.CodeownersCacheTtlSeconds = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "path_acceptance")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.PathAcceptance = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "path_owners")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (func(csilV cborValue) ([]PathOwnerRule, error) { return cborDecArray(csilV, csilDecPathOwnerRule) })(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.PathOwners = csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeOrgReportingSettingsView encodes a OrgReportingSettingsView to canonical CSIL CBOR bytes.
+func EncodeOrgReportingSettingsView(csilV OrgReportingSettingsView) []byte {
+	return cborEncode(csilEncOrgReportingSettingsView(csilV))
+}
+
+// DecodeOrgReportingSettingsView decodes canonical CSIL CBOR bytes into a OrgReportingSettingsView.
+func DecodeOrgReportingSettingsView(csilData []byte) (OrgReportingSettingsView, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero OrgReportingSettingsView
+		return csilZero, csilErr
+	}
+	return csilDecOrgReportingSettingsView(csilRoot)
+}
+
+// csilEncGetOrgReportingSettingsRequest builds the canonical CBOR value tree for a GetOrgReportingSettingsRequest.
+func csilEncGetOrgReportingSettingsRequest(csilV GetOrgReportingSettingsRequest) cborValue {
+	csilEntries := make(cborMap, 0, 1)
+	csilEntries = append(csilEntries, cborEntry{cborText("organization"), cborText(csilV.Organization)})
+	return csilEntries
+}
+
+// csilDecGetOrgReportingSettingsRequest reconstructs a GetOrgReportingSettingsRequest from a decoded CBOR value tree.
+func csilDecGetOrgReportingSettingsRequest(csilRoot cborValue) (GetOrgReportingSettingsRequest, error) {
+	var csilOut GetOrgReportingSettingsRequest
+	{
+		csilField, csilErr := cborRequire(csilRoot, "organization")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Organization = csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeGetOrgReportingSettingsRequest encodes a GetOrgReportingSettingsRequest to canonical CSIL CBOR bytes.
+func EncodeGetOrgReportingSettingsRequest(csilV GetOrgReportingSettingsRequest) []byte {
+	return cborEncode(csilEncGetOrgReportingSettingsRequest(csilV))
+}
+
+// DecodeGetOrgReportingSettingsRequest decodes canonical CSIL CBOR bytes into a GetOrgReportingSettingsRequest.
+func DecodeGetOrgReportingSettingsRequest(csilData []byte) (GetOrgReportingSettingsRequest, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero GetOrgReportingSettingsRequest
+		return csilZero, csilErr
+	}
+	return csilDecGetOrgReportingSettingsRequest(csilRoot)
+}
+
+// csilEncGetOrgReportingSettingsResponse builds the canonical CBOR value tree for a GetOrgReportingSettingsResponse.
+func csilEncGetOrgReportingSettingsResponse(csilV GetOrgReportingSettingsResponse) cborValue {
+	csilEntries := make(cborMap, 0, 2)
+	csilEntries = append(csilEntries, cborEntry{cborText("settings"), csilEncOrgReportingSettingsView(csilV.Settings)})
+	csilEntries = append(csilEntries, cborEntry{cborText("can_manage"), cborBool(csilV.CanManage)})
+	return csilEntries
+}
+
+// csilDecGetOrgReportingSettingsResponse reconstructs a GetOrgReportingSettingsResponse from a decoded CBOR value tree.
+func csilDecGetOrgReportingSettingsResponse(csilRoot cborValue) (GetOrgReportingSettingsResponse, error) {
+	var csilOut GetOrgReportingSettingsResponse
+	{
+		csilField, csilErr := cborRequire(csilRoot, "settings")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (csilDecOrgReportingSettingsView)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Settings = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "can_manage")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsBool)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.CanManage = csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeGetOrgReportingSettingsResponse encodes a GetOrgReportingSettingsResponse to canonical CSIL CBOR bytes.
+func EncodeGetOrgReportingSettingsResponse(csilV GetOrgReportingSettingsResponse) []byte {
+	return cborEncode(csilEncGetOrgReportingSettingsResponse(csilV))
+}
+
+// DecodeGetOrgReportingSettingsResponse decodes canonical CSIL CBOR bytes into a GetOrgReportingSettingsResponse.
+func DecodeGetOrgReportingSettingsResponse(csilData []byte) (GetOrgReportingSettingsResponse, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero GetOrgReportingSettingsResponse
+		return csilZero, csilErr
+	}
+	return csilDecGetOrgReportingSettingsResponse(csilRoot)
+}
+
+// csilEncPutOrgReportingSettingsRequest builds the canonical CBOR value tree for a PutOrgReportingSettingsRequest.
+func csilEncPutOrgReportingSettingsRequest(csilV PutOrgReportingSettingsRequest) cborValue {
+	csilEntries := make(cborMap, 0, 2)
+	csilEntries = append(csilEntries, cborEntry{cborText("settings"), csilEncOrgReportingSettingsView(csilV.Settings)})
+	csilEntries = append(csilEntries, cborEntry{cborText("organization"), cborText(csilV.Organization)})
+	return csilEntries
+}
+
+// csilDecPutOrgReportingSettingsRequest reconstructs a PutOrgReportingSettingsRequest from a decoded CBOR value tree.
+func csilDecPutOrgReportingSettingsRequest(csilRoot cborValue) (PutOrgReportingSettingsRequest, error) {
+	var csilOut PutOrgReportingSettingsRequest
+	{
+		csilField, csilErr := cborRequire(csilRoot, "organization")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Organization = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "settings")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (csilDecOrgReportingSettingsView)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Settings = csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodePutOrgReportingSettingsRequest encodes a PutOrgReportingSettingsRequest to canonical CSIL CBOR bytes.
+func EncodePutOrgReportingSettingsRequest(csilV PutOrgReportingSettingsRequest) []byte {
+	return cborEncode(csilEncPutOrgReportingSettingsRequest(csilV))
+}
+
+// DecodePutOrgReportingSettingsRequest decodes canonical CSIL CBOR bytes into a PutOrgReportingSettingsRequest.
+func DecodePutOrgReportingSettingsRequest(csilData []byte) (PutOrgReportingSettingsRequest, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero PutOrgReportingSettingsRequest
+		return csilZero, csilErr
+	}
+	return csilDecPutOrgReportingSettingsRequest(csilRoot)
+}
+
+// csilEncGetRequiredSetOrgSettingsRequest builds the canonical CBOR value tree for a GetRequiredSetOrgSettingsRequest.
+func csilEncGetRequiredSetOrgSettingsRequest(csilV GetRequiredSetOrgSettingsRequest) cborValue {
+	csilEntries := make(cborMap, 0, 1)
+	csilEntries = append(csilEntries, cborEntry{cborText("organization"), cborText(csilV.Organization)})
+	return csilEntries
+}
+
+// csilDecGetRequiredSetOrgSettingsRequest reconstructs a GetRequiredSetOrgSettingsRequest from a decoded CBOR value tree.
+func csilDecGetRequiredSetOrgSettingsRequest(csilRoot cborValue) (GetRequiredSetOrgSettingsRequest, error) {
+	var csilOut GetRequiredSetOrgSettingsRequest
+	{
+		csilField, csilErr := cborRequire(csilRoot, "organization")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Organization = csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeGetRequiredSetOrgSettingsRequest encodes a GetRequiredSetOrgSettingsRequest to canonical CSIL CBOR bytes.
+func EncodeGetRequiredSetOrgSettingsRequest(csilV GetRequiredSetOrgSettingsRequest) []byte {
+	return cborEncode(csilEncGetRequiredSetOrgSettingsRequest(csilV))
+}
+
+// DecodeGetRequiredSetOrgSettingsRequest decodes canonical CSIL CBOR bytes into a GetRequiredSetOrgSettingsRequest.
+func DecodeGetRequiredSetOrgSettingsRequest(csilData []byte) (GetRequiredSetOrgSettingsRequest, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero GetRequiredSetOrgSettingsRequest
+		return csilZero, csilErr
+	}
+	return csilDecGetRequiredSetOrgSettingsRequest(csilRoot)
+}
+
+// csilEncGetRequiredSetOrgSettingsResponse builds the canonical CBOR value tree for a GetRequiredSetOrgSettingsResponse.
+func csilEncGetRequiredSetOrgSettingsResponse(csilV GetRequiredSetOrgSettingsResponse) cborValue {
+	csilEntries := make(cborMap, 0, 4)
+	csilEntries = append(csilEntries, cborEntry{cborText("approvers"), cborEncArray(csilV.Approvers, func(csilElem string) cborValue { return cborText(csilElem) })})
+	csilEntries = append(csilEntries, cborEntry{cborText("can_manage"), cborBool(csilV.CanManage)})
+	csilEntries = append(csilEntries, cborEntry{cborText("approver_rules"), cborEncArray(csilV.ApproverRules, func(csilElem RequiredSetApproverRule) cborValue { return csilEncRequiredSetApproverRule(csilElem) })})
+	csilEntries = append(csilEntries, cborEntry{cborText("max_quarantine_days"), cborInt(csilV.MaxQuarantineDays)})
+	return csilEntries
+}
+
+// csilDecGetRequiredSetOrgSettingsResponse reconstructs a GetRequiredSetOrgSettingsResponse from a decoded CBOR value tree.
+func csilDecGetRequiredSetOrgSettingsResponse(csilRoot cborValue) (GetRequiredSetOrgSettingsResponse, error) {
+	var csilOut GetRequiredSetOrgSettingsResponse
+	{
+		csilField, csilErr := cborRequire(csilRoot, "approvers")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (func(csilV cborValue) ([]string, error) { return cborDecArray(csilV, cborAsText) })(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Approvers = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "approver_rules")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (func(csilV cborValue) ([]RequiredSetApproverRule, error) {
+			return cborDecArray(csilV, csilDecRequiredSetApproverRule)
+		})(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.ApproverRules = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "max_quarantine_days")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsI64)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.MaxQuarantineDays = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "can_manage")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsBool)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.CanManage = csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeGetRequiredSetOrgSettingsResponse encodes a GetRequiredSetOrgSettingsResponse to canonical CSIL CBOR bytes.
+func EncodeGetRequiredSetOrgSettingsResponse(csilV GetRequiredSetOrgSettingsResponse) []byte {
+	return cborEncode(csilEncGetRequiredSetOrgSettingsResponse(csilV))
+}
+
+// DecodeGetRequiredSetOrgSettingsResponse decodes canonical CSIL CBOR bytes into a GetRequiredSetOrgSettingsResponse.
+func DecodeGetRequiredSetOrgSettingsResponse(csilData []byte) (GetRequiredSetOrgSettingsResponse, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero GetRequiredSetOrgSettingsResponse
+		return csilZero, csilErr
+	}
+	return csilDecGetRequiredSetOrgSettingsResponse(csilRoot)
+}
+
+// csilEncPutRequiredSetOrgSettingsRequest builds the canonical CBOR value tree for a PutRequiredSetOrgSettingsRequest.
+func csilEncPutRequiredSetOrgSettingsRequest(csilV PutRequiredSetOrgSettingsRequest) cborValue {
+	csilEntries := make(cborMap, 0, 4)
+	csilEntries = append(csilEntries, cborEntry{cborText("approvers"), cborEncArray(csilV.Approvers, func(csilElem string) cborValue { return cborText(csilElem) })})
+	csilEntries = append(csilEntries, cborEntry{cborText("organization"), cborText(csilV.Organization)})
+	csilEntries = append(csilEntries, cborEntry{cborText("approver_rules"), cborEncArray(csilV.ApproverRules, func(csilElem RequiredSetApproverRule) cborValue { return csilEncRequiredSetApproverRule(csilElem) })})
+	csilEntries = append(csilEntries, cborEntry{cborText("max_quarantine_days"), cborInt(csilV.MaxQuarantineDays)})
+	return csilEntries
+}
+
+// csilDecPutRequiredSetOrgSettingsRequest reconstructs a PutRequiredSetOrgSettingsRequest from a decoded CBOR value tree.
+func csilDecPutRequiredSetOrgSettingsRequest(csilRoot cborValue) (PutRequiredSetOrgSettingsRequest, error) {
+	var csilOut PutRequiredSetOrgSettingsRequest
+	{
+		csilField, csilErr := cborRequire(csilRoot, "organization")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Organization = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "approvers")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (func(csilV cborValue) ([]string, error) { return cborDecArray(csilV, cborAsText) })(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Approvers = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "approver_rules")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (func(csilV cborValue) ([]RequiredSetApproverRule, error) {
+			return cborDecArray(csilV, csilDecRequiredSetApproverRule)
+		})(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.ApproverRules = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "max_quarantine_days")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsI64)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.MaxQuarantineDays = csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodePutRequiredSetOrgSettingsRequest encodes a PutRequiredSetOrgSettingsRequest to canonical CSIL CBOR bytes.
+func EncodePutRequiredSetOrgSettingsRequest(csilV PutRequiredSetOrgSettingsRequest) []byte {
+	return cborEncode(csilEncPutRequiredSetOrgSettingsRequest(csilV))
+}
+
+// DecodePutRequiredSetOrgSettingsRequest decodes canonical CSIL CBOR bytes into a PutRequiredSetOrgSettingsRequest.
+func DecodePutRequiredSetOrgSettingsRequest(csilData []byte) (PutRequiredSetOrgSettingsRequest, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero PutRequiredSetOrgSettingsRequest
+		return csilZero, csilErr
+	}
+	return csilDecPutRequiredSetOrgSettingsRequest(csilRoot)
+}
+
+// csilEncGetVcsOwnerAllowlistRequest builds the canonical CBOR value tree for a GetVcsOwnerAllowlistRequest.
+func csilEncGetVcsOwnerAllowlistRequest(csilV GetVcsOwnerAllowlistRequest) cborValue {
+	csilEntries := make(cborMap, 0, 1)
+	csilEntries = append(csilEntries, cborEntry{cborText("organization"), cborText(csilV.Organization)})
+	return csilEntries
+}
+
+// csilDecGetVcsOwnerAllowlistRequest reconstructs a GetVcsOwnerAllowlistRequest from a decoded CBOR value tree.
+func csilDecGetVcsOwnerAllowlistRequest(csilRoot cborValue) (GetVcsOwnerAllowlistRequest, error) {
+	var csilOut GetVcsOwnerAllowlistRequest
+	{
+		csilField, csilErr := cborRequire(csilRoot, "organization")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Organization = csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeGetVcsOwnerAllowlistRequest encodes a GetVcsOwnerAllowlistRequest to canonical CSIL CBOR bytes.
+func EncodeGetVcsOwnerAllowlistRequest(csilV GetVcsOwnerAllowlistRequest) []byte {
+	return cborEncode(csilEncGetVcsOwnerAllowlistRequest(csilV))
+}
+
+// DecodeGetVcsOwnerAllowlistRequest decodes canonical CSIL CBOR bytes into a GetVcsOwnerAllowlistRequest.
+func DecodeGetVcsOwnerAllowlistRequest(csilData []byte) (GetVcsOwnerAllowlistRequest, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero GetVcsOwnerAllowlistRequest
+		return csilZero, csilErr
+	}
+	return csilDecGetVcsOwnerAllowlistRequest(csilRoot)
+}
+
+// csilEncVcsOwnerAllowlistResponse builds the canonical CBOR value tree for a VcsOwnerAllowlistResponse.
+func csilEncVcsOwnerAllowlistResponse(csilV VcsOwnerAllowlistResponse) cborValue {
+	csilEntries := make(cborMap, 0, 1)
+	csilEntries = append(csilEntries, cborEntry{cborText("owners"), cborEncArray(csilV.Owners, func(csilElem string) cborValue { return cborText(csilElem) })})
+	return csilEntries
+}
+
+// csilDecVcsOwnerAllowlistResponse reconstructs a VcsOwnerAllowlistResponse from a decoded CBOR value tree.
+func csilDecVcsOwnerAllowlistResponse(csilRoot cborValue) (VcsOwnerAllowlistResponse, error) {
+	var csilOut VcsOwnerAllowlistResponse
+	{
+		csilField, csilErr := cborRequire(csilRoot, "owners")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (func(csilV cborValue) ([]string, error) { return cborDecArray(csilV, cborAsText) })(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Owners = csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeVcsOwnerAllowlistResponse encodes a VcsOwnerAllowlistResponse to canonical CSIL CBOR bytes.
+func EncodeVcsOwnerAllowlistResponse(csilV VcsOwnerAllowlistResponse) []byte {
+	return cborEncode(csilEncVcsOwnerAllowlistResponse(csilV))
+}
+
+// DecodeVcsOwnerAllowlistResponse decodes canonical CSIL CBOR bytes into a VcsOwnerAllowlistResponse.
+func DecodeVcsOwnerAllowlistResponse(csilData []byte) (VcsOwnerAllowlistResponse, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero VcsOwnerAllowlistResponse
+		return csilZero, csilErr
+	}
+	return csilDecVcsOwnerAllowlistResponse(csilRoot)
+}
+
+// csilEncPutVcsOwnerAllowlistRequest builds the canonical CBOR value tree for a PutVcsOwnerAllowlistRequest.
+func csilEncPutVcsOwnerAllowlistRequest(csilV PutVcsOwnerAllowlistRequest) cborValue {
+	csilEntries := make(cborMap, 0, 2)
+	csilEntries = append(csilEntries, cborEntry{cborText("owners"), cborEncArray(csilV.Owners, func(csilElem string) cborValue { return cborText(csilElem) })})
+	csilEntries = append(csilEntries, cborEntry{cborText("organization"), cborText(csilV.Organization)})
+	return csilEntries
+}
+
+// csilDecPutVcsOwnerAllowlistRequest reconstructs a PutVcsOwnerAllowlistRequest from a decoded CBOR value tree.
+func csilDecPutVcsOwnerAllowlistRequest(csilRoot cborValue) (PutVcsOwnerAllowlistRequest, error) {
+	var csilOut PutVcsOwnerAllowlistRequest
+	{
+		csilField, csilErr := cborRequire(csilRoot, "organization")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Organization = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "owners")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (func(csilV cborValue) ([]string, error) { return cborDecArray(csilV, cborAsText) })(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Owners = csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodePutVcsOwnerAllowlistRequest encodes a PutVcsOwnerAllowlistRequest to canonical CSIL CBOR bytes.
+func EncodePutVcsOwnerAllowlistRequest(csilV PutVcsOwnerAllowlistRequest) []byte {
+	return cborEncode(csilEncPutVcsOwnerAllowlistRequest(csilV))
+}
+
+// DecodePutVcsOwnerAllowlistRequest decodes canonical CSIL CBOR bytes into a PutVcsOwnerAllowlistRequest.
+func DecodePutVcsOwnerAllowlistRequest(csilData []byte) (PutVcsOwnerAllowlistRequest, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero PutVcsOwnerAllowlistRequest
+		return csilZero, csilErr
+	}
+	return csilDecPutVcsOwnerAllowlistRequest(csilRoot)
+}
+
+// csilEncOidcClaim builds the canonical CBOR value tree for a OidcClaim.
+func csilEncOidcClaim(csilV OidcClaim) cborValue {
+	csilEntries := make(cborMap, 0, 2)
+	csilEntries = append(csilEntries, cborEntry{cborText("name"), cborText(csilV.Name)})
+	csilEntries = append(csilEntries, cborEntry{cborText("value"), cborText(csilV.Value)})
+	return csilEntries
+}
+
+// csilDecOidcClaim reconstructs a OidcClaim from a decoded CBOR value tree.
+func csilDecOidcClaim(csilRoot cborValue) (OidcClaim, error) {
+	var csilOut OidcClaim
+	{
+		csilField, csilErr := cborRequire(csilRoot, "name")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Name = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "value")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Value = csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeOidcClaim encodes a OidcClaim to canonical CSIL CBOR bytes.
+func EncodeOidcClaim(csilV OidcClaim) []byte {
+	return cborEncode(csilEncOidcClaim(csilV))
+}
+
+// DecodeOidcClaim decodes canonical CSIL CBOR bytes into a OidcClaim.
+func DecodeOidcClaim(csilData []byte) (OidcClaim, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero OidcClaim
+		return csilZero, csilErr
+	}
+	return csilDecOidcClaim(csilRoot)
+}
+
+// csilEncOidcAudienceClaims builds the canonical CBOR value tree for a OidcAudienceClaims.
+func csilEncOidcAudienceClaims(csilV OidcAudienceClaims) cborValue {
+	csilEntries := make(cborMap, 0, 2)
+	csilEntries = append(csilEntries, cborEntry{cborText("claims"), cborEncArray(csilV.Claims, func(csilElem OidcClaim) cborValue { return csilEncOidcClaim(csilElem) })})
+	csilEntries = append(csilEntries, cborEntry{cborText("audience"), cborText(csilV.Audience)})
+	return csilEntries
+}
+
+// csilDecOidcAudienceClaims reconstructs a OidcAudienceClaims from a decoded CBOR value tree.
+func csilDecOidcAudienceClaims(csilRoot cborValue) (OidcAudienceClaims, error) {
+	var csilOut OidcAudienceClaims
+	{
+		csilField, csilErr := cborRequire(csilRoot, "audience")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Audience = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "claims")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (func(csilV cborValue) ([]OidcClaim, error) { return cborDecArray(csilV, csilDecOidcClaim) })(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Claims = csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeOidcAudienceClaims encodes a OidcAudienceClaims to canonical CSIL CBOR bytes.
+func EncodeOidcAudienceClaims(csilV OidcAudienceClaims) []byte {
+	return cborEncode(csilEncOidcAudienceClaims(csilV))
+}
+
+// DecodeOidcAudienceClaims decodes canonical CSIL CBOR bytes into a OidcAudienceClaims.
+func DecodeOidcAudienceClaims(csilData []byte) (OidcAudienceClaims, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero OidcAudienceClaims
+		return csilZero, csilErr
+	}
+	return csilDecOidcAudienceClaims(csilRoot)
+}
+
+// csilEncGetOidcSettingsRequest builds the canonical CBOR value tree for a GetOidcSettingsRequest.
+func csilEncGetOidcSettingsRequest(csilV GetOidcSettingsRequest) cborValue {
+	csilEntries := make(cborMap, 0, 2)
+	if csilV.ProjectId != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("project_id"), cborText((*csilV.ProjectId))})
+	}
+	csilEntries = append(csilEntries, cborEntry{cborText("organization"), cborText(csilV.Organization)})
+	return csilEntries
+}
+
+// csilDecGetOidcSettingsRequest reconstructs a GetOidcSettingsRequest from a decoded CBOR value tree.
+func csilDecGetOidcSettingsRequest(csilRoot cborValue) (GetOidcSettingsRequest, error) {
+	var csilOut GetOidcSettingsRequest
+	{
+		csilField, csilErr := cborRequire(csilRoot, "organization")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Organization = csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "project_id"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.ProjectId = &csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeGetOidcSettingsRequest encodes a GetOidcSettingsRequest to canonical CSIL CBOR bytes.
+func EncodeGetOidcSettingsRequest(csilV GetOidcSettingsRequest) []byte {
+	return cborEncode(csilEncGetOidcSettingsRequest(csilV))
+}
+
+// DecodeGetOidcSettingsRequest decodes canonical CSIL CBOR bytes into a GetOidcSettingsRequest.
+func DecodeGetOidcSettingsRequest(csilData []byte) (GetOidcSettingsRequest, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero GetOidcSettingsRequest
+		return csilZero, csilErr
+	}
+	return csilDecGetOidcSettingsRequest(csilRoot)
+}
+
+// csilEncOidcSettingsResponse builds the canonical CBOR value tree for a OidcSettingsResponse.
+func csilEncOidcSettingsResponse(csilV OidcSettingsResponse) cborValue {
+	csilEntries := make(cborMap, 0, 6)
+	csilEntries = append(csilEntries, cborEntry{cborText("issuer"), cborText(csilV.Issuer)})
+	csilEntries = append(csilEntries, cborEntry{cborText("can_manage"), cborBool(csilV.CanManage)})
+	if csilV.IssuerUrl != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("issuer_url"), cborText((*csilV.IssuerUrl))})
+	}
+	csilEntries = append(csilEntries, cborEntry{cborText("audience_claims"), cborEncArray(csilV.AudienceClaims, func(csilElem OidcAudienceClaims) cborValue { return csilEncOidcAudienceClaims(csilElem) })})
+	csilEntries = append(csilEntries, cborEntry{cborText("effective_enabled"), cborBool(csilV.EffectiveEnabled)})
+	csilEntries = append(csilEntries, cborEntry{cborText("issuer_configured"), cborBool(csilV.IssuerConfigured)})
+	return csilEntries
+}
+
+// csilDecOidcSettingsResponse reconstructs a OidcSettingsResponse from a decoded CBOR value tree.
+func csilDecOidcSettingsResponse(csilRoot cborValue) (OidcSettingsResponse, error) {
+	var csilOut OidcSettingsResponse
+	{
+		csilField, csilErr := cborRequire(csilRoot, "issuer")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Issuer = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "audience_claims")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (func(csilV cborValue) ([]OidcAudienceClaims, error) {
+			return cborDecArray(csilV, csilDecOidcAudienceClaims)
+		})(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.AudienceClaims = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "effective_enabled")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsBool)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.EffectiveEnabled = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "issuer_configured")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsBool)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.IssuerConfigured = csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "issuer_url"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.IssuerUrl = &csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "can_manage")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsBool)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.CanManage = csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeOidcSettingsResponse encodes a OidcSettingsResponse to canonical CSIL CBOR bytes.
+func EncodeOidcSettingsResponse(csilV OidcSettingsResponse) []byte {
+	return cborEncode(csilEncOidcSettingsResponse(csilV))
+}
+
+// DecodeOidcSettingsResponse decodes canonical CSIL CBOR bytes into a OidcSettingsResponse.
+func DecodeOidcSettingsResponse(csilData []byte) (OidcSettingsResponse, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero OidcSettingsResponse
+		return csilZero, csilErr
+	}
+	return csilDecOidcSettingsResponse(csilRoot)
+}
+
+// csilEncPutOidcSettingsRequest builds the canonical CBOR value tree for a PutOidcSettingsRequest.
+func csilEncPutOidcSettingsRequest(csilV PutOidcSettingsRequest) cborValue {
+	csilEntries := make(cborMap, 0, 4)
+	if csilV.Issuer != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("issuer"), cborText((*csilV.Issuer))})
+	}
+	if csilV.ProjectId != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("project_id"), cborText((*csilV.ProjectId))})
+	}
+	csilEntries = append(csilEntries, cborEntry{cborText("organization"), cborText(csilV.Organization)})
+	if csilV.AudienceClaims != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("audience_claims"), cborEncArray(csilV.AudienceClaims, func(csilElem OidcAudienceClaims) cborValue { return csilEncOidcAudienceClaims(csilElem) })})
+	}
+	return csilEntries
+}
+
+// csilDecPutOidcSettingsRequest reconstructs a PutOidcSettingsRequest from a decoded CBOR value tree.
+func csilDecPutOidcSettingsRequest(csilRoot cborValue) (PutOidcSettingsRequest, error) {
+	var csilOut PutOidcSettingsRequest
+	{
+		csilField, csilErr := cborRequire(csilRoot, "organization")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Organization = csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "project_id"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.ProjectId = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "issuer"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Issuer = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "audience_claims"); csilOk {
+		csilVal, csilErr := (func(csilV cborValue) ([]OidcAudienceClaims, error) {
+			return cborDecArray(csilV, csilDecOidcAudienceClaims)
+		})(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.AudienceClaims = csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodePutOidcSettingsRequest encodes a PutOidcSettingsRequest to canonical CSIL CBOR bytes.
+func EncodePutOidcSettingsRequest(csilV PutOidcSettingsRequest) []byte {
+	return cborEncode(csilEncPutOidcSettingsRequest(csilV))
+}
+
+// DecodePutOidcSettingsRequest decodes canonical CSIL CBOR bytes into a PutOidcSettingsRequest.
+func DecodePutOidcSettingsRequest(csilData []byte) (PutOidcSettingsRequest, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero PutOidcSettingsRequest
+		return csilZero, csilErr
+	}
+	return csilDecPutOidcSettingsRequest(csilRoot)
+}
+
+// csilEncOidcSigningKey builds the canonical CBOR value tree for a OidcSigningKey.
+func csilEncOidcSigningKey(csilV OidcSigningKey) cborValue {
+	csilEntries := make(cborMap, 0, 6)
+	csilEntries = append(csilEntries, cborEntry{cborText("kid"), cborText(csilV.Kid)})
+	csilEntries = append(csilEntries, cborEntry{cborText("state"), cborText(csilV.State)})
+	csilEntries = append(csilEntries, cborEntry{cborText("algorithm"), cborText(csilV.Algorithm)})
+	csilEntries = append(csilEntries, cborEntry{cborText("created_at"), cborText(csilV.CreatedAt)})
+	if csilV.RetiresAt != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("retires_at"), cborText((*csilV.RetiresAt))})
+	}
+	csilEntries = append(csilEntries, cborEntry{cborText("activates_at"), cborText(csilV.ActivatesAt)})
+	return csilEntries
+}
+
+// csilDecOidcSigningKey reconstructs a OidcSigningKey from a decoded CBOR value tree.
+func csilDecOidcSigningKey(csilRoot cborValue) (OidcSigningKey, error) {
+	var csilOut OidcSigningKey
+	{
+		csilField, csilErr := cborRequire(csilRoot, "kid")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Kid = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "algorithm")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Algorithm = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "created_at")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.CreatedAt = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "activates_at")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.ActivatesAt = csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "retires_at"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.RetiresAt = &csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "state")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.State = csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeOidcSigningKey encodes a OidcSigningKey to canonical CSIL CBOR bytes.
+func EncodeOidcSigningKey(csilV OidcSigningKey) []byte {
+	return cborEncode(csilEncOidcSigningKey(csilV))
+}
+
+// DecodeOidcSigningKey decodes canonical CSIL CBOR bytes into a OidcSigningKey.
+func DecodeOidcSigningKey(csilData []byte) (OidcSigningKey, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero OidcSigningKey
+		return csilZero, csilErr
+	}
+	return csilDecOidcSigningKey(csilRoot)
+}
+
+// csilEncListOidcKeysRequest builds the canonical CBOR value tree for a ListOidcKeysRequest.
+func csilEncListOidcKeysRequest(csilV ListOidcKeysRequest) cborValue {
+	csilEntries := make(cborMap, 0, 0)
+	return csilEntries
+}
+
+// csilDecListOidcKeysRequest reconstructs a ListOidcKeysRequest from a decoded CBOR value tree.
+func csilDecListOidcKeysRequest(csilRoot cborValue) (ListOidcKeysRequest, error) {
+	var csilOut ListOidcKeysRequest
+	return csilOut, nil
+}
+
+// EncodeListOidcKeysRequest encodes a ListOidcKeysRequest to canonical CSIL CBOR bytes.
+func EncodeListOidcKeysRequest(csilV ListOidcKeysRequest) []byte {
+	return cborEncode(csilEncListOidcKeysRequest(csilV))
+}
+
+// DecodeListOidcKeysRequest decodes canonical CSIL CBOR bytes into a ListOidcKeysRequest.
+func DecodeListOidcKeysRequest(csilData []byte) (ListOidcKeysRequest, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero ListOidcKeysRequest
+		return csilZero, csilErr
+	}
+	return csilDecListOidcKeysRequest(csilRoot)
+}
+
+// csilEncListOidcKeysResponse builds the canonical CBOR value tree for a ListOidcKeysResponse.
+func csilEncListOidcKeysResponse(csilV ListOidcKeysResponse) cborValue {
+	csilEntries := make(cborMap, 0, 3)
+	csilEntries = append(csilEntries, cborEntry{cborText("keys"), cborEncArray(csilV.Keys, func(csilElem OidcSigningKey) cborValue { return csilEncOidcSigningKey(csilElem) })})
+	if csilV.Issuer != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("issuer"), cborText((*csilV.Issuer))})
+	}
+	csilEntries = append(csilEntries, cborEntry{cborText("issuer_configured"), cborBool(csilV.IssuerConfigured)})
+	return csilEntries
+}
+
+// csilDecListOidcKeysResponse reconstructs a ListOidcKeysResponse from a decoded CBOR value tree.
+func csilDecListOidcKeysResponse(csilRoot cborValue) (ListOidcKeysResponse, error) {
+	var csilOut ListOidcKeysResponse
+	{
+		csilField, csilErr := cborRequire(csilRoot, "issuer_configured")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsBool)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.IssuerConfigured = csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "issuer"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Issuer = &csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "keys")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (func(csilV cborValue) ([]OidcSigningKey, error) { return cborDecArray(csilV, csilDecOidcSigningKey) })(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Keys = csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeListOidcKeysResponse encodes a ListOidcKeysResponse to canonical CSIL CBOR bytes.
+func EncodeListOidcKeysResponse(csilV ListOidcKeysResponse) []byte {
+	return cborEncode(csilEncListOidcKeysResponse(csilV))
+}
+
+// DecodeListOidcKeysResponse decodes canonical CSIL CBOR bytes into a ListOidcKeysResponse.
+func DecodeListOidcKeysResponse(csilData []byte) (ListOidcKeysResponse, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero ListOidcKeysResponse
+		return csilZero, csilErr
+	}
+	return csilDecListOidcKeysResponse(csilRoot)
+}
+
+// csilEncRotateOidcKeyRequest builds the canonical CBOR value tree for a RotateOidcKeyRequest.
+func csilEncRotateOidcKeyRequest(csilV RotateOidcKeyRequest) cborValue {
+	csilEntries := make(cborMap, 0, 1)
+	if csilV.Immediate != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("immediate"), cborBool((*csilV.Immediate))})
+	}
+	return csilEntries
+}
+
+// csilDecRotateOidcKeyRequest reconstructs a RotateOidcKeyRequest from a decoded CBOR value tree.
+func csilDecRotateOidcKeyRequest(csilRoot cborValue) (RotateOidcKeyRequest, error) {
+	var csilOut RotateOidcKeyRequest
+	if csilField, csilOk := cborMapGet(csilRoot, "immediate"); csilOk {
+		csilVal, csilErr := (cborAsBool)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Immediate = &csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeRotateOidcKeyRequest encodes a RotateOidcKeyRequest to canonical CSIL CBOR bytes.
+func EncodeRotateOidcKeyRequest(csilV RotateOidcKeyRequest) []byte {
+	return cborEncode(csilEncRotateOidcKeyRequest(csilV))
+}
+
+// DecodeRotateOidcKeyRequest decodes canonical CSIL CBOR bytes into a RotateOidcKeyRequest.
+func DecodeRotateOidcKeyRequest(csilData []byte) (RotateOidcKeyRequest, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero RotateOidcKeyRequest
+		return csilZero, csilErr
+	}
+	return csilDecRotateOidcKeyRequest(csilRoot)
+}
+
+// csilEncRetireOidcKeyRequest builds the canonical CBOR value tree for a RetireOidcKeyRequest.
+func csilEncRetireOidcKeyRequest(csilV RetireOidcKeyRequest) cborValue {
+	csilEntries := make(cborMap, 0, 1)
+	csilEntries = append(csilEntries, cborEntry{cborText("kid"), cborText(csilV.Kid)})
+	return csilEntries
+}
+
+// csilDecRetireOidcKeyRequest reconstructs a RetireOidcKeyRequest from a decoded CBOR value tree.
+func csilDecRetireOidcKeyRequest(csilRoot cborValue) (RetireOidcKeyRequest, error) {
+	var csilOut RetireOidcKeyRequest
+	{
+		csilField, csilErr := cborRequire(csilRoot, "kid")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Kid = csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeRetireOidcKeyRequest encodes a RetireOidcKeyRequest to canonical CSIL CBOR bytes.
+func EncodeRetireOidcKeyRequest(csilV RetireOidcKeyRequest) []byte {
+	return cborEncode(csilEncRetireOidcKeyRequest(csilV))
+}
+
+// DecodeRetireOidcKeyRequest decodes canonical CSIL CBOR bytes into a RetireOidcKeyRequest.
+func DecodeRetireOidcKeyRequest(csilData []byte) (RetireOidcKeyRequest, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero RetireOidcKeyRequest
+		return csilZero, csilErr
+	}
+	return csilDecRetireOidcKeyRequest(csilRoot)
+}
+
+// csilEncListAlertRulesRequest builds the canonical CBOR value tree for a ListAlertRulesRequest.
+func csilEncListAlertRulesRequest(csilV ListAlertRulesRequest) cborValue {
+	csilEntries := make(cborMap, 0, 2)
+	csilEntries = append(csilEntries, cborEntry{cborText("org_id"), cborText(csilV.OrgId)})
+	if csilV.ProjectId != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("project_id"), cborText((*csilV.ProjectId))})
+	}
+	return csilEntries
+}
+
+// csilDecListAlertRulesRequest reconstructs a ListAlertRulesRequest from a decoded CBOR value tree.
+func csilDecListAlertRulesRequest(csilRoot cborValue) (ListAlertRulesRequest, error) {
+	var csilOut ListAlertRulesRequest
+	{
+		csilField, csilErr := cborRequire(csilRoot, "org_id")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.OrgId = csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "project_id"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.ProjectId = &csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeListAlertRulesRequest encodes a ListAlertRulesRequest to canonical CSIL CBOR bytes.
+func EncodeListAlertRulesRequest(csilV ListAlertRulesRequest) []byte {
+	return cborEncode(csilEncListAlertRulesRequest(csilV))
+}
+
+// DecodeListAlertRulesRequest decodes canonical CSIL CBOR bytes into a ListAlertRulesRequest.
+func DecodeListAlertRulesRequest(csilData []byte) (ListAlertRulesRequest, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero ListAlertRulesRequest
+		return csilZero, csilErr
+	}
+	return csilDecListAlertRulesRequest(csilRoot)
+}
+
+// csilEncListAlertRulesResponse builds the canonical CBOR value tree for a ListAlertRulesResponse.
+func csilEncListAlertRulesResponse(csilV ListAlertRulesResponse) cborValue {
+	csilEntries := make(cborMap, 0, 2)
+	csilEntries = append(csilEntries, cborEntry{cborText("rules"), cborEncArray(csilV.Rules, func(csilElem ObsAlertRule) cborValue { return csilEncObsAlertRule(csilElem) })})
+	csilEntries = append(csilEntries, cborEntry{cborText("can_create_org_rules"), cborBool(csilV.CanCreateOrgRules)})
+	return csilEntries
+}
+
+// csilDecListAlertRulesResponse reconstructs a ListAlertRulesResponse from a decoded CBOR value tree.
+func csilDecListAlertRulesResponse(csilRoot cborValue) (ListAlertRulesResponse, error) {
+	var csilOut ListAlertRulesResponse
+	{
+		csilField, csilErr := cborRequire(csilRoot, "rules")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (func(csilV cborValue) ([]ObsAlertRule, error) { return cborDecArray(csilV, csilDecObsAlertRule) })(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Rules = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "can_create_org_rules")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsBool)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.CanCreateOrgRules = csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeListAlertRulesResponse encodes a ListAlertRulesResponse to canonical CSIL CBOR bytes.
+func EncodeListAlertRulesResponse(csilV ListAlertRulesResponse) []byte {
+	return cborEncode(csilEncListAlertRulesResponse(csilV))
+}
+
+// DecodeListAlertRulesResponse decodes canonical CSIL CBOR bytes into a ListAlertRulesResponse.
+func DecodeListAlertRulesResponse(csilData []byte) (ListAlertRulesResponse, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero ListAlertRulesResponse
+		return csilZero, csilErr
+	}
+	return csilDecListAlertRulesResponse(csilRoot)
+}
+
+// csilEncAlertRuleInput builds the canonical CBOR value tree for a AlertRuleInput.
+func csilEncAlertRuleInput(csilV AlertRuleInput) cborValue {
+	csilEntries := make(cborMap, 0, 12)
+	if csilV.Factor != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("factor"), cborFloat((*csilV.Factor))})
+	}
+	if csilV.Enabled != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("enabled"), cborBool((*csilV.Enabled))})
+	}
+	if csilV.MinRuns != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("min_runs"), cborInt((*csilV.MinRuns))})
+	}
+	if csilV.Condition != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("condition"), cborText((*csilV.Condition))})
+	}
+	if csilV.Threshold != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("threshold"), cborFloat((*csilV.Threshold))})
+	}
+	if csilV.FireAfter != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("fire_after"), cborInt((*csilV.FireAfter))})
+	}
+	if csilV.Description != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("description"), cborText((*csilV.Description))})
+	}
+	if csilV.WindowHours != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("window_hours"), cborInt((*csilV.WindowHours))})
+	}
+	if csilV.BaselineDays != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("baseline_days"), cborInt((*csilV.BaselineDays))})
+	}
+	if csilV.ResolveAfter != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("resolve_after"), cborInt((*csilV.ResolveAfter))})
+	}
+	if csilV.ResolveMargin != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("resolve_margin"), cborFloat((*csilV.ResolveMargin))})
+	}
+	if csilV.RefClassBucket != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("ref_class_bucket"), cborText((*csilV.RefClassBucket))})
+	}
+	return csilEntries
+}
+
+// csilDecAlertRuleInput reconstructs a AlertRuleInput from a decoded CBOR value tree.
+func csilDecAlertRuleInput(csilRoot cborValue) (AlertRuleInput, error) {
+	var csilOut AlertRuleInput
+	if csilField, csilOk := cborMapGet(csilRoot, "description"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Description = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "condition"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Condition = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "ref_class_bucket"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.RefClassBucket = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "threshold"); csilOk {
+		csilVal, csilErr := (cborAsF64)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Threshold = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "factor"); csilOk {
+		csilVal, csilErr := (cborAsF64)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Factor = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "window_hours"); csilOk {
+		csilVal, csilErr := (cborAsI64)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.WindowHours = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "baseline_days"); csilOk {
+		csilVal, csilErr := (cborAsI64)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.BaselineDays = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "min_runs"); csilOk {
+		csilVal, csilErr := (cborAsI64)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.MinRuns = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "resolve_margin"); csilOk {
+		csilVal, csilErr := (cborAsF64)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.ResolveMargin = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "fire_after"); csilOk {
+		csilVal, csilErr := (cborAsI64)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.FireAfter = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "resolve_after"); csilOk {
+		csilVal, csilErr := (cborAsI64)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.ResolveAfter = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "enabled"); csilOk {
+		csilVal, csilErr := (cborAsBool)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Enabled = &csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeAlertRuleInput encodes a AlertRuleInput to canonical CSIL CBOR bytes.
+func EncodeAlertRuleInput(csilV AlertRuleInput) []byte {
+	return cborEncode(csilEncAlertRuleInput(csilV))
+}
+
+// DecodeAlertRuleInput decodes canonical CSIL CBOR bytes into a AlertRuleInput.
+func DecodeAlertRuleInput(csilData []byte) (AlertRuleInput, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero AlertRuleInput
+		return csilZero, csilErr
+	}
+	return csilDecAlertRuleInput(csilRoot)
+}
+
+// csilEncCreateAlertRuleRequest builds the canonical CBOR value tree for a CreateAlertRuleRequest.
+func csilEncCreateAlertRuleRequest(csilV CreateAlertRuleRequest) cborValue {
+	csilEntries := make(cborMap, 0, 7)
+	csilEntries = append(csilEntries, cborEntry{cborText("name"), cborText(csilV.Name)})
+	csilEntries = append(csilEntries, cborEntry{cborText("rule"), csilEncAlertRuleInput(csilV.Rule)})
+	csilEntries = append(csilEntries, cborEntry{cborText("scope"), cborText(csilV.Scope)})
+	csilEntries = append(csilEntries, cborEntry{cborText("org_id"), cborText(csilV.OrgId)})
+	if csilV.ProjectId != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("project_id"), cborText((*csilV.ProjectId))})
+	}
+	if csilV.OwnerGroup != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("owner_group"), cborText((*csilV.OwnerGroup))})
+	}
+	if csilV.WorkflowSecurityId != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("workflow_security_id"), cborText((*csilV.WorkflowSecurityId))})
+	}
+	return csilEntries
+}
+
+// csilDecCreateAlertRuleRequest reconstructs a CreateAlertRuleRequest from a decoded CBOR value tree.
+func csilDecCreateAlertRuleRequest(csilRoot cborValue) (CreateAlertRuleRequest, error) {
+	var csilOut CreateAlertRuleRequest
+	{
+		csilField, csilErr := cborRequire(csilRoot, "org_id")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.OrgId = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "name")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Name = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "scope")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Scope = csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "project_id"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.ProjectId = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "workflow_security_id"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.WorkflowSecurityId = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "owner_group"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.OwnerGroup = &csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "rule")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (csilDecAlertRuleInput)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Rule = csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeCreateAlertRuleRequest encodes a CreateAlertRuleRequest to canonical CSIL CBOR bytes.
+func EncodeCreateAlertRuleRequest(csilV CreateAlertRuleRequest) []byte {
+	return cborEncode(csilEncCreateAlertRuleRequest(csilV))
+}
+
+// DecodeCreateAlertRuleRequest decodes canonical CSIL CBOR bytes into a CreateAlertRuleRequest.
+func DecodeCreateAlertRuleRequest(csilData []byte) (CreateAlertRuleRequest, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero CreateAlertRuleRequest
+		return csilZero, csilErr
+	}
+	return csilDecCreateAlertRuleRequest(csilRoot)
+}
+
+// csilEncUpdateAlertRuleRequest builds the canonical CBOR value tree for a UpdateAlertRuleRequest.
+func csilEncUpdateAlertRuleRequest(csilV UpdateAlertRuleRequest) cborValue {
+	csilEntries := make(cborMap, 0, 3)
+	csilEntries = append(csilEntries, cborEntry{cborText("rule"), csilEncAlertRuleInput(csilV.Rule)})
+	csilEntries = append(csilEntries, cborEntry{cborText("org_id"), cborText(csilV.OrgId)})
+	csilEntries = append(csilEntries, cborEntry{cborText("rule_id"), cborText(csilV.RuleId)})
+	return csilEntries
+}
+
+// csilDecUpdateAlertRuleRequest reconstructs a UpdateAlertRuleRequest from a decoded CBOR value tree.
+func csilDecUpdateAlertRuleRequest(csilRoot cborValue) (UpdateAlertRuleRequest, error) {
+	var csilOut UpdateAlertRuleRequest
+	{
+		csilField, csilErr := cborRequire(csilRoot, "org_id")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.OrgId = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "rule_id")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.RuleId = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "rule")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (csilDecAlertRuleInput)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Rule = csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeUpdateAlertRuleRequest encodes a UpdateAlertRuleRequest to canonical CSIL CBOR bytes.
+func EncodeUpdateAlertRuleRequest(csilV UpdateAlertRuleRequest) []byte {
+	return cborEncode(csilEncUpdateAlertRuleRequest(csilV))
+}
+
+// DecodeUpdateAlertRuleRequest decodes canonical CSIL CBOR bytes into a UpdateAlertRuleRequest.
+func DecodeUpdateAlertRuleRequest(csilData []byte) (UpdateAlertRuleRequest, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero UpdateAlertRuleRequest
+		return csilZero, csilErr
+	}
+	return csilDecUpdateAlertRuleRequest(csilRoot)
+}
+
+// csilEncAlertRuleResponse builds the canonical CBOR value tree for a AlertRuleResponse.
+func csilEncAlertRuleResponse(csilV AlertRuleResponse) cborValue {
+	csilEntries := make(cborMap, 0, 1)
+	csilEntries = append(csilEntries, cborEntry{cborText("rule"), csilEncObsAlertRule(csilV.Rule)})
+	return csilEntries
+}
+
+// csilDecAlertRuleResponse reconstructs a AlertRuleResponse from a decoded CBOR value tree.
+func csilDecAlertRuleResponse(csilRoot cborValue) (AlertRuleResponse, error) {
+	var csilOut AlertRuleResponse
+	{
+		csilField, csilErr := cborRequire(csilRoot, "rule")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (csilDecObsAlertRule)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Rule = csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeAlertRuleResponse encodes a AlertRuleResponse to canonical CSIL CBOR bytes.
+func EncodeAlertRuleResponse(csilV AlertRuleResponse) []byte {
+	return cborEncode(csilEncAlertRuleResponse(csilV))
+}
+
+// DecodeAlertRuleResponse decodes canonical CSIL CBOR bytes into a AlertRuleResponse.
+func DecodeAlertRuleResponse(csilData []byte) (AlertRuleResponse, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero AlertRuleResponse
+		return csilZero, csilErr
+	}
+	return csilDecAlertRuleResponse(csilRoot)
+}
+
+// csilEncDeleteAlertRuleRequest builds the canonical CBOR value tree for a DeleteAlertRuleRequest.
+func csilEncDeleteAlertRuleRequest(csilV DeleteAlertRuleRequest) cborValue {
+	csilEntries := make(cborMap, 0, 2)
+	csilEntries = append(csilEntries, cborEntry{cborText("org_id"), cborText(csilV.OrgId)})
+	csilEntries = append(csilEntries, cborEntry{cborText("rule_id"), cborText(csilV.RuleId)})
+	return csilEntries
+}
+
+// csilDecDeleteAlertRuleRequest reconstructs a DeleteAlertRuleRequest from a decoded CBOR value tree.
+func csilDecDeleteAlertRuleRequest(csilRoot cborValue) (DeleteAlertRuleRequest, error) {
+	var csilOut DeleteAlertRuleRequest
+	{
+		csilField, csilErr := cborRequire(csilRoot, "org_id")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.OrgId = csilVal
+	}
+	{
+		csilField, csilErr := cborRequire(csilRoot, "rule_id")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.RuleId = csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeDeleteAlertRuleRequest encodes a DeleteAlertRuleRequest to canonical CSIL CBOR bytes.
+func EncodeDeleteAlertRuleRequest(csilV DeleteAlertRuleRequest) []byte {
+	return cborEncode(csilEncDeleteAlertRuleRequest(csilV))
+}
+
+// DecodeDeleteAlertRuleRequest decodes canonical CSIL CBOR bytes into a DeleteAlertRuleRequest.
+func DecodeDeleteAlertRuleRequest(csilData []byte) (DeleteAlertRuleRequest, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero DeleteAlertRuleRequest
+		return csilZero, csilErr
+	}
+	return csilDecDeleteAlertRuleRequest(csilRoot)
+}
+
+// csilEncDeleteAlertRuleResponse builds the canonical CBOR value tree for a DeleteAlertRuleResponse.
+func csilEncDeleteAlertRuleResponse(csilV DeleteAlertRuleResponse) cborValue {
+	csilEntries := make(cborMap, 0, 1)
+	csilEntries = append(csilEntries, cborEntry{cborText("deleted"), cborBool(csilV.Deleted)})
+	return csilEntries
+}
+
+// csilDecDeleteAlertRuleResponse reconstructs a DeleteAlertRuleResponse from a decoded CBOR value tree.
+func csilDecDeleteAlertRuleResponse(csilRoot cborValue) (DeleteAlertRuleResponse, error) {
+	var csilOut DeleteAlertRuleResponse
+	{
+		csilField, csilErr := cborRequire(csilRoot, "deleted")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsBool)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Deleted = csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeDeleteAlertRuleResponse encodes a DeleteAlertRuleResponse to canonical CSIL CBOR bytes.
+func EncodeDeleteAlertRuleResponse(csilV DeleteAlertRuleResponse) []byte {
+	return cborEncode(csilEncDeleteAlertRuleResponse(csilV))
+}
+
+// DecodeDeleteAlertRuleResponse decodes canonical CSIL CBOR bytes into a DeleteAlertRuleResponse.
+func DecodeDeleteAlertRuleResponse(csilData []byte) (DeleteAlertRuleResponse, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero DeleteAlertRuleResponse
+		return csilZero, csilErr
+	}
+	return csilDecDeleteAlertRuleResponse(csilRoot)
+}
+
+// csilEncDeleteDiagnosisRequest builds the canonical CBOR value tree for a DeleteDiagnosisRequest.
+func csilEncDeleteDiagnosisRequest(csilV DeleteDiagnosisRequest) cborValue {
+	csilEntries := make(cborMap, 0, 3)
+	if csilV.JobId != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("job_id"), cborText((*csilV.JobId))})
+	}
+	if csilV.NodeName != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("node_name"), cborText((*csilV.NodeName))})
+	}
+	if csilV.WorkflowId != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("workflow_id"), cborText((*csilV.WorkflowId))})
+	}
+	return csilEntries
+}
+
+// csilDecDeleteDiagnosisRequest reconstructs a DeleteDiagnosisRequest from a decoded CBOR value tree.
+func csilDecDeleteDiagnosisRequest(csilRoot cborValue) (DeleteDiagnosisRequest, error) {
+	var csilOut DeleteDiagnosisRequest
+	if csilField, csilOk := cborMapGet(csilRoot, "job_id"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.JobId = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "workflow_id"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.WorkflowId = &csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "node_name"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.NodeName = &csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeDeleteDiagnosisRequest encodes a DeleteDiagnosisRequest to canonical CSIL CBOR bytes.
+func EncodeDeleteDiagnosisRequest(csilV DeleteDiagnosisRequest) []byte {
+	return cborEncode(csilEncDeleteDiagnosisRequest(csilV))
+}
+
+// DecodeDeleteDiagnosisRequest decodes canonical CSIL CBOR bytes into a DeleteDiagnosisRequest.
+func DecodeDeleteDiagnosisRequest(csilData []byte) (DeleteDiagnosisRequest, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero DeleteDiagnosisRequest
+		return csilZero, csilErr
+	}
+	return csilDecDeleteDiagnosisRequest(csilRoot)
+}
+
+// csilEncDeleteDiagnosisResponse builds the canonical CBOR value tree for a DeleteDiagnosisResponse.
+func csilEncDeleteDiagnosisResponse(csilV DeleteDiagnosisResponse) cborValue {
+	csilEntries := make(cborMap, 0, 2)
+	csilEntries = append(csilEntries, cborEntry{cborText("deleted"), cborBool(csilV.Deleted)})
+	if csilV.DiagnosisId != nil {
+		csilEntries = append(csilEntries, cborEntry{cborText("diagnosis_id"), cborText((*csilV.DiagnosisId))})
+	}
+	return csilEntries
+}
+
+// csilDecDeleteDiagnosisResponse reconstructs a DeleteDiagnosisResponse from a decoded CBOR value tree.
+func csilDecDeleteDiagnosisResponse(csilRoot cborValue) (DeleteDiagnosisResponse, error) {
+	var csilOut DeleteDiagnosisResponse
+	{
+		csilField, csilErr := cborRequire(csilRoot, "deleted")
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilVal, csilErr := (cborAsBool)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.Deleted = csilVal
+	}
+	if csilField, csilOk := cborMapGet(csilRoot, "diagnosis_id"); csilOk {
+		csilVal, csilErr := (cborAsText)(csilField)
+		if csilErr != nil {
+			return csilOut, csilErr
+		}
+		csilOut.DiagnosisId = &csilVal
+	}
+	return csilOut, nil
+}
+
+// EncodeDeleteDiagnosisResponse encodes a DeleteDiagnosisResponse to canonical CSIL CBOR bytes.
+func EncodeDeleteDiagnosisResponse(csilV DeleteDiagnosisResponse) []byte {
+	return cborEncode(csilEncDeleteDiagnosisResponse(csilV))
+}
+
+// DecodeDeleteDiagnosisResponse decodes canonical CSIL CBOR bytes into a DeleteDiagnosisResponse.
+func DecodeDeleteDiagnosisResponse(csilData []byte) (DeleteDiagnosisResponse, error) {
+	csilRoot, csilErr := cborDecode(csilData)
+	if csilErr != nil {
+		var csilZero DeleteDiagnosisResponse
+		return csilZero, csilErr
+	}
+	return csilDecDeleteDiagnosisResponse(csilRoot)
 }
 
 // csilEncCharacteristicScalar encodes a CharacteristicScalar union as a tagged sum [variant_index, value].

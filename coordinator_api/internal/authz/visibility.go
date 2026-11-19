@@ -52,8 +52,8 @@ func (r *Resolver) newVisibilityBatch(ctx context.Context, id Identity) (*visibi
 	if lookup, ok := r.store.(organizationLookup); ok {
 		vb.orgLookup = lookup
 	}
-	if !id.Anonymous && id.UserID != "" {
-		p, err := r.loadPrincipal(ctx, id.UserID)
+	if !id.Anonymous && id.hasRoles() {
+		p, err := r.loadFor(ctx, id)
 		if err != nil {
 			return nil, err
 		}
@@ -158,12 +158,19 @@ func (vb *visibilityBatch) canViewPrivate(ctx context.Context, ownerUserID strin
 	if vb.id.Anonymous {
 		return false, nil
 	}
-	if vb.id.UserID == "" {
-		return vb.id.tokenAllows(ownerUserID, tokencaps.ProjectsRead) ||
-			vb.id.tokenAllows(ownerUserID, tokencaps.JobsRead) ||
-			vb.id.tokenAllows(ownerUserID, tokencaps.WorkflowsRead), nil
+	tokenReads := vb.id.tokenAllows(ownerUserID, tokencaps.ProjectsRead) ||
+		vb.id.tokenAllows(ownerUserID, tokencaps.JobsRead) ||
+		vb.id.tokenAllows(ownerUserID, tokencaps.WorkflowsRead)
+	if !vb.id.hasRoles() {
+		return tokenReads, nil
 	}
-	if ownerUserID != "" && ownerUserID == vb.id.UserID {
+	// A token sees private resources only with a read capability for the
+	// owning organization: a service principal token and a user-delegated
+	// token alike.
+	if vb.id.Token != nil && !tokenReads {
+		return false, nil
+	}
+	if ownerUserID != "" && vb.id.UserID != "" && ownerUserID == vb.id.UserID {
 		return true, nil
 	}
 	if vb.globalAdmin {

@@ -2,8 +2,8 @@
 // Source: <csil spec>
 // Target: typescript-client
 
-import type { AddGroupMemberRequest, AddGroupMemberResponse, AddTrustedDomainPatternRequest, AddTrustedDomainPatternResponse, AddTrustedIdentityRequest, AddTrustedIdentityResponse, AddVcsCredentialRequest, AddVcsCredentialResponse, AddWebhookSecretRequest, AddWebhookSecretResponse, AssignRoleRequest, AssignRoleResponse, AuthenticateRequest, AuthenticateResponse, BeginLoginRequest, BeginLoginResponse, BootstrapAdminRequest, BootstrapAdminResponse, CancelJobRequest, CancelJobResponse, CancelWorkflowRequest, CancelWorkflowResponse, CompleteLoginRequest, CompleteLoginResponse, CreateEnrollmentTokenRequest, CreateEnrollmentTokenResponse, CreateGroupRequest, CreateGroupResponse, CreateOrgRequest, CreateOrgResponse, CreatePoolRequest, CreatePoolResponse, CreateProjectRequest, CreateProjectResponse, CreateQueueRequest, CreateQueueResponse, CreateScheduleRequest, CreateScheduleResponse, CreateSecretGrantRequest, CreateSecretGrantResponse, DeactivateEnrollmentTokenRequest, DeactivateEnrollmentTokenResponse, DeactivateVcsCredentialRequest, DeactivateVcsCredentialResponse, DeactivateWebhookSecretRequest, DeactivateWebhookSecretResponse, DeleteCiPolicyRequest, DeleteCiPolicyResponse, DeleteExecutionProfileRequest, DeleteExecutionProfileResponse, DeleteGroupRequest, DeleteGroupResponse, DeleteOrgRequest, DeleteOrgResponse, DeletePoolRequest, DeletePoolResponse, DeleteProjectRequest, DeleteProjectResponse, DeleteQueueRequest, DeleteQueueResponse, DeleteScheduleRequest, DeleteScheduleResponse, DeleteSecretGrantRequest, DeleteSecretGrantResponse, DeleteSecretRequest, DeleteSecretResponse, DeleteVcsCredentialRequest, DeleteVcsCredentialResponse, DeleteWebhookSecretRequest, DeleteWebhookSecretResponse, DeleteWorkerClassRequest, DeleteWorkerClassResponse, DescribeFormMetadataRequest, DescribeFormMetadataResponse, DrainWorkerRequest, DrainWorkerResponse, GetAuthConfigRequest, GetAuthConfigResponse, GetCapabilitiesRequest, GetCapabilitiesResponse, GetCiPolicyRequest, GetCiPolicyResponse, GetCiTrustSettingsRequest, GetCiTrustSettingsResponse, GetEventRequest, GetEventResponse, GetGlobalSettingsRequest, GetGlobalSettingsResponse, GetJobLogsRequest, GetJobLogsResponse, GetJobMetricsRequest, GetJobMetricsResponse, GetJobRequest, GetJobResourceHistoryRequest, GetJobResourceHistoryResponse, GetJobResponse, GetPrApprovalsRequest, GetPrApprovalsResponse, GetProjectRequest, GetProjectResponse, GetWorkflowRequest, GetWorkflowResponse, KillJobRequest, KillJobResponse, ListEnrollmentTokensRequest, ListEnrollmentTokensResponse, ListExecutionProfilesRequest, ListExecutionProfilesResponse, ListGroupMembersRequest, ListGroupMembersResponse, ListGroupsRequest, ListGroupsResponse, ListJobsRequest, ListJobsResponse, ListOrgsRequest, ListOrgsResponse, ListPoolsRequest, ListPoolsResponse, ListProjectsRequest, ListProjectsResponse, ListQueuesRequest, ListQueuesResponse, ListRoleAssignmentsRequest, ListRoleAssignmentsResponse, ListScheduleFiresRequest, ListScheduleFiresResponse, ListSchedulesRequest, ListSchedulesResponse, ListSecretGrantsRequest, ListSecretGrantsResponse, ListSecretPathsRequest, ListSecretPathsResponse, ListTrustedDomainPatternsRequest, ListTrustedDomainPatternsResponse, ListTrustedIdentitiesRequest, ListTrustedIdentitiesResponse, ListUsersRequest, ListUsersResponse, ListVcsCredentialsRequest, ListVcsCredentialsResponse, ListWebhookSecretsRequest, ListWebhookSecretsResponse, ListWorkerClassesRequest, ListWorkerClassesResponse, ListWorkersRequest, ListWorkersResponse, ListWorkflowsRequest, ListWorkflowsResponse, LogoutRequest, LogoutResponse, PrCommandRequest, PrCommandResponse, PutCiPolicyRequest, PutCiPolicyResponse, PutCiTrustSettingsRequest, PutCiTrustSettingsResponse, PutExecutionProfileRequest, PutExecutionProfileResponse, PutWorkerClassRequest, PutWorkerClassResponse, RemoveGroupMemberRequest, RemoveGroupMemberResponse, RemoveTrustedDomainPatternRequest, RemoveTrustedDomainPatternResponse, RemoveTrustedIdentityRequest, RemoveTrustedIdentityResponse, RenameQueueRequest, RenameQueueResponse, RetryJobRequest, RetryJobResponse, RetryUnsuccessfulJobsRequest, RetryUnsuccessfulJobsResponse, RetryWorkflowRequest, RetryWorkflowResponse, RevokeRoleRequest, RevokeRoleResponse, SetDefaultOrgRequest, SetDefaultOrgResponse, SetSecretRequest, SetSecretResponse, SetWorkerClassPoolRequest, SetWorkerClassPoolResponse, SetWorkerStatusRequest, SetWorkerStatusResponse, UpdateGlobalSettingsRequest, UpdateGlobalSettingsResponse, UpdateGroupRequest, UpdateGroupResponse, UpdateOrgRequest, UpdateOrgResponse, UpdatePoolRequest, UpdatePoolResponse, UpdateProjectRequest, UpdateProjectResponse, UpdateScheduleRequest, UpdateScheduleResponse, UpdateSecretGrantRequest, UpdateSecretGrantResponse } from "./types.gen.ts";
-import { fromAddGroupMemberResponseCbor, fromAddTrustedDomainPatternResponseCbor, fromAddTrustedIdentityResponseCbor, fromAddVcsCredentialResponseCbor, fromAddWebhookSecretResponseCbor, fromAssignRoleResponseCbor, fromAuthenticateResponseCbor, fromBeginLoginResponseCbor, fromBootstrapAdminResponseCbor, fromCancelJobResponseCbor, fromCancelWorkflowResponseCbor, fromCompleteLoginResponseCbor, fromCreateEnrollmentTokenResponseCbor, fromCreateGroupResponseCbor, fromCreateOrgResponseCbor, fromCreatePoolResponseCbor, fromCreateProjectResponseCbor, fromCreateQueueResponseCbor, fromCreateScheduleResponseCbor, fromCreateSecretGrantResponseCbor, fromDeactivateEnrollmentTokenResponseCbor, fromDeactivateVcsCredentialResponseCbor, fromDeactivateWebhookSecretResponseCbor, fromDeleteCiPolicyResponseCbor, fromDeleteExecutionProfileResponseCbor, fromDeleteGroupResponseCbor, fromDeleteOrgResponseCbor, fromDeletePoolResponseCbor, fromDeleteProjectResponseCbor, fromDeleteQueueResponseCbor, fromDeleteScheduleResponseCbor, fromDeleteSecretGrantResponseCbor, fromDeleteSecretResponseCbor, fromDeleteVcsCredentialResponseCbor, fromDeleteWebhookSecretResponseCbor, fromDeleteWorkerClassResponseCbor, fromDescribeFormMetadataResponseCbor, fromDrainWorkerResponseCbor, fromGetAuthConfigResponseCbor, fromGetCapabilitiesResponseCbor, fromGetCiPolicyResponseCbor, fromGetCiTrustSettingsResponseCbor, fromGetEventResponseCbor, fromGetGlobalSettingsResponseCbor, fromGetJobLogsResponseCbor, fromGetJobMetricsResponseCbor, fromGetJobResourceHistoryResponseCbor, fromGetJobResponseCbor, fromGetPrApprovalsResponseCbor, fromGetProjectResponseCbor, fromGetWorkflowResponseCbor, fromKillJobResponseCbor, fromListEnrollmentTokensResponseCbor, fromListExecutionProfilesResponseCbor, fromListGroupMembersResponseCbor, fromListGroupsResponseCbor, fromListJobsResponseCbor, fromListOrgsResponseCbor, fromListPoolsResponseCbor, fromListProjectsResponseCbor, fromListQueuesResponseCbor, fromListRoleAssignmentsResponseCbor, fromListScheduleFiresResponseCbor, fromListSchedulesResponseCbor, fromListSecretGrantsResponseCbor, fromListSecretPathsResponseCbor, fromListTrustedDomainPatternsResponseCbor, fromListTrustedIdentitiesResponseCbor, fromListUsersResponseCbor, fromListVcsCredentialsResponseCbor, fromListWebhookSecretsResponseCbor, fromListWorkerClassesResponseCbor, fromListWorkersResponseCbor, fromListWorkflowsResponseCbor, fromLogoutResponseCbor, fromPrCommandResponseCbor, fromPutCiPolicyResponseCbor, fromPutCiTrustSettingsResponseCbor, fromPutExecutionProfileResponseCbor, fromPutWorkerClassResponseCbor, fromRemoveGroupMemberResponseCbor, fromRemoveTrustedDomainPatternResponseCbor, fromRemoveTrustedIdentityResponseCbor, fromRenameQueueResponseCbor, fromRetryJobResponseCbor, fromRetryUnsuccessfulJobsResponseCbor, fromRetryWorkflowResponseCbor, fromRevokeRoleResponseCbor, fromSetDefaultOrgResponseCbor, fromSetSecretResponseCbor, fromSetWorkerClassPoolResponseCbor, fromSetWorkerStatusResponseCbor, fromUpdateGlobalSettingsResponseCbor, fromUpdateGroupResponseCbor, fromUpdateOrgResponseCbor, fromUpdatePoolResponseCbor, fromUpdateProjectResponseCbor, fromUpdateScheduleResponseCbor, fromUpdateSecretGrantResponseCbor, toAddGroupMemberRequestCbor, toAddTrustedDomainPatternRequestCbor, toAddTrustedIdentityRequestCbor, toAddVcsCredentialRequestCbor, toAddWebhookSecretRequestCbor, toAssignRoleRequestCbor, toAuthenticateRequestCbor, toBeginLoginRequestCbor, toBootstrapAdminRequestCbor, toCancelJobRequestCbor, toCancelWorkflowRequestCbor, toCompleteLoginRequestCbor, toCreateEnrollmentTokenRequestCbor, toCreateGroupRequestCbor, toCreateOrgRequestCbor, toCreatePoolRequestCbor, toCreateProjectRequestCbor, toCreateQueueRequestCbor, toCreateScheduleRequestCbor, toCreateSecretGrantRequestCbor, toDeactivateEnrollmentTokenRequestCbor, toDeactivateVcsCredentialRequestCbor, toDeactivateWebhookSecretRequestCbor, toDeleteCiPolicyRequestCbor, toDeleteExecutionProfileRequestCbor, toDeleteGroupRequestCbor, toDeleteOrgRequestCbor, toDeletePoolRequestCbor, toDeleteProjectRequestCbor, toDeleteQueueRequestCbor, toDeleteScheduleRequestCbor, toDeleteSecretGrantRequestCbor, toDeleteSecretRequestCbor, toDeleteVcsCredentialRequestCbor, toDeleteWebhookSecretRequestCbor, toDeleteWorkerClassRequestCbor, toDescribeFormMetadataRequestCbor, toDrainWorkerRequestCbor, toGetAuthConfigRequestCbor, toGetCapabilitiesRequestCbor, toGetCiPolicyRequestCbor, toGetCiTrustSettingsRequestCbor, toGetEventRequestCbor, toGetGlobalSettingsRequestCbor, toGetJobLogsRequestCbor, toGetJobMetricsRequestCbor, toGetJobRequestCbor, toGetJobResourceHistoryRequestCbor, toGetPrApprovalsRequestCbor, toGetProjectRequestCbor, toGetWorkflowRequestCbor, toKillJobRequestCbor, toListEnrollmentTokensRequestCbor, toListExecutionProfilesRequestCbor, toListGroupMembersRequestCbor, toListGroupsRequestCbor, toListJobsRequestCbor, toListOrgsRequestCbor, toListPoolsRequestCbor, toListProjectsRequestCbor, toListQueuesRequestCbor, toListRoleAssignmentsRequestCbor, toListScheduleFiresRequestCbor, toListSchedulesRequestCbor, toListSecretGrantsRequestCbor, toListSecretPathsRequestCbor, toListTrustedDomainPatternsRequestCbor, toListTrustedIdentitiesRequestCbor, toListUsersRequestCbor, toListVcsCredentialsRequestCbor, toListWebhookSecretsRequestCbor, toListWorkerClassesRequestCbor, toListWorkersRequestCbor, toListWorkflowsRequestCbor, toLogoutRequestCbor, toPrCommandRequestCbor, toPutCiPolicyRequestCbor, toPutCiTrustSettingsRequestCbor, toPutExecutionProfileRequestCbor, toPutWorkerClassRequestCbor, toRemoveGroupMemberRequestCbor, toRemoveTrustedDomainPatternRequestCbor, toRemoveTrustedIdentityRequestCbor, toRenameQueueRequestCbor, toRetryJobRequestCbor, toRetryUnsuccessfulJobsRequestCbor, toRetryWorkflowRequestCbor, toRevokeRoleRequestCbor, toSetDefaultOrgRequestCbor, toSetSecretRequestCbor, toSetWorkerClassPoolRequestCbor, toSetWorkerStatusRequestCbor, toUpdateGlobalSettingsRequestCbor, toUpdateGroupRequestCbor, toUpdateOrgRequestCbor, toUpdatePoolRequestCbor, toUpdateProjectRequestCbor, toUpdateScheduleRequestCbor, toUpdateSecretGrantRequestCbor } from "./codec.gen.ts";
+import type { AddGroupMemberRequest, AddGroupMemberResponse, AddTrustedDomainPatternRequest, AddTrustedDomainPatternResponse, AddTrustedIdentityRequest, AddTrustedIdentityResponse, AddVcsCredentialRequest, AddVcsCredentialResponse, AddWebhookSecretRequest, AddWebhookSecretResponse, AlertRuleResponse, AssignRoleRequest, AssignRoleResponse, AuthenticateRequest, AuthenticateResponse, BeginLoginRequest, BeginLoginResponse, BootstrapAdminRequest, BootstrapAdminResponse, CancelJobRequest, CancelJobResponse, CancelWorkflowRequest, CancelWorkflowResponse, CompleteLoginRequest, CompleteLoginResponse, CreateAlertRuleRequest, CreateEnrollmentTokenRequest, CreateEnrollmentTokenResponse, CreateEventSubscriptionRequest, CreateEventSubscriptionResponse, CreateGroupRequest, CreateGroupResponse, CreateOrgRequest, CreateOrgResponse, CreatePoolRequest, CreatePoolResponse, CreateProjectRequest, CreateProjectResponse, CreateQueueRequest, CreateQueueResponse, CreateScheduleRequest, CreateScheduleResponse, CreateSecretGrantRequest, CreateSecretGrantResponse, CreateServicePrincipalRequest, CreateServicePrincipalResponse, DeactivateEnrollmentTokenRequest, DeactivateEnrollmentTokenResponse, DeactivateVcsCredentialRequest, DeactivateVcsCredentialResponse, DeactivateWebhookSecretRequest, DeactivateWebhookSecretResponse, DecidePathAcceptanceRequest, DecideRequiredSetProposalRequest, DecideRequiredSetProposalResponse, DeleteAlertRuleRequest, DeleteAlertRuleResponse, DeleteCiPolicyRequest, DeleteCiPolicyResponse, DeleteDiagnosisRequest, DeleteDiagnosisResponse, DeleteEnvDefaultRequest, DeleteEnvDefaultResponse, DeleteEventSubscriptionRequest, DeleteEventSubscriptionResponse, DeleteExecutionProfileRequest, DeleteExecutionProfileResponse, DeleteFederationIssuerRequest, DeleteFederationIssuerResponse, DeleteFederationMappingRequest, DeleteFederationMappingResponse, DeleteGroupRequest, DeleteGroupResponse, DeleteImageAliasRequest, DeleteImageAliasResponse, DeleteOrgRequest, DeleteOrgResponse, DeletePoolRequest, DeletePoolResponse, DeletePriorityLaneRequest, DeletePriorityLaneResponse, DeleteProjectRequest, DeleteProjectResponse, DeleteQueueRequest, DeleteQueueResponse, DeleteRefClassRuleRequest, DeleteRefClassRuleResponse, DeleteScheduleRequest, DeleteScheduleResponse, DeleteSecretGrantRequest, DeleteSecretGrantResponse, DeleteSecretRequest, DeleteSecretResponse, DeleteVcsCredentialRequest, DeleteVcsCredentialResponse, DeleteWebhookSecretRequest, DeleteWebhookSecretResponse, DeleteWorkerClassRequest, DeleteWorkerClassResponse, DescribeFormMetadataRequest, DescribeFormMetadataResponse, DrainWorkerRequest, DrainWorkerResponse, ExplainPriorityRequest, ExplainPriorityResponse, ExplainRefClassesRequest, ExplainRefClassesResponse, GetAgreementReportRequest, GetAgreementReportResponse, GetAuthConfigRequest, GetAuthConfigResponse, GetCapabilitiesRequest, GetCapabilitiesResponse, GetCiPolicyRequest, GetCiPolicyResponse, GetCiTrustSettingsRequest, GetCiTrustSettingsResponse, GetEventDeliveryRequest, GetEventDeliveryResponse, GetEventRequest, GetEventResponse, GetEventSubscriptionRequest, GetEventSubscriptionResponse, GetGlobalSettingsRequest, GetGlobalSettingsResponse, GetImageAliasRequest, GetImageAliasResponse, GetImagePolicyRequest, GetImagePolicyResponse, GetImageRolloutStatusRequest, GetImageRolloutStatusResponse, GetInfraDashboardRequest, GetInfraDashboardResponse, GetJobLogsRequest, GetJobLogsResponse, GetJobMetricsRequest, GetJobMetricsResponse, GetJobProvenanceRequest, GetJobProvenanceResponse, GetJobRequest, GetJobResourceHistoryRequest, GetJobResourceHistoryResponse, GetJobResponse, GetJobTestResultsRequest, GetJobTestResultsResponse, GetOidcSettingsRequest, GetOrgReportingSettingsRequest, GetOrgReportingSettingsResponse, GetPipelineDashboardRequest, GetPipelineDashboardResponse, GetPrApprovalsRequest, GetPrApprovalsResponse, GetPrincipalRequest, GetPrincipalResponse, GetProjectRequest, GetProjectResponse, GetReportingSettingsRequest, GetReportingSettingsResponse, GetRequiredSetOrgSettingsRequest, GetRequiredSetOrgSettingsResponse, GetRequiredSetRequest, GetRequiredSetResponse, GetShedStateRequest, GetShedStateResponse, GetUsageDashboardRequest, GetUsageDashboardResponse, GetVcsOwnerAllowlistRequest, GetWorkerImageStateRequest, GetWorkerImageStateResponse, GetWorkflowRequest, GetWorkflowResponse, IssuePrincipalTokenRequest, IssuePrincipalTokenResponse, KillJobRequest, KillJobResponse, LinkGroupVcsTeamRequest, LinkGroupVcsTeamResponse, ListAlertRulesRequest, ListAlertRulesResponse, ListDiagnosesRequest, ListDiagnosesResponse, ListEnrollmentTokensRequest, ListEnrollmentTokensResponse, ListEnvDefaultsRequest, ListEnvDefaultsResponse, ListEventDeliveriesRequest, ListEventDeliveriesResponse, ListEventSubscriptionsRequest, ListEventSubscriptionsResponse, ListExecutionProfilesRequest, ListExecutionProfilesResponse, ListFederationIssuersRequest, ListFederationIssuersResponse, ListFlakyTestsRequest, ListFlakyTestsResponse, ListGitHubAppsRequest, ListGitHubAppsResponse, ListGroupMemberDetailsRequest, ListGroupMemberDetailsResponse, ListGroupMembersRequest, ListGroupMembersResponse, ListGroupVcsLinksRequest, ListGroupVcsLinksResponse, ListGroupsRequest, ListGroupsResponse, ListImageAliasesRequest, ListImageAliasesResponse, ListJobArtifactsRequest, ListJobArtifactsResponse, ListJobLinksRequest, ListJobLinksResponse, ListJobsRequest, ListJobsResponse, ListOidcKeysRequest, ListOidcKeysResponse, ListOrgsRequest, ListOrgsResponse, ListPathAcceptancesRequest, ListPathAcceptancesResponse, ListPoolsRequest, ListPoolsResponse, ListPrincipalsRequest, ListPrincipalsResponse, ListPriorityLanesRequest, ListPriorityLanesResponse, ListProjectsRequest, ListProjectsResponse, ListQueuesRequest, ListQueuesResponse, ListRefClassRulesRequest, ListRefClassRulesResponse, ListRoleAssignmentsRequest, ListRoleAssignmentsResponse, ListScheduleFiresRequest, ListScheduleFiresResponse, ListSchedulesRequest, ListSchedulesResponse, ListSecretGrantsRequest, ListSecretGrantsResponse, ListSecretPathsRequest, ListSecretPathsResponse, ListTestQuarantinesRequest, ListTestQuarantinesResponse, ListTrustedDomainPatternsRequest, ListTrustedDomainPatternsResponse, ListTrustedIdentitiesRequest, ListTrustedIdentitiesResponse, ListUsersRequest, ListUsersResponse, ListVcsCredentialsRequest, ListVcsCredentialsResponse, ListWebhookSecretsRequest, ListWebhookSecretsResponse, ListWorkerClassesRequest, ListWorkerClassesResponse, ListWorkersRequest, ListWorkersResponse, ListWorkflowsRequest, ListWorkflowsResponse, LogoutRequest, LogoutResponse, OidcSettingsResponse, PathAcceptanceResponse, PrCommandRequest, PrCommandResponse, PrincipalIdentityRequest, PrincipalIdentityResponse, ProposeRequiredSetChangeRequest, ProposeRequiredSetChangeResponse, PutCiPolicyRequest, PutCiPolicyResponse, PutCiTrustSettingsRequest, PutCiTrustSettingsResponse, PutDiagnosisRequest, PutDiagnosisResponse, PutEnvDefaultRequest, PutEnvDefaultResponse, PutExecutionProfileRequest, PutExecutionProfileResponse, PutImagePolicyRequest, PutImagePolicyResponse, PutOidcSettingsRequest, PutOrgReportingSettingsRequest, PutPriorityLaneRequest, PutPriorityLaneResponse, PutRefClassRuleRequest, PutRefClassRuleResponse, PutRequiredSetOrgSettingsRequest, PutVcsOwnerAllowlistRequest, PutWorkerClassRequest, PutWorkerClassResponse, QuarantineRequiredWorkflowRequest, QuarantineRequiredWorkflowResponse, QuarantineTestRequest, QuarantineTestResponse, ReadJobArtifactRequest, ReadJobArtifactResponse, RemoveGroupMemberRequest, RemoveGroupMemberResponse, RemoveTrustedDomainPatternRequest, RemoveTrustedDomainPatternResponse, RemoveTrustedIdentityRequest, RemoveTrustedIdentityResponse, RenameQueueRequest, RenameQueueResponse, ReplayEventDeliveryRequest, ReplayEventDeliveryResponse, RequestPathAcceptanceRequest, RerunWorkflowRequest, RerunWorkflowResponse, ResolvePrincipalRequest, ResolvePrincipalResponse, RetireOidcKeyRequest, RetryJobRequest, RetryJobResponse, RetryUnsuccessfulJobsRequest, RetryUnsuccessfulJobsResponse, RetryWorkflowRequest, RetryWorkflowResponse, RevokePrincipalTokenRequest, RevokePrincipalTokenResponse, RevokeRoleRequest, RevokeRoleResponse, RotateOidcKeyRequest, SaveFederationIssuerRequest, SaveFederationIssuerResponse, SaveFederationMappingRequest, SaveFederationMappingResponse, SetDefaultOrgRequest, SetDefaultOrgResponse, SetGitHubAppEnabledRequest, SetGitHubAppEnabledResponse, SetGroupPriorityShiftRequest, SetGroupPriorityShiftResponse, SetImageAliasRequest, SetImageAliasResponse, SetPrincipalGroupRequest, SetPrincipalGroupResponse, SetPrincipalStatusRequest, SetPrincipalStatusResponse, SetRequiredSetApproversRequest, SetRequiredSetEnabledRequest, SetRequiredSetEnabledResponse, SetSecretRequest, SetSecretResponse, SetShedActionsRequest, SetShedLevelRequest, SetShedLevelResponse, SetWorkerClassPoolRequest, SetWorkerClassPoolResponse, SetWorkerStatusRequest, SetWorkerStatusResponse, StartRunRequest, StartRunResponse, SyncGitHubAppRequest, SyncGitHubAppResponse, SyncGroupVcsTeamsRequest, SyncGroupVcsTeamsResponse, TestEventSubscriptionRequest, TestEventSubscriptionResponse, UnlinkGroupVcsTeamRequest, UnlinkGroupVcsTeamResponse, UnquarantineRequiredWorkflowRequest, UnquarantineRequiredWorkflowResponse, UnquarantineTestRequest, UnquarantineTestResponse, UpdateAlertRuleRequest, UpdateEventSubscriptionRequest, UpdateEventSubscriptionResponse, UpdateGlobalSettingsRequest, UpdateGlobalSettingsResponse, UpdateGroupRequest, UpdateGroupResponse, UpdateOrgRequest, UpdateOrgResponse, UpdatePoolRequest, UpdatePoolResponse, UpdateProjectRequest, UpdateProjectResponse, UpdateReportingSettingsRequest, UpdateScheduleRequest, UpdateScheduleResponse, UpdateSecretGrantRequest, UpdateSecretGrantResponse, VcsOwnerAllowlistResponse } from "./types.gen.ts";
+import { fromAddGroupMemberResponseCbor, fromAddTrustedDomainPatternResponseCbor, fromAddTrustedIdentityResponseCbor, fromAddVcsCredentialResponseCbor, fromAddWebhookSecretResponseCbor, fromAlertRuleResponseCbor, fromAssignRoleResponseCbor, fromAuthenticateResponseCbor, fromBeginLoginResponseCbor, fromBootstrapAdminResponseCbor, fromCancelJobResponseCbor, fromCancelWorkflowResponseCbor, fromCompleteLoginResponseCbor, fromCreateEnrollmentTokenResponseCbor, fromCreateEventSubscriptionResponseCbor, fromCreateGroupResponseCbor, fromCreateOrgResponseCbor, fromCreatePoolResponseCbor, fromCreateProjectResponseCbor, fromCreateQueueResponseCbor, fromCreateScheduleResponseCbor, fromCreateSecretGrantResponseCbor, fromCreateServicePrincipalResponseCbor, fromDeactivateEnrollmentTokenResponseCbor, fromDeactivateVcsCredentialResponseCbor, fromDeactivateWebhookSecretResponseCbor, fromDecideRequiredSetProposalResponseCbor, fromDeleteAlertRuleResponseCbor, fromDeleteCiPolicyResponseCbor, fromDeleteDiagnosisResponseCbor, fromDeleteEnvDefaultResponseCbor, fromDeleteEventSubscriptionResponseCbor, fromDeleteExecutionProfileResponseCbor, fromDeleteFederationIssuerResponseCbor, fromDeleteFederationMappingResponseCbor, fromDeleteGroupResponseCbor, fromDeleteImageAliasResponseCbor, fromDeleteOrgResponseCbor, fromDeletePoolResponseCbor, fromDeletePriorityLaneResponseCbor, fromDeleteProjectResponseCbor, fromDeleteQueueResponseCbor, fromDeleteRefClassRuleResponseCbor, fromDeleteScheduleResponseCbor, fromDeleteSecretGrantResponseCbor, fromDeleteSecretResponseCbor, fromDeleteVcsCredentialResponseCbor, fromDeleteWebhookSecretResponseCbor, fromDeleteWorkerClassResponseCbor, fromDescribeFormMetadataResponseCbor, fromDrainWorkerResponseCbor, fromExplainPriorityResponseCbor, fromExplainRefClassesResponseCbor, fromGetAgreementReportResponseCbor, fromGetAuthConfigResponseCbor, fromGetCapabilitiesResponseCbor, fromGetCiPolicyResponseCbor, fromGetCiTrustSettingsResponseCbor, fromGetEventDeliveryResponseCbor, fromGetEventResponseCbor, fromGetEventSubscriptionResponseCbor, fromGetGlobalSettingsResponseCbor, fromGetImageAliasResponseCbor, fromGetImagePolicyResponseCbor, fromGetImageRolloutStatusResponseCbor, fromGetInfraDashboardResponseCbor, fromGetJobLogsResponseCbor, fromGetJobMetricsResponseCbor, fromGetJobProvenanceResponseCbor, fromGetJobResourceHistoryResponseCbor, fromGetJobResponseCbor, fromGetJobTestResultsResponseCbor, fromGetOrgReportingSettingsResponseCbor, fromGetPipelineDashboardResponseCbor, fromGetPrApprovalsResponseCbor, fromGetPrincipalResponseCbor, fromGetProjectResponseCbor, fromGetReportingSettingsResponseCbor, fromGetRequiredSetOrgSettingsResponseCbor, fromGetRequiredSetResponseCbor, fromGetShedStateResponseCbor, fromGetUsageDashboardResponseCbor, fromGetWorkerImageStateResponseCbor, fromGetWorkflowResponseCbor, fromIssuePrincipalTokenResponseCbor, fromKillJobResponseCbor, fromLinkGroupVcsTeamResponseCbor, fromListAlertRulesResponseCbor, fromListDiagnosesResponseCbor, fromListEnrollmentTokensResponseCbor, fromListEnvDefaultsResponseCbor, fromListEventDeliveriesResponseCbor, fromListEventSubscriptionsResponseCbor, fromListExecutionProfilesResponseCbor, fromListFederationIssuersResponseCbor, fromListFlakyTestsResponseCbor, fromListGitHubAppsResponseCbor, fromListGroupMemberDetailsResponseCbor, fromListGroupMembersResponseCbor, fromListGroupVcsLinksResponseCbor, fromListGroupsResponseCbor, fromListImageAliasesResponseCbor, fromListJobArtifactsResponseCbor, fromListJobLinksResponseCbor, fromListJobsResponseCbor, fromListOidcKeysResponseCbor, fromListOrgsResponseCbor, fromListPathAcceptancesResponseCbor, fromListPoolsResponseCbor, fromListPrincipalsResponseCbor, fromListPriorityLanesResponseCbor, fromListProjectsResponseCbor, fromListQueuesResponseCbor, fromListRefClassRulesResponseCbor, fromListRoleAssignmentsResponseCbor, fromListScheduleFiresResponseCbor, fromListSchedulesResponseCbor, fromListSecretGrantsResponseCbor, fromListSecretPathsResponseCbor, fromListTestQuarantinesResponseCbor, fromListTrustedDomainPatternsResponseCbor, fromListTrustedIdentitiesResponseCbor, fromListUsersResponseCbor, fromListVcsCredentialsResponseCbor, fromListWebhookSecretsResponseCbor, fromListWorkerClassesResponseCbor, fromListWorkersResponseCbor, fromListWorkflowsResponseCbor, fromLogoutResponseCbor, fromOidcSettingsResponseCbor, fromPathAcceptanceResponseCbor, fromPrCommandResponseCbor, fromPrincipalIdentityResponseCbor, fromProposeRequiredSetChangeResponseCbor, fromPutCiPolicyResponseCbor, fromPutCiTrustSettingsResponseCbor, fromPutDiagnosisResponseCbor, fromPutEnvDefaultResponseCbor, fromPutExecutionProfileResponseCbor, fromPutImagePolicyResponseCbor, fromPutPriorityLaneResponseCbor, fromPutRefClassRuleResponseCbor, fromPutWorkerClassResponseCbor, fromQuarantineRequiredWorkflowResponseCbor, fromQuarantineTestResponseCbor, fromReadJobArtifactResponseCbor, fromRemoveGroupMemberResponseCbor, fromRemoveTrustedDomainPatternResponseCbor, fromRemoveTrustedIdentityResponseCbor, fromRenameQueueResponseCbor, fromReplayEventDeliveryResponseCbor, fromRerunWorkflowResponseCbor, fromResolvePrincipalResponseCbor, fromRetryJobResponseCbor, fromRetryUnsuccessfulJobsResponseCbor, fromRetryWorkflowResponseCbor, fromRevokePrincipalTokenResponseCbor, fromRevokeRoleResponseCbor, fromSaveFederationIssuerResponseCbor, fromSaveFederationMappingResponseCbor, fromSetDefaultOrgResponseCbor, fromSetGitHubAppEnabledResponseCbor, fromSetGroupPriorityShiftResponseCbor, fromSetImageAliasResponseCbor, fromSetPrincipalGroupResponseCbor, fromSetPrincipalStatusResponseCbor, fromSetRequiredSetEnabledResponseCbor, fromSetSecretResponseCbor, fromSetShedLevelResponseCbor, fromSetWorkerClassPoolResponseCbor, fromSetWorkerStatusResponseCbor, fromStartRunResponseCbor, fromSyncGitHubAppResponseCbor, fromSyncGroupVcsTeamsResponseCbor, fromTestEventSubscriptionResponseCbor, fromUnlinkGroupVcsTeamResponseCbor, fromUnquarantineRequiredWorkflowResponseCbor, fromUnquarantineTestResponseCbor, fromUpdateEventSubscriptionResponseCbor, fromUpdateGlobalSettingsResponseCbor, fromUpdateGroupResponseCbor, fromUpdateOrgResponseCbor, fromUpdatePoolResponseCbor, fromUpdateProjectResponseCbor, fromUpdateScheduleResponseCbor, fromUpdateSecretGrantResponseCbor, fromVcsOwnerAllowlistResponseCbor, toAddGroupMemberRequestCbor, toAddTrustedDomainPatternRequestCbor, toAddTrustedIdentityRequestCbor, toAddVcsCredentialRequestCbor, toAddWebhookSecretRequestCbor, toAssignRoleRequestCbor, toAuthenticateRequestCbor, toBeginLoginRequestCbor, toBootstrapAdminRequestCbor, toCancelJobRequestCbor, toCancelWorkflowRequestCbor, toCompleteLoginRequestCbor, toCreateAlertRuleRequestCbor, toCreateEnrollmentTokenRequestCbor, toCreateEventSubscriptionRequestCbor, toCreateGroupRequestCbor, toCreateOrgRequestCbor, toCreatePoolRequestCbor, toCreateProjectRequestCbor, toCreateQueueRequestCbor, toCreateScheduleRequestCbor, toCreateSecretGrantRequestCbor, toCreateServicePrincipalRequestCbor, toDeactivateEnrollmentTokenRequestCbor, toDeactivateVcsCredentialRequestCbor, toDeactivateWebhookSecretRequestCbor, toDecidePathAcceptanceRequestCbor, toDecideRequiredSetProposalRequestCbor, toDeleteAlertRuleRequestCbor, toDeleteCiPolicyRequestCbor, toDeleteDiagnosisRequestCbor, toDeleteEnvDefaultRequestCbor, toDeleteEventSubscriptionRequestCbor, toDeleteExecutionProfileRequestCbor, toDeleteFederationIssuerRequestCbor, toDeleteFederationMappingRequestCbor, toDeleteGroupRequestCbor, toDeleteImageAliasRequestCbor, toDeleteOrgRequestCbor, toDeletePoolRequestCbor, toDeletePriorityLaneRequestCbor, toDeleteProjectRequestCbor, toDeleteQueueRequestCbor, toDeleteRefClassRuleRequestCbor, toDeleteScheduleRequestCbor, toDeleteSecretGrantRequestCbor, toDeleteSecretRequestCbor, toDeleteVcsCredentialRequestCbor, toDeleteWebhookSecretRequestCbor, toDeleteWorkerClassRequestCbor, toDescribeFormMetadataRequestCbor, toDrainWorkerRequestCbor, toExplainPriorityRequestCbor, toExplainRefClassesRequestCbor, toGetAgreementReportRequestCbor, toGetAuthConfigRequestCbor, toGetCapabilitiesRequestCbor, toGetCiPolicyRequestCbor, toGetCiTrustSettingsRequestCbor, toGetEventDeliveryRequestCbor, toGetEventRequestCbor, toGetEventSubscriptionRequestCbor, toGetGlobalSettingsRequestCbor, toGetImageAliasRequestCbor, toGetImagePolicyRequestCbor, toGetImageRolloutStatusRequestCbor, toGetInfraDashboardRequestCbor, toGetJobLogsRequestCbor, toGetJobMetricsRequestCbor, toGetJobProvenanceRequestCbor, toGetJobRequestCbor, toGetJobResourceHistoryRequestCbor, toGetJobTestResultsRequestCbor, toGetOidcSettingsRequestCbor, toGetOrgReportingSettingsRequestCbor, toGetPipelineDashboardRequestCbor, toGetPrApprovalsRequestCbor, toGetPrincipalRequestCbor, toGetProjectRequestCbor, toGetReportingSettingsRequestCbor, toGetRequiredSetOrgSettingsRequestCbor, toGetRequiredSetRequestCbor, toGetShedStateRequestCbor, toGetUsageDashboardRequestCbor, toGetVcsOwnerAllowlistRequestCbor, toGetWorkerImageStateRequestCbor, toGetWorkflowRequestCbor, toIssuePrincipalTokenRequestCbor, toKillJobRequestCbor, toLinkGroupVcsTeamRequestCbor, toListAlertRulesRequestCbor, toListDiagnosesRequestCbor, toListEnrollmentTokensRequestCbor, toListEnvDefaultsRequestCbor, toListEventDeliveriesRequestCbor, toListEventSubscriptionsRequestCbor, toListExecutionProfilesRequestCbor, toListFederationIssuersRequestCbor, toListFlakyTestsRequestCbor, toListGitHubAppsRequestCbor, toListGroupMemberDetailsRequestCbor, toListGroupMembersRequestCbor, toListGroupVcsLinksRequestCbor, toListGroupsRequestCbor, toListImageAliasesRequestCbor, toListJobArtifactsRequestCbor, toListJobLinksRequestCbor, toListJobsRequestCbor, toListOidcKeysRequestCbor, toListOrgsRequestCbor, toListPathAcceptancesRequestCbor, toListPoolsRequestCbor, toListPrincipalsRequestCbor, toListPriorityLanesRequestCbor, toListProjectsRequestCbor, toListQueuesRequestCbor, toListRefClassRulesRequestCbor, toListRoleAssignmentsRequestCbor, toListScheduleFiresRequestCbor, toListSchedulesRequestCbor, toListSecretGrantsRequestCbor, toListSecretPathsRequestCbor, toListTestQuarantinesRequestCbor, toListTrustedDomainPatternsRequestCbor, toListTrustedIdentitiesRequestCbor, toListUsersRequestCbor, toListVcsCredentialsRequestCbor, toListWebhookSecretsRequestCbor, toListWorkerClassesRequestCbor, toListWorkersRequestCbor, toListWorkflowsRequestCbor, toLogoutRequestCbor, toPrCommandRequestCbor, toPrincipalIdentityRequestCbor, toProposeRequiredSetChangeRequestCbor, toPutCiPolicyRequestCbor, toPutCiTrustSettingsRequestCbor, toPutDiagnosisRequestCbor, toPutEnvDefaultRequestCbor, toPutExecutionProfileRequestCbor, toPutImagePolicyRequestCbor, toPutOidcSettingsRequestCbor, toPutOrgReportingSettingsRequestCbor, toPutPriorityLaneRequestCbor, toPutRefClassRuleRequestCbor, toPutRequiredSetOrgSettingsRequestCbor, toPutVcsOwnerAllowlistRequestCbor, toPutWorkerClassRequestCbor, toQuarantineRequiredWorkflowRequestCbor, toQuarantineTestRequestCbor, toReadJobArtifactRequestCbor, toRemoveGroupMemberRequestCbor, toRemoveTrustedDomainPatternRequestCbor, toRemoveTrustedIdentityRequestCbor, toRenameQueueRequestCbor, toReplayEventDeliveryRequestCbor, toRequestPathAcceptanceRequestCbor, toRerunWorkflowRequestCbor, toResolvePrincipalRequestCbor, toRetireOidcKeyRequestCbor, toRetryJobRequestCbor, toRetryUnsuccessfulJobsRequestCbor, toRetryWorkflowRequestCbor, toRevokePrincipalTokenRequestCbor, toRevokeRoleRequestCbor, toRotateOidcKeyRequestCbor, toSaveFederationIssuerRequestCbor, toSaveFederationMappingRequestCbor, toSetDefaultOrgRequestCbor, toSetGitHubAppEnabledRequestCbor, toSetGroupPriorityShiftRequestCbor, toSetImageAliasRequestCbor, toSetPrincipalGroupRequestCbor, toSetPrincipalStatusRequestCbor, toSetRequiredSetApproversRequestCbor, toSetRequiredSetEnabledRequestCbor, toSetSecretRequestCbor, toSetShedActionsRequestCbor, toSetShedLevelRequestCbor, toSetWorkerClassPoolRequestCbor, toSetWorkerStatusRequestCbor, toStartRunRequestCbor, toSyncGitHubAppRequestCbor, toSyncGroupVcsTeamsRequestCbor, toTestEventSubscriptionRequestCbor, toUnlinkGroupVcsTeamRequestCbor, toUnquarantineRequiredWorkflowRequestCbor, toUnquarantineTestRequestCbor, toUpdateAlertRuleRequestCbor, toUpdateEventSubscriptionRequestCbor, toUpdateGlobalSettingsRequestCbor, toUpdateGroupRequestCbor, toUpdateOrgRequestCbor, toUpdatePoolRequestCbor, toUpdateProjectRequestCbor, toUpdateReportingSettingsRequestCbor, toUpdateScheduleRequestCbor, toUpdateSecretGrantRequestCbor } from "./codec.gen.ts";
 
 export interface AsyncServiceTransport {
   call(service: string, op: string, req: Uint8Array): Promise<Uint8Array>;
@@ -74,9 +74,405 @@ export class ReactorcideUiAsyncClient {
    * @throws {ServiceError} when the API returns an error response
    * @throws transport errors (network, timeout) raised by the transport
    */
+  async listPriorityLanes(req: ListPriorityLanesRequest): Promise<ListPriorityLanesResponse> {
+    const csilResp = await this.t.call("ReactorcideUi", "list-priority-lanes", toListPriorityLanesRequestCbor(req));
+    return fromListPriorityLanesResponseCbor(csilResp);
+  }
+
+  /**
+   * @throws {ServiceError} when the API returns an error response
+   * @throws transport errors (network, timeout) raised by the transport
+   */
+  async putPriorityLane(req: PutPriorityLaneRequest): Promise<PutPriorityLaneResponse> {
+    const csilResp = await this.t.call("ReactorcideUi", "put-priority-lane", toPutPriorityLaneRequestCbor(req));
+    return fromPutPriorityLaneResponseCbor(csilResp);
+  }
+
+  /**
+   * @throws {ServiceError} when the API returns an error response
+   * @throws transport errors (network, timeout) raised by the transport
+   */
+  async deletePriorityLane(req: DeletePriorityLaneRequest): Promise<DeletePriorityLaneResponse> {
+    const csilResp = await this.t.call("ReactorcideUi", "delete-priority-lane", toDeletePriorityLaneRequestCbor(req));
+    return fromDeletePriorityLaneResponseCbor(csilResp);
+  }
+
+  /**
+   * @throws {ServiceError} when the API returns an error response
+   * @throws transport errors (network, timeout) raised by the transport
+   */
+  async explainPriority(req: ExplainPriorityRequest): Promise<ExplainPriorityResponse> {
+    const csilResp = await this.t.call("ReactorcideUi", "explain-priority", toExplainPriorityRequestCbor(req));
+    return fromExplainPriorityResponseCbor(csilResp);
+  }
+
+  /**
+   * @throws {ServiceError} when the API returns an error response
+   * @throws transport errors (network, timeout) raised by the transport
+   */
+  async setGroupPriorityShift(req: SetGroupPriorityShiftRequest): Promise<SetGroupPriorityShiftResponse> {
+    const csilResp = await this.t.call("ReactorcideUi", "set-group-priority-shift", toSetGroupPriorityShiftRequestCbor(req));
+    return fromSetGroupPriorityShiftResponseCbor(csilResp);
+  }
+
+  /**
+   * @throws {ServiceError} when the API returns an error response
+   * @throws transport errors (network, timeout) raised by the transport
+   */
+  async getReportingSettings(req: GetReportingSettingsRequest): Promise<GetReportingSettingsResponse> {
+    const csilResp = await this.t.call("ReactorcideUi", "get-reporting-settings", toGetReportingSettingsRequestCbor(req));
+    return fromGetReportingSettingsResponseCbor(csilResp);
+  }
+
+  /**
+   * @throws {ServiceError} when the API returns an error response
+   * @throws transport errors (network, timeout) raised by the transport
+   */
+  async updateReportingSettings(req: UpdateReportingSettingsRequest): Promise<GetReportingSettingsResponse> {
+    const csilResp = await this.t.call("ReactorcideUi", "update-reporting-settings", toUpdateReportingSettingsRequestCbor(req));
+    return fromGetReportingSettingsResponseCbor(csilResp);
+  }
+
+  /**
+   * @throws {ServiceError} when the API returns an error response
+   * @throws transport errors (network, timeout) raised by the transport
+   */
+  async getAgreementReport(req: GetAgreementReportRequest): Promise<GetAgreementReportResponse> {
+    const csilResp = await this.t.call("ReactorcideUi", "get-agreement-report", toGetAgreementReportRequestCbor(req));
+    return fromGetAgreementReportResponseCbor(csilResp);
+  }
+
+  /**
+   * @throws {ServiceError} when the API returns an error response
+   * @throws transport errors (network, timeout) raised by the transport
+   */
+  async listPathAcceptances(req: ListPathAcceptancesRequest): Promise<ListPathAcceptancesResponse> {
+    const csilResp = await this.t.call("ReactorcideUi", "list-path-acceptances", toListPathAcceptancesRequestCbor(req));
+    return fromListPathAcceptancesResponseCbor(csilResp);
+  }
+
+  /**
+   * @throws {ServiceError} when the API returns an error response
+   * @throws transport errors (network, timeout) raised by the transport
+   */
+  async requestPathAcceptance(req: RequestPathAcceptanceRequest): Promise<PathAcceptanceResponse> {
+    const csilResp = await this.t.call("ReactorcideUi", "request-path-acceptance", toRequestPathAcceptanceRequestCbor(req));
+    return fromPathAcceptanceResponseCbor(csilResp);
+  }
+
+  /**
+   * @throws {ServiceError} when the API returns an error response
+   * @throws transport errors (network, timeout) raised by the transport
+   */
+  async decidePathAcceptance(req: DecidePathAcceptanceRequest): Promise<PathAcceptanceResponse> {
+    const csilResp = await this.t.call("ReactorcideUi", "decide-path-acceptance", toDecidePathAcceptanceRequestCbor(req));
+    return fromPathAcceptanceResponseCbor(csilResp);
+  }
+
+  /**
+   * @throws {ServiceError} when the API returns an error response
+   * @throws transport errors (network, timeout) raised by the transport
+   */
+  async getRequiredSet(req: GetRequiredSetRequest): Promise<GetRequiredSetResponse> {
+    const csilResp = await this.t.call("ReactorcideUi", "get-required-set", toGetRequiredSetRequestCbor(req));
+    return fromGetRequiredSetResponseCbor(csilResp);
+  }
+
+  /**
+   * @throws {ServiceError} when the API returns an error response
+   * @throws transport errors (network, timeout) raised by the transport
+   */
+  async setRequiredSetEnabled(req: SetRequiredSetEnabledRequest): Promise<SetRequiredSetEnabledResponse> {
+    const csilResp = await this.t.call("ReactorcideUi", "set-required-set-enabled", toSetRequiredSetEnabledRequestCbor(req));
+    return fromSetRequiredSetEnabledResponseCbor(csilResp);
+  }
+
+  /**
+   * @throws {ServiceError} when the API returns an error response
+   * @throws transport errors (network, timeout) raised by the transport
+   */
+  async setRequiredSetApprovers(req: SetRequiredSetApproversRequest): Promise<GetRequiredSetResponse> {
+    const csilResp = await this.t.call("ReactorcideUi", "set-required-set-approvers", toSetRequiredSetApproversRequestCbor(req));
+    return fromGetRequiredSetResponseCbor(csilResp);
+  }
+
+  /**
+   * @throws {ServiceError} when the API returns an error response
+   * @throws transport errors (network, timeout) raised by the transport
+   */
+  async proposeRequiredSetChange(req: ProposeRequiredSetChangeRequest): Promise<ProposeRequiredSetChangeResponse> {
+    const csilResp = await this.t.call("ReactorcideUi", "propose-required-set-change", toProposeRequiredSetChangeRequestCbor(req));
+    return fromProposeRequiredSetChangeResponseCbor(csilResp);
+  }
+
+  /**
+   * @throws {ServiceError} when the API returns an error response
+   * @throws transport errors (network, timeout) raised by the transport
+   */
+  async decideRequiredSetProposal(req: DecideRequiredSetProposalRequest): Promise<DecideRequiredSetProposalResponse> {
+    const csilResp = await this.t.call("ReactorcideUi", "decide-required-set-proposal", toDecideRequiredSetProposalRequestCbor(req));
+    return fromDecideRequiredSetProposalResponseCbor(csilResp);
+  }
+
+  /**
+   * @throws {ServiceError} when the API returns an error response
+   * @throws transport errors (network, timeout) raised by the transport
+   */
+  async quarantineRequiredWorkflow(req: QuarantineRequiredWorkflowRequest): Promise<QuarantineRequiredWorkflowResponse> {
+    const csilResp = await this.t.call("ReactorcideUi", "quarantine-required-workflow", toQuarantineRequiredWorkflowRequestCbor(req));
+    return fromQuarantineRequiredWorkflowResponseCbor(csilResp);
+  }
+
+  /**
+   * @throws {ServiceError} when the API returns an error response
+   * @throws transport errors (network, timeout) raised by the transport
+   */
+  async unquarantineRequiredWorkflow(req: UnquarantineRequiredWorkflowRequest): Promise<UnquarantineRequiredWorkflowResponse> {
+    const csilResp = await this.t.call("ReactorcideUi", "unquarantine-required-workflow", toUnquarantineRequiredWorkflowRequestCbor(req));
+    return fromUnquarantineRequiredWorkflowResponseCbor(csilResp);
+  }
+
+  /**
+   * @throws {ServiceError} when the API returns an error response
+   * @throws transport errors (network, timeout) raised by the transport
+   */
   async getCapabilities(req: GetCapabilitiesRequest): Promise<GetCapabilitiesResponse> {
     const csilResp = await this.t.call("ReactorcideUi", "get-capabilities", toGetCapabilitiesRequestCbor(req));
     return fromGetCapabilitiesResponseCbor(csilResp);
+  }
+
+  /**
+   * @throws {ServiceError} when the API returns an error response
+   * @throws transport errors (network, timeout) raised by the transport
+   */
+  async listEnvDefaults(req: ListEnvDefaultsRequest): Promise<ListEnvDefaultsResponse> {
+    const csilResp = await this.t.call("ReactorcideUi", "list-env-defaults", toListEnvDefaultsRequestCbor(req));
+    return fromListEnvDefaultsResponseCbor(csilResp);
+  }
+
+  /**
+   * @throws {ServiceError} when the API returns an error response
+   * @throws transport errors (network, timeout) raised by the transport
+   */
+  async putEnvDefault(req: PutEnvDefaultRequest): Promise<PutEnvDefaultResponse> {
+    const csilResp = await this.t.call("ReactorcideUi", "put-env-default", toPutEnvDefaultRequestCbor(req));
+    return fromPutEnvDefaultResponseCbor(csilResp);
+  }
+
+  /**
+   * @throws {ServiceError} when the API returns an error response
+   * @throws transport errors (network, timeout) raised by the transport
+   */
+  async deleteEnvDefault(req: DeleteEnvDefaultRequest): Promise<DeleteEnvDefaultResponse> {
+    const csilResp = await this.t.call("ReactorcideUi", "delete-env-default", toDeleteEnvDefaultRequestCbor(req));
+    return fromDeleteEnvDefaultResponseCbor(csilResp);
+  }
+
+  /**
+   * @throws {ServiceError} when the API returns an error response
+   * @throws transport errors (network, timeout) raised by the transport
+   */
+  async getImagePolicy(req: GetImagePolicyRequest): Promise<GetImagePolicyResponse> {
+    const csilResp = await this.t.call("ReactorcideUi", "get-image-policy", toGetImagePolicyRequestCbor(req));
+    return fromGetImagePolicyResponseCbor(csilResp);
+  }
+
+  /**
+   * @throws {ServiceError} when the API returns an error response
+   * @throws transport errors (network, timeout) raised by the transport
+   */
+  async putImagePolicy(req: PutImagePolicyRequest): Promise<PutImagePolicyResponse> {
+    const csilResp = await this.t.call("ReactorcideUi", "put-image-policy", toPutImagePolicyRequestCbor(req));
+    return fromPutImagePolicyResponseCbor(csilResp);
+  }
+
+  /**
+   * @throws {ServiceError} when the API returns an error response
+   * @throws transport errors (network, timeout) raised by the transport
+   */
+  async listImageAliases(req: ListImageAliasesRequest): Promise<ListImageAliasesResponse> {
+    const csilResp = await this.t.call("ReactorcideUi", "list-image-aliases", toListImageAliasesRequestCbor(req));
+    return fromListImageAliasesResponseCbor(csilResp);
+  }
+
+  /**
+   * @throws {ServiceError} when the API returns an error response
+   * @throws transport errors (network, timeout) raised by the transport
+   */
+  async getImageAlias(req: GetImageAliasRequest): Promise<GetImageAliasResponse> {
+    const csilResp = await this.t.call("ReactorcideUi", "get-image-alias", toGetImageAliasRequestCbor(req));
+    return fromGetImageAliasResponseCbor(csilResp);
+  }
+
+  /**
+   * @throws {ServiceError} when the API returns an error response
+   * @throws transport errors (network, timeout) raised by the transport
+   */
+  async setImageAlias(req: SetImageAliasRequest): Promise<SetImageAliasResponse> {
+    const csilResp = await this.t.call("ReactorcideUi", "set-image-alias", toSetImageAliasRequestCbor(req));
+    return fromSetImageAliasResponseCbor(csilResp);
+  }
+
+  /**
+   * @throws {ServiceError} when the API returns an error response
+   * @throws transport errors (network, timeout) raised by the transport
+   */
+  async deleteImageAlias(req: DeleteImageAliasRequest): Promise<DeleteImageAliasResponse> {
+    const csilResp = await this.t.call("ReactorcideUi", "delete-image-alias", toDeleteImageAliasRequestCbor(req));
+    return fromDeleteImageAliasResponseCbor(csilResp);
+  }
+
+  /**
+   * @throws {ServiceError} when the API returns an error response
+   * @throws transport errors (network, timeout) raised by the transport
+   */
+  async getImageRolloutStatus(req: GetImageRolloutStatusRequest): Promise<GetImageRolloutStatusResponse> {
+    const csilResp = await this.t.call("ReactorcideUi", "get-image-rollout-status", toGetImageRolloutStatusRequestCbor(req));
+    return fromGetImageRolloutStatusResponseCbor(csilResp);
+  }
+
+  /**
+   * @throws {ServiceError} when the API returns an error response
+   * @throws transport errors (network, timeout) raised by the transport
+   */
+  async getWorkerImageState(req: GetWorkerImageStateRequest): Promise<GetWorkerImageStateResponse> {
+    const csilResp = await this.t.call("ReactorcideUi", "get-worker-image-state", toGetWorkerImageStateRequestCbor(req));
+    return fromGetWorkerImageStateResponseCbor(csilResp);
+  }
+
+  /**
+   * @throws {ServiceError} when the API returns an error response
+   * @throws transport errors (network, timeout) raised by the transport
+   */
+  async listJobLinks(req: ListJobLinksRequest): Promise<ListJobLinksResponse> {
+    const csilResp = await this.t.call("ReactorcideUi", "list-job-links", toListJobLinksRequestCbor(req));
+    return fromListJobLinksResponseCbor(csilResp);
+  }
+
+  /**
+   * @throws {ServiceError} when the API returns an error response
+   * @throws transport errors (network, timeout) raised by the transport
+   */
+  async listJobArtifacts(req: ListJobArtifactsRequest): Promise<ListJobArtifactsResponse> {
+    const csilResp = await this.t.call("ReactorcideUi", "list-job-artifacts", toListJobArtifactsRequestCbor(req));
+    return fromListJobArtifactsResponseCbor(csilResp);
+  }
+
+  /**
+   * @throws {ServiceError} when the API returns an error response
+   * @throws transport errors (network, timeout) raised by the transport
+   */
+  async readJobArtifact(req: ReadJobArtifactRequest): Promise<ReadJobArtifactResponse> {
+    const csilResp = await this.t.call("ReactorcideUi", "read-job-artifact", toReadJobArtifactRequestCbor(req));
+    return fromReadJobArtifactResponseCbor(csilResp);
+  }
+
+  /**
+   * @throws {ServiceError} when the API returns an error response
+   * @throws transport errors (network, timeout) raised by the transport
+   */
+  async getJobTestResults(req: GetJobTestResultsRequest): Promise<GetJobTestResultsResponse> {
+    const csilResp = await this.t.call("ReactorcideUi", "get-job-test-results", toGetJobTestResultsRequestCbor(req));
+    return fromGetJobTestResultsResponseCbor(csilResp);
+  }
+
+  /**
+   * @throws {ServiceError} when the API returns an error response
+   * @throws transport errors (network, timeout) raised by the transport
+   */
+  async listFlakyTests(req: ListFlakyTestsRequest): Promise<ListFlakyTestsResponse> {
+    const csilResp = await this.t.call("ReactorcideUi", "list-flaky-tests", toListFlakyTestsRequestCbor(req));
+    return fromListFlakyTestsResponseCbor(csilResp);
+  }
+
+  /**
+   * @throws {ServiceError} when the API returns an error response
+   * @throws transport errors (network, timeout) raised by the transport
+   */
+  async listTestQuarantines(req: ListTestQuarantinesRequest): Promise<ListTestQuarantinesResponse> {
+    const csilResp = await this.t.call("ReactorcideUi", "list-test-quarantines", toListTestQuarantinesRequestCbor(req));
+    return fromListTestQuarantinesResponseCbor(csilResp);
+  }
+
+  /**
+   * @throws {ServiceError} when the API returns an error response
+   * @throws transport errors (network, timeout) raised by the transport
+   */
+  async quarantineTest(req: QuarantineTestRequest): Promise<QuarantineTestResponse> {
+    const csilResp = await this.t.call("ReactorcideUi", "quarantine-test", toQuarantineTestRequestCbor(req));
+    return fromQuarantineTestResponseCbor(csilResp);
+  }
+
+  /**
+   * @throws {ServiceError} when the API returns an error response
+   * @throws transport errors (network, timeout) raised by the transport
+   */
+  async unquarantineTest(req: UnquarantineTestRequest): Promise<UnquarantineTestResponse> {
+    const csilResp = await this.t.call("ReactorcideUi", "unquarantine-test", toUnquarantineTestRequestCbor(req));
+    return fromUnquarantineTestResponseCbor(csilResp);
+  }
+
+  /**
+   * @throws {ServiceError} when the API returns an error response
+   * @throws transport errors (network, timeout) raised by the transport
+   */
+  async getJobProvenance(req: GetJobProvenanceRequest): Promise<GetJobProvenanceResponse> {
+    const csilResp = await this.t.call("ReactorcideUi", "get-job-provenance", toGetJobProvenanceRequestCbor(req));
+    return fromGetJobProvenanceResponseCbor(csilResp);
+  }
+
+  /**
+   * @throws {ServiceError} when the API returns an error response
+   * @throws transport errors (network, timeout) raised by the transport
+   */
+  async listDiagnoses(req: ListDiagnosesRequest): Promise<ListDiagnosesResponse> {
+    const csilResp = await this.t.call("ReactorcideUi", "list-diagnoses", toListDiagnosesRequestCbor(req));
+    return fromListDiagnosesResponseCbor(csilResp);
+  }
+
+  /**
+   * @throws {ServiceError} when the API returns an error response
+   * @throws transport errors (network, timeout) raised by the transport
+   */
+  async putDiagnosis(req: PutDiagnosisRequest): Promise<PutDiagnosisResponse> {
+    const csilResp = await this.t.call("ReactorcideUi", "put-diagnosis", toPutDiagnosisRequestCbor(req));
+    return fromPutDiagnosisResponseCbor(csilResp);
+  }
+
+  /**
+   * @throws {ServiceError} when the API returns an error response
+   * @throws transport errors (network, timeout) raised by the transport
+   */
+  async listRefClassRules(req: ListRefClassRulesRequest): Promise<ListRefClassRulesResponse> {
+    const csilResp = await this.t.call("ReactorcideUi", "list-ref-class-rules", toListRefClassRulesRequestCbor(req));
+    return fromListRefClassRulesResponseCbor(csilResp);
+  }
+
+  /**
+   * @throws {ServiceError} when the API returns an error response
+   * @throws transport errors (network, timeout) raised by the transport
+   */
+  async putRefClassRule(req: PutRefClassRuleRequest): Promise<PutRefClassRuleResponse> {
+    const csilResp = await this.t.call("ReactorcideUi", "put-ref-class-rule", toPutRefClassRuleRequestCbor(req));
+    return fromPutRefClassRuleResponseCbor(csilResp);
+  }
+
+  /**
+   * @throws {ServiceError} when the API returns an error response
+   * @throws transport errors (network, timeout) raised by the transport
+   */
+  async deleteRefClassRule(req: DeleteRefClassRuleRequest): Promise<DeleteRefClassRuleResponse> {
+    const csilResp = await this.t.call("ReactorcideUi", "delete-ref-class-rule", toDeleteRefClassRuleRequestCbor(req));
+    return fromDeleteRefClassRuleResponseCbor(csilResp);
+  }
+
+  /**
+   * @throws {ServiceError} when the API returns an error response
+   * @throws transport errors (network, timeout) raised by the transport
+   */
+  async explainRefClasses(req: ExplainRefClassesRequest): Promise<ExplainRefClassesResponse> {
+    const csilResp = await this.t.call("ReactorcideUi", "explain-ref-classes", toExplainRefClassesRequestCbor(req));
+    return fromExplainRefClassesResponseCbor(csilResp);
   }
 
   /**
@@ -362,6 +758,51 @@ export class ReactorcideUiAsyncClient {
    * @throws {ServiceError} when the API returns an error response
    * @throws transport errors (network, timeout) raised by the transport
    */
+  async listGroupMemberDetails(req: ListGroupMemberDetailsRequest): Promise<ListGroupMemberDetailsResponse> {
+    const csilResp = await this.t.call("ReactorcideUi", "list-group-member-details", toListGroupMemberDetailsRequestCbor(req));
+    return fromListGroupMemberDetailsResponseCbor(csilResp);
+  }
+
+  /**
+   * @throws {ServiceError} when the API returns an error response
+   * @throws transport errors (network, timeout) raised by the transport
+   */
+  async listGroupVcsLinks(req: ListGroupVcsLinksRequest): Promise<ListGroupVcsLinksResponse> {
+    const csilResp = await this.t.call("ReactorcideUi", "list-group-vcs-links", toListGroupVcsLinksRequestCbor(req));
+    return fromListGroupVcsLinksResponseCbor(csilResp);
+  }
+
+  /**
+   * @throws {ServiceError} when the API returns an error response
+   * @throws transport errors (network, timeout) raised by the transport
+   */
+  async linkGroupVcsTeam(req: LinkGroupVcsTeamRequest): Promise<LinkGroupVcsTeamResponse> {
+    const csilResp = await this.t.call("ReactorcideUi", "link-group-vcs-team", toLinkGroupVcsTeamRequestCbor(req));
+    return fromLinkGroupVcsTeamResponseCbor(csilResp);
+  }
+
+  /**
+   * @throws {ServiceError} when the API returns an error response
+   * @throws transport errors (network, timeout) raised by the transport
+   */
+  async unlinkGroupVcsTeam(req: UnlinkGroupVcsTeamRequest): Promise<UnlinkGroupVcsTeamResponse> {
+    const csilResp = await this.t.call("ReactorcideUi", "unlink-group-vcs-team", toUnlinkGroupVcsTeamRequestCbor(req));
+    return fromUnlinkGroupVcsTeamResponseCbor(csilResp);
+  }
+
+  /**
+   * @throws {ServiceError} when the API returns an error response
+   * @throws transport errors (network, timeout) raised by the transport
+   */
+  async syncGroupVcsTeams(req: SyncGroupVcsTeamsRequest): Promise<SyncGroupVcsTeamsResponse> {
+    const csilResp = await this.t.call("ReactorcideUi", "sync-group-vcs-teams", toSyncGroupVcsTeamsRequestCbor(req));
+    return fromSyncGroupVcsTeamsResponseCbor(csilResp);
+  }
+
+  /**
+   * @throws {ServiceError} when the API returns an error response
+   * @throws transport errors (network, timeout) raised by the transport
+   */
   async listUsers(req: ListUsersRequest): Promise<ListUsersResponse> {
     const csilResp = await this.t.call("ReactorcideUi", "list-users", toListUsersRequestCbor(req));
     return fromListUsersResponseCbor(csilResp);
@@ -587,6 +1028,24 @@ export class ReactorcideUiAsyncClient {
    * @throws {ServiceError} when the API returns an error response
    * @throws transport errors (network, timeout) raised by the transport
    */
+  async rerunWorkflow(req: RerunWorkflowRequest): Promise<RerunWorkflowResponse> {
+    const csilResp = await this.t.call("ReactorcideUi", "rerun-workflow", toRerunWorkflowRequestCbor(req));
+    return fromRerunWorkflowResponseCbor(csilResp);
+  }
+
+  /**
+   * @throws {ServiceError} when the API returns an error response
+   * @throws transport errors (network, timeout) raised by the transport
+   */
+  async startRun(req: StartRunRequest): Promise<StartRunResponse> {
+    const csilResp = await this.t.call("ReactorcideUi", "start-run", toStartRunRequestCbor(req));
+    return fromStartRunResponseCbor(csilResp);
+  }
+
+  /**
+   * @throws {ServiceError} when the API returns an error response
+   * @throws transport errors (network, timeout) raised by the transport
+   */
   async getGlobalSettings(req: GetGlobalSettingsRequest): Promise<GetGlobalSettingsResponse> {
     const csilResp = await this.t.call("ReactorcideUi", "get-global-settings", toGetGlobalSettingsRequestCbor(req));
     return fromGetGlobalSettingsResponseCbor(csilResp);
@@ -599,6 +1058,24 @@ export class ReactorcideUiAsyncClient {
   async updateGlobalSettings(req: UpdateGlobalSettingsRequest): Promise<UpdateGlobalSettingsResponse> {
     const csilResp = await this.t.call("ReactorcideUi", "update-global-settings", toUpdateGlobalSettingsRequestCbor(req));
     return fromUpdateGlobalSettingsResponseCbor(csilResp);
+  }
+
+  /**
+   * @throws {ServiceError} when the API returns an error response
+   * @throws transport errors (network, timeout) raised by the transport
+   */
+  async getShedState(req: GetShedStateRequest): Promise<GetShedStateResponse> {
+    const csilResp = await this.t.call("ReactorcideUi", "get-shed-state", toGetShedStateRequestCbor(req));
+    return fromGetShedStateResponseCbor(csilResp);
+  }
+
+  /**
+   * @throws {ServiceError} when the API returns an error response
+   * @throws transport errors (network, timeout) raised by the transport
+   */
+  async setShedLevel(req: SetShedLevelRequest): Promise<SetShedLevelResponse> {
+    const csilResp = await this.t.call("ReactorcideUi", "set-shed-level", toSetShedLevelRequestCbor(req));
+    return fromSetShedLevelResponseCbor(csilResp);
   }
 
   /**
@@ -812,6 +1289,33 @@ export class ReactorcideUiAsyncClient {
    * @throws {ServiceError} when the API returns an error response
    * @throws transport errors (network, timeout) raised by the transport
    */
+  async getPipelineDashboard(req: GetPipelineDashboardRequest): Promise<GetPipelineDashboardResponse> {
+    const csilResp = await this.t.call("ReactorcideUi", "get-pipeline-dashboard", toGetPipelineDashboardRequestCbor(req));
+    return fromGetPipelineDashboardResponseCbor(csilResp);
+  }
+
+  /**
+   * @throws {ServiceError} when the API returns an error response
+   * @throws transport errors (network, timeout) raised by the transport
+   */
+  async getInfraDashboard(req: GetInfraDashboardRequest): Promise<GetInfraDashboardResponse> {
+    const csilResp = await this.t.call("ReactorcideUi", "get-infra-dashboard", toGetInfraDashboardRequestCbor(req));
+    return fromGetInfraDashboardResponseCbor(csilResp);
+  }
+
+  /**
+   * @throws {ServiceError} when the API returns an error response
+   * @throws transport errors (network, timeout) raised by the transport
+   */
+  async getUsageDashboard(req: GetUsageDashboardRequest): Promise<GetUsageDashboardResponse> {
+    const csilResp = await this.t.call("ReactorcideUi", "get-usage-dashboard", toGetUsageDashboardRequestCbor(req));
+    return fromGetUsageDashboardResponseCbor(csilResp);
+  }
+
+  /**
+   * @throws {ServiceError} when the API returns an error response
+   * @throws transport errors (network, timeout) raised by the transport
+   */
   async listSchedules(req: ListSchedulesRequest): Promise<ListSchedulesResponse> {
     const csilResp = await this.t.call("ReactorcideUi", "list-schedules", toListSchedulesRequestCbor(req));
     return fromListSchedulesResponseCbor(csilResp);
@@ -851,6 +1355,87 @@ export class ReactorcideUiAsyncClient {
   async listScheduleFires(req: ListScheduleFiresRequest): Promise<ListScheduleFiresResponse> {
     const csilResp = await this.t.call("ReactorcideUi", "list-schedule-fires", toListScheduleFiresRequestCbor(req));
     return fromListScheduleFiresResponseCbor(csilResp);
+  }
+
+  /**
+   * @throws {ServiceError} when the API returns an error response
+   * @throws transport errors (network, timeout) raised by the transport
+   */
+  async listEventSubscriptions(req: ListEventSubscriptionsRequest): Promise<ListEventSubscriptionsResponse> {
+    const csilResp = await this.t.call("ReactorcideUi", "list-event-subscriptions", toListEventSubscriptionsRequestCbor(req));
+    return fromListEventSubscriptionsResponseCbor(csilResp);
+  }
+
+  /**
+   * @throws {ServiceError} when the API returns an error response
+   * @throws transport errors (network, timeout) raised by the transport
+   */
+  async getEventSubscription(req: GetEventSubscriptionRequest): Promise<GetEventSubscriptionResponse> {
+    const csilResp = await this.t.call("ReactorcideUi", "get-event-subscription", toGetEventSubscriptionRequestCbor(req));
+    return fromGetEventSubscriptionResponseCbor(csilResp);
+  }
+
+  /**
+   * @throws {ServiceError} when the API returns an error response
+   * @throws transport errors (network, timeout) raised by the transport
+   */
+  async createEventSubscription(req: CreateEventSubscriptionRequest): Promise<CreateEventSubscriptionResponse> {
+    const csilResp = await this.t.call("ReactorcideUi", "create-event-subscription", toCreateEventSubscriptionRequestCbor(req));
+    return fromCreateEventSubscriptionResponseCbor(csilResp);
+  }
+
+  /**
+   * @throws {ServiceError} when the API returns an error response
+   * @throws transport errors (network, timeout) raised by the transport
+   */
+  async updateEventSubscription(req: UpdateEventSubscriptionRequest): Promise<UpdateEventSubscriptionResponse> {
+    const csilResp = await this.t.call("ReactorcideUi", "update-event-subscription", toUpdateEventSubscriptionRequestCbor(req));
+    return fromUpdateEventSubscriptionResponseCbor(csilResp);
+  }
+
+  /**
+   * @throws {ServiceError} when the API returns an error response
+   * @throws transport errors (network, timeout) raised by the transport
+   */
+  async deleteEventSubscription(req: DeleteEventSubscriptionRequest): Promise<DeleteEventSubscriptionResponse> {
+    const csilResp = await this.t.call("ReactorcideUi", "delete-event-subscription", toDeleteEventSubscriptionRequestCbor(req));
+    return fromDeleteEventSubscriptionResponseCbor(csilResp);
+  }
+
+  /**
+   * @throws {ServiceError} when the API returns an error response
+   * @throws transport errors (network, timeout) raised by the transport
+   */
+  async listEventDeliveries(req: ListEventDeliveriesRequest): Promise<ListEventDeliveriesResponse> {
+    const csilResp = await this.t.call("ReactorcideUi", "list-event-deliveries", toListEventDeliveriesRequestCbor(req));
+    return fromListEventDeliveriesResponseCbor(csilResp);
+  }
+
+  /**
+   * @throws {ServiceError} when the API returns an error response
+   * @throws transport errors (network, timeout) raised by the transport
+   */
+  async getEventDelivery(req: GetEventDeliveryRequest): Promise<GetEventDeliveryResponse> {
+    const csilResp = await this.t.call("ReactorcideUi", "get-event-delivery", toGetEventDeliveryRequestCbor(req));
+    return fromGetEventDeliveryResponseCbor(csilResp);
+  }
+
+  /**
+   * @throws {ServiceError} when the API returns an error response
+   * @throws transport errors (network, timeout) raised by the transport
+   */
+  async replayEventDelivery(req: ReplayEventDeliveryRequest): Promise<ReplayEventDeliveryResponse> {
+    const csilResp = await this.t.call("ReactorcideUi", "replay-event-delivery", toReplayEventDeliveryRequestCbor(req));
+    return fromReplayEventDeliveryResponseCbor(csilResp);
+  }
+
+  /**
+   * @throws {ServiceError} when the API returns an error response
+   * @throws transport errors (network, timeout) raised by the transport
+   */
+  async testEventSubscription(req: TestEventSubscriptionRequest): Promise<TestEventSubscriptionResponse> {
+    const csilResp = await this.t.call("ReactorcideUi", "test-event-subscription", toTestEventSubscriptionRequestCbor(req));
+    return fromTestEventSubscriptionResponseCbor(csilResp);
   }
 
   /**
@@ -905,6 +1490,321 @@ export class ReactorcideUiAsyncClient {
   async describeFormMetadata(req: DescribeFormMetadataRequest): Promise<DescribeFormMetadataResponse> {
     const csilResp = await this.t.call("ReactorcideUi", "describe-form-metadata", toDescribeFormMetadataRequestCbor(req));
     return fromDescribeFormMetadataResponseCbor(csilResp);
+  }
+
+  /**
+   * @throws {ServiceError} when the API returns an error response
+   * @throws transport errors (network, timeout) raised by the transport
+   */
+  async listPrincipals(req: ListPrincipalsRequest): Promise<ListPrincipalsResponse> {
+    const csilResp = await this.t.call("ReactorcideUi", "list-principals", toListPrincipalsRequestCbor(req));
+    return fromListPrincipalsResponseCbor(csilResp);
+  }
+
+  /**
+   * @throws {ServiceError} when the API returns an error response
+   * @throws transport errors (network, timeout) raised by the transport
+   */
+  async getPrincipal(req: GetPrincipalRequest): Promise<GetPrincipalResponse> {
+    const csilResp = await this.t.call("ReactorcideUi", "get-principal", toGetPrincipalRequestCbor(req));
+    return fromGetPrincipalResponseCbor(csilResp);
+  }
+
+  /**
+   * @throws {ServiceError} when the API returns an error response
+   * @throws transport errors (network, timeout) raised by the transport
+   */
+  async createServicePrincipal(req: CreateServicePrincipalRequest): Promise<CreateServicePrincipalResponse> {
+    const csilResp = await this.t.call("ReactorcideUi", "create-service-principal", toCreateServicePrincipalRequestCbor(req));
+    return fromCreateServicePrincipalResponseCbor(csilResp);
+  }
+
+  /**
+   * @throws {ServiceError} when the API returns an error response
+   * @throws transport errors (network, timeout) raised by the transport
+   */
+  async setPrincipalStatus(req: SetPrincipalStatusRequest): Promise<SetPrincipalStatusResponse> {
+    const csilResp = await this.t.call("ReactorcideUi", "set-principal-status", toSetPrincipalStatusRequestCbor(req));
+    return fromSetPrincipalStatusResponseCbor(csilResp);
+  }
+
+  /**
+   * @throws {ServiceError} when the API returns an error response
+   * @throws transport errors (network, timeout) raised by the transport
+   */
+  async linkPrincipalIdentity(req: PrincipalIdentityRequest): Promise<PrincipalIdentityResponse> {
+    const csilResp = await this.t.call("ReactorcideUi", "link-principal-identity", toPrincipalIdentityRequestCbor(req));
+    return fromPrincipalIdentityResponseCbor(csilResp);
+  }
+
+  /**
+   * @throws {ServiceError} when the API returns an error response
+   * @throws transport errors (network, timeout) raised by the transport
+   */
+  async unlinkPrincipalIdentity(req: PrincipalIdentityRequest): Promise<PrincipalIdentityResponse> {
+    const csilResp = await this.t.call("ReactorcideUi", "unlink-principal-identity", toPrincipalIdentityRequestCbor(req));
+    return fromPrincipalIdentityResponseCbor(csilResp);
+  }
+
+  /**
+   * @throws {ServiceError} when the API returns an error response
+   * @throws transport errors (network, timeout) raised by the transport
+   */
+  async setPrincipalGroup(req: SetPrincipalGroupRequest): Promise<SetPrincipalGroupResponse> {
+    const csilResp = await this.t.call("ReactorcideUi", "set-principal-group", toSetPrincipalGroupRequestCbor(req));
+    return fromSetPrincipalGroupResponseCbor(csilResp);
+  }
+
+  /**
+   * @throws {ServiceError} when the API returns an error response
+   * @throws transport errors (network, timeout) raised by the transport
+   */
+  async issuePrincipalToken(req: IssuePrincipalTokenRequest): Promise<IssuePrincipalTokenResponse> {
+    const csilResp = await this.t.call("ReactorcideUi", "issue-principal-token", toIssuePrincipalTokenRequestCbor(req));
+    return fromIssuePrincipalTokenResponseCbor(csilResp);
+  }
+
+  /**
+   * @throws {ServiceError} when the API returns an error response
+   * @throws transport errors (network, timeout) raised by the transport
+   */
+  async revokePrincipalToken(req: RevokePrincipalTokenRequest): Promise<RevokePrincipalTokenResponse> {
+    const csilResp = await this.t.call("ReactorcideUi", "revoke-principal-token", toRevokePrincipalTokenRequestCbor(req));
+    return fromRevokePrincipalTokenResponseCbor(csilResp);
+  }
+
+  /**
+   * @throws {ServiceError} when the API returns an error response
+   * @throws transport errors (network, timeout) raised by the transport
+   */
+  async resolvePrincipal(req: ResolvePrincipalRequest): Promise<ResolvePrincipalResponse> {
+    const csilResp = await this.t.call("ReactorcideUi", "resolve-principal", toResolvePrincipalRequestCbor(req));
+    return fromResolvePrincipalResponseCbor(csilResp);
+  }
+
+  /**
+   * @throws {ServiceError} when the API returns an error response
+   * @throws transport errors (network, timeout) raised by the transport
+   */
+  async listFederationIssuers(req: ListFederationIssuersRequest): Promise<ListFederationIssuersResponse> {
+    const csilResp = await this.t.call("ReactorcideUi", "list-federation-issuers", toListFederationIssuersRequestCbor(req));
+    return fromListFederationIssuersResponseCbor(csilResp);
+  }
+
+  /**
+   * @throws {ServiceError} when the API returns an error response
+   * @throws transport errors (network, timeout) raised by the transport
+   */
+  async saveFederationIssuer(req: SaveFederationIssuerRequest): Promise<SaveFederationIssuerResponse> {
+    const csilResp = await this.t.call("ReactorcideUi", "save-federation-issuer", toSaveFederationIssuerRequestCbor(req));
+    return fromSaveFederationIssuerResponseCbor(csilResp);
+  }
+
+  /**
+   * @throws {ServiceError} when the API returns an error response
+   * @throws transport errors (network, timeout) raised by the transport
+   */
+  async deleteFederationIssuer(req: DeleteFederationIssuerRequest): Promise<DeleteFederationIssuerResponse> {
+    const csilResp = await this.t.call("ReactorcideUi", "delete-federation-issuer", toDeleteFederationIssuerRequestCbor(req));
+    return fromDeleteFederationIssuerResponseCbor(csilResp);
+  }
+
+  /**
+   * @throws {ServiceError} when the API returns an error response
+   * @throws transport errors (network, timeout) raised by the transport
+   */
+  async saveFederationMapping(req: SaveFederationMappingRequest): Promise<SaveFederationMappingResponse> {
+    const csilResp = await this.t.call("ReactorcideUi", "save-federation-mapping", toSaveFederationMappingRequestCbor(req));
+    return fromSaveFederationMappingResponseCbor(csilResp);
+  }
+
+  /**
+   * @throws {ServiceError} when the API returns an error response
+   * @throws transport errors (network, timeout) raised by the transport
+   */
+  async deleteFederationMapping(req: DeleteFederationMappingRequest): Promise<DeleteFederationMappingResponse> {
+    const csilResp = await this.t.call("ReactorcideUi", "delete-federation-mapping", toDeleteFederationMappingRequestCbor(req));
+    return fromDeleteFederationMappingResponseCbor(csilResp);
+  }
+
+  /**
+   * @throws {ServiceError} when the API returns an error response
+   * @throws transport errors (network, timeout) raised by the transport
+   */
+  async listGithubApps(req: ListGitHubAppsRequest): Promise<ListGitHubAppsResponse> {
+    const csilResp = await this.t.call("ReactorcideUi", "list-github-apps", toListGitHubAppsRequestCbor(req));
+    return fromListGitHubAppsResponseCbor(csilResp);
+  }
+
+  /**
+   * @throws {ServiceError} when the API returns an error response
+   * @throws transport errors (network, timeout) raised by the transport
+   */
+  async setGithubAppEnabled(req: SetGitHubAppEnabledRequest): Promise<SetGitHubAppEnabledResponse> {
+    const csilResp = await this.t.call("ReactorcideUi", "set-github-app-enabled", toSetGitHubAppEnabledRequestCbor(req));
+    return fromSetGitHubAppEnabledResponseCbor(csilResp);
+  }
+
+  /**
+   * @throws {ServiceError} when the API returns an error response
+   * @throws transport errors (network, timeout) raised by the transport
+   */
+  async syncGithubApp(req: SyncGitHubAppRequest): Promise<SyncGitHubAppResponse> {
+    const csilResp = await this.t.call("ReactorcideUi", "sync-github-app", toSyncGitHubAppRequestCbor(req));
+    return fromSyncGitHubAppResponseCbor(csilResp);
+  }
+
+  /**
+   * @throws {ServiceError} when the API returns an error response
+   * @throws transport errors (network, timeout) raised by the transport
+   */
+  async setShedActions(req: SetShedActionsRequest): Promise<SetShedLevelResponse> {
+    const csilResp = await this.t.call("ReactorcideUi", "set-shed-actions", toSetShedActionsRequestCbor(req));
+    return fromSetShedLevelResponseCbor(csilResp);
+  }
+
+  /**
+   * @throws {ServiceError} when the API returns an error response
+   * @throws transport errors (network, timeout) raised by the transport
+   */
+  async getOrgReportingSettings(req: GetOrgReportingSettingsRequest): Promise<GetOrgReportingSettingsResponse> {
+    const csilResp = await this.t.call("ReactorcideUi", "get-org-reporting-settings", toGetOrgReportingSettingsRequestCbor(req));
+    return fromGetOrgReportingSettingsResponseCbor(csilResp);
+  }
+
+  /**
+   * @throws {ServiceError} when the API returns an error response
+   * @throws transport errors (network, timeout) raised by the transport
+   */
+  async putOrgReportingSettings(req: PutOrgReportingSettingsRequest): Promise<GetOrgReportingSettingsResponse> {
+    const csilResp = await this.t.call("ReactorcideUi", "put-org-reporting-settings", toPutOrgReportingSettingsRequestCbor(req));
+    return fromGetOrgReportingSettingsResponseCbor(csilResp);
+  }
+
+  /**
+   * @throws {ServiceError} when the API returns an error response
+   * @throws transport errors (network, timeout) raised by the transport
+   */
+  async getRequiredSetOrgSettings(req: GetRequiredSetOrgSettingsRequest): Promise<GetRequiredSetOrgSettingsResponse> {
+    const csilResp = await this.t.call("ReactorcideUi", "get-required-set-org-settings", toGetRequiredSetOrgSettingsRequestCbor(req));
+    return fromGetRequiredSetOrgSettingsResponseCbor(csilResp);
+  }
+
+  /**
+   * @throws {ServiceError} when the API returns an error response
+   * @throws transport errors (network, timeout) raised by the transport
+   */
+  async putRequiredSetOrgSettings(req: PutRequiredSetOrgSettingsRequest): Promise<GetRequiredSetOrgSettingsResponse> {
+    const csilResp = await this.t.call("ReactorcideUi", "put-required-set-org-settings", toPutRequiredSetOrgSettingsRequestCbor(req));
+    return fromGetRequiredSetOrgSettingsResponseCbor(csilResp);
+  }
+
+  /**
+   * @throws {ServiceError} when the API returns an error response
+   * @throws transport errors (network, timeout) raised by the transport
+   */
+  async getVcsOwnerAllowlist(req: GetVcsOwnerAllowlistRequest): Promise<VcsOwnerAllowlistResponse> {
+    const csilResp = await this.t.call("ReactorcideUi", "get-vcs-owner-allowlist", toGetVcsOwnerAllowlistRequestCbor(req));
+    return fromVcsOwnerAllowlistResponseCbor(csilResp);
+  }
+
+  /**
+   * @throws {ServiceError} when the API returns an error response
+   * @throws transport errors (network, timeout) raised by the transport
+   */
+  async putVcsOwnerAllowlist(req: PutVcsOwnerAllowlistRequest): Promise<VcsOwnerAllowlistResponse> {
+    const csilResp = await this.t.call("ReactorcideUi", "put-vcs-owner-allowlist", toPutVcsOwnerAllowlistRequestCbor(req));
+    return fromVcsOwnerAllowlistResponseCbor(csilResp);
+  }
+
+  /**
+   * @throws {ServiceError} when the API returns an error response
+   * @throws transport errors (network, timeout) raised by the transport
+   */
+  async getOidcSettings(req: GetOidcSettingsRequest): Promise<OidcSettingsResponse> {
+    const csilResp = await this.t.call("ReactorcideUi", "get-oidc-settings", toGetOidcSettingsRequestCbor(req));
+    return fromOidcSettingsResponseCbor(csilResp);
+  }
+
+  /**
+   * @throws {ServiceError} when the API returns an error response
+   * @throws transport errors (network, timeout) raised by the transport
+   */
+  async putOidcSettings(req: PutOidcSettingsRequest): Promise<OidcSettingsResponse> {
+    const csilResp = await this.t.call("ReactorcideUi", "put-oidc-settings", toPutOidcSettingsRequestCbor(req));
+    return fromOidcSettingsResponseCbor(csilResp);
+  }
+
+  /**
+   * @throws {ServiceError} when the API returns an error response
+   * @throws transport errors (network, timeout) raised by the transport
+   */
+  async listOidcKeys(req: ListOidcKeysRequest): Promise<ListOidcKeysResponse> {
+    const csilResp = await this.t.call("ReactorcideUi", "list-oidc-keys", toListOidcKeysRequestCbor(req));
+    return fromListOidcKeysResponseCbor(csilResp);
+  }
+
+  /**
+   * @throws {ServiceError} when the API returns an error response
+   * @throws transport errors (network, timeout) raised by the transport
+   */
+  async rotateOidcKey(req: RotateOidcKeyRequest): Promise<ListOidcKeysResponse> {
+    const csilResp = await this.t.call("ReactorcideUi", "rotate-oidc-key", toRotateOidcKeyRequestCbor(req));
+    return fromListOidcKeysResponseCbor(csilResp);
+  }
+
+  /**
+   * @throws {ServiceError} when the API returns an error response
+   * @throws transport errors (network, timeout) raised by the transport
+   */
+  async retireOidcKey(req: RetireOidcKeyRequest): Promise<ListOidcKeysResponse> {
+    const csilResp = await this.t.call("ReactorcideUi", "retire-oidc-key", toRetireOidcKeyRequestCbor(req));
+    return fromListOidcKeysResponseCbor(csilResp);
+  }
+
+  /**
+   * @throws {ServiceError} when the API returns an error response
+   * @throws transport errors (network, timeout) raised by the transport
+   */
+  async listAlertRules(req: ListAlertRulesRequest): Promise<ListAlertRulesResponse> {
+    const csilResp = await this.t.call("ReactorcideUi", "list-alert-rules", toListAlertRulesRequestCbor(req));
+    return fromListAlertRulesResponseCbor(csilResp);
+  }
+
+  /**
+   * @throws {ServiceError} when the API returns an error response
+   * @throws transport errors (network, timeout) raised by the transport
+   */
+  async createAlertRule(req: CreateAlertRuleRequest): Promise<AlertRuleResponse> {
+    const csilResp = await this.t.call("ReactorcideUi", "create-alert-rule", toCreateAlertRuleRequestCbor(req));
+    return fromAlertRuleResponseCbor(csilResp);
+  }
+
+  /**
+   * @throws {ServiceError} when the API returns an error response
+   * @throws transport errors (network, timeout) raised by the transport
+   */
+  async updateAlertRule(req: UpdateAlertRuleRequest): Promise<AlertRuleResponse> {
+    const csilResp = await this.t.call("ReactorcideUi", "update-alert-rule", toUpdateAlertRuleRequestCbor(req));
+    return fromAlertRuleResponseCbor(csilResp);
+  }
+
+  /**
+   * @throws {ServiceError} when the API returns an error response
+   * @throws transport errors (network, timeout) raised by the transport
+   */
+  async deleteAlertRule(req: DeleteAlertRuleRequest): Promise<DeleteAlertRuleResponse> {
+    const csilResp = await this.t.call("ReactorcideUi", "delete-alert-rule", toDeleteAlertRuleRequestCbor(req));
+    return fromDeleteAlertRuleResponseCbor(csilResp);
+  }
+
+  /**
+   * @throws {ServiceError} when the API returns an error response
+   * @throws transport errors (network, timeout) raised by the transport
+   */
+  async deleteDiagnosis(req: DeleteDiagnosisRequest): Promise<DeleteDiagnosisResponse> {
+    const csilResp = await this.t.call("ReactorcideUi", "delete-diagnosis", toDeleteDiagnosisRequestCbor(req));
+    return fromDeleteDiagnosisResponseCbor(csilResp);
   }
 }
 

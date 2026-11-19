@@ -159,7 +159,9 @@ func TestEvalDecisions_RecordedForEveryWorkflowWithPolicyAndWorkflowLink(t *test
 	if build.Decision != models.WorkflowDecisionRun || stringValue(build.WorkflowID) != created.WorkflowID {
 		t.Fatalf("build decision = %+v", build)
 	}
-	if len(build.Reasons) != 2 || build.Reasons[0].Kind != "event" || build.Reasons[1].Kind != "policy" || build.Reasons[1].CIOrigin != "base" {
+	// Each decision ends with the ref class reason of the event (WP3).
+	if len(build.Reasons) != 3 || build.Reasons[0].Kind != "event" || build.Reasons[1].Kind != "policy" || build.Reasons[1].CIOrigin != "base" ||
+		build.Reasons[2].Kind != "ref_class" {
 		t.Fatalf("build reasons = %+v", build.Reasons)
 	}
 	if st.decisions["docs"].Decision != models.WorkflowDecisionSkipped || st.decisions["docs"].Reasons[0].Include[0] != "docs/**" {
@@ -303,7 +305,36 @@ head_ci:
 	}
 }
 
-func withEvalTrigger(spec triggerWorkflowSpec) *triggerWorkflowSpec {
-	spec.TriggerType = "runnerlib_eval"
-	return &spec
+// A pull request eval that read its CI from the base marks each workflow
+// that the base definition matched, so "Reactorcide Checks" can fail a
+// required workflow that the head removed or renamed.
+func TestEvalDecisions_MarkBaseDefinitionsOfPullRequests(t *testing.T) {
+	st := newEventRecordingStore()
+	parent := eventEvalParent(t, "eval-1", "event-1")
+	parent.JobEnvVars["REACTORCIDE_PR_NUMBER"] = "7"
+	st.process(t, parent, evalPayload(t, parent, true))
+	hasBase := func(decision models.CIEventWorkflowDecision) bool {
+		for _, reason := range decision.Reasons {
+			if reason.Kind == models.DecisionReasonBaseDefinition {
+				return true
+			}
+		}
+		return false
+	}
+	if !hasBase(st.decisions["build"]) {
+		t.Fatalf("a matched base workflow must be marked: %+v", st.decisions["build"].Reasons)
+	}
+	if hasBase(st.decisions["docs"]) {
+		t.Fatal("a base workflow that did not match the event must not be marked")
+	}
+
+	// The eval read the head itself (no stored policy): not a base view.
+	head := newEventRecordingStore()
+	headParent := eventEvalParent(t, "eval-2", "event-2")
+	headParent.JobEnvVars["REACTORCIDE_PR_NUMBER"] = "7"
+	headParent.CISHA = *headParent.SourceRef
+	head.process(t, headParent, evalPayload(t, headParent, true))
+	if hasBase(head.decisions["build"]) {
+		t.Fatal("decisions of the head's own CI are not base definitions")
+	}
 }

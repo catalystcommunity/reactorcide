@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/catalystcommunity/app-utils-go/logging"
+	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/refclass"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store/models"
 )
 
@@ -17,6 +18,33 @@ import (
 // without reimplementing it.
 type SecretGrantStore interface {
 	ListSecretGrantsForJob(ctx context.Context, userID string, projectID *string, jobName string) ([]models.SecretGrant, error)
+}
+
+// secretProjectStore reads the project of a job. A store without it keeps
+// the behavior of before (no project state check).
+type secretProjectStore interface {
+	GetProjectByID(ctx context.Context, projectID string) (*models.Project, error)
+}
+
+// orgWideGrantsApply reports whether the org-wide grants (no project_id) of
+// the organization apply to the job. They do not apply to a job of a
+// disabled project: a GitHub App can register a project that waits for
+// approval, and an org-wide grant must not reach it before an administrator
+// enables it. On a lookup error the org-wide grants do not apply (fail
+// closed).
+func orgWideGrantsApply(ctx context.Context, grantStore SecretGrantStore, job *models.Job) bool {
+	if job.ProjectID == nil || *job.ProjectID == "" {
+		return true
+	}
+	projects, ok := grantStore.(secretProjectStore)
+	if !ok {
+		return true
+	}
+	project, err := projects.GetProjectByID(ctx, *job.ProjectID)
+	if err != nil || project == nil {
+		return false
+	}
+	return project.Enabled
 }
 
 type secretProfileStore interface {
@@ -66,7 +94,11 @@ func AuthorizeSecretAccess(ctx context.Context, grantStore SecretGrantStore, job
 	if err != nil {
 		return err
 	}
+	orgWide := orgWideGrantsApply(ctx, grantStore, job)
 	for _, grant := range grants {
+		if grant.ProjectID == nil && !orgWide {
+			continue
+		}
 		if grantMatchesSecret(grant, job, path) {
 			logging.Log.WithFields(map[string]interface{}{
 				"job_id":    job.JobID,
@@ -128,6 +160,9 @@ func grantMatchesSecret(grant models.SecretGrant, job *models.Job, path string) 
 	if len(grant.CIOrigins) > 0 && !containsSecretScope(grant.CIOrigins, job.CIOrigin) {
 		return false
 	}
+	if !grantRefClassesSatisfied(grant, job) {
+		return false
+	}
 	if !matchGrantPattern(grant.JobNameMatch, grant.JobNamePattern, job.Name, true) {
 		return false
 	}
@@ -181,4 +216,12 @@ func derefSecretProjectID(v *string) string {
 		return ""
 	}
 	return *v
+}
+
+// grantRefClassesSatisfied applies the ref class conditions of a grant
+// (docs/ref-classes.md). The job's classes come from the coordinator record
+// of the job, never from job code. A grant with no conditions matches every
+// job.
+func grantRefClassesSatisfied(grant models.SecretGrant, job *models.Job) bool {
+	return refclass.Satisfies(refclass.ForJob(job), grant.RefClassesAny, grant.RefClassesNone)
 }

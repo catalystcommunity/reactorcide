@@ -7,7 +7,7 @@ This example demonstrates a basic two-step pipeline:
 2. If tests pass, trigger deploy (only on main branch)
 
 Usage:
-    python -m runnerlib.cli run \
+    runnerlib run \
         --source-type git \
         --source-url https://github.com/user/repo.git \
         --source-ref main \

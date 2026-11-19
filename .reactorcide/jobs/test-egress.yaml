@@ -1,0 +1,20 @@
+name: test-egress
+description: "Run the egress proxy tests: cargo test in egress_proxy and go test in egress_proxy/netd"
+# A cold debug build of the Rust proxy (wasmtime) is the slow part, so this
+# job has a longer timeout and more memory than the other test jobs.
+job:
+  image: containers.catalystsquad.com/public/reactorcide/runnerbase:latest
+  command: "runnerlib run --job-command true"
+  timeout: 2700
+  priority: 10
+  working_dir: /job
+  resources:
+    cpu:
+      request: "2"
+      limit: "4"
+    memory:
+      limit: "6Gi"
+environment:
+  REACTORCIDE_CI_JOB: test-egress
+run_local:
+  user: host

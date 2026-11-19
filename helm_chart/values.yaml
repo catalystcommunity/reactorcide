@@ -48,6 +48,17 @@ app:
     targetMemoryUtilizationPercentage: 80
   replicaCount: 1
   commitOnSuccess: true
+  # Extra environment variables for the coordinator container. Each item is a
+  # Kubernetes EnvVar: {name, value} or {name, valueFrom}. Use valueFrom with
+  # a secretKeyRef for secret values. An item here overrides a key with the
+  # same name from the coordinator ConfigMap. Example:
+  #   extraEnv:
+  #     - name: REACTORCIDE_ADMISSION_RESERVE_AFTER
+  #       value: "10m"
+  #     - name: REACTORCIDE_GITHUB_APP_API_URL
+  #       valueFrom:
+  #         configMapKeyRef: {name: my-settings, key: github-api-url}
+  extraEnv: []
   resources:
     limits:
       cpu: 1000m
@@ -124,6 +135,11 @@ worker:
   telemetryBufferBatches: 12
   terminationGracePeriodSeconds: 3600
   containerRuntime: "auto"
+  # Extra environment variables for the worker container, in the same form
+  # as app.extraEnv ({name, value} or {name, valueFrom}). Use it for worker
+  # settings that have no value in this file, for example
+  # REACTORCIDE_WORKER_REGION or REACTORCIDE_WORKER_ZONE.
+  extraEnv: []
 
   # --- Coordinator-mediated worker ---
   # The worker authenticates to the coordinator over CSIL-RPC and pulls work
@@ -161,9 +177,9 @@ worker:
   # Managed (auto-generated) enrollment token Secret used when the override
   # above is unset. Rendered by templates/secret-worker-enrollment.yaml with
   # helm.sh/resource-policy: keep so the value survives upgrades/uninstalls.
-  # Leave name empty to default to "<worker-name>-enrollment".
+  # Leave name empty to default to "<worker name>-enrollment".
   managedEnrollmentTokenSecret:
-    name: ""       # empty -> "<release>-worker-enrollment"
+    name: ""       # empty -> "<worker name>-enrollment" (reactorcide-worker-enrollment)
     key: "token"
   # The worker stores its identity and unsent telemetry in this directory.
   # The default emptyDir survives a container restart in the same Pod. It
@@ -211,6 +227,60 @@ worker:
   jobStartupTimeout: "30m"
   # Use "disabled" only when no node autoscaler can add capacity.
   jobAutoscaling: "auto"
+  # Node selector, tolerations, and affinity of job pods. The image
+  # pre-seed DaemonSet uses the same values (docs/workers.md "Kubernetes
+  # image pre-seed").
+  jobNodeSelector: {}
+  jobTolerations: []
+  jobAffinity: {}
+  # Image pre-seed DaemonSets. The name is a prefix (52 characters or
+  # less, default "<worker name>-image-preseed"); each image set gets the
+  # DaemonSet "<prefix>-<short hash>". Workers with the same set share it.
+  imagePreseed:
+    name: ""
+    toolsImage: ""
+    pauseImage: ""
+    timeout: ""
+  # Admission: how the worker decides to request more work. See
+  # docs/workers.md "Resource-aware admission".
+  #   concurrency (default): a fixed lease count, worker.concurrency.
+  #   resources: request work only when the CPU and memory headroom has room
+  #     for the job's CPU request and memory limit. Capacity is the
+  #     allocatable CPU and memory of the eligible nodes, or the budget below.
+  #     With a node autoscaler, set the budget to the largest pool size:
+  #     current nodes grow only when Pods wait.
+  admission:
+    mode: "concurrency"
+    # Upper bound of concurrent leases in resources mode (worker.concurrency
+    # applies only to concurrency mode).
+    maxLeases: 64
+    # Optional budget, for example cpu: "64" and memory: "256Gi". Empty
+    # uses the measured capacity.
+    cpu: ""
+    memory: ""
+    # Label selector of the nodes that count toward capacity, for example
+    # "reactorcide.io/pool=ci". Empty counts every Ready, schedulable node
+    # with no NoSchedule or NoExecute taint.
+    capacityNodeSelector: ""
+  # Standard location characteristics. A job that does not require one
+  # matches every worker. Empty region and zone are detected from the
+  # topology.kubernetes.io labels of the nodes when every node agrees
+  # (detectTopology). cloud is a free-form provider or site name.
+  region: ""
+  zone: ""
+  cloud: ""
+  detectTopology: true
+  # Run jobs in a remote cluster. secretName names a Secret (in the release
+  # namespace) whose key holds a kubeconfig file. The worker then creates job
+  # Pods in that cluster, with the kubeconfig credentials, not with its own
+  # service account. Empty uses the in-cluster config (the default).
+  kubeconfig:
+    secretName: ""
+    key: "config"
+    context: ""
+  # Coordinator API address for job Pods (trigger submission). Empty uses
+  # this release's in-cluster Service. Set it for a remote cluster.
+  jobApiUrl: ""
   autoscaling:
     enabled: false
     minReplicas: 1
@@ -249,7 +319,16 @@ worker:
 #   - authSecret: name of a Secret whose "config.json" key is mounted at
 #     /root/.docker/config.json (docker-format registry auth).
 #   - cachePvc: name of a PVC mounted at /var/lib/buildkit for cross-job cache.
-#     Empty means each sidecar starts fresh.
+#     Empty means each sidecar starts fresh. The shared cache namespace
+#     ("standard" by default) uses the sub path shared/ of the claim. Each
+#     other cache namespace uses the sub path namespaces/<key> of the same
+#     claim. A job
+#     with no cache writes gets no cache mount. Use a ReadWriteMany claim when
+#     builder pods run on more than one node. See docs/builds-and-caches.md.
+#   - rootless: run buildkitd with the rootless image (moby/buildkit:*-rootless),
+#     uid 1000, no privilege, and Unconfined seccomp and AppArmor profiles.
+#     Off by default (privileged root). When on and image is the default
+#     image, the worker uses moby/buildkit:v0.17.3-rootless.
 #
 # Under DockerRunner / ContainerdRunner (docker-compose deploy), the same env
 # vars point at HOST paths instead of k8s resource names.
@@ -258,6 +337,70 @@ builder:
   configMap: ""
   authSecret: ""
   cachePvc: ""
+  rootless: false
+
+# Egress proxy (docs/egress-proxy.md). Disabled by default: no job network
+# changes. When enabled, the chart runs the proxy (Deployment + Service) and
+# gives the worker the REACTORCIDE_EGRESS_* settings, so the worker gets the
+# characteristic egress_proxy=true. Jobs use the proxy only when egress
+# control is on for their organization, project, or execution profile, or
+# when they use a secret grant with delivery "proxy".
+egressProxy:
+  enabled: false
+  image:
+    repository: containers.catalystsquad.com/public/reactorcide/egress
+    pullPolicy: IfNotPresent
+    tag: "dev"
+  replicaCount: 1
+  # Name of a Secret YOU create (never put the values in values.yaml), with
+  # the keys ca.crt, ca.key, job.key, and control.token. Make them with the
+  # proxy image: reactorcide-egress ca --out DIR; reactorcide-egress key
+  # --out DIR/job.key; reactorcide-egress control-token --out DIR/control.token.
+  # Required when enabled.
+  secretName: ""
+  # Optional Secret whose keys are operator secrets for WASM plugins and the
+  # SSH proxy (REACTORCIDE_EGRESS_SECRETS_DIR). Job secrets do not go here.
+  secretsDirSecret: ""
+  # Global policy (JSON, no secret values): destinations every job with
+  # egress control may reach, passthrough, decode depth, stream hosts,
+  # plugins. Example: {"destinations": [{"host": "*.pypi.org"}]}.
+  policy:
+    destinations: []
+  # Let a job that the worker did not register use the proxy with only the
+  # global policy. Keep false; a VM worker that sends all guest traffic to
+  # the proxy can need it.
+  allowUnregistered: false
+  service:
+    proxyPort: 3128
+    controlPort: 8080
+  # Image of the network helper of job pods (egress-net init container and
+  # egress-forward sidecar). Empty uses the proxy image.
+  netImage: ""
+  # The control API carries the secret values of proxy grants. With
+  # controlTLS.enabled the proxy serves it over TLS with a certificate from
+  # its CA (for the service name), and the worker trusts only that CA.
+  controlTLS:
+    enabled: true
+  # NetworkPolicies (on by default with the egress proxy; needs a CNI that
+  # enforces NetworkPolicy):
+  #   - job pods with egress control (label reactorcide.io/egress=proxy):
+  #     egress only to the proxy port, and no ingress at all. The nft
+  #     redirect and input filter in the pod already enforce this; the
+  #     policy is a second layer.
+  #   - the proxy pods: the control port only from worker pods, the proxy
+  #     port only from egress job pods (and proxyClients).
+  networkPolicy:
+    enabled: true
+    # More peers (NetworkPolicy "from" entries) that may use the proxy port,
+    # for example the hosts of VM workers: [{ipBlock: {cidr: 10.0.5.0/24}}].
+    proxyClients: []
+  resources:
+    limits:
+      cpu: 1000m
+      memory: 512Mi
+    requests:
+      cpu: 50m
+      memory: 64Mi
 
 grpc:
   maxMessageSizeBytes: "1000000000"
@@ -267,10 +410,17 @@ postgres:
 
 # Corndogs task queue configuration
 # Disabled by default - users should provide their own Corndogs in production
+#
+# Known limit: keep corndogs.resilience.submissionKeyPolicy at
+# "compatibility" (the subchart default). Reactorcide submits jobs without a
+# submission key (coordinator_api/internal/corndogs/client.go), so a Corndogs
+# server with CORNDOGS_SUBMISSION_KEY_POLICY=required refuses each job. This
+# also applies to an external Corndogs (corndogs.enabled: false).
 corndogs:
   enabled: false  # Set to true to deploy Corndogs subchart
   # External Corndogs URL - used when subchart is disabled but you have external Corndogs
-  baseUrl: ""  # e.g., "http://corndogs.example.com:5080"
+  # A CSIL-RPC TCP address (host:port). A URL scheme is removed.
+  baseUrl: ""  # e.g., "corndogs.example.com:5080"
   replicaCount: 1
   podSecurityContext:
     fsGroup: 65532
@@ -346,6 +496,87 @@ defaults:
   checkoutMode: "isolated"
   # Secret name for the bootstrap API token.
   apiTokenSecretName: "base-reactorcide-api-token"
+
+# Coordinator settings added in 0.13 (docs/upgrade-0.13.md). An empty value
+# ("" or null) does not set the variable, so the coordinator uses its code
+# default (shown in each comment). The values go into the coordinator
+# ConfigMap.
+oidc:
+  # REACTORCIDE_OIDC_ISSUER_URL: the HTTPS issuer URL, for example
+  # "https://ci.example.com/api/v1/oidc". Empty
+  # (default) disables the OIDC issuer for jobs (docs/oidc.md).
+  issuerUrl: ""
+rateLimits:
+  # REACTORCIDE_WEBHOOK_RATE_LIMIT_PER_MINUTE (default 600, per project, per
+  # replica; 0 disables) and REACTORCIDE_WEBHOOK_RATE_LIMIT_BURST (200).
+  webhookPerMinute: ""
+  webhookBurst: ""
+  # REACTORCIDE_API_RATE_LIMIT_PER_MINUTE (default 0 = off) and
+  # REACTORCIDE_API_RATE_LIMIT_BURST (300).
+  apiPerMinute: ""
+  apiBurst: ""
+  # REACTORCIDE_TRUSTED_PROXY_CIDRS (default empty = the TCP peer). The
+  # CIDRs of your ingress or proxy pods, for example "10.42.0.0/16". When the
+  # TCP peer is in this list, the federation source limit uses the
+  # right-most X-Forwarded-For address that is not in it (docs/federation.md).
+  trustedProxyCIDRs: ""
+outboundEvents:
+  # REACTORCIDE_OUTBOUND_EVENTS_ENABLED (default true). Set false to stop
+  # outbound event delivery (docs/outbound-events.md).
+  enabled: ""
+  # REACTORCIDE_OUTBOUND_EVENTS_ALLOWED_NETWORKS: comma-separated CIDRs or
+  # addresses that are private or loopback but that webhooks can reach.
+  # Default empty: webhooks reach only public addresses.
+  allowedNetworks: ""
+observability:
+  # REACTORCIDE_OBSERVABILITY_ENABLED (default true): rollup and alert loops
+  # (docs/observability.md).
+  enabled: ""
+  # REACTORCIDE_OBSERVABILITY_INTERVAL_SECONDS (60) and
+  # REACTORCIDE_OBSERVABILITY_ALERT_INTERVAL_SECONDS (300).
+  intervalSeconds: ""
+  alertIntervalSeconds: ""
+  # REACTORCIDE_ROLLUP_HOURLY_RETENTION_DAYS (35) and
+  # REACTORCIDE_ROLLUP_DAILY_RETENTION_DAYS (400).
+  rollupHourlyRetentionDays: ""
+  rollupDailyRetentionDays: ""
+artifacts:
+  # REACTORCIDE_ARTIFACTS_ENABLED (default true) and the limits
+  # REACTORCIDE_ARTIFACT_MAX_FILE_BYTES (256 MiB), _MAX_JOB_BYTES (1 GiB),
+  # and _MAX_FILES (1000) (docs/artifacts-and-tests.md).
+  enabled: ""
+  maxFileBytes: ""
+  maxJobBytes: ""
+  maxFiles: ""
+  # REACTORCIDE_FLAKY_WINDOW_DAYS (default 30): the window of the flaky test
+  # detection.
+  flakyWindowDays: ""
+provenance:
+  # REACTORCIDE_PROVENANCE_ENABLED: false turns provenance off. Empty keeps it
+  # on when a builder ID is known.
+  enabled: ""
+  # REACTORCIDE_PROVENANCE_BUILDER_ID. Empty uses the OIDC issuer URL
+  # (docs/provenance.md).
+  builderId: ""
+cache:
+  # REACTORCIDE_CACHE_SHARED_NAMESPACE. null (default) does not set it, so
+  # the shared builder cache volume belongs to the "standard" namespace. An
+  # empty string "" turns the shared volume off (docs/builds-and-caches.md).
+  sharedNamespace: null
+groupVcsSync:
+  # REACTORCIDE_GROUP_VCS_SYNC_INTERVAL (Go duration, default 15m; 0
+  # disables the sync of groups linked to VCS teams).
+  interval: ""
+
+# Metrics objects for the Prometheus Operator.
+metrics:
+  prometheusRule:
+    # Make a PrometheusRule with the CI owner alerts of
+    # deployment/prometheus/reactorcide-ci-owner-alerts.yaml. Needs the
+    # PrometheusRule CRD. Off by default.
+    enabled: false
+    # Extra labels, for example the label that your Prometheus selects.
+    labels: {}
 
 storage:
   type: postgres

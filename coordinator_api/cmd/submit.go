@@ -75,6 +75,8 @@ type CreateJobRequest struct {
 	Priority       *int   `json:"priority,omitempty"`
 	RunAsUser      string `json:"run_as_user,omitempty"`
 	QueueName      string `json:"queue_name,omitempty"`
+	// RunAsAdministrator is run_as.administrator. nil means not set.
+	RunAsAdministrator *bool `json:"run_as_administrator,omitempty"`
 
 	// ImagePullSecrets lists Kubernetes Secret NAMES for pulling the job
 	// image — never credentials.
@@ -107,6 +109,7 @@ type JobResponse struct {
 	TimeoutSeconds      int        `json:"timeout_seconds"`
 	Priority            int        `json:"priority"`
 	RunAsUser           string     `json:"run_as_user,omitempty"`
+	RunAsAdministrator  *bool      `json:"run_as_administrator,omitempty"`
 	QueueName           string     `json:"queue_name"`
 	SchedulingStartedAt *time.Time `json:"scheduling_started_at,omitempty"`
 	StartedAt           *time.Time `json:"started_at,omitempty"`
@@ -251,6 +254,12 @@ func specToCreateJobRequest(spec *worker.JobSpec) *CreateJobRequest {
 	if spec.Checkout != nil && spec.Checkout.Mode != "" {
 		environment["REACTORCIDE_CHECKOUT_MODE"] = spec.Checkout.Mode
 	}
+	// The coordinator reads the shell prefix from the job environment.
+	// command_prefix has precedence over REACTORCIDE_JOB_SHELLCMD, as in
+	// run-local (worker.ResolveShellPrefix).
+	if prefix := strings.TrimSpace(spec.CommandPrefix); prefix != "" {
+		environment[worker.ShellPrefixEnvVar] = prefix
+	}
 	req := &CreateJobRequest{
 		Name:             spec.Name,
 		JobCommand:       spec.Command,
@@ -265,6 +274,7 @@ func specToCreateJobRequest(spec *worker.JobSpec) *CreateJobRequest {
 	}
 	if spec.RunAs != nil {
 		req.RunAsUser = spec.RunAs.User
+		req.RunAsAdministrator = spec.RunAs.Administrator
 	}
 
 	// Set timeout if specified
@@ -314,7 +324,7 @@ func submitJobToAPI(apiURL, token string, req *CreateJobRequest, allowInsecure b
 	body, _ := io.ReadAll(resp.Body)
 
 	if resp.StatusCode != http.StatusCreated {
-		return nil, fmt.Errorf("API error (%d): %s", resp.StatusCode, string(body))
+		return nil, &apiError{StatusCode: resp.StatusCode, Body: strings.TrimSpace(string(body))}
 	}
 
 	var jobResp JobResponse

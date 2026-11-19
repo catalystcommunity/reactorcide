@@ -339,6 +339,7 @@ func TestRetryJob_ClonesSpecFields(t *testing.T) {
 		Capabilities:       []string{"docker"},
 		ImagePullSecrets:   []string{"regcred"},
 		RunAsUser:          "runner",
+		RunAsAdministrator: boolPtrRetry(false),
 		QueueName:          "reactorcide-jobs",
 		AutoTargetState:    "running",
 		Status:             "failed",
@@ -394,6 +395,12 @@ func TestRetryJob_ClonesSpecFields(t *testing.T) {
 		{"AutoTargetState", newJob.AutoTargetState, original.AutoTargetState},
 		{"VCSRepo", derefStr(newJob.VCSRepo), derefStr(original.VCSRepo)},
 		{"CommitSHA", derefStr(newJob.CommitSHA), derefStr(original.CommitSHA)},
+	}
+	if newJob.RunAsAdministrator == nil || *newJob.RunAsAdministrator {
+		t.Errorf("RunAsAdministrator = %v, want false", newJob.RunAsAdministrator)
+	}
+	if newJob.RunAsAdministrator == original.RunAsAdministrator {
+		t.Error("RunAsAdministrator must be a copy, not the same pointer")
 	}
 	for _, c := range checks {
 		if c.got != c.want {
@@ -891,3 +898,34 @@ func sourceTypePtr(s string) *models.SourceType {
 	st := models.SourceType(s)
 	return &st
 }
+
+type workerClassRetryStore struct {
+	*retryMockStore
+	class *models.WorkerClass
+}
+
+func (s workerClassRetryStore) GetWorkerClass(context.Context, string, string) (*models.WorkerClass, error) {
+	return s.class, nil
+}
+
+// A retry checks the worker class conditions again: a class that now needs
+// the production ref class refuses a retry of a pull request job.
+func TestRetryJob_WorkerClassRefClassesChecked(t *testing.T) {
+	base := newRetryMockStore()
+	job := base.addJob(&models.Job{JobID: "orig", OrgID: "org", Status: "failed", JobCommand: "echo",
+		WorkerClass: "deploy", RefClasses: []string{"pr"}})
+	st := workerClassRetryStore{retryMockStore: base,
+		class: &models.WorkerClass{Name: "deploy", RefClassesAny: []string{"production"}}}
+	if _, err := RetryJob(context.Background(), st, corndogs.NewMockClient(), job); !errors.Is(err, ErrWorkerClassRefused) {
+		t.Fatalf("expected ErrWorkerClassRefused, got %v", err)
+	}
+	if len(base.jobs) != 1 {
+		t.Fatalf("a refused retry must create no job, have %d", len(base.jobs))
+	}
+	job.RefClasses = []string{"production"}
+	if _, err := RetryJob(context.Background(), st, corndogs.NewMockClient(), job); err != nil {
+		t.Fatalf("a retry that satisfies the class must succeed: %v", err)
+	}
+}
+
+func boolPtrRetry(v bool) *bool { return &v }

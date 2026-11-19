@@ -32,7 +32,7 @@ const maxUserQueryLength = 128
 // The list itself is not org-filtered -- users are global rows and a grant
 // may target any account -- so the org only authorizes the call.
 func (s *UiService) ListUsers(ctx context.Context, req csilapi.ListUsersRequest) (csilapi.ListUsersResponse, error) {
-	id, _, authErr := s.deps.requireUser(ctx)
+	ctx, id, _, authErr := s.deps.requireManagementIdentity(ctx)
 	if authErr != nil {
 		return csilapi.ListUsersResponse{}, authErr
 	}
@@ -43,7 +43,7 @@ func (s *UiService) ListUsers(ctx context.Context, req csilapi.ListUsersRequest)
 	if len(query) > maxUserQueryLength {
 		return csilapi.ListUsersResponse{}, NewServiceError("invalid_argument", "query is too long")
 	}
-	if err := s.deps.Resolver.RequireOrgAdmin(ctx, id, req.OrgId); err != nil {
+	if err := s.requireOrgAdminGrant(ctx, id, req.OrgId, orgReadCapabilities...); err != nil {
 		return csilapi.ListUsersResponse{}, mapPermissionErr(err)
 	}
 

@@ -102,6 +102,25 @@ func (d *Deps) checkoutProjectOwner(ctx context.Context, job *models.Job) (*mode
 // (*JobProcessor).resolveVCSCheckoutToken resolution order exactly,
 // coordinator-side.
 func (d *Deps) resolveVCSCheckoutToken(ctx context.Context, job *models.Job, project *models.Project, ownerID string, provider vcs.Provider) (token, scope string, err error) {
+	// A repository in a GitHub App installation gets a short-lived
+	// installation token that reads only that repository
+	// (docs/github-app.md). The repository is the one of the checkout URL,
+	// so a fork that no installation holds keeps the token path below. The
+	// binding of the repository must belong to the project of the job: a job
+	// names its own source URL, and a URL of a repository of another project
+	// (or organization) must not get a token of that installation. A job
+	// with no project never gets an App token. The trusted CI checkout
+	// (CISourceURL) gets no vcs_auth on this path.
+	if source := vcs.AppSource(); source != nil && provider == vcs.GitHub && project != nil {
+		if repo := vcs.GitHubRepoFullName(checkoutURLForJob(job)); repo != "" {
+			t, ok, aerr := source.CheckoutToken(ctx, provider, repo, project.ProjectID)
+			if aerr != nil {
+				logging.Log.WithError(aerr).WithField("job_id", job.JobID).Warn("Could not get a GitHub App checkout token; using the token path")
+			} else if ok && t != "" {
+				return t, "github-app", nil
+			}
+		}
+	}
 	// Highest-precedence active project_vcs_credentials rotation row wins
 	// over the legacy project ref. Deactivated rows are never returned by
 	// ListActiveProjectVCSCredentials, so they are never used here.

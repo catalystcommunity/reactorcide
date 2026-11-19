@@ -12,6 +12,9 @@ import (
 	"time"
 
 	"github.com/catalystcommunity/app-utils-go/logging"
+	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/imagealias"
+	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/principals"
+	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/priority"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store/models"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/vcs"
@@ -244,6 +247,9 @@ func (tp *TriggerProcessor) ensureWorkflow(ctx context.Context, parentJob *model
 		if spec.TriggerType != "" {
 			wf.TriggerType = spec.TriggerType
 		}
+		// The trusted owner snapshot (trigger_ownership.go). A child
+		// workflow with none gets its parent's from the database trigger.
+		applyOwnership(wf, spec)
 	}
 
 	if parentJob.WorkflowID != nil && *parentJob.WorkflowID != "" {
@@ -269,17 +275,27 @@ func (tp *TriggerProcessor) ensureWorkflow(ctx context.Context, parentJob *model
 			wf.PRNumber = rootWorkflow.PRNumber
 			wf.CommitSHA = rootWorkflow.CommitSHA
 		}
-		wf.EventID = parentWorkflow.EventID
+		// A child workflow keeps the event of its parent in event_id, also
+		// under a root re-run instance (rerun_event_id).
+		wf.EventID = parentWorkflow.CIEventID()
+		// A child workflow keeps the actor of its parent workflow.
+		principals.ApplyToWorkflow(wf, actorOfWorkflow(parentWorkflow))
 	} else {
 		wf.OriginJobID = &parentJobID
 		wf.OriginType = string(workflowEventType(parentJob))
 		wf.EventID = parentJob.EventID
 	}
 
+	// A workflow made from a job keeps the actor of that job (the webhook
+	// sender, the token principal, or the system principal of a schedule).
+	// The database trigger sets the same default; setting it here keeps the
+	// in-memory row correct for the events published before a re-read.
+	principals.ApplyToWorkflow(wf, actorOfJob(parentJob))
+
 	// A root workflow of a CI event posts no commit status of its own: the
 	// event's "Reactorcide Checks" status covers it. It posts an extra status
 	// only when its definition declares status.context.
-	if wf.ParentWorkflowID == nil && stringValue(wf.EventID) != "" {
+	if wf.ParentWorkflowID == nil && wf.CIEventID() != nil {
 		wf.StatusContext = ""
 		if spec != nil {
 			wf.StatusContext = workflowStatusContext(spec.StatusContext)
@@ -682,6 +698,9 @@ func (tp *TriggerProcessor) submitWorkflowNode(ctx context.Context, wf *models.W
 	if err := json.Unmarshal(specBytes, &spec); err != nil {
 		return "", admissionError(fmt.Errorf("workflow node %q has an invalid job specification: %w", node.DisplayName, err))
 	}
+	if spec.LoadError != "" {
+		return "", admissionError(fmt.Errorf("workflow node %q job_file %q could not be loaded: %s", node.DisplayName, spec.JobFile, spec.LoadError))
+	}
 	parentJob, err := tp.store.GetJobByID(ctx, derefString(wf.ParentJobID))
 	if err != nil {
 		return "", err
@@ -748,6 +767,11 @@ func (tp *TriggerProcessor) submitWorkflowNode(ctx context.Context, wf *models.W
 	if err != nil {
 		return "", admissionError(err)
 	}
+	// A re-run instance gives each job its shifts (resources and timeout
+	// only). The profile ceilings below still apply.
+	if err := applyWorkflowShifts(job, wf); err != nil {
+		return "", admissionError(fmt.Errorf("workflow node %q: %w", node.DisplayName, err))
+	}
 	// The recorded authority decides the executable CI revision, not the
 	// stored spec. This keeps a trusted node on the exact recorded base SHA
 	// and an ordinary node on the workflow decision, including on retries.
@@ -768,16 +792,56 @@ func (tp *TriggerProcessor) submitWorkflowNode(ctx context.Context, wf *models.W
 			return "", admissionError(fmt.Errorf("execution profile %q: %w", executionProfile.Name, err))
 		}
 	}
+	// A worker class can require ref classes (docs/ref-classes.md).
+	runClasses := wf.RefClasses
+	if len(runClasses) == 0 {
+		runClasses = parentJob.RefClasses
+	}
+	if err := CheckWorkerClassAdmission(ctx, tp.store, wf.OrgID, effectiveWorkerClass, runClasses, effectiveProfileName, executionProfile); err != nil {
+		return "", admissionError(fmt.Errorf("workflow node %q: %w", node.DisplayName, err))
+	}
 	job.WorkflowID = &wf.WorkflowID
+	job.CopyOwnershipFrom(wf)
 	job.WorkflowNodeID = &node.NodeID
 	runID := uuid.New().String()
 	job.WorkflowRunID = &runID
 	job.WorkflowNodeName = node.DisplayName
 	// Every job of an event's workflows carries the event.
-	job.EventID = wf.EventID
+	job.EventID = wf.CIEventID()
+	// The image alias of the job, before the queue (internal/imagealias).
+	// A node of a retry or a re-run resolves the image of the earlier run
+	// again through its alias and gets the current pin of that alias: after
+	// an alias update the old digest leaves the worker image sets.
+	if node.CarriedImageRef != nil && *node.CarriedImageRef != "" {
+		carried := imagealias.Carried{Ref: *node.CarriedImageRef, Alias: node.CarriedImageAlias, PinAlias: node.CarriedImagePinAlias}
+		if node.CarriedImageDigest != nil {
+			carried.Digest = *node.CarriedImageDigest
+		}
+		imageResult, err := imagealias.ResolveRetry(ctx, tp.store, job, carried)
+		if err != nil {
+			if _, refused := imagealias.IsRefused(err); refused {
+				return "", admissionError(fmt.Errorf("workflow node %q: %w", node.DisplayName, err))
+			}
+			return "", err
+		}
+		if imageResult.Changed {
+			logging.Log.WithFields(map[string]interface{}{
+				"workflow_id": wf.WorkflowID, "node": node.DisplayName,
+				"image": imagealias.DisplayJob(job), "retry_of_image": imageResult.Previous,
+			}).Info("Workflow retry node uses the current pin of the image alias")
+		}
+	} else if err := tp.resolveChildImage(ctx, job, spec, &authorityParent); err != nil {
+		if _, refused := imagealias.IsRefused(err); refused {
+			return "", admissionError(fmt.Errorf("workflow node %q: %w", node.DisplayName, err))
+		}
+		return "", err
+	}
 	if err := tp.resolveJobQueue(ctx, job); err != nil {
 		return "", err
 	}
+	// The lane and group shifts give the queue priority (docs/priority.md).
+	// The node records how: a reason {kind: "priority", ...}.
+	priorityDecision := priority.Assign(ctx, tp.store, job)
 	if err := tp.store.CreateJob(ctx, job); err != nil {
 		return "", err
 	}
@@ -788,6 +852,8 @@ func (tp *TriggerProcessor) submitWorkflowNode(ctx context.Context, wf *models.W
 	if len(node.DecisionReasons) > 0 {
 		node.DecisionReason = "submitted: " + models.SummarizeDecisionReasons(node.DecisionReasons)
 	}
+	// After the summary: the human summary of the node stays the same.
+	node.DecisionReasons = append(node.DecisionReasons, priorityDecision.Reason())
 	if err := ws.UpdateWorkflowNode(ctx, node); err != nil {
 		return "", err
 	}
@@ -797,6 +863,7 @@ func (tp *TriggerProcessor) submitWorkflowNode(ctx context.Context, wf *models.W
 		if err != nil {
 			job.Status = "failed"
 			job.LastError = fmt.Sprintf("failed to submit to Corndogs: %v", err)
+			job.SetFailure(models.FailureClassPlatform, "queue submission")
 			if updateErr := tp.store.UpdateJob(ctx, job); updateErr != nil {
 				return "", fmt.Errorf("failed to submit to Corndogs: %v; failed to record job failure: %w", err, updateErr)
 			}
@@ -846,13 +913,23 @@ func (tp *TriggerProcessor) ProcessWorkflowCompletion(ctx context.Context, works
 		ms := job.CompletedAt.Sub(*job.StartedAt).Milliseconds()
 		node.LastSuccessfulDurationMs = &ms
 	}
-	node.DecisionReason = fmt.Sprintf("job finished with status %s", job.Status)
+	node.DecisionReason = jobFinishedReason(job)
+	// WP15: a node with quarantine_policy ignore_quarantined succeeds when
+	// its job failed only by quarantined tests (quarantine_override.go).
+	// The job status and exit code stay as the job reported them.
+	quarantineOverride := tp.quarantineOverride(ctx, job)
+	if quarantineOverride {
+		node.Status = "completed"
+		node.DecisionReason = quarantineOverrideReason
+	}
 	if err := ws.UpdateWorkflowNode(ctx, node); err != nil {
 		return err
 	}
 	tp.recordWorkflowEvent(ctx, wf.WorkflowID, &node.NodeID, &job.JobID, "node_completed", node.DecisionReason, models.JSONB{
-		"status":    job.Status,
-		"exit_code": job.ExitCode,
+		"status":              job.Status,
+		"exit_code":           job.ExitCode,
+		"failure_class":       job.FailureClassValue(),
+		"quarantine_override": quarantineOverride,
 	})
 	_, err = tp.evaluateWorkflow(ctx, wf)
 	return err
@@ -959,11 +1036,11 @@ func (tp *TriggerProcessor) ProcessWorkflowCompletionData(ctx context.Context, d
 	now := time.Now().UTC()
 	node.Status = workflowNodeStatusFromJob(job.Status)
 	node.CompletedAt = &now
-	node.DecisionReason = fmt.Sprintf("job finished with status %s", job.Status)
+	node.DecisionReason = jobFinishedReason(job)
 	if err := ws.UpdateWorkflowNode(ctx, node); err != nil {
 		return err
 	}
-	tp.recordWorkflowEvent(ctx, wf.WorkflowID, &node.NodeID, &job.JobID, "node_completed", node.DecisionReason, models.JSONB{"status": job.Status, "exit_code": job.ExitCode})
+	tp.recordWorkflowEvent(ctx, wf.WorkflowID, &node.NodeID, &job.JobID, "node_completed", node.DecisionReason, models.JSONB{"status": job.Status, "exit_code": job.ExitCode, "failure_class": job.FailureClassValue()})
 	_, err = tp.evaluateWorkflow(ctx, wf)
 	return err
 }
@@ -1114,6 +1191,17 @@ func computeWorkflowStatus(nodes []models.WorkflowNode) string {
 	return workflowengine.ComputeStatus(workflowRuleNodes(nodes))
 }
 
+// jobFinishedReason is a finished node's decision reason. For a failure it
+// says whether the pipeline or the infrastructure failed, so a reader of the
+// workflow report knows who must act.
+func jobFinishedReason(job *models.Job) string {
+	reason := fmt.Sprintf("job finished with status %s", job.Status)
+	if text := models.FailureReportText(job.FailureClassValue()); text != "" && job.Status != "cancelled" {
+		reason += " (" + text + ")"
+	}
+	return reason
+}
+
 func workflowNodeStatusFromJob(status string) string {
 	switch status {
 	case "completed":
@@ -1259,4 +1347,20 @@ func failedReasons(reasons []models.DecisionReason) []models.DecisionReason {
 		return reasons
 	}
 	return failed
+}
+
+// actorOfJob returns the recorded actor of a job, or a zero actor.
+func actorOfJob(job *models.Job) principals.Actor {
+	if job == nil || job.ActorPrincipalID == nil {
+		return principals.Actor{}
+	}
+	return principals.Actor{PrincipalID: *job.ActorPrincipalID, Identity: job.ActorIdentity}
+}
+
+// actorOfWorkflow returns the recorded actor of a workflow, or a zero actor.
+func actorOfWorkflow(wf *models.WorkflowInstance) principals.Actor {
+	if wf == nil || wf.ActorPrincipalID == nil {
+		return principals.Actor{}
+	}
+	return principals.Actor{PrincipalID: *wf.ActorPrincipalID, Identity: wf.ActorIdentity}
 }
