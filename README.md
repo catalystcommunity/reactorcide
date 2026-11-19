@@ -16,8 +16,16 @@ git is the current implemented VCS, others may follow if needed.
 - Connect GitHub: [VCS Setup](./docs/vcs-setup.md)
 - Write repository jobs: [Job Definition Reference](./docs/job-definitions.md)
 - Understand the security boundary: [Security Model](./docs/security-model.md)
+- Keep secrets out of jobs and control job egress: [Egress
+  Proxy](./docs/egress-proxy.md)
 - Permit reviewed pull-request CI changes: [Organizations and Trusted CI
   Policy](./docs/organizations-and-ci-policy.md)
+- Make macOS or Windows VM images for jobs: [VM Images Quick
+  Start](./docs/vm-images-quickstart.md)
+- Name job images and roll out new images to workers: [Image Aliases and
+  Worker Image Sets](./docs/image-aliases.md)
+- Upgrade an installation from 0.12: [Upgrade to 0.13](./docs/upgrade-0.13.md)
+- Find a CLI command: [CLI Reference](./docs/cli-reference.md)
 
 ## Build the CLI
 

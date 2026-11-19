@@ -7,6 +7,16 @@ Expand the name of the chart.
 {{- define "web.name" -}}
 {{- default .Chart.Name .Values.nameOverride | trunc 59 | trimSuffix "-" }}{{ "web" }}
 {{- end }}
+{{- define "egress.name" -}}
+{{- default .Chart.Name .Values.nameOverride | trunc 56 | trimSuffix "-" }}{{ "-egress" }}
+{{- end }}
+{{- define "egress.selectorLabels" -}}
+app.kubernetes.io/name: {{ include "egress.name" . }}
+app.kubernetes.io/instance: {{ .Release.Name }}
+{{- end }}
+{{- define "egress.host" -}}
+{{- printf "%s.%s.svc.cluster.local" (include "egress.name" .) .Release.Namespace }}
+{{- end }}
 {{- define "worker.name" -}}
 {{- default .Chart.Name .Values.nameOverride | trunc 59 | trimSuffix "-" }}{{ "-worker" }}
 {{- end }}

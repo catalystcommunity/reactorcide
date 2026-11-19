@@ -18,6 +18,7 @@ Runnerlib provides these functions:
 - Evaluate repository job and workflow files.
 - Create follow-up job triggers.
 - Read and write workflow variables and outputs.
+- Request an OIDC token for the job (`runnerlib oidc-token`).
 
 Runnerlib does not:
 
@@ -75,6 +76,9 @@ Implemented source types are:
 - `copy`
 - `git`
 
+The CLI help also names `tarball`, `hg`, and `svn`. These types are stubs.
+They are not implemented.
+
 Runnerlib can prepare application source and CI source separately. Use this
 for a trusted CI checkout and an untrusted pull-request checkout.
 
@@ -115,6 +119,19 @@ runnerlib eval --event-type pull_request_updated --branch main
 
 Use `--help` on a command for its current arguments.
 
+`runnerlib run` gives the job command to the shell (`subprocess` with
+`shell=True`). Thus shell syntax works in the command.
+
+Eval wraps the `command` of each matched job as
+`runnerlib run --job-command '<command>'`. Thus each triggered job prepares
+its source through runnerlib before the command runs. Eval does not wrap a
+command that starts with `runnerlib `. Set `raw_command: true` in the job to
+send the command without the wrap. The wrap quotes the command as one
+argument for the shell of the job: POSIX single quotes (each `'` becomes
+`'"'"'`), or PowerShell single quotes (each `'` becomes `''`) for a job
+with `os: windows` or a PowerShell `REACTORCIDE_JOB_SHELLCMD`. Thus a
+command can contain single quotes.
+
 ## Lifecycle Hooks
 
 Plugins can run at these phases:
@@ -123,15 +140,18 @@ Plugins can run at these phases:
 2. `POST_VALIDATION`
 3. `PRE_SOURCE_PREP`
 4. `POST_SOURCE_PREP`
-5. `PRE_EXECUTION`
-6. `POST_EXECUTION`
+5. `PRE_CONTAINER`
+6. `POST_CONTAINER`
 7. `ON_ERROR`
 8. `CLEANUP`
 
-Some compatibility names use `PRE_CONTAINER` and `POST_CONTAINER`. They refer
-to the execution phase. Runnerlib does not start the outer job container.
+`PRE_CONTAINER` and `POST_CONTAINER` are the phases before and after the job
+command. The names are historical. Runnerlib does not start the outer job
+container.
 
-See [Plugin Development](./docs/plugin_development.md).
+Plugins of a run with untrusted application source come only from the
+trusted CI tree. If that tree has no plugins, no repository plugins load.
+See [Plugin Development](./docs/plugin_development.md#plugin-loading).
 
 ## Secret Masking
 
@@ -159,6 +179,13 @@ Eval matches:
 - Target branch glob
 - Changed path include and exclude globs
 
+Then eval applies the `if` block of each job (`paths`, `branches`, `events`,
+`schedule`). A job whose `if` is false becomes a skipped node with reasons.
+For the `schedule` event, eval evaluates only the workflow that
+`REACTORCIDE_WORKFLOW_REF` names. The `on` and `paths` filters of that
+workflow do not apply. See [Events, Checks, and
+Schedules](../docs/events-and-schedules.md).
+
 It resolves reusable `job_file` entries and creates complete job triggers.
 For a pull request that changes CI files, eval returns inactive base and head
 workflow candidates. The evaluation job receives a coordinator policy snapshot,
@@ -183,6 +210,7 @@ A trigger can include:
 - Condition
 - Priority and timeout
 - `for_each` values
+- Capabilities, characteristics, resources, and `run_as`
 
 Runnerlib creates one operation ID for each trigger payload. It uses the same
 ID for the API request and the local fallback file. The coordinator can then
@@ -197,6 +225,16 @@ creates requests and reads the context that the coordinator provides.
 
 See [Writing Pipelines](../docs/writing-pipelines.md) and [Workflow
 Design](../docs/workflow-design.md).
+
+## OIDC Tokens
+
+`runnerlib oidc-token --audience AUD` sends the job token to
+`POST /api/v1/oidc/token` and prints only the signed token to stdout. With
+`--output FILE`, it writes the token to a file with mode 0600. It needs
+`REACTORCIDE_COORDINATOR_URL` and `REACTORCIDE_API_TOKEN`, and HTTPS unless
+`--allow-insecure-transport` is set. It registers the token with the masker
+when the masker runs. The Python API is `src.oidc.request_token`. See
+[OIDC Tokens for Jobs](../docs/oidc.md).
 
 ## Extension Rules
 

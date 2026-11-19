@@ -9,6 +9,7 @@ import (
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/schedule"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store/models"
+	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/tokencaps"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/uiapi/csilapi"
 )
 
@@ -20,6 +21,13 @@ const (
 
 // scheduleNow is the clock for next-fire computation; tests replace it.
 var scheduleNow = func() time.Time { return time.Now().UTC() }
+
+// The token capabilities of the schedule operations. A schedule is
+// project configuration: projects:read to read, projects:manage to change.
+var (
+	scheduleReadCapabilities  = []string{tokencaps.ProjectsRead, tokencaps.ProjectsManage}
+	scheduleWriteCapabilities = []string{tokencaps.ProjectsManage}
+)
 
 func (s *UiService) scheduleStore() (store.ScheduleStore, error) {
 	ss, ok := s.deps.Store.(store.ScheduleStore)
@@ -76,7 +84,9 @@ func mapScheduleWriteErr(err error) error {
 
 // loadManagedSchedule loads a schedule and checks that the caller manages its
 // project.
-func (s *UiService) loadManagedSchedule(ctx context.Context, scheduleID string) (context.Context, *models.User, store.ScheduleStore, *models.CISchedule, error) {
+// loadManagedSchedule loads a schedule for a project owner. A token also
+// needs one of capabilities for the organization of the schedule.
+func (s *UiService) loadManagedSchedule(ctx context.Context, scheduleID string, capabilities ...string) (context.Context, *models.User, store.ScheduleStore, *models.CISchedule, error) {
 	ctx, id, user, authErr := s.deps.requireManagementIdentity(ctx)
 	if authErr != nil {
 		return ctx, nil, nil, nil, authErr
@@ -92,6 +102,9 @@ func (s *UiService) loadManagedSchedule(ctx context.Context, scheduleID string) 
 	if err != nil {
 		return ctx, nil, nil, nil, mapStoreErr(err, "schedule not found")
 	}
+	if err := requireTokenGrant(id, &sched.OrgID, capabilities...); err != nil {
+		return ctx, nil, nil, nil, err
+	}
 	if err := s.deps.Resolver.RequireProjectOwner(ctx, id, sched.ProjectID); err != nil {
 		return ctx, nil, nil, nil, mapPermissionErr(err)
 	}
@@ -106,8 +119,13 @@ func (s *UiService) ListSchedules(ctx context.Context, req csilapi.ListSchedules
 	if err := requireNonEmpty("project_id", req.ProjectId, 64); err != nil {
 		return csilapi.ListSchedulesResponse{}, err
 	}
-	if _, err := s.deps.Store.GetProjectByID(ctx, req.ProjectId); err != nil {
+	project, err := s.deps.Store.GetProjectByID(ctx, req.ProjectId)
+	if err != nil {
 		return csilapi.ListSchedulesResponse{}, mapStoreErr(err, "project not found")
+	}
+	orgID := project.OwnershipOrgID()
+	if err := requireTokenGrant(id, &orgID, scheduleReadCapabilities...); err != nil {
+		return csilapi.ListSchedulesResponse{}, err
 	}
 	if err := s.deps.Resolver.RequireProjectOwner(ctx, id, req.ProjectId); err != nil {
 		return csilapi.ListSchedulesResponse{}, mapPermissionErr(err)
@@ -138,6 +156,10 @@ func (s *UiService) CreateSchedule(ctx context.Context, req csilapi.CreateSchedu
 	project, err := s.deps.Store.GetProjectByID(ctx, req.ProjectId)
 	if err != nil {
 		return csilapi.CreateScheduleResponse{}, mapStoreErr(err, "project not found")
+	}
+	orgID := project.OwnershipOrgID()
+	if err := requireTokenGrant(id, &orgID, scheduleWriteCapabilities...); err != nil {
+		return csilapi.CreateScheduleResponse{}, err
 	}
 	if err := s.deps.Resolver.RequireProjectOwner(ctx, id, req.ProjectId); err != nil {
 		return csilapi.CreateScheduleResponse{}, mapPermissionErr(err)
@@ -182,7 +204,7 @@ func (s *UiService) CreateSchedule(ctx context.Context, req csilapi.CreateSchedu
 }
 
 func (s *UiService) UpdateSchedule(ctx context.Context, req csilapi.UpdateScheduleRequest) (csilapi.UpdateScheduleResponse, error) {
-	ctx, user, ss, sched, err := s.loadManagedSchedule(ctx, req.ScheduleId)
+	ctx, user, ss, sched, err := s.loadManagedSchedule(ctx, req.ScheduleId, scheduleWriteCapabilities...)
 	if err != nil {
 		return csilapi.UpdateScheduleResponse{}, err
 	}
@@ -236,7 +258,7 @@ func (s *UiService) UpdateSchedule(ctx context.Context, req csilapi.UpdateSchedu
 }
 
 func (s *UiService) DeleteSchedule(ctx context.Context, req csilapi.DeleteScheduleRequest) (csilapi.DeleteScheduleResponse, error) {
-	ctx, user, ss, sched, err := s.loadManagedSchedule(ctx, req.ScheduleId)
+	ctx, user, ss, sched, err := s.loadManagedSchedule(ctx, req.ScheduleId, scheduleWriteCapabilities...)
 	if err != nil {
 		return csilapi.DeleteScheduleResponse{}, err
 	}
@@ -248,7 +270,7 @@ func (s *UiService) DeleteSchedule(ctx context.Context, req csilapi.DeleteSchedu
 }
 
 func (s *UiService) ListScheduleFires(ctx context.Context, req csilapi.ListScheduleFiresRequest) (csilapi.ListScheduleFiresResponse, error) {
-	ctx, _, ss, sched, err := s.loadManagedSchedule(ctx, req.ScheduleId)
+	ctx, _, ss, sched, err := s.loadManagedSchedule(ctx, req.ScheduleId, scheduleReadCapabilities...)
 	if err != nil {
 		return csilapi.ListScheduleFiresResponse{}, err
 	}

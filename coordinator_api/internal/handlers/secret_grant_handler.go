@@ -12,6 +12,8 @@ import (
 
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/authz"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/checkauth"
+	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/egress"
+	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/refclass"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store/models"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/tokencaps"
@@ -538,6 +540,73 @@ func applySecretGrantRequest(grant *models.SecretGrant, req SecretGrantRequest) 
 		}
 		grant.CIOrigins = append([]string(nil), req.CIOrigins...)
 	}
+	if err := applySecretGrantRefClasses(grant, req); err != nil {
+		return err
+	}
+	return applySecretGrantDelivery(grant, req)
+}
+
+// applySecretGrantRefClasses sets the ref class conditions of a grant from a
+// request (docs/ref-classes.md).
+func applySecretGrantRefClasses(grant *models.SecretGrant, req SecretGrantRequest) error {
+	if req.RefClassesAny != nil {
+		if err := refclass.ValidateClasses(req.RefClassesAny); err != nil {
+			return fmt.Errorf("ref_classes_any: %w", err)
+		}
+		grant.RefClassesAny = refclass.Normalize(req.RefClassesAny)
+	}
+	if req.RefClassesNone != nil {
+		if err := refclass.ValidateClasses(req.RefClassesNone); err != nil {
+			return fmt.Errorf("ref_classes_none: %w", err)
+		}
+		grant.RefClassesNone = refclass.Normalize(req.RefClassesNone)
+	}
+	return nil
+}
+
+// applySecretGrantDelivery sets and checks the delivery mode of a grant
+// (docs/egress-proxy.md). "env" is the default. "proxy" needs at least one
+// proxy host; the job then gets a placeholder, and the egress proxy puts
+// the value in the header for those hosts only.
+func applySecretGrantDelivery(grant *models.SecretGrant, req SecretGrantRequest) error {
+	if d := strings.TrimSpace(req.Delivery); d != "" {
+		grant.Delivery = d
+	}
+	if grant.Delivery == "" {
+		grant.Delivery = models.SecretDeliveryEnv
+	}
+	if grant.Delivery != models.SecretDeliveryEnv && grant.Delivery != models.SecretDeliveryProxy {
+		return fmt.Errorf("invalid delivery %q: use %q or %q", grant.Delivery, models.SecretDeliveryEnv, models.SecretDeliveryProxy)
+	}
+	if req.ProxyHosts != nil {
+		hosts := make([]string, 0, len(req.ProxyHosts))
+		for _, h := range req.ProxyHosts {
+			h = strings.ToLower(strings.TrimSpace(h))
+			if err := egress.ValidateHostPattern(h); err != nil {
+				return err
+			}
+			hosts = append(hosts, h)
+		}
+		grant.ProxyHosts = hosts
+	}
+	if req.ProxyHeader != nil {
+		grant.ProxyHeader = strings.TrimSpace(*req.ProxyHeader)
+	}
+	if req.ProxyHeaderFormat != nil {
+		grant.ProxyHeaderFormat = *req.ProxyHeaderFormat
+	}
+	if err := egress.ValidateHeader(grant.ProxyHeader); err != nil {
+		return err
+	}
+	if err := egress.ValidateHeaderFormat(grant.ProxyHeaderFormat); err != nil {
+		return err
+	}
+	if grant.ProxyHosts == nil {
+		grant.ProxyHosts = []string{}
+	}
+	if grant.Delivery == models.SecretDeliveryProxy && len(grant.ProxyHosts) == 0 {
+		return fmt.Errorf("delivery %q needs at least one proxy_hosts entry", models.SecretDeliveryProxy)
+	}
 	return nil
 }
 
@@ -576,7 +645,13 @@ func secretGrantEquivalent(a, b models.SecretGrant) bool {
 		a.JobNamePattern == b.JobNamePattern &&
 		a.Description == b.Description &&
 		slices.Equal(a.ExecutionProfiles, b.ExecutionProfiles) &&
-		slices.Equal(a.CIOrigins, b.CIOrigins)
+		slices.Equal(a.CIOrigins, b.CIOrigins) &&
+		slices.Equal(refclass.Normalize(a.RefClassesAny), refclass.Normalize(b.RefClassesAny)) &&
+		slices.Equal(refclass.Normalize(a.RefClassesNone), refclass.Normalize(b.RefClassesNone)) &&
+		a.EffectiveDelivery() == b.EffectiveDelivery() &&
+		slices.Equal(a.ProxyHosts, b.ProxyHosts) &&
+		a.ProxyHeader == b.ProxyHeader &&
+		a.ProxyHeaderFormat == b.ProxyHeaderFormat
 }
 
 func stringPtrEqual(a, b *string) bool {

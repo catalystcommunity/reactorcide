@@ -28,6 +28,8 @@ func TestComputeEventChecks(t *testing.T) {
 			StatusPending, "Evaluating event", "w1"},
 		{"eval failed", EventChecksInput{EventStatus: "failed", EvalJobStatus: "failed"}, StatusFailure, "Eval failed", ""},
 		{"eval timed out", EventChecksInput{EvalJobStatus: "timeout"}, StatusFailure, "Eval timed out", ""},
+		{"eval refused at creation", EventChecksInput{EventStatus: "failed", SkipKind: "image_alias", SkipReason: `eval job not created: image alias "win" is for os "windows"`},
+			StatusFailure, `eval job not created: image alias "win" is for os "windows"`, ""},
 		{"eval cancelled", EventChecksInput{EvalJobStatus: "cancelled"}, StatusFailure, "Eval cancelled", ""},
 		{"event failed without a job status", EventChecksInput{EventStatus: "failed"}, StatusFailure, "Eval failed", ""},
 		{"no workflow matched", EventChecksInput{EventStatus: "evaluated", EvalJobStatus: "completed"}, StatusSuccess, "No workflows to run", ""},
@@ -303,6 +305,33 @@ func TestPublishEventChecksCountsNotAdmittedDecisions(t *testing.T) {
 	}
 	got := client.last()
 	if got.State != StatusFailure || got.Description != "2 of 2 workflows failed: build, deploy (not admitted)" {
+		t.Fatalf("status = %+v", got)
+	}
+}
+
+// A required workflow that the trusted base definition matched, but that did
+// not run (the head renamed or removed it), fails the checks.
+func TestPublishEventChecksFailsRequiredBaseWorkflowThatDidNotRun(t *testing.T) {
+	updater, fake, client := newChecksFixture()
+	fake.jobs["eval-job"].Status = "completed"
+	fake.workflows = []models.WorkflowInstance{{WorkflowID: "wf-1", Name: "lint", WorkflowSecurityID: "lint", Status: "success"}}
+	base := models.DecisionReason{Kind: models.DecisionReasonBaseDefinition}
+	fake.decisions = []models.CIEventWorkflowDecision{
+		{WorkflowSecurityID: "lint", WorkflowName: "lint", Decision: models.WorkflowDecisionRun, Reasons: []models.DecisionReason{base}},
+		{WorkflowSecurityID: "security-scan", WorkflowName: "security scan", Decision: models.WorkflowDecisionSkipped,
+			Reasons: []models.DecisionReason{base, {Kind: "admission", Detail: "not selected for this event"}}},
+		// Path acceptance skips on purpose; a carried workflow ran earlier.
+		{WorkflowSecurityID: "docs", WorkflowName: "docs", Decision: models.WorkflowDecisionSkipped,
+			Reasons: []models.DecisionReason{base, {Kind: "path_acceptance"}}},
+		{WorkflowSecurityID: "e2e", WorkflowName: "e2e", Decision: models.WorkflowDecisionCarried, Reasons: []models.DecisionReason{base}},
+		// No base marker (a push, or a head view): not counted.
+		{WorkflowSecurityID: "bench", WorkflowName: "bench", Decision: models.WorkflowDecisionSkipped},
+	}
+	if err := updater.PublishEventChecks(context.Background(), testEventID); err != nil {
+		t.Fatal(err)
+	}
+	got := client.last()
+	if got.State != StatusFailure || got.Description != "1 of 2 workflows failed: required workflow security scan did not run" {
 		t.Fatalf("status = %+v", got)
 	}
 }

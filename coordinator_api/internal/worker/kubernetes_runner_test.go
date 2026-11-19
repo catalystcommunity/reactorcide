@@ -607,3 +607,37 @@ func TestKubernetesRunnerImagePullSecrets_InvalidNamesRejected(t *testing.T) {
 		}
 	}
 }
+
+// A job that is not in a workflow gets the reader container when it has
+// artifacts, so the worker can read /job/artifacts. A job with neither has
+// no reader container.
+func TestKubernetesRunnerAddsReaderForStandaloneArtifacts(t *testing.T) {
+	for name, tc := range map[string]struct {
+		env  map[string]string
+		want int
+	}{
+		"artifacts":       {env: map[string]string{kubernetesArtifactsDirEnv: "/job/artifacts"}, want: 2},
+		"no artifacts":    {env: map[string]string{}, want: 1},
+		"workflow output": {env: map[string]string{"RC_WF_OUTPUT_FILE": "/job/workflow-output.json"}, want: 2},
+	} {
+		t.Run(name, func(t *testing.T) {
+			clientset := fake.NewSimpleClientset()
+			runner := &KubernetesRunner{clientset: clientset, namespace: "reactorcide", serviceAccount: "default", dindImage: "docker:27-dind"}
+			if _, err := runner.SpawnJob(context.Background(), &JobConfig{JobID: "standalone-job", Image: "reactorcide/runnerbase:test",
+				Command: []string{"sh", "-c", "echo ok"}, Env: tc.env, WorkingDir: "/job"}); err != nil {
+				t.Fatalf("SpawnJob failed: %v", err)
+			}
+			jobs, err := clientset.BatchV1().Jobs("reactorcide").List(context.Background(), metav1.ListOptions{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			containers := jobs.Items[0].Spec.Template.Spec.Containers
+			if len(containers) != tc.want {
+				t.Fatalf("containers = %d, want %d", len(containers), tc.want)
+			}
+			if tc.want == 2 && containers[1].Name != kubernetesWorkflowOutputReader {
+				t.Fatalf("second container = %q", containers[1].Name)
+			}
+		})
+	}
+}

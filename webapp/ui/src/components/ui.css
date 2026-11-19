@@ -347,6 +347,12 @@ list-box {
   gap: var(--space-1);
   border-bottom: 1px solid var(--border);
   margin-bottom: var(--space-4);
+  /* Many tabs scroll at phone width instead of widening the page. */
+  overflow-x: auto;
+}
+.tab {
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 .tab {
   padding: var(--space-2) var(--space-3);
@@ -426,4 +432,18 @@ list-box {
 .user-picker-option-selected,
 .user-picker-option-selected:hover {
   background: var(--info-soft);
+}
+
+/* The owner view: the label stays on the line of its value. Inside a
+   definition list the item already has the label "Owner". */
+.owner .field-label {
+  display: inline;
+}
+.grid-dl .owner .owner-label {
+  display: none;
+}
+
+/* An "Add ..." button under a list of rows keeps space from what follows. */
+push-button.rc-add-row {
+  margin-bottom: var(--space-4);
 }

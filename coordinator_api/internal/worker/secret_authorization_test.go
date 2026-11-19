@@ -13,6 +13,12 @@ type secretGrantMockStore struct {
 	grants          []models.SecretGrant
 	expectedOrgID   string
 	expectedProject string
+	// projectDisabled makes the project of the job disabled.
+	projectDisabled bool
+}
+
+func (s *secretGrantMockStore) GetProjectByID(_ context.Context, projectID string) (*models.Project, error) {
+	return &models.Project{ProjectID: projectID, Enabled: !s.projectDisabled}, nil
 }
 
 func (s *secretGrantMockStore) ListSecretGrantsForJob(ctx context.Context, userID string, projectID *string, jobName string) ([]models.SecretGrant, error) {
@@ -173,4 +179,24 @@ func TestAuthorizeSecretAccess_RequiresOrganizationProjectProfileAndProvenance(t
 	job.ExecutionProfile = "standard"
 	job.CIOrigin = "head"
 	require.Error(t, AuthorizeSecretAccess(context.Background(), grantStore, job, "deploy/production/db", "password"))
+}
+
+// An org-wide grant does not reach a job of a disabled project (for example
+// a project that a GitHub App registered and that waits for approval). A
+// grant of the project itself still applies.
+func TestAuthorizeSecretAccess_OrgWideGrantSkipsDisabledProject(t *testing.T) {
+	projectID := "project-1"
+	job := &models.Job{JobID: "job-1", OrgID: "org-1", ProjectID: &projectID, Name: "build"}
+	orgWide := models.SecretGrant{GrantID: "grant-org", Name: "org-wide", SecretPathMatch: models.SecretGrantMatchPrefix,
+		SecretPathPattern: "shared"}
+	grantStore := &secretGrantMockStore{grants: []models.SecretGrant{orgWide}}
+	require.NoError(t, AuthorizeSecretAccess(context.Background(), grantStore, job, "shared/npm", "token"))
+
+	grantStore.projectDisabled = true
+	require.Error(t, AuthorizeSecretAccess(context.Background(), grantStore, job, "shared/npm", "token"))
+
+	projectGrant := orgWide
+	projectGrant.GrantID, projectGrant.ProjectID = "grant-project", &projectID
+	grantStore.grants = append(grantStore.grants, projectGrant)
+	require.NoError(t, AuthorizeSecretAccess(context.Background(), grantStore, job, "shared/npm", "token"))
 }

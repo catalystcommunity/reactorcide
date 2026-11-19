@@ -25,12 +25,14 @@ export const NAV: readonly NavEntry[] = [
   { path: '/', label: 'Workflows', visible: () => true },
   { path: '/jobs', label: 'Jobs', visible: () => true },
   { path: '/projects', label: 'Projects', visible: () => true },
+  { path: '/insights', label: 'Insights', visible: () => true },
   // Management links show for anyone who administers SOME organization. The
   // session's capability set is the global scope, which is all-false for an
   // org admin, so it cannot drive these; the roles on the identity can. Each
   // page then picks the org.
   { path: '/org/roles', label: 'Access', visible: () => canManageSomeOrg(session()) },
   { path: '/org/secrets', label: 'Secrets', visible: () => canManageSomeOrg(session()) },
+  { path: '/org/images', label: 'Images', visible: () => canManageSomeOrg(session()) },
   // Pools, workers and queues are instance-wide and the coordinator requires
   // a global admin for them, so an org admin would land on a refusal. Worker
   // classes are org-scoped, so an org admin gets that link instead.

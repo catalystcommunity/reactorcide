@@ -43,6 +43,26 @@ def schedule_reason_from_env(environ: Optional[Mapping[str, str]] = None) -> Dic
     return reason
 
 
+def selection_reason_from_env(event_type: str, workflow_ref: str,
+                              environ: Optional[Mapping[str, str]] = None) -> Dict:
+    """Build the reason of a workflow that REACTORCIDE_WORKFLOW_REF selected.
+
+    A schedule fire gets the ``schedule`` reason. A manual run on a ref (the
+    coordinator sets REACTORCIDE_EVENT_SOURCE=manual) that names one workflow
+    gets an ``event`` reason that says a manual run selected it.
+    """
+    env = os.environ if environ is None else environ
+    if event_type == SCHEDULE_EVENT or (env.get("REACTORCIDE_EVENT_SOURCE") or "").strip() != "manual":
+        return schedule_reason_from_env(env)
+    return {
+        "kind": "event",
+        "matched": True,
+        "value": "manual",
+        "patterns": ["manual"],
+        "detail": f"a manual run selected workflow '{workflow_ref}'",
+    }
+
+
 def _relative(path_value: Optional[str], root: Path) -> str:
     if not path_value:
         return ""

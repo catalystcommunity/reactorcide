@@ -79,6 +79,8 @@ func (s *UiService) GetJobResourceHistory(ctx context.Context, req csilapi.GetJo
 		Name:      job.Name,
 		Runs:      make([]csilapi.JobRunResourceSummary, 0, len(runs)),
 		Pending:   int64(pending),
+		// Suggest reads the runs newest first, as the store returns them.
+		Suggestion: resourceSuggestionToCsil(resourcehistory.Suggest(runs)),
 	}
 	// The store returns newest first; the response is oldest first. A run
 	// with no current summary is left out: it is counted in pending.

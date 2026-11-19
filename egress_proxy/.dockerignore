@@ -1,0 +1,6 @@
+target/
+**/target/
+plugins/
+tests/
+testdata/
+*.md

@@ -23,17 +23,32 @@ Plugins can hook into the following phases:
 
 Runnerlib loads built-in plugins first.
 
-For `runnerlib run`, it then searches for `.reactorcide/plugins`:
+For `runnerlib run`, it then searches for `.reactorcide/plugins`. The
+search depends on the trust of the application source.
 
-1. Runnerlib uses the trusted CI source directory when that directory has
-   plugins.
-2. If the trusted CI source does not have plugins, runnerlib uses the
-   application source directory.
-3. Runnerlib also loads the directory from `--plugin-dir` when you set that
-   option.
+The application source is untrusted when the run has a separate trusted CI
+tree (a prepared CI checkout, `REACTORCIDE_CI_SOURCE_DIR`, or
+`REACTORCIDE_CI_SOURCE_TYPE`), or when `REACTORCIDE_IS_FORK_PR` is `true`.
+The coordinator gives each eval job and each workflow job a CI tree.
+`run-local` gives each job a CI tree at `/job/ci`.
 
-Runnerlib does not load application source plugins when trusted CI plugins
-exist. This rule prevents a pull request from changing the CI lifecycle code.
+For a run with untrusted application source:
+
+1. Runnerlib uses the plugins of the prepared trusted CI checkout.
+2. If that checkout has no plugins, runnerlib examines the directory in
+   `REACTORCIDE_CI_SOURCE_DIR`.
+3. If neither has plugins, runnerlib loads no repository plugins. It never
+   loads the plugins of the application source. A fork pull request cannot
+   add or change CI lifecycle code.
+
+For a run with no separate CI tree and no fork pull request, the
+application source is the trusted CI. Runnerlib then uses the plugins of
+the application source directory.
+
+Runnerlib also loads the directory of `--plugin-dir` and of
+`REACTORCIDE_PLUGIN_DIR` when you set them. For a run with untrusted
+application source, runnerlib refuses such a directory when it is in the
+application source and not in a trusted CI tree.
 
 Plugin file names must start with `plugin_` and must end with `.py`.
 
@@ -296,7 +311,7 @@ def test_plugin_with_job_execution():
 Set log level to debug:
 
 ```bash
-export REACTORCIDE_LOG_LEVEL=DEBUG
+export LOG_LEVEL=DEBUG
 ```
 
 ### Test in Dry-Run Mode
@@ -353,13 +368,13 @@ cp plugin_*.py /path/to/plugins/
 runnerlib run --plugin-dir /path/to/plugins
 ```
 
-2. Using environment variable:
-```bash
-export REACTORCIDE_PLUGIN_DIR=/path/to/plugins
-runnerlib run
-```
+2. Putting them in `.reactorcide/plugins` of the trusted CI source. See
+   [Plugin Loading](#plugin-loading).
 
 3. Adding to built-in plugins (for system-wide deployment)
+
+You can also set `REACTORCIDE_PLUGIN_DIR`. The trust rules of
+[Plugin Loading](#plugin-loading) apply to both.
 
 ## Security Considerations
 

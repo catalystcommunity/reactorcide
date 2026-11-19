@@ -31,4 +31,10 @@ var flags = []cli.Flag{
 		EnvVars:     []string{"REACTORCIDE_PORT", "PORT"},
 		Destination: &config.Port,
 	},
+	&cli.BoolFlag{
+		Name: "allow-insecure-transport",
+		Usage: "Development only: permit HTTP for federation issuer JWKS and discovery fetches, " +
+			"an HTTP OIDC issuer URL, and HTTP outbound event webhooks. Never use it in production.",
+		Destination: &config.AllowInsecureTransport,
+	},
 }

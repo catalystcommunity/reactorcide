@@ -29,7 +29,124 @@ func dialProxy(t *testing.T, server *httptest.Server, sessionToken string) (*web
 	if sessionToken != "" {
 		header.Set("Cookie", sessionCookieName+"="+sessionToken)
 	}
+	// A browser sends the origin of the page: the webapp itself.
+	header.Set("Origin", server.URL)
 	return websocket.DefaultDialer.Dial("ws"+strings.TrimPrefix(server.URL, "http"), header)
+}
+
+// dialProxyWith opens a connection with an explicit Origin ("" for none).
+func dialProxyWith(server *httptest.Server, origin, sessionToken string) (*websocket.Conn, *http.Response, error) {
+	header := http.Header{}
+	if sessionToken != "" {
+		header.Set("Cookie", sessionCookieName+"="+sessionToken)
+	}
+	if origin != "" {
+		header.Set("Origin", origin)
+	}
+	return websocket.DefaultDialer.Dial("ws"+strings.TrimPrefix(server.URL, "http"), header)
+}
+
+// echoUpstream is a coordinator stream that records the Authorization of
+// each handshake, refuses the credentials in refuse with 401, and sends one
+// event.
+func echoUpstream(t *testing.T, refuse map[string]bool) (*httptest.Server, chan string) {
+	t.Helper()
+	seen := make(chan string, 4)
+	upgrader := websocket.Upgrader{CheckOrigin: func(*http.Request) bool { return true }}
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		auth := r.Header.Get("Authorization")
+		seen <- auth
+		if refuse[auth] {
+			http.Error(w, "invalid or expired token", http.StatusUnauthorized)
+			return
+		}
+		conn, err := upgrader.Upgrade(w, r, nil)
+		if err != nil {
+			return
+		}
+		defer conn.Close()
+		_ = conn.WriteMessage(websocket.TextMessage, []byte(`{"type":"job_update","job_id":"public"}`))
+	}))
+	t.Cleanup(upstream.Close)
+	return upstream, seen
+}
+
+func newProxyServer(t *testing.T) *httptest.Server {
+	t.Helper()
+	proxy := NewWSProxy()
+	proxy.logger.SetOutput(io.Discard)
+	server := httptest.NewServer(http.HandlerFunc(proxy.UIStream))
+	t.Cleanup(server.Close)
+	return server
+}
+
+// TestWSProxyOriginCheck: only the origin of the webapp may open the socket
+// with the session cookie (cross-site WebSocket hijacking).
+func TestWSProxyOriginCheck(t *testing.T) {
+	upstream, _ := echoUpstream(t, nil)
+	withUpstreamWS(t, upstream)
+	server := newProxyServer(t)
+	status := func(resp *http.Response) int {
+		if resp == nil {
+			return 0
+		}
+		return resp.StatusCode
+	}
+
+	conn, _, err := dialProxyWith(server, server.URL, "session")
+	if err != nil {
+		t.Fatalf("same origin refused: %v", err)
+	}
+	conn.Close()
+
+	_, resp, err := dialProxyWith(server, "https://attacker.example", "session")
+	if err == nil || status(resp) != http.StatusForbidden {
+		t.Fatalf("foreign origin: err %v status %d, want 403", err, status(resp))
+	}
+
+	// A sibling subdomain of the webapp host is another origin.
+	sibling := strings.Replace(server.URL, "127.0.0.1", "evil.127.0.0.1.nip.io", 1)
+	_, resp, err = dialProxyWith(server, sibling, "session")
+	if err == nil || status(resp) != http.StatusForbidden {
+		t.Fatalf("sibling subdomain: err %v status %d, want 403", err, status(resp))
+	}
+
+	conn, _, err = dialProxyWith(server, "", "")
+	if err != nil {
+		t.Fatalf("no origin and no cookie (a non-browser client) refused: %v", err)
+	}
+	conn.Close()
+
+	_, resp, err = dialProxyWith(server, "", "session")
+	if err == nil || status(resp) != http.StatusForbidden {
+		t.Fatalf("no origin with a session cookie: err %v status %d, want 403", err, status(resp))
+	}
+}
+
+// TestWSProxyExpiredSessionGetsTheAnonymousStream: when the coordinator
+// refuses the session, the proxy connects again without it, so a logged-out
+// browser keeps the public stream.
+func TestWSProxyExpiredSessionGetsTheAnonymousStream(t *testing.T) {
+	upstream, seen := echoUpstream(t, map[string]bool{"Bearer expired": true})
+	withUpstreamWS(t, upstream)
+	server := newProxyServer(t)
+
+	conn, resp, err := dialProxy(t, server, "expired")
+	if err != nil {
+		code := 0
+		if resp != nil {
+			code = resp.StatusCode
+		}
+		t.Fatalf("expired session: dial failed with status %d: %v", code, err)
+	}
+	defer conn.Close()
+	if first, second := <-seen, <-seen; first != "Bearer expired" || second != "" {
+		t.Fatalf("upstream handshakes = %q then %q, want the session then no credential", first, second)
+	}
+	_, message, err := conn.ReadMessage()
+	if err != nil || !strings.Contains(string(message), `"job_id":"public"`) {
+		t.Fatalf("anonymous stream message = %q, err %v", message, err)
+	}
 }
 
 func TestWSProxyRejectsBrowserUpgradeWhenUpstreamRejects(t *testing.T) {

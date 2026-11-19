@@ -156,6 +156,8 @@ func (ps PostgresDbStore) GetPoolEnrollmentTokenByID(ctx context.Context, tokenI
 func (ps PostgresDbStore) ListPoolEnrollmentTokens(ctx context.Context, poolID string) ([]models.PoolEnrollmentToken, error) {
 	var tokens []models.PoolEnrollmentToken
 	if err := ps.getDB(ctx).
+		Select("pool_enrollment_tokens.*, (SELECT count(*) FROM workers w WHERE w.enrollment_token_id = pool_enrollment_tokens.token_id AND "+
+			activeWorkerSessionSQL("w")+") AS active_worker_count", time.Now().UTC()).
 		Where("pool_id = ?", poolID).
 		Order("created_at DESC").
 		Find(&tokens).Error; err != nil {
@@ -295,6 +297,12 @@ func (ps PostgresDbStore) UpsertWorkerByKey(ctx context.Context, worker *models.
 	existing.Arch = worker.Arch
 	existing.Characteristics = worker.Characteristics
 	existing.WorkerVersion = worker.WorkerVersion
+	// A worker that registers again with no runtime (an older binary) is
+	// no longer image aware.
+	existing.ImageRuntime = worker.ImageRuntime
+	if worker.EnrollmentTokenID != nil {
+		existing.EnrollmentTokenID = worker.EnrollmentTokenID
+	}
 	if worker.Status != "" {
 		existing.Status = worker.Status
 	}
@@ -357,10 +365,17 @@ func (ps PostgresDbStore) ListWorkersByPool(ctx context.Context, poolID string) 
 // ListWorkersByPool's signature, since RequestJob's matching path and any
 // other existing caller of ListWorkersByPool always has a concrete pool in
 // hand.
+//
+// Each worker also gets the name and the state of its enrollment token, and
+// whether it has an active session (models.Worker read-only values).
 func (ps PostgresDbStore) ListWorkers(ctx context.Context, poolID *string) ([]models.Worker, error) {
-	query := ps.getDB(ctx).Order("created_at DESC")
+	query := ps.getDB(ctx).
+		Select("workers.*, t.name AS enrollment_token_name, t.is_active AS enrollment_token_active, "+
+			activeWorkerSessionSQL("workers")+" AS has_active_session", time.Now().UTC()).
+		Joins("LEFT JOIN pool_enrollment_tokens t ON t.token_id = workers.enrollment_token_id").
+		Order("workers.created_at DESC")
 	if poolID != nil {
-		query = query.Where("pool_id = ?", *poolID)
+		query = query.Where("workers.pool_id = ?", *poolID)
 	}
 
 	var workers []models.Worker
@@ -368,6 +383,13 @@ func (ps PostgresDbStore) ListWorkers(ctx context.Context, poolID *string) ([]mo
 		return nil, fmt.Errorf("failed to list workers: %w", err)
 	}
 	return workers, nil
+}
+
+// activeWorkerSessionSQL is an EXISTS test for an active session of the
+// worker in table alias alias. It takes one argument: the current UTC time.
+func activeWorkerSessionSQL(alias string) string {
+	return "EXISTS (SELECT 1 FROM worker_sessions s WHERE s.worker_id = " + alias +
+		".worker_id AND s.revoked_at IS NULL AND s.expires_at > ?)"
 }
 
 // UpdateWorkerStatus sets a worker's status (active/quarantined/disabled) --

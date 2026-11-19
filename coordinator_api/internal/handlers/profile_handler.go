@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/audit"
+	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/cachens"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store/models"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/tokencaps"
@@ -83,6 +84,10 @@ func (h *ProfileHandler) ServeHTTP(w http.ResponseWriter, r *http.Request, orgNa
 		profile.CreatedAt = time.Time{}
 		profile.UpdatedAt = time.Time{}
 		profile.Name = strings.TrimSpace(profile.Name)
+		if err := cachens.NormalizeProfile(&profile); err != nil {
+			h.respondWithJSON(w, http.StatusBadRequest, ErrorResponse{Error: "invalid_input", Message: err.Error()})
+			return
+		}
 		if err := h.store.CreateExecutionProfile(r.Context(), &profile); err != nil {
 			h.respondWithError(w, 400, err)
 			return
@@ -105,6 +110,10 @@ func (h *ProfileHandler) ServeHTTP(w http.ResponseWriter, r *http.Request, orgNa
 		profile.Name = profileName
 		profile.ProfileID = profileID
 		profile.CreatedAt = createdAt
+		if err := cachens.NormalizeProfile(profile); err != nil {
+			h.respondWithJSON(w, http.StatusBadRequest, ErrorResponse{Error: "invalid_input", Message: err.Error()})
+			return
+		}
 		if err := h.store.UpdateExecutionProfile(r.Context(), profile); err != nil {
 			h.respondWithError(w, 400, err)
 			return

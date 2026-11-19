@@ -1,0 +1,52 @@
+[package]
+name = "reactorcide-egress"
+version = "0.1.0"
+edition = "2024"
+publish = false
+license = "Apache-2.0"
+
+[lib]
+name = "reactorcide_egress"
+path = "src/lib.rs"
+
+[[bin]]
+name = "reactorcide-egress"
+path = "src/main.rs"
+
+[dependencies]
+anyhow = "1.0.104"
+axum = "0.8.9"
+base64 = "0.22"
+bytes = "1.12.1"
+ciborium = "0.2.2"
+flate2 = "1.1.10"
+hex = "0.4.3"
+hmac = "0.12"
+http = "1.5.0"
+http-body-util = { version = "0.1.5", features = ["channel"] }
+hyper = { version = "1.12.0", features = ["server", "client", "http1"] }
+hyper-rustls = { version = "0.27.10", default-features = false, features = ["ring", "http1", "tls12", "logging", "webpki-roots"] }
+hyper-util = { version = "0.1.21", features = ["tokio", "client-legacy", "http1"] }
+rand = "0.9"
+rcgen = { version = "0.14.10", default-features = false, features = ["pem", "x509-parser", "ring"] }
+regex = "1.13.1"
+russh = { version = "0.65.0", default-features = false, features = ["ring"] }
+rustls = { version = "0.23.46", default-features = false, features = ["ring", "std", "tls12", "logging"] }
+rustls-pemfile = "2.2.0"
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.154"
+sha2 = "0.10"
+tokio = { version = "1.54.1", features = ["macros", "rt-multi-thread", "signal", "sync", "time", "net", "io-util"] }
+tokio-rustls = { version = "0.26.6", default-features = false, features = ["ring", "tls12", "logging"] }
+tracing = "0.1.44"
+tracing-subscriber = { version = "0.3.23", features = ["json", "env-filter"] }
+wasmtime = "50.0.1"
+wasmtime-wasi = "50.0.1"
+webpki-roots = "1.0.11"
+
+[profile.release]
+strip = true
+
+[dev-dependencies]
+tempfile = "3.27.0"
+x509-parser = "0.18"

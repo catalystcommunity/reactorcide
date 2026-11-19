@@ -13,7 +13,9 @@ import (
 	"time"
 
 	"github.com/catalystcommunity/app-utils-go/logging"
+	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/imagealias"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/secrets"
+	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store/models"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/worker"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/workerclient"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/workerclient/csilapi"
@@ -40,7 +42,29 @@ type trackedLease struct {
 	graceSeconds int64
 	timing       worker.ExecutionTiming
 	cancelWait   context.CancelFunc
-	outcome      string // "", "cancel", "kill"
+	outcome      string // "", "cancel", "kill", "timeout"
+	// waitDone is set when WaitForCompletion returned. A timeout that
+	// fires after that point does not apply: completion wins.
+	waitDone bool
+}
+
+// markTimeout sets the outcome "timeout" when no other outcome is set and
+// WaitForCompletion has not yet returned. It reports whether it set it.
+func (t *trackedLease) markTimeout() bool {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if t.waitDone || t.outcome != "" {
+		return false
+	}
+	t.outcome = "timeout"
+	return true
+}
+
+// markWaitDone records that WaitForCompletion returned.
+func (t *trackedLease) markWaitDone() {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.waitDone = true
 }
 
 func (t *trackedLease) setOutcome(outcome string) (prior string) {
@@ -66,6 +90,9 @@ func (t *trackedLease) getOutcome() string {
 type leaseTracker struct {
 	mu    sync.Mutex
 	items map[string]*trackedLease
+	// images is the image set manager (imageset.go), or nil. The
+	// heartbeat sends its report, and a lease marks its image as in use.
+	images *imageSetManager
 }
 
 func newLeaseTracker() *leaseTracker {
@@ -122,6 +149,9 @@ func runLease(c client, runner worker.JobRunner, lease csilapi.Lease, tracker *l
 	tl := &trackedLease{jobID: lease.JobId, graceSeconds: lease.CancelGraceSeconds}
 	tracker.add(lease.LeaseId, tl)
 	defer tracker.remove(lease.LeaseId)
+	// The job uses the pinned reference of the lease unchanged. Mark its
+	// digest as in use, so that the image set removal skips it.
+	defer tracker.images.use(lease.Image)()
 
 	masker := secrets.NewMasker()
 
@@ -159,14 +189,14 @@ func runLease(c client, runner worker.JobRunner, lease csilapi.Lease, tracker *l
 	if cfg.WorkspaceRoot != "" {
 		if err := os.MkdirAll(cfg.WorkspaceRoot, 0o755); err != nil {
 			logger.WithError(err).Error("failed to create lease workspace root")
-			reportResult(c, cfg, lease.LeaseId, 1, "failed", "failed to create workspace root: "+err.Error())
+			reportPlatformFailure(c, cfg, lease.LeaseId, "failed to create workspace root: "+err.Error())
 			return
 		}
 	}
 	workspaceDir, err := os.MkdirTemp(cfg.WorkspaceRoot, "reactorcide-worker-lease-*")
 	if err != nil {
 		logger.WithError(err).Error("failed to create lease workspace directory")
-		reportResult(c, cfg, lease.LeaseId, 1, "failed", "failed to create workspace: "+err.Error())
+		reportPlatformFailure(c, cfg, lease.LeaseId, "failed to create workspace: "+err.Error())
 		return
 	}
 	// workspaceDir (and any VCS auth credential material written under it
@@ -185,7 +215,7 @@ func runLease(c client, runner worker.JobRunner, lease csilapi.Lease, tracker *l
 	wsUID, wsGID := authFileOwner(lease.RunAsUser)
 	if err := makeWritableFor(workspaceDir, wsUID, wsGID); err != nil {
 		logger.WithError(err).Error("failed to make lease workspace accessible to job uid")
-		reportResult(c, cfg, lease.LeaseId, 1, "failed", "failed to prepare workspace permissions: "+err.Error())
+		reportPlatformFailure(c, cfg, lease.LeaseId, "failed to prepare workspace permissions: "+err.Error())
 		return
 	}
 
@@ -207,12 +237,12 @@ func runLease(c client, runner worker.JobRunner, lease csilapi.Lease, tracker *l
 		codeDir := filepath.Join(workspaceDir, rel)
 		if err := os.MkdirAll(codeDir, 0o755); err != nil {
 			logger.WithError(err).Error("failed to pre-create job code dir")
-			reportResult(c, cfg, lease.LeaseId, 1, "failed", "failed to prepare code dir: "+err.Error())
+			reportPlatformFailure(c, cfg, lease.LeaseId, "failed to prepare code dir: "+err.Error())
 			return
 		}
 		if err := makeWritableFor(codeDir, wsUID, wsGID); err != nil {
 			logger.WithError(err).Error("failed to make job code dir writable")
-			reportResult(c, cfg, lease.LeaseId, 1, "failed", "failed to prepare code dir: "+err.Error())
+			reportPlatformFailure(c, cfg, lease.LeaseId, "failed to prepare code dir: "+err.Error())
 			return
 		}
 	}
@@ -221,12 +251,12 @@ func runLease(c client, runner worker.JobRunner, lease csilapi.Lease, tracker *l
 		homeDir := filepath.Join(ctlDir, "home")
 		if err := os.MkdirAll(homeDir, 0o755); err != nil {
 			logger.WithError(err).Error("failed to create control home dir")
-			reportResult(c, cfg, lease.LeaseId, 1, "failed", "failed to prepare home dir: "+err.Error())
+			reportPlatformFailure(c, cfg, lease.LeaseId, "failed to prepare home dir: "+err.Error())
 			return
 		}
 		if err := makeWritableFor(homeDir, wsUID, wsGID); err != nil {
 			logger.WithError(err).Error("failed to make control home dir writable")
-			reportResult(c, cfg, lease.LeaseId, 1, "failed", "failed to prepare home dir: "+err.Error())
+			reportPlatformFailure(c, cfg, lease.LeaseId, "failed to prepare home dir: "+err.Error())
 			return
 		}
 		passwdFile := filepath.Join(ctlDir, "passwd")
@@ -239,12 +269,12 @@ func runLease(c client, runner worker.JobRunner, lease csilapi.Lease, tracker *l
 		group := fmt.Sprintf("root:x:0:\nreactorcide:x:1001:\nrunner:x:%d:\n", wsGID)
 		if err := os.WriteFile(passwdFile, []byte(passwd), 0o644); err != nil {
 			logger.WithError(err).Error("failed to write synthetic passwd")
-			reportResult(c, cfg, lease.LeaseId, 1, "failed", "failed to prepare passwd: "+err.Error())
+			reportPlatformFailure(c, cfg, lease.LeaseId, "failed to prepare passwd: "+err.Error())
 			return
 		}
 		if err := os.WriteFile(groupFile, []byte(group), 0o644); err != nil {
 			logger.WithError(err).Error("failed to write synthetic group")
-			reportResult(c, cfg, lease.LeaseId, 1, "failed", "failed to prepare group: "+err.Error())
+			reportPlatformFailure(c, cfg, lease.LeaseId, "failed to prepare group: "+err.Error())
 			return
 		}
 		extraMounts = append(extraMounts,
@@ -263,7 +293,7 @@ func runLease(c client, runner worker.JobRunner, lease csilapi.Lease, tracker *l
 	vcsAuth, err := prepareVCSAuth(lease.VcsAuth, workspaceDir, lease.RunAsUser, masker)
 	if err != nil {
 		logger.WithError(err).Error("failed to prepare VCS checkout auth")
-		reportResult(c, cfg, lease.LeaseId, 1, "failed", "failed to prepare VCS checkout auth: "+err.Error())
+		reportPlatformFailure(c, cfg, lease.LeaseId, "failed to prepare VCS checkout auth: "+err.Error())
 		return
 	}
 	if vcsAuth != nil {
@@ -274,24 +304,54 @@ func runLease(c client, runner worker.JobRunner, lease csilapi.Lease, tracker *l
 	}
 
 	jobConfig := &worker.JobConfig{
-		Image:            lease.Image,
-		Command:          lease.Command,
-		Env:              env,
-		WorkspaceDir:     workspaceDir,
-		WorkingDir:       lease.WorkingDir,
-		Capabilities:     append([]string{}, lease.Capabilities...),
-		ImagePullSecrets: append([]string{}, lease.ImagePullSecrets...),
-		RunAsUser:        lease.RunAsUser,
-		ExtraMounts:      extraMounts,
-		VCSAuth:          vcsAuth,
-		TimeoutSeconds:   int(lease.TimeoutSeconds),
-		CPURequest:       lease.Resources.CpuRequest,
-		CPULimit:         lease.Resources.CpuLimit,
-		MemoryLimit:      lease.Resources.MemoryLimit,
-		JobID:            lease.JobId,
+		Image:              lease.Image,
+		Command:            lease.Command,
+		Env:                env,
+		WorkspaceDir:       workspaceDir,
+		WorkingDir:         lease.WorkingDir,
+		Capabilities:       append([]string{}, lease.Capabilities...),
+		ImagePullSecrets:   append([]string{}, lease.ImagePullSecrets...),
+		RunAsUser:          lease.RunAsUser,
+		RunAsAdministrator: copyOptionalBool(lease.RunAsAdministrator),
+		ExtraMounts:        extraMounts,
+		VCSAuth:            vcsAuth,
+		TimeoutSeconds:     int(lease.TimeoutSeconds),
+		CPURequest:         lease.Resources.CpuRequest,
+		CPULimit:           lease.Resources.CpuLimit,
+		MemoryLimit:        lease.Resources.MemoryLimit,
+		StorageRequest:     derefWireText(lease.Resources.StorageRequest),
+		StorageLimit:       derefWireText(lease.Resources.StorageLimit),
+		JobID:              lease.JobId,
+	}
+	// The cache decision of the coordinator (cache.go).
+	jobConfig.Cache = cacheConfigFromLease(lease.Cache)
+	// The artifacts directory and the quarantined tests file (artifacts.go).
+	if err := prepareLeaseArtifacts(lease, runner, workspaceDir, jobConfig, wsUID, wsGID); err != nil {
+		logger.WithError(err).Error("failed to prepare the job artifacts directory")
+		reportPlatformFailure(c, cfg, lease.LeaseId, "failed to prepare artifacts: "+err.Error())
+		return
 	}
 	if cfg.AllowInsecureTransport {
 		jobConfig.Command = withRunnerlibInsecureTransport(jobConfig.Command)
+		// A job script calls "runnerlib oidc-token" itself, so the worker
+		// cannot add the flag to the command. runnerlib reads this value
+		// as the default of --allow-insecure-transport.
+		if jobConfig.Env == nil {
+			jobConfig.Env = map[string]string{}
+		}
+		jobConfig.Env[runnerlibInsecureTransportEnv] = "true"
+	}
+	// Egress control (egress.go): register the job with the egress proxy
+	// before it starts; remove it after the job and its containers end.
+	if lease.Egress != nil {
+		egressConfig, releaseEgress, err := startLeaseEgress(context.Background(), cfg.Egress, lease, masker)
+		if err != nil {
+			logger.WithError(err).Error("failed to set up egress control for leased job")
+			reportPlatformFailure(c, cfg, lease.LeaseId, masker.MaskString("egress control: "+err.Error()))
+			return
+		}
+		defer releaseEgress()
+		jobConfig.Egress = egressConfig
 	}
 
 	runCtx, cancelWait := context.WithCancel(context.Background())
@@ -301,12 +361,23 @@ func runLease(c client, runner worker.JobRunner, lease csilapi.Lease, tracker *l
 	tl.mu.Unlock()
 
 	maskedCmd := masker.MaskCommandArgs(jobConfig.Command)
-	logger.WithFields(map[string]interface{}{"image": jobConfig.Image, "command": strings.Join(maskedCmd, " ")}).Info("spawning leased job")
+	// Owner decision I2: "alias (ref)" when the job named an alias.
+	spawnFields := map[string]interface{}{"image": imagealias.Display(jobConfig.Image, lease.ImageAlias), "command": strings.Join(maskedCmd, " ")}
+	if lease.ImageRetryOf != nil && *lease.ImageRetryOf != "" {
+		spawnFields["image_retry_of"] = *lease.ImageRetryOf
+	}
+	logger.WithFields(spawnFields).Info("spawning leased job")
 
 	runnerID, err := runner.SpawnJob(runCtx, jobConfig)
 	if err != nil {
 		logger.WithError(err).Error("failed to spawn leased job")
-		reportResult(c, cfg, lease.LeaseId, 1, "failed", masker.MaskString("failed to spawn job: "+err.Error()))
+		class, detail := worker.ClassifyExecutionError(err, 1)
+		// SpawnJob returns only after the main container started, so a
+		// spawn error means it did not start.
+		sendLeaseResult(c, cfg, lease.LeaseId, leaseResult{
+			exitCode: 1, status: "failed", errMsg: masker.MaskString("failed to spawn job: " + err.Error()),
+			class: class, detail: masker.MaskString(detail), mainStarted: boolRef(false),
+		})
 		return
 	}
 
@@ -339,11 +410,17 @@ func runLease(c client, runner worker.JobRunner, lease csilapi.Lease, tracker *l
 		defer pumpWg.Done()
 		pumpMetrics(metricsCtx, c, runner, lease.LeaseId, runnerID, cfg)
 	}()
+	// Owner decision I2: the job log starts with the image display line
+	// for a VM job or a job that named an alias.
+	header := jobLogHeader(runner, jobConfig.Image, lease.ImageAlias, lease.ImageRetryOf)
+	if stdout == nil && len(header) > 0 {
+		stdout = io.NopCloser(strings.NewReader(""))
+	}
 	if stdout != nil {
 		pumpWg.Add(1)
 		go func() {
 			defer pumpWg.Done()
-			pumpLogs(c, lease.LeaseId, "stdout", stdout, masker, cfg.DataDir, cfg.TelemetryBufferBatches)
+			pumpLogs(c, lease.LeaseId, "stdout", stdout, masker, cfg.DataDir, cfg.TelemetryBufferBatches, header...)
 		}()
 	}
 	if stderr != nil {
@@ -354,7 +431,11 @@ func runLease(c client, runner worker.JobRunner, lease csilapi.Lease, tracker *l
 		}()
 	}
 
+	timeoutCtx, stopTimeout := context.WithCancel(context.Background())
+	go enforceTimeout(timeoutCtx, runner, tl, time.Duration(lease.TimeoutSeconds)*time.Second, logger)
 	exitCode, waitErr := runner.WaitForCompletion(runCtx, runnerID)
+	tl.markWaitDone()
+	stopTimeout()
 	captureExecutionTiming(runCtx, runner, tl)
 	tl.mu.Lock()
 	if _, precise := runner.(worker.ExecutionTimingReader); !precise {
@@ -368,21 +449,177 @@ func runLease(c client, runner worker.JobRunner, lease csilapi.Lease, tracker *l
 	// still active. ReportResult releases the lease.
 	replayTelemetrySpool(c, cfg.DataDir)
 
-	status, errMsg := finalizeStatus(tl.getOutcome(), exitCode, waitErr)
-	if errMsg != "" {
-		errMsg = masker.MaskString(errMsg)
+	outcome := tl.getOutcome()
+	if outcome == "timeout" && completedWithinTimeout(exitCode, waitErr, timing, lease.TimeoutSeconds) {
+		// The main container exited 0 inside its timeout; the timeout
+		// check fired only before WaitForCompletion noticed. Completion
+		// wins.
+		outcome = ""
 	}
-	workflowOutput := readWorkflowOutput(workspaceDir)
-	if outputReader, ok := runner.(worker.WorkflowOutputReader); ok {
-		if output, captured := outputReader.TakeWorkflowOutput(runnerID); captured {
-			workflowOutput = output
+	result := finalizeStatus(outcome, exitCode, waitErr, lease.TimeoutSeconds)
+	if result.status == "failed" && result.class == models.FailureClassJob {
+		// The runner may know that the exit was not the job's own failure
+		// (an OOM kill, an eviction). Read it before Cleanup removes the
+		// container or pod.
+		classifyCtx, cancelClassify := context.WithTimeout(context.Background(), 10*time.Second)
+		result.class, result.detail = worker.ClassifyExit(classifyCtx, runner, runnerID, exitCode)
+		cancelClassify()
+		if result.class == models.FailureClassTimeout {
+			// The runtime stopped the job at its own deadline (the
+			// Kubernetes Job active deadline).
+			result.status = "timeout"
+			result.errMsg = fmt.Sprintf("job exceeded its timeout of %d seconds", lease.TimeoutSeconds)
+		}
+		if result.detail != "" {
+			result.errMsg += " (" + result.detail + ")"
 		}
 	}
-	reportResultWithOutput(c, cfg, lease.LeaseId, exitCode, status, errMsg, workflowOutput, timing)
+	result.errMsg = masker.MaskString(result.errMsg)
+	result.detail = masker.MaskString(result.detail)
+	result.workflowOutput = readWorkflowOutput(workspaceDir)
+	if outputReader, ok := runner.(worker.WorkflowOutputReader); ok {
+		if output, captured := outputReader.TakeWorkflowOutput(runnerID); captured {
+			result.workflowOutput = output
+		}
+	}
+	result.timing = &timing
+	// Upload the job artifacts before the result (artifacts.go): the
+	// coordinator reads the test reports when the result arrives.
+	uploadLeaseArtifacts(c, runner, runnerID, lease, workspaceDir, result.workflowOutput, masker)
+	retryable := result.status == "failed" && result.class == models.FailureClassPlatform
+	result.mainStarted = leaseMainStarted(runner, runnerID, tl, retryable)
+	sendLeaseResult(c, cfg, lease.LeaseId, result)
 }
 
+func boolRef(v bool) *bool { return &v }
+
+// completedWithinTimeout reports whether a run that the timeout check
+// marked "timeout" in fact completed inside its timeout: the exit was 0
+// with no wait error, and the main container timestamps show a run time
+// not longer than the timeout.
+func completedWithinTimeout(exitCode int, waitErr error, timing worker.ExecutionTiming, timeoutSeconds int64) bool {
+	if exitCode != 0 || waitErr != nil || timeoutSeconds <= 0 {
+		return false
+	}
+	if timing.StartedAt.IsZero() || timing.FinishedAt.IsZero() {
+		return false
+	}
+	return timing.FinishedAt.Sub(timing.StartedAt) <= time.Duration(timeoutSeconds)*time.Second
+}
+
+// leaseMainStarted decides main_started of a result after SpawnJob
+// succeeded. The coordinator retries an infra.platform failure only when
+// main_started is false, so false needs proof:
+//
+//   - A runner without ExecutionTimingReader (docker, containerd, VM)
+//     returns from SpawnJob after the main container started: true.
+//   - A start time from the runtime: true.
+//   - Otherwise, for a retryable failure only, the worker reads the
+//     runtime state. When it shows a main container that has not started,
+//     the worker stops the job (so it cannot start later) and reads the
+//     state again. No start time in the second read: false.
+//   - Any read or stop error: unknown (nil), which is never retried.
+func leaseMainStarted(runner worker.JobRunner, runnerID string, tl *trackedLease, retryable bool) *bool {
+	reader, precise := runner.(worker.ExecutionTimingReader)
+	if !precise {
+		return boolRef(true)
+	}
+	tl.mu.Lock()
+	started := tl.timing.StartedAt
+	tl.mu.Unlock()
+	if !started.IsZero() {
+		return boolRef(true)
+	}
+	if !retryable {
+		return nil
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	before, err := reader.ExecutionTiming(ctx, runnerID)
+	if err != nil {
+		return nil
+	}
+	if !before.StartedAt.IsZero() {
+		return boolRef(true)
+	}
+	if !before.MainNotStarted {
+		return nil
+	}
+	if err := runner.Stop(ctx, runnerID, 0); err != nil {
+		return nil
+	}
+	after, err := reader.ExecutionTiming(ctx, runnerID)
+	if err != nil {
+		return nil
+	}
+	if !after.StartedAt.IsZero() {
+		return boolRef(true)
+	}
+	return boolRef(false)
+}
+
+// timeoutPollInterval is how often enforceTimeout checks a lease's run
+// time. Tests shorten it.
+var timeoutPollInterval = time.Second
+
+// enforceTimeout stops a job that runs longer than timeout and marks its
+// lease outcome "timeout", so the result reports status "timeout". The run
+// time starts when the main container starts (ExecutionTiming), so time in
+// a scheduling queue (a pending pod) does not count. A timeout of zero or
+// less never fires. It returns when ctx ends (the job finished) or after it
+// acted once.
+func enforceTimeout(ctx context.Context, runner worker.JobRunner, tl *trackedLease, timeout time.Duration, logger interface {
+	Warn(args ...interface{})
+}) {
+	if timeout <= 0 {
+		return
+	}
+	ticker := time.NewTicker(timeoutPollInterval)
+	defer ticker.Stop()
+	for ticks := 0; ; ticks++ {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+		}
+		tl.mu.Lock()
+		started := tl.timing.StartedAt
+		tl.mu.Unlock()
+		if started.IsZero() {
+			if ticks%10 == 0 {
+				captureExecutionTiming(ctx, runner, tl)
+			}
+			continue
+		}
+		if time.Since(started) < timeout {
+			continue
+		}
+		if !tl.markTimeout() {
+			return
+		}
+		tl.mu.Lock()
+		runnerID := tl.runnerID
+		grace := time.Duration(tl.graceSeconds) * time.Second
+		tl.mu.Unlock()
+		logger.Warn(fmt.Sprintf("job exceeded its timeout of %s; stopping it", timeout))
+		if err := runner.Stop(context.Background(), runnerID, grace); err != nil {
+			logger.Warn("failed to stop timed out job: " + err.Error())
+		}
+		return
+	}
+}
+
+// runnerlibInsecureTransportEnv tells runnerlib that the worker runs in the
+// development mode without TLS (--allow-insecure-transport). runnerlib
+// oidc-token reads it.
+const runnerlibInsecureTransportEnv = "REACTORCIDE_ALLOW_INSECURE_TRANSPORT"
+
+// runnerlibInsecureSubcommands are the runnerlib commands that call the
+// coordinator with the job token.
+var runnerlibInsecureSubcommands = map[string]bool{"eval": true, "trigger": true, "oidc-token": true}
+
 func withRunnerlibInsecureTransport(command []string) []string {
-	if len(command) >= 2 && command[0] == "runnerlib" && (command[1] == "eval" || command[1] == "trigger") {
+	if len(command) >= 2 && command[0] == "runnerlib" && runnerlibInsecureSubcommands[command[1]] {
 		for _, arg := range command[2:] {
 			if arg == "--allow-insecure-transport" {
 				return command
@@ -392,7 +629,8 @@ func withRunnerlibInsecureTransport(command []string) []string {
 	}
 	if len(command) == 3 && (command[1] == "-c" || command[1] == "/c") {
 		script := strings.TrimSpace(command[2])
-		if (strings.HasPrefix(script, "runnerlib eval ") || strings.HasPrefix(script, "runnerlib trigger ")) && !strings.Contains(script, "--allow-insecure-transport") {
+		if (strings.HasPrefix(script, "runnerlib eval ") || strings.HasPrefix(script, "runnerlib trigger ") ||
+			strings.HasPrefix(script, "runnerlib oidc-token ")) && !strings.Contains(script, "--allow-insecure-transport") {
 			result := append([]string(nil), command...)
 			result[2] = command[2] + " --allow-insecure-transport"
 			return result
@@ -401,25 +639,54 @@ func withRunnerlibInsecureTransport(command []string) []string {
 	return command
 }
 
-// finalizeStatus turns a lease's raw execution outcome into the status/error
-// ReportResult reports. A directive outcome ("cancel"/"kill") always wins
-// over the raw exit code, since Stop/Cleanup deliberately terminated the
-// container -- its exit code reflects SIGTERM/SIGKILL, not the job's own
-// success or failure.
-func finalizeStatus(outcome string, exitCode int, waitErr error) (status, errMsg string) {
+// leaseResult is one lease's result as the worker reports it.
+type leaseResult struct {
+	exitCode       int
+	status         string
+	errMsg         string
+	class          string
+	detail         string
+	workflowOutput string
+	timing         *worker.ExecutionTiming
+	// mainStarted is main_started of the result: nil when unknown.
+	mainStarted *bool
+}
+
+// finalizeStatus turns a lease's raw execution outcome into the status,
+// error, and failure class ReportResult reports. A directive outcome
+// ("cancel"/"kill") or the worker's own timeout always wins over the raw
+// exit code, since Stop/Cleanup deliberately terminated the container -- its
+// exit code reflects SIGTERM/SIGKILL, not the job's own success or failure.
+// A non-zero exit gets class "job"; the caller refines it with the runner's
+// ExitClassifier.
+func finalizeStatus(outcome string, exitCode int, waitErr error, timeoutSeconds int64) leaseResult {
+	result := leaseResult{exitCode: exitCode}
 	switch outcome {
 	case "cancel":
-		return "cancelled", "cancelled by coordinator directive"
+		result.status, result.errMsg, result.class = "cancelled", "cancelled by coordinator directive", models.FailureClassCancelled
+		return result
 	case "kill":
-		return "cancelled", "killed by coordinator directive"
+		result.status, result.errMsg, result.class = "cancelled", "killed by coordinator directive", models.FailureClassCancelled
+		return result
+	case "timeout":
+		result.status, result.class = "timeout", models.FailureClassTimeout
+		result.errMsg = fmt.Sprintf("job exceeded its timeout of %d seconds", timeoutSeconds)
+		return result
 	}
 	if waitErr != nil {
-		return "failed", waitErr.Error()
+		result.status, result.errMsg = "failed", waitErr.Error()
+		result.class, result.detail = worker.ClassifyExecutionError(waitErr, exitCode)
+		if result.class == models.FailureClassTimeout {
+			result.status = "timeout"
+		}
+		return result
 	}
 	if exitCode != 0 {
-		return "failed", fmt.Sprintf("job exited with code %d", exitCode)
+		result.status, result.errMsg, result.class = "failed", fmt.Sprintf("job exited with code %d", exitCode), models.FailureClassJob
+		return result
 	}
-	return "completed", ""
+	result.status = "completed"
+	return result
 }
 
 // resultRetryWindow bounds how long a worker keeps a result it could not
@@ -432,30 +699,36 @@ var (
 	resultRetryMax    = reconnectBackoffMax
 )
 
-// reportResult delivers a lease's result on a context independent of the
-// lease's own execution context (which may already be torn down), so a
-// result is still delivered after a directive-driven Stop/Cleanup. See
-// deliverResult for the retry rules.
-func reportResult(c client, cfg Config, leaseID string, exitCode int, status, errMsg string) {
-	deliverResult(c, cfg, leaseID, func(ctx context.Context) error {
-		_, err := c.ReportResult(ctx, leaseID, exitCode, status, errMsg)
-		return err
-	})
+// reportPlatformFailure reports a failure of the worker's own preparation
+// (workspace, credentials) before the job ran: infra.platform.
+func reportPlatformFailure(c client, cfg Config, leaseID, errMsg string) {
+	sendLeaseResult(c, cfg, leaseID, leaseResult{exitCode: 1, status: "failed", errMsg: errMsg, class: models.FailureClassPlatform, mainStarted: boolRef(false)})
 }
 
-func reportResultWithOutput(c client, cfg Config, leaseID string, exitCode int, status, errMsg, workflowOutput string, timings ...worker.ExecutionTiming) {
+// sendLeaseResult delivers a lease's result with ReportExecutionResult, on
+// a context independent of the lease's own execution context (which may
+// already be torn down), so a result is still delivered after a
+// directive-driven Stop/Cleanup. See deliverResult for the retry rules.
+func sendLeaseResult(c client, cfg Config, leaseID string, result leaseResult) {
 	deliverResult(c, cfg, leaseID, func(ctx context.Context) error {
-		req := csilapi.ReportResultRequest{LeaseId: leaseID, ExitCode: int64(exitCode), Status: status}
-		if errMsg != "" {
-			req.Error = &errMsg
+		req := csilapi.ReportResultRequest{LeaseId: leaseID, ExitCode: int64(result.exitCode), Status: result.status}
+		if result.errMsg != "" {
+			req.Error = &result.errMsg
 		}
-		if workflowOutput != "" {
-			req.WorkflowOutput = &workflowOutput
+		if result.workflowOutput != "" {
+			req.WorkflowOutput = &result.workflowOutput
 		}
-		if len(timings) > 0 {
-			req.StartedAt = timestampText(timings[0].StartedAt)
-			req.FinishedAt = timestampText(timings[0].FinishedAt)
+		if result.timing != nil {
+			req.StartedAt = timestampText(result.timing.StartedAt)
+			req.FinishedAt = timestampText(result.timing.FinishedAt)
 		}
+		if result.class != "" {
+			req.FailureClass = &result.class
+		}
+		if result.detail != "" {
+			req.FailureDetail = &result.detail
+		}
+		req.MainStarted = result.mainStarted
 		_, err := c.ReportExecutionResult(ctx, req)
 		return err
 	})
@@ -542,18 +815,51 @@ func readWorkflowOutput(workspaceDir string) string {
 	return string(data)
 }
 
+// jobLogHeaderPrefix starts each line that the worker (not the job) writes
+// to the job log.
+const jobLogHeaderPrefix = "[reactorcide] "
+
+// jobLogHeader returns the lines that start the job log (owner decision
+// I2): "image: alias (ref)" when the job named an alias, or "image: ref"
+// for a VM job without an alias. When a retry or a re-run changed the image,
+// a second line "retry of: <earlier image>" follows, and the header is
+// written for any job. A container job without an alias and without a
+// changed image gets no header, so its log is the same as before.
+func jobLogHeader(runner worker.JobRunner, image string, alias, retryOf *string) []string {
+	hasAlias := alias != nil && *alias != ""
+	hasRetryOf := retryOf != nil && *retryOf != ""
+	isVM := false
+	if seeder, ok := runner.(worker.ImageSetSeeder); ok {
+		isVM = seeder.ImageSetKind() == worker.ImageKindVM
+	}
+	if image == "" || (!hasAlias && !isVM && !hasRetryOf) {
+		return nil
+	}
+	header := []string{jobLogHeaderPrefix + "image: " + imagealias.Display(image, alias)}
+	if hasRetryOf {
+		// A retry or a re-run that resolved the alias again to a new pin
+		// (docs/image-aliases.md "Retry and rerun").
+		header = append(header, jobLogHeaderPrefix+"retry of: "+*retryOf)
+	}
+	return header
+}
+
 // pumpLogs reads newline-delimited lines from r, masks each line, batches
 // them, and pushes batches to AppendLogs on a ticker (or when the batch
 // fills), flushing whatever remains when r reaches EOF/closes. Masking
 // happens before a line is ever buffered, so a secret value never reaches the
 // coordinator in a log chunk regardless of how batching splits lines across
-// calls.
-func pumpLogs(c client, leaseID, stream string, r io.ReadCloser, masker *secrets.Masker, dataDir string, bufferBatches int) {
+// calls. header lines (jobLogHeader) go first, in the same sequence, so
+// they are the first lines of the stream.
+func pumpLogs(c client, leaseID, stream string, r io.ReadCloser, masker *secrets.Masker, dataDir string, bufferBatches int, header ...string) {
 	defer r.Close()
 
 	lines := make(chan string, 64)
 	go func() {
 		defer close(lines)
+		for _, line := range header {
+			lines <- line
+		}
 		scanner := bufio.NewScanner(r)
 		scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
 		for scanner.Scan() {
@@ -601,4 +907,21 @@ func pumpLogs(c client, leaseID, stream string, r io.ReadCloser, masker *secrets
 			flush()
 		}
 	}
+}
+
+func derefWireText(value *string) string {
+	if value == nil {
+		return ""
+	}
+	return *value
+}
+
+// copyOptionalBool copies a lease's optional bool. nil (absent on the wire)
+// stays nil.
+func copyOptionalBool(value *bool) *bool {
+	if value == nil {
+		return nil
+	}
+	v := *value
+	return &v
 }

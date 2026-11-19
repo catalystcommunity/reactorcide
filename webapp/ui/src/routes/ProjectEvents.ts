@@ -5,6 +5,7 @@ import { ChoiceSelect } from '~/components/ChoiceInput.ts'
 import { field, type Field } from '~/components/Field.ts'
 import { Action, ActionError, describeError } from '~/components/ManagementPage.ts'
 import { ProjectCard } from '~/components/ProjectCard.ts'
+import { DRAFT_CHOICES } from '~/components/ShedLevel.ts'
 import { setStatus, statusBadge } from '~/components/StatusBadge.ts'
 import { button, checkBox, clearField, confirmAction, setButtonText, textField } from '~/ui/controls.ts'
 import { h, setAttr, setText, show, syncKeyed } from '~/ui/dom.ts'
@@ -408,10 +409,13 @@ class EventSettingsCard extends ProjectCard {
 
   #duplicate = 'inherit'
   #dynamic = 'inherit'
+  #draft = 'inherit'
   #duplicateSelect!: ChoiceSelect
   #dynamicSelect!: ChoiceSelect
+  #draftSelect!: ChoiceSelect
   #duplicateEffective!: HTMLDivElement
   #dynamicEffective!: HTMLDivElement
+  #draftEffective!: HTMLDivElement
   #save = new Action(() => this.invalidate())
   #error = new ActionError()
   #saved!: HTMLDivElement
@@ -421,6 +425,7 @@ class EventSettingsCard extends ProjectCard {
     // The draft is seeded once; a live project refresh does not overwrite it.
     this.#duplicate = this.initial.duplicateEvents || 'inherit'
     this.#dynamic = this.initial.dynamicJobs || 'inherit'
+    this.#draft = this.initial.draftPrs || 'inherit'
     this.#duplicateSelect = new ChoiceSelect({
       value: this.#duplicate,
       choices: [INHERIT, ...DUPLICATE_CHOICES],
@@ -431,6 +436,12 @@ class EventSettingsCard extends ProjectCard {
       choices: [INHERIT, ...DYNAMIC_CHOICES],
       onChange: (value) => (this.#dynamic = value),
     })
+    this.#draftSelect = new ChoiceSelect({
+      value: this.#draft,
+      choices: [INHERIT, ...DRAFT_CHOICES],
+      onChange: (value) => (this.#draft = value),
+    })
+    this.#draftEffective = h('div', { class: 'field-hint' })
     this.#duplicateEffective = h('div', { class: 'field-hint' })
     this.#dynamicEffective = h('div', { class: 'field-hint' })
     this.#saved = h('div', { class: 'alert alert-info', role: 'status', hidden: true }, 'Event settings saved.')
@@ -444,6 +455,8 @@ class EventSettingsCard extends ProjectCard {
     duplicateField.el.append(this.#duplicateEffective)
     const dynamicField = field({ label: 'Dynamic jobs', hint: 'Jobs that a running job starts, not declared in a workflow file.', control: this.#dynamicSelect.el })
     dynamicField.el.append(this.#dynamicEffective)
+    const draftField = field({ label: 'Draft PRs', hint: 'What a draft pull request does. A skipped draft runs when it becomes ready for review.', control: this.#draftSelect.el })
+    draftField.el.append(this.#draftEffective)
     this.append(
       h('h3', { class: 'section-title' }, 'Events'),
       h(
@@ -453,6 +466,7 @@ class EventSettingsCard extends ProjectCard {
         this.#saved,
         duplicateField.el,
         dynamicField.el,
+        draftField.el,
         this.#submit,
       ),
     )
@@ -464,7 +478,7 @@ class EventSettingsCard extends ProjectCard {
     if (!project) return
     show(this.#saved, false)
     const ok = await this.#save.run('The event settings could not be saved.', () =>
-      api.updateProject({ projectId: project.projectId, duplicateEvents: this.#duplicate, dynamicJobs: this.#dynamic }),
+      api.updateProject({ projectId: project.projectId, duplicateEvents: this.#duplicate, dynamicJobs: this.#dynamic, draftPrs: this.#draft }),
     )
     if (!ok || !this.isActive()) return
     await this.onSaved()
@@ -475,8 +489,10 @@ class EventSettingsCard extends ProjectCard {
     const p = this.project
     this.#duplicateSelect.update([INHERIT, ...DUPLICATE_CHOICES], this.#duplicate)
     this.#dynamicSelect.update([INHERIT, ...DYNAMIC_CHOICES], this.#dynamic)
+    this.#draftSelect.update([INHERIT, ...DRAFT_CHOICES], this.#draft)
     setText(this.#duplicateEffective, p?.effectiveDuplicateEvents ? `In force now: ${choiceLabel(DUPLICATE_CHOICES, p.effectiveDuplicateEvents)}.` : '')
     setText(this.#dynamicEffective, p?.effectiveDynamicJobs ? `In force now: ${choiceLabel(DYNAMIC_CHOICES, p.effectiveDynamicJobs)}.` : '')
+    setText(this.#draftEffective, p?.effectiveDraftPrs ? `In force now: ${choiceLabel(DRAFT_CHOICES, p.effectiveDraftPrs)}.` : '')
     this.#error.set(this.#save.error)
     this.#submit.disabled = this.#save.busy
     setButtonText(this.#submit, this.#save.busy ? 'Saving…' : 'Save event settings')
@@ -484,4 +500,116 @@ class EventSettingsCard extends ProjectCard {
 }
 define('rc-project-event-settings-card', EventSettingsCard)
 
-export type { SchedulesCard, EventSettingsCard }
+/**
+ * Start a new run on any ref of this project.
+ *
+ * The coordinator resolves the commit of the branch, tag or pull request
+ * head, records a manual event with the caller as its actor, and evaluates it
+ * with the normal policy of that ref. A run never gets the authority of an
+ * earlier run. The workflow field is optional: empty evaluates every workflow
+ * for the event, as a push or a pull request update does.
+ */
+class RunCard extends ProjectCard {
+  #run = new Action(() => this.invalidate())
+  #error = new ActionError()
+  #ref!: TextField
+  #pr!: TextField
+  #workflow!: TextField
+  #fields!: Record<'ref' | 'pr', Field>
+  #submit!: PushButton
+  #result!: HTMLParagraphElement
+  #resultLink!: HTMLAnchorElement
+  #resultText!: HTMLSpanElement
+  #touched = false
+
+  protected build(): void {
+    const rerender = (): void => this.invalidate()
+    this.#ref = textField({ placeholder: 'main or refs/tags/v1.2.0', mono: true, onInput: rerender })
+    this.#pr = textField({ placeholder: '42', mono: true, onInput: rerender })
+    this.#workflow = textField({ placeholder: 'build or .reactorcide/workflows/build.yaml', mono: true })
+    this.#fields = {
+      ref: field({ label: 'Branch or tag', hint: 'A branch name, refs/heads/NAME, or refs/tags/NAME.', control: this.#ref }),
+      pr: field({ label: 'Pull request', hint: 'Runs the current head of the pull request.', control: this.#pr }),
+    }
+    this.#submit = button('Start run', { type: 'submit', variant: 'primary' })
+    this.#resultText = h('span')
+    this.#resultLink = h('a', null, 'View the event')
+    this.#result = h('p', { class: 'meta', hidden: true }, this.#resultText, ' ', this.#resultLink)
+    this.append(
+      h(
+        'div',
+        { class: 'card-header' },
+        h(
+          'div',
+          null,
+          h('h3', null, 'Run'),
+          h('p', { class: 'meta' }, 'Start a new evaluated run on a branch, a tag or a pull request head. The normal policy of that ref applies.'),
+        ),
+      ),
+      h(
+        'form',
+        { class: 'schedule-form', novalidate: true, onSubmit: (event: Event) => void this.#submitForm(event) },
+        this.#error.el,
+        this.#fields.ref.el,
+        this.#fields.pr.el,
+        field({
+          label: 'Workflow',
+          hint: 'Run only this workflow, without its on/paths filters. Empty evaluates every workflow.',
+          control: this.#workflow,
+        }).el,
+        h('div', { class: 'row' }, this.#submit),
+        this.#result,
+      ),
+    )
+  }
+
+  #values(): { ref: string; pr: string; workflow: string } {
+    return { ref: this.#ref.value.trim(), pr: this.#pr.value.trim(), workflow: this.#workflow.value.trim() }
+  }
+
+  #errors(): Partial<Record<'ref' | 'pr', string>> {
+    const v = this.#values()
+    if (v.ref && v.pr) return { pr: 'Give a branch or tag, or a pull request, not both.' }
+    if (!v.ref && !v.pr) return { ref: 'Give a branch or tag, or a pull request.' }
+    if (v.pr && !/^[1-9][0-9]*$/.test(v.pr)) return { pr: 'A pull request number is a positive whole number.' }
+    return {}
+  }
+
+  async #submitForm(event: Event): Promise<void> {
+    event.preventDefault()
+    this.#touched = true
+    if (Object.values(this.#errors()).some(Boolean) || !this.project) {
+      this.invalidate()
+      return
+    }
+    const v = this.#values()
+    const projectId = this.project.projectId
+    let started: { eventId: string; ref: string; commitSha: string } | undefined
+    const ok = await this.#run.run('The run could not be started.', async () => {
+      started = await api.startRun({
+        projectId,
+        ref: v.ref || undefined,
+        prNumber: v.pr ? Number(v.pr) : undefined,
+        workflow: v.workflow || undefined,
+      })
+    })
+    if (!ok || !this.isActive() || !started) return
+    this.#touched = false
+    for (const control of [this.#ref, this.#pr, this.#workflow]) clearField(control)
+    setText(this.#resultText, `Started on ${started.ref} (${started.commitSha.slice(0, 7)}).`)
+    setAttr(this.#resultLink, 'href', href(`/events/${started.eventId}`))
+    show(this.#result, true)
+    this.invalidate()
+  }
+
+  render(): void {
+    const errors = this.#errors()
+    for (const key of ['ref', 'pr'] as const) this.#fields[key].setError(this.#touched ? errors[key] : undefined)
+    this.#error.set(this.#run.error)
+    this.#submit.disabled = this.#run.busy
+    setButtonText(this.#submit, this.#run.busy ? 'Starting…' : 'Start run')
+  }
+}
+define('rc-project-run-card', RunCard)
+
+export type { SchedulesCard, EventSettingsCard, RunCard }

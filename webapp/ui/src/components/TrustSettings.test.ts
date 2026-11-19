@@ -122,6 +122,35 @@ describe('CI trust settings form', () => {
     })
   })
 
+  it('keeps stored re-run shift limits, edits them, and refuses a bad quantity', async () => {
+    response = { settings: { rerunShiftLimits: { maxCpu: '8', maxTimeoutSeconds: 7200 } }, effective: { ...EFFECTIVE, rerunShiftLimits: { maxCpu: '8', maxTimeoutSeconds: 7200 } }, canLoosen: true }
+    const el = await form('acme')
+    expect(byLabel<ComboBox>(el, 'combo-box', /^Re-run shift limits/).value).toBe('set')
+    expect(el.textContent).toContain('In force now: cpu ≤ 8, timeout ≤ 7200 s')
+    submit(el)
+    await waitFor(() => expect(api.putCiTrustSettings).toHaveBeenCalledTimes(1))
+    expect(vi.mocked(api.putCiTrustSettings).mock.calls[0][0].settings).toStrictEqual({ rerunShiftLimits: { maxCpu: '8', maxTimeoutSeconds: 7200 } })
+
+    await settle()
+    byLabel<TextField>(el, 'text-field', /^Largest memory/).value = '32Gi'
+    submit(el)
+    await waitFor(() => expect(api.putCiTrustSettings).toHaveBeenCalledTimes(2))
+    expect(vi.mocked(api.putCiTrustSettings).mock.calls[1][0].settings).toStrictEqual({ rerunShiftLimits: { maxCpu: '8', maxMemory: '32Gi', maxTimeoutSeconds: 7200 } })
+
+    await settle()
+    byLabel<TextField>(el, 'text-field', /^Largest memory/).value = 'lots'
+    submit(el)
+    await settle()
+    expect(api.putCiTrustSettings).toHaveBeenCalledTimes(2)
+    expect(el.textContent).toContain('The largest memory is not a quantity')
+
+    choose(byLabel<ComboBox>(el, 'combo-box', /^Re-run shift limits/), 'inherit')
+    await settle()
+    submit(el)
+    await waitFor(() => expect(api.putCiTrustSettings).toHaveBeenCalledTimes(3))
+    expect(vi.mocked(api.putCiTrustSettings).mock.calls[2][0].settings).toStrictEqual({})
+  })
+
   it('shows the server message when a looser save is refused', async () => {
     response = { settings: {}, effective: EFFECTIVE, organizationEffective: EFFECTIVE, canLoosen: false }
     const message = 'only an organization administrator can make project settings less strict than the organization: removes run gate condition forks'

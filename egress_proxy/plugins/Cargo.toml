@@ -1,0 +1,22 @@
+# Egress proxy plugins (only the test plugin ships here). Build: cargo build --release --target wasm32-wasip2
+# The files are target/wasm32-wasip2/release/<name>.wasm.
+[workspace]
+resolver = "3"
+members = ["test-actions"]
+
+[workspace.package]
+edition = "2024"
+license = "Apache-2.0"
+publish = false
+
+[workspace.dependencies]
+wit-bindgen = "0.57"
+ciborium = "0.2"
+serde = { version = "1", features = ["derive"] }
+regex = { version = "1", default-features = false, features = ["std", "perf"] }
+
+[profile.release]
+opt-level = "s"
+strip = true
+lto = true
+codegen-units = 1

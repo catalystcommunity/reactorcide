@@ -5,11 +5,20 @@ import (
 
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/audit"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/authz"
+	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/checkauth"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store/models"
+	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/tokencaps"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/uiapi/csilapi"
 )
 
 func (s *UiService) recordAudit(ctx context.Context, orgID, action, subjectType, subjectID string, details models.JSONB) {
+	if checkauth.GetPrincipalFromContext(ctx) == nil {
+		// An op that did not keep the context of requireManagementIdentity:
+		// resolve the token again, so the audit names the token credential.
+		if withPrincipal, _, _, err := s.deps.requireManagementIdentity(ctx); err == nil {
+			ctx = withPrincipal
+		}
+	}
 	_, user := s.deps.resolveIdentity(ctx)
 	audit.RecordUser(ctx, s.deps.Store, user, orgID, action, subjectType, subjectID, details)
 }
@@ -37,7 +46,25 @@ var _ csilapi.ReactorcideUi = (*UiService)(nil)
 func (s *UiService) GetCapabilities(ctx context.Context, req csilapi.GetCapabilitiesRequest) (csilapi.GetCapabilitiesResponse, error) {
 	id, _ := s.deps.resolveIdentity(ctx)
 
-	caps, err := s.deps.Resolver.Capabilities(ctx, id, authz.Scope{OrgID: req.OrgId, ProjectID: req.ProjectId})
+	scope := authz.Scope{OrgID: req.OrgId, ProjectID: req.ProjectId}
+	if req.WorkflowId != nil && *req.WorkflowId != "" {
+		// WP7: one workflow. Its owners can cancel and retry it. A workflow
+		// the caller cannot view reports "not found".
+		wig, ok := s.deps.Store.(workflowInstanceGetter)
+		if !ok {
+			return csilapi.GetCapabilitiesResponse{}, NewServiceError("internal", "workflows are not supported by this server's store configuration")
+		}
+		wf, err := wig.GetWorkflowInstance(ctx, *req.WorkflowId)
+		if err != nil {
+			return csilapi.GetCapabilitiesResponse{}, mapStoreErr(err, "workflow not found")
+		}
+		if err := s.requireWorkflowVisible(ctx, id, wf); err != nil {
+			return csilapi.GetCapabilitiesResponse{}, err
+		}
+		scope = workflowScope(wf)
+		req.ProjectId, req.OrgId = scope.ProjectID, scope.OrgID
+	}
+	caps, err := s.deps.Resolver.Capabilities(ctx, id, scope)
 	if err != nil {
 		return csilapi.GetCapabilitiesResponse{}, NewServiceError("internal", "an internal error occurred")
 	}
@@ -72,6 +99,14 @@ func (s *UiService) GetCapabilities(ctx context.Context, req csilapi.GetCapabili
 		}
 	}
 
+	// The role flags of a token are limited by the token, like caps: the
+	// admin capability of the scope must be in the token.
+	if id.Token != nil {
+		isGlobalAdmin = isGlobalAdmin && requireTokenGrant(id, nil, tokencaps.OrganizationsManage) == nil
+		isOrgAdmin = isOrgAdmin && requireTokenGrant(id, orgID, tokencaps.OrganizationsManage) == nil
+		isProjectOwner = isProjectOwner && orgID != nil && requireTokenGrant(id, orgID, tokencaps.ProjectsManage) == nil
+	}
+
 	return csilapi.GetCapabilitiesResponse{
 		ViewPrivate:             caps.ViewPrivate,
 		CancelJob:               caps.Cancel,
@@ -90,5 +125,6 @@ func (s *UiService) GetCapabilities(ctx context.Context, req csilapi.GetCapabili
 		IsGlobalAdmin:           isGlobalAdmin,
 		IsOrgAdmin:              isOrgAdmin,
 		IsProjectOwner:          isProjectOwner,
+		ManageWorkflow:          optionalBool(caps.ManageWorkflow),
 	}, nil
 }

@@ -288,3 +288,44 @@ func (ps PostgresDbStore) DeleteExpiredLoginAttempts(ctx context.Context) (int64
 	}
 	return result.RowsAffected, nil
 }
+
+// --- auth_login_history --------------------------------------------------
+
+// GetAuthLoginHistory returns the login history row. Returns
+// store.ErrNotFound when the instance has no record of logins.
+func (ps PostgresDbStore) GetAuthLoginHistory(ctx context.Context) (*models.AuthLoginHistory, error) {
+	var history models.AuthLoginHistory
+	if err := ps.getDB(ctx).Where("singleton").First(&history).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, store.ErrNotFound
+		}
+		return nil, fmt.Errorf("failed to get auth login history: %w", err)
+	}
+	return &history, nil
+}
+
+// MarkAuthLoginHistory records that the instance runs with logins in mode.
+// It keeps first_marked_at and sets login_mode, source=startup, and
+// last_marked_at.
+func (ps PostgresDbStore) MarkAuthLoginHistory(ctx context.Context, mode string) error {
+	now := time.Now().UTC()
+	history := &models.AuthLoginHistory{Singleton: true, LoginMode: mode,
+		Source: models.AuthLoginHistorySourceStartup, FirstMarkedAt: now, LastMarkedAt: now}
+	err := ps.getDB(ctx).Clauses(clause.OnConflict{
+		Columns:   []clause.Column{{Name: "singleton"}},
+		DoUpdates: clause.AssignmentColumns([]string{"login_mode", "source", "last_marked_at"}),
+	}).Create(history).Error
+	if err != nil {
+		return fmt.Errorf("failed to mark auth login history: %w", err)
+	}
+	return nil
+}
+
+// ClearAuthLoginHistory deletes the login history row. Only the explicit
+// downgrade override (REACTORCIDE_UI_AUTH_ALLOW_DOWNGRADE_TO_NONE) calls it.
+func (ps PostgresDbStore) ClearAuthLoginHistory(ctx context.Context) error {
+	if err := ps.getDB(ctx).Where("singleton").Delete(&models.AuthLoginHistory{}).Error; err != nil {
+		return fmt.Errorf("failed to clear auth login history: %w", err)
+	}
+	return nil
+}

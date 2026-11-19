@@ -98,18 +98,26 @@ func NewEnrollment(s EnrollmentTokenStore) *Enrollment {
 // does not fail validation, mirroring
 // internal/auth.Sessions.ResolveSession's last-seen touch.
 func (e *Enrollment) ValidateEnrollmentToken(ctx context.Context, presentedToken string) (*models.WorkerPool, error) {
+	pool, _, err := e.Validate(ctx, presentedToken)
+	return pool, err
+}
+
+// Validate is ValidateEnrollmentToken that also returns the token row (its
+// ID and name, never its hash), so Register can record which token a worker
+// used.
+func (e *Enrollment) Validate(ctx context.Context, presentedToken string) (*models.WorkerPool, *models.PoolEnrollmentToken, error) {
 	if presentedToken == "" {
-		return nil, ErrEnrollmentRejected
+		return nil, nil, ErrEnrollmentRejected
 	}
 
 	tok, err := e.store.GetActiveEnrollmentTokenByHash(ctx, HashToken(presentedToken))
 	if err != nil {
-		return nil, ErrEnrollmentRejected
+		return nil, nil, ErrEnrollmentRejected
 	}
 
 	pool, err := e.store.GetWorkerPoolByID(ctx, tok.PoolID)
 	if err != nil {
-		return nil, fmt.Errorf("workerauth: resolving enrollment token's pool: %w", err)
+		return nil, nil, fmt.Errorf("workerauth: resolving enrollment token's pool: %w", err)
 	}
 
 	// Best-effort: the token is valid and the pool resolved either way; a
@@ -117,5 +125,7 @@ func (e *Enrollment) ValidateEnrollmentToken(ctx context.Context, presentedToken
 	// rejection.
 	_ = e.store.TouchEnrollmentTokenLastUsed(ctx, tok.TokenID)
 
-	return pool, nil
+	out := *tok
+	out.TokenHash = nil
+	return pool, &out, nil
 }

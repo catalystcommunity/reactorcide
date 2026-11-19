@@ -133,6 +133,11 @@ func NewHandlerWithWorker(auth csilapi.ReactorcideAuth, ui csilapi.ReactorcideUi
 		"add-group-member":              wrapOp(csilapi.DecodeAddGroupMemberRequest, csilapi.EncodeAddGroupMemberResponse, "AddGroupMemberResponse", ui.AddGroupMember),
 		"remove-group-member":           wrapOp(csilapi.DecodeRemoveGroupMemberRequest, csilapi.EncodeRemoveGroupMemberResponse, "RemoveGroupMemberResponse", ui.RemoveGroupMember),
 		"list-group-members":            wrapOp(csilapi.DecodeListGroupMembersRequest, csilapi.EncodeListGroupMembersResponse, "ListGroupMembersResponse", ui.ListGroupMembers),
+		"list-group-member-details":     wrapOp(csilapi.DecodeListGroupMemberDetailsRequest, csilapi.EncodeListGroupMemberDetailsResponse, "ListGroupMemberDetailsResponse", ui.ListGroupMemberDetails),
+		"list-group-vcs-links":          wrapOp(csilapi.DecodeListGroupVcsLinksRequest, csilapi.EncodeListGroupVcsLinksResponse, "ListGroupVcsLinksResponse", ui.ListGroupVcsLinks),
+		"link-group-vcs-team":           wrapOp(csilapi.DecodeLinkGroupVcsTeamRequest, csilapi.EncodeLinkGroupVcsTeamResponse, "LinkGroupVcsTeamResponse", ui.LinkGroupVcsTeam),
+		"unlink-group-vcs-team":         wrapOp(csilapi.DecodeUnlinkGroupVcsTeamRequest, csilapi.EncodeUnlinkGroupVcsTeamResponse, "UnlinkGroupVcsTeamResponse", ui.UnlinkGroupVcsTeam),
+		"sync-group-vcs-teams":          wrapOp(csilapi.DecodeSyncGroupVcsTeamsRequest, csilapi.EncodeSyncGroupVcsTeamsResponse, "SyncGroupVcsTeamsResponse", ui.SyncGroupVcsTeams),
 		"list-users":                    wrapOp(csilapi.DecodeListUsersRequest, csilapi.EncodeListUsersResponse, "ListUsersResponse", ui.ListUsers),
 		"list-role-assignments":         wrapOp(csilapi.DecodeListRoleAssignmentsRequest, csilapi.EncodeListRoleAssignmentsResponse, "ListRoleAssignmentsResponse", ui.ListRoleAssignments),
 		"assign-role":                   wrapOp(csilapi.DecodeAssignRoleRequest, csilapi.EncodeAssignRoleResponse, "AssignRoleResponse", ui.AssignRole),
@@ -160,6 +165,8 @@ func NewHandlerWithWorker(auth csilapi.ReactorcideAuth, ui csilapi.ReactorcideUi
 		"retry-unsuccessful-jobs":       wrapOp(csilapi.DecodeRetryUnsuccessfulJobsRequest, csilapi.EncodeRetryUnsuccessfulJobsResponse, "RetryUnsuccessfulJobsResponse", ui.RetryUnsuccessfulJobs),
 		"get-global-settings":           wrapOp(csilapi.DecodeGetGlobalSettingsRequest, csilapi.EncodeGetGlobalSettingsResponse, "GetGlobalSettingsResponse", ui.GetGlobalSettings),
 		"update-global-settings":        wrapOp(csilapi.DecodeUpdateGlobalSettingsRequest, csilapi.EncodeUpdateGlobalSettingsResponse, "UpdateGlobalSettingsResponse", ui.UpdateGlobalSettings),
+		"get-shed-state":                wrapOp(csilapi.DecodeGetShedStateRequest, csilapi.EncodeGetShedStateResponse, "GetShedStateResponse", ui.GetShedState),
+		"set-shed-level":                wrapOp(csilapi.DecodeSetShedLevelRequest, csilapi.EncodeSetShedLevelResponse, "SetShedLevelResponse", ui.SetShedLevel),
 		"list-trusted-identities":       wrapOp(csilapi.DecodeListTrustedIdentitiesRequest, csilapi.EncodeListTrustedIdentitiesResponse, "ListTrustedIdentitiesResponse", ui.ListTrustedIdentities),
 		"add-trusted-identity":          wrapOp(csilapi.DecodeAddTrustedIdentityRequest, csilapi.EncodeAddTrustedIdentityResponse, "AddTrustedIdentityResponse", ui.AddTrustedIdentity),
 		"remove-trusted-identity":       wrapOp(csilapi.DecodeRemoveTrustedIdentityRequest, csilapi.EncodeRemoveTrustedIdentityResponse, "RemoveTrustedIdentityResponse", ui.RemoveTrustedIdentity),
@@ -183,18 +190,119 @@ func NewHandlerWithWorker(auth csilapi.ReactorcideAuth, ui csilapi.ReactorcideUi
 		"get-job-metrics":               wrapOp(csilapi.DecodeGetJobMetricsRequest, csilapi.EncodeGetJobMetricsResponse, "GetJobMetricsResponse", ui.GetJobMetrics),
 		"get-job-logs":                  wrapOp(csilapi.DecodeGetJobLogsRequest, csilapi.EncodeGetJobLogsResponse, "GetJobLogsResponse", ui.GetJobLogs),
 		"get-job-resource-history":      wrapOp(csilapi.DecodeGetJobResourceHistoryRequest, csilapi.EncodeGetJobResourceHistoryResponse, "GetJobResourceHistoryResponse", ui.GetJobResourceHistory),
+		"get-pipeline-dashboard":        wrapOp(csilapi.DecodeGetPipelineDashboardRequest, csilapi.EncodeGetPipelineDashboardResponse, "GetPipelineDashboardResponse", ui.GetPipelineDashboard),
+		"get-infra-dashboard":           wrapOp(csilapi.DecodeGetInfraDashboardRequest, csilapi.EncodeGetInfraDashboardResponse, "GetInfraDashboardResponse", ui.GetInfraDashboard),
+		"get-usage-dashboard":           wrapOp(csilapi.DecodeGetUsageDashboardRequest, csilapi.EncodeGetUsageDashboardResponse, "GetUsageDashboardResponse", ui.GetUsageDashboard),
 		"list-schedules":                wrapOp(csilapi.DecodeListSchedulesRequest, csilapi.EncodeListSchedulesResponse, "ListSchedulesResponse", ui.ListSchedules),
 		"create-schedule":               wrapOp(csilapi.DecodeCreateScheduleRequest, csilapi.EncodeCreateScheduleResponse, "CreateScheduleResponse", ui.CreateSchedule),
 		"update-schedule":               wrapOp(csilapi.DecodeUpdateScheduleRequest, csilapi.EncodeUpdateScheduleResponse, "UpdateScheduleResponse", ui.UpdateSchedule),
 		"delete-schedule":               wrapOp(csilapi.DecodeDeleteScheduleRequest, csilapi.EncodeDeleteScheduleResponse, "DeleteScheduleResponse", ui.DeleteSchedule),
 		"list-schedule-fires":           wrapOp(csilapi.DecodeListScheduleFiresRequest, csilapi.EncodeListScheduleFiresResponse, "ListScheduleFiresResponse", ui.ListScheduleFires),
+		"list-event-subscriptions":      wrapOp(csilapi.DecodeListEventSubscriptionsRequest, csilapi.EncodeListEventSubscriptionsResponse, "ListEventSubscriptionsResponse", ui.ListEventSubscriptions),
+		"get-event-subscription":        wrapOp(csilapi.DecodeGetEventSubscriptionRequest, csilapi.EncodeGetEventSubscriptionResponse, "GetEventSubscriptionResponse", ui.GetEventSubscription),
+		"create-event-subscription":     wrapOp(csilapi.DecodeCreateEventSubscriptionRequest, csilapi.EncodeCreateEventSubscriptionResponse, "CreateEventSubscriptionResponse", ui.CreateEventSubscription),
+		"update-event-subscription":     wrapOp(csilapi.DecodeUpdateEventSubscriptionRequest, csilapi.EncodeUpdateEventSubscriptionResponse, "UpdateEventSubscriptionResponse", ui.UpdateEventSubscription),
+		"delete-event-subscription":     wrapOp(csilapi.DecodeDeleteEventSubscriptionRequest, csilapi.EncodeDeleteEventSubscriptionResponse, "DeleteEventSubscriptionResponse", ui.DeleteEventSubscription),
+		"list-event-deliveries":         wrapOp(csilapi.DecodeListEventDeliveriesRequest, csilapi.EncodeListEventDeliveriesResponse, "ListEventDeliveriesResponse", ui.ListEventDeliveries),
+		"get-event-delivery":            wrapOp(csilapi.DecodeGetEventDeliveryRequest, csilapi.EncodeGetEventDeliveryResponse, "GetEventDeliveryResponse", ui.GetEventDelivery),
+		"replay-event-delivery":         wrapOp(csilapi.DecodeReplayEventDeliveryRequest, csilapi.EncodeReplayEventDeliveryResponse, "ReplayEventDeliveryResponse", ui.ReplayEventDelivery),
+		"test-event-subscription":       wrapOp(csilapi.DecodeTestEventSubscriptionRequest, csilapi.EncodeTestEventSubscriptionResponse, "TestEventSubscriptionResponse", ui.TestEventSubscription),
 		"list-jobs":                     wrapOp(csilapi.DecodeListJobsRequest, csilapi.EncodeListJobsResponse, "ListJobsResponse", ui.ListJobs),
 		"get-job":                       wrapOp(csilapi.DecodeGetJobRequest, csilapi.EncodeGetJobResponse, "GetJobResponse", ui.GetJob),
 		"list-workflows":                wrapOp(csilapi.DecodeListWorkflowsRequest, csilapi.EncodeListWorkflowsResponse, "ListWorkflowsResponse", ui.ListWorkflows),
 		"get-workflow":                  wrapOp(csilapi.DecodeGetWorkflowRequest, csilapi.EncodeGetWorkflowResponse, "GetWorkflowResponse", ui.GetWorkflow),
 		"get-event":                     wrapOp(csilapi.DecodeGetEventRequest, csilapi.EncodeGetEventResponse, "GetEventResponse", ui.GetEvent),
 		"describe-form-metadata":        wrapOp(csilapi.DecodeDescribeFormMetadataRequest, csilapi.EncodeDescribeFormMetadataResponse, "DescribeFormMetadataResponse", ui.DescribeFormMetadata),
+		// WP2 principals.
+		"list-principals":           wrapOp(csilapi.DecodeListPrincipalsRequest, csilapi.EncodeListPrincipalsResponse, "ListPrincipalsResponse", ui.ListPrincipals),
+		"get-principal":             wrapOp(csilapi.DecodeGetPrincipalRequest, csilapi.EncodeGetPrincipalResponse, "GetPrincipalResponse", ui.GetPrincipal),
+		"create-service-principal":  wrapOp(csilapi.DecodeCreateServicePrincipalRequest, csilapi.EncodeCreateServicePrincipalResponse, "CreateServicePrincipalResponse", ui.CreateServicePrincipal),
+		"set-principal-status":      wrapOp(csilapi.DecodeSetPrincipalStatusRequest, csilapi.EncodeSetPrincipalStatusResponse, "SetPrincipalStatusResponse", ui.SetPrincipalStatus),
+		"link-principal-identity":   wrapOp(csilapi.DecodePrincipalIdentityRequest, csilapi.EncodePrincipalIdentityResponse, "PrincipalIdentityResponse", ui.LinkPrincipalIdentity),
+		"unlink-principal-identity": wrapOp(csilapi.DecodePrincipalIdentityRequest, csilapi.EncodePrincipalIdentityResponse, "PrincipalIdentityResponse", ui.UnlinkPrincipalIdentity),
+		"set-principal-group":       wrapOp(csilapi.DecodeSetPrincipalGroupRequest, csilapi.EncodeSetPrincipalGroupResponse, "SetPrincipalGroupResponse", ui.SetPrincipalGroup),
+		"issue-principal-token":     wrapOp(csilapi.DecodeIssuePrincipalTokenRequest, csilapi.EncodeIssuePrincipalTokenResponse, "IssuePrincipalTokenResponse", ui.IssuePrincipalToken),
+		"revoke-principal-token":    wrapOp(csilapi.DecodeRevokePrincipalTokenRequest, csilapi.EncodeRevokePrincipalTokenResponse, "RevokePrincipalTokenResponse", ui.RevokePrincipalToken),
+		"resolve-principal":         wrapOp(csilapi.DecodeResolvePrincipalRequest, csilapi.EncodeResolvePrincipalResponse, "ResolvePrincipalResponse", ui.ResolvePrincipal),
+		"list-federation-issuers":   wrapOp(csilapi.DecodeListFederationIssuersRequest, csilapi.EncodeListFederationIssuersResponse, "ListFederationIssuersResponse", ui.ListFederationIssuers),
+		"save-federation-issuer":    wrapOp(csilapi.DecodeSaveFederationIssuerRequest, csilapi.EncodeSaveFederationIssuerResponse, "SaveFederationIssuerResponse", ui.SaveFederationIssuer),
+		"delete-federation-issuer":  wrapOp(csilapi.DecodeDeleteFederationIssuerRequest, csilapi.EncodeDeleteFederationIssuerResponse, "DeleteFederationIssuerResponse", ui.DeleteFederationIssuer),
+		"save-federation-mapping":   wrapOp(csilapi.DecodeSaveFederationMappingRequest, csilapi.EncodeSaveFederationMappingResponse, "SaveFederationMappingResponse", ui.SaveFederationMapping),
+		"delete-federation-mapping": wrapOp(csilapi.DecodeDeleteFederationMappingRequest, csilapi.EncodeDeleteFederationMappingResponse, "DeleteFederationMappingResponse", ui.DeleteFederationMapping),
+		"list-github-apps":          wrapOp(csilapi.DecodeListGitHubAppsRequest, csilapi.EncodeListGitHubAppsResponse, "ListGitHubAppsResponse", ui.ListGithubApps),
+		"set-github-app-enabled":    wrapOp(csilapi.DecodeSetGitHubAppEnabledRequest, csilapi.EncodeSetGitHubAppEnabledResponse, "SetGitHubAppEnabledResponse", ui.SetGithubAppEnabled),
+		"sync-github-app":           wrapOp(csilapi.DecodeSyncGitHubAppRequest, csilapi.EncodeSyncGitHubAppResponse, "SyncGitHubAppResponse", ui.SyncGithubApp),
+		// WP3 ref classes.
+		// WP10 reporting and ownership.
+		"get-reporting-settings":    wrapOp(csilapi.DecodeGetReportingSettingsRequest, csilapi.EncodeGetReportingSettingsResponse, "GetReportingSettingsResponse", ui.GetReportingSettings),
+		"update-reporting-settings": wrapOp(csilapi.DecodeUpdateReportingSettingsRequest, csilapi.EncodeGetReportingSettingsResponse, "GetReportingSettingsResponse", ui.UpdateReportingSettings),
+		"get-agreement-report":      wrapOp(csilapi.DecodeGetAgreementReportRequest, csilapi.EncodeGetAgreementReportResponse, "GetAgreementReportResponse", ui.GetAgreementReport),
+		"list-path-acceptances":     wrapOp(csilapi.DecodeListPathAcceptancesRequest, csilapi.EncodeListPathAcceptancesResponse, "ListPathAcceptancesResponse", ui.ListPathAcceptances),
+		"request-path-acceptance":   wrapOp(csilapi.DecodeRequestPathAcceptanceRequest, csilapi.EncodePathAcceptanceResponse, "PathAcceptanceResponse", ui.RequestPathAcceptance),
+		"decide-path-acceptance":    wrapOp(csilapi.DecodeDecidePathAcceptanceRequest, csilapi.EncodePathAcceptanceResponse, "PathAcceptanceResponse", ui.DecidePathAcceptance),
+		// WP15 artifacts, test results, test quarantine, provenance.
+		"list-job-artifacts":             wrapOp(csilapi.DecodeListJobArtifactsRequest, csilapi.EncodeListJobArtifactsResponse, "ListJobArtifactsResponse", ui.ListJobArtifacts),
+		"read-job-artifact":              wrapOp(csilapi.DecodeReadJobArtifactRequest, csilapi.EncodeReadJobArtifactResponse, "ReadJobArtifactResponse", ui.ReadJobArtifact),
+		"get-job-test-results":           wrapOp(csilapi.DecodeGetJobTestResultsRequest, csilapi.EncodeGetJobTestResultsResponse, "GetJobTestResultsResponse", ui.GetJobTestResults),
+		"list-flaky-tests":               wrapOp(csilapi.DecodeListFlakyTestsRequest, csilapi.EncodeListFlakyTestsResponse, "ListFlakyTestsResponse", ui.ListFlakyTests),
+		"list-test-quarantines":          wrapOp(csilapi.DecodeListTestQuarantinesRequest, csilapi.EncodeListTestQuarantinesResponse, "ListTestQuarantinesResponse", ui.ListTestQuarantines),
+		"quarantine-test":                wrapOp(csilapi.DecodeQuarantineTestRequest, csilapi.EncodeQuarantineTestResponse, "QuarantineTestResponse", ui.QuarantineTest),
+		"unquarantine-test":              wrapOp(csilapi.DecodeUnquarantineTestRequest, csilapi.EncodeUnquarantineTestResponse, "UnquarantineTestResponse", ui.UnquarantineTest),
+		"get-job-provenance":             wrapOp(csilapi.DecodeGetJobProvenanceRequest, csilapi.EncodeGetJobProvenanceResponse, "GetJobProvenanceResponse", ui.GetJobProvenance),
+		"get-required-set":               wrapOp(csilapi.DecodeGetRequiredSetRequest, csilapi.EncodeGetRequiredSetResponse, "GetRequiredSetResponse", ui.GetRequiredSet),
+		"set-required-set-enabled":       wrapOp(csilapi.DecodeSetRequiredSetEnabledRequest, csilapi.EncodeSetRequiredSetEnabledResponse, "SetRequiredSetEnabledResponse", ui.SetRequiredSetEnabled),
+		"set-required-set-approvers":     wrapOp(csilapi.DecodeSetRequiredSetApproversRequest, csilapi.EncodeGetRequiredSetResponse, "GetRequiredSetResponse", ui.SetRequiredSetApprovers),
+		"propose-required-set-change":    wrapOp(csilapi.DecodeProposeRequiredSetChangeRequest, csilapi.EncodeProposeRequiredSetChangeResponse, "ProposeRequiredSetChangeResponse", ui.ProposeRequiredSetChange),
+		"decide-required-set-proposal":   wrapOp(csilapi.DecodeDecideRequiredSetProposalRequest, csilapi.EncodeDecideRequiredSetProposalResponse, "DecideRequiredSetProposalResponse", ui.DecideRequiredSetProposal),
+		"quarantine-required-workflow":   wrapOp(csilapi.DecodeQuarantineRequiredWorkflowRequest, csilapi.EncodeQuarantineRequiredWorkflowResponse, "QuarantineRequiredWorkflowResponse", ui.QuarantineRequiredWorkflow),
+		"unquarantine-required-workflow": wrapOp(csilapi.DecodeUnquarantineRequiredWorkflowRequest, csilapi.EncodeUnquarantineRequiredWorkflowResponse, "UnquarantineRequiredWorkflowResponse", ui.UnquarantineRequiredWorkflow),
+		"list-priority-lanes":            wrapOp(csilapi.DecodeListPriorityLanesRequest, csilapi.EncodeListPriorityLanesResponse, "ListPriorityLanesResponse", ui.ListPriorityLanes),
+		"put-priority-lane":              wrapOp(csilapi.DecodePutPriorityLaneRequest, csilapi.EncodePutPriorityLaneResponse, "PutPriorityLaneResponse", ui.PutPriorityLane),
+		"delete-priority-lane":           wrapOp(csilapi.DecodeDeletePriorityLaneRequest, csilapi.EncodeDeletePriorityLaneResponse, "DeletePriorityLaneResponse", ui.DeletePriorityLane),
+		"explain-priority":               wrapOp(csilapi.DecodeExplainPriorityRequest, csilapi.EncodeExplainPriorityResponse, "ExplainPriorityResponse", ui.ExplainPriority),
+		"set-group-priority-shift":       wrapOp(csilapi.DecodeSetGroupPriorityShiftRequest, csilapi.EncodeSetGroupPriorityShiftResponse, "SetGroupPriorityShiftResponse", ui.SetGroupPriorityShift),
+		"list-ref-class-rules":           wrapOp(csilapi.DecodeListRefClassRulesRequest, csilapi.EncodeListRefClassRulesResponse, "ListRefClassRulesResponse", ui.ListRefClassRules),
+		"put-ref-class-rule":             wrapOp(csilapi.DecodePutRefClassRuleRequest, csilapi.EncodePutRefClassRuleResponse, "PutRefClassRuleResponse", ui.PutRefClassRule),
+		"delete-ref-class-rule":          wrapOp(csilapi.DecodeDeleteRefClassRuleRequest, csilapi.EncodeDeleteRefClassRuleResponse, "DeleteRefClassRuleResponse", ui.DeleteRefClassRule),
+		"explain-ref-classes":            wrapOp(csilapi.DecodeExplainRefClassesRequest, csilapi.EncodeExplainRefClassesResponse, "ExplainRefClassesResponse", ui.ExplainRefClasses),
 	}
+	// WP17 diagnosis entries from principals (docs/diagnosis.md).
+	h.ops["ReactorcideUi"]["list-diagnoses"] = wrapOp(csilapi.DecodeListDiagnosesRequest, csilapi.EncodeListDiagnosesResponse, "ListDiagnosesResponse", ui.ListDiagnoses)
+	h.ops["ReactorcideUi"]["put-diagnosis"] = wrapOp(csilapi.DecodePutDiagnosisRequest, csilapi.EncodePutDiagnosisResponse, "PutDiagnosisResponse", ui.PutDiagnosis)
+	h.ops["ReactorcideUi"]["set-shed-actions"] = wrapOp(csilapi.DecodeSetShedActionsRequest, csilapi.EncodeSetShedLevelResponse, "SetShedLevelResponse", ui.SetShedActions)
+	h.ops["ReactorcideUi"]["get-org-reporting-settings"] = wrapOp(csilapi.DecodeGetOrgReportingSettingsRequest, csilapi.EncodeGetOrgReportingSettingsResponse, "GetOrgReportingSettingsResponse", ui.GetOrgReportingSettings)
+	h.ops["ReactorcideUi"]["put-org-reporting-settings"] = wrapOp(csilapi.DecodePutOrgReportingSettingsRequest, csilapi.EncodeGetOrgReportingSettingsResponse, "GetOrgReportingSettingsResponse", ui.PutOrgReportingSettings)
+	h.ops["ReactorcideUi"]["get-required-set-org-settings"] = wrapOp(csilapi.DecodeGetRequiredSetOrgSettingsRequest, csilapi.EncodeGetRequiredSetOrgSettingsResponse, "GetRequiredSetOrgSettingsResponse", ui.GetRequiredSetOrgSettings)
+	h.ops["ReactorcideUi"]["put-required-set-org-settings"] = wrapOp(csilapi.DecodePutRequiredSetOrgSettingsRequest, csilapi.EncodeGetRequiredSetOrgSettingsResponse, "GetRequiredSetOrgSettingsResponse", ui.PutRequiredSetOrgSettings)
+	h.ops["ReactorcideUi"]["get-vcs-owner-allowlist"] = wrapOp(csilapi.DecodeGetVcsOwnerAllowlistRequest, csilapi.EncodeVcsOwnerAllowlistResponse, "VcsOwnerAllowlistResponse", ui.GetVcsOwnerAllowlist)
+	h.ops["ReactorcideUi"]["put-vcs-owner-allowlist"] = wrapOp(csilapi.DecodePutVcsOwnerAllowlistRequest, csilapi.EncodeVcsOwnerAllowlistResponse, "VcsOwnerAllowlistResponse", ui.PutVcsOwnerAllowlist)
+	h.ops["ReactorcideUi"]["get-oidc-settings"] = wrapOp(csilapi.DecodeGetOidcSettingsRequest, csilapi.EncodeOidcSettingsResponse, "OidcSettingsResponse", ui.GetOidcSettings)
+	h.ops["ReactorcideUi"]["put-oidc-settings"] = wrapOp(csilapi.DecodePutOidcSettingsRequest, csilapi.EncodeOidcSettingsResponse, "OidcSettingsResponse", ui.PutOidcSettings)
+	h.ops["ReactorcideUi"]["list-oidc-keys"] = wrapOp(csilapi.DecodeListOidcKeysRequest, csilapi.EncodeListOidcKeysResponse, "ListOidcKeysResponse", ui.ListOidcKeys)
+	h.ops["ReactorcideUi"]["rotate-oidc-key"] = wrapOp(csilapi.DecodeRotateOidcKeyRequest, csilapi.EncodeListOidcKeysResponse, "ListOidcKeysResponse", ui.RotateOidcKey)
+	h.ops["ReactorcideUi"]["retire-oidc-key"] = wrapOp(csilapi.DecodeRetireOidcKeyRequest, csilapi.EncodeListOidcKeysResponse, "ListOidcKeysResponse", ui.RetireOidcKey)
+	h.ops["ReactorcideUi"]["list-alert-rules"] = wrapOp(csilapi.DecodeListAlertRulesRequest, csilapi.EncodeListAlertRulesResponse, "ListAlertRulesResponse", ui.ListAlertRules)
+	h.ops["ReactorcideUi"]["create-alert-rule"] = wrapOp(csilapi.DecodeCreateAlertRuleRequest, csilapi.EncodeAlertRuleResponse, "AlertRuleResponse", ui.CreateAlertRule)
+	h.ops["ReactorcideUi"]["update-alert-rule"] = wrapOp(csilapi.DecodeUpdateAlertRuleRequest, csilapi.EncodeAlertRuleResponse, "AlertRuleResponse", ui.UpdateAlertRule)
+	h.ops["ReactorcideUi"]["delete-alert-rule"] = wrapOp(csilapi.DecodeDeleteAlertRuleRequest, csilapi.EncodeDeleteAlertRuleResponse, "DeleteAlertRuleResponse", ui.DeleteAlertRule)
+	h.ops["ReactorcideUi"]["delete-diagnosis"] = wrapOp(csilapi.DecodeDeleteDiagnosisRequest, csilapi.EncodeDeleteDiagnosisResponse, "DeleteDiagnosisResponse", ui.DeleteDiagnosis)
+	// WP5 re-run with shifts and runs on any ref.
+	h.ops["ReactorcideUi"]["rerun-workflow"] = wrapOp(csilapi.DecodeRerunWorkflowRequest, csilapi.EncodeRerunWorkflowResponse, "RerunWorkflowResponse", ui.RerunWorkflow)
+	h.ops["ReactorcideUi"]["start-run"] = wrapOp(csilapi.DecodeStartRunRequest, csilapi.EncodeStartRunResponse, "StartRunResponse", ui.StartRun)
+	// WP14 environment defaults, image policy, and reserved job links
+	// (docs/builds-and-caches.md).
+	h.ops["ReactorcideUi"]["list-env-defaults"] = wrapOp(csilapi.DecodeListEnvDefaultsRequest, csilapi.EncodeListEnvDefaultsResponse, "ListEnvDefaultsResponse", ui.ListEnvDefaults)
+	h.ops["ReactorcideUi"]["put-env-default"] = wrapOp(csilapi.DecodePutEnvDefaultRequest, csilapi.EncodePutEnvDefaultResponse, "PutEnvDefaultResponse", ui.PutEnvDefault)
+	h.ops["ReactorcideUi"]["delete-env-default"] = wrapOp(csilapi.DecodeDeleteEnvDefaultRequest, csilapi.EncodeDeleteEnvDefaultResponse, "DeleteEnvDefaultResponse", ui.DeleteEnvDefault)
+	h.ops["ReactorcideUi"]["get-image-policy"] = wrapOp(csilapi.DecodeGetImagePolicyRequest, csilapi.EncodeGetImagePolicyResponse, "GetImagePolicyResponse", ui.GetImagePolicy)
+	h.ops["ReactorcideUi"]["put-image-policy"] = wrapOp(csilapi.DecodePutImagePolicyRequest, csilapi.EncodePutImagePolicyResponse, "PutImagePolicyResponse", ui.PutImagePolicy)
+	h.ops["ReactorcideUi"]["list-image-aliases"] = wrapOp(csilapi.DecodeListImageAliasesRequest, csilapi.EncodeListImageAliasesResponse, "ListImageAliasesResponse", ui.ListImageAliases)
+	h.ops["ReactorcideUi"]["get-image-alias"] = wrapOp(csilapi.DecodeGetImageAliasRequest, csilapi.EncodeGetImageAliasResponse, "GetImageAliasResponse", ui.GetImageAlias)
+	h.ops["ReactorcideUi"]["set-image-alias"] = wrapOp(csilapi.DecodeSetImageAliasRequest, csilapi.EncodeSetImageAliasResponse, "SetImageAliasResponse", ui.SetImageAlias)
+	h.ops["ReactorcideUi"]["delete-image-alias"] = wrapOp(csilapi.DecodeDeleteImageAliasRequest, csilapi.EncodeDeleteImageAliasResponse, "DeleteImageAliasResponse", ui.DeleteImageAlias)
+	h.ops["ReactorcideUi"]["get-image-rollout-status"] = wrapOp(csilapi.DecodeGetImageRolloutStatusRequest, csilapi.EncodeGetImageRolloutStatusResponse, "GetImageRolloutStatusResponse", ui.GetImageRolloutStatus)
+	h.ops["ReactorcideUi"]["get-worker-image-state"] = wrapOp(csilapi.DecodeGetWorkerImageStateRequest, csilapi.EncodeGetWorkerImageStateResponse, "GetWorkerImageStateResponse", ui.GetWorkerImageState)
+	h.ops["ReactorcideUi"]["list-job-links"] = wrapOp(csilapi.DecodeListJobLinksRequest, csilapi.EncodeListJobLinksResponse, "ListJobLinksResponse", ui.ListJobLinks)
 	if worker != nil {
 		h.ops["ReactorcideWorker"] = map[string]opFunc{
 			"register":            wrapOp(workercsilapi.DecodeRegisterRequest, workercsilapi.EncodeRegisterResponse, "RegisterResponse", worker.Register),
@@ -204,6 +312,7 @@ func NewHandlerWithWorker(auth csilapi.ReactorcideAuth, ui csilapi.ReactorcideUi
 			"append-log-batch":    wrapOp(workercsilapi.DecodeAppendLogBatchRequest, workercsilapi.EncodeAppendLogBatchResponse, "AppendLogBatchResponse", worker.AppendLogBatch),
 			"append-metric-batch": wrapOp(workercsilapi.DecodeAppendMetricBatchRequest, workercsilapi.EncodeAppendMetricBatchResponse, "AppendMetricBatchResponse", worker.AppendMetricBatch),
 			"report-result":       wrapOp(workercsilapi.DecodeReportResultRequest, workercsilapi.EncodeReportResultResponse, "ReportResultResponse", worker.ReportResult),
+			"upload-artifact":     wrapOp(workercsilapi.DecodeUploadArtifactRequest, workercsilapi.EncodeUploadArtifactResponse, "UploadArtifactResponse", worker.UploadArtifact),
 		}
 	}
 	return h

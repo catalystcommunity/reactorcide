@@ -13,11 +13,22 @@ type groupSummary struct {
 	GroupID     string `json:"group_id" yaml:"group_id"`
 	Name        string `json:"name" yaml:"name"`
 	Description string `json:"description,omitempty" yaml:"description,omitempty"`
+	// PriorityShift moves the priority of the members' work (docs/priority.md).
+	PriorityShift int `json:"priority_shift" yaml:"priority_shift"`
 }
 
 type groupMember struct {
 	UserID   string `json:"user_id" yaml:"user_id"`
 	Username string `json:"username" yaml:"username"`
+	// The fields below come from the principal of the member. A member that
+	// a linked VCS team gives can be a principal with no user.
+	PrincipalID string   `json:"principal_id,omitempty" yaml:"principal_id,omitempty"`
+	Kind        string   `json:"kind,omitempty" yaml:"kind,omitempty"`
+	Name        string   `json:"name,omitempty" yaml:"name,omitempty"`
+	Source      string   `json:"source,omitempty" yaml:"source,omitempty"`
+	Manual      bool     `json:"manual,omitempty" yaml:"manual,omitempty"`
+	Teams       []string `json:"teams,omitempty" yaml:"teams,omitempty"`
+	VCSLogins   []string `json:"vcs_logins,omitempty" yaml:"vcs_logins,omitempty"`
 }
 
 func groupsPath(org string, parts ...string) string {
@@ -76,9 +87,9 @@ var GroupsCommand = &cli.Command{
 					return err
 				}
 				return render(ctx.String("format"), response.Groups, func(w *tabwriter.Writer) {
-					fmt.Fprintln(w, "NAME\tGROUP ID\tDESCRIPTION")
+					fmt.Fprintln(w, "NAME\tGROUP ID\tPRIORITY SHIFT\tDESCRIPTION")
 					for _, group := range response.Groups {
-						fmt.Fprintf(w, "%s\t%s\t%s\n", group.Name, group.GroupID, group.Description)
+						fmt.Fprintf(w, "%s\t%s\t%+d\t%s\n", group.Name, group.GroupID, group.PriorityShift, group.Description)
 					}
 				})
 			},
@@ -100,12 +111,7 @@ var GroupsCommand = &cli.Command{
 				if err := client.doJSON(http.MethodGet, groupsPath(ctx.String("org"), ctx.Args().First(), "members"), nil, http.StatusOK, &response); err != nil {
 					return err
 				}
-				return render(ctx.String("format"), response.Members, func(w *tabwriter.Writer) {
-					fmt.Fprintln(w, "USERNAME\tUSER ID")
-					for _, member := range response.Members {
-						fmt.Fprintf(w, "%s\t%s\n", member.Username, member.UserID)
-					}
-				})
+				return render(ctx.String("format"), response.Members, renderGroupMembers(response.Members))
 			},
 		},
 		{

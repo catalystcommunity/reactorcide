@@ -7,6 +7,7 @@ import (
 
 	"github.com/catalystcommunity/app-utils-go/logging"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/jobtelemetry"
+	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/metrics"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/resourcehistory"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store/models"
@@ -15,7 +16,7 @@ import (
 )
 
 // terminalStatuses are the job statuses ReportResult may land a job on.
-var terminalStatuses = map[string]bool{"completed": true, "failed": true, "cancelled": true}
+var terminalStatuses = map[string]bool{"completed": true, "failed": true, "cancelled": true, "timeout": true}
 
 // ReportResult finalizes a job a worker has finished executing: resolves
 // the caller's session, verifies the lease belongs to it, guarded-
@@ -90,8 +91,37 @@ func (s *WorkerService) ReportResult(ctx context.Context, req csilapi.ReportResu
 		}
 	}
 
-	now := time.Now().UTC()
 	exitCode := int(req.ExitCode)
+	failureClass, failureDetail, reportedClass := resultFailureClass(finalStatus, exitCode, lastError, req.FailureClass, req.FailureDetail)
+
+	// An infra.platform failure goes back to the queue while the job's
+	// retry budget lasts. It never applies to a job that is being
+	// cancelled: the cancel wins. A class derived from an older worker's
+	// error text is a guess, so only a class the worker reported is
+	// retried. A retry runs the job command again, so it applies only
+	// when the worker proves that the main container never started
+	// (main_started false). An older worker that does not send
+	// main_started never gets an automatic retry: an eviction or a lost
+	// runtime after the start must not run a deploy twice.
+	if reportedClass && neverStarted(req.MainStarted) && finalStatus == "failed" && (job.Status == "scheduling" || job.Status == "running") {
+		if retry, budget := s.shouldRetryInfra(ctx, job, failureClass); retry {
+			oldTask := job.CorndogsTaskID
+			if s.requeueInfraFailure(ctx, job, failureClass, lastError, budget, []string{"scheduling", "running"}, func(j *models.Job) bool {
+				return leaseOwnsJob(lease, j)
+			}) {
+				if s.deps.CorndogsClient != nil && oldTask != nil && *oldTask != "" {
+					s.cancelLiveTask(ctx, *oldTask)
+				}
+				if err := s.deps.Store.ReleaseWorkerLease(ctx, lease.LeaseID, "requeued:"+failureClass); err != nil {
+					logging.Log.WithError(err).WithField("lease_id", lease.LeaseID).Warn("Failed to release worker lease of a requeued job")
+				}
+				s.secrets.delete(lease.LeaseID)
+				return csilapi.ReportResultResponse{Ok: true}, nil
+			}
+		}
+	}
+
+	now := time.Now().UTC()
 	ownsFinalization := false
 	finalized, matched, err := s.deps.Store.UpdateJobStatusGuarded(ctx, job.JobID, []string{"scheduling", "running", "cancelling"}, func(j *models.Job) {
 		if !leaseOwnsJob(lease, j) {
@@ -108,6 +138,7 @@ func (s *WorkerService) ReportResult(ctx context.Context, req csilapi.ReportResu
 			j.CompletedAt = finished
 		}
 		j.ExitCode = &exitCode
+		j.SetFailure(failureClass, failureDetail)
 	})
 	if err != nil {
 		logging.Log.WithError(err).WithField("job_id", job.JobID).Error("Failed to finalize job status")
@@ -121,6 +152,7 @@ func (s *WorkerService) ReportResult(ctx context.Context, req csilapi.ReportResu
 	}
 	if matched {
 		job = finalized
+		metrics.RecordJobFinished(job.Status, job.FailureClassValue(), job.QueueName)
 		s.publishJobUpdate(ctx, job, now)
 	} else if current, getErr := s.deps.Store.GetJobByID(ctx, job.JobID); getErr == nil && !terminalStatuses[current.Status] && current.Status != "timeout" {
 		// The job is not terminal and not ours to finish: the lost-job
@@ -155,6 +187,13 @@ func (s *WorkerService) ReportResult(ctx context.Context, req csilapi.ReportResu
 	// workspaceDir: the coordinator has no access to the job's workspace, so
 	// workflow-output.json vars are not merged here -- status/DAG only. Does
 	// nothing for non-workflow jobs.
+	// Job links (build_settings.go), before the workflow advance so that the
+	// PR comment update can show them.
+	s.deps.recordJobLinks(ctx, job, req.WorkflowOutput)
+	// Artifacts, test reports, and provenance (artifacts.go), before the
+	// workflow advance so that the node and the PR comment see the test
+	// summary.
+	s.processJobOutputs(ctx, lease, job, req.WorkflowOutput)
 	if s.deps.WorkflowFinalizer != nil && job.WorkflowID != nil && *job.WorkflowID != "" {
 		var completionErr error
 		if req.WorkflowOutput != nil {
@@ -215,6 +254,38 @@ func (s *WorkerService) ReportResult(ctx context.Context, req csilapi.ReportResu
 	}
 
 	return csilapi.ReportResultResponse{Ok: true}, nil
+}
+
+// neverStarted reports whether the worker proved that the main container
+// of the job never started. An absent value (an older worker, or a worker
+// that cannot prove it) is not proof.
+func neverStarted(mainStarted *bool) bool {
+	return mainStarted != nil && !*mainStarted
+}
+
+// resultFailureClass decides the failure class of a reported result. A
+// worker that knows the cause sends it; the class must agree with the
+// status (cancelled and timeout have their own class, completed has none).
+// A worker older than failure classes sends none, and the class is derived
+// from the status, exit code and error text.
+//
+// reportedClass is true when the class is the worker's own.
+func resultFailureClass(status string, exitCode int, lastError string, reported, reportedDetail *string) (class, detail string, reportedClass bool) {
+	switch status {
+	case "completed":
+		return "", "", false
+	case "cancelled":
+		return models.FailureClassCancelled, "", reported != nil
+	case "timeout":
+		return models.FailureClassTimeout, "", reported != nil
+	}
+	detail = derefOrEmpty(reportedDetail)
+	if reported != nil && models.IsValidFailureClass(*reported) &&
+		*reported != models.FailureClassCancelled && *reported != models.FailureClassTimeout &&
+		*reported != models.FailureClassWorkerLost {
+		return *reported, detail, true
+	}
+	return models.DeriveFailureClass(status, &exitCode, lastError), detail, false
 }
 
 // finalizeCorndogsTask drives the corndogs task to match a job's terminal

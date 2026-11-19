@@ -1,0 +1,50 @@
+/* ---------- Image aliases and worker image sets (ImageAliases.ts, WorkerImageState.ts) ---------- */
+.image-ref {
+  max-width: 28rem;
+  overflow-wrap: anywhere;
+  font-size: var(--text-sm);
+}
+.alias-progress,
+.rollout-detail {
+  max-width: 28rem;
+}
+.rollout-row > td {
+  background: var(--surface-sunken);
+}
+.rollout-panel {
+  display: grid;
+  gap: var(--space-2);
+}
+.worker-image-facts {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: var(--space-1) var(--space-4);
+  margin: 0 0 var(--space-4);
+}
+.worker-image-facts dt {
+  color: var(--text-muted, inherit);
+}
+.worker-image-facts dd {
+  margin: 0;
+}
+.alias-name {
+  white-space: nowrap;
+}
+.image-failure-list,
+.rollout-failures,
+.rollout-problem-list,
+.rollout-pool-list {
+  margin: 0;
+  padding-left: var(--space-4);
+}
+.image-failure-permanent,
+.image-failure.image-failure-permanent {
+  color: var(--danger);
+}
+.rollout-problems {
+  color: var(--danger);
+  background: var(--danger-soft);
+  border: 1px solid var(--danger);
+  border-radius: var(--radius-sm, 4px);
+  padding: var(--space-2) var(--space-3);
+}

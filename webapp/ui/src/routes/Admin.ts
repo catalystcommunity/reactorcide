@@ -19,7 +19,12 @@ import { h, setText, show, syncKeyed, uid } from '~/ui/dom.ts'
 import { define } from '~/ui/element.ts'
 import { Loader, type LoadHost } from '~/ui/load.ts'
 import { ROUTE, href } from '~/ui/router.ts'
+import { DRAFT_CHOICES, shedLevelCard, type ShedLevelCard } from '~/components/ShedLevel.ts'
+import { githubAppsCard, type GitHubAppsCard } from '~/components/GitHubApps.ts'
+import { oidcKeysCard, type OidcKeysCard } from '~/components/Oidc.ts'
+import { ChipList } from '~/components/ChipList.ts'
 import { DUPLICATE_CHOICES, DYNAMIC_CHOICES } from './ProjectEvents.ts'
+import { EGRESS_CHOICES, RETRY_CHOICES } from '~/components/executionChoices.ts'
 
 /**
  * Instance administration: global settings, and who may sign in.
@@ -34,10 +39,20 @@ export class AdminPage extends RcPage {
   #refused!: HTMLElement
   #body!: HTMLElement
   #cards: Card[] = []
+  #shed!: ShedLevelCard
+  #githubApps!: GitHubAppsCard
+  #oidcKeys!: OidcKeysCard
 
   protected build(): void {
     this.#refused = notPermitted('this instance')
-    this.#cards = [new GlobalSettingsCard(this), new OrgEventSettingsCard(this), new TrustedIdentitiesCard(this), new TrustedDomainsCard(this)]
+    this.#cards = [new GlobalSettingsCard(this), new OrgEventSettingsCard(this), new VcsOwnerAllowlistCard(this), new TrustedIdentitiesCard(this), new TrustedDomainsCard(this)]
+    // The global shed level. It is an element with its own load, so it is
+    // added only when the gate is open (it requests nothing before).
+    this.#shed = shedLevelCard()
+    // The GitHub App pool (docs/github-app.md), added like the shed card.
+    this.#githubApps = githubAppsCard()
+    // The OIDC signing keys (docs/oidc.md), added like the shed card.
+    this.#oidcKeys = oidcKeysCard()
     this.#body = h(
       'div',
       { class: 'page' },
@@ -45,7 +60,7 @@ export class AdminPage extends RcPage {
         'div',
         { class: 'page-header' },
         h('div', null, h('h1', null, 'Administration'), h('p', { class: 'meta' }, 'Settings and access rules for the whole instance.')),
-        h('div', { class: 'row' }, h('a', { href: href('/org/groups'), class: 'btn btn-sm' }, 'Groups'), h('a', { href: href('/org/roles'), class: 'btn btn-sm' }, 'Roles')),
+        h('div', { class: 'row' }, h('a', { href: href('/org/groups'), class: 'btn btn-sm' }, 'Groups'), h('a', { href: href('/org/roles'), class: 'btn btn-sm' }, 'Roles'), h('a', { href: href('/org/principals'), class: 'btn btn-sm' }, 'Principals'), h('a', { href: href('/org/subscriptions'), class: 'btn btn-sm' }, 'Event subscriptions')),
       ),
       this.#cards.map((card) => card.el),
     )
@@ -57,7 +72,12 @@ export class AdminPage extends RcPage {
     show(this.#refused, !allowed)
     show(this.#body, allowed)
     // Nothing is requested until the gate is open.
-    if (allowed) for (const card of this.#cards) card.render()
+    if (allowed) {
+      if (!this.#shed.isConnected) this.#cards[0].el.after(this.#shed)
+      if (!this.#githubApps.isConnected) this.#body.append(this.#githubApps)
+      if (!this.#oidcKeys.isConnected) this.#body.append(this.#oidcKeys)
+      for (const card of this.#cards) card.render()
+    }
   }
 }
 
@@ -131,7 +151,7 @@ class OrgEventSettingsCard implements Card {
   readonly #loading: HTMLElement
   readonly #table: HTMLElement
   readonly #body: HTMLTableSectionElement
-  readonly #selects = new Map<string, { duplicate: ChoiceSelect; dynamic: ChoiceSelect }>()
+  readonly #selects = new Map<string, { duplicate: ChoiceSelect; dynamic: ChoiceSelect; draft: ChoiceSelect; retries: ChoiceSelect; egress: ChoiceSelect }>()
 
   constructor(host: LoadHost) {
     this.#orgs = new Loader(host, async () => (await api.listOrgs({})).orgs)
@@ -144,7 +164,7 @@ class OrgEventSettingsCard implements Card {
       h(
         'table',
         { class: 'table' },
-        h('thead', null, h('tr', null, h('th', null, 'Organization'), h('th', null, 'Repeated deliveries'), h('th', null, 'Dynamic jobs'))),
+        h('thead', null, h('tr', null, h('th', null, 'Organization'), h('th', null, 'Repeated deliveries'), h('th', null, 'Dynamic jobs'), h('th', null, 'Draft PRs'), h('th', null, 'Infra retries'), h('th', null, 'Egress control'))),
         this.#body,
       ),
     )
@@ -155,7 +175,7 @@ class OrgEventSettingsCard implements Card {
       h(
         'p',
         { class: 'meta' },
-        'Repeated deliveries: what a new delivery for a change already seen does. Dynamic jobs: whether running jobs may start more jobs. A project can override each one.',
+        'Repeated deliveries: what a new delivery for a change already seen does. Dynamic jobs: whether running jobs may start more jobs. Draft PRs: whether a draft pull request runs. Infra retries: how many times a job that failed for an infrastructure cause (the main container never started) runs again. Egress control: all job traffic goes through the egress proxy. A project can override each one; a project can only turn egress control on.',
       ),
       this.#error.el,
       this.#loading,
@@ -163,7 +183,7 @@ class OrgEventSettingsCard implements Card {
     )
   }
 
-  async #save(org: OrgSummary, change: { duplicateEvents?: string; dynamicJobs?: string }): Promise<void> {
+  async #save(org: OrgSummary, change: { duplicateEvents?: string; dynamicJobs?: string; draftPrs?: string; infraRetries?: number; egressControl?: boolean }): Promise<void> {
     await this.#action.run('The organization setting could not be saved.', () => api.updateOrg({ name: org.name, ...change }))
     void this.#orgs.reload()
   }
@@ -192,20 +212,124 @@ class OrgEventSettingsCard implements Card {
           value: o.dynamicJobs || 'allow',
           onChange: (value) => void this.#save(current(), { dynamicJobs: value }),
         })
-        this.#selects.set(o.orgId, { duplicate, dynamic })
-        return h('tr', null, h('td', { class: 'org-name' }), h('td', null, duplicate.el), h('td', null, dynamic.el))
+        const draft = new ChoiceSelect({
+          ariaLabel: `Draft PRs for ${o.displayName || o.name}`,
+          choices: DRAFT_CHOICES,
+          value: o.draftPrs || 'run',
+          onChange: (value) => void this.#save(current(), { draftPrs: value }),
+        })
+        const retries = new ChoiceSelect({
+          ariaLabel: `Infra retries for ${o.displayName || o.name}`,
+          choices: RETRY_CHOICES,
+          value: String(o.infraRetries ?? 1),
+          onChange: (value) => void this.#save(current(), { infraRetries: Number(value) }),
+        })
+        const egress = new ChoiceSelect({
+          ariaLabel: `Egress control for ${o.displayName || o.name}`,
+          choices: EGRESS_CHOICES,
+          value: o.egressControl ? 'on' : 'off',
+          onChange: (value) => void this.#save(current(), { egressControl: value === 'on' }),
+        })
+        this.#selects.set(o.orgId, { duplicate, dynamic, draft, retries, egress })
+        return h('tr', null, h('td', { class: 'org-name' }), h('td', null, duplicate.el), h('td', null, dynamic.el), h('td', null, draft.el), h('td', null, retries.el), h('td', null, egress.el))
       },
       (row, o) => {
         setText(row.querySelector('.org-name')!, o.displayName || o.name)
         const selects = this.#selects.get(o.orgId)!
         selects.duplicate.el.disabled = this.#action.busy
         selects.dynamic.el.disabled = this.#action.busy
+        selects.draft.el.disabled = this.#action.busy
+        selects.retries.el.disabled = this.#action.busy
+        selects.egress.el.disabled = this.#action.busy
         if (!this.#action.busy) {
           selects.duplicate.update(DUPLICATE_CHOICES, o.duplicateEvents || 'run')
           selects.dynamic.update(DYNAMIC_CHOICES, o.dynamicJobs || 'allow')
+          selects.draft.update(DRAFT_CHOICES, o.draftPrs || 'run')
+          selects.retries.update(RETRY_CHOICES, String(o.infraRetries ?? 1))
+          selects.egress.update(EGRESS_CHOICES, o.egressControl ? 'on' : 'off')
         }
       },
     )
+  }
+}
+
+/**
+ * The VCS owner allowlist of each organization (docs/principals.md). The
+ * group VCS sync of an organization uses the GLOBAL VCS credential only for
+ * these owners, so one tenant cannot read the teams of another VCS owner
+ * with the shared credential. Global admin only.
+ */
+class VcsOwnerAllowlistCard implements Card {
+  readonly el: HTMLElement
+  readonly #orgs: Loader<string, OrgSummary[]>
+  readonly #list: Loader<string, string[]>
+  readonly #action: Action
+  readonly #error = new ActionError()
+  readonly #picker: ChoiceSelect
+  readonly #owners: ChipList
+  readonly #save: PushButton
+  readonly #body: HTMLElement
+  #orgName = ''
+  #seeded = ''
+
+  constructor(host: LoadHost) {
+    this.#orgs = new Loader(host, async () => (await api.listOrgs({})).orgs)
+    this.#list = new Loader(host, async (organization: string) => (await api.getVcsOwnerAllowlist({ organization })).owners)
+    this.#action = new Action(() => host.invalidate())
+    this.#picker = new ChoiceSelect({ ariaLabel: 'Organization', onChange: (value) => { this.#orgName = value; host.invalidate() } })
+    this.#owners = new ChipList({
+      ariaLabel: 'Add a VCS owner',
+      placeholder: 'acme',
+      mono: true,
+      validate: (v) => (/^[a-z0-9][a-z0-9-]{0,38}$/.test(v.toLowerCase()) ? undefined : 'A VCS owner is an organization login: letters, digits and -.'),
+      onChange: () => host.invalidate(),
+    })
+    this.#save = button('Save allowlist', { variant: 'primary', onClick: () => void this.#store() })
+    this.#body = h(
+      'div',
+      { hidden: true },
+      field({ label: 'Organization', control: this.#picker.el }).el,
+      field({ label: 'VCS owners', hint: 'GitHub organization logins whose teams the group sync may read with the global VCS credential.', control: this.#owners.el, labelTarget: this.#owners.input }).el,
+      h('div', { class: 'row' }, this.#save),
+    )
+    this.el = h(
+      'div',
+      { class: 'card' },
+      h('h3', { class: 'section-title' }, 'VCS owner allowlist'),
+      h('p', { class: 'meta' }, 'A group linked to a VCS team syncs with the credential of a project of its organization. With no such credential, it uses the global VCS credential, but only for the owners listed here.'),
+      this.#error.el,
+      this.#body,
+    )
+  }
+
+  async #store(): Promise<void> {
+    const organization = this.#orgName
+    const owners = this.#owners.values().map((v) => v.toLowerCase())
+    let stored: string[] | undefined
+    const ok = await this.#action.run('The allowlist could not be saved.', async () => {
+      stored = (await api.putVcsOwnerAllowlist({ organization, owners })).owners
+    })
+    if (ok && stored) {
+      this.#seeded = ''
+      this.#list.mutate(stored)
+    }
+  }
+
+  render(): void {
+    this.#orgs.sync('all')
+    const orgs = this.#orgs.state.data ?? []
+    if (!this.#orgName && orgs.length) this.#orgName = (orgs.find((o) => o.isDefault) ?? orgs[0]).name
+    this.#picker.update(orgs.map((o) => ({ value: o.name, label: o.displayName || o.name, description: '' })), this.#orgName)
+    this.#list.sync(this.#orgName || undefined)
+    const owners = this.#list.state.data
+    const key = owners ? JSON.stringify([this.#orgName, owners]) : ''
+    if (owners && key !== this.#seeded) {
+      this.#seeded = key
+      this.#owners.set(owners)
+    }
+    this.#error.set(this.#action.error ?? this.#list.state.error?.message ?? this.#orgs.state.error?.message)
+    show(this.#body, orgs.length > 0)
+    this.#save.disabled = this.#action.busy || !owners
   }
 }
 

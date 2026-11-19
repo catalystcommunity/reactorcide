@@ -60,7 +60,14 @@ V1 workflow nodes are declared dynamically through `triggers.json`, either by wr
 }
 ```
 
-The normal trigger fields still work: `job_file`, `job_name`, source fields, `container_image`, `job_command`, `code_dir`, `job_dir`, `working_dir`, `run_as_user`, `priority`, `timeout`, `capabilities`, and `env`.
+The normal trigger fields still work: `job_name`, source fields, `container_image`, `job_command`, `code_dir`, `job_dir`, `working_dir`, `run_as_user`, `run_as_administrator`, `priority`, `timeout`, `capabilities`, `image_pull_secrets`, `worker_class`, `characteristics`, `resources`, `quarantine_policy`, and `env`.
+
+The `job_file` field in this example needs a workspace on the coordinator.
+The trigger API (`POST /api/v1/jobs/{job_id}/triggers`) has no workspace. It
+refuses a trigger with `job_file` (`job_file ... requires workspace-backed
+trigger processing`). Runnerlib eval resolves each `job_file` of a workflow
+YAML before it sends the triggers. A job script that calls `trigger_job()`
+must send complete jobs (`container_image` and `job_command`).
 
 ### Multiple workflows per event
 
@@ -202,6 +209,117 @@ Every merge produces durable events.
 
 Future merge strategies can add append, append-unique, object-merge, or explicit last-writer-wins behavior. Last-writer-wins should not be the default because it makes parallel behavior hard to debug.
 
+## Owners and Contact
+
+A workflow can name its owner and a contact. Both keys are optional.
+
+```yaml
+id: payments
+name: "Payments"
+owners:
+  # One primary group: a Reactorcide group name, or vcs_team:ORG/SLUG.
+  group: payments-ci
+  # Optional: more owner subjects (at most 20).
+  subjects:
+    - vcs_user:github/alice
+contact:
+  channel: "#payments-ci"          # at most 100 characters
+  help_url: https://wiki.example/payments-ci   # http or https, at most 500
+  email: payments-ci@example.com   # one plain address
+```
+
+Rules:
+
+- `owners.group` is one Reactorcide group name (lowercase letters, digits,
+  and hyphens) or `vcs_team:ORG/SLUG`. `reactorcide_group:NAME` is also
+  accepted and stored as `NAME`.
+- `owners.subjects` names people only: `principal:`, `service:`,
+  `identity:`, `vcs_user:`, `vcs_team:`, or `reactorcide_group:` subjects.
+  `*`, `repository_write`, `project_owner`, `workflow_owner`, and
+  `principal_kind:` are not owner subjects.
+- An `owners` block must set `group` or `subjects`.
+- An invalid `owners` or `contact` block makes the workflow file invalid. The
+  event page shows the error.
+
+### The trusted definition sets the owner
+
+The coordinator reads `owners` and `contact` from the TRUSTED CI definition
+only. A pull request cannot change the owner of the workflow that it runs.
+
+| Run | Owner source |
+| --- | --- |
+| Policy candidates (base and head CI), head CI not granted | The base definition. |
+| Policy candidates, head CI granted (policy rule or override-ci) | The base definition, not the head. |
+| A workflow that only the head has | No owner. |
+| One CI checkout at a trusted ref (see below) | That definition. |
+| One CI checkout at the pull request head (no stored CI policy) | The latest earlier trusted snapshot of the same workflow (`prior`), else unknown. |
+| A push to a branch that is not the default branch, a pull request to such a branch, a schedule, a manual run | The latest earlier trusted snapshot (`prior`), else unknown. |
+| A child workflow from a job's trigger output | The parent workflow. A job cannot set an owner. |
+| A retry or a re-run | The original run (`retry`). |
+
+### Trusted refs
+
+The revision alone is not enough: the ref of the CI definition must be
+trusted too. The coordinator writes an owner from the definition (source
+`ci`) only when the CI definition came from:
+
+- the default branch (ref class `default`; an operator rule can add the
+  class to other protected branches);
+- a pull request whose base is the default branch (the base SHA, or the
+  merge commit of a merged pull request);
+- a tag (ref class `tag`);
+- the separate CI repository of the project (`default_ci_source_url`).
+
+A push to another branch is pusher-controlled. With no stored policy its CI
+is the pushed commit. With a policy, the base is the `before` commit of the
+push, which the same pusher wrote. Thus such a push behaves like a pull
+request head: it copies the prior trusted snapshot or records unknown.
+
+The workflow row stores `owner_trusted` and `owner_ref_classes` (the ref
+classes of the run). A database trigger refuses a `ci` snapshot that is not
+trusted. Only a trusted snapshot gives authority (workflow owner
+capabilities, owner approvals, quarantine by an owner). The "latest owner"
+of a workflow (`owners.ForWorkflow`, used where no run is in view) is the
+newest trusted `ci` snapshot; copies (`prior`, `parent`, `retry`) do not
+count as the latest.
+
+### Snapshot
+
+The coordinator stores the owner on each workflow instance and each job when
+it creates the row (`owner_group`, `owner_subjects`, `owner_contact`, and on
+the workflow `owner_source` and `owner_ci_sha`). The snapshot does not change
+after creation, so attribution stays correct after a team changes. A database
+trigger copies it from the workflow to its jobs and from a parent workflow to
+a child workflow, and keeps it on every update.
+
+`NULL` means unknown: rows from before migration 000053, and runs with no
+trusted definition. An empty group with no subjects means that the trusted
+definition names no owner.
+
+The snapshot feeds:
+
+- the "why" section of the workflow page, the job page, and the event page;
+- the workflow entry of the pull-request report (`Owner ... · contact ...`);
+- the `owner_group` OIDC claim (docs/oidc.md);
+- the `owner_group` field of outbound events;
+- the priority shift of the owner group (docs/priority.md);
+- the `workflow_owner` approver subject and workflow roles
+  (docs/organizations-and-ci-policy.md).
+
+### Upgrade order
+
+runnerlib ignores top-level workflow keys that it does not know. An older
+runnerlib reads a file with `owners:` and `contact:` without an error and
+sends no owner. An older coordinator ignores the `owners` and `contact`
+fields of a workflow batch. To use owners:
+
+1. Deploy the coordinator with migration 000053.
+2. Deploy the runner image with the new runnerlib.
+3. Add `owners:` and `contact:` to the workflow files.
+
+A repository can add the keys before step 2. The owner is then unknown until
+the new runnerlib runs the eval.
+
 ## Decision Events
 
 Every meaningful workflow decision is queryable through `workflow_events`.
@@ -214,6 +332,8 @@ Every meaningful workflow decision is queryable through `workflow_events`.
 | `node_submitted` | Node became a job and was submitted |
 | `node_running` | Backing job was picked up by a worker |
 | `node_completed` | Backing job reached a terminal state |
+| `node_cancelled` | A user or an admin cancelled or killed the node |
+| `node_retried` | A user retried the node |
 | `workflow_var_set` | Workflow var was accepted or deduplicated |
 | `workflow_var_conflict` | Workflow var merge failed |
 | `workflow_status_changed` | Workflow status changed |
@@ -229,6 +349,7 @@ Workflow state uses dedicated workflow tables plus workflow foreign keys on `job
 - `workflow_vars`: key, JSON value, value hash, source node/job.
 - `workflow_events`: workflow/node/job, event type, reason, details JSON.
 - `jobs`: `workflow_id`, `workflow_node_id`, `workflow_run_id`, and `workflow_node_name` link concrete job runs back to workflow nodes.
+- `workflow_instances` and `jobs`: the owner snapshot (see [Owners and Contact](#owners-and-contact)).
 
 ## VCS Status
 
@@ -288,7 +409,7 @@ The UI should show workflows first and jobs underneath them:
   these results.
 - Node detail linked to existing job logs.
 - Skip/reason panel sourced from node decision reasons and `workflow_events`.
-- A closed "Why is this workflow running?" section with the event decision reasons.
+- A closed "Why is this workflow running?" section with the event decision reasons and the owner and contact.
 - Var history with source node/job and conflict events.
 
 Existing job pages remain useful, but workflow-triggered jobs should clearly show their parent workflow and node.

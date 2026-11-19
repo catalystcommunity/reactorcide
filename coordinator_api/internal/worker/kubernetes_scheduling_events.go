@@ -198,7 +198,13 @@ func (kr *KubernetesRunner) ExecutionTiming(ctx context.Context, jobName string)
 			if status.State.Running != nil {
 				return ExecutionTiming{StartedAt: status.State.Running.StartedAt.Time}, nil
 			}
+			if status.LastTerminationState.Terminated != nil {
+				return ExecutionTiming{StartedAt: status.LastTerminationState.Terminated.StartedAt.Time}, nil
+			}
 		}
 	}
-	return ExecutionTiming{}, nil
+	// The job has a pod, and no pod shows a main container that ran
+	// (restartPolicy Never and backoffLimit 0: a pod is not restarted).
+	// No pod at all is not proof: the pod can have been deleted.
+	return ExecutionTiming{MainNotStarted: len(pods.Items) > 0}, nil
 }

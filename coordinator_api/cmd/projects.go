@@ -5,6 +5,8 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"strconv"
+	"strings"
 	"text/tabwriter"
 
 	"github.com/urfave/cli/v2"
@@ -63,6 +65,7 @@ var ProjectsCommand = &cli.Command{
 			Flags: append(append(apiFlags(), projectSpecFlags()...),
 				formatFlag(),
 				&cli.StringFlag{Name: "file", Usage: "YAML or JSON file holding the project definition"},
+				&cli.StringFlag{Name: "report-mode", Usage: "Report mode of the new project: full, statuses_only, or silent (default: the organization value)"},
 			),
 			Action: func(ctx *cli.Context) error {
 				client, err := newAPIClient(ctx)
@@ -80,11 +83,19 @@ var ProjectsCommand = &cli.Command{
 				if err := client.doJSON(http.MethodPost, "/api/v1/projects", spec, http.StatusCreated, &project); err != nil {
 					return err
 				}
+				if ctx.IsSet("report-mode") {
+					// The report mode is a reporting setting with its own route.
+					body := map[string]interface{}{"report_mode": ctx.String("report-mode")}
+					if err := client.doJSON(http.MethodPut, "/api/v1/projects/"+url.PathEscape(project.ProjectID)+"/reporting", body, http.StatusOK, nil); err != nil {
+						return fmt.Errorf("project %s was created, but the report mode was not set: %w", project.ProjectID, err)
+					}
+				}
 				return renderProject(ctx.String("format"), &project)
 			},
 		},
 		{
 			Name:      "update",
+			Aliases:   []string{"set"},
 			Usage:     "Update a project",
 			ArgsUsage: "<project-id>",
 			Description: "Only the fields you supply are changed. Use --file for a YAML or JSON " +
@@ -156,6 +167,13 @@ type projectSpec struct {
 	VCSCredentialSecrets map[string]string `json:"vcs_token_secrets,omitempty" yaml:"vcs_token_secrets,omitempty"`
 	WebhookSecret        string            `json:"webhook_secret,omitempty" yaml:"webhook_secret,omitempty"`
 	WebhookSecrets       map[string]string `json:"webhook_secrets,omitempty" yaml:"webhook_secrets,omitempty"`
+
+	// Event settings: "inherit" uses the organization value.
+	DuplicateEvents *string `json:"duplicate_events,omitempty" yaml:"duplicate_events,omitempty"`
+	DynamicJobs     *string `json:"dynamic_jobs,omitempty" yaml:"dynamic_jobs,omitempty"`
+	DraftPRs        *string `json:"draft_prs,omitempty" yaml:"draft_prs,omitempty"`
+	// InfraRetries is a number 0-5, or "inherit" for the organization value.
+	InfraRetries interface{} `json:"infra_retries,omitempty" yaml:"infra_retries,omitempty"`
 }
 
 type projectResponse struct {
@@ -193,7 +211,11 @@ func projectSpecFlags() []cli.Flag {
 		&cli.StringFlag{Name: "ci-source-url", Usage: "Default trusted CI source URL"},
 		&cli.StringFlag{Name: "ci-source-ref", Usage: "Default trusted CI source ref"},
 		&cli.StringFlag{Name: "runner-image", Usage: "Default runner image"},
-		&cli.StringFlag{Name: "job-command", Usage: "Default job command"},
+		&cli.StringFlag{Name: "job-command", Usage: "Eval command that replaces runnerlib eval (global administrator only)"},
+		&cli.StringFlag{Name: "draft-prs", Usage: "Draft pull requests: inherit, run, skip, or skip_when_shedding"},
+		&cli.StringFlag{Name: "dynamic-jobs", Usage: "Runtime job creation: inherit, allow, or deny"},
+		&cli.StringFlag{Name: "duplicate-events", Usage: "Duplicate deliveries: inherit, run, or skip"},
+		&cli.StringFlag{Name: "infra-retries", Usage: "Automatic retries of an infra.platform failure: 0-5, or inherit"},
 		&cli.IntFlag{Name: "timeout-seconds", Usage: "Default job timeout in seconds"},
 		&cli.StringFlag{Name: "queue-name", Usage: "Default queue name"},
 		&cli.StringFlag{Name: "checkout-mode", Usage: "Runnerlib checkout mode: isolated, shared, or empty to use the coordinator default"},
@@ -230,6 +252,19 @@ func loadProjectSpec(ctx *cli.Context) (*projectSpec, error) {
 		mode := ctx.String("checkout-mode")
 		spec.CheckoutMode = &mode
 	}
+	for flag, target := range map[string]**string{"draft-prs": &spec.DraftPRs, "dynamic-jobs": &spec.DynamicJobs, "duplicate-events": &spec.DuplicateEvents} {
+		if ctx.IsSet(flag) {
+			value := ctx.String(flag)
+			*target = &value
+		}
+	}
+	if ctx.IsSet("infra-retries") {
+		value, err := parseInfraRetriesFlag(ctx.String("infra-retries"))
+		if err != nil {
+			return nil, err
+		}
+		spec.InfraRetries = value
+	}
 	setString(ctx, "vcs-token-secret", &spec.VCSTokenSecret)
 	setString(ctx, "webhook-secret", &spec.WebhookSecret)
 
@@ -248,6 +283,19 @@ func loadProjectSpec(ctx *cli.Context) (*projectSpec, error) {
 		spec.AllowedEventTypes = ctx.StringSlice("allowed-event-type")
 	}
 	return spec, nil
+}
+
+// parseInfraRetriesFlag reads --infra-retries: "inherit" or 0-5.
+func parseInfraRetriesFlag(value string) (interface{}, error) {
+	value = strings.TrimSpace(value)
+	if value == "inherit" {
+		return "inherit", nil
+	}
+	number, err := strconv.Atoi(value)
+	if err != nil || number < 0 || number > 5 {
+		return nil, fmt.Errorf("--infra-retries must be 0-5 or inherit")
+	}
+	return number, nil
 }
 
 func setString(ctx *cli.Context, flag string, target *string) {

@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/catalystcommunity/app-utils-go/logging"
+	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/refclass"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store/models"
 )
 
@@ -106,6 +107,11 @@ func BuildJobEnv(job *models.Job) map[string]string {
 			env["REACTORCIDE_SOURCE_PATH"] = *job.SourcePath
 		}
 	}
+
+	// The ref classes come from the coordinator record of the job, never
+	// from job environment or job code (docs/ref-classes.md). Set after the
+	// job's own variables, so a submitted value cannot replace them.
+	env[refclass.EnvName] = refclass.EnvValue(job.RefClasses)
 
 	if job.CISourceType != nil {
 		env["REACTORCIDE_CI_SOURCE_TYPE"] = string(*job.CISourceType)

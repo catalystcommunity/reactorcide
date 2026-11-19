@@ -160,6 +160,17 @@ describe('WorkflowDetail: why it runs', () => {
     expect(why.querySelector('a[href="/app/events/e1"]')).toBeTruthy()
   })
 
+  it('shows the trusted owner and contact in the "why" section', async () => {
+    workflow = makeWorkflow()
+    workflow.workflow.owner = { group: 'payments-ci', channel: '#payments-ci', source: 'ci', ciSha: 'abc123' }
+    event = makeEvent(['wf-1'])
+    const page = await renderWorkflow()
+    const owner = page.querySelector<HTMLElement>('details.why [data-testid="workflow-owner"]')!
+    expect(owner.textContent).toContain('payments-ci')
+    expect(owner.textContent).toContain('#payments-ci')
+    expect(owner.textContent).toContain('Read from the trusted CI definition at abc123.')
+  })
+
   it('says so plainly when no reason was recorded', async () => {
     workflow = makeWorkflow({ why: undefined })
     workflow.workflow.eventId = undefined

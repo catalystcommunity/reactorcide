@@ -67,3 +67,24 @@ func TestSaveWithOptionalUserIDKeepsPresentUUID(t *testing.T) {
 		t.Fatalf("save SQL omits a present user_id: %s", result.Statement.SQL.String())
 	}
 }
+
+func TestSaveWithOptionalUserIDKeepsAnUnreadActor(t *testing.T) {
+	db, err := gorm.Open(postgres.New(postgres.Config{
+		DSN: "host=localhost user=reactorcide dbname=reactorcide sslmode=disable",
+	}), &gorm.Config{DryRun: true, DisableAutomaticPing: true, SkipDefaultTransaction: true})
+	if err != nil {
+		t.Fatalf("open dry-run database: %v", err)
+	}
+	job := &models.Job{JobID: "00000000-0000-0000-0000-000000000001", OrgID: "00000000-0000-0000-0000-000000000002"}
+	result := saveWithOptionalUserID(db.Session(&gorm.Session{}), job, "")
+	sql := strings.ToLower(result.Statement.SQL.String())
+	if strings.Contains(sql, "actor_principal_id") || strings.Contains(sql, "user_id") {
+		t.Fatalf("a struct with no actor must not write the actor or the user: %s", sql)
+	}
+	actor := "00000000-0000-0000-0000-000000000009"
+	job.ActorPrincipalID = &actor
+	result = saveWithOptionalUserID(db.Session(&gorm.Session{}), job, "")
+	if !strings.Contains(strings.ToLower(result.Statement.SQL.String()), "actor_principal_id") {
+		t.Fatal("a known actor is saved")
+	}
+}

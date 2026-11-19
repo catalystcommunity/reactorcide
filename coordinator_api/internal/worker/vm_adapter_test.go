@@ -193,9 +193,7 @@ func TestLoadVMConfig_Defaults(t *testing.T) {
 	ConfigureVMPlainHTTPRegistries(nil)
 	t.Cleanup(func() { ConfigureVMPlainHTTPRegistries(nil) })
 	t.Setenv("REACTORCIDE_VM_IMAGE_DIR", "")
-	t.Setenv("REACTORCIDE_VM_SSH_USER", "")
-	t.Setenv("REACTORCIDE_VM_SSH_PASSWORD", "")
-	t.Setenv("REACTORCIDE_VM_SSH_PRIVATE_KEY_FILE", "")
+	t.Setenv("REACTORCIDE_VM_GUEST_USER", "")
 
 	cfg, err := LoadVMConfig()
 	if err != nil {
@@ -204,8 +202,8 @@ func TestLoadVMConfig_Defaults(t *testing.T) {
 	if cfg.ImageDir == "" {
 		t.Error("expected a non-empty default ImageDir")
 	}
-	if cfg.SSHUser == "" {
-		t.Error("expected a non-empty default SSHUser")
+	if cfg.GuestUser != "reactorcide" {
+		t.Errorf("GuestUser = %q, want the default \"reactorcide\"", cfg.GuestUser)
 	}
 }
 
@@ -229,5 +227,18 @@ func TestLoadVMConfigPlainHTTPIsCLIOnly(t *testing.T) {
 	}
 	if len(cfg.OCIPlainHTTPRegistries) != 1 || cfg.OCIPlainHTTPRegistries[0] != "explicit.example:5000" {
 		t.Fatalf("explicit plain HTTP registries = %v", cfg.OCIPlainHTTPRegistries)
+	}
+}
+
+func TestToVMJobConfigCarriesRunAsAdministrator(t *testing.T) {
+	no := false
+	for _, v := range []*bool{nil, &no} {
+		got, err := toVMJobConfig(&JobConfig{Image: "img", Command: []string{"x"}, RunAsAdministrator: v}, "reactorcide", "windows")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got.CreateAdministrator != v {
+			t.Fatalf("CreateAdministrator = %v, want %v", got.CreateAdministrator, v)
+		}
 	}
 }

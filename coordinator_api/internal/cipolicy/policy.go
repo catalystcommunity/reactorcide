@@ -12,6 +12,8 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/refclass"
+	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/subjects"
 	"gopkg.in/yaml.v3"
 )
 
@@ -25,7 +27,33 @@ type Policy struct {
 type Defaults struct {
 	CISource string `yaml:"ci_source" json:"ci_source"`
 	Profile  string `yaml:"profile" json:"profile"`
+	// ByRefClass selects the default profile by the ref classes of the event
+	// (docs/ref-classes.md). The first entry whose condition the classes
+	// satisfy gives the profile. When no entry matches, Profile applies.
+	ByRefClass []ClassProfile `yaml:"by_ref_class,omitempty" json:"by_ref_class,omitempty"`
 }
+
+// ClassProfile is one defaults.by_ref_class entry.
+type ClassProfile struct {
+	RefClasses refclass.Match `yaml:"ref_classes" json:"ref_classes"`
+	Profile    string         `yaml:"profile" json:"profile"`
+}
+
+// DefaultProfileFor returns the default profile for an event with classes,
+// and the index of the defaults.by_ref_class entry that selected it (-1 for
+// defaults.profile).
+func (p *Policy) DefaultProfileFor(classes []string) (string, int) {
+	if p == nil {
+		return "standard", -1
+	}
+	for i, entry := range p.Defaults.ByRefClass {
+		if entry.RefClasses.Satisfied(classes) {
+			return entry.Profile, i
+		}
+	}
+	return p.Defaults.Profile, -1
+}
+
 type SubjectMatch struct {
 	Any []string `yaml:"any" json:"any"`
 }
@@ -53,7 +81,10 @@ type Rule struct {
 	BaseBranches   []string     `yaml:"base_branches" json:"base_branches"`
 	HeadRepository string       `yaml:"head_repository" json:"head_repository"`
 	Approval       SubjectMatch `yaml:"approval" json:"approval"`
-	Use            Use          `yaml:"use" json:"use"`
+	// RefClasses is an optional ref class condition (docs/ref-classes.md).
+	// The rule applies only when the classes of the event satisfy it.
+	RefClasses refclass.Match `yaml:"ref_classes,omitempty" json:"ref_classes,omitempty"`
+	Use        Use            `yaml:"use" json:"use"`
 }
 
 type filePolicy struct {
@@ -106,18 +137,36 @@ func CanonicalDocument(policy *Policy) ([]byte, error) {
 			}
 			use["base_nodes"] = canonicalNodes
 		}
-		canonicalRules = append(canonicalRules, map[string]any{
+		canonicalRule := map[string]any{
 			"actors": map[string]any{"any": emptySlice(rule.Actors.Any)}, "approval": map[string]any{"any": emptySlice(rule.Approval.Any)},
 			"base_branches": emptySlice(rule.BaseBranches), "events": emptySlice(rule.Events), "head_repository": rule.HeadRepository,
 			"id": rule.ID, "paths": emptySlice(rule.Paths), "use": use,
 			"workflows": emptySlice(rule.Workflows),
-		})
+		}
+		// ref_classes joins the canonical form only when present, so the
+		// revision of a policy without class conditions stays unchanged.
+		if !rule.RefClasses.IsEmpty() {
+			canonicalRule["ref_classes"] = canonicalClassMatch(rule.RefClasses)
+		}
+		canonicalRules = append(canonicalRules, canonicalRule)
+	}
+	defaults := map[string]any{"ci_source": policy.Defaults.CISource, "profile": policy.Defaults.Profile}
+	if len(policy.Defaults.ByRefClass) > 0 {
+		entries := make([]map[string]any, 0, len(policy.Defaults.ByRefClass))
+		for _, entry := range policy.Defaults.ByRefClass {
+			entries = append(entries, map[string]any{"profile": entry.Profile, "ref_classes": canonicalClassMatch(entry.RefClasses)})
+		}
+		defaults["by_ref_class"] = entries
 	}
 	return json.Marshal(map[string]any{
-		"defaults": map[string]any{"ci_source": policy.Defaults.CISource, "profile": policy.Defaults.Profile},
+		"defaults": defaults,
 		"head_ci":  canonicalRules,
 		"version":  policy.Version,
 	})
+}
+
+func canonicalClassMatch(match refclass.Match) map[string]any {
+	return map[string]any{"any": emptySlice(match.Any), "none": emptySlice(match.None)}
 }
 
 func emptySlice(values []string) []string {
@@ -157,6 +206,19 @@ func validatePolicy(policy *Policy) error {
 	if policy.Defaults.CISource != "base" {
 		return fmt.Errorf("default ci_source must be base")
 	}
+	for i := range policy.Defaults.ByRefClass {
+		entry := &policy.Defaults.ByRefClass[i]
+		if entry.RefClasses.IsEmpty() {
+			return fmt.Errorf("defaults.by_ref_class[%d] must set ref_classes.any or ref_classes.none", i)
+		}
+		if err := entry.RefClasses.Validate(); err != nil {
+			return fmt.Errorf("defaults.by_ref_class[%d]: %w", i, err)
+		}
+		entry.RefClasses = normalizeClassMatch(entry.RefClasses)
+		if entry.Profile == "" {
+			return fmt.Errorf("defaults.by_ref_class[%d] must select a profile", i)
+		}
+	}
 	seenRules := map[string]bool{}
 	seenWorkflows := map[string]string{}
 	for i := range policy.HeadCI {
@@ -171,9 +233,13 @@ func validatePolicy(policy *Policy) error {
 		if err := validateSubjects(rule.Actors.Any, false); err != nil {
 			return fmt.Errorf("rule %s actors: %w", rule.ID, err)
 		}
-		if err := validateSubjects(rule.Approval.Any, true); err != nil {
+		if err := validateApprovalSubjects(rule.Approval.Any); err != nil {
 			return fmt.Errorf("rule %s approval: %w", rule.ID, err)
 		}
+		if err := rule.RefClasses.Validate(); err != nil {
+			return fmt.Errorf("rule %s ref_classes: %w", rule.ID, err)
+		}
+		rule.RefClasses = normalizeClassMatch(rule.RefClasses)
 		if len(rule.Workflows) == 0 || len(rule.Paths) == 0 {
 			return fmt.Errorf("rule %s must select workflows and paths", rule.ID)
 		}
@@ -228,26 +294,61 @@ func validatePolicy(policy *Policy) error {
 	return nil
 }
 
-func validateSubjects(subjects []string, allowProjectOwner bool) error {
-	for _, subject := range subjects {
-		if subject == "repository_write" {
-			continue
+// normalizeClassMatch sorts the class lists and keeps nil for an empty list,
+// so the canonical form does not depend on the input order.
+func normalizeClassMatch(match refclass.Match) refclass.Match {
+	result := refclass.Match{}
+	if len(match.Any) > 0 {
+		result.Any = refclass.Normalize(match.Any)
+	}
+	if len(match.None) > 0 {
+		result.None = refclass.Normalize(match.None)
+	}
+	return result
+}
+
+// validateSubjects checks a subject list against the subject grammar of
+// internal/subjects. project_owner is not an actor fact, so an actor list
+// cannot use it.
+func validateSubjects(values []string, allowProjectOwner bool) error {
+	for _, subject := range values {
+		if subject == subjects.ProjectOwner && !allowProjectOwner {
+			return fmt.Errorf("unknown policy subject %q", subject)
 		}
-		if allowProjectOwner && subject == "project_owner" {
-			continue
+		if !subjects.Valid(subject) {
+			return fmt.Errorf("unknown policy subject %q", subject)
 		}
-		if strings.HasPrefix(subject, "vcs_team:") && len(strings.TrimPrefix(subject, "vcs_team:")) > 0 {
-			continue
-		}
-		if strings.HasPrefix(subject, "vcs_user:") && len(strings.TrimPrefix(subject, "vcs_user:")) > 0 {
-			continue
-		}
-		if strings.HasPrefix(subject, "reactorcide_group:") && len(strings.TrimPrefix(subject, "reactorcide_group:")) > 0 {
-			continue
-		}
-		return fmt.Errorf("unknown policy subject %q", subject)
 	}
 	return nil
+}
+
+// validateApprovalSubjects checks a head_ci approval list. It also accepts
+// the workflow_owner placeholder: the owners of the trusted definition of the
+// workflow that the rule decides.
+func validateApprovalSubjects(values []string) error {
+	for _, subject := range values {
+		if subject == subjects.WorkflowOwner {
+			continue
+		}
+		if err := validateSubjects([]string{subject}, true); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// expandWorkflowOwner replaces workflow_owner with the owner subjects of the
+// workflow. A workflow with no owner matches nothing for that entry.
+func expandWorkflowOwner(list []string, ownerSubjects []string) []string {
+	out := make([]string, 0, len(list)+len(ownerSubjects))
+	for _, subject := range list {
+		if subject == subjects.WorkflowOwner {
+			out = append(out, ownerSubjects...)
+			continue
+		}
+		out = append(out, subject)
+	}
+	return out
 }
 
 func validateRepoPath(value string) error {
@@ -275,6 +376,13 @@ type Facts struct {
 	ActorSubjects             map[string]bool
 	ApprovalSubjects          map[string]bool
 	ApprovalSubjectsByProfile map[string]map[string]bool
+	// RefClasses are the ref classes of the event. A rule with a ref_classes
+	// condition applies only when they satisfy it.
+	RefClasses []string
+	// WorkflowOwnerSubjects are the owner subjects of the TRUSTED definition
+	// of the workflow (owners.Subjects). They replace workflow_owner in an
+	// approval list. Empty when the workflow has no known owner.
+	WorkflowOwnerSubjects []string
 }
 
 type Decision struct {
@@ -332,14 +440,18 @@ func Decide(policy *Policy, facts Facts) (Decision, error) {
 		if len(rule.Actors.Any) > 0 && !anyFact(rule.Actors.Any, facts.ActorSubjects) {
 			continue
 		}
+		if !rule.RefClasses.Satisfied(facts.RefClasses) {
+			continue
+		}
 		approvalFacts := facts.ApprovalSubjects
 		if facts.ApprovalSubjectsByProfile != nil {
 			approvalFacts = facts.ApprovalSubjectsByProfile[rule.Use.Profile]
 		}
-		if len(rule.Approval.Any) > 0 && !anyFact(rule.Approval.Any, approvalFacts) {
+		approvalSubjects := expandWorkflowOwner(rule.Approval.Any, facts.WorkflowOwnerSubjects)
+		if len(rule.Approval.Any) > 0 && !anyFact(approvalSubjects, approvalFacts) {
 			continue
 		}
-		matches = append(matches, Decision{CISource: "head", Profile: rule.Use.Profile, WorkerClass: rule.Use.Workers, RuleID: rule.ID, ApprovalSubjects: append([]string(nil), rule.Approval.Any...), BaseNodes: BaseNodeDecisions(rule.Use.BaseNodes), Allowed: true})
+		matches = append(matches, Decision{CISource: "head", Profile: rule.Use.Profile, WorkerClass: rule.Use.Workers, RuleID: rule.ID, ApprovalSubjects: approvalSubjects, BaseNodes: BaseNodeDecisions(rule.Use.BaseNodes), Allowed: true})
 	}
 	if len(matches) == 0 {
 		base.Reasons = []string{"no complete coordinator policy rule authorized head CI"}
@@ -365,13 +477,12 @@ func contains(values []string, value string) bool {
 func optionalContains(values []string, value string) bool {
 	return len(values) == 0 || contains(values, value)
 }
-func anyFact(subjects []string, facts map[string]bool) bool {
-	for _, subject := range subjects {
-		if facts[subject] {
-			return true
-		}
-	}
-	return false
+
+// anyFact reports whether a fact set matches one of the subjects. The
+// subject * matches a non-empty fact set (an identified actor, or at least
+// one approval).
+func anyFact(values []string, facts map[string]bool) bool {
+	return subjects.HasAnyFact(facts, values)
 }
 func allPathsMatch(values, patterns []string) bool {
 	for _, value := range values {

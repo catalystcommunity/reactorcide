@@ -1,6 +1,9 @@
 package worker
 
-import "os"
+import (
+	"os"
+	"strconv"
+)
 
 // BuilderConfig holds operator-level configuration for the buildkitd sidecar
 // launched for jobs with CapabilityBuilder. Runners pick the fields they need
@@ -25,6 +28,10 @@ type BuilderConfig struct {
 	// at buildkit's state dir for cross-job layer cache. Empty means no cache
 	// volume — each sidecar starts clean.
 	CacheVolume string
+
+	// Rootless runs buildkitd with the rootless image and no privilege
+	// (builder_cache.go). Off by default: the sidecar is privileged root.
+	Rootless bool
 }
 
 // LoadBuilderConfig resolves BuilderConfig from environment variables. This is
@@ -35,16 +42,17 @@ type BuilderConfig struct {
 //   - REACTORCIDE_BUILDER_CONFIG_PATH     (optional, no default)
 //   - REACTORCIDE_BUILDER_REGISTRY_AUTH_PATH (optional, no default)
 //   - REACTORCIDE_BUILDER_CACHE_VOLUME    (optional, no default)
+//   - REACTORCIDE_BUILDER_ROOTLESS        (optional, default false)
 func LoadBuilderConfig() BuilderConfig {
+	// An empty image selects the default of the mode (builder_cache.go).
 	image := os.Getenv("REACTORCIDE_BUILDER_IMAGE")
-	if image == "" {
-		image = DefaultBuilderImage
-	}
+	rootless, _ := strconv.ParseBool(os.Getenv("REACTORCIDE_BUILDER_ROOTLESS"))
 	return BuilderConfig{
 		Image:            image,
 		ConfigPath:       os.Getenv("REACTORCIDE_BUILDER_CONFIG_PATH"),
 		RegistryAuthPath: os.Getenv("REACTORCIDE_BUILDER_REGISTRY_AUTH_PATH"),
 		CacheVolume:      os.Getenv("REACTORCIDE_BUILDER_CACHE_VOLUME"),
+		Rootless:         rootless,
 	}
 }
 

@@ -2,8 +2,12 @@ package uiapi
 
 import (
 	"context"
+	"slices"
 
+	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/imagealias"
+	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/refclass"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store/models"
+	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/tokencaps"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/uiapi/csilapi"
 )
 
@@ -52,7 +56,7 @@ func listPageBounds(limit, offset *int64) (int, int) {
 	return l, o
 }
 
-// viewerScope resolves the caller once into the (viewerID, isGlobalAdmin)
+// viewerScopeFor resolves the caller once into the (viewerID, isGlobalAdmin)
 // pair the SQL visibility predicate needs.
 //
 // An anonymous caller gets ("", false), which is correct rather than a
@@ -61,16 +65,28 @@ func listPageBounds(limit, offset *int64) (int, int) {
 // of ” (none exists), so an anonymous caller matches only the public
 // branches. Anonymous browsing of public jobs keeps working, and nothing
 // private leaks.
-func (s *UiService) viewerScope(ctx context.Context) (string, bool, error) {
+//
+// It also gives the organizations of an API token. A token never sees more than it is given: without capability (jobs:read,
+// workflows:read) it sees only what an anonymous caller sees, and with it
+// only the organizations of the token (orgIDs; nil means no limit). Callers
+// put orgIDs in the "org_ids" filter.
+func (s *UiService) viewerScopeFor(ctx context.Context, capability string) (string, bool, []string, error) {
 	identity, _ := s.deps.resolveIdentity(ctx)
 	if identity.Anonymous {
-		return "", false, nil
+		return "", false, nil, nil
+	}
+	if identity.Token != nil && !identity.Token.HasCapability(capability) {
+		return "", false, nil, nil
 	}
 	isGlobalAdmin, err := s.deps.Resolver.IsGlobalAdmin(ctx, identity)
 	if err != nil {
-		return "", false, NewServiceError("internal", "an internal error occurred")
+		return "", false, nil, NewServiceError("internal", "an internal error occurred")
 	}
-	return identity.UserID, isGlobalAdmin, nil
+	var orgIDs []string
+	if identity.Token != nil && !identity.Token.AllOrganizations {
+		orgIDs = append([]string{}, identity.Token.OrganizationIDs...)
+	}
+	return identity.UserID, isGlobalAdmin, orgIDs, nil
 }
 
 // sourceTypeString renders the optional source type enum. An unset type is
@@ -100,8 +116,12 @@ func jobToSummary(job *models.Job) csilapi.JobSummary {
 		SourceType:          sourceTypeString(job.SourceType),
 		SourcePath:          derefOr(job.SourcePath, ""),
 		RunnerImage:         job.RunnerImage,
+		ImageAlias:          optionalText(derefOr(job.ImageAlias, "")),
+		ImageDisplay:        optionalText(imagealias.DisplayJob(job)),
+		ImageRetryOf:        optionalText(derefOr(job.ImageRetryOf, "")),
 		QueueName:           job.QueueName,
 		Priority:            int64(job.Priority),
+		PriorityLane:        optionalText(job.PriorityLane),
 		ParentJobId:         job.ParentJobID,
 		ProjectId:           job.ProjectID,
 		WorkflowId:          job.WorkflowID,
@@ -110,10 +130,32 @@ func jobToSummary(job *models.Job) csilapi.JobSummary {
 		ExecutionProfile:    job.ExecutionProfile,
 		WorkerClass:         job.WorkerClass,
 	}
+	if job.PriorityReason != nil {
+		reason := reasonToCSIL(*job.PriorityReason)
+		summary.PriorityReason = &reason
+	}
 	if job.ExitCode != nil {
 		code := int64(*job.ExitCode)
 		summary.ExitCode = &code
 	}
+	if class := job.FailureClassValue(); class != "" {
+		summary.FailureClass = &class
+		if owner := models.FailureOwner(class); owner != "" {
+			summary.FailureOwner = &owner
+		}
+		if job.FailureDetail != "" {
+			detail := job.FailureDetail
+			summary.FailureDetail = &detail
+		}
+	}
+	if job.RetryCount > 0 {
+		retries := int64(job.RetryCount)
+		summary.RetryCount = &retries
+	}
+	summary.Actor = actorToWire(job.ActorPrincipalID, job.ActorIdentity)
+	summary.RefClasses = refclass.ForJob(job)
+	summary.Shifts = shiftsToWire(job.Shifts)
+	summary.Owner = ownershipToWire(job.Ownership())
 	return summary
 }
 
@@ -124,13 +166,16 @@ func (s *UiService) ListJobs(ctx context.Context, req csilapi.ListJobsRequest) (
 	if !ok {
 		return csilapi.ListJobsResponse{}, NewServiceError("internal", "job listing is not available on this server")
 	}
-	viewerID, isGlobalAdmin, err := s.viewerScope(ctx)
+	viewerID, isGlobalAdmin, orgIDs, err := s.viewerScopeFor(ctx, tokencaps.JobsRead)
 	if err != nil {
 		return csilapi.ListJobsResponse{}, err
 	}
 	limit, offset := listPageBounds(req.Limit, req.Offset)
 
 	filters := map[string]interface{}{}
+	if orgIDs != nil {
+		filters["org_ids"] = orgIDs
+	}
 	if req.Status != nil && *req.Status != "" {
 		filters["status"] = *req.Status
 	}
@@ -142,6 +187,12 @@ func (s *UiService) ListJobs(ctx context.Context, req csilapi.ListJobsRequest) (
 	}
 	if req.QueueName != nil && *req.QueueName != "" {
 		filters["queue_name"] = *req.QueueName
+	}
+	if req.FailureClass != nil && *req.FailureClass != "" {
+		if !slices.Contains(models.FailureClasses, *req.FailureClass) {
+			return csilapi.ListJobsResponse{}, NewServiceError("invalid_argument", "failure_class is not a known failure class")
+		}
+		filters["failure_class"] = *req.FailureClass
 	}
 
 	jobs, total, err := visibleStore.ListJobsVisibleTo(ctx, viewerID, isGlobalAdmin, filters, limit, offset)
@@ -157,6 +208,7 @@ func (s *UiService) ListJobs(ctx context.Context, req csilapi.ListJobsRequest) (
 	for i := range jobs {
 		response.Jobs = append(response.Jobs, jobToSummary(&jobs[i]))
 	}
+	s.describeActors(ctx, jobActors(response.Jobs)...)
 	return response, nil
 }
 
@@ -182,5 +234,7 @@ func (s *UiService) GetJob(ctx context.Context, req csilapi.GetJobRequest) (csil
 	if !visible {
 		return csilapi.GetJobResponse{}, NewServiceError("not_found", "job not found")
 	}
-	return csilapi.GetJobResponse{Job: jobToSummary(job)}, nil
+	summary := jobToSummary(job)
+	s.describeActors(ctx, summary.Actor)
+	return csilapi.GetJobResponse{Job: summary}, nil
 }

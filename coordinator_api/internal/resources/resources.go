@@ -198,8 +198,8 @@ func ParseResources(raw map[string]any) (cpuRequest, cpuLimit, memoryLimit strin
 	}
 
 	for key := range raw {
-		if key != "cpu" && key != "memory" {
-			return "", "", "", fmt.Errorf("resources: unknown field %q (only \"cpu\" and \"memory\" are supported)", key)
+		if key != "cpu" && key != "memory" && key != "storage" {
+			return "", "", "", fmt.Errorf("resources: unknown field %q (only \"cpu\", \"memory\" and \"storage\" are supported)", key)
 		}
 	}
 
@@ -246,6 +246,61 @@ func ParseResources(raw map[string]any) (cpuRequest, cpuLimit, memoryLimit strin
 	}
 
 	return cpuRequest, cpuLimit, memoryLimit, nil
+}
+
+// ParseStorage reads the optional `storage` part of a `resources` block:
+//
+//	resources:
+//	  storage:
+//	    request: "10Gi"
+//	    limit: "20Gi"
+//
+// Storage is the ephemeral (scratch) disk of the job container. The values
+// use the memory grammar (ParseMemory). A field left out is returned as "":
+// no request and no limit. Kubernetes applies them as the ephemeral-storage
+// request and limit. Docker and containerd apply them on a best-effort basis
+// only (see docs/runtime-behavior.md).
+func ParseStorage(raw map[string]any) (storageRequest, storageLimit string, err error) {
+	if raw == nil {
+		return "", "", nil
+	}
+	storageRaw, ok := raw["storage"]
+	if !ok {
+		return "", "", nil
+	}
+	storageMap, ok := storageRaw.(map[string]any)
+	if !ok {
+		return "", "", fmt.Errorf("resources.storage must be a map with \"request\"/\"limit\" keys")
+	}
+	for key := range storageMap {
+		if key != "request" && key != "limit" {
+			return "", "", fmt.Errorf("resources.storage: unknown field %q (only \"request\" and \"limit\" are supported)", key)
+		}
+	}
+	if v, ok := storageMap["request"]; ok {
+		if storageRequest, err = parseQuantityField("resources.storage.request", v, ParseMemory); err != nil {
+			return "", "", err
+		}
+	}
+	if v, ok := storageMap["limit"]; ok {
+		if storageLimit, err = parseQuantityField("resources.storage.limit", v, ParseMemory); err != nil {
+			return "", "", err
+		}
+	}
+	if storageRequest != "" && storageLimit != "" {
+		request, _ := ParseMemory(storageRequest)
+		limit, _ := ParseMemory(storageLimit)
+		if request > limit {
+			return "", "", fmt.Errorf("resources.storage.request must not be more than resources.storage.limit")
+		}
+	}
+	return storageRequest, storageLimit, nil
+}
+
+// ParseQuantity validates one quantity value (a string or a number) with
+// parse and returns its trimmed string form. name is used in the error.
+func ParseQuantity(name string, v any, parse func(string) (int64, error)) (string, error) {
+	return parseQuantityField(name, v, parse)
 }
 
 // parseQuantityField normalizes v (a YAML/JSON scalar -- string, int, or

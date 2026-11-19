@@ -4,61 +4,31 @@ package vmrunner
 
 import (
 	"context"
-	"encoding/xml"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 )
 
-func TestWindowsLifecycleCreateScriptParses(t *testing.T) {
-	lifecycle := &windowsVMLifecycle{switchName: defaultHyperVSwitch, secureBoot: true}
-	script := lifecycle.createScript(
-		`C:\images\base\disk.vhdx`,
-		`D:\scratch\job.vhdx`,
-		"reactorcide-vm-test",
-		`D:\scratch\guest_authorized_key.pub`,
-		`D:\scratch\ssh_host_ed25519_key`,
-		BootSpec{CPUs: 2, MemoryBytes: 4 << 30, GuestUser: "reactorcide", JobID: "job-1234"},
-	)
-	for _, required := range []string{"Mount-VHD", "authorized_keys", "ssh_host_ed25519_key", "Unattend.xml", "Set-VMKeyProtector", "Enable-VMTPM", "AutomaticCheckpointsEnabled $false", "Start-VM"} {
-		if !strings.Contains(script, required) {
-			t.Fatalf("generated script does not contain %q", required)
+// The generated scripts must parse with the PowerShell parser of the host.
+func TestWindowsLifecycleScriptsParse(t *testing.T) {
+	scripts := map[string]string{
+		"create": hypervCreateScript(hypervCreateParams{
+			BaseVHDX: `C:\images\base\disk.vhdx`, DiffPath: `D:\scratch\job.vhdx`, VMName: "reactorcide-vm-test",
+			JobID: "job-1234", MemoryBytes: 4 << 30, CPUs: 2, SecureBoot: true,
+		}),
+		"start":    hypervStartScript("reactorcide-vm-test"),
+		"register": hvsockRegistrationScript(hvsockServices()),
+	}
+	for name, script := range scripts {
+		path := filepath.Join(t.TempDir(), name+".ps1")
+		if err := os.WriteFile(path, []byte(script), 0600); err != nil {
+			t.Fatal(err)
 		}
-	}
-
-	path := filepath.Join(t.TempDir(), "create-vm.ps1")
-	if err := os.WriteFile(path, []byte(script), 0600); err != nil {
-		t.Fatal(err)
-	}
-	parser := "$tokens = $null; $errors = $null; " +
-		"[void][Management.Automation.Language.Parser]::ParseFile(" + psQuote(path) + ", [ref]$tokens, [ref]$errors); " +
-		"if ($errors.Count -gt 0) { $errors | ForEach-Object { Write-Error $_.Message }; exit 1 }"
-	if _, err := runPowerShell(context.Background(), parser); err != nil {
-		t.Fatalf("generated PowerShell did not parse: %v", err)
-	}
-}
-
-func TestWindowsComputerNameIsUniqueSafeAndBounded(t *testing.T) {
-	first := windowsComputerName("01JABC-def-123")
-	second := windowsComputerName("01JXYZ-def-456")
-	if first == second || len(first) > 15 || len(second) > 15 {
-		t.Fatalf("computer names = %q, %q", first, second)
-	}
-	for _, name := range []string{first, second} {
-		for _, r := range name {
-			if !(r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || r == '-') {
-				t.Fatalf("computer name %q contains %q", name, r)
-			}
+		parser := "$tokens = $null; $errors = $null; " +
+			"[void][Management.Automation.Language.Parser]::ParseFile(" + psQuote(path) + ", [ref]$tokens, [ref]$errors); " +
+			"if ($errors.Count -gt 0) { $errors | ForEach-Object { Write-Error $_.Message }; exit 1 }"
+		if _, err := runPowerShell(context.Background(), parser); err != nil {
+			t.Fatalf("generated %s PowerShell did not parse: %v", name, err)
 		}
-	}
-}
-
-func TestWindowsSpecializeUnattendIsValidXML(t *testing.T) {
-	var document struct {
-		XMLName xml.Name `xml:"unattend"`
-	}
-	if err := xml.Unmarshal([]byte(windowsSpecializeUnattend("RC-JOB123")), &document); err != nil {
-		t.Fatal(err)
 	}
 }

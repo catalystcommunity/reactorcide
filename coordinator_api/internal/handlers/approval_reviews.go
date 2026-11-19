@@ -25,7 +25,11 @@ func (h *WebhookHandler) evaluateHeadReviews(ctx context.Context, project *model
 	if err != nil {
 		return nil, err
 	}
-	if len(trust.RequiredReviews) == 0 {
+	// The code owners import (docs/reporting-and-ownership.md) adds derived
+	// reviews. With the import on, the status is posted also when no review
+	// applies, so a branch rule that requires it can pass.
+	importCodeowners := h.codeownersImportOn(ctx, project)
+	if len(trust.RequiredReviews) == 0 && !importCodeowners {
 		return nil, nil
 	}
 	pr := target.PR
@@ -36,13 +40,14 @@ func (h *WebhookHandler) evaluateHeadReviews(ctx context.Context, project *model
 		}
 	}
 	reviews := trust.RequiredReviews
-	needsPaths := false
+	needsPaths := importCodeowners
 	for _, review := range reviews {
 		if len(review.Paths) > 0 {
 			needsPaths = true
 		}
 	}
 	var changed []string
+	changedKnown := true
 	if needsPaths {
 		lister, ok := target.Client.(vcs.PRFileLister)
 		var listErr error
@@ -50,6 +55,7 @@ func (h *WebhookHandler) evaluateHeadReviews(ctx context.Context, project *model
 			changed, listErr = lister.ListPRFiles(ctx, target.Repo, pr.Number)
 		}
 		if !ok || listErr != nil {
+			changedKnown = false
 			// Fail closed: every review applies when the changed paths are
 			// not known.
 			h.logger.WithError(listErr).WithField("pr_number", pr.Number).Warn("Could not list pull request files; every required review applies")
@@ -60,6 +66,9 @@ func (h *WebhookHandler) evaluateHeadReviews(ctx context.Context, project *model
 			}
 			reviews = widened
 		}
+	}
+	if importCodeowners {
+		reviews = append(reviews, h.codeownersReviews(ctx, project, target, changed, changedKnown)...)
 	}
 	authors := h.prAuthors(ctx, project, target)
 	results := approvals.EvaluateReviews(reviews, rows, pr.HeadSHA, changed, authors, time.Now().UTC())
@@ -154,6 +163,11 @@ func (h *WebhookHandler) publishReviewsStatus(ctx context.Context, project *mode
 		return
 	}
 	if reviews == nil {
+		return
+	}
+	// One line for each required review in the pull request comment.
+	h.publishReviewsReport(ctx, project, target, reviews)
+	if !h.vcsStatusesAllowed(ctx, project) {
 		return
 	}
 	if err := target.Client.UpdateCommitStatus(ctx, target.Repo, vcs.StatusUpdate{SHA: reviews.HeadSHA, State: vcs.StatusState(reviews.State),

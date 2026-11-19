@@ -241,6 +241,10 @@ classes, and trusted CI policy after installation. See [Organizations and
 Trusted CI Policy](./organizations-and-ci-policy.md). Review its upgrade checks
 before you apply migrations 000025 through 000033 to an existing database.
 
+To upgrade an existing 0.12.x installation, read
+[Upgrade to 0.13](./upgrade-0.13.md) before you apply migrations 000047
+through 000074.
+
 ## Install on Kubernetes
 
 Use the [Kubernetes Deployment Guide](../helm_chart/DEPLOYMENT.md). The chart

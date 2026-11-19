@@ -21,6 +21,10 @@ func prCommandSubcommand(name, usage string, label bool) *cli.Command {
 	if label {
 		flags = append(flags, &cli.StringFlag{Name: "label", Usage: "Count only for the required review with this ID"})
 	}
+	takesShifts := name == "retry" || name == "rerun"
+	if takesShifts {
+		flags = append(flags, shiftFlags()...)
+	}
 	return &cli.Command{Name: name, Usage: usage, Flags: flags, Action: func(ctx *cli.Context) error {
 		client, projectID, err := policyClientAndProject(ctx)
 		if err != nil {
@@ -30,6 +34,13 @@ func prCommandSubcommand(name, usage string, label bool) *cli.Command {
 			HeadSha: optionalText(ctx.String("head-sha"))}
 		if label {
 			request.Label = optionalText(ctx.String("label"))
+		}
+		if takesShifts {
+			shifts, err := shiftsFromFlags(ctx)
+			if err != nil {
+				return err
+			}
+			request.Shifts = csilShifts(shifts)
 		}
 		resp, err := client.PrCommand(ctx.Context, request)
 		if err != nil {
@@ -55,8 +66,8 @@ var ApprovalsCommand = &cli.Command{
 		prCommandSubcommand("override-ci", "Let the head's own CI run", false),
 		prCommandSubcommand("accept", "Accept shared responsibility for the change (counts toward required reviews)", true),
 		prCommandSubcommand("revoke", "Withdraw your approvals for the head, for every role you have", false),
-		prCommandSubcommand("retry", "Retry the failed and cancelled jobs of the head's workflows", false),
-		prCommandSubcommand("rerun", "Run every workflow of the head again", false),
+		prCommandSubcommand("retry", "Retry the failed and cancelled jobs of the head's workflows, with optional shifts", false),
+		prCommandSubcommand("rerun", "Run every workflow of the head again; with shifts, run the last evaluated workflows again with their recorded authority", false),
 		{
 			Name:  "show",
 			Usage: "Show the approval actions and required reviews of the current head",

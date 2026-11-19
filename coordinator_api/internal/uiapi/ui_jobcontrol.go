@@ -18,14 +18,32 @@ func mapJobControlErr(err error) error {
 	if errors.Is(err, jobcontrol.ErrNotCancellable) {
 		return NewServiceError("conflict", "job cannot be cancelled in its current state")
 	}
+	// A refused retry or re-run says which states allow it and the current
+	// status (jobcontrol.StateError).
+	var stateErr *jobcontrol.StateError
+	if errors.As(err, &stateErr) {
+		return NewServiceError("conflict", stateErr.Error())
+	}
 	if errors.Is(err, jobcontrol.ErrNotRetryable) {
 		return NewServiceError("conflict", "job cannot be retried in its current state")
 	}
 	if errors.Is(err, jobcontrol.ErrWorkflowNotRetryable) {
 		return NewServiceError("conflict", "workflow cannot be retried in its current state")
 	}
+	if errors.Is(err, jobcontrol.ErrWorkflowNotRerunnable) {
+		return NewServiceError("conflict", "workflow cannot be re-run until it is finished")
+	}
 	if errors.Is(err, jobcontrol.ErrWorkflowsUnsupported) {
 		return NewServiceError("internal", "workflows are not supported by this server's store configuration")
+	}
+	if jobcontrol.IsShiftError(err) {
+		return NewServiceError("invalid_argument", err.Error())
+	}
+	if errors.Is(err, jobcontrol.ErrWorkerClassRefused) {
+		return NewServiceError("forbidden", err.Error())
+	}
+	if errors.Is(err, jobcontrol.ErrImageGone) {
+		return NewServiceError("failed_precondition", err.Error())
 	}
 	return NewServiceError("internal", "an internal error occurred")
 }
@@ -61,9 +79,34 @@ func jobScope(job *models.Job) authz.Scope {
 	return jobControlScope(job.ProjectID, job.OwnershipOrgID())
 }
 
-// workflowScope is jobControlScope for a workflow instance.
+// workflowScope is jobControlScope for a workflow instance, narrowed to the
+// workflow so that its owners (workflow role holders and members of the
+// trusted owner group) can cancel and retry it (plan B5).
 func workflowScope(wf *models.WorkflowInstance) authz.Scope {
-	return jobControlScope(wf.ProjectID, wf.OwnershipOrgID())
+	scope := jobControlScope(wf.ProjectID, wf.OwnershipOrgID())
+	if scope.ProjectID != nil && wf.WorkflowSecurityID != "" {
+		scope.Workflow = &authz.WorkflowScope{SecurityID: wf.WorkflowSecurityID, Owner: wf.Ownership()}
+	}
+	return scope
+}
+
+// jobScopeWithWorkflow is jobScope narrowed to the workflow of the job, when
+// the job belongs to one.
+func (s *UiService) jobScopeWithWorkflow(ctx context.Context, job *models.Job) authz.Scope {
+	scope := jobScope(job)
+	if scope.ProjectID == nil || job.WorkflowID == nil || *job.WorkflowID == "" {
+		return scope
+	}
+	wig, ok := s.deps.Store.(workflowInstanceGetter)
+	if !ok {
+		return scope
+	}
+	wf, err := wig.GetWorkflowInstance(ctx, *job.WorkflowID)
+	if err != nil || wf == nil || wf.WorkflowSecurityID == "" {
+		return scope
+	}
+	scope.Workflow = &authz.WorkflowScope{SecurityID: wf.WorkflowSecurityID, Owner: wf.Ownership()}
+	return scope
 }
 
 // requireJobVisible answers "not found" for a job the caller cannot view.
@@ -115,7 +158,7 @@ func (s *UiService) CancelJob(ctx context.Context, req csilapi.CancelJobRequest)
 	if err := s.requireJobVisible(ctx, id, job); err != nil {
 		return csilapi.CancelJobResponse{}, err
 	}
-	caps, err := s.deps.Resolver.Capabilities(ctx, id, jobScope(job))
+	caps, err := s.deps.Resolver.Capabilities(ctx, id, s.jobScopeWithWorkflow(ctx, job))
 	if err != nil {
 		return csilapi.CancelJobResponse{}, NewServiceError("internal", "an internal error occurred")
 	}
@@ -230,7 +273,7 @@ func (s *UiService) RetryJob(ctx context.Context, req csilapi.RetryJobRequest) (
 	if err := s.requireJobVisible(ctx, id, job); err != nil {
 		return csilapi.RetryJobResponse{}, err
 	}
-	caps, err := s.deps.Resolver.Capabilities(ctx, id, jobScope(job))
+	caps, err := s.deps.Resolver.Capabilities(ctx, id, s.jobScopeWithWorkflow(ctx, job))
 	if err != nil {
 		return csilapi.RetryJobResponse{}, NewServiceError("internal", "an internal error occurred")
 	}
@@ -238,7 +281,11 @@ func (s *UiService) RetryJob(ctx context.Context, req csilapi.RetryJobRequest) (
 		return csilapi.RetryJobResponse{}, NewServiceError("forbidden", "you do not have permission to retry this job")
 	}
 
-	newJob, err := jobcontrol.RetryJob(ctx, s.deps.Store, s.deps.CorndogsClient, job)
+	shifts, err := shiftsFromWire(req.Shifts)
+	if err != nil {
+		return csilapi.RetryJobResponse{}, err
+	}
+	newJob, err := jobcontrol.RetryJobWithShifts(s.deps.actorContext(ctx), s.deps.Store, s.deps.CorndogsClient, job, shifts)
 	if err != nil {
 		return csilapi.RetryJobResponse{}, mapJobControlErr(err)
 	}
@@ -275,7 +322,11 @@ func (s *UiService) RetryWorkflow(ctx context.Context, req csilapi.RetryWorkflow
 		return csilapi.RetryWorkflowResponse{}, NewServiceError("forbidden", "you do not have permission to retry this workflow")
 	}
 
-	newWf, err := jobcontrol.RetryWorkflow(ctx, s.deps.Store, s.deps.CorndogsClient, req.WorkflowInstanceId)
+	shifts, err := shiftsFromWire(req.Shifts)
+	if err != nil {
+		return csilapi.RetryWorkflowResponse{}, err
+	}
+	newWf, err := jobcontrol.RetryWorkflowWithShifts(s.deps.actorContext(ctx), s.deps.Store, s.deps.CorndogsClient, req.WorkflowInstanceId, shifts)
 	if err != nil {
 		return csilapi.RetryWorkflowResponse{}, mapJobControlErr(err)
 	}
@@ -338,8 +389,12 @@ func (s *UiService) RetryUnsuccessfulJobs(ctx context.Context, req csilapi.Retry
 		}
 	}
 
-	retried, err := jobcontrol.RetryUnsuccessfulJobs(ctx, s.deps.Store, s.deps.CorndogsClient, req.WorkflowInstanceId)
-	if err != nil && errors.Is(err, jobcontrol.ErrWorkflowsUnsupported) {
+	shifts, err := shiftsFromWire(req.Shifts)
+	if err != nil {
+		return csilapi.RetryUnsuccessfulJobsResponse{}, err
+	}
+	retried, err := jobcontrol.RetryUnsuccessfulJobsWithShifts(s.deps.actorContext(ctx), s.deps.Store, s.deps.CorndogsClient, req.WorkflowInstanceId, shifts)
+	if err != nil && (errors.Is(err, jobcontrol.ErrWorkflowsUnsupported) || (jobcontrol.IsShiftError(err) && len(retried) == 0)) {
 		return csilapi.RetryUnsuccessfulJobsResponse{}, mapJobControlErr(err)
 	}
 

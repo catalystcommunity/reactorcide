@@ -94,29 +94,31 @@ type BootstrapAdminResponse struct {
 
 // GetCapabilitiesRequest represents a structured data type
 type GetCapabilitiesRequest struct {
-	OrgId     *string `json:"org_id,omitempty" yaml:"org_id,omitempty"`
-	ProjectId *string `json:"project_id,omitempty" yaml:"project_id,omitempty"`
+	OrgId      *string `json:"org_id,omitempty" yaml:"org_id,omitempty"`
+	ProjectId  *string `json:"project_id,omitempty" yaml:"project_id,omitempty"`
+	WorkflowId *string `json:"workflow_id,omitempty" yaml:"workflow_id,omitempty"`
 }
 
 // GetCapabilitiesResponse represents a structured data type
 type GetCapabilitiesResponse struct {
-	ViewPrivate             bool `json:"view_private" yaml:"view_private"`
-	CancelJob               bool `json:"cancel_job" yaml:"cancel_job"`
-	KillJob                 bool `json:"kill_job" yaml:"kill_job"`
-	RetryJob                bool `json:"retry_job" yaml:"retry_job"`
-	CreateProject           bool `json:"create_project" yaml:"create_project"`
-	DeleteProject           bool `json:"delete_project" yaml:"delete_project"`
-	ManageWebhookSecrets    bool `json:"manage_webhook_secrets" yaml:"manage_webhook_secrets"`
-	ManageVcsCredentials    bool `json:"manage_vcs_credentials" yaml:"manage_vcs_credentials"`
-	ManageSecrets           bool `json:"manage_secrets" yaml:"manage_secrets"`
-	ManageGroups            bool `json:"manage_groups" yaml:"manage_groups"`
-	ManageWorkers           bool `json:"manage_workers" yaml:"manage_workers"`
-	ManageProjectSettings   bool `json:"manage_project_settings" yaml:"manage_project_settings"`
-	ManageTrustedIdentities bool `json:"manage_trusted_identities" yaml:"manage_trusted_identities"`
-	ManageGlobalSettings    bool `json:"manage_global_settings" yaml:"manage_global_settings"`
-	IsGlobalAdmin           bool `json:"is_global_admin" yaml:"is_global_admin"`
-	IsOrgAdmin              bool `json:"is_org_admin" yaml:"is_org_admin"`
-	IsProjectOwner          bool `json:"is_project_owner" yaml:"is_project_owner"`
+	ViewPrivate             bool  `json:"view_private" yaml:"view_private"`
+	CancelJob               bool  `json:"cancel_job" yaml:"cancel_job"`
+	KillJob                 bool  `json:"kill_job" yaml:"kill_job"`
+	RetryJob                bool  `json:"retry_job" yaml:"retry_job"`
+	CreateProject           bool  `json:"create_project" yaml:"create_project"`
+	DeleteProject           bool  `json:"delete_project" yaml:"delete_project"`
+	ManageWebhookSecrets    bool  `json:"manage_webhook_secrets" yaml:"manage_webhook_secrets"`
+	ManageVcsCredentials    bool  `json:"manage_vcs_credentials" yaml:"manage_vcs_credentials"`
+	ManageSecrets           bool  `json:"manage_secrets" yaml:"manage_secrets"`
+	ManageGroups            bool  `json:"manage_groups" yaml:"manage_groups"`
+	ManageWorkers           bool  `json:"manage_workers" yaml:"manage_workers"`
+	ManageProjectSettings   bool  `json:"manage_project_settings" yaml:"manage_project_settings"`
+	ManageTrustedIdentities bool  `json:"manage_trusted_identities" yaml:"manage_trusted_identities"`
+	ManageGlobalSettings    bool  `json:"manage_global_settings" yaml:"manage_global_settings"`
+	IsGlobalAdmin           bool  `json:"is_global_admin" yaml:"is_global_admin"`
+	IsOrgAdmin              bool  `json:"is_org_admin" yaml:"is_org_admin"`
+	IsProjectOwner          bool  `json:"is_project_owner" yaml:"is_project_owner"`
+	ManageWorkflow          *bool `json:"manage_workflow,omitempty" yaml:"manage_workflow,omitempty"`
 }
 
 // OrgSummary represents a structured data type
@@ -129,6 +131,11 @@ type OrgSummary struct {
 	IsPrivate       bool    `json:"is_private" yaml:"is_private"`
 	DuplicateEvents *string `json:"duplicate_events,omitempty" yaml:"duplicate_events,omitempty"`
 	DynamicJobs     *string `json:"dynamic_jobs,omitempty" yaml:"dynamic_jobs,omitempty"`
+	DraftPrs        *string `json:"draft_prs,omitempty" yaml:"draft_prs,omitempty"`
+	DefaultsProfile *string `json:"defaults_profile,omitempty" yaml:"defaults_profile,omitempty"`
+	ShedLevel       *string `json:"shed_level,omitempty" yaml:"shed_level,omitempty"`
+	InfraRetries    *int64  `json:"infra_retries,omitempty" yaml:"infra_retries,omitempty"`
+	EgressControl   *bool   `json:"egress_control,omitempty" yaml:"egress_control,omitempty"`
 }
 
 // ListOrgsRequest represents a structured data type
@@ -160,6 +167,9 @@ type UpdateOrgRequest struct {
 	Status          *string `json:"status,omitempty" yaml:"status,omitempty"`
 	DuplicateEvents *string `json:"duplicate_events,omitempty" yaml:"duplicate_events,omitempty"`
 	DynamicJobs     *string `json:"dynamic_jobs,omitempty" yaml:"dynamic_jobs,omitempty"`
+	DraftPrs        *string `json:"draft_prs,omitempty" yaml:"draft_prs,omitempty"`
+	InfraRetries    *int64  `json:"infra_retries,omitempty" yaml:"infra_retries,omitempty"`
+	EgressControl   *bool   `json:"egress_control,omitempty" yaml:"egress_control,omitempty"`
 }
 
 // UpdateOrgResponse represents a structured data type
@@ -202,6 +212,9 @@ type ExecutionProfileSummary struct {
 	CacheNamespace        *string  `json:"cache_namespace,omitempty" yaml:"cache_namespace,omitempty"`
 	ArtifactNamespace     *string  `json:"artifact_namespace,omitempty" yaml:"artifact_namespace,omitempty"`
 	TrustedCacheWrites    bool     `json:"trusted_cache_writes" yaml:"trusted_cache_writes"`
+	CacheNamespaceClasses []string `json:"cache_namespace_classes,omitempty" yaml:"cache_namespace_classes,omitempty"`
+	CacheWriteClasses     []string `json:"cache_write_classes,omitempty" yaml:"cache_write_classes,omitempty"`
+	EgressControl         *bool    `json:"egress_control,omitempty" yaml:"egress_control,omitempty"`
 }
 
 // ListExecutionProfilesRequest represents a structured data type
@@ -238,9 +251,10 @@ type DeleteExecutionProfileResponse struct {
 
 // WorkerClassSummary represents a structured data type
 type WorkerClassSummary struct {
-	Name      string   `json:"name" yaml:"name"`
-	Protected bool     `json:"protected" yaml:"protected"`
-	PoolIds   []string `json:"pool_ids" yaml:"pool_ids"`
+	Name          string   `json:"name" yaml:"name"`
+	Protected     bool     `json:"protected" yaml:"protected"`
+	PoolIds       []string `json:"pool_ids" yaml:"pool_ids"`
+	RefClassesAny []string `json:"ref_classes_any,omitempty" yaml:"ref_classes_any,omitempty"`
 }
 
 // ListWorkerClassesRequest represents a structured data type
@@ -290,11 +304,12 @@ type SetWorkerClassPoolResponse struct {
 
 // PrCommandRequest represents a structured data type
 type PrCommandRequest struct {
-	ProjectId string  `json:"project_id" yaml:"project_id"`
-	PrNumber  int64   `json:"pr_number" yaml:"pr_number"`
-	Command   string  `json:"command" yaml:"command"`
-	Label     *string `json:"label,omitempty" yaml:"label,omitempty"`
-	HeadSha   *string `json:"head_sha,omitempty" yaml:"head_sha,omitempty"`
+	ProjectId string     `json:"project_id" yaml:"project_id"`
+	PrNumber  int64      `json:"pr_number" yaml:"pr_number"`
+	Command   string     `json:"command" yaml:"command"`
+	Label     *string    `json:"label,omitempty" yaml:"label,omitempty"`
+	HeadSha   *string    `json:"head_sha,omitempty" yaml:"head_sha,omitempty"`
+	Shifts    *RunShifts `json:"shifts,omitempty" yaml:"shifts,omitempty"`
 }
 
 // CiApprovalAction represents a structured data type
@@ -356,12 +371,21 @@ type RequiredReview struct {
 
 // CiTrustSettings represents a structured data type
 type CiTrustSettings struct {
-	RunGate           []string         `json:"run_gate,omitempty" yaml:"run_gate,omitempty"`
-	GatedRunAuthority *string          `json:"gated_run_authority,omitempty" yaml:"gated_run_authority,omitempty"`
-	RunApprovers      []string         `json:"run_approvers,omitempty" yaml:"run_approvers,omitempty"`
-	OverrideApprovers []string         `json:"override_approvers,omitempty" yaml:"override_approvers,omitempty"`
-	OverrideProfile   *string          `json:"override_profile,omitempty" yaml:"override_profile,omitempty"`
-	RequiredReviews   []RequiredReview `json:"required_reviews,omitempty" yaml:"required_reviews,omitempty"`
+	RunGate           []string          `json:"run_gate,omitempty" yaml:"run_gate,omitempty"`
+	GatedRunAuthority *string           `json:"gated_run_authority,omitempty" yaml:"gated_run_authority,omitempty"`
+	RunApprovers      []string          `json:"run_approvers,omitempty" yaml:"run_approvers,omitempty"`
+	OverrideApprovers []string          `json:"override_approvers,omitempty" yaml:"override_approvers,omitempty"`
+	OverrideProfile   *string           `json:"override_profile,omitempty" yaml:"override_profile,omitempty"`
+	RequiredReviews   []RequiredReview  `json:"required_reviews,omitempty" yaml:"required_reviews,omitempty"`
+	RerunShiftLimits  *RerunShiftLimits `json:"rerun_shift_limits,omitempty" yaml:"rerun_shift_limits,omitempty"`
+}
+
+// RerunShiftLimits represents a structured data type
+type RerunShiftLimits struct {
+	MaxCpu            *string `json:"max_cpu,omitempty" yaml:"max_cpu,omitempty"`
+	MaxMemory         *string `json:"max_memory,omitempty" yaml:"max_memory,omitempty"`
+	MaxStorage        *string `json:"max_storage,omitempty" yaml:"max_storage,omitempty"`
+	MaxTimeoutSeconds *int64  `json:"max_timeout_seconds,omitempty" yaml:"max_timeout_seconds,omitempty"`
 }
 
 // GetCiTrustSettingsRequest represents a structured data type
@@ -439,6 +463,12 @@ type ProjectDetail struct {
 	EffectiveDuplicateEvents *string  `json:"effective_duplicate_events,omitempty" yaml:"effective_duplicate_events,omitempty"`
 	DynamicJobs              *string  `json:"dynamic_jobs,omitempty" yaml:"dynamic_jobs,omitempty"`
 	EffectiveDynamicJobs     *string  `json:"effective_dynamic_jobs,omitempty" yaml:"effective_dynamic_jobs,omitempty"`
+	DraftPrs                 *string  `json:"draft_prs,omitempty" yaml:"draft_prs,omitempty"`
+	EffectiveDraftPrs        *string  `json:"effective_draft_prs,omitempty" yaml:"effective_draft_prs,omitempty"`
+	InfraRetries             *int64   `json:"infra_retries,omitempty" yaml:"infra_retries,omitempty"`
+	EffectiveInfraRetries    *int64   `json:"effective_infra_retries,omitempty" yaml:"effective_infra_retries,omitempty"`
+	EgressControl            *bool    `json:"egress_control,omitempty" yaml:"egress_control,omitempty"`
+	EffectiveEgressControl   *bool    `json:"effective_egress_control,omitempty" yaml:"effective_egress_control,omitempty"`
 }
 
 // GetProjectRequest represents a structured data type
@@ -484,6 +514,10 @@ type UpdateProjectRequest struct {
 	CheckoutMode          *string  `json:"checkout_mode,omitempty" yaml:"checkout_mode,omitempty"`
 	DuplicateEvents       *string  `json:"duplicate_events,omitempty" yaml:"duplicate_events,omitempty"`
 	DynamicJobs           *string  `json:"dynamic_jobs,omitempty" yaml:"dynamic_jobs,omitempty"`
+	DraftPrs              *string  `json:"draft_prs,omitempty" yaml:"draft_prs,omitempty"`
+	InfraRetries          *int64   `json:"infra_retries,omitempty" yaml:"infra_retries,omitempty"`
+	InfraRetriesInherit   *bool    `json:"infra_retries_inherit,omitempty" yaml:"infra_retries_inherit,omitempty"`
+	EgressControl         *bool    `json:"egress_control,omitempty" yaml:"egress_control,omitempty"`
 }
 
 // UpdateProjectResponse represents a structured data type
@@ -524,21 +558,35 @@ type CiPolicyUse struct {
 
 // CiPolicyDefaults represents a structured data type
 type CiPolicyDefaults struct {
-	CiSource *string `json:"ci_source,omitempty" yaml:"ci_source,omitempty"`
-	Profile  *string `json:"profile,omitempty" yaml:"profile,omitempty"`
+	CiSource   *string                `json:"ci_source,omitempty" yaml:"ci_source,omitempty"`
+	Profile    *string                `json:"profile,omitempty" yaml:"profile,omitempty"`
+	ByRefClass []CiPolicyClassProfile `json:"by_ref_class,omitempty" yaml:"by_ref_class,omitempty"`
+}
+
+// CiPolicyRefClassMatch represents a structured data type
+type CiPolicyRefClassMatch struct {
+	Any  []string `json:"any,omitempty" yaml:"any,omitempty"`
+	None []string `json:"none,omitempty" yaml:"none,omitempty"`
+}
+
+// CiPolicyClassProfile represents a structured data type
+type CiPolicyClassProfile struct {
+	RefClasses CiPolicyRefClassMatch `json:"ref_classes" yaml:"ref_classes"`
+	Profile    string                `json:"profile" yaml:"profile"`
 }
 
 // CiPolicyRule represents a structured data type
 type CiPolicyRule struct {
-	Id             string                `json:"id" yaml:"id"`
-	Actors         *CiPolicySubjectMatch `json:"actors,omitempty" yaml:"actors,omitempty"`
-	Workflows      []string              `json:"workflows,omitempty" yaml:"workflows,omitempty"`
-	Paths          []string              `json:"paths,omitempty" yaml:"paths,omitempty"`
-	Events         []string              `json:"events,omitempty" yaml:"events,omitempty"`
-	BaseBranches   []string              `json:"base_branches,omitempty" yaml:"base_branches,omitempty"`
-	HeadRepository *string               `json:"head_repository,omitempty" yaml:"head_repository,omitempty"`
-	Approval       *CiPolicySubjectMatch `json:"approval,omitempty" yaml:"approval,omitempty"`
-	Use            CiPolicyUse           `json:"use" yaml:"use"`
+	Id             string                 `json:"id" yaml:"id"`
+	Actors         *CiPolicySubjectMatch  `json:"actors,omitempty" yaml:"actors,omitempty"`
+	Workflows      []string               `json:"workflows,omitempty" yaml:"workflows,omitempty"`
+	Paths          []string               `json:"paths,omitempty" yaml:"paths,omitempty"`
+	Events         []string               `json:"events,omitempty" yaml:"events,omitempty"`
+	BaseBranches   []string               `json:"base_branches,omitempty" yaml:"base_branches,omitempty"`
+	HeadRepository *string                `json:"head_repository,omitempty" yaml:"head_repository,omitempty"`
+	Approval       *CiPolicySubjectMatch  `json:"approval,omitempty" yaml:"approval,omitempty"`
+	RefClasses     *CiPolicyRefClassMatch `json:"ref_classes,omitempty" yaml:"ref_classes,omitempty"`
+	Use            CiPolicyUse            `json:"use" yaml:"use"`
 }
 
 // CiPolicyDocument represents a structured data type
@@ -566,7 +614,9 @@ type GetCiPolicyRequest struct {
 
 // GetCiPolicyResponse represents a structured data type
 type GetCiPolicyResponse struct {
-	Policy CiPolicyDetail `json:"policy" yaml:"policy"`
+	Policy        CiPolicyDetail `json:"policy" yaml:"policy"`
+	BuiltIn       *bool          `json:"built_in,omitempty" yaml:"built_in,omitempty"`
+	BuiltInReason *string        `json:"built_in_reason,omitempty" yaml:"built_in_reason,omitempty"`
 }
 
 // PutCiPolicyRequest represents a structured data type
@@ -594,12 +644,13 @@ type DeleteCiPolicyResponse struct {
 
 // GroupSummary represents a structured data type
 type GroupSummary struct {
-	GroupId     string  `json:"group_id" yaml:"group_id"`
-	OrgId       string  `json:"org_id" yaml:"org_id"`
-	Name        string  `json:"name" yaml:"name"`
-	Description *string `json:"description,omitempty" yaml:"description,omitempty"`
-	CreatedAt   string  `json:"created_at" yaml:"created_at"`
-	UpdatedAt   string  `json:"updated_at" yaml:"updated_at"`
+	GroupId       string  `json:"group_id" yaml:"group_id"`
+	OrgId         string  `json:"org_id" yaml:"org_id"`
+	Name          string  `json:"name" yaml:"name"`
+	Description   *string `json:"description,omitempty" yaml:"description,omitempty"`
+	PriorityShift *int64  `json:"priority_shift,omitempty" yaml:"priority_shift,omitempty"`
+	CreatedAt     string  `json:"created_at" yaml:"created_at"`
+	UpdatedAt     string  `json:"updated_at" yaml:"updated_at"`
 }
 
 // ListGroupsRequest represents a structured data type
@@ -684,6 +735,100 @@ type ListGroupMembersResponse struct {
 	Members []GroupMemberEntry `json:"members" yaml:"members"`
 }
 
+// GroupVcsLink represents a structured data type
+type GroupVcsLink struct {
+	LinkId        string  `json:"link_id" yaml:"link_id"`
+	GroupId       string  `json:"group_id" yaml:"group_id"`
+	Provider      string  `json:"provider" yaml:"provider"`
+	Team          string  `json:"team" yaml:"team"`
+	Subject       string  `json:"subject" yaml:"subject"`
+	LastSyncedAt  *string `json:"last_synced_at,omitempty" yaml:"last_synced_at,omitempty"`
+	LastAttemptAt *string `json:"last_attempt_at,omitempty" yaml:"last_attempt_at,omitempty"`
+	NextSyncAt    *string `json:"next_sync_at,omitempty" yaml:"next_sync_at,omitempty"`
+	LastError     string  `json:"last_error" yaml:"last_error"`
+	FailureCount  int64   `json:"failure_count" yaml:"failure_count"`
+	MemberCount   int64   `json:"member_count" yaml:"member_count"`
+	CreatedAt     string  `json:"created_at" yaml:"created_at"`
+}
+
+// ListGroupVcsLinksRequest represents a structured data type
+type ListGroupVcsLinksRequest struct {
+	GroupId string `json:"group_id" yaml:"group_id"`
+}
+
+// ListGroupVcsLinksResponse represents a structured data type
+type ListGroupVcsLinksResponse struct {
+	Links []GroupVcsLink `json:"links" yaml:"links"`
+}
+
+// LinkGroupVcsTeamRequest represents a structured data type
+type LinkGroupVcsTeamRequest struct {
+	GroupId  string  `json:"group_id" yaml:"group_id"`
+	Provider *string `json:"provider,omitempty" yaml:"provider,omitempty"`
+	Team     string  `json:"team" yaml:"team"`
+}
+
+// LinkGroupVcsTeamResponse represents a structured data type
+type LinkGroupVcsTeamResponse struct {
+	Link GroupVcsLink `json:"link" yaml:"link"`
+}
+
+// UnlinkGroupVcsTeamRequest represents a structured data type
+type UnlinkGroupVcsTeamRequest struct {
+	GroupId string `json:"group_id" yaml:"group_id"`
+	LinkId  string `json:"link_id" yaml:"link_id"`
+}
+
+// UnlinkGroupVcsTeamResponse represents a structured data type
+type UnlinkGroupVcsTeamResponse struct {
+	Removed bool `json:"removed" yaml:"removed"`
+}
+
+// GroupVcsSyncResult represents a structured data type
+type GroupVcsSyncResult struct {
+	LinkId  string  `json:"link_id" yaml:"link_id"`
+	Team    string  `json:"team" yaml:"team"`
+	Members int64   `json:"members" yaml:"members"`
+	Added   int64   `json:"added" yaml:"added"`
+	Removed int64   `json:"removed" yaml:"removed"`
+	Error   *string `json:"error,omitempty" yaml:"error,omitempty"`
+}
+
+// SyncGroupVcsTeamsRequest represents a structured data type
+type SyncGroupVcsTeamsRequest struct {
+	GroupId string `json:"group_id" yaml:"group_id"`
+}
+
+// SyncGroupVcsTeamsResponse represents a structured data type
+type SyncGroupVcsTeamsResponse struct {
+	Results []GroupVcsSyncResult `json:"results" yaml:"results"`
+}
+
+// GroupMemberDetail represents a structured data type
+type GroupMemberDetail struct {
+	PrincipalId string   `json:"principal_id" yaml:"principal_id"`
+	Kind        string   `json:"kind" yaml:"kind"`
+	Name        string   `json:"name" yaml:"name"`
+	DisplayName string   `json:"display_name" yaml:"display_name"`
+	UserId      *string  `json:"user_id,omitempty" yaml:"user_id,omitempty"`
+	Username    *string  `json:"username,omitempty" yaml:"username,omitempty"`
+	Source      string   `json:"source" yaml:"source"`
+	Manual      bool     `json:"manual" yaml:"manual"`
+	Teams       []string `json:"teams" yaml:"teams"`
+	VcsLogins   []string `json:"vcs_logins" yaml:"vcs_logins"`
+	AddedAt     string   `json:"added_at" yaml:"added_at"`
+}
+
+// ListGroupMemberDetailsRequest represents a structured data type
+type ListGroupMemberDetailsRequest struct {
+	GroupId string `json:"group_id" yaml:"group_id"`
+}
+
+// ListGroupMemberDetailsResponse represents a structured data type
+type ListGroupMemberDetailsResponse struct {
+	Members []GroupMemberDetail `json:"members" yaml:"members"`
+}
+
 // UserSummary represents a structured data type
 type UserSummary struct {
 	UserId      string  `json:"user_id" yaml:"user_id"`
@@ -711,6 +856,7 @@ type RoleAssignment struct {
 	PrincipalId   string  `json:"principal_id" yaml:"principal_id"`
 	ScopeType     string  `json:"scope_type" yaml:"scope_type"`
 	ScopeId       *string `json:"scope_id,omitempty" yaml:"scope_id,omitempty"`
+	ScopeWorkflow *string `json:"scope_workflow,omitempty" yaml:"scope_workflow,omitempty"`
 	Role          string  `json:"role" yaml:"role"`
 	CreatedAt     string  `json:"created_at" yaml:"created_at"`
 	CreatedBy     *string `json:"created_by,omitempty" yaml:"created_by,omitempty"`
@@ -718,9 +864,10 @@ type RoleAssignment struct {
 
 // ListRoleAssignmentsRequest represents a structured data type
 type ListRoleAssignmentsRequest struct {
-	ScopeType   *string `json:"scope_type,omitempty" yaml:"scope_type,omitempty"`
-	ScopeId     *string `json:"scope_id,omitempty" yaml:"scope_id,omitempty"`
-	PrincipalId *string `json:"principal_id,omitempty" yaml:"principal_id,omitempty"`
+	ScopeType     *string `json:"scope_type,omitempty" yaml:"scope_type,omitempty"`
+	ScopeId       *string `json:"scope_id,omitempty" yaml:"scope_id,omitempty"`
+	ScopeWorkflow *string `json:"scope_workflow,omitempty" yaml:"scope_workflow,omitempty"`
+	PrincipalId   *string `json:"principal_id,omitempty" yaml:"principal_id,omitempty"`
 }
 
 // ListRoleAssignmentsResponse represents a structured data type
@@ -734,6 +881,7 @@ type AssignRoleRequest struct {
 	PrincipalId   string  `json:"principal_id" yaml:"principal_id"`
 	ScopeType     string  `json:"scope_type" yaml:"scope_type"`
 	ScopeId       *string `json:"scope_id,omitempty" yaml:"scope_id,omitempty"`
+	ScopeWorkflow *string `json:"scope_workflow,omitempty" yaml:"scope_workflow,omitempty"`
 	Role          string  `json:"role" yaml:"role"`
 }
 
@@ -906,17 +1054,23 @@ type ListSecretPathsResponse struct {
 
 // SecretGrant represents a structured data type
 type SecretGrant struct {
-	GrantId           string  `json:"grant_id" yaml:"grant_id"`
-	OrgId             string  `json:"org_id" yaml:"org_id"`
-	ProjectId         *string `json:"project_id,omitempty" yaml:"project_id,omitempty"`
-	Name              string  `json:"name" yaml:"name"`
-	SecretPathMatch   string  `json:"secret_path_match" yaml:"secret_path_match"`
-	SecretPathPattern string  `json:"secret_path_pattern" yaml:"secret_path_pattern"`
-	JobNameMatch      string  `json:"job_name_match" yaml:"job_name_match"`
-	JobNamePattern    *string `json:"job_name_pattern,omitempty" yaml:"job_name_pattern,omitempty"`
-	Description       *string `json:"description,omitempty" yaml:"description,omitempty"`
-	CreatedAt         string  `json:"created_at" yaml:"created_at"`
-	UpdatedAt         string  `json:"updated_at" yaml:"updated_at"`
+	GrantId           string   `json:"grant_id" yaml:"grant_id"`
+	OrgId             string   `json:"org_id" yaml:"org_id"`
+	ProjectId         *string  `json:"project_id,omitempty" yaml:"project_id,omitempty"`
+	Name              string   `json:"name" yaml:"name"`
+	SecretPathMatch   string   `json:"secret_path_match" yaml:"secret_path_match"`
+	SecretPathPattern string   `json:"secret_path_pattern" yaml:"secret_path_pattern"`
+	JobNameMatch      string   `json:"job_name_match" yaml:"job_name_match"`
+	JobNamePattern    *string  `json:"job_name_pattern,omitempty" yaml:"job_name_pattern,omitempty"`
+	Description       *string  `json:"description,omitempty" yaml:"description,omitempty"`
+	CreatedAt         string   `json:"created_at" yaml:"created_at"`
+	UpdatedAt         string   `json:"updated_at" yaml:"updated_at"`
+	RefClassesAny     []string `json:"ref_classes_any,omitempty" yaml:"ref_classes_any,omitempty"`
+	RefClassesNone    []string `json:"ref_classes_none,omitempty" yaml:"ref_classes_none,omitempty"`
+	Delivery          *string  `json:"delivery,omitempty" yaml:"delivery,omitempty"`
+	ProxyHosts        []string `json:"proxy_hosts,omitempty" yaml:"proxy_hosts,omitempty"`
+	ProxyHeader       *string  `json:"proxy_header,omitempty" yaml:"proxy_header,omitempty"`
+	ProxyHeaderFormat *string  `json:"proxy_header_format,omitempty" yaml:"proxy_header_format,omitempty"`
 }
 
 // ListSecretGrantsRequest represents a structured data type
@@ -931,14 +1085,20 @@ type ListSecretGrantsResponse struct {
 
 // CreateSecretGrantRequest represents a structured data type
 type CreateSecretGrantRequest struct {
-	OrgId             string  `json:"org_id" yaml:"org_id"`
-	ProjectId         *string `json:"project_id,omitempty" yaml:"project_id,omitempty"`
-	Name              string  `json:"name" yaml:"name"`
-	SecretPathMatch   string  `json:"secret_path_match" yaml:"secret_path_match"`
-	SecretPathPattern string  `json:"secret_path_pattern" yaml:"secret_path_pattern"`
-	JobNameMatch      *string `json:"job_name_match,omitempty" yaml:"job_name_match,omitempty"`
-	JobNamePattern    *string `json:"job_name_pattern,omitempty" yaml:"job_name_pattern,omitempty"`
-	Description       *string `json:"description,omitempty" yaml:"description,omitempty"`
+	OrgId             string   `json:"org_id" yaml:"org_id"`
+	ProjectId         *string  `json:"project_id,omitempty" yaml:"project_id,omitempty"`
+	Name              string   `json:"name" yaml:"name"`
+	SecretPathMatch   string   `json:"secret_path_match" yaml:"secret_path_match"`
+	SecretPathPattern string   `json:"secret_path_pattern" yaml:"secret_path_pattern"`
+	JobNameMatch      *string  `json:"job_name_match,omitempty" yaml:"job_name_match,omitempty"`
+	JobNamePattern    *string  `json:"job_name_pattern,omitempty" yaml:"job_name_pattern,omitempty"`
+	Description       *string  `json:"description,omitempty" yaml:"description,omitempty"`
+	RefClassesAny     []string `json:"ref_classes_any,omitempty" yaml:"ref_classes_any,omitempty"`
+	RefClassesNone    []string `json:"ref_classes_none,omitempty" yaml:"ref_classes_none,omitempty"`
+	Delivery          *string  `json:"delivery,omitempty" yaml:"delivery,omitempty"`
+	ProxyHosts        []string `json:"proxy_hosts,omitempty" yaml:"proxy_hosts,omitempty"`
+	ProxyHeader       *string  `json:"proxy_header,omitempty" yaml:"proxy_header,omitempty"`
+	ProxyHeaderFormat *string  `json:"proxy_header_format,omitempty" yaml:"proxy_header_format,omitempty"`
 }
 
 // CreateSecretGrantResponse represents a structured data type
@@ -948,13 +1108,20 @@ type CreateSecretGrantResponse struct {
 
 // UpdateSecretGrantRequest represents a structured data type
 type UpdateSecretGrantRequest struct {
-	GrantId           string  `json:"grant_id" yaml:"grant_id"`
-	Name              *string `json:"name,omitempty" yaml:"name,omitempty"`
-	SecretPathMatch   *string `json:"secret_path_match,omitempty" yaml:"secret_path_match,omitempty"`
-	SecretPathPattern *string `json:"secret_path_pattern,omitempty" yaml:"secret_path_pattern,omitempty"`
-	JobNameMatch      *string `json:"job_name_match,omitempty" yaml:"job_name_match,omitempty"`
-	JobNamePattern    *string `json:"job_name_pattern,omitempty" yaml:"job_name_pattern,omitempty"`
-	Description       *string `json:"description,omitempty" yaml:"description,omitempty"`
+	GrantId           string   `json:"grant_id" yaml:"grant_id"`
+	Name              *string  `json:"name,omitempty" yaml:"name,omitempty"`
+	SecretPathMatch   *string  `json:"secret_path_match,omitempty" yaml:"secret_path_match,omitempty"`
+	SecretPathPattern *string  `json:"secret_path_pattern,omitempty" yaml:"secret_path_pattern,omitempty"`
+	JobNameMatch      *string  `json:"job_name_match,omitempty" yaml:"job_name_match,omitempty"`
+	JobNamePattern    *string  `json:"job_name_pattern,omitempty" yaml:"job_name_pattern,omitempty"`
+	Description       *string  `json:"description,omitempty" yaml:"description,omitempty"`
+	SetRefClasses     *bool    `json:"set_ref_classes,omitempty" yaml:"set_ref_classes,omitempty"`
+	RefClassesAny     []string `json:"ref_classes_any,omitempty" yaml:"ref_classes_any,omitempty"`
+	RefClassesNone    []string `json:"ref_classes_none,omitempty" yaml:"ref_classes_none,omitempty"`
+	Delivery          *string  `json:"delivery,omitempty" yaml:"delivery,omitempty"`
+	ProxyHosts        []string `json:"proxy_hosts,omitempty" yaml:"proxy_hosts,omitempty"`
+	ProxyHeader       *string  `json:"proxy_header,omitempty" yaml:"proxy_header,omitempty"`
+	ProxyHeaderFormat *string  `json:"proxy_header_format,omitempty" yaml:"proxy_header_format,omitempty"`
 }
 
 // UpdateSecretGrantResponse represents a structured data type
@@ -1005,9 +1172,20 @@ type CancelWorkflowResponse struct {
 	Status             string `json:"status" yaml:"status"`
 }
 
+// RunShifts represents a structured data type
+type RunShifts struct {
+	Cpu            *string `json:"cpu,omitempty" yaml:"cpu,omitempty"`
+	CpuRequest     *string `json:"cpu_request,omitempty" yaml:"cpu_request,omitempty"`
+	Memory         *string `json:"memory,omitempty" yaml:"memory,omitempty"`
+	Storage        *string `json:"storage,omitempty" yaml:"storage,omitempty"`
+	StorageRequest *string `json:"storage_request,omitempty" yaml:"storage_request,omitempty"`
+	Timeout        *string `json:"timeout,omitempty" yaml:"timeout,omitempty"`
+}
+
 // RetryJobRequest represents a structured data type
 type RetryJobRequest struct {
-	JobId string `json:"job_id" yaml:"job_id"`
+	JobId  string     `json:"job_id" yaml:"job_id"`
+	Shifts *RunShifts `json:"shifts,omitempty" yaml:"shifts,omitempty"`
 }
 
 // RetryJobResponse represents a structured data type
@@ -1018,7 +1196,8 @@ type RetryJobResponse struct {
 
 // RetryWorkflowRequest represents a structured data type
 type RetryWorkflowRequest struct {
-	WorkflowInstanceId string `json:"workflow_instance_id" yaml:"workflow_instance_id"`
+	WorkflowInstanceId string     `json:"workflow_instance_id" yaml:"workflow_instance_id"`
+	Shifts             *RunShifts `json:"shifts,omitempty" yaml:"shifts,omitempty"`
 }
 
 // RetryWorkflowResponse represents a structured data type
@@ -1029,7 +1208,39 @@ type RetryWorkflowResponse struct {
 
 // RetryUnsuccessfulJobsRequest represents a structured data type
 type RetryUnsuccessfulJobsRequest struct {
+	WorkflowInstanceId string     `json:"workflow_instance_id" yaml:"workflow_instance_id"`
+	Shifts             *RunShifts `json:"shifts,omitempty" yaml:"shifts,omitempty"`
+}
+
+// RerunWorkflowRequest represents a structured data type
+type RerunWorkflowRequest struct {
+	WorkflowInstanceId string     `json:"workflow_instance_id" yaml:"workflow_instance_id"`
+	Shifts             *RunShifts `json:"shifts,omitempty" yaml:"shifts,omitempty"`
+}
+
+// RerunWorkflowResponse represents a structured data type
+type RerunWorkflowResponse struct {
 	WorkflowInstanceId string `json:"workflow_instance_id" yaml:"workflow_instance_id"`
+	Status             string `json:"status" yaml:"status"`
+}
+
+// StartRunRequest represents a structured data type
+type StartRunRequest struct {
+	ProjectId string  `json:"project_id" yaml:"project_id"`
+	Ref       *string `json:"ref,omitempty" yaml:"ref,omitempty"`
+	PrNumber  *int64  `json:"pr_number,omitempty" yaml:"pr_number,omitempty"`
+	Workflow  *string `json:"workflow,omitempty" yaml:"workflow,omitempty"`
+}
+
+// StartRunResponse represents a structured data type
+type StartRunResponse struct {
+	EventId   string  `json:"event_id" yaml:"event_id"`
+	Status    string  `json:"status" yaml:"status"`
+	EvalJobId *string `json:"eval_job_id,omitempty" yaml:"eval_job_id,omitempty"`
+	Ref       string  `json:"ref" yaml:"ref"`
+	CommitSha string  `json:"commit_sha" yaml:"commit_sha"`
+	PrNumber  *int64  `json:"pr_number,omitempty" yaml:"pr_number,omitempty"`
+	Workflow  *string `json:"workflow,omitempty" yaml:"workflow,omitempty"`
 }
 
 // RetryUnsuccessfulJobsResponse represents a structured data type
@@ -1066,6 +1277,48 @@ type UpdateGlobalSettingsRequest struct {
 type UpdateGlobalSettingsResponse struct {
 	NewProjectsPrivate bool                 `json:"new_projects_private" yaml:"new_projects_private"`
 	Settings           []GlobalSettingEntry `json:"settings" yaml:"settings"`
+}
+
+// ShedActions represents a structured data type
+type ShedActions struct {
+	SkipDrafts       bool `json:"skip_drafts" yaml:"skip_drafts"`
+	PauseSchedules   bool `json:"pause_schedules" yaml:"pause_schedules"`
+	LowerPrPriority  bool `json:"lower_pr_priority" yaml:"lower_pr_priority"`
+	SkipAdvisory     bool `json:"skip_advisory" yaml:"skip_advisory"`
+	RefuseManualRuns bool `json:"refuse_manual_runs" yaml:"refuse_manual_runs"`
+}
+
+// ShedState represents a structured data type
+type ShedState struct {
+	GlobalLevel     string      `json:"global_level" yaml:"global_level"`
+	OrgLevel        *string     `json:"org_level,omitempty" yaml:"org_level,omitempty"`
+	Level           string      `json:"level" yaml:"level"`
+	Source          *string     `json:"source,omitempty" yaml:"source,omitempty"`
+	Actions         ShedActions `json:"actions" yaml:"actions"`
+	DegradedActions ShedActions `json:"degraded_actions" yaml:"degraded_actions"`
+	CriticalActions ShedActions `json:"critical_actions" yaml:"critical_actions"`
+}
+
+// GetShedStateRequest represents a structured data type
+type GetShedStateRequest struct {
+	OrgId *string `json:"org_id,omitempty" yaml:"org_id,omitempty"`
+}
+
+// GetShedStateResponse represents a structured data type
+type GetShedStateResponse struct {
+	State ShedState `json:"state" yaml:"state"`
+}
+
+// SetShedLevelRequest represents a structured data type
+type SetShedLevelRequest struct {
+	Level  string  `json:"level" yaml:"level"`
+	OrgId  *string `json:"org_id,omitempty" yaml:"org_id,omitempty"`
+	Reason *string `json:"reason,omitempty" yaml:"reason,omitempty"`
+}
+
+// SetShedLevelResponse represents a structured data type
+type SetShedLevelResponse struct {
+	State ShedState `json:"state" yaml:"state"`
 }
 
 // TrustedIdentity represents a structured data type
@@ -1166,12 +1419,26 @@ type WorkerCharacteristicEntry struct {
 
 // QueueSummary represents a structured data type
 type QueueSummary struct {
-	QueueId         string                `json:"queue_id" yaml:"queue_id"`
-	QueueUuid       string                `json:"queue_uuid" yaml:"queue_uuid"`
-	Characteristics []CharacteristicEntry `json:"characteristics" yaml:"characteristics"`
-	DisplayName     string                `json:"display_name" yaml:"display_name"`
-	IsDefault       bool                  `json:"is_default" yaml:"is_default"`
-	BacklogCount    int64                 `json:"backlog_count" yaml:"backlog_count"`
+	QueueId                     string                `json:"queue_id" yaml:"queue_id"`
+	QueueUuid                   string                `json:"queue_uuid" yaml:"queue_uuid"`
+	Characteristics             []CharacteristicEntry `json:"characteristics" yaml:"characteristics"`
+	DisplayName                 string                `json:"display_name" yaml:"display_name"`
+	IsDefault                   bool                  `json:"is_default" yaml:"is_default"`
+	BacklogCount                int64                 `json:"backlog_count" yaml:"backlog_count"`
+	BacklogOldestAgeSeconds     *int64                `json:"backlog_oldest_age_seconds,omitempty" yaml:"backlog_oldest_age_seconds,omitempty"`
+	BacklogCpuRequestMillicores *int64                `json:"backlog_cpu_request_millicores,omitempty" yaml:"backlog_cpu_request_millicores,omitempty"`
+	BacklogMemoryLimitBytes     *int64                `json:"backlog_memory_limit_bytes,omitempty" yaml:"backlog_memory_limit_bytes,omitempty"`
+}
+
+// CharacteristicBacklog represents a structured data type
+type CharacteristicBacklog struct {
+	Key                  string `json:"key" yaml:"key"`
+	Value                string `json:"value" yaml:"value"`
+	Queues               int64  `json:"queues" yaml:"queues"`
+	Count                int64  `json:"count" yaml:"count"`
+	OldestAgeSeconds     int64  `json:"oldest_age_seconds" yaml:"oldest_age_seconds"`
+	CpuRequestMillicores int64  `json:"cpu_request_millicores" yaml:"cpu_request_millicores"`
+	MemoryLimitBytes     int64  `json:"memory_limit_bytes" yaml:"memory_limit_bytes"`
 }
 
 // ListQueuesRequest represents a structured data type
@@ -1180,7 +1447,8 @@ type ListQueuesRequest struct {
 
 // ListQueuesResponse represents a structured data type
 type ListQueuesResponse struct {
-	Queues []QueueSummary `json:"queues" yaml:"queues"`
+	Queues                  []QueueSummary          `json:"queues" yaml:"queues"`
+	BacklogByCharacteristic []CharacteristicBacklog `json:"backlog_by_characteristic,omitempty" yaml:"backlog_by_characteristic,omitempty"`
 }
 
 // CreateQueueRequest represents a structured data type
@@ -1218,22 +1486,45 @@ type DeleteQueueResponse struct {
 
 // WorkerSummary represents a structured data type
 type WorkerSummary struct {
-	WorkerId         string                      `json:"worker_id" yaml:"worker_id"`
-	PoolId           string                      `json:"pool_id" yaml:"pool_id"`
-	WorkerKey        string                      `json:"worker_key" yaml:"worker_key"`
-	Hostname         *string                     `json:"hostname,omitempty" yaml:"hostname,omitempty"`
-	Os               string                      `json:"os" yaml:"os"`
-	Arch             string                      `json:"arch" yaml:"arch"`
-	Characteristics  []WorkerCharacteristicEntry `json:"characteristics" yaml:"characteristics"`
-	WorkerVersion    *string                     `json:"worker_version,omitempty" yaml:"worker_version,omitempty"`
-	Status           string                      `json:"status" yaml:"status"`
-	LastSeenAt       *string                     `json:"last_seen_at,omitempty" yaml:"last_seen_at,omitempty"`
-	ActiveLeaseCount int64                       `json:"active_lease_count" yaml:"active_lease_count"`
+	WorkerId              string                      `json:"worker_id" yaml:"worker_id"`
+	PoolId                string                      `json:"pool_id" yaml:"pool_id"`
+	WorkerKey             string                      `json:"worker_key" yaml:"worker_key"`
+	Hostname              *string                     `json:"hostname,omitempty" yaml:"hostname,omitempty"`
+	Os                    string                      `json:"os" yaml:"os"`
+	Arch                  string                      `json:"arch" yaml:"arch"`
+	Characteristics       []WorkerCharacteristicEntry `json:"characteristics" yaml:"characteristics"`
+	WorkerVersion         *string                     `json:"worker_version,omitempty" yaml:"worker_version,omitempty"`
+	Status                string                      `json:"status" yaml:"status"`
+	LastSeenAt            *string                     `json:"last_seen_at,omitempty" yaml:"last_seen_at,omitempty"`
+	ActiveLeaseCount      int64                       `json:"active_lease_count" yaml:"active_lease_count"`
+	Admission             *WorkerAdmissionSummary     `json:"admission,omitempty" yaml:"admission,omitempty"`
+	EnrollmentTokenId     *string                     `json:"enrollment_token_id,omitempty" yaml:"enrollment_token_id,omitempty"`
+	EnrollmentTokenName   *string                     `json:"enrollment_token_name,omitempty" yaml:"enrollment_token_name,omitempty"`
+	EnrollmentTokenActive *bool                       `json:"enrollment_token_active,omitempty" yaml:"enrollment_token_active,omitempty"`
+	OnDeactivatedToken    *bool                       `json:"on_deactivated_token,omitempty" yaml:"on_deactivated_token,omitempty"`
+	Online                *bool                       `json:"online,omitempty" yaml:"online,omitempty"`
+	ImageStatus           *string                     `json:"image_status,omitempty" yaml:"image_status,omitempty"`
+	ImageStatusDetail     *string                     `json:"image_status_detail,omitempty" yaml:"image_status_detail,omitempty"`
+	ImageRuntime          *string                     `json:"image_runtime,omitempty" yaml:"image_runtime,omitempty"`
+	ImageSetVersion       *int64                      `json:"image_set_version,omitempty" yaml:"image_set_version,omitempty"`
+	ImageReportedVersion  *int64                      `json:"image_reported_version,omitempty" yaml:"image_reported_version,omitempty"`
+}
+
+// WorkerAdmissionSummary represents a structured data type
+type WorkerAdmissionSummary struct {
+	Mode                  string `json:"mode" yaml:"mode"`
+	CapacityCpuMillicores int64  `json:"capacity_cpu_millicores" yaml:"capacity_cpu_millicores"`
+	CapacityMemoryBytes   int64  `json:"capacity_memory_bytes" yaml:"capacity_memory_bytes"`
+	HeadroomCpuMillicores int64  `json:"headroom_cpu_millicores" yaml:"headroom_cpu_millicores"`
+	HeadroomMemoryBytes   int64  `json:"headroom_memory_bytes" yaml:"headroom_memory_bytes"`
+	ReportedAt            string `json:"reported_at" yaml:"reported_at"`
 }
 
 // ListWorkersRequest represents a structured data type
 type ListWorkersRequest struct {
-	PoolId *string `json:"pool_id,omitempty" yaml:"pool_id,omitempty"`
+	PoolId             *string `json:"pool_id,omitempty" yaml:"pool_id,omitempty"`
+	EnrollmentTokenId  *string `json:"enrollment_token_id,omitempty" yaml:"enrollment_token_id,omitempty"`
+	OnDeactivatedToken *bool   `json:"on_deactivated_token,omitempty" yaml:"on_deactivated_token,omitempty"`
 }
 
 // ListWorkersResponse represents a structured data type
@@ -1318,13 +1609,14 @@ type DeletePoolResponse struct {
 
 // EnrollmentTokenSummary represents a structured data type
 type EnrollmentTokenSummary struct {
-	TokenId       string  `json:"token_id" yaml:"token_id"`
-	PoolId        string  `json:"pool_id" yaml:"pool_id"`
-	Name          *string `json:"name,omitempty" yaml:"name,omitempty"`
-	IsActive      bool    `json:"is_active" yaml:"is_active"`
-	LastUsedAt    *string `json:"last_used_at,omitempty" yaml:"last_used_at,omitempty"`
-	CreatedAt     string  `json:"created_at" yaml:"created_at"`
-	DeactivatedAt *string `json:"deactivated_at,omitempty" yaml:"deactivated_at,omitempty"`
+	TokenId           string  `json:"token_id" yaml:"token_id"`
+	PoolId            string  `json:"pool_id" yaml:"pool_id"`
+	Name              *string `json:"name,omitempty" yaml:"name,omitempty"`
+	IsActive          bool    `json:"is_active" yaml:"is_active"`
+	LastUsedAt        *string `json:"last_used_at,omitempty" yaml:"last_used_at,omitempty"`
+	CreatedAt         string  `json:"created_at" yaml:"created_at"`
+	DeactivatedAt     *string `json:"deactivated_at,omitempty" yaml:"deactivated_at,omitempty"`
+	ActiveWorkerCount *int64  `json:"active_worker_count,omitempty" yaml:"active_worker_count,omitempty"`
 }
 
 // CreateEnrollmentTokenRequest represents a structured data type
@@ -1351,7 +1643,8 @@ type ListEnrollmentTokensResponse struct {
 
 // DeactivateEnrollmentTokenRequest represents a structured data type
 type DeactivateEnrollmentTokenRequest struct {
-	TokenId string `json:"token_id" yaml:"token_id"`
+	TokenId          string `json:"token_id" yaml:"token_id"`
+	ConfirmPermanent *bool  `json:"confirm_permanent,omitempty" yaml:"confirm_permanent,omitempty"`
 }
 
 // DeactivateEnrollmentTokenResponse represents a structured data type
@@ -1500,6 +1793,193 @@ type ListScheduleFiresResponse struct {
 	Fires []ScheduleFireSummary `json:"fires" yaml:"fires"`
 }
 
+// EventSubscriptionSummary represents a structured data type
+type EventSubscriptionSummary struct {
+	SubscriptionId     string   `json:"subscription_id" yaml:"subscription_id"`
+	OrgId              string   `json:"org_id" yaml:"org_id"`
+	Name               string   `json:"name" yaml:"name"`
+	Description        string   `json:"description" yaml:"description"`
+	OwnerPrincipalId   string   `json:"owner_principal_id" yaml:"owner_principal_id"`
+	OwnerActive        bool     `json:"owner_active" yaml:"owner_active"`
+	Scope              string   `json:"scope" yaml:"scope"`
+	ProjectId          *string  `json:"project_id,omitempty" yaml:"project_id,omitempty"`
+	WorkflowSecurityId string   `json:"workflow_security_id" yaml:"workflow_security_id"`
+	OwnerGroup         string   `json:"owner_group" yaml:"owner_group"`
+	EventTypes         []string `json:"event_types" yaml:"event_types"`
+	RefClassesAny      []string `json:"ref_classes_any" yaml:"ref_classes_any"`
+	Results            []string `json:"results" yaml:"results"`
+	ActorKinds         []string `json:"actor_kinds" yaml:"actor_kinds"`
+	FailureClasses     []string `json:"failure_classes,omitempty" yaml:"failure_classes,omitempty"`
+	SinkType           string   `json:"sink_type" yaml:"sink_type"`
+	WebhookUrl         string   `json:"webhook_url" yaml:"webhook_url"`
+	MaxAttempts        int64    `json:"max_attempts" yaml:"max_attempts"`
+	Enabled            bool     `json:"enabled" yaml:"enabled"`
+	CreatedAt          string   `json:"created_at" yaml:"created_at"`
+	UpdatedAt          string   `json:"updated_at" yaml:"updated_at"`
+}
+
+// EventDeliverySummary represents a structured data type
+type EventDeliverySummary struct {
+	DeliveryId     string  `json:"delivery_id" yaml:"delivery_id"`
+	SubscriptionId string  `json:"subscription_id" yaml:"subscription_id"`
+	EventId        string  `json:"event_id" yaml:"event_id"`
+	EventType      string  `json:"event_type" yaml:"event_type"`
+	OrderKey       string  `json:"order_key" yaml:"order_key"`
+	Sequence       int64   `json:"sequence" yaml:"sequence"`
+	Status         string  `json:"status" yaml:"status"`
+	Attempts       int64   `json:"attempts" yaml:"attempts"`
+	LastHttpStatus *int64  `json:"last_http_status,omitempty" yaml:"last_http_status,omitempty"`
+	LastLatencyMs  *int64  `json:"last_latency_ms,omitempty" yaml:"last_latency_ms,omitempty"`
+	LastError      string  `json:"last_error" yaml:"last_error"`
+	NextAttemptAt  string  `json:"next_attempt_at" yaml:"next_attempt_at"`
+	DeliveredAt    *string `json:"delivered_at,omitempty" yaml:"delivered_at,omitempty"`
+	DeadLetteredAt *string `json:"dead_lettered_at,omitempty" yaml:"dead_lettered_at,omitempty"`
+	CreatedAt      string  `json:"created_at" yaml:"created_at"`
+}
+
+// EventDeliveryAttemptEntry represents a structured data type
+type EventDeliveryAttemptEntry struct {
+	Attempt    int64  `json:"attempt" yaml:"attempt"`
+	StartedAt  string `json:"started_at" yaml:"started_at"`
+	FinishedAt string `json:"finished_at" yaml:"finished_at"`
+	Result     string `json:"result" yaml:"result"`
+	HttpStatus *int64 `json:"http_status,omitempty" yaml:"http_status,omitempty"`
+	LatencyMs  int64  `json:"latency_ms" yaml:"latency_ms"`
+	Error      string `json:"error" yaml:"error"`
+}
+
+// ListEventSubscriptionsRequest represents a structured data type
+type ListEventSubscriptionsRequest struct {
+	OrgId     string  `json:"org_id" yaml:"org_id"`
+	ProjectId *string `json:"project_id,omitempty" yaml:"project_id,omitempty"`
+}
+
+// ListEventSubscriptionsResponse represents a structured data type
+type ListEventSubscriptionsResponse struct {
+	Subscriptions []EventSubscriptionSummary `json:"subscriptions" yaml:"subscriptions"`
+}
+
+// GetEventSubscriptionRequest represents a structured data type
+type GetEventSubscriptionRequest struct {
+	SubscriptionId string `json:"subscription_id" yaml:"subscription_id"`
+}
+
+// GetEventSubscriptionResponse represents a structured data type
+type GetEventSubscriptionResponse struct {
+	Subscription EventSubscriptionSummary `json:"subscription" yaml:"subscription"`
+}
+
+// CreateEventSubscriptionRequest represents a structured data type
+type CreateEventSubscriptionRequest struct {
+	OrgId              string   `json:"org_id" yaml:"org_id"`
+	Name               string   `json:"name" yaml:"name"`
+	Description        *string  `json:"description,omitempty" yaml:"description,omitempty"`
+	Scope              string   `json:"scope" yaml:"scope"`
+	ProjectId          *string  `json:"project_id,omitempty" yaml:"project_id,omitempty"`
+	WorkflowSecurityId *string  `json:"workflow_security_id,omitempty" yaml:"workflow_security_id,omitempty"`
+	OwnerGroup         *string  `json:"owner_group,omitempty" yaml:"owner_group,omitempty"`
+	EventTypes         []string `json:"event_types,omitempty" yaml:"event_types,omitempty"`
+	RefClassesAny      []string `json:"ref_classes_any,omitempty" yaml:"ref_classes_any,omitempty"`
+	Results            []string `json:"results,omitempty" yaml:"results,omitempty"`
+	ActorKinds         []string `json:"actor_kinds,omitempty" yaml:"actor_kinds,omitempty"`
+	FailureClasses     []string `json:"failure_classes,omitempty" yaml:"failure_classes,omitempty"`
+	SinkType           *string  `json:"sink_type,omitempty" yaml:"sink_type,omitempty"`
+	WebhookUrl         string   `json:"webhook_url" yaml:"webhook_url"`
+	MaxAttempts        *int64   `json:"max_attempts,omitempty" yaml:"max_attempts,omitempty"`
+	Enabled            *bool    `json:"enabled,omitempty" yaml:"enabled,omitempty"`
+	SigningSecret      *string  `json:"signing_secret,omitempty" yaml:"signing_secret,omitempty"`
+	OwnerPrincipalId   *string  `json:"owner_principal_id,omitempty" yaml:"owner_principal_id,omitempty"`
+}
+
+// CreateEventSubscriptionResponse represents a structured data type
+type CreateEventSubscriptionResponse struct {
+	Subscription  EventSubscriptionSummary `json:"subscription" yaml:"subscription"`
+	SigningSecret string                   `json:"signing_secret" yaml:"signing_secret"`
+}
+
+// UpdateEventSubscriptionRequest represents a structured data type
+type UpdateEventSubscriptionRequest struct {
+	SubscriptionId string   `json:"subscription_id" yaml:"subscription_id"`
+	Description    *string  `json:"description,omitempty" yaml:"description,omitempty"`
+	EventTypes     []string `json:"event_types,omitempty" yaml:"event_types,omitempty"`
+	RefClassesAny  []string `json:"ref_classes_any,omitempty" yaml:"ref_classes_any,omitempty"`
+	Results        []string `json:"results,omitempty" yaml:"results,omitempty"`
+	ActorKinds     []string `json:"actor_kinds,omitempty" yaml:"actor_kinds,omitempty"`
+	FailureClasses []string `json:"failure_classes,omitempty" yaml:"failure_classes,omitempty"`
+	WebhookUrl     *string  `json:"webhook_url,omitempty" yaml:"webhook_url,omitempty"`
+	MaxAttempts    *int64   `json:"max_attempts,omitempty" yaml:"max_attempts,omitempty"`
+	Enabled        *bool    `json:"enabled,omitempty" yaml:"enabled,omitempty"`
+	RotateSecret   *bool    `json:"rotate_secret,omitempty" yaml:"rotate_secret,omitempty"`
+	SigningSecret  *string  `json:"signing_secret,omitempty" yaml:"signing_secret,omitempty"`
+	ClearFilters   []string `json:"clear_filters,omitempty" yaml:"clear_filters,omitempty"`
+}
+
+// UpdateEventSubscriptionResponse represents a structured data type
+type UpdateEventSubscriptionResponse struct {
+	Subscription  EventSubscriptionSummary `json:"subscription" yaml:"subscription"`
+	SigningSecret *string                  `json:"signing_secret,omitempty" yaml:"signing_secret,omitempty"`
+}
+
+// DeleteEventSubscriptionRequest represents a structured data type
+type DeleteEventSubscriptionRequest struct {
+	SubscriptionId string `json:"subscription_id" yaml:"subscription_id"`
+}
+
+// DeleteEventSubscriptionResponse represents a structured data type
+type DeleteEventSubscriptionResponse struct {
+	Ok bool `json:"ok" yaml:"ok"`
+}
+
+// ListEventDeliveriesRequest represents a structured data type
+type ListEventDeliveriesRequest struct {
+	SubscriptionId string  `json:"subscription_id" yaml:"subscription_id"`
+	Status         *string `json:"status,omitempty" yaml:"status,omitempty"`
+	Limit          *int64  `json:"limit,omitempty" yaml:"limit,omitempty"`
+}
+
+// ListEventDeliveriesResponse represents a structured data type
+type ListEventDeliveriesResponse struct {
+	Deliveries []EventDeliverySummary `json:"deliveries" yaml:"deliveries"`
+}
+
+// GetEventDeliveryRequest represents a structured data type
+type GetEventDeliveryRequest struct {
+	SubscriptionId string `json:"subscription_id" yaml:"subscription_id"`
+	DeliveryId     string `json:"delivery_id" yaml:"delivery_id"`
+}
+
+// GetEventDeliveryResponse represents a structured data type
+type GetEventDeliveryResponse struct {
+	Delivery EventDeliverySummary        `json:"delivery" yaml:"delivery"`
+	Attempts []EventDeliveryAttemptEntry `json:"attempts" yaml:"attempts"`
+}
+
+// ReplayEventDeliveryRequest represents a structured data type
+type ReplayEventDeliveryRequest struct {
+	SubscriptionId string  `json:"subscription_id" yaml:"subscription_id"`
+	DeliveryId     *string `json:"delivery_id,omitempty" yaml:"delivery_id,omitempty"`
+	AllDeadLetters *bool   `json:"all_dead_letters,omitempty" yaml:"all_dead_letters,omitempty"`
+}
+
+// ReplayEventDeliveryResponse represents a structured data type
+type ReplayEventDeliveryResponse struct {
+	Replayed int64 `json:"replayed" yaml:"replayed"`
+}
+
+// TestEventSubscriptionRequest represents a structured data type
+type TestEventSubscriptionRequest struct {
+	SubscriptionId string `json:"subscription_id" yaml:"subscription_id"`
+}
+
+// TestEventSubscriptionResponse represents a structured data type
+type TestEventSubscriptionResponse struct {
+	Delivered  bool   `json:"delivered" yaml:"delivered"`
+	HttpStatus *int64 `json:"http_status,omitempty" yaml:"http_status,omitempty"`
+	LatencyMs  int64  `json:"latency_ms" yaml:"latency_ms"`
+	Error      string `json:"error" yaml:"error"`
+	Refused    bool   `json:"refused" yaml:"refused"`
+}
+
 // GetJobResourceHistoryRequest represents a structured data type
 type GetJobResourceHistoryRequest struct {
 	JobId    string  `json:"job_id" yaml:"job_id"`
@@ -1535,10 +2015,27 @@ type JobRunResourceSummary struct {
 
 // GetJobResourceHistoryResponse represents a structured data type
 type GetJobResourceHistoryResponse struct {
-	ProjectId *string                 `json:"project_id,omitempty" yaml:"project_id,omitempty"`
-	Name      string                  `json:"name" yaml:"name"`
-	Runs      []JobRunResourceSummary `json:"runs" yaml:"runs"`
-	Pending   int64                   `json:"pending" yaml:"pending"`
+	ProjectId  *string                 `json:"project_id,omitempty" yaml:"project_id,omitempty"`
+	Name       string                  `json:"name" yaml:"name"`
+	Runs       []JobRunResourceSummary `json:"runs" yaml:"runs"`
+	Pending    int64                   `json:"pending" yaml:"pending"`
+	Suggestion *ResourceSuggestion     `json:"suggestion,omitempty" yaml:"suggestion,omitempty"`
+}
+
+// ResourceSuggestion represents a structured data type
+type ResourceSuggestion struct {
+	Runs                        int64   `json:"runs" yaml:"runs"`
+	MinRuns                     int64   `json:"min_runs" yaml:"min_runs"`
+	Sufficient                  bool    `json:"sufficient" yaml:"sufficient"`
+	CpuP95Millicores            int64   `json:"cpu_p95_millicores" yaml:"cpu_p95_millicores"`
+	MemoryPeakP95Bytes          int64   `json:"memory_peak_p95_bytes" yaml:"memory_peak_p95_bytes"`
+	OomRuns                     int64   `json:"oom_runs" yaml:"oom_runs"`
+	CpuRequest                  *string `json:"cpu_request,omitempty" yaml:"cpu_request,omitempty"`
+	CpuRequestMillicores        *int64  `json:"cpu_request_millicores,omitempty" yaml:"cpu_request_millicores,omitempty"`
+	MemoryLimit                 *string `json:"memory_limit,omitempty" yaml:"memory_limit,omitempty"`
+	MemoryLimitBytes            *int64  `json:"memory_limit_bytes,omitempty" yaml:"memory_limit_bytes,omitempty"`
+	CurrentCpuRequestMillicores int64   `json:"current_cpu_request_millicores" yaml:"current_cpu_request_millicores"`
+	CurrentMemoryLimitBytes     int64   `json:"current_memory_limit_bytes" yaml:"current_memory_limit_bytes"`
 }
 
 // GetJobLogsRequest represents a structured data type
@@ -1567,41 +2064,67 @@ type GetJobLogsResponse struct {
 
 // JobSummary represents a structured data type
 type JobSummary struct {
-	JobId               string  `json:"job_id" yaml:"job_id"`
-	Name                string  `json:"name" yaml:"name"`
-	Description         string  `json:"description" yaml:"description"`
-	Status              string  `json:"status" yaml:"status"`
-	LastError           string  `json:"last_error" yaml:"last_error"`
-	CreatedAt           string  `json:"created_at" yaml:"created_at"`
-	UpdatedAt           string  `json:"updated_at" yaml:"updated_at"`
-	SchedulingStartedAt *string `json:"scheduling_started_at,omitempty" yaml:"scheduling_started_at,omitempty"`
-	StartedAt           *string `json:"started_at,omitempty" yaml:"started_at,omitempty"`
-	CompletedAt         *string `json:"completed_at,omitempty" yaml:"completed_at,omitempty"`
-	ExitCode            *int64  `json:"exit_code,omitempty" yaml:"exit_code,omitempty"`
-	SourceUrl           string  `json:"source_url" yaml:"source_url"`
-	SourceRef           string  `json:"source_ref" yaml:"source_ref"`
-	SourceType          string  `json:"source_type" yaml:"source_type"`
-	SourcePath          string  `json:"source_path" yaml:"source_path"`
-	RunnerImage         string  `json:"runner_image" yaml:"runner_image"`
-	QueueName           string  `json:"queue_name" yaml:"queue_name"`
-	Priority            int64   `json:"priority" yaml:"priority"`
-	ParentJobId         *string `json:"parent_job_id,omitempty" yaml:"parent_job_id,omitempty"`
-	ProjectId           *string `json:"project_id,omitempty" yaml:"project_id,omitempty"`
-	WorkflowId          *string `json:"workflow_id,omitempty" yaml:"workflow_id,omitempty"`
-	WorkflowNodeName    string  `json:"workflow_node_name" yaml:"workflow_node_name"`
-	CiOrigin            string  `json:"ci_origin" yaml:"ci_origin"`
-	ExecutionProfile    string  `json:"execution_profile" yaml:"execution_profile"`
-	WorkerClass         string  `json:"worker_class" yaml:"worker_class"`
+	JobId               string             `json:"job_id" yaml:"job_id"`
+	Name                string             `json:"name" yaml:"name"`
+	Description         string             `json:"description" yaml:"description"`
+	Status              string             `json:"status" yaml:"status"`
+	LastError           string             `json:"last_error" yaml:"last_error"`
+	CreatedAt           string             `json:"created_at" yaml:"created_at"`
+	UpdatedAt           string             `json:"updated_at" yaml:"updated_at"`
+	SchedulingStartedAt *string            `json:"scheduling_started_at,omitempty" yaml:"scheduling_started_at,omitempty"`
+	StartedAt           *string            `json:"started_at,omitempty" yaml:"started_at,omitempty"`
+	CompletedAt         *string            `json:"completed_at,omitempty" yaml:"completed_at,omitempty"`
+	ExitCode            *int64             `json:"exit_code,omitempty" yaml:"exit_code,omitempty"`
+	FailureClass        *string            `json:"failure_class,omitempty" yaml:"failure_class,omitempty"`
+	FailureDetail       *string            `json:"failure_detail,omitempty" yaml:"failure_detail,omitempty"`
+	FailureOwner        *string            `json:"failure_owner,omitempty" yaml:"failure_owner,omitempty"`
+	RetryCount          *int64             `json:"retry_count,omitempty" yaml:"retry_count,omitempty"`
+	SourceUrl           string             `json:"source_url" yaml:"source_url"`
+	SourceRef           string             `json:"source_ref" yaml:"source_ref"`
+	SourceType          string             `json:"source_type" yaml:"source_type"`
+	SourcePath          string             `json:"source_path" yaml:"source_path"`
+	RunnerImage         string             `json:"runner_image" yaml:"runner_image"`
+	ImageAlias          *string            `json:"image_alias,omitempty" yaml:"image_alias,omitempty"`
+	ImageDisplay        *string            `json:"image_display,omitempty" yaml:"image_display,omitempty"`
+	ImageRetryOf        *string            `json:"image_retry_of,omitempty" yaml:"image_retry_of,omitempty"`
+	QueueName           string             `json:"queue_name" yaml:"queue_name"`
+	Priority            int64              `json:"priority" yaml:"priority"`
+	PriorityLane        *string            `json:"priority_lane,omitempty" yaml:"priority_lane,omitempty"`
+	PriorityReason      *CIDecisionReason  `json:"priority_reason,omitempty" yaml:"priority_reason,omitempty"`
+	ParentJobId         *string            `json:"parent_job_id,omitempty" yaml:"parent_job_id,omitempty"`
+	ProjectId           *string            `json:"project_id,omitempty" yaml:"project_id,omitempty"`
+	WorkflowId          *string            `json:"workflow_id,omitempty" yaml:"workflow_id,omitempty"`
+	WorkflowNodeName    string             `json:"workflow_node_name" yaml:"workflow_node_name"`
+	CiOrigin            string             `json:"ci_origin" yaml:"ci_origin"`
+	ExecutionProfile    string             `json:"execution_profile" yaml:"execution_profile"`
+	WorkerClass         string             `json:"worker_class" yaml:"worker_class"`
+	Actor               *ActorSummary      `json:"actor,omitempty" yaml:"actor,omitempty"`
+	Shifts              *RunShifts         `json:"shifts,omitempty" yaml:"shifts,omitempty"`
+	RefClasses          []string           `json:"ref_classes,omitempty" yaml:"ref_classes,omitempty"`
+	Owner               *WorkflowOwnership `json:"owner,omitempty" yaml:"owner,omitempty"`
+}
+
+// WorkflowOwnership represents a structured data type
+type WorkflowOwnership struct {
+	Group    *string  `json:"group,omitempty" yaml:"group,omitempty"`
+	Subjects []string `json:"subjects,omitempty" yaml:"subjects,omitempty"`
+	Channel  *string  `json:"channel,omitempty" yaml:"channel,omitempty"`
+	HelpUrl  *string  `json:"help_url,omitempty" yaml:"help_url,omitempty"`
+	Email    *string  `json:"email,omitempty" yaml:"email,omitempty"`
+	Source   *string  `json:"source,omitempty" yaml:"source,omitempty"`
+	CiSha    *string  `json:"ci_sha,omitempty" yaml:"ci_sha,omitempty"`
+	Trusted  *bool    `json:"trusted,omitempty" yaml:"trusted,omitempty"`
 }
 
 // ListJobsRequest represents a structured data type
 type ListJobsRequest struct {
-	Status     *string `json:"status,omitempty" yaml:"status,omitempty"`
-	ProjectId  *string `json:"project_id,omitempty" yaml:"project_id,omitempty"`
-	WorkflowId *string `json:"workflow_id,omitempty" yaml:"workflow_id,omitempty"`
-	QueueName  *string `json:"queue_name,omitempty" yaml:"queue_name,omitempty"`
-	Limit      *int64  `json:"limit,omitempty" yaml:"limit,omitempty"`
-	Offset     *int64  `json:"offset,omitempty" yaml:"offset,omitempty"`
+	Status       *string `json:"status,omitempty" yaml:"status,omitempty"`
+	ProjectId    *string `json:"project_id,omitempty" yaml:"project_id,omitempty"`
+	WorkflowId   *string `json:"workflow_id,omitempty" yaml:"workflow_id,omitempty"`
+	QueueName    *string `json:"queue_name,omitempty" yaml:"queue_name,omitempty"`
+	FailureClass *string `json:"failure_class,omitempty" yaml:"failure_class,omitempty"`
+	Limit        *int64  `json:"limit,omitempty" yaml:"limit,omitempty"`
+	Offset       *int64  `json:"offset,omitempty" yaml:"offset,omitempty"`
 }
 
 // ListJobsResponse represents a structured data type
@@ -1651,36 +2174,39 @@ type WorkflowEventSummary struct {
 
 // WorkflowSummaryDetail represents a structured data type
 type WorkflowSummaryDetail struct {
-	WorkflowId       string  `json:"workflow_id" yaml:"workflow_id"`
-	Kind             string  `json:"kind" yaml:"kind"`
-	Name             string  `json:"name" yaml:"name"`
-	Status           string  `json:"status" yaml:"status"`
-	ProjectId        *string `json:"project_id,omitempty" yaml:"project_id,omitempty"`
-	CreatedAt        string  `json:"created_at" yaml:"created_at"`
-	UpdatedAt        string  `json:"updated_at" yaml:"updated_at"`
-	CompletedAt      *string `json:"completed_at,omitempty" yaml:"completed_at,omitempty"`
-	QueueName        string  `json:"queue_name" yaml:"queue_name"`
-	VcsRepo          string  `json:"vcs_repo" yaml:"vcs_repo"`
-	PrNumber         *int64  `json:"pr_number,omitempty" yaml:"pr_number,omitempty"`
-	CommitSha        string  `json:"commit_sha" yaml:"commit_sha"`
-	JobCount         int64   `json:"job_count" yaml:"job_count"`
-	RunningCount     int64   `json:"running_count" yaml:"running_count"`
-	CompletedCount   int64   `json:"completed_count" yaml:"completed_count"`
-	FailedCount      int64   `json:"failed_count" yaml:"failed_count"`
-	SkippedCount     int64   `json:"skipped_count" yaml:"skipped_count"`
-	LooseJobId       *string `json:"loose_job_id,omitempty" yaml:"loose_job_id,omitempty"`
-	LooseJobExit     *int64  `json:"loose_job_exit,omitempty" yaml:"loose_job_exit,omitempty"`
-	DecisionSummary  string  `json:"decision_summary" yaml:"decision_summary"`
-	ParentJobId      *string `json:"parent_job_id,omitempty" yaml:"parent_job_id,omitempty"`
-	RootWorkflowId   *string `json:"root_workflow_id,omitempty" yaml:"root_workflow_id,omitempty"`
-	ParentWorkflowId *string `json:"parent_workflow_id,omitempty" yaml:"parent_workflow_id,omitempty"`
-	OriginJobId      *string `json:"origin_job_id,omitempty" yaml:"origin_job_id,omitempty"`
-	OriginType       string  `json:"origin_type" yaml:"origin_type"`
-	TriggerType      string  `json:"trigger_type" yaml:"trigger_type"`
-	CiOrigin         string  `json:"ci_origin" yaml:"ci_origin"`
-	ExecutionProfile string  `json:"execution_profile" yaml:"execution_profile"`
-	WorkerClass      string  `json:"worker_class" yaml:"worker_class"`
-	EventId          *string `json:"event_id,omitempty" yaml:"event_id,omitempty"`
+	WorkflowId       string             `json:"workflow_id" yaml:"workflow_id"`
+	Kind             string             `json:"kind" yaml:"kind"`
+	Name             string             `json:"name" yaml:"name"`
+	Status           string             `json:"status" yaml:"status"`
+	ProjectId        *string            `json:"project_id,omitempty" yaml:"project_id,omitempty"`
+	CreatedAt        string             `json:"created_at" yaml:"created_at"`
+	UpdatedAt        string             `json:"updated_at" yaml:"updated_at"`
+	CompletedAt      *string            `json:"completed_at,omitempty" yaml:"completed_at,omitempty"`
+	QueueName        string             `json:"queue_name" yaml:"queue_name"`
+	VcsRepo          string             `json:"vcs_repo" yaml:"vcs_repo"`
+	PrNumber         *int64             `json:"pr_number,omitempty" yaml:"pr_number,omitempty"`
+	CommitSha        string             `json:"commit_sha" yaml:"commit_sha"`
+	JobCount         int64              `json:"job_count" yaml:"job_count"`
+	RunningCount     int64              `json:"running_count" yaml:"running_count"`
+	CompletedCount   int64              `json:"completed_count" yaml:"completed_count"`
+	FailedCount      int64              `json:"failed_count" yaml:"failed_count"`
+	SkippedCount     int64              `json:"skipped_count" yaml:"skipped_count"`
+	LooseJobId       *string            `json:"loose_job_id,omitempty" yaml:"loose_job_id,omitempty"`
+	LooseJobExit     *int64             `json:"loose_job_exit,omitempty" yaml:"loose_job_exit,omitempty"`
+	DecisionSummary  string             `json:"decision_summary" yaml:"decision_summary"`
+	ParentJobId      *string            `json:"parent_job_id,omitempty" yaml:"parent_job_id,omitempty"`
+	RootWorkflowId   *string            `json:"root_workflow_id,omitempty" yaml:"root_workflow_id,omitempty"`
+	ParentWorkflowId *string            `json:"parent_workflow_id,omitempty" yaml:"parent_workflow_id,omitempty"`
+	OriginJobId      *string            `json:"origin_job_id,omitempty" yaml:"origin_job_id,omitempty"`
+	OriginType       string             `json:"origin_type" yaml:"origin_type"`
+	TriggerType      string             `json:"trigger_type" yaml:"trigger_type"`
+	CiOrigin         string             `json:"ci_origin" yaml:"ci_origin"`
+	ExecutionProfile string             `json:"execution_profile" yaml:"execution_profile"`
+	WorkerClass      string             `json:"worker_class" yaml:"worker_class"`
+	EventId          *string            `json:"event_id,omitempty" yaml:"event_id,omitempty"`
+	Actor            *ActorSummary      `json:"actor,omitempty" yaml:"actor,omitempty"`
+	RefClasses       []string           `json:"ref_classes,omitempty" yaml:"ref_classes,omitempty"`
+	Owner            *WorkflowOwnership `json:"owner,omitempty" yaml:"owner,omitempty"`
 }
 
 // ListWorkflowsRequest represents a structured data type
@@ -1735,6 +2261,12 @@ type CIDecisionReason struct {
 	Required       *bool                 `json:"required,omitempty" yaml:"required,omitempty"`
 	ScheduleId     *string               `json:"schedule_id,omitempty" yaml:"schedule_id,omitempty"`
 	FireTime       *string               `json:"fire_time,omitempty" yaml:"fire_time,omitempty"`
+	Classes        []string              `json:"classes,omitempty" yaml:"classes,omitempty"`
+	RuleIds        []string              `json:"rule_ids,omitempty" yaml:"rule_ids,omitempty"`
+	Lane           *string               `json:"lane,omitempty" yaml:"lane,omitempty"`
+	Base           *int64                `json:"base,omitempty" yaml:"base,omitempty"`
+	Shifts         []PriorityShift       `json:"shifts,omitempty" yaml:"shifts,omitempty"`
+	Final          *int64                `json:"final,omitempty" yaml:"final,omitempty"`
 }
 
 // CIDependencyOutcome represents a structured data type
@@ -1751,34 +2283,41 @@ type CIEventWorkflowDecision struct {
 	Decision           string             `json:"decision" yaml:"decision"`
 	Reasons            []CIDecisionReason `json:"reasons" yaml:"reasons"`
 	WorkflowId         *string            `json:"workflow_id,omitempty" yaml:"workflow_id,omitempty"`
+	Owner              *WorkflowOwnership `json:"owner,omitempty" yaml:"owner,omitempty"`
+	RequiredState      *string            `json:"required_state,omitempty" yaml:"required_state,omitempty"`
+	RequiredLabel      *string            `json:"required_label,omitempty" yaml:"required_label,omitempty"`
 }
 
 // CIEventDetail represents a structured data type
 type CIEventDetail struct {
-	EventId             string   `json:"event_id" yaml:"event_id"`
-	Source              string   `json:"source" yaml:"source"`
-	Provider            string   `json:"provider" yaml:"provider"`
-	EventType           string   `json:"event_type" yaml:"event_type"`
-	Repo                string   `json:"repo" yaml:"repo"`
-	ProjectId           *string  `json:"project_id,omitempty" yaml:"project_id,omitempty"`
-	Ref                 *string  `json:"ref,omitempty" yaml:"ref,omitempty"`
-	Branch              *string  `json:"branch,omitempty" yaml:"branch,omitempty"`
-	CommitSha           string   `json:"commit_sha" yaml:"commit_sha"`
-	BaseSha             *string  `json:"base_sha,omitempty" yaml:"base_sha,omitempty"`
-	PrNumber            *int64   `json:"pr_number,omitempty" yaml:"pr_number,omitempty"`
-	Actor               *string  `json:"actor,omitempty" yaml:"actor,omitempty"`
-	Action              *string  `json:"action,omitempty" yaml:"action,omitempty"`
-	ScheduleId          *string  `json:"schedule_id,omitempty" yaml:"schedule_id,omitempty"`
-	ReceivedAt          string   `json:"received_at" yaml:"received_at"`
-	Status              string   `json:"status" yaml:"status"`
-	EvalJobId           *string  `json:"eval_job_id,omitempty" yaml:"eval_job_id,omitempty"`
-	DuplicateOfEventId  *string  `json:"duplicate_of_event_id,omitempty" yaml:"duplicate_of_event_id,omitempty"`
-	ChangedFilesCount   int64    `json:"changed_files_count" yaml:"changed_files_count"`
-	ChangedFilesPreview []string `json:"changed_files_preview" yaml:"changed_files_preview"`
-	DeliveryId          *string  `json:"delivery_id,omitempty" yaml:"delivery_id,omitempty"`
-	ChecksState         *string  `json:"checks_state,omitempty" yaml:"checks_state,omitempty"`
-	ChecksDescription   *string  `json:"checks_description,omitempty" yaml:"checks_description,omitempty"`
-	ChecksPublishedAt   *string  `json:"checks_published_at,omitempty" yaml:"checks_published_at,omitempty"`
+	EventId             string           `json:"event_id" yaml:"event_id"`
+	Source              string           `json:"source" yaml:"source"`
+	Provider            string           `json:"provider" yaml:"provider"`
+	EventType           string           `json:"event_type" yaml:"event_type"`
+	Repo                string           `json:"repo" yaml:"repo"`
+	ProjectId           *string          `json:"project_id,omitempty" yaml:"project_id,omitempty"`
+	Ref                 *string          `json:"ref,omitempty" yaml:"ref,omitempty"`
+	Branch              *string          `json:"branch,omitempty" yaml:"branch,omitempty"`
+	CommitSha           string           `json:"commit_sha" yaml:"commit_sha"`
+	BaseSha             *string          `json:"base_sha,omitempty" yaml:"base_sha,omitempty"`
+	PrNumber            *int64           `json:"pr_number,omitempty" yaml:"pr_number,omitempty"`
+	Actor               *string          `json:"actor,omitempty" yaml:"actor,omitempty"`
+	Action              *string          `json:"action,omitempty" yaml:"action,omitempty"`
+	ScheduleId          *string          `json:"schedule_id,omitempty" yaml:"schedule_id,omitempty"`
+	ReceivedAt          string           `json:"received_at" yaml:"received_at"`
+	Status              string           `json:"status" yaml:"status"`
+	EvalJobId           *string          `json:"eval_job_id,omitempty" yaml:"eval_job_id,omitempty"`
+	DuplicateOfEventId  *string          `json:"duplicate_of_event_id,omitempty" yaml:"duplicate_of_event_id,omitempty"`
+	ChangedFilesCount   int64            `json:"changed_files_count" yaml:"changed_files_count"`
+	ChangedFilesPreview []string         `json:"changed_files_preview" yaml:"changed_files_preview"`
+	DeliveryId          *string          `json:"delivery_id,omitempty" yaml:"delivery_id,omitempty"`
+	ChecksState         *string          `json:"checks_state,omitempty" yaml:"checks_state,omitempty"`
+	ChecksDescription   *string          `json:"checks_description,omitempty" yaml:"checks_description,omitempty"`
+	ChecksPublishedAt   *string          `json:"checks_published_at,omitempty" yaml:"checks_published_at,omitempty"`
+	ActorPrincipal      *ActorSummary    `json:"actor_principal,omitempty" yaml:"actor_principal,omitempty"`
+	RefClasses          []string         `json:"ref_classes,omitempty" yaml:"ref_classes,omitempty"`
+	RefClassFacts       *RefClassFacts   `json:"ref_class_facts,omitempty" yaml:"ref_class_facts,omitempty"`
+	RefClassReasons     []RefClassReason `json:"ref_class_reasons,omitempty" yaml:"ref_class_reasons,omitempty"`
 }
 
 // GetEventRequest represents a structured data type
@@ -1813,4 +2352,1806 @@ type DescribeFormMetadataResponse struct {
 	WorkflowStatuses []EnumChoice `json:"workflow_statuses" yaml:"workflow_statuses"`
 	CiSourceTypes    []EnumChoice `json:"ci_source_types" yaml:"ci_source_types"`
 	VcsProviders     []EnumChoice `json:"vcs_providers" yaml:"vcs_providers"`
+}
+
+// ActorSummary represents a structured data type
+type ActorSummary struct {
+	PrincipalId string  `json:"principal_id" yaml:"principal_id"`
+	Kind        string  `json:"kind" yaml:"kind"`
+	DisplayName string  `json:"display_name" yaml:"display_name"`
+	Identity    *string `json:"identity,omitempty" yaml:"identity,omitempty"`
+}
+
+// PrincipalIdentityEntry represents a structured data type
+type PrincipalIdentityEntry struct {
+	IdentityType  string `json:"identity_type" yaml:"identity_type"`
+	IdentityValue string `json:"identity_value" yaml:"identity_value"`
+	VerifiedBy    string `json:"verified_by" yaml:"verified_by"`
+	CreatedAt     string `json:"created_at" yaml:"created_at"`
+}
+
+// PrincipalTokenEntry represents a structured data type
+type PrincipalTokenEntry struct {
+	TokenId      string   `json:"token_id" yaml:"token_id"`
+	Name         string   `json:"name" yaml:"name"`
+	Capabilities []string `json:"capabilities" yaml:"capabilities"`
+	CreatedAt    string   `json:"created_at" yaml:"created_at"`
+	ExpiresAt    *string  `json:"expires_at,omitempty" yaml:"expires_at,omitempty"`
+	LastUsedAt   *string  `json:"last_used_at,omitempty" yaml:"last_used_at,omitempty"`
+	IsActive     bool     `json:"is_active" yaml:"is_active"`
+}
+
+// PrincipalSummary represents a structured data type
+type PrincipalSummary struct {
+	PrincipalId string  `json:"principal_id" yaml:"principal_id"`
+	Kind        string  `json:"kind" yaml:"kind"`
+	Name        string  `json:"name" yaml:"name"`
+	DisplayName string  `json:"display_name" yaml:"display_name"`
+	Status      string  `json:"status" yaml:"status"`
+	OrgId       *string `json:"org_id,omitempty" yaml:"org_id,omitempty"`
+	CreatedAt   string  `json:"created_at" yaml:"created_at"`
+}
+
+// PrincipalDetail represents a structured data type
+type PrincipalDetail struct {
+	Principal  PrincipalSummary         `json:"principal" yaml:"principal"`
+	Identities []PrincipalIdentityEntry `json:"identities" yaml:"identities"`
+	Groups     []string                 `json:"groups" yaml:"groups"`
+	Tokens     []PrincipalTokenEntry    `json:"tokens" yaml:"tokens"`
+	Subjects   []string                 `json:"subjects" yaml:"subjects"`
+}
+
+// ListPrincipalsRequest represents a structured data type
+type ListPrincipalsRequest struct {
+	OrgId string  `json:"org_id" yaml:"org_id"`
+	Kind  *string `json:"kind,omitempty" yaml:"kind,omitempty"`
+}
+
+// ListPrincipalsResponse represents a structured data type
+type ListPrincipalsResponse struct {
+	Principals []PrincipalSummary `json:"principals" yaml:"principals"`
+}
+
+// GetPrincipalRequest represents a structured data type
+type GetPrincipalRequest struct {
+	OrgId       string `json:"org_id" yaml:"org_id"`
+	PrincipalId string `json:"principal_id" yaml:"principal_id"`
+}
+
+// GetPrincipalResponse represents a structured data type
+type GetPrincipalResponse struct {
+	Principal PrincipalDetail `json:"principal" yaml:"principal"`
+}
+
+// CreateServicePrincipalRequest represents a structured data type
+type CreateServicePrincipalRequest struct {
+	OrgId       string  `json:"org_id" yaml:"org_id"`
+	Name        string  `json:"name" yaml:"name"`
+	DisplayName *string `json:"display_name,omitempty" yaml:"display_name,omitempty"`
+}
+
+// CreateServicePrincipalResponse represents a structured data type
+type CreateServicePrincipalResponse struct {
+	Principal PrincipalDetail `json:"principal" yaml:"principal"`
+}
+
+// SetPrincipalStatusRequest represents a structured data type
+type SetPrincipalStatusRequest struct {
+	OrgId       string `json:"org_id" yaml:"org_id"`
+	PrincipalId string `json:"principal_id" yaml:"principal_id"`
+	Status      string `json:"status" yaml:"status"`
+}
+
+// SetPrincipalStatusResponse represents a structured data type
+type SetPrincipalStatusResponse struct {
+	Principal PrincipalDetail `json:"principal" yaml:"principal"`
+}
+
+// PrincipalIdentityRequest represents a structured data type
+type PrincipalIdentityRequest struct {
+	OrgId         string `json:"org_id" yaml:"org_id"`
+	PrincipalId   string `json:"principal_id" yaml:"principal_id"`
+	IdentityType  string `json:"identity_type" yaml:"identity_type"`
+	IdentityValue string `json:"identity_value" yaml:"identity_value"`
+}
+
+// PrincipalIdentityResponse represents a structured data type
+type PrincipalIdentityResponse struct {
+	Principal PrincipalDetail `json:"principal" yaml:"principal"`
+}
+
+// SetPrincipalGroupRequest represents a structured data type
+type SetPrincipalGroupRequest struct {
+	OrgId       string `json:"org_id" yaml:"org_id"`
+	PrincipalId string `json:"principal_id" yaml:"principal_id"`
+	GroupId     string `json:"group_id" yaml:"group_id"`
+	Member      bool   `json:"member" yaml:"member"`
+}
+
+// SetPrincipalGroupResponse represents a structured data type
+type SetPrincipalGroupResponse struct {
+	Principal PrincipalDetail `json:"principal" yaml:"principal"`
+}
+
+// IssuePrincipalTokenRequest represents a structured data type
+type IssuePrincipalTokenRequest struct {
+	OrgId        string   `json:"org_id" yaml:"org_id"`
+	PrincipalId  string   `json:"principal_id" yaml:"principal_id"`
+	Name         string   `json:"name" yaml:"name"`
+	Capabilities []string `json:"capabilities" yaml:"capabilities"`
+	ExpiresAt    *string  `json:"expires_at,omitempty" yaml:"expires_at,omitempty"`
+}
+
+// IssuePrincipalTokenResponse represents a structured data type
+type IssuePrincipalTokenResponse struct {
+	Token string              `json:"token" yaml:"token"`
+	Info  PrincipalTokenEntry `json:"info" yaml:"info"`
+}
+
+// RevokePrincipalTokenRequest represents a structured data type
+type RevokePrincipalTokenRequest struct {
+	OrgId       string `json:"org_id" yaml:"org_id"`
+	PrincipalId string `json:"principal_id" yaml:"principal_id"`
+	TokenId     string `json:"token_id" yaml:"token_id"`
+}
+
+// RevokePrincipalTokenResponse represents a structured data type
+type RevokePrincipalTokenResponse struct {
+	Revoked bool `json:"revoked" yaml:"revoked"`
+}
+
+// ResolvePrincipalRequest represents a structured data type
+type ResolvePrincipalRequest struct {
+	OrgId         string `json:"org_id" yaml:"org_id"`
+	IdentityType  string `json:"identity_type" yaml:"identity_type"`
+	IdentityValue string `json:"identity_value" yaml:"identity_value"`
+}
+
+// ResolvePrincipalResponse represents a structured data type
+type ResolvePrincipalResponse struct {
+	Principal PrincipalDetail `json:"principal" yaml:"principal"`
+	Identity  string          `json:"identity" yaml:"identity"`
+}
+
+// FederationIssuerEntry represents a structured data type
+type FederationIssuerEntry struct {
+	IssuerId         string   `json:"issuer_id" yaml:"issuer_id"`
+	Name             string   `json:"name" yaml:"name"`
+	IssuerUrl        string   `json:"issuer_url" yaml:"issuer_url"`
+	JwksUrl          string   `json:"jwks_url" yaml:"jwks_url"`
+	Audiences        []string `json:"audiences" yaml:"audiences"`
+	Algorithms       []string `json:"algorithms" yaml:"algorithms"`
+	ClockSkewSeconds int64    `json:"clock_skew_seconds" yaml:"clock_skew_seconds"`
+	Status           string   `json:"status" yaml:"status"`
+	CreatedAt        string   `json:"created_at" yaml:"created_at"`
+}
+
+// FederationConditionEntry represents a structured data type
+type FederationConditionEntry struct {
+	Claim string `json:"claim" yaml:"claim"`
+	Op    string `json:"op" yaml:"op"`
+	Value string `json:"value" yaml:"value"`
+}
+
+// FederationMappingEntry represents a structured data type
+type FederationMappingEntry struct {
+	MappingId       string                     `json:"mapping_id" yaml:"mapping_id"`
+	IssuerId        string                     `json:"issuer_id" yaml:"issuer_id"`
+	Name            string                     `json:"name" yaml:"name"`
+	PrincipalId     string                     `json:"principal_id" yaml:"principal_id"`
+	PrincipalName   string                     `json:"principal_name" yaml:"principal_name"`
+	Conditions      []FederationConditionEntry `json:"conditions" yaml:"conditions"`
+	Capabilities    []string                   `json:"capabilities" yaml:"capabilities"`
+	TokenTtlSeconds int64                      `json:"token_ttl_seconds" yaml:"token_ttl_seconds"`
+	Status          string                     `json:"status" yaml:"status"`
+	CreatedAt       string                     `json:"created_at" yaml:"created_at"`
+}
+
+// ListFederationIssuersRequest represents a structured data type
+type ListFederationIssuersRequest struct {
+	OrgId string `json:"org_id" yaml:"org_id"`
+}
+
+// ListFederationIssuersResponse represents a structured data type
+type ListFederationIssuersResponse struct {
+	Issuers  []FederationIssuerEntry  `json:"issuers" yaml:"issuers"`
+	Mappings []FederationMappingEntry `json:"mappings" yaml:"mappings"`
+}
+
+// SaveFederationIssuerRequest represents a structured data type
+type SaveFederationIssuerRequest struct {
+	OrgId            string   `json:"org_id" yaml:"org_id"`
+	IssuerId         *string  `json:"issuer_id,omitempty" yaml:"issuer_id,omitempty"`
+	Name             string   `json:"name" yaml:"name"`
+	IssuerUrl        string   `json:"issuer_url" yaml:"issuer_url"`
+	JwksUrl          *string  `json:"jwks_url,omitempty" yaml:"jwks_url,omitempty"`
+	Audiences        []string `json:"audiences" yaml:"audiences"`
+	Algorithms       []string `json:"algorithms,omitempty" yaml:"algorithms,omitempty"`
+	ClockSkewSeconds *int64   `json:"clock_skew_seconds,omitempty" yaml:"clock_skew_seconds,omitempty"`
+	Status           *string  `json:"status,omitempty" yaml:"status,omitempty"`
+}
+
+// SaveFederationIssuerResponse represents a structured data type
+type SaveFederationIssuerResponse struct {
+	Issuer FederationIssuerEntry `json:"issuer" yaml:"issuer"`
+}
+
+// DeleteFederationIssuerRequest represents a structured data type
+type DeleteFederationIssuerRequest struct {
+	OrgId    string `json:"org_id" yaml:"org_id"`
+	IssuerId string `json:"issuer_id" yaml:"issuer_id"`
+}
+
+// DeleteFederationIssuerResponse represents a structured data type
+type DeleteFederationIssuerResponse struct {
+	Deleted bool `json:"deleted" yaml:"deleted"`
+}
+
+// SaveFederationMappingRequest represents a structured data type
+type SaveFederationMappingRequest struct {
+	OrgId           string                     `json:"org_id" yaml:"org_id"`
+	IssuerId        string                     `json:"issuer_id" yaml:"issuer_id"`
+	MappingId       *string                    `json:"mapping_id,omitempty" yaml:"mapping_id,omitempty"`
+	Name            string                     `json:"name" yaml:"name"`
+	PrincipalId     string                     `json:"principal_id" yaml:"principal_id"`
+	Conditions      []FederationConditionEntry `json:"conditions" yaml:"conditions"`
+	Capabilities    []string                   `json:"capabilities" yaml:"capabilities"`
+	TokenTtlSeconds *int64                     `json:"token_ttl_seconds,omitempty" yaml:"token_ttl_seconds,omitempty"`
+	Status          *string                    `json:"status,omitempty" yaml:"status,omitempty"`
+}
+
+// SaveFederationMappingResponse represents a structured data type
+type SaveFederationMappingResponse struct {
+	Mapping FederationMappingEntry `json:"mapping" yaml:"mapping"`
+}
+
+// DeleteFederationMappingRequest represents a structured data type
+type DeleteFederationMappingRequest struct {
+	OrgId     string `json:"org_id" yaml:"org_id"`
+	MappingId string `json:"mapping_id" yaml:"mapping_id"`
+}
+
+// DeleteFederationMappingResponse represents a structured data type
+type DeleteFederationMappingResponse struct {
+	Deleted bool `json:"deleted" yaml:"deleted"`
+}
+
+// RefClassFacts represents a structured data type
+type RefClassFacts struct {
+	Source          *string `json:"source,omitempty" yaml:"source,omitempty"`
+	EventType       *string `json:"event_type,omitempty" yaml:"event_type,omitempty"`
+	Branch          *string `json:"branch,omitempty" yaml:"branch,omitempty"`
+	HeadBranch      *string `json:"head_branch,omitempty" yaml:"head_branch,omitempty"`
+	Tag             *string `json:"tag,omitempty" yaml:"tag,omitempty"`
+	BaseBranch      *string `json:"base_branch,omitempty" yaml:"base_branch,omitempty"`
+	DefaultBranch   *string `json:"default_branch,omitempty" yaml:"default_branch,omitempty"`
+	IsPr            *bool   `json:"is_pr,omitempty" yaml:"is_pr,omitempty"`
+	IsFork          *bool   `json:"is_fork,omitempty" yaml:"is_fork,omitempty"`
+	IsDefaultBranch *bool   `json:"is_default_branch,omitempty" yaml:"is_default_branch,omitempty"`
+}
+
+// RefClassReason represents a structured data type
+type RefClassReason struct {
+	Class    string  `json:"class" yaml:"class"`
+	RuleId   string  `json:"rule_id" yaml:"rule_id"`
+	RuleName *string `json:"rule_name,omitempty" yaml:"rule_name,omitempty"`
+	Scope    string  `json:"scope" yaml:"scope"`
+}
+
+// RefClassRule represents a structured data type
+type RefClassRule struct {
+	RuleId          *string  `json:"rule_id,omitempty" yaml:"rule_id,omitempty"`
+	ProjectId       *string  `json:"project_id,omitempty" yaml:"project_id,omitempty"`
+	Name            string   `json:"name" yaml:"name"`
+	Position        int64    `json:"position" yaml:"position"`
+	Description     *string  `json:"description,omitempty" yaml:"description,omitempty"`
+	EventTypes      []string `json:"event_types,omitempty" yaml:"event_types,omitempty"`
+	BranchGlob      *string  `json:"branch_glob,omitempty" yaml:"branch_glob,omitempty"`
+	TagGlob         *string  `json:"tag_glob,omitempty" yaml:"tag_glob,omitempty"`
+	BaseBranchGlob  *string  `json:"base_branch_glob,omitempty" yaml:"base_branch_glob,omitempty"`
+	IsPr            *bool    `json:"is_pr,omitempty" yaml:"is_pr,omitempty"`
+	IsFork          *bool    `json:"is_fork,omitempty" yaml:"is_fork,omitempty"`
+	IsDefaultBranch *bool    `json:"is_default_branch,omitempty" yaml:"is_default_branch,omitempty"`
+	Classes         []string `json:"classes" yaml:"classes"`
+	Enabled         bool     `json:"enabled" yaml:"enabled"`
+	CreatedAt       *string  `json:"created_at,omitempty" yaml:"created_at,omitempty"`
+	UpdatedAt       *string  `json:"updated_at,omitempty" yaml:"updated_at,omitempty"`
+}
+
+// RefClassBuiltin represents a structured data type
+type RefClassBuiltin struct {
+	RuleId  string   `json:"rule_id" yaml:"rule_id"`
+	Classes []string `json:"classes" yaml:"classes"`
+}
+
+// RefClassRuleCheck represents a structured data type
+type RefClassRuleCheck struct {
+	RuleId  string   `json:"rule_id" yaml:"rule_id"`
+	Name    string   `json:"name" yaml:"name"`
+	Scope   string   `json:"scope" yaml:"scope"`
+	Enabled bool     `json:"enabled" yaml:"enabled"`
+	Matched bool     `json:"matched" yaml:"matched"`
+	Classes []string `json:"classes" yaml:"classes"`
+}
+
+// ListRefClassRulesRequest represents a structured data type
+type ListRefClassRulesRequest struct {
+	Organization string  `json:"organization" yaml:"organization"`
+	ProjectId    *string `json:"project_id,omitempty" yaml:"project_id,omitempty"`
+}
+
+// ListRefClassRulesResponse represents a structured data type
+type ListRefClassRulesResponse struct {
+	Rules     []RefClassRule    `json:"rules" yaml:"rules"`
+	Inherited []RefClassRule    `json:"inherited" yaml:"inherited"`
+	Builtin   []RefClassBuiltin `json:"builtin" yaml:"builtin"`
+	CanManage bool              `json:"can_manage" yaml:"can_manage"`
+}
+
+// PutRefClassRuleRequest represents a structured data type
+type PutRefClassRuleRequest struct {
+	Organization string       `json:"organization" yaml:"organization"`
+	ProjectId    *string      `json:"project_id,omitempty" yaml:"project_id,omitempty"`
+	Rule         RefClassRule `json:"rule" yaml:"rule"`
+}
+
+// PutRefClassRuleResponse represents a structured data type
+type PutRefClassRuleResponse struct {
+	Rule RefClassRule `json:"rule" yaml:"rule"`
+}
+
+// DeleteRefClassRuleRequest represents a structured data type
+type DeleteRefClassRuleRequest struct {
+	Organization string  `json:"organization" yaml:"organization"`
+	ProjectId    *string `json:"project_id,omitempty" yaml:"project_id,omitempty"`
+	Name         string  `json:"name" yaml:"name"`
+}
+
+// DeleteRefClassRuleResponse represents a structured data type
+type DeleteRefClassRuleResponse struct {
+	Deleted bool `json:"deleted" yaml:"deleted"`
+}
+
+// ExplainRefClassesRequest represents a structured data type
+type ExplainRefClassesRequest struct {
+	Organization string         `json:"organization" yaml:"organization"`
+	ProjectId    *string        `json:"project_id,omitempty" yaml:"project_id,omitempty"`
+	EventId      *string        `json:"event_id,omitempty" yaml:"event_id,omitempty"`
+	Facts        *RefClassFacts `json:"facts,omitempty" yaml:"facts,omitempty"`
+}
+
+// ExplainRefClassesResponse represents a structured data type
+type ExplainRefClassesResponse struct {
+	Facts         RefClassFacts       `json:"facts" yaml:"facts"`
+	Classes       []string            `json:"classes" yaml:"classes"`
+	Reasons       []RefClassReason    `json:"reasons" yaml:"reasons"`
+	RuleIds       []string            `json:"rule_ids" yaml:"rule_ids"`
+	Rules         []RefClassRuleCheck `json:"rules" yaml:"rules"`
+	StoredClasses []string            `json:"stored_classes,omitempty" yaml:"stored_classes,omitempty"`
+}
+
+// ImageAliasSummary represents a structured data type
+type ImageAliasSummary struct {
+	AliasId         string                `json:"alias_id" yaml:"alias_id"`
+	OrgId           string                `json:"org_id" yaml:"org_id"`
+	ProjectId       *string               `json:"project_id,omitempty" yaml:"project_id,omitempty"`
+	Scope           string                `json:"scope" yaml:"scope"`
+	Name            string                `json:"name" yaml:"name"`
+	Kind            string                `json:"kind" yaml:"kind"`
+	Os              string                `json:"os" yaml:"os"`
+	Arch            string                `json:"arch" yaml:"arch"`
+	Characteristics []CharacteristicEntry `json:"characteristics" yaml:"characteristics"`
+	ActiveRef       string                `json:"active_ref" yaml:"active_ref"`
+	ActiveDigest    string                `json:"active_digest" yaml:"active_digest"`
+	PendingRef      *string               `json:"pending_ref,omitempty" yaml:"pending_ref,omitempty"`
+	PendingDigest   *string               `json:"pending_digest,omitempty" yaml:"pending_digest,omitempty"`
+	PendingSince    *string               `json:"pending_since,omitempty" yaml:"pending_since,omitempty"`
+	CreatedAt       string                `json:"created_at" yaml:"created_at"`
+	UpdatedAt       string                `json:"updated_at" yaml:"updated_at"`
+	UpdatedBy       string                `json:"updated_by" yaml:"updated_by"`
+}
+
+// ListImageAliasesRequest represents a structured data type
+type ListImageAliasesRequest struct {
+	Organization string  `json:"organization" yaml:"organization"`
+	ProjectId    *string `json:"project_id,omitempty" yaml:"project_id,omitempty"`
+}
+
+// ListImageAliasesResponse represents a structured data type
+type ListImageAliasesResponse struct {
+	Aliases []ImageAliasSummary `json:"aliases" yaml:"aliases"`
+}
+
+// GetImageAliasRequest represents a structured data type
+type GetImageAliasRequest struct {
+	Organization string  `json:"organization" yaml:"organization"`
+	ProjectId    *string `json:"project_id,omitempty" yaml:"project_id,omitempty"`
+	Name         string  `json:"name" yaml:"name"`
+}
+
+// GetImageAliasResponse represents a structured data type
+type GetImageAliasResponse struct {
+	Alias ImageAliasSummary `json:"alias" yaml:"alias"`
+}
+
+// SetImageAliasRequest represents a structured data type
+type SetImageAliasRequest struct {
+	Organization    string                `json:"organization" yaml:"organization"`
+	ProjectId       *string               `json:"project_id,omitempty" yaml:"project_id,omitempty"`
+	Name            string                `json:"name" yaml:"name"`
+	Ref             string                `json:"ref" yaml:"ref"`
+	Kind            *string               `json:"kind,omitempty" yaml:"kind,omitempty"`
+	Os              *string               `json:"os,omitempty" yaml:"os,omitempty"`
+	Arch            *string               `json:"arch,omitempty" yaml:"arch,omitempty"`
+	Characteristics []CharacteristicEntry `json:"characteristics,omitempty" yaml:"characteristics,omitempty"`
+	Force           *bool                 `json:"force,omitempty" yaml:"force,omitempty"`
+}
+
+// SetImageAliasResponse represents a structured data type
+type SetImageAliasResponse struct {
+	Alias   ImageAliasSummary `json:"alias" yaml:"alias"`
+	Outcome string            `json:"outcome" yaml:"outcome"`
+}
+
+// DeleteImageAliasRequest represents a structured data type
+type DeleteImageAliasRequest struct {
+	Organization string  `json:"organization" yaml:"organization"`
+	ProjectId    *string `json:"project_id,omitempty" yaml:"project_id,omitempty"`
+	Name         string  `json:"name" yaml:"name"`
+}
+
+// DeleteImageAliasResponse represents a structured data type
+type DeleteImageAliasResponse struct {
+	Deleted bool `json:"deleted" yaml:"deleted"`
+}
+
+// ImageFailureSummary represents a structured data type
+type ImageFailureSummary struct {
+	Digest    string `json:"digest" yaml:"digest"`
+	Permanent bool   `json:"permanent" yaml:"permanent"`
+	Detail    string `json:"detail" yaml:"detail"`
+}
+
+// ImageRolloutWorker represents a structured data type
+type ImageRolloutWorker struct {
+	WorkerId             string                `json:"worker_id" yaml:"worker_id"`
+	Hostname             *string               `json:"hostname,omitempty" yaml:"hostname,omitempty"`
+	PoolId               string                `json:"pool_id" yaml:"pool_id"`
+	Online               bool                  `json:"online" yaml:"online"`
+	ImageStatus          string                `json:"image_status" yaml:"image_status"`
+	ImageStatusDetail    *string               `json:"image_status_detail,omitempty" yaml:"image_status_detail,omitempty"`
+	ImageSetVersion      int64                 `json:"image_set_version" yaml:"image_set_version"`
+	ImageReportedVersion *int64                `json:"image_reported_version,omitempty" yaml:"image_reported_version,omitempty"`
+	HasActive            bool                  `json:"has_active" yaml:"has_active"`
+	HasPending           bool                  `json:"has_pending" yaml:"has_pending"`
+	Ready                bool                  `json:"ready" yaml:"ready"`
+	Failed               []ImageFailureSummary `json:"failed,omitempty" yaml:"failed,omitempty"`
+}
+
+// ImageRolloutPoolSummary represents a structured data type
+type ImageRolloutPoolSummary struct {
+	PoolName      string `json:"pool_name" yaml:"pool_name"`
+	Workers       int64  `json:"workers" yaml:"workers"`
+	OnlineWorkers int64  `json:"online_workers" yaml:"online_workers"`
+	ReadyWorkers  int64  `json:"ready_workers" yaml:"ready_workers"`
+	FailedWorkers int64  `json:"failed_workers" yaml:"failed_workers"`
+}
+
+// ImageAliasRollout represents a structured data type
+type ImageAliasRollout struct {
+	Alias         ImageAliasSummary         `json:"alias" yaml:"alias"`
+	Workers       []ImageRolloutWorker      `json:"workers" yaml:"workers"`
+	OnlineWorkers int64                     `json:"online_workers" yaml:"online_workers"`
+	ReadyWorkers  int64                     `json:"ready_workers" yaml:"ready_workers"`
+	Promotable    bool                      `json:"promotable" yaml:"promotable"`
+	Blocked       *string                   `json:"blocked,omitempty" yaml:"blocked,omitempty"`
+	OtherPools    []ImageRolloutPoolSummary `json:"other_pools,omitempty" yaml:"other_pools,omitempty"`
+	Problems      []string                  `json:"problems,omitempty" yaml:"problems,omitempty"`
+}
+
+// GetImageRolloutStatusRequest represents a structured data type
+type GetImageRolloutStatusRequest struct {
+	Organization string  `json:"organization" yaml:"organization"`
+	ProjectId    *string `json:"project_id,omitempty" yaml:"project_id,omitempty"`
+	Name         *string `json:"name,omitempty" yaml:"name,omitempty"`
+}
+
+// GetImageRolloutStatusResponse represents a structured data type
+type GetImageRolloutStatusResponse struct {
+	Rollouts []ImageAliasRollout `json:"rollouts" yaml:"rollouts"`
+}
+
+// WorkerImageSetEntrySummary represents a structured data type
+type WorkerImageSetEntrySummary struct {
+	Ref     string               `json:"ref" yaml:"ref"`
+	Digest  string               `json:"digest" yaml:"digest"`
+	Kind    string               `json:"kind" yaml:"kind"`
+	Aliases []string             `json:"aliases" yaml:"aliases"`
+	Ready   bool                 `json:"ready" yaml:"ready"`
+	Pending *bool                `json:"pending,omitempty" yaml:"pending,omitempty"`
+	Failure *ImageFailureSummary `json:"failure,omitempty" yaml:"failure,omitempty"`
+}
+
+// GetWorkerImageStateRequest represents a structured data type
+type GetWorkerImageStateRequest struct {
+	WorkerId string `json:"worker_id" yaml:"worker_id"`
+}
+
+// GetWorkerImageStateResponse represents a structured data type
+type GetWorkerImageStateResponse struct {
+	WorkerId             string                       `json:"worker_id" yaml:"worker_id"`
+	ImageAware           bool                         `json:"image_aware" yaml:"image_aware"`
+	ImageRuntime         *string                      `json:"image_runtime,omitempty" yaml:"image_runtime,omitempty"`
+	ImageStatus          *string                      `json:"image_status,omitempty" yaml:"image_status,omitempty"`
+	ImageStatusDetail    *string                      `json:"image_status_detail,omitempty" yaml:"image_status_detail,omitempty"`
+	ImageSetVersion      int64                        `json:"image_set_version" yaml:"image_set_version"`
+	ImageReportedVersion *int64                       `json:"image_reported_version,omitempty" yaml:"image_reported_version,omitempty"`
+	State                *string                      `json:"state,omitempty" yaml:"state,omitempty"`
+	ReadyDigests         []string                     `json:"ready_digests" yaml:"ready_digests"`
+	Images               []WorkerImageSetEntrySummary `json:"images" yaml:"images"`
+	Failed               []ImageFailureSummary        `json:"failed,omitempty" yaml:"failed,omitempty"`
+}
+
+// EnvDefaultEntry represents a structured data type
+type EnvDefaultEntry struct {
+	Key       string  `json:"key" yaml:"key"`
+	Value     string  `json:"value" yaml:"value"`
+	UpdatedAt *string `json:"updated_at,omitempty" yaml:"updated_at,omitempty"`
+}
+
+// ListEnvDefaultsRequest represents a structured data type
+type ListEnvDefaultsRequest struct {
+	Organization string  `json:"organization" yaml:"organization"`
+	WorkerClass  *string `json:"worker_class,omitempty" yaml:"worker_class,omitempty"`
+	ProjectId    *string `json:"project_id,omitempty" yaml:"project_id,omitempty"`
+}
+
+// ListEnvDefaultsResponse represents a structured data type
+type ListEnvDefaultsResponse struct {
+	Scope   string            `json:"scope" yaml:"scope"`
+	Entries []EnvDefaultEntry `json:"entries" yaml:"entries"`
+}
+
+// PutEnvDefaultRequest represents a structured data type
+type PutEnvDefaultRequest struct {
+	Organization string  `json:"organization" yaml:"organization"`
+	WorkerClass  *string `json:"worker_class,omitempty" yaml:"worker_class,omitempty"`
+	ProjectId    *string `json:"project_id,omitempty" yaml:"project_id,omitempty"`
+	Key          string  `json:"key" yaml:"key"`
+	Value        string  `json:"value" yaml:"value"`
+}
+
+// PutEnvDefaultResponse represents a structured data type
+type PutEnvDefaultResponse struct {
+	Entry EnvDefaultEntry `json:"entry" yaml:"entry"`
+}
+
+// DeleteEnvDefaultRequest represents a structured data type
+type DeleteEnvDefaultRequest struct {
+	Organization string  `json:"organization" yaml:"organization"`
+	WorkerClass  *string `json:"worker_class,omitempty" yaml:"worker_class,omitempty"`
+	ProjectId    *string `json:"project_id,omitempty" yaml:"project_id,omitempty"`
+	Key          string  `json:"key" yaml:"key"`
+}
+
+// DeleteEnvDefaultResponse represents a structured data type
+type DeleteEnvDefaultResponse struct {
+	Deleted bool `json:"deleted" yaml:"deleted"`
+}
+
+// ImagePolicySummary represents a structured data type
+type ImagePolicySummary struct {
+	Enabled         bool     `json:"enabled" yaml:"enabled"`
+	AllowedPrefixes []string `json:"allowed_prefixes" yaml:"allowed_prefixes"`
+	RequireDigest   bool     `json:"require_digest" yaml:"require_digest"`
+	UpdatedAt       *string  `json:"updated_at,omitempty" yaml:"updated_at,omitempty"`
+}
+
+// GetImagePolicyRequest represents a structured data type
+type GetImagePolicyRequest struct {
+	Organization string `json:"organization" yaml:"organization"`
+}
+
+// GetImagePolicyResponse represents a structured data type
+type GetImagePolicyResponse struct {
+	Policy ImagePolicySummary `json:"policy" yaml:"policy"`
+}
+
+// PutImagePolicyRequest represents a structured data type
+type PutImagePolicyRequest struct {
+	Organization string             `json:"organization" yaml:"organization"`
+	Policy       ImagePolicySummary `json:"policy" yaml:"policy"`
+}
+
+// PutImagePolicyResponse represents a structured data type
+type PutImagePolicyResponse struct {
+	Policy ImagePolicySummary `json:"policy" yaml:"policy"`
+}
+
+// JobLinkSummary represents a structured data type
+type JobLinkSummary struct {
+	Name string `json:"name" yaml:"name"`
+	Url  string `json:"url" yaml:"url"`
+}
+
+// ListJobLinksRequest represents a structured data type
+type ListJobLinksRequest struct {
+	JobId string `json:"job_id" yaml:"job_id"`
+}
+
+// ListJobLinksResponse represents a structured data type
+type ListJobLinksResponse struct {
+	Links []JobLinkSummary `json:"links" yaml:"links"`
+}
+
+// JobArtifactSummary represents a structured data type
+type JobArtifactSummary struct {
+	ArtifactId   string  `json:"artifact_id" yaml:"artifact_id"`
+	Path         string  `json:"path" yaml:"path"`
+	Kind         string  `json:"kind" yaml:"kind"`
+	MediaType    string  `json:"media_type" yaml:"media_type"`
+	SizeBytes    int64   `json:"size_bytes" yaml:"size_bytes"`
+	Sha256       string  `json:"sha256" yaml:"sha256"`
+	Status       string  `json:"status" yaml:"status"`
+	StatusReason *string `json:"status_reason,omitempty" yaml:"status_reason,omitempty"`
+	CreatedAt    string  `json:"created_at" yaml:"created_at"`
+}
+
+// ListJobArtifactsRequest represents a structured data type
+type ListJobArtifactsRequest struct {
+	JobId string `json:"job_id" yaml:"job_id"`
+}
+
+// ListJobArtifactsResponse represents a structured data type
+type ListJobArtifactsResponse struct {
+	Artifacts []JobArtifactSummary `json:"artifacts" yaml:"artifacts"`
+}
+
+// ReadJobArtifactRequest represents a structured data type
+type ReadJobArtifactRequest struct {
+	JobId      string `json:"job_id" yaml:"job_id"`
+	ArtifactId string `json:"artifact_id" yaml:"artifact_id"`
+	Offset     int64  `json:"offset" yaml:"offset"`
+	Length     *int64 `json:"length,omitempty" yaml:"length,omitempty"`
+}
+
+// ReadJobArtifactResponse represents a structured data type
+type ReadJobArtifactResponse struct {
+	Data      []byte `json:"data" yaml:"data"`
+	SizeBytes int64  `json:"size_bytes" yaml:"size_bytes"`
+	Sha256    string `json:"sha256" yaml:"sha256"`
+	Eof       bool   `json:"eof" yaml:"eof"`
+}
+
+// JobTestSummaryView represents a structured data type
+type JobTestSummaryView struct {
+	Reports             int64    `json:"reports" yaml:"reports"`
+	Total               int64    `json:"total" yaml:"total"`
+	Passed              int64    `json:"passed" yaml:"passed"`
+	Failed              int64    `json:"failed" yaml:"failed"`
+	Errored             int64    `json:"errored" yaml:"errored"`
+	Skipped             int64    `json:"skipped" yaml:"skipped"`
+	QuarantinedFailures int64    `json:"quarantined_failures" yaml:"quarantined_failures"`
+	Flaky               int64    `json:"flaky" yaml:"flaky"`
+	Truncated           bool     `json:"truncated" yaml:"truncated"`
+	ParseErrors         []string `json:"parse_errors" yaml:"parse_errors"`
+	QuarantinePolicy    string   `json:"quarantine_policy" yaml:"quarantine_policy"`
+	QuarantineOverride  bool     `json:"quarantine_override" yaml:"quarantine_override"`
+}
+
+// TestResultView represents a structured data type
+type TestResultView struct {
+	TestId      string `json:"test_id" yaml:"test_id"`
+	Suite       string `json:"suite" yaml:"suite"`
+	Classname   string `json:"classname" yaml:"classname"`
+	Name        string `json:"name" yaml:"name"`
+	Status      string `json:"status" yaml:"status"`
+	DurationMs  int64  `json:"duration_ms" yaml:"duration_ms"`
+	Message     string `json:"message" yaml:"message"`
+	File        string `json:"file" yaml:"file"`
+	Line        *int64 `json:"line,omitempty" yaml:"line,omitempty"`
+	Quarantined bool   `json:"quarantined" yaml:"quarantined"`
+	Flaky       bool   `json:"flaky" yaml:"flaky"`
+}
+
+// GetJobTestResultsRequest represents a structured data type
+type GetJobTestResultsRequest struct {
+	JobId      string `json:"job_id" yaml:"job_id"`
+	FailedOnly *bool  `json:"failed_only,omitempty" yaml:"failed_only,omitempty"`
+	Limit      *int64 `json:"limit,omitempty" yaml:"limit,omitempty"`
+}
+
+// GetJobTestResultsResponse represents a structured data type
+type GetJobTestResultsResponse struct {
+	Summary       *JobTestSummaryView `json:"summary,omitempty" yaml:"summary,omitempty"`
+	Results       []TestResultView    `json:"results" yaml:"results"`
+	ProjectId     *string             `json:"project_id,omitempty" yaml:"project_id,omitempty"`
+	CanQuarantine bool                `json:"can_quarantine" yaml:"can_quarantine"`
+}
+
+// FlakyTestView represents a structured data type
+type FlakyTestView struct {
+	TestId       string  `json:"test_id" yaml:"test_id"`
+	Suite        string  `json:"suite" yaml:"suite"`
+	Classname    string  `json:"classname" yaml:"classname"`
+	Name         string  `json:"name" yaml:"name"`
+	FlakyCount   int64   `json:"flaky_count" yaml:"flaky_count"`
+	TotalRuns    int64   `json:"total_runs" yaml:"total_runs"`
+	LastFlakyAt  *string `json:"last_flaky_at,omitempty" yaml:"last_flaky_at,omitempty"`
+	LastFlakySha *string `json:"last_flaky_sha,omitempty" yaml:"last_flaky_sha,omitempty"`
+}
+
+// ListFlakyTestsRequest represents a structured data type
+type ListFlakyTestsRequest struct {
+	ProjectId string `json:"project_id" yaml:"project_id"`
+	Days      *int64 `json:"days,omitempty" yaml:"days,omitempty"`
+}
+
+// ListFlakyTestsResponse represents a structured data type
+type ListFlakyTestsResponse struct {
+	Tests      []FlakyTestView `json:"tests" yaml:"tests"`
+	WindowDays int64           `json:"window_days" yaml:"window_days"`
+}
+
+// TestQuarantineView represents a structured data type
+type TestQuarantineView struct {
+	QuarantineId     string  `json:"quarantine_id" yaml:"quarantine_id"`
+	TestId           string  `json:"test_id" yaml:"test_id"`
+	Suite            string  `json:"suite" yaml:"suite"`
+	Classname        string  `json:"classname" yaml:"classname"`
+	Name             string  `json:"name" yaml:"name"`
+	OwnerPrincipalId string  `json:"owner_principal_id" yaml:"owner_principal_id"`
+	Reason           string  `json:"reason" yaml:"reason"`
+	ExpiresAt        string  `json:"expires_at" yaml:"expires_at"`
+	CreatedAt        string  `json:"created_at" yaml:"created_at"`
+	CreatedBy        *string `json:"created_by,omitempty" yaml:"created_by,omitempty"`
+	RemovedAt        *string `json:"removed_at,omitempty" yaml:"removed_at,omitempty"`
+	RemovedBy        *string `json:"removed_by,omitempty" yaml:"removed_by,omitempty"`
+}
+
+// ListTestQuarantinesRequest represents a structured data type
+type ListTestQuarantinesRequest struct {
+	ProjectId    string `json:"project_id" yaml:"project_id"`
+	IncludeEnded *bool  `json:"include_ended,omitempty" yaml:"include_ended,omitempty"`
+}
+
+// ListTestQuarantinesResponse represents a structured data type
+type ListTestQuarantinesResponse struct {
+	Quarantines []TestQuarantineView `json:"quarantines" yaml:"quarantines"`
+	CanManage   bool                 `json:"can_manage" yaml:"can_manage"`
+}
+
+// QuarantineTestRequest represents a structured data type
+type QuarantineTestRequest struct {
+	ProjectId          string  `json:"project_id" yaml:"project_id"`
+	TestId             *string `json:"test_id,omitempty" yaml:"test_id,omitempty"`
+	Suite              *string `json:"suite,omitempty" yaml:"suite,omitempty"`
+	Classname          *string `json:"classname,omitempty" yaml:"classname,omitempty"`
+	Name               *string `json:"name,omitempty" yaml:"name,omitempty"`
+	Reason             string  `json:"reason" yaml:"reason"`
+	Until              string  `json:"until" yaml:"until"`
+	OwnerPrincipalId   *string `json:"owner_principal_id,omitempty" yaml:"owner_principal_id,omitempty"`
+	WorkflowSecurityId *string `json:"workflow_security_id,omitempty" yaml:"workflow_security_id,omitempty"`
+}
+
+// QuarantineTestResponse represents a structured data type
+type QuarantineTestResponse struct {
+	Quarantine TestQuarantineView `json:"quarantine" yaml:"quarantine"`
+}
+
+// UnquarantineTestRequest represents a structured data type
+type UnquarantineTestRequest struct {
+	ProjectId          string  `json:"project_id" yaml:"project_id"`
+	QuarantineId       string  `json:"quarantine_id" yaml:"quarantine_id"`
+	WorkflowSecurityId *string `json:"workflow_security_id,omitempty" yaml:"workflow_security_id,omitempty"`
+}
+
+// UnquarantineTestResponse represents a structured data type
+type UnquarantineTestResponse struct {
+	Done bool `json:"done" yaml:"done"`
+}
+
+// GetJobProvenanceRequest represents a structured data type
+type GetJobProvenanceRequest struct {
+	JobId string `json:"job_id" yaml:"job_id"`
+}
+
+// GetJobProvenanceResponse represents a structured data type
+type GetJobProvenanceResponse struct {
+	Present       bool    `json:"present" yaml:"present"`
+	Verified      bool    `json:"verified" yaml:"verified"`
+	KeyId         *string `json:"key_id,omitempty" yaml:"key_id,omitempty"`
+	EnvelopeJson  *string `json:"envelope_json,omitempty" yaml:"envelope_json,omitempty"`
+	StatementJson *string `json:"statement_json,omitempty" yaml:"statement_json,omitempty"`
+	Error         *string `json:"error,omitempty" yaml:"error,omitempty"`
+}
+
+// DiagnosisLinkEntry represents a structured data type
+type DiagnosisLinkEntry struct {
+	Name string `json:"name" yaml:"name"`
+	Url  string `json:"url" yaml:"url"`
+}
+
+// DiagnosisSummary represents a structured data type
+type DiagnosisSummary struct {
+	DiagnosisId         string               `json:"diagnosis_id" yaml:"diagnosis_id"`
+	TargetType          string               `json:"target_type" yaml:"target_type"`
+	JobId               *string              `json:"job_id,omitempty" yaml:"job_id,omitempty"`
+	WorkflowId          *string              `json:"workflow_id,omitempty" yaml:"workflow_id,omitempty"`
+	NodeName            *string              `json:"node_name,omitempty" yaml:"node_name,omitempty"`
+	Author              ActorSummary         `json:"author" yaml:"author"`
+	Title               string               `json:"title" yaml:"title"`
+	Body                string               `json:"body" yaml:"body"`
+	Confidence          string               `json:"confidence" yaml:"confidence"`
+	Category            string               `json:"category" yaml:"category"`
+	Links               []DiagnosisLinkEntry `json:"links" yaml:"links"`
+	SuggestedShifts     *RunShifts           `json:"suggested_shifts,omitempty" yaml:"suggested_shifts,omitempty"`
+	SuggestedShiftsText string               `json:"suggested_shifts_text" yaml:"suggested_shifts_text"`
+	Revision            int64                `json:"revision" yaml:"revision"`
+	CreatedAt           string               `json:"created_at" yaml:"created_at"`
+	UpdatedAt           string               `json:"updated_at" yaml:"updated_at"`
+}
+
+// ListDiagnosesRequest represents a structured data type
+type ListDiagnosesRequest struct {
+	JobId      *string `json:"job_id,omitempty" yaml:"job_id,omitempty"`
+	WorkflowId *string `json:"workflow_id,omitempty" yaml:"workflow_id,omitempty"`
+}
+
+// ListDiagnosesResponse represents a structured data type
+type ListDiagnosesResponse struct {
+	Diagnoses []DiagnosisSummary `json:"diagnoses" yaml:"diagnoses"`
+}
+
+// PutDiagnosisRequest represents a structured data type
+type PutDiagnosisRequest struct {
+	JobId           *string              `json:"job_id,omitempty" yaml:"job_id,omitempty"`
+	WorkflowId      *string              `json:"workflow_id,omitempty" yaml:"workflow_id,omitempty"`
+	NodeName        *string              `json:"node_name,omitempty" yaml:"node_name,omitempty"`
+	Title           string               `json:"title" yaml:"title"`
+	Body            *string              `json:"body,omitempty" yaml:"body,omitempty"`
+	Confidence      *string              `json:"confidence,omitempty" yaml:"confidence,omitempty"`
+	Category        *string              `json:"category,omitempty" yaml:"category,omitempty"`
+	Links           []DiagnosisLinkEntry `json:"links,omitempty" yaml:"links,omitempty"`
+	SuggestedShifts *RunShifts           `json:"suggested_shifts,omitempty" yaml:"suggested_shifts,omitempty"`
+}
+
+// PutDiagnosisResponse represents a structured data type
+type PutDiagnosisResponse struct {
+	Diagnosis DiagnosisSummary `json:"diagnosis" yaml:"diagnosis"`
+	Created   bool             `json:"created" yaml:"created"`
+}
+
+// PathOwnerRule represents a structured data type
+type PathOwnerRule struct {
+	Pattern string   `json:"pattern" yaml:"pattern"`
+	Owners  []string `json:"owners" yaml:"owners"`
+}
+
+// ReportingSettings represents a structured data type
+type ReportingSettings struct {
+	ReportMode                string          `json:"report_mode" yaml:"report_mode"`
+	ReportModeSource          string          `json:"report_mode_source" yaml:"report_mode_source"`
+	AgreementContexts         []string        `json:"agreement_contexts" yaml:"agreement_contexts"`
+	AgreementContextsSource   string          `json:"agreement_contexts_source" yaml:"agreement_contexts_source"`
+	CodeownersImport          string          `json:"codeowners_import" yaml:"codeowners_import"`
+	CodeownersImportSource    string          `json:"codeowners_import_source" yaml:"codeowners_import_source"`
+	CodeownersCacheTtlSeconds int64           `json:"codeowners_cache_ttl_seconds" yaml:"codeowners_cache_ttl_seconds"`
+	PathAcceptance            string          `json:"path_acceptance" yaml:"path_acceptance"`
+	PathAcceptanceSource      string          `json:"path_acceptance_source" yaml:"path_acceptance_source"`
+	PathOwners                []PathOwnerRule `json:"path_owners" yaml:"path_owners"`
+	PathOwnersSource          string          `json:"path_owners_source" yaml:"path_owners_source"`
+}
+
+// GetReportingSettingsRequest represents a structured data type
+type GetReportingSettingsRequest struct {
+	ProjectId string `json:"project_id" yaml:"project_id"`
+}
+
+// GetReportingSettingsResponse represents a structured data type
+type GetReportingSettingsResponse struct {
+	Effective                        ReportingSettings `json:"effective" yaml:"effective"`
+	ProjectReportMode                *string           `json:"project_report_mode,omitempty" yaml:"project_report_mode,omitempty"`
+	ProjectAgreementContexts         []string          `json:"project_agreement_contexts,omitempty" yaml:"project_agreement_contexts,omitempty"`
+	ProjectCodeownersImport          *string           `json:"project_codeowners_import,omitempty" yaml:"project_codeowners_import,omitempty"`
+	ProjectCodeownersCacheTtlSeconds *int64            `json:"project_codeowners_cache_ttl_seconds,omitempty" yaml:"project_codeowners_cache_ttl_seconds,omitempty"`
+	ProjectPathAcceptance            *string           `json:"project_path_acceptance,omitempty" yaml:"project_path_acceptance,omitempty"`
+	ProjectPathOwners                []PathOwnerRule   `json:"project_path_owners,omitempty" yaml:"project_path_owners,omitempty"`
+	CanManageReporting               bool              `json:"can_manage_reporting" yaml:"can_manage_reporting"`
+	CanManageOwnership               bool              `json:"can_manage_ownership" yaml:"can_manage_ownership"`
+}
+
+// UpdateReportingSettingsRequest represents a structured data type
+type UpdateReportingSettingsRequest struct {
+	ProjectId                 string          `json:"project_id" yaml:"project_id"`
+	ReportMode                *string         `json:"report_mode,omitempty" yaml:"report_mode,omitempty"`
+	AgreementContexts         []string        `json:"agreement_contexts,omitempty" yaml:"agreement_contexts,omitempty"`
+	CodeownersImport          *string         `json:"codeowners_import,omitempty" yaml:"codeowners_import,omitempty"`
+	CodeownersCacheTtlSeconds *int64          `json:"codeowners_cache_ttl_seconds,omitempty" yaml:"codeowners_cache_ttl_seconds,omitempty"`
+	PathAcceptance            *string         `json:"path_acceptance,omitempty" yaml:"path_acceptance,omitempty"`
+	PathOwners                []PathOwnerRule `json:"path_owners,omitempty" yaml:"path_owners,omitempty"`
+	Inherit                   []string        `json:"inherit,omitempty" yaml:"inherit,omitempty"`
+}
+
+// AgreementOtherResult represents a structured data type
+type AgreementOtherResult struct {
+	Name      string  `json:"name" yaml:"name"`
+	Kind      string  `json:"kind" yaml:"kind"`
+	State     string  `json:"state" yaml:"state"`
+	Raw       *string `json:"raw,omitempty" yaml:"raw,omitempty"`
+	TargetUrl *string `json:"target_url,omitempty" yaml:"target_url,omitempty"`
+}
+
+// AgreementRow represents a structured data type
+type AgreementRow struct {
+	CommitSha              string                 `json:"commit_sha" yaml:"commit_sha"`
+	EventId                *string                `json:"event_id,omitempty" yaml:"event_id,omitempty"`
+	PrNumber               *int64                 `json:"pr_number,omitempty" yaml:"pr_number,omitempty"`
+	Branch                 *string                `json:"branch,omitempty" yaml:"branch,omitempty"`
+	ReactorcideResult      string                 `json:"reactorcide_result" yaml:"reactorcide_result"`
+	OtherResult            *string                `json:"other_result,omitempty" yaml:"other_result,omitempty"`
+	Agree                  *bool                  `json:"agree,omitempty" yaml:"agree,omitempty"`
+	Status                 string                 `json:"status" yaml:"status"`
+	OtherResults           []AgreementOtherResult `json:"other_results" yaml:"other_results"`
+	ReactorcideCompletedAt string                 `json:"reactorcide_completed_at" yaml:"reactorcide_completed_at"`
+	ObservedAt             *string                `json:"observed_at,omitempty" yaml:"observed_at,omitempty"`
+	LastError              *string                `json:"last_error,omitempty" yaml:"last_error,omitempty"`
+	CommitUrl              *string                `json:"commit_url,omitempty" yaml:"commit_url,omitempty"`
+}
+
+// GetAgreementReportRequest represents a structured data type
+type GetAgreementReportRequest struct {
+	ProjectId string  `json:"project_id" yaml:"project_id"`
+	Since     *string `json:"since,omitempty" yaml:"since,omitempty"`
+	Limit     *int64  `json:"limit,omitempty" yaml:"limit,omitempty"`
+}
+
+// GetAgreementReportResponse represents a structured data type
+type GetAgreementReportResponse struct {
+	Contexts                     []string       `json:"contexts" yaml:"contexts"`
+	Total                        int64          `json:"total" yaml:"total"`
+	Compared                     int64          `json:"compared" yaml:"compared"`
+	Agreed                       int64          `json:"agreed" yaml:"agreed"`
+	Disagreed                    int64          `json:"disagreed" yaml:"disagreed"`
+	Pending                      int64          `json:"pending" yaml:"pending"`
+	NoOther                      int64          `json:"no_other" yaml:"no_other"`
+	RateBasisPoints              *int64         `json:"rate_basis_points,omitempty" yaml:"rate_basis_points,omitempty"`
+	ReactorcideFailedOtherPassed int64          `json:"reactorcide_failed_other_passed" yaml:"reactorcide_failed_other_passed"`
+	ReactorcidePassedOtherFailed int64          `json:"reactorcide_passed_other_failed" yaml:"reactorcide_passed_other_failed"`
+	Disagreements                []AgreementRow `json:"disagreements" yaml:"disagreements"`
+	Rows                         []AgreementRow `json:"rows" yaml:"rows"`
+}
+
+// PathAcceptanceSummary represents a structured data type
+type PathAcceptanceSummary struct {
+	AcceptanceId       string  `json:"acceptance_id" yaml:"acceptance_id"`
+	WorkflowSecurityId string  `json:"workflow_security_id" yaml:"workflow_security_id"`
+	PathPattern        string  `json:"path_pattern" yaml:"path_pattern"`
+	OwnerSubject       string  `json:"owner_subject" yaml:"owner_subject"`
+	State              string  `json:"state" yaml:"state"`
+	Reason             *string `json:"reason,omitempty" yaml:"reason,omitempty"`
+	RequestedBy        *string `json:"requested_by,omitempty" yaml:"requested_by,omitempty"`
+	RequestedByName    *string `json:"requested_by_name,omitempty" yaml:"requested_by_name,omitempty"`
+	RequestedAt        *string `json:"requested_at,omitempty" yaml:"requested_at,omitempty"`
+	AcceptedBy         *string `json:"accepted_by,omitempty" yaml:"accepted_by,omitempty"`
+	AcceptedByName     *string `json:"accepted_by_name,omitempty" yaml:"accepted_by_name,omitempty"`
+	AcceptedAt         *string `json:"accepted_at,omitempty" yaml:"accepted_at,omitempty"`
+	RevokedBy          *string `json:"revoked_by,omitempty" yaml:"revoked_by,omitempty"`
+	RevokedByName      *string `json:"revoked_by_name,omitempty" yaml:"revoked_by_name,omitempty"`
+	RevokedAt          *string `json:"revoked_at,omitempty" yaml:"revoked_at,omitempty"`
+	DecisionReason     *string `json:"decision_reason,omitempty" yaml:"decision_reason,omitempty"`
+}
+
+// ListPathAcceptancesRequest represents a structured data type
+type ListPathAcceptancesRequest struct {
+	ProjectId string  `json:"project_id" yaml:"project_id"`
+	State     *string `json:"state,omitempty" yaml:"state,omitempty"`
+}
+
+// ListPathAcceptancesResponse represents a structured data type
+type ListPathAcceptancesResponse struct {
+	PathAcceptance     string                  `json:"path_acceptance" yaml:"path_acceptance"`
+	OwnershipSource    string                  `json:"ownership_source" yaml:"ownership_source"`
+	Rows               []PathAcceptanceSummary `json:"rows" yaml:"rows"`
+	CanManageOwnership bool                    `json:"can_manage_ownership" yaml:"can_manage_ownership"`
+}
+
+// RequestPathAcceptanceRequest represents a structured data type
+type RequestPathAcceptanceRequest struct {
+	ProjectId          string  `json:"project_id" yaml:"project_id"`
+	WorkflowSecurityId string  `json:"workflow_security_id" yaml:"workflow_security_id"`
+	PathPattern        string  `json:"path_pattern" yaml:"path_pattern"`
+	OwnerSubject       string  `json:"owner_subject" yaml:"owner_subject"`
+	Reason             *string `json:"reason,omitempty" yaml:"reason,omitempty"`
+	Accept             *bool   `json:"accept,omitempty" yaml:"accept,omitempty"`
+}
+
+// PathAcceptanceResponse represents a structured data type
+type PathAcceptanceResponse struct {
+	Acceptance PathAcceptanceSummary `json:"acceptance" yaml:"acceptance"`
+}
+
+// DecidePathAcceptanceRequest represents a structured data type
+type DecidePathAcceptanceRequest struct {
+	ProjectId    string  `json:"project_id" yaml:"project_id"`
+	AcceptanceId string  `json:"acceptance_id" yaml:"acceptance_id"`
+	Decision     string  `json:"decision" yaml:"decision"`
+	Reason       *string `json:"reason,omitempty" yaml:"reason,omitempty"`
+}
+
+// RequiredSetApproverRule represents a structured data type
+type RequiredSetApproverRule struct {
+	Branches  []string `json:"branches" yaml:"branches"`
+	Approvers []string `json:"approvers" yaml:"approvers"`
+}
+
+// RequiredSetWorkflow represents a structured data type
+type RequiredSetWorkflow struct {
+	WorkflowSecurityId string  `json:"workflow_security_id" yaml:"workflow_security_id"`
+	Name               *string `json:"name,omitempty" yaml:"name,omitempty"`
+	BranchPattern      string  `json:"branch_pattern" yaml:"branch_pattern"`
+	State              string  `json:"state" yaml:"state"`
+	InSet              bool    `json:"in_set" yaml:"in_set"`
+	Source             *string `json:"source,omitempty" yaml:"source,omitempty"`
+	AddedBy            *string `json:"added_by,omitempty" yaml:"added_by,omitempty"`
+	AddedByName        *string `json:"added_by_name,omitempty" yaml:"added_by_name,omitempty"`
+	AddedAt            *string `json:"added_at,omitempty" yaml:"added_at,omitempty"`
+	Reason             *string `json:"reason,omitempty" yaml:"reason,omitempty"`
+	QuarantinedUntil   *string `json:"quarantined_until,omitempty" yaml:"quarantined_until,omitempty"`
+	QuarantineReason   *string `json:"quarantine_reason,omitempty" yaml:"quarantine_reason,omitempty"`
+	QuarantinedBy      *string `json:"quarantined_by,omitempty" yaml:"quarantined_by,omitempty"`
+	QuarantinedByName  *string `json:"quarantined_by_name,omitempty" yaml:"quarantined_by_name,omitempty"`
+	LastSeen           *string `json:"last_seen,omitempty" yaml:"last_seen,omitempty"`
+}
+
+// RequiredSetProposal represents a structured data type
+type RequiredSetProposal struct {
+	ProposalId         string  `json:"proposal_id" yaml:"proposal_id"`
+	WorkflowSecurityId string  `json:"workflow_security_id" yaml:"workflow_security_id"`
+	BranchPattern      string  `json:"branch_pattern" yaml:"branch_pattern"`
+	Action             string  `json:"action" yaml:"action"`
+	State              string  `json:"state" yaml:"state"`
+	Reason             *string `json:"reason,omitempty" yaml:"reason,omitempty"`
+	ProposedBy         *string `json:"proposed_by,omitempty" yaml:"proposed_by,omitempty"`
+	ProposedByName     *string `json:"proposed_by_name,omitempty" yaml:"proposed_by_name,omitempty"`
+	ProposedAt         string  `json:"proposed_at" yaml:"proposed_at"`
+	DecidedBy          *string `json:"decided_by,omitempty" yaml:"decided_by,omitempty"`
+	DecidedByName      *string `json:"decided_by_name,omitempty" yaml:"decided_by_name,omitempty"`
+	DecidedAt          *string `json:"decided_at,omitempty" yaml:"decided_at,omitempty"`
+	DecisionReason     *string `json:"decision_reason,omitempty" yaml:"decision_reason,omitempty"`
+}
+
+// GetRequiredSetRequest represents a structured data type
+type GetRequiredSetRequest struct {
+	ProjectId string `json:"project_id" yaml:"project_id"`
+}
+
+// GetRequiredSetResponse represents a structured data type
+type GetRequiredSetResponse struct {
+	Enabled               bool                      `json:"enabled" yaml:"enabled"`
+	EnabledAt             *string                   `json:"enabled_at,omitempty" yaml:"enabled_at,omitempty"`
+	Workflows             []RequiredSetWorkflow     `json:"workflows" yaml:"workflows"`
+	Proposals             []RequiredSetProposal     `json:"proposals" yaml:"proposals"`
+	Approvers             []string                  `json:"approvers" yaml:"approvers"`
+	ApproversSource       string                    `json:"approvers_source" yaml:"approvers_source"`
+	ApproverRules         []RequiredSetApproverRule `json:"approver_rules" yaml:"approver_rules"`
+	ApproversInherit      bool                      `json:"approvers_inherit" yaml:"approvers_inherit"`
+	ApproverRulesInherit  bool                      `json:"approver_rules_inherit" yaml:"approver_rules_inherit"`
+	MaxQuarantineDays     int64                     `json:"max_quarantine_days" yaml:"max_quarantine_days"`
+	CanPropose            bool                      `json:"can_propose" yaml:"can_propose"`
+	CanManage             bool                      `json:"can_manage" yaml:"can_manage"`
+	CanApproveAllBranches bool                      `json:"can_approve_all_branches" yaml:"can_approve_all_branches"`
+}
+
+// SetRequiredSetEnabledRequest represents a structured data type
+type SetRequiredSetEnabledRequest struct {
+	ProjectId string `json:"project_id" yaml:"project_id"`
+	Enabled   bool   `json:"enabled" yaml:"enabled"`
+}
+
+// SetRequiredSetEnabledResponse represents a structured data type
+type SetRequiredSetEnabledResponse struct {
+	Enabled bool     `json:"enabled" yaml:"enabled"`
+	Seeded  []string `json:"seeded" yaml:"seeded"`
+}
+
+// ProposeRequiredSetChangeRequest represents a structured data type
+type ProposeRequiredSetChangeRequest struct {
+	ProjectId          string  `json:"project_id" yaml:"project_id"`
+	Action             string  `json:"action" yaml:"action"`
+	WorkflowSecurityId string  `json:"workflow_security_id" yaml:"workflow_security_id"`
+	BranchPattern      *string `json:"branch_pattern,omitempty" yaml:"branch_pattern,omitempty"`
+	Reason             *string `json:"reason,omitempty" yaml:"reason,omitempty"`
+	Approve            *bool   `json:"approve,omitempty" yaml:"approve,omitempty"`
+}
+
+// ProposeRequiredSetChangeResponse represents a structured data type
+type ProposeRequiredSetChangeResponse struct {
+	Proposal RequiredSetProposal `json:"proposal" yaml:"proposal"`
+}
+
+// DecideRequiredSetProposalRequest represents a structured data type
+type DecideRequiredSetProposalRequest struct {
+	ProjectId  string  `json:"project_id" yaml:"project_id"`
+	ProposalId string  `json:"proposal_id" yaml:"proposal_id"`
+	Decision   string  `json:"decision" yaml:"decision"`
+	Reason     *string `json:"reason,omitempty" yaml:"reason,omitempty"`
+}
+
+// DecideRequiredSetProposalResponse represents a structured data type
+type DecideRequiredSetProposalResponse struct {
+	Proposal RequiredSetProposal `json:"proposal" yaml:"proposal"`
+}
+
+// QuarantineRequiredWorkflowRequest represents a structured data type
+type QuarantineRequiredWorkflowRequest struct {
+	ProjectId          string  `json:"project_id" yaml:"project_id"`
+	WorkflowSecurityId string  `json:"workflow_security_id" yaml:"workflow_security_id"`
+	BranchPattern      *string `json:"branch_pattern,omitempty" yaml:"branch_pattern,omitempty"`
+	Until              string  `json:"until" yaml:"until"`
+	Reason             string  `json:"reason" yaml:"reason"`
+}
+
+// QuarantineRequiredWorkflowResponse represents a structured data type
+type QuarantineRequiredWorkflowResponse struct {
+	Workflow RequiredSetWorkflow `json:"workflow" yaml:"workflow"`
+}
+
+// UnquarantineRequiredWorkflowRequest represents a structured data type
+type UnquarantineRequiredWorkflowRequest struct {
+	ProjectId          string  `json:"project_id" yaml:"project_id"`
+	WorkflowSecurityId string  `json:"workflow_security_id" yaml:"workflow_security_id"`
+	BranchPattern      *string `json:"branch_pattern,omitempty" yaml:"branch_pattern,omitempty"`
+}
+
+// UnquarantineRequiredWorkflowResponse represents a structured data type
+type UnquarantineRequiredWorkflowResponse struct {
+	Done bool `json:"done" yaml:"done"`
+}
+
+// SetRequiredSetApproversRequest represents a structured data type
+type SetRequiredSetApproversRequest struct {
+	ProjectId        string                    `json:"project_id" yaml:"project_id"`
+	InheritApprovers bool                      `json:"inherit_approvers" yaml:"inherit_approvers"`
+	Approvers        []string                  `json:"approvers" yaml:"approvers"`
+	InheritRules     bool                      `json:"inherit_rules" yaml:"inherit_rules"`
+	ApproverRules    []RequiredSetApproverRule `json:"approver_rules" yaml:"approver_rules"`
+}
+
+// PriorityLaneMatch represents a structured data type
+type PriorityLaneMatch struct {
+	ClassesAny  []string `json:"classes_any,omitempty" yaml:"classes_any,omitempty"`
+	ClassesNone []string `json:"classes_none,omitempty" yaml:"classes_none,omitempty"`
+	EventTypes  []string `json:"event_types,omitempty" yaml:"event_types,omitempty"`
+	Draft       *bool    `json:"draft,omitempty" yaml:"draft,omitempty"`
+	JobKind     *string  `json:"job_kind,omitempty" yaml:"job_kind,omitempty"`
+	Retry       *bool    `json:"retry,omitempty" yaml:"retry,omitempty"`
+}
+
+// PriorityLane represents a structured data type
+type PriorityLane struct {
+	LaneId      *string           `json:"lane_id,omitempty" yaml:"lane_id,omitempty"`
+	RuleId      *string           `json:"rule_id,omitempty" yaml:"rule_id,omitempty"`
+	ProjectId   *string           `json:"project_id,omitempty" yaml:"project_id,omitempty"`
+	Name        string            `json:"name" yaml:"name"`
+	Position    int64             `json:"position" yaml:"position"`
+	Description *string           `json:"description,omitempty" yaml:"description,omitempty"`
+	Base        int64             `json:"base" yaml:"base"`
+	Match       PriorityLaneMatch `json:"match" yaml:"match"`
+	MatchText   string            `json:"match_text" yaml:"match_text"`
+	Enabled     bool              `json:"enabled" yaml:"enabled"`
+	Scope       *string           `json:"scope,omitempty" yaml:"scope,omitempty"`
+	Replaces    *string           `json:"replaces,omitempty" yaml:"replaces,omitempty"`
+}
+
+// PriorityBounds represents a structured data type
+type PriorityBounds struct {
+	MinBase       int64 `json:"min_base" yaml:"min_base"`
+	MaxBase       int64 `json:"max_base" yaml:"max_base"`
+	MinGroupShift int64 `json:"min_group_shift" yaml:"min_group_shift"`
+	MaxGroupShift int64 `json:"max_group_shift" yaml:"max_group_shift"`
+	MaxRequested  int64 `json:"max_requested" yaml:"max_requested"`
+	ShedPrShift   int64 `json:"shed_pr_shift" yaml:"shed_pr_shift"`
+}
+
+// PriorityShift represents a structured data type
+type PriorityShift struct {
+	Source  string  `json:"source" yaml:"source"`
+	Group   *string `json:"group,omitempty" yaml:"group,omitempty"`
+	Value   int64   `json:"value" yaml:"value"`
+	Applied bool    `json:"applied" yaml:"applied"`
+}
+
+// PriorityDecision represents a structured data type
+type PriorityDecision struct {
+	Lane         string          `json:"lane" yaml:"lane"`
+	RuleId       string          `json:"rule_id" yaml:"rule_id"`
+	Scope        string          `json:"scope" yaml:"scope"`
+	Base         int64           `json:"base" yaml:"base"`
+	Shifts       []PriorityShift `json:"shifts" yaml:"shifts"`
+	Final        int64           `json:"final" yaml:"final"`
+	RetainedFrom *string         `json:"retained_from,omitempty" yaml:"retained_from,omitempty"`
+	Summary      string          `json:"summary" yaml:"summary"`
+}
+
+// PriorityLaneCheck represents a structured data type
+type PriorityLaneCheck struct {
+	Name      string `json:"name" yaml:"name"`
+	Scope     string `json:"scope" yaml:"scope"`
+	Base      int64  `json:"base" yaml:"base"`
+	Enabled   bool   `json:"enabled" yaml:"enabled"`
+	Matched   bool   `json:"matched" yaml:"matched"`
+	MatchText string `json:"match_text" yaml:"match_text"`
+}
+
+// ListPriorityLanesRequest represents a structured data type
+type ListPriorityLanesRequest struct {
+	Organization string  `json:"organization" yaml:"organization"`
+	ProjectId    *string `json:"project_id,omitempty" yaml:"project_id,omitempty"`
+}
+
+// ListPriorityLanesResponse represents a structured data type
+type ListPriorityLanesResponse struct {
+	Lanes     []PriorityLane `json:"lanes" yaml:"lanes"`
+	Inherited []PriorityLane `json:"inherited" yaml:"inherited"`
+	Builtin   []PriorityLane `json:"builtin" yaml:"builtin"`
+	Effective []PriorityLane `json:"effective" yaml:"effective"`
+	Bounds    PriorityBounds `json:"bounds" yaml:"bounds"`
+	CanManage bool           `json:"can_manage" yaml:"can_manage"`
+}
+
+// PutPriorityLaneRequest represents a structured data type
+type PutPriorityLaneRequest struct {
+	Organization string             `json:"organization" yaml:"organization"`
+	ProjectId    *string            `json:"project_id,omitempty" yaml:"project_id,omitempty"`
+	Name         string             `json:"name" yaml:"name"`
+	Base         int64              `json:"base" yaml:"base"`
+	Position     *int64             `json:"position,omitempty" yaml:"position,omitempty"`
+	Description  *string            `json:"description,omitempty" yaml:"description,omitempty"`
+	Match        *PriorityLaneMatch `json:"match,omitempty" yaml:"match,omitempty"`
+	Enabled      *bool              `json:"enabled,omitempty" yaml:"enabled,omitempty"`
+}
+
+// PutPriorityLaneResponse represents a structured data type
+type PutPriorityLaneResponse struct {
+	Lane PriorityLane `json:"lane" yaml:"lane"`
+}
+
+// DeletePriorityLaneRequest represents a structured data type
+type DeletePriorityLaneRequest struct {
+	Organization string  `json:"organization" yaml:"organization"`
+	ProjectId    *string `json:"project_id,omitempty" yaml:"project_id,omitempty"`
+	Name         string  `json:"name" yaml:"name"`
+}
+
+// DeletePriorityLaneResponse represents a structured data type
+type DeletePriorityLaneResponse struct {
+	Deleted bool `json:"deleted" yaml:"deleted"`
+}
+
+// ExplainPriorityRequest represents a structured data type
+type ExplainPriorityRequest struct {
+	Organization string   `json:"organization" yaml:"organization"`
+	ProjectId    *string  `json:"project_id,omitempty" yaml:"project_id,omitempty"`
+	JobId        *string  `json:"job_id,omitempty" yaml:"job_id,omitempty"`
+	RefClasses   []string `json:"ref_classes,omitempty" yaml:"ref_classes,omitempty"`
+	EventType    *string  `json:"event_type,omitempty" yaml:"event_type,omitempty"`
+	Draft        *bool    `json:"draft,omitempty" yaml:"draft,omitempty"`
+	JobKind      *string  `json:"job_kind,omitempty" yaml:"job_kind,omitempty"`
+	Requested    *int64   `json:"requested,omitempty" yaml:"requested,omitempty"`
+}
+
+// ExplainPriorityResponse represents a structured data type
+type ExplainPriorityResponse struct {
+	Decision PriorityDecision    `json:"decision" yaml:"decision"`
+	Stored   *PriorityDecision   `json:"stored,omitempty" yaml:"stored,omitempty"`
+	Lanes    []PriorityLaneCheck `json:"lanes" yaml:"lanes"`
+}
+
+// SetGroupPriorityShiftRequest represents a structured data type
+type SetGroupPriorityShiftRequest struct {
+	GroupId string `json:"group_id" yaml:"group_id"`
+	Shift   int64  `json:"shift" yaml:"shift"`
+}
+
+// SetGroupPriorityShiftResponse represents a structured data type
+type SetGroupPriorityShiftResponse struct {
+	Group GroupSummary `json:"group" yaml:"group"`
+}
+
+// ObsClassCount represents a structured data type
+type ObsClassCount struct {
+	FailureClass string `json:"failure_class" yaml:"failure_class"`
+	Count        int64  `json:"count" yaml:"count"`
+}
+
+// ObsSummary represents a structured data type
+type ObsSummary struct {
+	Runs                   int64           `json:"runs" yaml:"runs"`
+	Successes              int64           `json:"successes" yaml:"successes"`
+	PipelineFailures       int64           `json:"pipeline_failures" yaml:"pipeline_failures"`
+	InfraFailures          int64           `json:"infra_failures" yaml:"infra_failures"`
+	Cancelled              int64           `json:"cancelled" yaml:"cancelled"`
+	PassRate               *float64        `json:"pass_rate,omitempty" yaml:"pass_rate,omitempty"`
+	InfraFailureRate       *float64        `json:"infra_failure_rate,omitempty" yaml:"infra_failure_rate,omitempty"`
+	DurationP50Seconds     *float64        `json:"duration_p50_seconds,omitempty" yaml:"duration_p50_seconds,omitempty"`
+	DurationP95Seconds     *float64        `json:"duration_p95_seconds,omitempty" yaml:"duration_p95_seconds,omitempty"`
+	QueueWaitP50Seconds    *float64        `json:"queue_wait_p50_seconds,omitempty" yaml:"queue_wait_p50_seconds,omitempty"`
+	QueueWaitP95Seconds    *float64        `json:"queue_wait_p95_seconds,omitempty" yaml:"queue_wait_p95_seconds,omitempty"`
+	ByClass                []ObsClassCount `json:"by_class" yaml:"by_class"`
+	MeasuredRuns           int64           `json:"measured_runs" yaml:"measured_runs"`
+	CpuCoreHours           float64         `json:"cpu_core_hours" yaml:"cpu_core_hours"`
+	MemoryGibHours         float64         `json:"memory_gib_hours" yaml:"memory_gib_hours"`
+	CpuReservedCoreHours   float64         `json:"cpu_reserved_core_hours" yaml:"cpu_reserved_core_hours"`
+	MemoryReservedGibHours float64         `json:"memory_reserved_gib_hours" yaml:"memory_reserved_gib_hours"`
+}
+
+// ObsTrendPoint represents a structured data type
+type ObsTrendPoint struct {
+	BucketStart         string   `json:"bucket_start" yaml:"bucket_start"`
+	Runs                int64    `json:"runs" yaml:"runs"`
+	PassRate            *float64 `json:"pass_rate,omitempty" yaml:"pass_rate,omitempty"`
+	DurationP95Seconds  *float64 `json:"duration_p95_seconds,omitempty" yaml:"duration_p95_seconds,omitempty"`
+	QueueWaitP95Seconds *float64 `json:"queue_wait_p95_seconds,omitempty" yaml:"queue_wait_p95_seconds,omitempty"`
+	InfraFailures       int64    `json:"infra_failures" yaml:"infra_failures"`
+	InfraFailureRate    *float64 `json:"infra_failure_rate,omitempty" yaml:"infra_failure_rate,omitempty"`
+	CpuCoreHours        float64  `json:"cpu_core_hours" yaml:"cpu_core_hours"`
+	EvalEvents          int64    `json:"eval_events" yaml:"eval_events"`
+	EvalP95Seconds      *float64 `json:"eval_p95_seconds,omitempty" yaml:"eval_p95_seconds,omitempty"`
+}
+
+// ObsWorkflowHealth represents a structured data type
+type ObsWorkflowHealth struct {
+	ProjectId          *string         `json:"project_id,omitempty" yaml:"project_id,omitempty"`
+	ProjectName        *string         `json:"project_name,omitempty" yaml:"project_name,omitempty"`
+	WorkflowSecurityId string          `json:"workflow_security_id" yaml:"workflow_security_id"`
+	OwnerGroup         string          `json:"owner_group" yaml:"owner_group"`
+	Summary            ObsSummary      `json:"summary" yaml:"summary"`
+	DefaultBranch      ObsSummary      `json:"default_branch" yaml:"default_branch"`
+	CpuCoreHoursPerRun *float64        `json:"cpu_core_hours_per_run,omitempty" yaml:"cpu_core_hours_per_run,omitempty"`
+	Trend              []ObsTrendPoint `json:"trend" yaml:"trend"`
+}
+
+// ObsFlakyTest represents a structured data type
+type ObsFlakyTest struct {
+	ProjectId   *string `json:"project_id,omitempty" yaml:"project_id,omitempty"`
+	TestId      string  `json:"test_id" yaml:"test_id"`
+	Suite       string  `json:"suite" yaml:"suite"`
+	Classname   string  `json:"classname" yaml:"classname"`
+	Name        string  `json:"name" yaml:"name"`
+	FlakyCount  int64   `json:"flaky_count" yaml:"flaky_count"`
+	TotalRuns   int64   `json:"total_runs" yaml:"total_runs"`
+	LastFlakyAt *string `json:"last_flaky_at,omitempty" yaml:"last_flaky_at,omitempty"`
+}
+
+// ObsAlertRule represents a structured data type
+type ObsAlertRule struct {
+	RuleId             string   `json:"rule_id" yaml:"rule_id"`
+	Name               string   `json:"name" yaml:"name"`
+	Scope              string   `json:"scope" yaml:"scope"`
+	ProjectId          *string  `json:"project_id,omitempty" yaml:"project_id,omitempty"`
+	WorkflowSecurityId *string  `json:"workflow_security_id,omitempty" yaml:"workflow_security_id,omitempty"`
+	OwnerGroup         *string  `json:"owner_group,omitempty" yaml:"owner_group,omitempty"`
+	Condition          string   `json:"condition" yaml:"condition"`
+	RefClassBucket     string   `json:"ref_class_bucket" yaml:"ref_class_bucket"`
+	Threshold          float64  `json:"threshold" yaml:"threshold"`
+	Factor             float64  `json:"factor" yaml:"factor"`
+	WindowHours        int64    `json:"window_hours" yaml:"window_hours"`
+	State              string   `json:"state" yaml:"state"`
+	Enabled            bool     `json:"enabled" yaml:"enabled"`
+	LastValue          *float64 `json:"last_value,omitempty" yaml:"last_value,omitempty"`
+	LastBaseline       *float64 `json:"last_baseline,omitempty" yaml:"last_baseline,omitempty"`
+	LastRuns           int64    `json:"last_runs" yaml:"last_runs"`
+	LastEvaluatedAt    *string  `json:"last_evaluated_at,omitempty" yaml:"last_evaluated_at,omitempty"`
+	StateChangedAt     *string  `json:"state_changed_at,omitempty" yaml:"state_changed_at,omitempty"`
+	Description        *string  `json:"description,omitempty" yaml:"description,omitempty"`
+	BaselineDays       *int64   `json:"baseline_days,omitempty" yaml:"baseline_days,omitempty"`
+	MinRuns            *int64   `json:"min_runs,omitempty" yaml:"min_runs,omitempty"`
+	ResolveMargin      *float64 `json:"resolve_margin,omitempty" yaml:"resolve_margin,omitempty"`
+	FireAfter          *int64   `json:"fire_after,omitempty" yaml:"fire_after,omitempty"`
+	ResolveAfter       *int64   `json:"resolve_after,omitempty" yaml:"resolve_after,omitempty"`
+	CanManage          *bool    `json:"can_manage,omitempty" yaml:"can_manage,omitempty"`
+}
+
+// GetPipelineDashboardRequest represents a structured data type
+type GetPipelineDashboardRequest struct {
+	OrgId     string  `json:"org_id" yaml:"org_id"`
+	ProjectId *string `json:"project_id,omitempty" yaml:"project_id,omitempty"`
+	Days      *int64  `json:"days,omitempty" yaml:"days,omitempty"`
+}
+
+// GetPipelineDashboardResponse represents a structured data type
+type GetPipelineDashboardResponse struct {
+	RangeFrom  string              `json:"range_from" yaml:"range_from"`
+	RangeTo    string              `json:"range_to" yaml:"range_to"`
+	Days       int64               `json:"days" yaml:"days"`
+	Totals     ObsSummary          `json:"totals" yaml:"totals"`
+	Trend      []ObsTrendPoint     `json:"trend" yaml:"trend"`
+	Workflows  []ObsWorkflowHealth `json:"workflows" yaml:"workflows"`
+	FlakyTests []ObsFlakyTest      `json:"flaky_tests" yaml:"flaky_tests"`
+	Alerts     []ObsAlertRule      `json:"alerts" yaml:"alerts"`
+}
+
+// ObsLaneHealth represents a structured data type
+type ObsLaneHealth struct {
+	Lane    string     `json:"lane" yaml:"lane"`
+	Summary ObsSummary `json:"summary" yaml:"summary"`
+}
+
+// ObsSloStatus represents a structured data type
+type ObsSloStatus struct {
+	Sli                  string   `json:"sli" yaml:"sli"`
+	Lane                 string   `json:"lane" yaml:"lane"`
+	Objective            float64  `json:"objective" yaml:"objective"`
+	ThresholdSeconds     float64  `json:"threshold_seconds" yaml:"threshold_seconds"`
+	WindowDays           int64    `json:"window_days" yaml:"window_days"`
+	Total                float64  `json:"total" yaml:"total"`
+	Good                 float64  `json:"good" yaml:"good"`
+	Compliance           *float64 `json:"compliance,omitempty" yaml:"compliance,omitempty"`
+	P95Seconds           *float64 `json:"p95_seconds,omitempty" yaml:"p95_seconds,omitempty"`
+	ErrorBudgetRemaining float64  `json:"error_budget_remaining" yaml:"error_budget_remaining"`
+	BudgetState          string   `json:"budget_state" yaml:"budget_state"`
+	Measures             string   `json:"measures" yaml:"measures"`
+}
+
+// ObsQueueBacklog represents a structured data type
+type ObsQueueBacklog struct {
+	QueueUuid        string `json:"queue_uuid" yaml:"queue_uuid"`
+	DisplayName      string `json:"display_name" yaml:"display_name"`
+	Count            int64  `json:"count" yaml:"count"`
+	OldestAgeSeconds int64  `json:"oldest_age_seconds" yaml:"oldest_age_seconds"`
+}
+
+// ObsCapacity represents a structured data type
+type ObsCapacity struct {
+	WorkersTotal            int64             `json:"workers_total" yaml:"workers_total"`
+	WorkersActive           int64             `json:"workers_active" yaml:"workers_active"`
+	WorkersQuarantined      int64             `json:"workers_quarantined" yaml:"workers_quarantined"`
+	WorkersDisabled         int64             `json:"workers_disabled" yaml:"workers_disabled"`
+	WorkersSeen             int64             `json:"workers_seen" yaml:"workers_seen"`
+	BacklogJobs             int64             `json:"backlog_jobs" yaml:"backlog_jobs"`
+	BacklogOldestAgeSeconds int64             `json:"backlog_oldest_age_seconds" yaml:"backlog_oldest_age_seconds"`
+	Queues                  []ObsQueueBacklog `json:"queues" yaml:"queues"`
+}
+
+// GetInfraDashboardRequest represents a structured data type
+type GetInfraDashboardRequest struct {
+	OrgId string `json:"org_id" yaml:"org_id"`
+	Days  *int64 `json:"days,omitempty" yaml:"days,omitempty"`
+}
+
+// GetInfraDashboardResponse represents a structured data type
+type GetInfraDashboardResponse struct {
+	RangeFrom      string          `json:"range_from" yaml:"range_from"`
+	RangeTo        string          `json:"range_to" yaml:"range_to"`
+	Days           int64           `json:"days" yaml:"days"`
+	Totals         ObsSummary      `json:"totals" yaml:"totals"`
+	Lanes          []ObsLaneHealth `json:"lanes" yaml:"lanes"`
+	EvalEvents     int64           `json:"eval_events" yaml:"eval_events"`
+	EvalP50Seconds *float64        `json:"eval_p50_seconds,omitempty" yaml:"eval_p50_seconds,omitempty"`
+	EvalP95Seconds *float64        `json:"eval_p95_seconds,omitempty" yaml:"eval_p95_seconds,omitempty"`
+	Trend          []ObsTrendPoint `json:"trend" yaml:"trend"`
+	Slos           []ObsSloStatus  `json:"slos" yaml:"slos"`
+	Capacity       ObsCapacity     `json:"capacity" yaml:"capacity"`
+}
+
+// ObsUsagePoint represents a structured data type
+type ObsUsagePoint struct {
+	BucketStart  string  `json:"bucket_start" yaml:"bucket_start"`
+	Runs         int64   `json:"runs" yaml:"runs"`
+	CpuCoreHours float64 `json:"cpu_core_hours" yaml:"cpu_core_hours"`
+}
+
+// ObsGroupUsage represents a structured data type
+type ObsGroupUsage struct {
+	Group                string          `json:"group" yaml:"group"`
+	Runs                 int64           `json:"runs" yaml:"runs"`
+	Successes            int64           `json:"successes" yaml:"successes"`
+	PipelineFailures     int64           `json:"pipeline_failures" yaml:"pipeline_failures"`
+	InfraFailures        int64           `json:"infra_failures" yaml:"infra_failures"`
+	PassRate             *float64        `json:"pass_rate,omitempty" yaml:"pass_rate,omitempty"`
+	CpuCoreHours         float64         `json:"cpu_core_hours" yaml:"cpu_core_hours"`
+	MemoryGibHours       float64         `json:"memory_gib_hours" yaml:"memory_gib_hours"`
+	CpuReservedCoreHours float64         `json:"cpu_reserved_core_hours" yaml:"cpu_reserved_core_hours"`
+	Series               []ObsUsagePoint `json:"series" yaml:"series"`
+}
+
+// GetUsageDashboardRequest represents a structured data type
+type GetUsageDashboardRequest struct {
+	OrgId       string  `json:"org_id" yaml:"org_id"`
+	Days        *int64  `json:"days,omitempty" yaml:"days,omitempty"`
+	Attribution *string `json:"attribution,omitempty" yaml:"attribution,omitempty"`
+}
+
+// GetUsageDashboardResponse represents a structured data type
+type GetUsageDashboardResponse struct {
+	RangeFrom   string          `json:"range_from" yaml:"range_from"`
+	RangeTo     string          `json:"range_to" yaml:"range_to"`
+	Days        int64           `json:"days" yaml:"days"`
+	Attribution string          `json:"attribution" yaml:"attribution"`
+	Groups      []ObsGroupUsage `json:"groups" yaml:"groups"`
+}
+
+// GitHubAppSummary represents a structured data type
+type GitHubAppSummary struct {
+	AppId               int64   `json:"app_id" yaml:"app_id"`
+	Slug                string  `json:"slug" yaml:"slug"`
+	Name                string  `json:"name" yaml:"name"`
+	Enabled             bool    `json:"enabled" yaml:"enabled"`
+	OpenRegistration    bool    `json:"open_registration" yaml:"open_registration"`
+	HeadroomPercent     int64   `json:"headroom_percent" yaml:"headroom_percent"`
+	ActiveInstallations int64   `json:"active_installations" yaml:"active_installations"`
+	Repositories        int64   `json:"repositories" yaml:"repositories"`
+	Recommended         bool    `json:"recommended" yaml:"recommended"`
+	InstallUrl          *string `json:"install_url,omitempty" yaml:"install_url,omitempty"`
+	RatelimitLimit      *int64  `json:"ratelimit_limit,omitempty" yaml:"ratelimit_limit,omitempty"`
+	RatelimitRemaining  *int64  `json:"ratelimit_remaining,omitempty" yaml:"ratelimit_remaining,omitempty"`
+	RatelimitResetAt    *string `json:"ratelimit_reset_at,omitempty" yaml:"ratelimit_reset_at,omitempty"`
+	CreatedAt           string  `json:"created_at" yaml:"created_at"`
+}
+
+// GitHubAppInstallationSummary represents a structured data type
+type GitHubAppInstallationSummary struct {
+	InstallationId      int64    `json:"installation_id" yaml:"installation_id"`
+	AppId               int64    `json:"app_id" yaml:"app_id"`
+	AccountLogin        string   `json:"account_login" yaml:"account_login"`
+	AccountType         string   `json:"account_type" yaml:"account_type"`
+	RepositorySelection string   `json:"repository_selection" yaml:"repository_selection"`
+	Suspended           bool     `json:"suspended" yaml:"suspended"`
+	Deleted             bool     `json:"deleted" yaml:"deleted"`
+	HeadroomPercent     int64    `json:"headroom_percent" yaml:"headroom_percent"`
+	RatelimitLimit      *int64   `json:"ratelimit_limit,omitempty" yaml:"ratelimit_limit,omitempty"`
+	RatelimitRemaining  *int64   `json:"ratelimit_remaining,omitempty" yaml:"ratelimit_remaining,omitempty"`
+	RatelimitResetAt    *string  `json:"ratelimit_reset_at,omitempty" yaml:"ratelimit_reset_at,omitempty"`
+	LastSeenAt          string   `json:"last_seen_at" yaml:"last_seen_at"`
+	Repositories        []string `json:"repositories" yaml:"repositories"`
+	PendingRepositories []string `json:"pending_repositories" yaml:"pending_repositories"`
+}
+
+// ListGitHubAppsRequest represents a structured data type
+type ListGitHubAppsRequest struct {
+}
+
+// ListGitHubAppsResponse represents a structured data type
+type ListGitHubAppsResponse struct {
+	Apps          []GitHubAppSummary             `json:"apps" yaml:"apps"`
+	Installations []GitHubAppInstallationSummary `json:"installations" yaml:"installations"`
+}
+
+// SetGitHubAppEnabledRequest represents a structured data type
+type SetGitHubAppEnabledRequest struct {
+	AppId   int64 `json:"app_id" yaml:"app_id"`
+	Enabled bool  `json:"enabled" yaml:"enabled"`
+}
+
+// SetGitHubAppEnabledResponse represents a structured data type
+type SetGitHubAppEnabledResponse struct {
+	App GitHubAppSummary `json:"app" yaml:"app"`
+}
+
+// SyncGitHubAppRequest represents a structured data type
+type SyncGitHubAppRequest struct {
+	AppId int64 `json:"app_id" yaml:"app_id"`
+}
+
+// SyncGitHubAppResponse represents a structured data type
+type SyncGitHubAppResponse struct {
+	Installations int64    `json:"installations" yaml:"installations"`
+	Created       int64    `json:"created" yaml:"created"`
+	Disabled      int64    `json:"disabled" yaml:"disabled"`
+	Errors        []string `json:"errors" yaml:"errors"`
+}
+
+// SetShedActionsRequest represents a structured data type
+type SetShedActionsRequest struct {
+	OrgId    string       `json:"org_id" yaml:"org_id"`
+	Degraded *ShedActions `json:"degraded,omitempty" yaml:"degraded,omitempty"`
+	Critical *ShedActions `json:"critical,omitempty" yaml:"critical,omitempty"`
+	Reset    *bool        `json:"reset,omitempty" yaml:"reset,omitempty"`
+}
+
+// OrgReportingSettingsView represents a structured data type
+type OrgReportingSettingsView struct {
+	ReportMode                string          `json:"report_mode" yaml:"report_mode"`
+	AgreementContexts         []string        `json:"agreement_contexts" yaml:"agreement_contexts"`
+	CodeownersImport          string          `json:"codeowners_import" yaml:"codeowners_import"`
+	CodeownersCacheTtlSeconds int64           `json:"codeowners_cache_ttl_seconds" yaml:"codeowners_cache_ttl_seconds"`
+	PathAcceptance            string          `json:"path_acceptance" yaml:"path_acceptance"`
+	PathOwners                []PathOwnerRule `json:"path_owners" yaml:"path_owners"`
+}
+
+// GetOrgReportingSettingsRequest represents a structured data type
+type GetOrgReportingSettingsRequest struct {
+	Organization string `json:"organization" yaml:"organization"`
+}
+
+// GetOrgReportingSettingsResponse represents a structured data type
+type GetOrgReportingSettingsResponse struct {
+	Settings  OrgReportingSettingsView `json:"settings" yaml:"settings"`
+	CanManage bool                     `json:"can_manage" yaml:"can_manage"`
+}
+
+// PutOrgReportingSettingsRequest represents a structured data type
+type PutOrgReportingSettingsRequest struct {
+	Organization string                   `json:"organization" yaml:"organization"`
+	Settings     OrgReportingSettingsView `json:"settings" yaml:"settings"`
+}
+
+// GetRequiredSetOrgSettingsRequest represents a structured data type
+type GetRequiredSetOrgSettingsRequest struct {
+	Organization string `json:"organization" yaml:"organization"`
+}
+
+// GetRequiredSetOrgSettingsResponse represents a structured data type
+type GetRequiredSetOrgSettingsResponse struct {
+	Approvers         []string                  `json:"approvers" yaml:"approvers"`
+	ApproverRules     []RequiredSetApproverRule `json:"approver_rules" yaml:"approver_rules"`
+	MaxQuarantineDays int64                     `json:"max_quarantine_days" yaml:"max_quarantine_days"`
+	CanManage         bool                      `json:"can_manage" yaml:"can_manage"`
+}
+
+// PutRequiredSetOrgSettingsRequest represents a structured data type
+type PutRequiredSetOrgSettingsRequest struct {
+	Organization      string                    `json:"organization" yaml:"organization"`
+	Approvers         []string                  `json:"approvers" yaml:"approvers"`
+	ApproverRules     []RequiredSetApproverRule `json:"approver_rules" yaml:"approver_rules"`
+	MaxQuarantineDays int64                     `json:"max_quarantine_days" yaml:"max_quarantine_days"`
+}
+
+// GetVcsOwnerAllowlistRequest represents a structured data type
+type GetVcsOwnerAllowlistRequest struct {
+	Organization string `json:"organization" yaml:"organization"`
+}
+
+// VcsOwnerAllowlistResponse represents a structured data type
+type VcsOwnerAllowlistResponse struct {
+	Owners []string `json:"owners" yaml:"owners"`
+}
+
+// PutVcsOwnerAllowlistRequest represents a structured data type
+type PutVcsOwnerAllowlistRequest struct {
+	Organization string   `json:"organization" yaml:"organization"`
+	Owners       []string `json:"owners" yaml:"owners"`
+}
+
+// OidcClaim represents a structured data type
+type OidcClaim struct {
+	Name  string `json:"name" yaml:"name"`
+	Value string `json:"value" yaml:"value"`
+}
+
+// OidcAudienceClaims represents a structured data type
+type OidcAudienceClaims struct {
+	Audience string      `json:"audience" yaml:"audience"`
+	Claims   []OidcClaim `json:"claims" yaml:"claims"`
+}
+
+// GetOidcSettingsRequest represents a structured data type
+type GetOidcSettingsRequest struct {
+	Organization string  `json:"organization" yaml:"organization"`
+	ProjectId    *string `json:"project_id,omitempty" yaml:"project_id,omitempty"`
+}
+
+// OidcSettingsResponse represents a structured data type
+type OidcSettingsResponse struct {
+	Issuer           string               `json:"issuer" yaml:"issuer"`
+	AudienceClaims   []OidcAudienceClaims `json:"audience_claims" yaml:"audience_claims"`
+	EffectiveEnabled bool                 `json:"effective_enabled" yaml:"effective_enabled"`
+	IssuerConfigured bool                 `json:"issuer_configured" yaml:"issuer_configured"`
+	IssuerUrl        *string              `json:"issuer_url,omitempty" yaml:"issuer_url,omitempty"`
+	CanManage        bool                 `json:"can_manage" yaml:"can_manage"`
+}
+
+// PutOidcSettingsRequest represents a structured data type
+type PutOidcSettingsRequest struct {
+	Organization   string               `json:"organization" yaml:"organization"`
+	ProjectId      *string              `json:"project_id,omitempty" yaml:"project_id,omitempty"`
+	Issuer         *string              `json:"issuer,omitempty" yaml:"issuer,omitempty"`
+	AudienceClaims []OidcAudienceClaims `json:"audience_claims,omitempty" yaml:"audience_claims,omitempty"`
+}
+
+// OidcSigningKey represents a structured data type
+type OidcSigningKey struct {
+	Kid         string  `json:"kid" yaml:"kid"`
+	Algorithm   string  `json:"algorithm" yaml:"algorithm"`
+	CreatedAt   string  `json:"created_at" yaml:"created_at"`
+	ActivatesAt string  `json:"activates_at" yaml:"activates_at"`
+	RetiresAt   *string `json:"retires_at,omitempty" yaml:"retires_at,omitempty"`
+	State       string  `json:"state" yaml:"state"`
+}
+
+// ListOidcKeysRequest represents a structured data type
+type ListOidcKeysRequest struct {
+}
+
+// ListOidcKeysResponse represents a structured data type
+type ListOidcKeysResponse struct {
+	IssuerConfigured bool             `json:"issuer_configured" yaml:"issuer_configured"`
+	Issuer           *string          `json:"issuer,omitempty" yaml:"issuer,omitempty"`
+	Keys             []OidcSigningKey `json:"keys" yaml:"keys"`
+}
+
+// RotateOidcKeyRequest represents a structured data type
+type RotateOidcKeyRequest struct {
+	Immediate *bool `json:"immediate,omitempty" yaml:"immediate,omitempty"`
+}
+
+// RetireOidcKeyRequest represents a structured data type
+type RetireOidcKeyRequest struct {
+	Kid string `json:"kid" yaml:"kid"`
+}
+
+// ListAlertRulesRequest represents a structured data type
+type ListAlertRulesRequest struct {
+	OrgId     string  `json:"org_id" yaml:"org_id"`
+	ProjectId *string `json:"project_id,omitempty" yaml:"project_id,omitempty"`
+}
+
+// ListAlertRulesResponse represents a structured data type
+type ListAlertRulesResponse struct {
+	Rules             []ObsAlertRule `json:"rules" yaml:"rules"`
+	CanCreateOrgRules bool           `json:"can_create_org_rules" yaml:"can_create_org_rules"`
+}
+
+// AlertRuleInput represents a structured data type
+type AlertRuleInput struct {
+	Description    *string  `json:"description,omitempty" yaml:"description,omitempty"`
+	Condition      *string  `json:"condition,omitempty" yaml:"condition,omitempty"`
+	RefClassBucket *string  `json:"ref_class_bucket,omitempty" yaml:"ref_class_bucket,omitempty"`
+	Threshold      *float64 `json:"threshold,omitempty" yaml:"threshold,omitempty"`
+	Factor         *float64 `json:"factor,omitempty" yaml:"factor,omitempty"`
+	WindowHours    *int64   `json:"window_hours,omitempty" yaml:"window_hours,omitempty"`
+	BaselineDays   *int64   `json:"baseline_days,omitempty" yaml:"baseline_days,omitempty"`
+	MinRuns        *int64   `json:"min_runs,omitempty" yaml:"min_runs,omitempty"`
+	ResolveMargin  *float64 `json:"resolve_margin,omitempty" yaml:"resolve_margin,omitempty"`
+	FireAfter      *int64   `json:"fire_after,omitempty" yaml:"fire_after,omitempty"`
+	ResolveAfter   *int64   `json:"resolve_after,omitempty" yaml:"resolve_after,omitempty"`
+	Enabled        *bool    `json:"enabled,omitempty" yaml:"enabled,omitempty"`
+}
+
+// CreateAlertRuleRequest represents a structured data type
+type CreateAlertRuleRequest struct {
+	OrgId              string         `json:"org_id" yaml:"org_id"`
+	Name               string         `json:"name" yaml:"name"`
+	Scope              string         `json:"scope" yaml:"scope"`
+	ProjectId          *string        `json:"project_id,omitempty" yaml:"project_id,omitempty"`
+	WorkflowSecurityId *string        `json:"workflow_security_id,omitempty" yaml:"workflow_security_id,omitempty"`
+	OwnerGroup         *string        `json:"owner_group,omitempty" yaml:"owner_group,omitempty"`
+	Rule               AlertRuleInput `json:"rule" yaml:"rule"`
+}
+
+// UpdateAlertRuleRequest represents a structured data type
+type UpdateAlertRuleRequest struct {
+	OrgId  string         `json:"org_id" yaml:"org_id"`
+	RuleId string         `json:"rule_id" yaml:"rule_id"`
+	Rule   AlertRuleInput `json:"rule" yaml:"rule"`
+}
+
+// AlertRuleResponse represents a structured data type
+type AlertRuleResponse struct {
+	Rule ObsAlertRule `json:"rule" yaml:"rule"`
+}
+
+// DeleteAlertRuleRequest represents a structured data type
+type DeleteAlertRuleRequest struct {
+	OrgId  string `json:"org_id" yaml:"org_id"`
+	RuleId string `json:"rule_id" yaml:"rule_id"`
+}
+
+// DeleteAlertRuleResponse represents a structured data type
+type DeleteAlertRuleResponse struct {
+	Deleted bool `json:"deleted" yaml:"deleted"`
+}
+
+// DeleteDiagnosisRequest represents a structured data type
+type DeleteDiagnosisRequest struct {
+	JobId      *string `json:"job_id,omitempty" yaml:"job_id,omitempty"`
+	WorkflowId *string `json:"workflow_id,omitempty" yaml:"workflow_id,omitempty"`
+	NodeName   *string `json:"node_name,omitempty" yaml:"node_name,omitempty"`
+}
+
+// DeleteDiagnosisResponse represents a structured data type
+type DeleteDiagnosisResponse struct {
+	Deleted     bool    `json:"deleted" yaml:"deleted"`
+	DiagnosisId *string `json:"diagnosis_id,omitempty" yaml:"diagnosis_id,omitempty"`
 }

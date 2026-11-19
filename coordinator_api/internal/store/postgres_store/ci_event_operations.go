@@ -54,8 +54,11 @@ func (ps PostgresDbStore) RecordCIEvent(ctx context.Context, event *models.CIEve
 			}
 			if setting == models.DuplicateEventsSkip {
 				var first models.CIEvent
-				err := tx.Where("project_id = ? AND semantic_key = ? AND status <> ?",
-					*event.ProjectID, event.SemanticKey, models.CIEventStatusDuplicate).
+				// An event that never ran (rate limited, or a skipped draft)
+				// is not the first of its change: the next delivery runs.
+				err := tx.Where("project_id = ? AND semantic_key = ? AND status NOT IN ?",
+					*event.ProjectID, event.SemanticKey, []string{models.CIEventStatusDuplicate,
+						models.CIEventStatusRateLimited, models.CIEventStatusSkipped}).
 					Order("received_at ASC").First(&first).Error
 				if err == nil {
 					firstID := first.EventID

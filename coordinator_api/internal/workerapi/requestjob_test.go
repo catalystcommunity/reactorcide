@@ -349,3 +349,78 @@ func TestBuildLease_CarriesImagePullSecretNames(t *testing.T) {
 		t.Fatalf("lease image_pull_secrets = %v, want [regcred team-cred]", lease.ImagePullSecrets)
 	}
 }
+
+// TestBuildLease_CarriesRunAsAdministrator guards lease delivery of the
+// job's optional run_as.administrator value. Unset stays absent.
+func TestBuildLease_CarriesRunAsAdministrator(t *testing.T) {
+	no := false
+	job := &models.Job{JobID: "job-1", JobCommand: "echo ok", RunnerImage: "img:1", RunAsAdministrator: &no}
+	lease := buildLease("lease-1", job, &resolvedLeaseSecrets{}, nil)
+	if lease.RunAsAdministrator == nil || *lease.RunAsAdministrator {
+		t.Fatalf("lease run_as_administrator = %v, want false", lease.RunAsAdministrator)
+	}
+	if lease.RunAsAdministrator == job.RunAsAdministrator {
+		t.Fatal("lease must hold a copy of the job value")
+	}
+	unset := buildLease("lease-2", &models.Job{JobID: "job-2", JobCommand: "echo ok", RunnerImage: "img:1"}, &resolvedLeaseSecrets{}, nil)
+	if unset.RunAsAdministrator != nil {
+		t.Fatalf("unset job must send no run_as_administrator, got %v", *unset.RunAsAdministrator)
+	}
+}
+
+// TestBuildLease_ShellCmdPrefixSplitsAllWords guards that every word of
+// REACTORCIDE_JOB_SHELLCMD becomes its own argument (a multi-flag
+// PowerShell prefix must not reach the shell as one argument).
+func TestBuildLease_ShellCmdPrefixSplitsAllWords(t *testing.T) {
+	job := &models.Job{
+		JobID:       "job-1",
+		JobCommand:  "Write-Output a\nWrite-Output b",
+		RunnerImage: "img:1",
+		JobEnvVars: models.JSONB{
+			"REACTORCIDE_JOB_SHELLCMD": "powershell.exe -NoProfile -NonInteractive -Command",
+		},
+	}
+	lease := buildLease("lease-1", job, &resolvedLeaseSecrets{}, nil)
+	want := []string{"powershell.exe", "-NoProfile", "-NonInteractive", "-Command", "Write-Output a\nWrite-Output b"}
+	if len(lease.Command) != len(want) {
+		t.Fatalf("lease command = %q, want %q", lease.Command, want)
+	}
+	for i := range want {
+		if lease.Command[i] != want[i] {
+			t.Fatalf("lease command = %q, want %q", lease.Command, want)
+		}
+	}
+}
+
+// TestBuildLease_ShellPrefixDefaultsByOS guards that every command goes
+// through a shell, and that a Windows job without REACTORCIDE_JOB_SHELLCMD
+// gets PowerShell, not "sh -c" (a Windows guest has no /bin/sh).
+func TestBuildLease_ShellPrefixDefaultsByOS(t *testing.T) {
+	tests := []struct {
+		name string
+		os   string
+		env  models.JSONB
+		want []string
+	}{
+		{"linux single line", "linux", nil, []string{"sh", "-c", "echo a; sleep 1"}},
+		{"macos single line", "macos", nil, []string{"sh", "-c", "echo a; sleep 1"}},
+		{"windows single line", "windows", nil, []string{"powershell.exe", "-NoProfile", "-NonInteractive", "-Command", "echo a; sleep 1"}},
+		{"windows env override", "windows", models.JSONB{"REACTORCIDE_JOB_SHELLCMD": "cmd.exe /c"}, []string{"cmd.exe", "/c", "echo a; sleep 1"}},
+		{"distroless none", "linux", models.JSONB{"REACTORCIDE_JOB_SHELLCMD": "none"}, []string{"echo", "a;", "sleep", "1"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			job := &models.Job{
+				JobID:           "job-1",
+				JobCommand:      "echo a; sleep 1",
+				RunnerImage:     "img:1",
+				JobEnvVars:      tt.env,
+				Characteristics: characteristics.Characteristics{"os": characteristics.StringValue(tt.os)},
+			}
+			lease := buildLease("lease-1", job, &resolvedLeaseSecrets{}, nil)
+			if strings.Join(lease.Command, "\x00") != strings.Join(tt.want, "\x00") {
+				t.Fatalf("lease command = %q, want %q", lease.Command, tt.want)
+			}
+		})
+	}
+}

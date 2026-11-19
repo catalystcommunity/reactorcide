@@ -58,7 +58,7 @@ describe('application shell', () => {
     setSessionForTest({ logged_in: true, is_global_admin: false, capabilities: {} as never, roles: [] })
     mount(document.createElement('rc-app'))
     await settle()
-    expect(navLabels()).toEqual(['Workflows', 'Jobs', 'Projects'])
+    expect(navLabels()).toEqual(['Workflows', 'Jobs', 'Projects', 'Insights'])
 
     setSessionForTest({
       logged_in: true,
@@ -67,11 +67,11 @@ describe('application shell', () => {
       roles: [{ scope_type: 'org', scope_id: 'org-1', role: 'admin' }],
     })
     await settle()
-    expect(navLabels()).toEqual(['Workflows', 'Jobs', 'Projects', 'Access', 'Secrets', 'Worker classes'])
+    expect(navLabels()).toEqual(['Workflows', 'Jobs', 'Projects', 'Insights', 'Access', 'Secrets', 'Images', 'Worker classes'])
 
     setSessionForTest({ logged_in: true, is_global_admin: true, capabilities: {} as never, roles: [] })
     await settle()
-    expect(navLabels()).toEqual(['Workflows', 'Jobs', 'Projects', 'Access', 'Secrets', 'Workers', 'Admin'])
+    expect(navLabels()).toEqual(['Workflows', 'Jobs', 'Projects', 'Insights', 'Access', 'Secrets', 'Images', 'Workers', 'Admin'])
   })
 
   it('marks the current section in the navigation', async () => {

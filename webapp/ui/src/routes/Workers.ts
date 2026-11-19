@@ -1,4 +1,4 @@
-import type { PushButton, TextField } from '@catalystcommunity/controls'
+import type { CheckBox, PushButton, TextField } from '@catalystcommunity/controls'
 import { api } from '~/api/client.ts'
 import type {
   EnrollmentTokenSummary,
@@ -10,10 +10,12 @@ import type {
 } from '~/api/csilapi/types.gen.ts'
 import { RcPage } from '~/app/page.ts'
 import { field } from '~/components/Field.ts'
-import { Action, ActionError, notPermitted, oneTimeSecret } from '~/components/ManagementPage.ts'
+import { Action, ActionError, describeError, notPermitted, oneTimeSecret } from '~/components/ManagementPage.ts'
+import { formatMetric } from '~/components/ResourceHistory.ts'
 import { relativeTime } from '~/components/States.ts'
+import { imageStatusClass, imageStatusText, imageVersionText } from '~/components/imageText.ts'
 import { SESSION, session } from '~/lib/session.ts'
-import { button, clearField, confirmAction, setButtonText, textField } from '~/ui/controls.ts'
+import { button, checkBox, clearField, confirmAction, setButtonText, textField } from '~/ui/controls.ts'
 import { h, setAttr, setText, show, syncKeyed } from '~/ui/dom.ts'
 import { RcElement, define } from '~/ui/element.ts'
 import { Loader } from '~/ui/load.ts'
@@ -35,6 +37,15 @@ export class WorkersPage extends RcPage {
   #pools = new Loader<string, ListPoolsResponse>(this, () => api.listPools({}))
   #workers = new Loader<string, ListWorkersResponse>(this, () => api.listWorkers({}))
   #selectedPool: string | undefined
+  // Worker filters. They apply to the list on the page: the full list also
+  // gives the count for the warning above the table.
+  #onlyDeactivated = false
+  #tokenFilter: { id: string; label: string } | undefined
+  #deactivatedFilter!: CheckBox
+  #tokenFilterChip!: HTMLElement
+  #tokenFilterText!: HTMLElement
+  #deactivatedWarning!: HTMLElement
+  #workersFilteredEmpty!: HTMLElement
 
   #createAction = new Action(() => this.invalidate())
   #createError = new ActionError()
@@ -51,6 +62,7 @@ export class WorkersPage extends RcPage {
   #workerRows!: HTMLTableSectionElement
   #workerWrap!: HTMLElement
   #workersEmpty!: HTMLElement
+  #workersError!: ActionError
   #workerViews = new WeakMap<Element, WorkerRow>()
 
   protected build(): void {
@@ -92,12 +104,52 @@ export class WorkersPage extends RcPage {
         h(
           'thead',
           null,
-          h('tr', null, h('th', null, 'Worker'), h('th', null, 'Status'), h('th', null, 'Platform'), h('th', null, 'Active leases'), h('th', null, 'Last seen'), h('th')),
+          h(
+            'tr',
+            null,
+            h('th', null, 'Worker'),
+            h('th', null, 'Status'),
+            h('th', null, 'Images'),
+            h('th', null, 'Platform'),
+            h('th', null, 'Location'),
+            h('th', null, 'Enrollment token'),
+            h('th', null, 'Active leases'),
+            h('th', null, 'Headroom'),
+            h('th', null, 'Last seen'),
+            h('th'),
+          ),
         ),
         this.#workerRows,
       ),
     )
     this.#workersEmpty = h('div', { class: 'empty' }, 'No workers have enrolled yet.')
+    this.#workersError = new ActionError()
+    this.#workersFilteredEmpty = h('div', { class: 'empty' }, 'No workers match the filter.')
+    this.#deactivatedWarning = h('div', { class: 'alert alert-error', role: 'alert', hidden: true })
+    this.#deactivatedFilter = checkBox('Only workers on a deactivated token', {
+      onChange: (checked) => {
+        this.#onlyDeactivated = checked
+        this.invalidate()
+      },
+    })
+    this.#tokenFilterText = h('span')
+    this.#tokenFilterChip = h(
+      'span',
+      { class: 'row', hidden: true },
+      this.#tokenFilterText,
+      button('Clear', {
+        small: true,
+        variant: 'flat',
+        onClick: () => {
+          this.#tokenFilter = undefined
+          this.invalidate()
+        },
+      }),
+    )
+    this.addEventListener('rc-filter-token', (event) => {
+      this.#tokenFilter = (event as CustomEvent<{ id: string; label: string }>).detail
+      this.invalidate()
+    })
 
     this.#body = h(
       'div',
@@ -110,7 +162,17 @@ export class WorkersPage extends RcPage {
       ),
       h('div', { class: 'card' }, h('h3', { class: 'section-title' }, 'New pool'), form),
       h('div', { class: 'card' }, h('h3', { class: 'section-title' }, 'Pools'), this.#poolWrap, this.#poolsEmpty),
-      h('div', { class: 'card' }, h('h3', { class: 'section-title' }, 'Enrolled workers'), this.#workerWrap, this.#workersEmpty),
+      h(
+        'div',
+        { class: 'card' },
+        h('h3', { class: 'section-title' }, 'Enrolled workers'),
+        this.#workersError.el,
+        this.#deactivatedWarning,
+        h('div', { class: 'row' }, this.#deactivatedFilter, this.#tokenFilterChip),
+        this.#workerWrap,
+        this.#workersEmpty,
+        this.#workersFilteredEmpty,
+      ),
     )
     this.append(this.#refused, this.#body)
   }
@@ -144,9 +206,23 @@ export class WorkersPage extends RcPage {
 
     this.#renderPools(this.#pools.state.data?.pools ?? [])
 
-    const workers = this.#workers.state.data?.workers ?? []
+    const all = this.#workers.state.data?.workers ?? []
+    const onDeactivated = all.filter((w) => w.onDeactivatedToken).length
+    show(this.#deactivatedWarning, onDeactivated > 0)
+    setText(
+      this.#deactivatedWarning,
+      `${onDeactivated} ${onDeactivated === 1 ? 'worker runs' : 'workers run'} on a deactivated enrollment token. ` +
+        'They work until they stop, but then they cannot register again. Give those hosts an active token.',
+    )
+    show(this.#tokenFilterChip, Boolean(this.#tokenFilter))
+    setText(this.#tokenFilterText, this.#tokenFilter ? `Token: ${this.#tokenFilter.label}` : '')
+    const workers = filterWorkers(all, this.#onlyDeactivated, this.#tokenFilter?.id)
     show(this.#workerWrap, workers.length > 0)
-    show(this.#workersEmpty, workers.length === 0)
+    // A failed load is not "no workers": say that it failed.
+    const workersError = this.#workers.state.error
+    this.#workersError.set(workersError ? describeError(workersError, 'The workers could not be loaded.') : undefined)
+    show(this.#workersEmpty, this.#workers.state.loaded && all.length === 0)
+    show(this.#workersFilteredEmpty, all.length > 0 && workers.length === 0)
     syncKeyed(
       this.#workerRows,
       workers,
@@ -294,7 +370,7 @@ export class EnrollmentTokens extends RcElement {
     this.#tableWrap = h(
       'table',
       { class: 'table' },
-      h('thead', null, h('tr', null, h('th', null, 'Name'), h('th', null, 'Active'), h('th', null, 'Last used'), h('th'))),
+      h('thead', null, h('tr', null, h('th', null, 'Token'), h('th', null, 'Active'), h('th', null, 'Active workers'), h('th', null, 'Last used'), h('th'))),
       this.#rows,
     )
     this.#none = h('p', { class: 'meta' }, 'No enrollment tokens for this pool.')
@@ -339,13 +415,34 @@ export class EnrollmentTokens extends RcElement {
       () => {
         const deactivate = button('Deactivate', {
           small: true,
+          variant: 'danger',
           onClick: async () => {
             const token = this.#rowToken.get(row)!
-            await this.#action.run('The token could not be deactivated.', () => api.deactivateEnrollmentToken({ tokenId: token.tokenId }))
+            const ok = await confirmAction(deactivateText(token), { title: 'Deactivate permanently?', okLabel: 'Deactivate permanently' })
+            if (!ok) return
+            await this.#action.run('The token could not be deactivated.', () =>
+              api.deactivateEnrollmentToken({ tokenId: token.tokenId, confirmPermanent: true }),
+            )
             void this.#tokens.reload()
           },
         })
-        const row = h('tr', null, h('td', { class: 'token-name' }), h('td', { class: 'token-active' }), h('td', { class: 'meta token-used' }), h('td', null, deactivate))
+        const workers = button('', {
+          small: true,
+          variant: 'flat',
+          onClick: () => {
+            const token = this.#rowToken.get(row)!
+            this.dispatchEvent(new CustomEvent('rc-filter-token', { bubbles: true, detail: { id: token.tokenId, label: tokenLabel(token) } }))
+          },
+        })
+        const row = h(
+          'tr',
+          null,
+          h('td', null, h('div', { class: 'token-name' }), h('div', { class: 'meta mono truncate token-id' })),
+          h('td', { class: 'token-active' }),
+          h('td', { class: 'numeric' }, workers, h('span', { class: 'status status-warn token-warn', hidden: true }, 'still in use')),
+          h('td', { class: 'meta token-used' }),
+          h('td', null, deactivate),
+        )
         return row
       },
       (row, token) => {
@@ -353,9 +450,15 @@ export class EnrollmentTokens extends RcElement {
         const name = row.querySelector<HTMLElement>('.token-name')!
         setText(name, token.name || 'unnamed')
         name.classList.toggle('meta', !token.name)
-        setText(row.querySelector('.token-active')!, token.isActive ? 'Yes' : 'No')
+        setText(row.querySelector('.token-id')!, token.tokenId)
+        setText(row.querySelector('.token-active')!, token.isActive ? 'Yes' : 'No (permanent)')
+        const count = token.activeWorkerCount ?? 0
+        const [workers, deactivate] = row.querySelectorAll<PushButton>('push-button')
+        setButtonText(workers!, String(count))
+        workers!.disabled = count === 0
+        show(row.querySelector<HTMLElement>('.token-warn')!, !token.isActive && count > 0)
         setText(row.querySelector('.token-used')!, token.lastUsedAt ? relativeTime(token.lastUsedAt) : 'never')
-        show(row.querySelector<HTMLElement>('push-button')!, token.isActive)
+        show(deactivate!, token.isActive)
       },
     )
   }
@@ -395,10 +498,26 @@ class WorkerRow {
     this.el = h(
       'tr',
       null,
-      h('td', null, h('div', { class: 'worker-name' }), h('div', { class: 'meta mono truncate worker-id' })),
-      h('td', { class: 'worker-status' }),
+      h('td', null, h('a', { class: 'worker-name' }), h('div', { class: 'meta mono truncate worker-id' })),
+      h('td', null, h('div', { class: 'worker-status' }), h('div', { class: 'meta worker-online' })),
+      h(
+        'td',
+        null,
+        h('span', { class: 'worker-image-status' }),
+        h('div', { class: 'meta worker-image-detail', hidden: true }),
+        h('div', { class: 'meta worker-image-version' }),
+      ),
       h('td', { class: 'meta worker-platform' }),
+      h('td', { class: 'meta worker-location' }),
+      h(
+        'td',
+        null,
+        h('div', { class: 'worker-token-name' }),
+        h('div', { class: 'meta mono truncate worker-token-id' }),
+        h('span', { class: 'status status-danger worker-token-warn', hidden: true }, 'deactivated token'),
+      ),
       h('td', { class: 'numeric worker-leases' }),
+      h('td', { class: 'meta worker-headroom' }),
       h('td', { class: 'meta worker-seen' }),
       h('td', null, h('div', { class: 'row' }, this.#drain, this.#toggle), this.#error.el),
     )
@@ -408,16 +527,74 @@ class WorkerRow {
     this.#worker = worker
     const q = (cls: string): Element => this.el.querySelector(cls)!
     setText(q('.worker-name'), worker.hostname || worker.workerKey)
+    setAttr(q('.worker-name'), 'href', href(`/workers/${encodeURIComponent(worker.workerId)}`))
     setText(q('.worker-id'), worker.workerId)
     setText(q('.worker-status'), worker.status)
+    setText(q('.worker-online'), worker.online === undefined ? '' : worker.online ? 'online' : 'offline')
+    const imageStatus = q('.worker-image-status')
+    setText(imageStatus, imageStatusText(worker.imageStatus))
+    setAttr(imageStatus, 'class', `worker-image-status ${imageStatusClass(worker.imageStatus)}`)
+    const imageDetail = q('.worker-image-detail') as HTMLElement
+    setText(imageDetail, worker.imageStatusDetail ?? '')
+    show(imageDetail, worker.imageStatusDetail)
+    setText(q('.worker-image-version'), worker.imageStatus ? imageVersionText(worker.imageSetVersion, worker.imageReportedVersion) : '')
     setText(q('.worker-platform'), `${worker.os}/${worker.arch}`)
+    setText(q('.worker-location'), workerLocation(worker))
+    const tokenName = q('.worker-token-name') as HTMLElement
+    setText(tokenName, worker.enrollmentTokenId ? worker.enrollmentTokenName || 'unnamed' : '—')
+    tokenName.classList.toggle('meta', !worker.enrollmentTokenName)
+    setText(q('.worker-token-id'), worker.enrollmentTokenId ?? '')
+    show(q('.worker-token-warn') as HTMLElement, Boolean(worker.onDeactivatedToken))
     setText(q('.worker-leases'), String(worker.activeLeaseCount))
+    setText(q('.worker-headroom'), workerHeadroom(worker))
     setText(q('.worker-seen'), worker.lastSeenAt ? relativeTime(worker.lastSeenAt) : '—')
     setButtonText(this.#toggle, worker.status === 'disabled' ? 'Enable' : 'Disable')
     this.#drain.disabled = this.#action.busy
     this.#toggle.disabled = this.#action.busy
     this.#error.set(this.#action.error)
   }
+}
+
+/** The workers that pass the filters of the workers table. */
+export function filterWorkers(workers: WorkerSummary[], onlyDeactivated: boolean, tokenId: string | undefined): WorkerSummary[] {
+  return workers.filter((w) => (!onlyDeactivated || w.onDeactivatedToken) && (!tokenId || w.enrollmentTokenId === tokenId))
+}
+
+/** A token as its name and ID, for labels. The token value is never shown. */
+export function tokenLabel(token: EnrollmentTokenSummary): string {
+  return token.name ? `${token.name} (${token.tokenId})` : token.tokenId
+}
+
+/** The text of the deactivation dialog: permanent, and the workers still on the token. */
+export function deactivateText(token: EnrollmentTokenSummary): string {
+  const count = token.activeWorkerCount ?? 0
+  const inUse =
+    count > 0
+      ? ` ${count} ${count === 1 ? 'worker runs' : 'workers run'} on this token now. ${count === 1 ? 'It keeps' : 'They keep'} working until ${count === 1 ? 'it stops' : 'they stop'}, then cannot register again.`
+      : ' No worker with an active session uses this token.'
+  return `Deactivate enrollment token ${tokenLabel(token)}? This is permanent: the token can never be activated again.${inUse}`
+}
+
+/** The standard location characteristics (cloud, region, zone) of a worker, or a dash. */
+export function workerLocation(worker: WorkerSummary): string {
+  const parts: string[] = []
+  for (const key of ['cloud', 'region', 'zone']) {
+    const entry = worker.characteristics.find((c) => c.key === key)
+    if (entry) parts.push(Array.isArray(entry.value) ? entry.value.join(',') : String(entry.value))
+  }
+  return parts.join(' / ') || '—'
+}
+
+/**
+ * The headroom of a worker in resources admission mode, as CPU and memory of
+ * the capacity; "fixed" for a worker in the default concurrency mode.
+ */
+export function workerHeadroom(worker: WorkerSummary): string {
+  const a = worker.admission
+  if (!a) return 'fixed'
+  const cpu = `${formatMetric(Math.max(0, a.headroomCpuMillicores), 'millicores')} of ${formatMetric(a.capacityCpuMillicores, 'millicores')}`
+  const memory = `${formatMetric(Math.max(0, a.headroomMemoryBytes), 'bytes')} of ${formatMetric(a.capacityMemoryBytes, 'bytes')}`
+  return `${cpu}, ${memory}`
 }
 
 export const tag = 'rc-workers-page'

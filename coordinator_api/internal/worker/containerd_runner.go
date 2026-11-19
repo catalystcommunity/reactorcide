@@ -1,7 +1,9 @@
 package worker
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"os/exec"
@@ -12,6 +14,7 @@ import (
 
 	"github.com/catalystcommunity/app-utils-go/logging"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/resources"
+	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store/models"
 )
 
 const (
@@ -47,6 +50,10 @@ type ContainerdRunner struct {
 	// to its builder sidecar container name, so Cleanup can remove both.
 	sidecars   map[string]string
 	sidecarsMu sync.Mutex
+
+	// runNerdctl replaces the nerdctl command of the image set pre-seed
+	// (containerd_image_set.go) in tests. nil runs nerdctl.
+	runNerdctl nerdctlCommand
 }
 
 // NewContainerdRunner creates a new nerdctl-based job runner
@@ -72,7 +79,7 @@ func NewContainerdRunner() (*ContainerdRunner, error) {
 // worker run. Same assumptions as DockerRunner.sweepLeaked.
 func (cr *ContainerdRunner) sweepLeaked(ctx context.Context) {
 	logger := logging.Log
-	for _, component := range []string{"builder-sidecar", "job-container"} {
+	for _, component := range []string{"builder-sidecar", "job-container", egressComponent} {
 		out, err := exec.CommandContext(ctx, nerdctlBinary,
 			"--namespace", containerdNamespace,
 			"ps", "-a", "-q",
@@ -111,6 +118,14 @@ func (cr *ContainerdRunner) SpawnJob(ctx context.Context, config *JobConfig) (st
 
 	containerID := fmt.Sprintf("reactorcide-job-%s", config.JobID)
 
+	// Pull before run, so an image failure is reported as infra.image_pull
+	// and not as a non-zero exit of `nerdctl run` (which looks like the
+	// job's own failure). The run below then uses the pulled image.
+	if out, err := exec.CommandContext(ctx, nerdctlBinary, "--namespace", containerdNamespace, "pull", config.Image).CombinedOutput(); err != nil {
+		return "", NewFailureError(models.FailureClassImagePull, "image pull",
+			fmt.Errorf("failed to pull image %s: %w (%s)", config.Image, err, strings.TrimSpace(lastLines(string(out), 3))))
+	}
+
 	// If the job requested the builder capability, spawn the buildkitd
 	// sidecar first and have the job container share its netns.
 	wantsBuilder := HasCapability(config.Capabilities, CapabilityBuilder)
@@ -123,15 +138,27 @@ func (cr *ContainerdRunner) SpawnJob(ctx context.Context, config *JobConfig) (st
 		sidecarName = name
 	}
 
+	// Egress control (containerd_egress.go): the helper owns the job network.
+	config, egressNetwork, err := cr.prepareEgress(ctx, config)
+	if err != nil {
+		if sidecarName != "" {
+			cr.removeSidecar(context.Background(), sidecarName)
+		}
+		return "", err
+	}
+
 	// Build nerdctl run command
 	args := []string{
 		"--namespace", containerdNamespace,
 		"run",
 		"--name", containerID,
-		"--rm=false",       // Don't auto-remove so we can get logs and exit code
-		"--pull", "always", // Always pull to get latest image
+		"--rm=false",        // Don't auto-remove so we can get logs and exit code
+		"--pull", "missing", // Pulled just above; see the pull step
 	}
-	if wantsBuilder {
+	if egressNetwork != "" {
+		args = append(args, "--net", egressNetwork)
+		args = append(args, nerdctlEgressJobArgs()...)
+	} else if wantsBuilder {
 		// Share the sidecar's netns so BUILDKIT_HOST=tcp://localhost:1234 works
 		// without any per-job network plumbing — mirrors k8s pod semantics.
 		args = append(args, "--net", "container:"+sidecarName)
@@ -273,6 +300,7 @@ func (cr *ContainerdRunner) SpawnJob(ctx context.Context, config *JobConfig) (st
 		if sidecarName != "" {
 			cr.removeSidecar(context.Background(), sidecarName)
 		}
+		cr.removeEgressForContainer(context.Background(), containerID)
 		return "", fmt.Errorf("failed to start nerdctl: %w", err)
 	}
 
@@ -358,39 +386,8 @@ func (cr *ContainerdRunner) SpawnJob(ctx context.Context, config *JobConfig) (st
 func (cr *ContainerdRunner) startBuilderSidecar(ctx context.Context, config *JobConfig) (string, error) {
 	logger := logging.Log.WithField("job_id", config.JobID)
 
-	image := cr.builder.Image
-	if image == "" {
-		image = DefaultBuilderImage
-	}
 	name := BuilderSidecarName(config.JobID)
-
-	args := []string{
-		"--namespace", containerdNamespace,
-		"run", "-d",
-		"--name", name,
-		"--rm=false",
-		"--privileged",
-		"--net", "bridge",
-		"--pull", "always",
-		"--label", "reactorcide.job_id=" + config.JobID,
-		"--label", "reactorcide.component=builder-sidecar",
-	}
-	if cr.builder.ConfigPath != "" {
-		args = append(args, "-v", fmt.Sprintf("%s:/etc/buildkit/buildkitd.toml:ro", cr.builder.ConfigPath))
-	}
-	if cr.builder.RegistryAuthPath != "" {
-		args = append(args, "-v", fmt.Sprintf("%s:/root/.docker/config.json:ro", cr.builder.RegistryAuthPath))
-	}
-	if cr.builder.CacheVolume != "" {
-		args = append(args, "-v", fmt.Sprintf("%s:/var/lib/buildkit", cr.builder.CacheVolume))
-	}
-	args = append(args, image,
-		"--addr", fmt.Sprintf("tcp://0.0.0.0:%d", BuilderSidecarPort),
-		"--oci-worker=true",
-	)
-	if cr.builder.ConfigPath != "" {
-		args = append(args, "--config", "/etc/buildkit/buildkitd.toml")
-	}
+	args := cr.builderSidecarArgs(config)
 
 	out, err := exec.CommandContext(ctx, nerdctlBinary, args...).CombinedOutput()
 	if err != nil {
@@ -399,6 +396,36 @@ func (cr *ContainerdRunner) startBuilderSidecar(ctx context.Context, config *Job
 
 	logger.WithField("sidecar_name", name).Info("Builder sidecar started")
 	return name, nil
+}
+
+// builderSidecarArgs returns the nerdctl arguments of the buildkitd
+// sidecar: privileged root by default, or the rootless mode, with the cache
+// namespace and the write mode of the coordinator (builder_cache.go).
+func (cr *ContainerdRunner) builderSidecarArgs(config *JobConfig) []string {
+	args := []string{
+		"--namespace", containerdNamespace,
+		"run", "-d",
+		"--name", BuilderSidecarName(config.JobID),
+		"--rm=false",
+	}
+	if cr.builder.Rootless {
+		for _, opt := range rootlessSecurityOpts {
+			args = append(args, "--security-opt", opt)
+		}
+	} else {
+		args = append(args, "--privileged")
+	}
+	args = append(args,
+		"--net", "bridge",
+		"--pull", "always",
+		"--label", "reactorcide.job_id="+config.JobID,
+		"--label", "reactorcide.component=builder-sidecar",
+	)
+	for _, bind := range cr.builder.builderBinds(config.Cache) {
+		args = append(args, "-v", bind)
+	}
+	args = append(args, cr.builder.image())
+	return append(args, cr.builder.sidecarArgs()...)
 }
 
 // removeSidecar best-effort cleanup: stops and removes a sidecar by name.
@@ -456,6 +483,47 @@ func (cr *ContainerdRunner) WaitForCompletion(ctx context.Context, containerID s
 	}
 }
 
+// ClassifyExit reads the exited container's state. An OOM kill is oom. A
+// container that nerdctl did not create (the exit code is nerdctl's own) is
+// infra.platform. See ExitClassifier.
+func (cr *ContainerdRunner) ClassifyExit(ctx context.Context, containerID string, exitCode int) (string, string) {
+	out, err := exec.CommandContext(ctx, nerdctlBinary, "--namespace", containerdNamespace,
+		"inspect", "--format", "{{json .State}}", containerID).CombinedOutput()
+	if err != nil {
+		if strings.Contains(string(out), "no such container") || strings.Contains(string(out), "not found") {
+			return models.FailureClassPlatform, "container not created"
+		}
+		return "", ""
+	}
+	oomKilled, err := parseNerdctlOOMKilled(out)
+	if err != nil {
+		return "", ""
+	}
+	return containerExitClass(oomKilled)
+}
+
+// parseNerdctlOOMKilled reads State.OOMKilled from `nerdctl inspect
+// --format '{{json .State}}'`. A nerdctl that does not report the field
+// reads as false.
+func parseNerdctlOOMKilled(out []byte) (bool, error) {
+	var state struct {
+		OOMKilled bool `json:"OOMKilled"`
+	}
+	if err := json.Unmarshal(bytes.TrimSpace(out), &state); err != nil {
+		return false, err
+	}
+	return state.OOMKilled, nil
+}
+
+// lastLines returns at most n trailing lines of text.
+func lastLines(text string, n int) string {
+	lines := strings.Split(strings.TrimRight(text, "\n"), "\n")
+	if len(lines) > n {
+		lines = lines[len(lines)-n:]
+	}
+	return strings.Join(lines, "\n")
+}
+
 // Stop requests a graceful shutdown of the job container via `nerdctl stop`,
 // which sends SIGTERM to PID 1 and waits up to `grace` seconds before
 // sending SIGKILL. grace == 0 requests immediate termination (nerdctl stop
@@ -509,6 +577,8 @@ func (cr *ContainerdRunner) Cleanup(ctx context.Context, containerID string) err
 			logger.WithError(err).WithField("output", string(output)).Warn("Failed to remove container")
 		}
 	}
+
+	cr.removeEgressForContainer(ctx, containerID)
 
 	// Tear down the builder sidecar, if any.
 	cr.sidecarsMu.Lock()

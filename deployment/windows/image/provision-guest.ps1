@@ -2,7 +2,11 @@
 param(
     [Parameter(Mandatory = $true)]
     [ValidatePattern('^[A-Za-z][A-Za-z0-9_-]{0,19}$')]
-    [string]$GuestUser
+    [string]$GuestUser,
+
+    # Remove the guest account from Administrators. By default it stays an
+    # administrator.
+    [switch]$StandardUser
 )
 
 $ErrorActionPreference = 'Stop'
@@ -11,74 +15,10 @@ $failurePath = Join-Path $setupDirectory 'failed.txt'
 $completePath = Join-Path $setupDirectory 'complete.txt'
 
 try {
-    $capability = Get-WindowsCapability -Online -Name 'OpenSSH.Server~~~~0.0.1.0'
-    if ($capability.State -ne 'Installed') {
-        Add-WindowsCapability -Online -Name 'OpenSSH.Server~~~~0.0.1.0' | Out-Null
+    $guestDaemon = 'C:\Program Files\Reactorcide\vmguest.exe'
+    if (-not (Test-Path -LiteralPath $guestDaemon)) {
+        throw 'The Reactorcide guest daemon is not in the image.'
     }
-
-    $sshDirectory = Join-Path $env:ProgramData 'ssh'
-    Set-Service -Name sshd -StartupType Automatic
-    Start-Service -Name sshd
-    Stop-Service -Name sshd
-    & (Join-Path $env:SystemRoot 'System32\OpenSSH\ssh-keygen.exe') -A
-    if ($LASTEXITCODE -ne 0) {
-        throw 'OpenSSH could not generate its host keys.'
-    }
-
-    $userProfile = Join-Path 'C:\Users' $GuestUser
-    $userSSHDirectory = Join-Path $userProfile '.ssh'
-    $authorizedKeys = Join-Path $userSSHDirectory 'authorized_keys'
-    New-Item -ItemType Directory -Path $userSSHDirectory -Force | Out-Null
-
-    & icacls.exe $userSSHDirectory /inheritance:r /grant:r "${GuestUser}:(OI)(CI)F" '*S-1-5-18:(OI)(CI)F' '*S-1-5-32-544:(OI)(CI)F' | Out-Null
-    if ($LASTEXITCODE -ne 0) {
-        throw 'The guest SSH directory access rules could not be set.'
-    }
-    $sshdConfigPath = Join-Path $sshDirectory 'sshd_config'
-    if (-not (Test-Path -LiteralPath $sshdConfigPath)) {
-        Copy-Item -LiteralPath (Join-Path $env:SystemRoot 'System32\OpenSSH\sshd_config_default') -Destination $sshdConfigPath
-    }
-    $sshdConfig = Get-Content -LiteralPath $sshdConfigPath -Raw
-    function Add-GlobalSSHDDirective {
-        param([string]$Config, [string]$Line)
-
-        $match = [regex]::Match($Config, '(?m)^\s*Match\s+')
-        if ($match.Success) {
-            return $Config.Insert($match.Index, $Line + "`r`n")
-        }
-        return $Config + "`r`n" + $Line + "`r`n"
-    }
-
-    foreach ($option in @{
-        PubkeyAuthentication = 'yes'
-        PasswordAuthentication = 'no'
-        KbdInteractiveAuthentication = 'no'
-    }.GetEnumerator()) {
-        $pattern = '(?m)^\s*#?\s*' + [regex]::Escape($option.Key) + '\s+.*$'
-        $line = $option.Key + ' ' + $option.Value
-        if ([regex]::IsMatch($sshdConfig, $pattern)) {
-            $sshdConfig = [regex]::Replace($sshdConfig, $pattern, $line)
-        } else {
-            $sshdConfig = Add-GlobalSSHDDirective -Config $sshdConfig -Line $line
-        }
-    }
-    $sshdConfig = Add-GlobalSSHDDirective -Config $sshdConfig -Line 'HostKey __PROGRAMDATA__/ssh/ssh_host_ed25519_key'
-    $sshdConfig = Add-GlobalSSHDDirective -Config $sshdConfig -Line "AllowUsers $GuestUser"
-    Set-Content -LiteralPath $sshdConfigPath -Value $sshdConfig -Encoding ascii
-
-    & (Join-Path $env:SystemRoot 'System32\OpenSSH\sshd.exe') -t
-    if ($LASTEXITCODE -ne 0) {
-        throw 'The generated sshd_config file is not valid.'
-    }
-
-    Start-Service -Name sshd
-    if (-not (Get-NetFirewallRule -Name 'OpenSSH-Server-In-TCP' -ErrorAction SilentlyContinue)) {
-        New-NetFirewallRule -Name 'OpenSSH-Server-In-TCP' -DisplayName 'OpenSSH Server (sshd)' -Enabled True -Direction Inbound -Protocol TCP -Action Allow -LocalPort 22 | Out-Null
-    }
-    Set-NetFirewallRule -Name 'OpenSSH-Server-In-TCP' -Enabled True -Direction Inbound -Action Allow -Profile Any
-
-    Set-Service -Name vmickvpexchange -StartupType Automatic
-    Start-Service -Name vmickvpexchange
 
     New-Item -ItemType Directory -Path 'C:\reactorcide\job' -Force | Out-Null
     & icacls.exe 'C:\reactorcide' /inheritance:r /grant:r "${GuestUser}:(OI)(CI)F" '*S-1-5-18:(OI)(CI)F' '*S-1-5-32-544:(OI)(CI)F' | Out-Null
@@ -104,13 +44,20 @@ try {
     Set-LocalUser -Name $GuestUser -Password $runtimePassword
     [Array]::Clear($passwordBytes, 0, $passwordBytes.Length)
 
-    $administrators = Get-LocalGroup -SID 'S-1-5-32-544'
-    Remove-LocalGroupMember -Group $administrators.Name -Member $GuestUser -ErrorAction SilentlyContinue
+    if ($StandardUser) {
+        $administrators = Get-LocalGroup -SID 'S-1-5-32-544'
+        Remove-LocalGroupMember -Group $administrators.Name -Member $GuestUser -ErrorAction SilentlyContinue
+    }
 
-    Stop-Service -Name sshd
-    Remove-Item -LiteralPath $authorizedKeys -Force -ErrorAction SilentlyContinue
-    Get-ChildItem -LiteralPath $sshDirectory -Filter 'ssh_host_*' -File -ErrorAction SilentlyContinue |
-        Remove-Item -Force
+    # Install the guest daemon service last and do not start it: it sets the
+    # system proxy to its own tunnel, and this build VM still uses its own
+    # network adapter. The service starts at the first boot of each job VM,
+    # which has no network adapter.
+    & $guestDaemon install -no-start
+    if ($LASTEXITCODE -ne 0) {
+        throw 'The Reactorcide guest daemon service could not be installed.'
+    }
+    Set-Content -LiteralPath (Join-Path $setupDirectory 'vmguest-installed.txt') -Value 'ready' -Encoding ascii
 
     $winlogonPath = 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon'
     Remove-ItemProperty -Path $winlogonPath -Name AutoAdminLogon, DefaultUserName, DefaultPassword, AutoLogonCount -ErrorAction SilentlyContinue
@@ -119,14 +66,25 @@ try {
         Remove-Item -Force -ErrorAction SilentlyContinue
     Remove-Item -LiteralPath 'C:\Windows\System32\Sysprep\Unattend.xml' -Force -ErrorAction SilentlyContinue
 
-    Set-Content -LiteralPath $completePath -Value 'ready' -Encoding ascii
-    Set-Content -LiteralPath (Join-Path $setupDirectory 'generalize-requested.txt') -Value 'ready' -Encoding ascii
-
-    $sysprep = Join-Path $env:SystemRoot 'System32\Sysprep\Sysprep.exe'
-    & $sysprep /generalize /oobe /shutdown /quiet
-    if ($LASTEXITCODE -ne 0) {
-        throw "Sysprep failed with exit code $LASTEXITCODE."
+    # Do not generalize the image (no Sysprep). A generalized image runs
+    # specialize, a restart, and OOBE at each job boot. Job VMs have no
+    # network adapter and are deleted after the job, so they can share one
+    # Windows identity. The image must not be encrypted: each job VM has a
+    # new virtual TPM.
+    $osVolume = Get-BitLockerVolume -MountPoint $env:SystemDrive -ErrorAction SilentlyContinue
+    if ($osVolume -and $osVolume.VolumeStatus -ne 'FullyDecrypted') {
+        Disable-BitLocker -MountPoint $env:SystemDrive | Out-Null
+        $deadline = (Get-Date).AddMinutes(30)
+        while ((Get-BitLockerVolume -MountPoint $env:SystemDrive).VolumeStatus -ne 'FullyDecrypted') {
+            if ((Get-Date) -gt $deadline) {
+                throw 'The system volume did not decrypt in 30 minutes.'
+            }
+            Start-Sleep -Seconds 5
+        }
     }
+
+    Set-Content -LiteralPath $completePath -Value 'ready' -Encoding ascii
+    Set-Content -LiteralPath (Join-Path $setupDirectory 'capture-requested.txt') -Value 'ready' -Encoding ascii
 } catch {
     $_.Exception.Message | Set-Content -LiteralPath $failurePath -Encoding utf8
 } finally {

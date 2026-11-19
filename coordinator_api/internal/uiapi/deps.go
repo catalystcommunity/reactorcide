@@ -2,6 +2,7 @@ package uiapi
 
 import (
 	"context"
+	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/outboundevents"
 
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/approvals"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/auth"
@@ -9,6 +10,7 @@ import (
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/checkauth"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/corndogs"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/objects"
+	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/oidcissuer"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/secrets"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store/models"
@@ -42,6 +44,21 @@ type Deps struct {
 	// (the webhook handler). Nil when the router does not wire it; the
 	// command operations then fail with "unavailable".
 	Approvals approvals.Executor
+
+	// ManualRuns starts manual runs on a ref (the webhook handler). Nil when
+	// the router does not wire it; start-run then fails with "unavailable".
+	ManualRuns ManualRunStarter
+
+	// GroupVCSSync syncs a linked VCS team now (vcsteams.Syncer). Nil when
+	// the router does not wire it; sync-group-vcs-teams then only makes the
+	// links due for the sync loop.
+	GroupVCSSync GroupVCSSyncer
+	// OutboundEvents manages outbound event subscriptions (WP12). Nil when
+	// the coordinator has no outbound event support.
+	OutboundEvents *outboundevents.Manager
+	// OIDCIssuer is the job OIDC issuer (docs/oidc.md). Nil when the
+	// coordinator has no issuer; the key operations then report that.
+	OIDCIssuer *oidcissuer.Issuer
 }
 
 // NewDeps constructs a Deps. backend selects the login flow (NewNoneBackend
@@ -100,9 +117,22 @@ func (d *Deps) resolveIdentityDetails(ctx context.Context) (authz.Identity, *mod
 	if apiToken.BoundJobID != nil {
 		principal.BoundJobID = *apiToken.BoundJobID
 	}
+	if apiToken.PrincipalID != nil {
+		principal.PrincipalID = *apiToken.PrincipalID
+	}
+	principal.IntersectRoles = apiToken.IntersectRoles
+	if principal.IsServicePrincipalToken() && d.Resolver.NarrowServicePrincipalToken(ctx, principal) != nil {
+		return authz.AnonymousIdentity(), nil, nil
+	}
 	return authz.IdentityFromPrincipal(principal, tokenUser), tokenUser, principal
 }
 
+// requireManagementIdentity resolves the caller as a UI session or an API
+// token, and returns "unauthorized" when neither is valid. Every UI operation
+// that needs a caller uses it: a browser session and a token are equal
+// callers, and the permission check of the operation decides (for a token:
+// the role of its owner intersected with the token, see token_scope.go).
+// With a token, the returned context carries the principal for the audit.
 func (d *Deps) requireManagementIdentity(ctx context.Context) (context.Context, authz.Identity, *models.User, error) {
 	id, user, principal := d.resolveIdentityDetails(ctx)
 	if id.Anonymous || (id.UserID == "" && id.Token == nil) {
@@ -114,18 +144,6 @@ func (d *Deps) requireManagementIdentity(ctx context.Context) (context.Context, 
 		ctx = checkauth.SetVerifiedContext(ctx, true)
 	}
 	return ctx, id, user, nil
-}
-
-// requireUser resolves the caller like resolveIdentity, but returns a
-// ServiceError "unauthorized" instead of an anonymous identity when no valid
-// session is present. Use for ops the permission matrix never grants to an
-// anonymous caller under any auth mode (e.g. every management op).
-func (d *Deps) requireUser(ctx context.Context) (authz.Identity, *models.User, error) {
-	id, user, principal := d.resolveIdentityDetails(ctx)
-	if user == nil || principal != nil {
-		return authz.Identity{}, nil, NewServiceError("unauthorized", "a valid session is required for this operation")
-	}
-	return id, user, nil
 }
 
 // defaultSecretsProviderForOrg builds a secrets.Provider scoped to orgID,

@@ -37,11 +37,16 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/egress"
+	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/principals"
+	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/priority"
 	"time"
 
 	"github.com/catalystcommunity/app-utils-go/logging"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/characteristics"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/corndogs"
+	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/imagealias"
+	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/runshifts"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store/models"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/worker"
@@ -54,6 +59,17 @@ import (
 // state — see models.Job.IsRetryable. Mirrors ErrNotCancellable's role for
 // the cancel/kill flow.
 var ErrNotRetryable = errors.New("job cannot be retried in its current state")
+
+// ErrWorkerClassRefused is returned when the worker class of a retried job
+// refuses it (worker.CheckWorkerClassAdmission).
+var ErrWorkerClassRefused = errors.New("the worker class refuses the retried job")
+
+// ErrImageGone is returned when a retry or a rerun cannot get an image: the
+// alias of the earlier run (the alias that the job named, or the alias that
+// pinned its direct reference) does not exist any more, is now for another
+// kind or platform, or does not fit the job (imagealias.ResolveRetry). The
+// job would wait forever, so it is not created.
+var ErrImageGone = errors.New("the image of the earlier run is not available any more")
 
 // ErrWorkflowNotRetryable is ErrNotRetryable's workflow-instance analog —
 // see models.WorkflowInstance.IsRetryable.
@@ -107,17 +123,54 @@ type orgQueueResolvingStore interface {
 // for why this is a direct assignment rather than a
 // worker.ComputeWorkflowStatus recompute).
 func RetryJob(ctx context.Context, st store.Store, corndogsClient corndogs.ClientInterface, job *models.Job) (*models.Job, error) {
+	return retryJob(ctx, st, corndogsClient, job, models.RunShifts{})
+}
+
+func retryJob(ctx context.Context, st store.Store, corndogsClient corndogs.ClientInterface, job *models.Job, shifts models.RunShifts) (*models.Job, error) {
 	if job == nil || !job.IsRetryable() {
-		return nil, ErrNotRetryable
+		return nil, JobNotRetryable(job)
 	}
 
 	newJob := cloneJobForRetry(job)
+	// A retry resolves the image again through the alias of the earlier run
+	// and uses its current pin: after an alias update the old digest leaves
+	// the worker image sets (owner decision 2026-11-18).
+	imageResult, err := imagealias.ResolveRetry(ctx, st, newJob, imagealias.CarriedFromJob(job))
+	if err != nil {
+		if refused, ok := imagealias.IsRefused(err); ok {
+			return nil, fmt.Errorf("%w: %s", ErrImageGone, refused.Message)
+		}
+		return nil, err
+	}
+	if imageResult.Changed {
+		logging.Log.WithFields(map[string]interface{}{
+			"job_id": job.JobID, "image": imagealias.DisplayJob(newJob), "retry_of_image": imageResult.Previous,
+		}).Info("Retry uses the current pin of the image alias")
+	}
+	// The worker class conditions can have changed since the first run, so
+	// a retry checks them again. Fail closed.
+	if err := worker.CheckWorkerClassAdmission(ctx, st, newJob.OrgID, newJob.WorkerClass, newJob.RefClasses, newJob.ExecutionProfile, nil); err != nil {
+		return nil, fmt.Errorf("%w: %v", ErrWorkerClassRefused, err)
+	}
+	// Shifts change only resources and the timeout (see rerun.go). Every
+	// authority field above comes from the original job.
+	if err := applyRetryShifts(ctx, st, newJob, shifts); err != nil {
+		return nil, err
+	}
+	// The re-runner is the actor of the retry. With no actor in the context
+	// the database inherits the actor of the original job (parent_job_id).
+	principals.ApplyToJob(newJob, principals.ActorOf(ctx))
+	// A retry keeps the lane and the priority of the original job; the
+	// re-runner's groups do not apply. Only a retry lane can change the lane
+	// (docs/priority.md).
+	priority.AssignRetry(ctx, st, job, newJob)
 
 	// Re-resolve the queue from the cloned characteristics rather than
 	// trusting the cloned QueueName verbatim -- this is a no-op in the common
 	// case (the original job's characteristics already resolved to a live
 	// queue row) but stays correct if that queue row was ever deleted and
 	// needs re-creating.
+	egress.RouteJob(ctx, st, newJob)
 	if qs, ok := st.(orgQueueResolvingStore); ok {
 		queue, err := qs.FindOrCreateQueueForOrg(ctx, newJob.OrgID, newJob.WorkerClass, newJob.Characteristics)
 		if err != nil {
@@ -145,6 +198,7 @@ func RetryJob(ctx context.Context, st store.Store, corndogsClient corndogs.Clien
 				Error("Failed to submit retried job to Corndogs")
 			newJob.Status = "failed"
 			newJob.LastError = fmt.Sprintf("failed to submit to Corndogs: %v", err)
+			newJob.SetFailure(models.FailureClassPlatform, "queue submission")
 		} else {
 			taskID := task.Uuid
 			newJob.CorndogsTaskID = &taskID
@@ -187,6 +241,12 @@ func RetryJob(ctx context.Context, st store.Store, corndogsClient corndogs.Clien
 // needed. See the retry feature's REST/CSIL layer for anything wanting a
 // dedicated audit trail.
 func RetryWorkflow(ctx context.Context, st store.Store, corndogsClient corndogs.ClientInterface, workflowID string) (*models.WorkflowInstance, error) {
+	return retryWorkflow(ctx, st, corndogsClient, workflowID, models.RunShifts{}, false)
+}
+
+// retryWorkflow is RetryWorkflow with shifts. rerun accepts any finished
+// workflow (see RerunWorkflow); otherwise the workflow must be retryable.
+func retryWorkflow(ctx context.Context, st store.Store, corndogsClient corndogs.ClientInterface, workflowID string, shifts models.RunShifts, rerun bool) (*models.WorkflowInstance, error) {
 	ws, ok := st.(workflowRetryStore)
 	if !ok {
 		return nil, ErrWorkflowsUnsupported
@@ -196,8 +256,14 @@ func RetryWorkflow(ctx context.Context, st store.Store, corndogsClient corndogs.
 	if err != nil {
 		return nil, err
 	}
-	if !old.IsRetryable() {
-		return old, ErrWorkflowNotRetryable
+	if rerun && !IsWorkflowRerunnable(old) {
+		return old, WorkflowNotRerunnable(old)
+	}
+	if !rerun && !old.IsRetryable() {
+		return old, WorkflowNotRetryable(old)
+	}
+	if err := CheckShifts(ctx, st, old.OwnershipOrgID(), old.ProjectID, shifts); err != nil {
+		return old, err
 	}
 	oldNodes, err := ws.ListWorkflowNodes(ctx, workflowID)
 	if err != nil {
@@ -205,10 +271,18 @@ func RetryWorkflow(ctx context.Context, st store.Store, corndogsClient corndogs.
 	}
 
 	newWf := &models.WorkflowInstance{
-		UserID:             old.UserID,
-		OrgID:              old.OrgID,
-		ProjectID:          old.ProjectID,
-		ParentJobID:        old.ParentJobID,
+		UserID:      old.UserID,
+		OrgID:       old.OrgID,
+		ProjectID:   old.ProjectID,
+		ParentJobID: old.ParentJobID,
+		// A retry or a re-run serves the same CI event: its jobs keep the
+		// event, and the event checks count it in place of the instance it
+		// supersedes (rerun_of_workflow_id, the first instance of the chain).
+		// SetCIEventID below links the event.
+		RerunOfWorkflowID:  rerunChainRoot(old),
+		ParentWorkflowID:   cloneStringPtr(old.ParentWorkflowID),
+		RootWorkflowID:     cloneStringPtr(old.RootWorkflowID),
+		RefClasses:         append([]string{}, old.RefClasses...),
 		Name:               old.Name,
 		WorkflowSecurityID: old.WorkflowSecurityID,
 		SourceFile:         old.SourceFile,
@@ -223,6 +297,30 @@ func RetryWorkflow(ctx context.Context, st store.Store, corndogsClient corndogs.
 		CIOrigin:           old.CIOrigin, CIRepository: old.CIRepository, CISHA: old.CISHA,
 		ExecutionProfile: old.ExecutionProfile, WorkerClass: old.WorkerClass,
 		PolicyRevision: old.PolicyRevision, PolicyRuleID: old.PolicyRuleID, ApprovalID: cloneStringPtr(old.ApprovalID),
+	}
+	// A root re-run keeps the event in rerun_event_id, not event_id: the
+	// (event, security ID) index of root workflows stays the identity of
+	// the first instance (migration 000051).
+	newWf.SetCIEventID(old.CIEventID())
+	if old.ActorPrincipalID != nil {
+		newWf.ActorPrincipalID, newWf.ActorIdentity = cloneStringPtr(old.ActorPrincipalID), old.ActorIdentity
+	}
+	// A retry or a re-run keeps the owner snapshot of the original run.
+	if old.OwnerGroup != nil {
+		newWf.SetOwnership(old.Ownership(), models.OwnerSourceRetry)
+	}
+	if actor := principals.ActorOf(ctx); !actor.IsZero() {
+		newWf.ActorPrincipalID, newWf.ActorIdentity = actor.Ptr(), actor.Identity
+	}
+	// The shifts of the original instance stay; new shifts replace them key
+	// by key. Every job of the new instance gets them (worker
+	// applyWorkflowShifts).
+	if old.Shifts != nil || !shifts.IsZero() {
+		merged := shifts
+		if old.Shifts != nil {
+			merged = old.Shifts.Merge(shifts)
+		}
+		newWf.Shifts = merged.Ptr()
 	}
 	if err := ws.CreateWorkflowInstance(ctx, newWf); err != nil {
 		return nil, fmt.Errorf("failed to create retried workflow instance: %w", err)
@@ -247,6 +345,10 @@ func RetryWorkflow(ctx context.Context, st store.Store, corndogsClient corndogs.
 			CIOrigin: on.CIOrigin, CIRepository: on.CIRepository, CISHA: on.CISHA,
 			ExecutionProfile: on.ExecutionProfile, WorkerClass: on.WorkerClass,
 			PolicyRevision: on.PolicyRevision, PolicyRuleID: on.PolicyRuleID, ApprovalID: cloneStringPtr(on.ApprovalID),
+		}
+		// A retry or a re-run keeps the resolved image of the earlier run.
+		if err := carryNodeImage(ctx, st, on, node); err != nil {
+			return newWf, fmt.Errorf("failed to copy the image of workflow node %q: %w", on.Name, err)
 		}
 		if err := ws.CreateWorkflowNode(ctx, node); err != nil {
 			return newWf, fmt.Errorf("failed to create retried workflow node %q: %w", on.Name, err)
@@ -274,9 +376,23 @@ func RetryWorkflow(ctx context.Context, st store.Store, corndogsClient corndogs.
 // and an aggregated error describing what failed, so a caller can show
 // partial success rather than an all-or-nothing failure.
 func RetryUnsuccessfulJobs(ctx context.Context, st store.Store, corndogsClient corndogs.ClientInterface, workflowID string) ([]*models.Job, error) {
+	return retryUnsuccessfulJobs(ctx, st, corndogsClient, workflowID, models.RunShifts{})
+}
+
+func retryUnsuccessfulJobs(ctx context.Context, st store.Store, corndogsClient corndogs.ClientInterface, workflowID string, shifts models.RunShifts) ([]*models.Job, error) {
 	ws, ok := st.(workflowControlStore)
 	if !ok {
 		return nil, ErrWorkflowsUnsupported
+	}
+	if !shifts.IsZero() {
+		// Refuse shifts over the limits before any job is retried.
+		wf, err := ws.GetWorkflowInstance(ctx, workflowID)
+		if err != nil {
+			return nil, err
+		}
+		if err := CheckShifts(ctx, st, wf.OwnershipOrgID(), wf.ProjectID, shifts); err != nil {
+			return nil, err
+		}
 	}
 
 	nodes, err := ws.ListWorkflowNodes(ctx, workflowID)
@@ -302,7 +418,7 @@ func RetryUnsuccessfulJobs(ctx context.Context, st store.Store, corndogsClient c
 		if !job.IsRetryable() {
 			continue
 		}
-		newJob, err := RetryJob(ctx, st, corndogsClient, job)
+		newJob, err := retryJob(ctx, st, corndogsClient, job, shifts)
 		if err != nil {
 			errs = append(errs, fmt.Errorf("node %q (job %s): %w", node.DisplayName, job.JobID, err))
 			continue
@@ -368,7 +484,11 @@ func rebindWorkflowNodeForRetry(ctx context.Context, st store.Store, oldJob, new
 	}
 	workflowevents.NodeUpdated(ctx, wf, node)
 	workflowevents.WorkflowUpdated(ctx, wf)
-	recordRetryEvent(ctx, ws, wf.WorkflowID, &node.NodeID, &newJob.JobID, "job retried")
+	reason := "job retried"
+	if newJob.Shifts != nil {
+		reason += " with shifts " + runshifts.Describe(*newJob.Shifts)
+	}
+	recordRetryEvent(ctx, ws, wf.WorkflowID, &node.NodeID, &newJob.JobID, reason)
 	return nil
 }
 
@@ -413,8 +533,10 @@ func cloneJobForRetry(original *models.Job) *models.Job {
 		// A retry serves the same CI event. A retried eval therefore uses the
 		// same trigger operation ID and reuses the event's workflows.
 		EventID: cloneStringPtr(original.EventID),
-		JobFile: original.JobFile,
-		Notes:   original.Notes,
+		// A retry keeps the ref classes of the original (docs/ref-classes.md).
+		RefClasses: append([]string{}, original.RefClasses...),
+		JobFile:    original.JobFile,
+		Notes:      original.Notes,
 
 		SourceURL:  cloneStringPtr(original.SourceURL),
 		SourceRef:  cloneStringPtr(original.SourceRef),
@@ -425,7 +547,13 @@ func cloneJobForRetry(original *models.Job) *models.Job {
 		CISourceURL:  cloneStringPtr(original.CISourceURL),
 		CISourceRef:  cloneStringPtr(original.CISourceRef),
 
+		// The resolved image of the earlier run: the reference, the alias
+		// names, and the image_digest characteristic (copied with
+		// Characteristics below). retryJob resolves it again through the
+		// alias (imagealias.ResolveRetry).
 		ContainerImage: cloneStringPtr(original.ContainerImage),
+		ImageAlias:     cloneStringPtr(original.ImageAlias),
+		ImagePinAlias:  cloneStringPtr(original.ImagePinAlias),
 
 		CodeDir:     original.CodeDir,
 		JobDir:      original.JobDir,
@@ -434,11 +562,12 @@ func cloneJobForRetry(original *models.Job) *models.Job {
 		JobEnvVars:  cloneJSONB(original.JobEnvVars),
 		JobEnvFile:  original.JobEnvFile,
 
-		TimeoutSeconds:   original.TimeoutSeconds,
-		Priority:         original.Priority,
-		Capabilities:     append(pq.StringArray(nil), original.Capabilities...),
-		ImagePullSecrets: append(pq.StringArray(nil), original.ImagePullSecrets...),
-		RunAsUser:        original.RunAsUser,
+		TimeoutSeconds:     original.TimeoutSeconds,
+		Priority:           original.Priority,
+		Capabilities:       append(pq.StringArray(nil), original.Capabilities...),
+		ImagePullSecrets:   append(pq.StringArray(nil), original.ImagePullSecrets...),
+		RunAsUser:          original.RunAsUser,
+		RunAsAdministrator: cloneBoolPtr(original.RunAsAdministrator),
 
 		QueueName:       original.QueueName,
 		WorkerClass:     original.WorkerClass,
@@ -448,6 +577,10 @@ func cloneJobForRetry(original *models.Job) *models.Job {
 		ResourceCPURequest:  original.ResourceCPURequest,
 		ResourceCPULimit:    original.ResourceCPULimit,
 		ResourceMemoryLimit: original.ResourceMemoryLimit,
+		// Storage and earlier shifts are resources too: a retry keeps them.
+		ResourceStorageRequest: original.ResourceStorageRequest,
+		ResourceStorageLimit:   original.ResourceStorageLimit,
+		Shifts:                 cloneShifts(original.Shifts),
 
 		Status: "submitted",
 
@@ -473,6 +606,58 @@ func cloneJobForRetry(original *models.Job) *models.Job {
 	}
 
 	return newJob
+}
+
+// carryNodeImage copies the resolved image of the earlier run of a workflow
+// node to its new node: from the job of the old node, or from the carried
+// values of the old node when it has no job. The node job then resolves
+// its image again through the alias of the earlier run and gets the
+// current pin of that alias (imagealias.ResolveRetry).
+func carryNodeImage(ctx context.Context, st store.Store, old, node *models.WorkflowNode) error {
+	if old.JobID != nil && *old.JobID != "" {
+		job, err := st.GetJobByID(ctx, *old.JobID)
+		switch {
+		case err == nil:
+			carried := imagealias.CarriedFromJob(job)
+			if carried.Ref == "" {
+				return nil
+			}
+			node.CarriedImageRef = &carried.Ref
+			node.CarriedImageAlias = cloneStringPtr(carried.Alias)
+			node.CarriedImagePinAlias = cloneStringPtr(carried.PinAlias)
+			if carried.Digest != "" {
+				node.CarriedImageDigest = &carried.Digest
+			}
+			return nil
+		case errors.Is(err, store.ErrNotFound):
+			// The job is gone: use the carried values, if any.
+		default:
+			return err
+		}
+	}
+	node.CarriedImageRef = cloneStringPtr(old.CarriedImageRef)
+	node.CarriedImageAlias = cloneStringPtr(old.CarriedImageAlias)
+	node.CarriedImageDigest = cloneStringPtr(old.CarriedImageDigest)
+	node.CarriedImagePinAlias = cloneStringPtr(old.CarriedImagePinAlias)
+	return nil
+}
+
+// rerunChainRoot returns the first instance of the retry or re-run chain of
+// old: a re-run of a re-run points at the same first instance.
+func rerunChainRoot(old *models.WorkflowInstance) *string {
+	if old.RerunOfWorkflowID != nil && *old.RerunOfWorkflowID != "" {
+		return cloneStringPtr(old.RerunOfWorkflowID)
+	}
+	id := old.WorkflowID
+	return &id
+}
+
+func cloneShifts(in *models.RunShifts) *models.RunShifts {
+	if in == nil {
+		return nil
+	}
+	cp := *in
+	return &cp
 }
 
 func cloneJSONB(in models.JSONB) models.JSONB {
@@ -507,6 +692,14 @@ func cloneStringPtr(in *string) *string {
 	}
 	cp := *in
 	return &cp
+}
+
+func cloneBoolPtr(in *bool) *bool {
+	if in == nil {
+		return nil
+	}
+	out := *in
+	return &out
 }
 
 func cloneIntPtr(in *int) *int {

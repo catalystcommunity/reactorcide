@@ -16,11 +16,11 @@ package approvals
 
 import (
 	"sort"
-	"strings"
 	"time"
 
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/cipolicy"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store/models"
+	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/subjects"
 )
 
 // ordered returns the active actions for the head, oldest first.
@@ -195,7 +195,7 @@ func acceptedThrough(accepts []models.CIApproval, reviewID, subject string, auth
 // group, or project owner.
 func hasRole(action models.CIApproval) bool {
 	for _, subject := range action.Subjects {
-		if !strings.HasPrefix(subject, "vcs_user:") {
+		if subjects.IsRole(subject) {
 			return true
 		}
 	}

@@ -43,6 +43,27 @@ For a pull request from a fork:
 This design prevents the pull request from changing the CI definition that
 starts the job.
 
+Runnerlib plugins (`.reactorcide/plugins`) are CI code. Runnerlib loads them
+only from the trusted CI tree when the run has untrusted application source:
+a run with a separate CI tree, or a fork pull request. When the trusted CI
+tree has no plugins, runnerlib loads no repository plugins. It never uses
+the plugins of the application source as a fallback. It also refuses a
+`--plugin-dir` or `REACTORCIDE_PLUGIN_DIR` directory that is in the
+application source. See
+[Plugin Development](../runnerlib/docs/plugin_development.md#plugin-loading).
+
+The coordinator treats a pull request as a fork unless it knows that the
+head repository is the base repository (fail closed). A GitHub pull request
+with a null `head.repo` (a deleted fork) is a fork. A GitLab merge request
+is a fork when its `source_project_id` is not its `target_project_id`, or
+when the IDs are not known. The eval job of a fork with no known repository
+fetches the head commit from the base repository.
+
+Only the job token of a running job can submit triggers for that job
+(`POST /api/v1/jobs/{id}/triggers`). A child job inherits the event, the ref
+classes, and the trusted CI authority of its parent, so no other credential
+can add jobs to a parent, and a finished job cannot add jobs.
+
 ## Important Limit
 
 Trusted CI source does not isolate secrets from untrusted application code.
@@ -83,6 +104,42 @@ an explicit secret grant. Make each grant narrow:
 Log masking reduces accidental disclosure. It is not an access control. A
 process that receives a secret can use or disclose it.
 
+To keep a secret out of the job, use a proxy-delivered grant
+(`delivery: proxy`, see [Egress Proxy](./egress-proxy.md)). The job gets a
+placeholder. The egress proxy puts the value only in the named header and
+only for the hosts in the grant. A job that sends the placeholder to another
+host gets 403, and the value does not leave the proxy.
+
+A job can also get a short-lived OIDC token for a consumer, in place of a
+static secret ([OIDC Tokens for Jobs](./oidc.md)). Any job can ask for a
+token, including a fork pull request job. The consumer decides what a token
+gets. Configure each consumer with the trust conditions in that document:
+match the full subject, `event_type`, `ci_origin`, the execution profile, and
+the ref classes. Never give write access to a token with a `refs/pull/` ref.
+
+## Egress Control
+
+Egress control sends all network traffic of a job through the egress proxy.
+Turn it on for an organization, a project, or an execution profile
+(`egress_control: true`). It is off by default. With it on:
+
+- The job can reach only the destinations in the proxy policy, the job's
+  own destinations (the coordinator API), and the hosts of its proxy grants.
+- The proxy scans requests and responses for secret values (raw, base64,
+  hex, percent encoding) and removes them.
+- The job has no network capability. In Kubernetes an init container with
+  only `NET_ADMIN` installs the redirect; in Docker and containerd a setup
+  container does this in a helper namespace. A guard rule drops all other
+  traffic, for example UDP.
+- The worker refuses the `docker` capability (a privileged job could remove
+  the redirect) and the `builder` capability with egress control.
+- A job with egress control runs only on a worker with the characteristic
+  `egress_proxy=true`.
+
+The proxy ends TLS with its own CA. Keep the CA key in the proxy Secret only.
+The worker gets the CA certificate, the job key, and the control token. The
+job gets only its own credential, which stops working when the job ends.
+
 See [VCS Credentials and Secret Grants](./vcs-credentials-and-secret-grants.md).
 See [Organizations and Coordinator CI Policy](./organizations-and-ci-policy.md)
 for organization scope, execution profiles, policy rules, and approvals.
@@ -112,14 +169,38 @@ These job features increase access:
 - A Docker or containerd host socket
 - `capabilities: [docker]`
 - A privileged container
-- A BuildKit service with registry credentials
+- A BuildKit service with registry credentials. The default sidecar is
+  privileged. The rootless mode removes the privilege
+  ([Builds, Caches, and Job Settings](./builds-and-caches.md#rootless-builder)).
 - Broad Kubernetes service-account permissions
+- Open egress (egress control off): the job can send any data to any host
 
 Capabilities do not automatically select `root`. Request the minimum
 capability and user for each job.
 
 A job with a host container-runtime socket can usually control that runtime.
 Treat it as host-level access.
+
+## Cache and Image Boundaries
+
+The coordinator selects the cache namespace and the write mode of each job
+from the execution profile and the ref classes of the job. The worker cannot
+select another namespace. A job with no cache writes gets no persistent
+BuildKit state, so it cannot change a cache that another job reads. Two
+organizations never share a namespace volume, except the shared namespace
+(`standard` by default), which keeps the behavior before namespaces. See
+[Builds, Caches, and Job Settings](./builds-and-caches.md#cache-namespaces).
+
+Do not give `cache_namespace` of a trusted profile to an untrusted profile
+with writes. Keep `trusted_cache_writes: false` (or `cache_write_classes`)
+for profiles of pull request code.
+
+An organization image policy limits job images to allowed registry prefixes
+and can require digest pinning. The coordinator checks it at submit and at
+claim.
+
+Environment defaults are not secret. The coordinator refuses a secret
+reference in a default, and refuses reserved keys.
 
 ## Webhook Security
 
@@ -132,6 +213,28 @@ Reactorcide validates:
 Do not depend only on source IP filtering. Rotate a webhook secret with the
 credential rotation procedure in [UI Authentication and
 Authorization](./ui-auth.md).
+
+## Management Credentials
+
+- The coordinator authorizes every management operation. The UI service
+  (CSIL-RPC) and REST apply the same checks to a browser session and to an
+  API token: the role of the owner, the organization scope of the token, and
+  the token capability. See
+  [Sessions and API tokens](./ui-auth.md#sessions-and-api-tokens).
+- The webapp holds no coordinator API token. It sends the session of the
+  browser to the coordinator, and it removes each credential that the client
+  supplies.
+- The webapp accepts a CSIL-RPC call and an event stream upgrade (`/app/ws`)
+  only when the `Origin` header names the host that serves the request.
+  Another site and a sibling subdomain get HTTP 403.
+- A token never gets more than its capabilities. A token of a service
+  principal (`reactorcide principals tokens create`) also gets no more than
+  the roles of the principal. See [Principals](./principals.md).
+- WARNING: on a no-login instance (`REACTORCIDE_UI_AUTH_MODE=none`), a
+  principal token with no capability list gets all capabilities and all
+  organizations. It keeps them after you enable logins. Revoke such tokens
+  before you enable logins. See
+  [No-login instances](./ui-auth.md#no-login-instances-single-admin).
 
 ## Deployment Security
 
@@ -196,12 +299,15 @@ credential and do not write it to a log or summary.
 
 A pull request command (`approve-ci`, `override-ci`, `accept`, `revoke`,
 `retry`, `rerun`) has the same rules in a comment, a review, the CLI, the API,
-and the UI. The coordinator gets the pull request head from the VCS. It records
+and the UI. `promote` and `demote` change the
+[required set](./required-set.md) and are comments only. The coordinator gets the pull request head from the VCS. It records
 only provider-verified or identity-linked approver subjects, and the settings
 decide which subjects can give each command. A pull request review never
 grants execution.
 
-The run gate holds a pull request until a run approver gives `approve-ci`. An
+The run gate holds a pull request until a run approver gives `approve-ci`. A
+new organization has the gate `outside_contributors` (the `secure` defaults
+profile). An organization from before migration 000055 has no gate. An
 approved gated run uses trusted base CI only, and by default it gets the
 profile `pr-untrusted`, with no secrets. Without a gate, a fork pull request
 runs trusted base CI with the normal profile. Its job can get secrets while it

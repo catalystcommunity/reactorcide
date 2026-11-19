@@ -11,6 +11,8 @@ import (
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/characteristics"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/corndogs"
 	pb "github.com/catalystcommunity/reactorcide/coordinator_api/internal/corndogs/v1alpha1"
+	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/imagealias"
+	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/metrics"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/pubsub"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store/models"
@@ -48,8 +50,9 @@ var (
 // and mounted on the shared /csil/v1/rpc dispatcher via
 // uiapi.NewHandlerWithWorker.
 type WorkerService struct {
-	deps    *Deps
-	secrets *leaseSecretCache
+	deps      *Deps
+	secrets   *leaseSecretCache
+	imageSets *imageSetCache
 }
 
 type poolQueueStore interface {
@@ -66,7 +69,7 @@ var _ csilapi.ReactorcideWorker = (*WorkerService)(nil)
 
 // NewWorkerService constructs a WorkerService backed by deps.
 func NewWorkerService(deps *Deps) *WorkerService {
-	return &WorkerService{deps: deps, secrets: newLeaseSecretCache()}
+	return &WorkerService{deps: deps, secrets: newLeaseSecretCache(), imageSets: newImageSetCache()}
 }
 
 // --- Register ---------------------------------------------------------
@@ -78,7 +81,7 @@ func NewWorkerService(deps *Deps) *WorkerService {
 // when explicitly given a non-empty one) -- Register must not undo an
 // admin's quarantine/disable decision.
 func (s *WorkerService) Register(ctx context.Context, req csilapi.RegisterRequest) (csilapi.RegisterResponse, error) {
-	pool, err := s.deps.Enrollment.ValidateEnrollmentToken(ctx, req.EnrollmentToken)
+	pool, enrollmentToken, err := s.deps.Enrollment.Validate(ctx, req.EnrollmentToken)
 	if err != nil {
 		return csilapi.RegisterResponse{}, uiapi.NewServiceError("unauthorized", "enrollment token rejected")
 	}
@@ -101,7 +104,10 @@ func (s *WorkerService) Register(ctx context.Context, req csilapi.RegisterReques
 		Arch:            info.Arch,
 		Characteristics: chars,
 		WorkerVersion:   derefOrEmpty(info.WorkerVersion),
+		ImageRuntime:    registerRuntime(info),
 	}
+	tokenID := enrollmentToken.TokenID
+	toUpsert.EnrollmentTokenID = &tokenID
 	saved, err := s.deps.Store.UpsertWorkerByKey(ctx, toUpsert)
 	if err != nil {
 		logging.Log.WithError(err).WithField("worker_key", info.WorkerKey).Error("Failed to upsert worker on register")
@@ -115,7 +121,9 @@ func (s *WorkerService) Register(ctx context.Context, req csilapi.RegisterReques
 		orgID = *pool.OrgID
 	}
 	audit.Record(ctx, s.deps.Store, orgID, "worker.enroll", "worker", saved.WorkerID, models.JSONB{
-		"pool_id": pool.PoolID,
+		"pool_id":               pool.PoolID,
+		"enrollment_token_id":   enrollmentToken.TokenID,
+		"enrollment_token_name": enrollmentToken.Name,
 	})
 
 	token, err := s.deps.Sessions.Mint(ctx, saved.WorkerID)
@@ -124,10 +132,21 @@ func (s *WorkerService) Register(ctx context.Context, req csilapi.RegisterReques
 		return csilapi.RegisterResponse{}, uiapi.NewServiceError("internal", "failed to mint worker session")
 	}
 
+	tokenIDOut := enrollmentToken.TokenID
+	var tokenName *string
+	if enrollmentToken.Name != "" {
+		name := enrollmentToken.Name
+		tokenName = &name
+	}
 	return csilapi.RegisterResponse{
-		WorkerSession:     token,
-		WorkerId:          saved.WorkerID,
-		HeartbeatInterval: int64(workerauth.HeartbeatInterval / time.Second),
+		EnrollmentTokenId:   &tokenIDOut,
+		EnrollmentTokenName: tokenName,
+		WorkerSession:       token,
+		WorkerId:            saved.WorkerID,
+		HeartbeatInterval:   int64(workerauth.HeartbeatInterval / time.Second),
+		// An image-aware worker gets its image set (image_set.go). An
+		// older worker sends no runtime and gets nothing.
+		ImageSet: s.registerImageSet(ctx, saved),
 	}, nil
 }
 
@@ -189,6 +208,13 @@ func (s *WorkerService) RequestJob(ctx context.Context, req csilapi.RequestJobRe
 		return csilapi.RequestJobResponse{}, uiapi.NewServiceError("internal", "failed to list queues")
 	}
 	queueUUIDs := satisfyingQueueUUIDs(workerChars, queues)
+	// Resource admission (admission.go): a resources-mode worker claims only
+	// from queues whose head job fits its headroom.
+	report := admissionReport(req.Admission)
+	s.recordAdmission(ctx, wkr, report)
+	if report != nil && len(queueUUIDs) > 0 {
+		queueUUIDs = s.admitQueues(ctx, wkr, report, queueUUIDs)
+	}
 	if len(queueUUIDs) == 0 {
 		return csilapi.RequestJobResponse{HasLease: false}, nil
 	}
@@ -253,6 +279,12 @@ func (s *WorkerService) RequestJob(ctx context.Context, req csilapi.RequestJobRe
 		s.finalizeClaimedCancellingJob(ctx, job, task)
 		return csilapi.RequestJobResponse{HasLease: false}, nil
 	}
+	if report != nil && !jobFits(job, report) {
+		// Corndogs returned a task other than the head that fit. Put it back
+		// for a worker with more headroom.
+		s.requeueTask(ctx, task)
+		return csilapi.RequestJobResponse{HasLease: false}, nil
+	}
 
 	// Resolve everything that can deny the claim BEFORE any write. A denial
 	// or a store failure here leaves the job at submitted, so nothing needs
@@ -269,12 +301,25 @@ func (s *WorkerService) RequestJob(ctx context.Context, req csilapi.RequestJobRe
 			}
 		}
 	}
+	// Build settings (build_settings.go): image policy, environment
+	// defaults, and the cache decision of the job.
+	cacheLease, settingsStep, err := s.deps.prepareLeaseBuildSettings(ctx, job, env)
+	if err != nil {
+		s.rejectClaim(ctx, job, task, settingsStep, err)
+		return csilapi.RequestJobResponse{HasLease: false}, nil
+	}
 	// A remote lease must never inherit the coordinator's static API token.
 	// The claim-specific job token below is the only API credential for it.
 	delete(env, "REACTORCIDE_API_TOKEN")
 	resolved, err := s.deps.resolveJobSecrets(ctx, job, env)
 	if err != nil {
 		s.rejectClaim(ctx, job, task, "secret resolution", err)
+		return csilapi.RequestJobResponse{HasLease: false}, nil
+	}
+	resolved.Cache = cacheLease
+	// Egress control (egress.go): the policy for the worker's egress proxy.
+	if resolved.Egress, err = s.deps.buildLeaseEgress(ctx, job, resolved, req.WorkerCharacteristics, env); err != nil {
+		s.rejectClaim(ctx, job, task, "egress policy", err)
 		return csilapi.RequestJobResponse{HasLease: false}, nil
 	}
 
@@ -355,6 +400,10 @@ func (s *WorkerService) RequestJob(ctx context.Context, req csilapi.RequestJobRe
 	}
 	job = running
 	s.publishJobUpdate(ctx, job, now)
+	logging.Log.WithFields(map[string]any{
+		"job_id": job.JobID, "worker_id": workerID, "lease_id": lease.LeaseID,
+		"image": imagealias.DisplayJob(job),
+	}).Info("Job leased to worker")
 
 	// Roll the job's workflow node to "running" (best-effort): keeps the
 	// workflow instance and its VCS check in sync while the job executes. Does
@@ -389,7 +438,7 @@ func (s *WorkerService) RequestJob(ctx context.Context, req csilapi.RequestJobRe
 
 	return csilapi.RequestJobResponse{
 		HasLease: true,
-		Lease:    buildLease(lease.LeaseID, job, resolved, vcsAuth),
+		Lease:    s.deps.withArtifactLease(ctx, job, buildLease(lease.LeaseID, job, resolved, vcsAuth)),
 	}, nil
 }
 
@@ -454,10 +503,12 @@ func (s *WorkerService) finalizeClaimedCancellingJob(ctx context.Context, job *m
 		j.Status = "cancelled"
 		j.LastError = lastError
 		j.CompletedAt = &now
+		j.SetFailure(models.FailureClassCancelled, "")
 	})
 	if err != nil || !matched {
 		return
 	}
+	metrics.RecordJobFinished(finalized.Status, finalized.FailureClassValue(), finalized.QueueName)
 	if _, err := s.deps.CorndogsClient.CancelTask(ctx, task.Uuid, task.CurrentState); err != nil {
 		logging.Log.WithError(err).WithField("job_id", job.JobID).Warn("Failed to cancel corndogs task for a job cancelled before claim")
 	}
@@ -489,6 +540,9 @@ func (s *WorkerService) rejectClaim(ctx context.Context, job *models.Job, task *
 		j.Status = "failed"
 		j.LastError = step + " denied: " + cause.Error()
 		j.CompletedAt = &now
+		// The job asked for a secret or credential it may not have: the
+		// pipeline's configuration.
+		j.SetFailure(models.FailureClassJob, step+" denied")
 	})
 	if err != nil {
 		logging.Log.WithError(err).WithFields(fields).Warn("Could not record claim denial; requeueing task")
@@ -504,6 +558,7 @@ func (s *WorkerService) rejectClaim(ctx context.Context, job *models.Job, task *
 		return
 	}
 	s.updateTaskFailed(ctx, task, step+" denied")
+	metrics.RecordJobFinished(finalized.Status, finalized.FailureClassValue(), finalized.QueueName)
 	s.publishJobUpdate(ctx, finalized, now)
 	s.advanceWorkflowAfterCoordinatorFinalization(ctx, finalized)
 }
@@ -545,6 +600,11 @@ func (s *WorkerService) Heartbeat(ctx context.Context, req csilapi.HeartbeatRequ
 	// the same status, distinguished only by admin intent, not by data model.
 	draining := wkr.Status != models.WorkerStatusActive
 
+	// An older worker sends no image set report: nothing changes for it.
+	if req.ImageSetReport != nil {
+		s.recordImageSetReport(ctx, wkr, req.ImageSetReport)
+	}
+
 	var directives []csilapi.Directive
 	for _, rl := range req.RunningLeases {
 		lease, err := s.deps.Store.GetWorkerLeaseByID(ctx, rl.LeaseId)
@@ -581,7 +641,11 @@ func (s *WorkerService) Heartbeat(ctx context.Context, req csilapi.HeartbeatRequ
 		}
 	}
 
-	return csilapi.HeartbeatResponse{Directives: directives, Draining: draining}, nil
+	return csilapi.HeartbeatResponse{
+		Directives: directives,
+		Draining:   draining,
+		ImageSet:   s.heartbeatImageSet(ctx, wkr, req.ImageSetReport),
+	}, nil
 }
 
 // --- resolveSession -------------------------------------------------------
@@ -698,6 +762,12 @@ func jobRef(job *models.Job, at time.Time) pubsub.JobRef {
 func satisfyingQueueUUIDs(workerChars characteristics.Characteristics, queues []models.Queue) []string {
 	var uuids []string
 	for _, q := range queues {
+		// Coordinator-only queues (outbound event deliveries) never reach a
+		// worker. A queue_uuid is a UUID and cannot have the prefix; this is
+		// a second guard.
+		if corndogs.IsInternalQueue(q.QueueUUID) {
+			continue
+		}
 		if characteristics.Satisfies(workerChars, q.Characteristics) {
 			uuids = append(uuids, q.QueueUUID)
 		}
@@ -729,21 +799,24 @@ func derefOrEmpty(s *string) string {
 // own optional vcs_auth field (see vcs_auth.go), never folded into
 // Env/Secrets.
 func buildLease(leaseID string, job *models.Job, resolved *resolvedLeaseSecrets, vcsAuth *csilapi.VCSAuth) *csilapi.Lease {
-	image := worker.DefaultRunnerImage
-	if job.ContainerImage != nil && *job.ContainerImage != "" {
-		image = *job.ContainerImage
-	} else if job.RunnerImage != "" {
-		image = job.RunnerImage
-	}
+	image := jobImage(job)
 
-	shellPrefix := ""
+	// The shell prefix: REACTORCIDE_JOB_SHELLCMD from the job environment,
+	// else the default for the job's os characteristic (PowerShell for a
+	// Windows job, "sh -c" otherwise). Every command goes through it.
+	envPrefix := ""
 	if job.JobEnvVars != nil {
-		if v, ok := job.JobEnvVars["REACTORCIDE_JOB_SHELLCMD"]; ok {
+		if v, ok := job.JobEnvVars[worker.ShellPrefixEnvVar]; ok {
 			if s, ok := v.(string); ok {
-				shellPrefix = s
+				envPrefix = s
 			}
 		}
 	}
+	jobOS := ""
+	if v, ok := job.Characteristics["os"].(characteristics.StringValue); ok {
+		jobOS = string(v)
+	}
+	shellPrefix := worker.ResolveShellPrefix("", envPrefix, jobOS)
 
 	return &csilapi.Lease{
 		LeaseId:    leaseID,
@@ -754,16 +827,26 @@ func buildLease(leaseID string, job *models.Job, resolved *resolvedLeaseSecrets,
 		Env:        envVarsFromMap(resolved.Env),
 		Secrets:    envVarsFromMap(resolved.Secrets),
 		Resources: csilapi.Resources{
-			CpuRequest:  job.ResourceCPURequest,
-			CpuLimit:    job.ResourceCPULimit,
-			MemoryLimit: job.ResourceMemoryLimit,
+			CpuRequest:     job.ResourceCPURequest,
+			CpuLimit:       job.ResourceCPULimit,
+			MemoryLimit:    job.ResourceMemoryLimit,
+			StorageRequest: optionalWireText(job.ResourceStorageRequest),
+			StorageLimit:   optionalWireText(job.ResourceStorageLimit),
 		},
 		TimeoutSeconds:     int64(job.TimeoutSeconds),
 		CancelGraceSeconds: int64(worker.DefaultCancelGrace / time.Second),
 		Capabilities:       append([]string{}, job.Capabilities...),
 		ImagePullSecrets:   append([]string{}, job.ImagePullSecrets...),
 		RunAsUser:          job.RunAsUser,
+		RunAsAdministrator: optionalWireBool(job.RunAsAdministrator),
 		VcsAuth:            vcsAuth,
+		Egress:             resolved.Egress,
+		Cache:              resolved.Cache,
+		// The worker logs the image as "image_alias (image)" (owner
+		// decision I2). Absent for a job that named a reference.
+		ImageAlias: optionalWireText(derefOrEmpty(job.ImageAlias)),
+		// The earlier image of a retry or a re-run, for the log header.
+		ImageRetryOf: optionalWireText(derefOrEmpty(job.ImageRetryOf)),
 	}
 }
 
@@ -773,4 +856,22 @@ func envVarsFromMap(m map[string]string) []csilapi.EnvVar {
 		out = append(out, csilapi.EnvVar{Key: k, Value: v})
 	}
 	return out
+}
+
+// optionalWireBool copies an optional bool. nil stays nil, so the lease
+// carries no field and an old worker sees no new field.
+func optionalWireBool(value *bool) *bool {
+	if value == nil {
+		return nil
+	}
+	v := *value
+	return &v
+}
+
+// optionalWireText is nil for "", so an old worker sees no new field.
+func optionalWireText(value string) *string {
+	if value == "" {
+		return nil
+	}
+	return &value
 }

@@ -5,6 +5,11 @@ embedded bbolt data file is owned by a single process and cannot be shared
 across pods, so the file backend is single-replica only.
 */}}
 {{- define "corndogs.validateStorage" -}}
+{{- range $name, $policy := dict "submissionKeyPolicy" .Values.resilience.submissionKeyPolicy "taskGuardPolicy" .Values.resilience.taskGuardPolicy -}}
+  {{- if not (has $policy (list "compatibility" "required")) -}}
+    {{- fail (printf "\n\ncorndogs: resilience.%s=%q is not valid.\nChoose \"compatibility\" (accept released clients) or \"required\" (reject legacy requests).\n\nTo fix:\n  --set resilience.%s=compatibility\n" $name $policy $name) -}}
+  {{- end -}}
+{{- end -}}
 {{- if and .Values.tls.enabled (not .Values.tls.secretName) -}}
   {{- fail "\n\ncorndogs: tls.enabled=true needs tls.secretName.\nSet it to a kubernetes.io/tls Secret that holds tls.crt and tls.key.\n\nTo fix:\n  --set tls.secretName=<secret>\n" -}}
 {{- end -}}

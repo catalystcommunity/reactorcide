@@ -24,6 +24,7 @@ func TestWithRunnerlibInsecureTransportOnlyChangesTriggerCommands(t *testing.T) 
 		{name: "eval", in: []string{"runnerlib", "eval", "--event-type", "push"}, want: []string{"runnerlib", "eval", "--event-type", "push", "--allow-insecure-transport"}},
 		{name: "shell eval", in: []string{"sh", "-c", "runnerlib eval --event-type $EVENT"}, want: []string{"sh", "-c", "runnerlib eval --event-type $EVENT --allow-insecure-transport"}},
 		{name: "already set", in: []string{"runnerlib", "trigger", "--allow-insecure-transport", "job.yaml"}, want: []string{"runnerlib", "trigger", "--allow-insecure-transport", "job.yaml"}},
+		{name: "oidc-token", in: []string{"runnerlib", "oidc-token", "--audience", "sts"}, want: []string{"runnerlib", "oidc-token", "--audience", "sts", "--allow-insecure-transport"}},
 		{name: "ordinary job", in: []string{"sh", "-c", "make test"}, want: []string{"sh", "-c", "make test"}},
 	}
 	for _, tt := range tests {

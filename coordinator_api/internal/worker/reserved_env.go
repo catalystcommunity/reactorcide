@@ -29,6 +29,11 @@ var reservedEventEnvNames = map[string]bool{
 	"REACTORCIDE_EVAL_DUAL_CI":       true,
 	"REACTORCIDE_REPORT_GENERATION":  true,
 	"REACTORCIDE_REPORT_TARGET_ID":   true,
+	"REACTORCIDE_REF_CLASSES":        true,
+	// The cache decision of the coordinator (docs/builds-and-caches.md).
+	"REACTORCIDE_CACHE_NAMESPACE":    true,
+	"REACTORCIDE_CACHE_WRITABLE":     true,
+	"REACTORCIDE_ARTIFACT_NAMESPACE": true,
 }
 
 // authorityEnvNames are the reserved facts that decide trust: approvals,
@@ -40,6 +45,10 @@ var authorityEnvNames = map[string]bool{
 	"REACTORCIDE_RUN_AUTHORITY":      true,
 	"REACTORCIDE_CI_POLICY":          true,
 	"REACTORCIDE_CI_POLICY_REVISION": true,
+	"REACTORCIDE_REF_CLASSES":        true,
+	"REACTORCIDE_CACHE_NAMESPACE":    true,
+	"REACTORCIDE_CACHE_WRITABLE":     true,
+	"REACTORCIDE_ARTIFACT_NAMESPACE": true,
 }
 
 // reservedEventEnvPrefixes covers the head, base, and pull request facts

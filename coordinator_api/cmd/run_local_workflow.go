@@ -46,8 +46,10 @@ type localTriggerJob struct {
 	JobDir         string            `json:"job_dir"`
 	WorkingDir     string            `json:"working_dir"`
 	RunAsUser      string            `json:"run_as_user"`
-	Timeout        *int              `json:"timeout"`
-	Capabilities   []string          `json:"capabilities"`
+	// RunAsAdministrator is run_as.administrator. nil means not set.
+	RunAsAdministrator *bool    `json:"run_as_administrator,omitempty"`
+	Timeout            *int     `json:"timeout"`
+	Capabilities       []string `json:"capabilities"`
 	// ImagePullSecrets is preserved for parity with remote execution; local
 	// execution never reads a Kubernetes Secret — the local container
 	// runtime's own credential store handles private pulls.
@@ -470,9 +472,15 @@ func copyLocalCIPath(source, destination, allowedRoot string) error {
 	if err != nil {
 		return err
 	}
+	// Resolve the root the same way as the source: a CI tree below a
+	// symbolic link (on macOS, /tmp and /var link to /private) is not
+	// outside itself.
 	root, err := filepath.Abs(allowedRoot)
 	if err != nil {
 		return err
+	}
+	if real, err := filepath.EvalSymlinks(root); err == nil {
+		root = real
 	}
 	resolved, err = filepath.Abs(resolved)
 	if err != nil {
@@ -758,6 +766,14 @@ func (e *subprocessWorkflowExecutor) Execute(ctx context.Context, node *localWor
 	if user := e.ctx.String("user"); user != "" {
 		args = append(args, "--user", user)
 	}
+	// The node gets the cache values and the timeout rule of the run.
+	args = append(args, cacheProfileOf(&e.localContext).args()...)
+	if e.ctx.Bool("cache-writable") {
+		args = append(args, "--cache-writable")
+	}
+	if e.ctx.Bool("ignore-timeout") {
+		args = append(args, "--ignore-timeout")
+	}
 	args = append(args, jobFile)
 	executable, err := os.Executable()
 	if err != nil {
@@ -823,8 +839,12 @@ func localNodeJobSpec(node *localWorkflowNode, local localContext) worker.JobSpe
 	if checkout != "" {
 		spec.Checkout = &worker.CheckoutSpec{Mode: checkout}
 	}
-	if node.Spec.RunAsUser != "" {
+	if node.Spec.RunAsUser != "" || node.Spec.RunAsAdministrator != nil {
 		spec.RunAs = &worker.RunAsSpec{User: node.Spec.RunAsUser}
+		if node.Spec.RunAsAdministrator != nil {
+			v := *node.Spec.RunAsAdministrator
+			spec.RunAs.Administrator = &v
+		}
 	}
 	return spec
 }

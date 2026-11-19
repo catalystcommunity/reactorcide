@@ -10,6 +10,8 @@ import (
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/approvals"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/audit"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/checkauth"
+	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/config"
+	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/runshifts"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store/models"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/tokencaps"
@@ -50,12 +52,12 @@ type identityLinkRequest struct {
 
 func (h *CISecurityHandler) Identities(w http.ResponseWriter, r *http.Request, linkID string) {
 	p := checkauth.GetPrincipalFromContext(r.Context())
-	if h.store == nil || p == nil || !p.HasCapability(tokencaps.OrganizationsManage) {
+	if h.store == nil || p == nil || !principalHasAny(p, readOrManage(r)) {
 		h.respondWithError(w, 403, store.ErrForbidden)
 		return
 	}
 	if r.Method == http.MethodGet {
-		if !principalAllowsGlobal(r.Context(), h.appStore, tokencaps.OrganizationsManage) {
+		if !principalAllowsGlobalAdmin(r.Context(), h.appStore, readOrManage(r)) {
 			h.respondWithError(w, 403, store.ErrForbidden)
 			return
 		}
@@ -89,10 +91,22 @@ func (h *CISecurityHandler) Identities(w http.ResponseWriter, r *http.Request, l
 		h.respondWithError(w, 400, store.ErrInvalidInput)
 		return
 	}
-	org, err := h.store.GetOrganizationByName(r.Context(), req.Organization)
-	if err != nil || !principalAllowsOrg(r.Context(), h.appStore, org.OrgID, tokencaps.OrganizationsManage) {
+	// The link gives a user (a human principal) the VCS login. Its subjects
+	// then apply in every organization, so only a global admin (or the
+	// admin or instance token) may link it. An org admin links identities
+	// only to service principals of the org (link-principal-identity).
+	if !principalAllowsGlobal(r.Context(), h.appStore, tokencaps.OrganizationsManage) {
 		h.respondWithError(w, 403, store.ErrForbidden)
 		return
+	}
+	orgID := ""
+	if strings.TrimSpace(req.Organization) != "" {
+		org, err := h.store.GetOrganizationByName(r.Context(), req.Organization)
+		if err != nil {
+			h.respondWithError(w, 400, err)
+			return
+		}
+		orgID = org.OrgID
 	}
 	user, err := h.store.GetUserByUsername(r.Context(), req.Username)
 	if err != nil {
@@ -101,10 +115,14 @@ func (h *CISecurityHandler) Identities(w http.ResponseWriter, r *http.Request, l
 	}
 	link := &models.VCSIdentityLink{Provider: req.Provider, ExternalSubject: req.ExternalSubject, UserID: user.UserID, VerifiedBy: "admin"}
 	if err := h.store.CreateVCSIdentityLink(r.Context(), link); err != nil {
+		if errors.Is(err, store.ErrConflict) {
+			h.respondWithError(w, 409, err)
+			return
+		}
 		h.respondWithError(w, 400, err)
 		return
 	}
-	audit.Record(r.Context(), h.appStore, org.OrgID, "vcs_identity.create", "vcs_identity_link", link.LinkID, models.JSONB{"provider": link.Provider, "external_subject": link.ExternalSubject})
+	audit.Record(r.Context(), h.appStore, orgID, "vcs_identity.create", "vcs_identity_link", link.LinkID, models.JSONB{"provider": link.Provider, "external_subject": link.ExternalSubject})
 	h.respondWithJSON(w, 201, link)
 }
 
@@ -117,13 +135,23 @@ type approvalRequest struct {
 	Label   string `json:"label,omitempty"`
 	// HeadSHA, when set, must be the current head of the pull request.
 	HeadSHA string `json:"head_sha,omitempty"`
+	// Shifts are the optional resource and timeout changes of retry or
+	// rerun (see internal/runshifts). Other commands refuse them.
+	Shifts map[string]any `json:"shifts,omitempty"`
 }
 
 // Approve runs a pull request command for the token's user through the one
 // approval path. The command's own subject rules decide what it may do.
 func (h *CISecurityHandler) Approve(w http.ResponseWriter, r *http.Request) {
 	p := checkauth.GetPrincipalFromContext(r.Context())
-	if h.store == nil || h.approvals == nil || p == nil || p.UserID == "" || !p.HasCapability(tokencaps.WorkflowsControl) {
+	// A user token acts as its user; a service principal token acts as its
+	// service principal. The command's own subject rules decide what either
+	// may do. On a no-login instance only, the admin token and a wide
+	// service principal token act as the instance administrator.
+	instanceAdmin := config.NoLoginMode() && p.IsWideInstanceToken()
+	if h.store == nil || h.approvals == nil || p == nil ||
+		(p.UserID == "" && !p.IsServicePrincipalToken() && !instanceAdmin) ||
+		!p.HasCapability(tokencaps.WorkflowsControl) {
 		h.respondWithError(w, http.StatusForbidden, store.ErrForbidden)
 		return
 	}
@@ -142,9 +170,23 @@ func (h *CISecurityHandler) Approve(w http.ResponseWriter, r *http.Request) {
 		h.respondWithError(w, http.StatusNotFound, store.ErrNotFound)
 		return
 	}
+	command := approvals.Command{Name: strings.TrimSpace(req.Command), Label: strings.TrimSpace(req.Label)}
+	if len(req.Shifts) > 0 {
+		if command.Name != approvals.CommandRetry && command.Name != approvals.CommandRerun {
+			h.respondWithJSON(w, http.StatusBadRequest, ErrorResponse{Error: "invalid_shift", Message: "only retry and rerun take shifts"})
+			return
+		}
+		shifts, err := runshifts.ParseMap(req.Shifts)
+		if err != nil {
+			respondShiftError(&h.BaseHandler, w, err)
+			return
+		}
+		command.Shifts = shifts
+	}
 	result, err := h.approvals.Execute(r.Context(), approvals.Request{Project: project, PRNumber: req.PRNumber,
-		HeadSHA: strings.TrimSpace(req.HeadSHA), Command: approvals.Command{Name: strings.TrimSpace(req.Command), Label: strings.TrimSpace(req.Label)},
-		Channel: models.CIApprovalChannelAPI, UserID: p.UserID})
+		HeadSHA: strings.TrimSpace(req.HeadSHA), Command: command,
+		Channel: models.CIApprovalChannelAPI, UserID: p.UserID, PrincipalID: approvalPrincipalOf(p, instanceAdmin),
+		InstanceAdmin: instanceAdmin, TokenID: instanceAdminTokenOf(p, instanceAdmin)})
 	switch {
 	case errors.Is(err, approvals.ErrNotAllowed):
 		h.respondWithError(w, http.StatusForbidden, err)
@@ -157,4 +199,23 @@ func (h *CISecurityHandler) Approve(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	h.respondWithJSON(w, http.StatusOK, result)
+}
+
+// approvalPrincipalOf is the principal that gives a command: the service
+// principal of a service principal token, or the principal of a wide token
+// of the instance administrator.
+func approvalPrincipalOf(p *checkauth.Principal, instanceAdmin bool) string {
+	if instanceAdmin {
+		return p.PrincipalID
+	}
+	return servicePrincipalOf(p)
+}
+
+// instanceAdminTokenOf is the token of the instance administrator when the
+// token has no principal (the admin token).
+func instanceAdminTokenOf(p *checkauth.Principal, instanceAdmin bool) string {
+	if instanceAdmin && p.PrincipalID == "" {
+		return p.CredentialID
+	}
+	return ""
 }

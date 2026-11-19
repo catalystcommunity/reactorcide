@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store/models"
+	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/tokencaps"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/uiapi/csilapi"
 )
 
@@ -19,6 +20,8 @@ func groupToSummary(g *models.Group) csilapi.GroupSummary {
 		desc := g.Description
 		out.Description = &desc
 	}
+	shift := int64(g.PriorityShift)
+	out.PriorityShift = &shift
 	return out
 }
 
@@ -26,14 +29,14 @@ func groupToSummary(g *models.Group) csilapi.GroupSummary {
 // membership is management surface; there is no separate "view groups"
 // capability.
 func (s *UiService) ListGroups(ctx context.Context, req csilapi.ListGroupsRequest) (csilapi.ListGroupsResponse, error) {
-	id, _, authErr := s.deps.requireUser(ctx)
+	ctx, id, _, authErr := s.deps.requireManagementIdentity(ctx)
 	if authErr != nil {
 		return csilapi.ListGroupsResponse{}, authErr
 	}
 	if err := requireNonEmpty("org_id", req.OrgId, 64); err != nil {
 		return csilapi.ListGroupsResponse{}, err
 	}
-	if err := s.deps.Resolver.RequireOrgAdmin(ctx, id, req.OrgId); err != nil {
+	if err := s.requireOrgAdminGrant(ctx, id, req.OrgId, orgReadCapabilities...); err != nil {
 		return csilapi.ListGroupsResponse{}, mapPermissionErr(err)
 	}
 
@@ -50,7 +53,7 @@ func (s *UiService) ListGroups(ctx context.Context, req csilapi.ListGroupsReques
 
 // CreateGroup requires org admin (of org_id) or global admin.
 func (s *UiService) CreateGroup(ctx context.Context, req csilapi.CreateGroupRequest) (csilapi.CreateGroupResponse, error) {
-	id, _, authErr := s.deps.requireUser(ctx)
+	ctx, id, _, authErr := s.deps.requireManagementIdentity(ctx)
 	if authErr != nil {
 		return csilapi.CreateGroupResponse{}, authErr
 	}
@@ -60,7 +63,7 @@ func (s *UiService) CreateGroup(ctx context.Context, req csilapi.CreateGroupRequ
 	if err := requireNonEmpty("name", req.Name, maxNameLength); err != nil {
 		return csilapi.CreateGroupResponse{}, err
 	}
-	if err := s.deps.Resolver.RequireOrgAdmin(ctx, id, req.OrgId); err != nil {
+	if err := s.requireOrgAdminGrant(ctx, id, req.OrgId, tokencaps.OrganizationsManage); err != nil {
 		return csilapi.CreateGroupResponse{}, mapPermissionErr(err)
 	}
 
@@ -74,7 +77,7 @@ func (s *UiService) CreateGroup(ctx context.Context, req csilapi.CreateGroupRequ
 
 // UpdateGroup requires org admin (of the group's org) or global admin.
 func (s *UiService) UpdateGroup(ctx context.Context, req csilapi.UpdateGroupRequest) (csilapi.UpdateGroupResponse, error) {
-	id, _, authErr := s.deps.requireUser(ctx)
+	ctx, id, _, authErr := s.deps.requireManagementIdentity(ctx)
 	if authErr != nil {
 		return csilapi.UpdateGroupResponse{}, authErr
 	}
@@ -86,7 +89,7 @@ func (s *UiService) UpdateGroup(ctx context.Context, req csilapi.UpdateGroupRequ
 	if err != nil {
 		return csilapi.UpdateGroupResponse{}, mapStoreErr(err, "group not found")
 	}
-	if err := s.deps.Resolver.RequireOrgAdmin(ctx, id, group.OrgID); err != nil {
+	if err := s.requireOrgAdminGrant(ctx, id, group.OrgID, tokencaps.OrganizationsManage); err != nil {
 		return csilapi.UpdateGroupResponse{}, mapPermissionErr(err)
 	}
 
@@ -108,7 +111,7 @@ func (s *UiService) UpdateGroup(ctx context.Context, req csilapi.UpdateGroupRequ
 
 // DeleteGroup requires org admin (of the group's org) or global admin.
 func (s *UiService) DeleteGroup(ctx context.Context, req csilapi.DeleteGroupRequest) (csilapi.DeleteGroupResponse, error) {
-	id, _, authErr := s.deps.requireUser(ctx)
+	ctx, id, _, authErr := s.deps.requireManagementIdentity(ctx)
 	if authErr != nil {
 		return csilapi.DeleteGroupResponse{}, authErr
 	}
@@ -120,7 +123,7 @@ func (s *UiService) DeleteGroup(ctx context.Context, req csilapi.DeleteGroupRequ
 	if err != nil {
 		return csilapi.DeleteGroupResponse{}, mapStoreErr(err, "group not found")
 	}
-	if err := s.deps.Resolver.RequireOrgAdmin(ctx, id, group.OrgID); err != nil {
+	if err := s.requireOrgAdminGrant(ctx, id, group.OrgID, tokencaps.OrganizationsManage); err != nil {
 		return csilapi.DeleteGroupResponse{}, mapPermissionErr(err)
 	}
 
@@ -133,7 +136,7 @@ func (s *UiService) DeleteGroup(ctx context.Context, req csilapi.DeleteGroupRequ
 
 // AddGroupMember requires org admin (of the group's org) or global admin.
 func (s *UiService) AddGroupMember(ctx context.Context, req csilapi.AddGroupMemberRequest) (csilapi.AddGroupMemberResponse, error) {
-	id, _, authErr := s.deps.requireUser(ctx)
+	ctx, id, _, authErr := s.deps.requireManagementIdentity(ctx)
 	if authErr != nil {
 		return csilapi.AddGroupMemberResponse{}, authErr
 	}
@@ -148,7 +151,7 @@ func (s *UiService) AddGroupMember(ctx context.Context, req csilapi.AddGroupMemb
 	if err != nil {
 		return csilapi.AddGroupMemberResponse{}, mapStoreErr(err, "group not found")
 	}
-	if err := s.deps.Resolver.RequireOrgAdmin(ctx, id, group.OrgID); err != nil {
+	if err := s.requireOrgAdminGrant(ctx, id, group.OrgID, tokencaps.OrganizationsManage); err != nil {
 		return csilapi.AddGroupMemberResponse{}, mapPermissionErr(err)
 	}
 	if _, err := s.deps.Store.GetUserByID(ctx, req.UserId); err != nil {
@@ -164,7 +167,7 @@ func (s *UiService) AddGroupMember(ctx context.Context, req csilapi.AddGroupMemb
 
 // RemoveGroupMember requires org admin (of the group's org) or global admin.
 func (s *UiService) RemoveGroupMember(ctx context.Context, req csilapi.RemoveGroupMemberRequest) (csilapi.RemoveGroupMemberResponse, error) {
-	id, _, authErr := s.deps.requireUser(ctx)
+	ctx, id, _, authErr := s.deps.requireManagementIdentity(ctx)
 	if authErr != nil {
 		return csilapi.RemoveGroupMemberResponse{}, authErr
 	}
@@ -179,7 +182,7 @@ func (s *UiService) RemoveGroupMember(ctx context.Context, req csilapi.RemoveGro
 	if err != nil {
 		return csilapi.RemoveGroupMemberResponse{}, mapStoreErr(err, "group not found")
 	}
-	if err := s.deps.Resolver.RequireOrgAdmin(ctx, id, group.OrgID); err != nil {
+	if err := s.requireOrgAdminGrant(ctx, id, group.OrgID, tokencaps.OrganizationsManage); err != nil {
 		return csilapi.RemoveGroupMemberResponse{}, mapPermissionErr(err)
 	}
 
@@ -194,7 +197,7 @@ func (s *UiService) RemoveGroupMember(ctx context.Context, req csilapi.RemoveGro
 // same as the other group ops — there is no separate "view group members"
 // capability.
 func (s *UiService) ListGroupMembers(ctx context.Context, req csilapi.ListGroupMembersRequest) (csilapi.ListGroupMembersResponse, error) {
-	id, _, authErr := s.deps.requireUser(ctx)
+	ctx, id, _, authErr := s.deps.requireManagementIdentity(ctx)
 	if authErr != nil {
 		return csilapi.ListGroupMembersResponse{}, authErr
 	}
@@ -206,7 +209,7 @@ func (s *UiService) ListGroupMembers(ctx context.Context, req csilapi.ListGroupM
 	if err != nil {
 		return csilapi.ListGroupMembersResponse{}, mapStoreErr(err, "group not found")
 	}
-	if err := s.deps.Resolver.RequireOrgAdmin(ctx, id, group.OrgID); err != nil {
+	if err := s.requireOrgAdminGrant(ctx, id, group.OrgID, orgReadCapabilities...); err != nil {
 		return csilapi.ListGroupMembersResponse{}, mapPermissionErr(err)
 	}
 

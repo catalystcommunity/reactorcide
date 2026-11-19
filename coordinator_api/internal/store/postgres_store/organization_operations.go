@@ -25,6 +25,14 @@ func (ps PostgresDbStore) CreateOrganization(ctx context.Context, organization *
 	if err := models.ValidateOrganizationStatus(organization.Status); err != nil {
 		return err
 	}
+	// A new organization gets the secure defaults (plan item A5) unless the
+	// caller asks for the legacy profile.
+	if organization.DefaultsProfile == "" {
+		organization.DefaultsProfile = models.DefaultsProfileSecure
+	}
+	if !models.IsValidDefaultsProfile(organization.DefaultsProfile) {
+		return fmt.Errorf("defaults profile must be legacy or secure: %w", store.ErrInvalidInput)
+	}
 
 	return ps.getDB(ctx).Transaction(func(tx *gorm.DB) error {
 		// Serialize organization creation so two first creates cannot select
@@ -41,6 +49,10 @@ func (ps PostgresDbStore) CreateOrganization(ctx context.Context, organization *
 		if err := seedBuiltInProfiles(tx, organization.OrgID); err != nil {
 			return err
 		}
+		if err := applyDefaultsProfile(tx, organization.OrgID, organization.DefaultsProfile, "organization.create"); err != nil {
+			return err
+		}
+		organization.DynamicJobs = models.SettingsForDefaultsProfile(organization.DefaultsProfile).DynamicJobs
 		setting := &models.GlobalSetting{
 			Key:       models.GlobalSettingDefaultOrgID,
 			Value:     models.JSONValue([]byte(fmt.Sprintf("%q", organization.OrgID))),

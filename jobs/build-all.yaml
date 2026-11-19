@@ -98,6 +98,13 @@ command: |-
     # Cleanup
     rm -f /job/src/deployment/reactorcide-web
 
+    # Build the egress proxy (Rust proxy and job network helper; the
+    # Dockerfile builds both inside BuildKit). See docs/egress-proxy.md.
+    echo ""
+    echo ">>> Building egress proxy..."
+    echo "----------------------------------------"
+    build_and_push /job/src/egress_proxy Dockerfile "$REGISTRY/public/reactorcide/egress:$TAG"
+
     echo ""
     echo "========================================"
     echo "All images built and pushed successfully!"
@@ -108,6 +115,7 @@ command: |-
     echo "  - $REGISTRY/public/reactorcide/coordinator:$TAG"
     echo "  - $REGISTRY/public/reactorcide/worker:$TAG"
     echo "  - $REGISTRY/public/reactorcide/web:$TAG"
+    echo "  - $REGISTRY/public/reactorcide/egress:$TAG"
   '
 environment:
   REGISTRY: containers.catalystsquad.com

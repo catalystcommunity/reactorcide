@@ -38,7 +38,7 @@ class ConfigManager:
     # Default values
     DEFAULTS = {
         'code_dir': '/job/src',
-        'runner_image': 'quay.io/catalystcommunity/reactorcide_runner',
+        'runner_image': 'containers.catalystsquad.com/public/reactorcide/runnerbase:dev',
         'checkout_mode': 'isolated',
     }
     

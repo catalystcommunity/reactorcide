@@ -38,6 +38,11 @@ type Project struct {
 	Description string `gorm:"type:text" json:"description"`
 	// RepoURL in canonical form: github.com/org/repo (no protocol, no .git suffix)
 	RepoURL string `gorm:"type:text;not null;uniqueIndex" json:"repo_url"`
+	// VCSRepositoryID is the numeric repository ID of the VCS (GitHub), when
+	// known. A repository with the same name and another ID is another
+	// repository (a deleted or renamed repository, then a new one with the
+	// name). Migration 000057.
+	VCSRepositoryID *int64 `gorm:"column:vcs_repository_id" json:"vcs_repository_id,omitempty"`
 
 	// Event filtering configuration
 	Enabled           bool           `gorm:"default:true;not null" json:"enabled"`
@@ -62,7 +67,7 @@ type Project struct {
 	WebhookSecrets JSONB `gorm:"type:jsonb;default:'{}'" json:"webhook_secrets,omitempty"`
 
 	// Job defaults
-	DefaultRunnerImage    string `gorm:"type:text;default:'quay.io/catalystcommunity/reactorcide_runner'" json:"default_runner_image"`
+	DefaultRunnerImage    string `gorm:"type:text;default:'containers.catalystsquad.com/public/reactorcide/runnerbase:dev'" json:"default_runner_image"`
 	DefaultJobCommand     string `gorm:"type:text" json:"default_job_command"`
 	DefaultTimeoutSeconds int    `gorm:"default:3600" json:"default_timeout_seconds"`
 	DefaultQueueName      string `gorm:"type:text;default:'reactorcide-jobs'" json:"default_queue_name"`
@@ -81,6 +86,18 @@ type Project struct {
 	// DynamicJobs overrides the organization setting: "inherit", "allow" or
 	// "deny".
 	DynamicJobs string `gorm:"type:text;not null;default:'inherit'" json:"dynamic_jobs,omitempty"`
+	// DraftPRs overrides the organization draft_prs setting: "inherit",
+	// "run", "skip" or "skip_when_shedding".
+	DraftPRs string `gorm:"column:draft_prs;type:text;not null;default:'inherit'" json:"draft_prs,omitempty"`
+
+	// InfraRetries overrides the organization infra_retries setting. NULL
+	// inherits the organization value.
+	InfraRetries *int `gorm:"type:integer" json:"infra_retries,omitempty"`
+
+	// EgressControl sends all egress of the project's jobs through the
+	// egress proxy (docs/egress-proxy.md). The organization or the execution
+	// profile can also turn it on; none of them can turn it off for another.
+	EgressControl bool `gorm:"not null;default:false" json:"egress_control"`
 }
 
 // TableName specifies the table name for the model
@@ -121,6 +138,20 @@ const (
 	SecretGrantMatchRegex  = "regex"
 )
 
+// Secret grant delivery modes (SecretGrant.Delivery).
+const (
+	SecretDeliveryEnv   = "env"
+	SecretDeliveryProxy = "proxy"
+)
+
+// EffectiveDelivery returns the delivery mode of the grant; empty is "env".
+func (g SecretGrant) EffectiveDelivery() string {
+	if g.Delivery == SecretDeliveryProxy {
+		return SecretDeliveryProxy
+	}
+	return SecretDeliveryEnv
+}
+
 // SecretGrant allows an API/worker job to resolve secrets under a configured path pattern.
 type SecretGrant struct {
 	GrantID           string         `gorm:"primaryKey;type:uuid;default:generate_ulid()" json:"grant_id"`
@@ -136,6 +167,20 @@ type SecretGrant struct {
 	Description       string         `gorm:"type:text" json:"description,omitempty"`
 	ExecutionProfiles pq.StringArray `gorm:"type:text[]" json:"execution_profiles,omitempty"`
 	CIOrigins         pq.StringArray `gorm:"type:text[]" json:"ci_origins,omitempty"`
+	// RefClassesAny and RefClassesNone are ref class conditions
+	// (docs/ref-classes.md). With RefClassesAny, the grant applies only to a
+	// job that has one of the classes. With RefClassesNone, the grant never
+	// applies to a job that has one of the classes. Empty is no condition.
+	RefClassesAny  pq.StringArray `gorm:"type:text[]" json:"ref_classes_any,omitempty"`
+	RefClassesNone pq.StringArray `gorm:"type:text[]" json:"ref_classes_none,omitempty"`
+	// Delivery is how a job gets the secrets of this grant: "env" (the
+	// value is in the job environment) or "proxy" (the job gets a
+	// placeholder; the egress proxy puts the value in ProxyHeader for the
+	// hosts in ProxyHosts only). See docs/egress-proxy.md.
+	Delivery          string         `gorm:"type:text;not null;default:'env'" json:"delivery,omitempty"`
+	ProxyHosts        pq.StringArray `gorm:"type:text[];not null;default:'{}'" json:"proxy_hosts,omitempty"`
+	ProxyHeader       string         `gorm:"type:text;not null;default:''" json:"proxy_header,omitempty"`
+	ProxyHeaderFormat string         `gorm:"type:text;not null;default:''" json:"proxy_header_format,omitempty"`
 
 	User    User     `gorm:"foreignKey:UserID" json:"user,omitempty"`
 	Project *Project `gorm:"foreignKey:ProjectID" json:"project,omitempty"`

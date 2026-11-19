@@ -461,6 +461,9 @@ func TestWebhookHandler_PREvent_SubmitsToCorndogs(t *testing.T) {
 	require.Len(t, mockStore.CreateJobCalls, 1)
 	createdJob := mockStore.CreateJobCalls[0]
 	assert.Equal(t, 10, createdJob.Priority) // PR priority
+	assert.Equal(t, "eval-pr", createdJob.PriorityLane, "the lane gives the eval priority (docs/priority.md)")
+	require.NotNil(t, createdJob.PriorityReason)
+	assert.Equal(t, "priority", createdJob.PriorityReason.Kind)
 	assert.Equal(t, "pull_request_opened", createdJob.JobEnvVars["REACTORCIDE_EVENT_TYPE"])
 
 	// Verify eval job characteristics
@@ -550,6 +553,7 @@ func TestWebhookHandler_PushEvent_SubmitsToCorndogs(t *testing.T) {
 	require.Len(t, mockStore.CreateJobCalls, 1)
 	createdJob := mockStore.CreateJobCalls[0]
 	assert.Equal(t, 5, createdJob.Priority) // Push priority
+	assert.Equal(t, "eval", createdJob.PriorityLane)
 	assert.Equal(t, "push", createdJob.JobEnvVars["REACTORCIDE_EVENT_TYPE"])
 
 	// Verify eval job characteristics

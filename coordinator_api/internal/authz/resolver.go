@@ -47,6 +47,8 @@ func NewResolver(s RoleStore) *Resolver {
 type principal struct {
 	userID      string
 	assignments []models.RoleAssignment
+	// groups are the groups of the principal (workflow owner checks).
+	groups []models.Group
 }
 
 func (r *Resolver) loadPrincipal(ctx context.Context, userID string) (*principal, error) {
@@ -62,7 +64,49 @@ func (r *Resolver) loadPrincipal(ctx context.Context, userID string) (*principal
 	if err != nil {
 		return nil, fmt.Errorf("authz: loading role assignments: %w", err)
 	}
-	return &principal{userID: userID, assignments: assignments}, nil
+	return &principal{userID: userID, assignments: assignments, groups: groups}, nil
+}
+
+// PrincipalRoleStore is the optional store surface for principals that are
+// not users (service principals): their groups and role assignments. A store
+// without it gives such a principal no roles (fail closed).
+type PrincipalRoleStore interface {
+	ListGroupsForPrincipal(ctx context.Context, principalID string) ([]models.Group, error)
+	ListRoleAssignmentsForPrincipalID(ctx context.Context, principalID string, groupIDs []string) ([]models.RoleAssignment, error)
+}
+
+// loadFor loads the role assignments that decide for id: the user's, or the
+// service principal's.
+func (r *Resolver) loadFor(ctx context.Context, id Identity) (*principal, error) {
+	if id.UserID != "" {
+		return r.loadPrincipal(ctx, id.UserID)
+	}
+	if id.PrincipalID == "" {
+		return &principal{}, nil
+	}
+	roles, ok := r.store.(PrincipalRoleStore)
+	if !ok {
+		return &principal{}, nil
+	}
+	groups, err := roles.ListGroupsForPrincipal(ctx, id.PrincipalID)
+	if err != nil {
+		return nil, fmt.Errorf("authz: loading groups for principal: %w", err)
+	}
+	groupIDs := make([]string, len(groups))
+	for i, g := range groups {
+		groupIDs[i] = g.GroupID
+	}
+	assignments, err := roles.ListRoleAssignmentsForPrincipalID(ctx, id.PrincipalID, groupIDs)
+	if err != nil {
+		return nil, fmt.Errorf("authz: loading role assignments for principal: %w", err)
+	}
+	return &principal{assignments: assignments, groups: groups}, nil
+}
+
+// tokenGate is true when id has no token, or its token allows capability in
+// orgID. A service principal token needs both its capability and a role.
+func (id Identity) tokenGate(orgID, capability string) bool {
+	return id.Token == nil || id.tokenAllows(orgID, capability)
 }
 
 func (p *principal) hasGlobalAdmin() bool {
@@ -116,10 +160,13 @@ func (r *Resolver) IsGlobalAdmin(ctx context.Context, id Identity) (bool, error)
 	if id.Anonymous {
 		return false, nil
 	}
-	if id.UserID == "" {
+	if !id.hasRoles() {
 		return id.tokenAllowsGlobal(tokencaps.OrganizationsManage), nil
 	}
-	p, err := r.loadPrincipal(ctx, id.UserID)
+	if id.PrincipalID != "" && id.Token != nil && !id.tokenAllowsGlobal(tokencaps.OrganizationsManage) {
+		return false, nil
+	}
+	p, err := r.loadFor(ctx, id)
 	if err != nil {
 		return false, err
 	}
@@ -136,13 +183,16 @@ func (r *Resolver) IsOrgAdmin(ctx context.Context, id Identity, orgID string) (b
 	if id.Anonymous || orgID == "" {
 		return false, nil
 	}
-	if id.UserID == "" {
+	if !id.hasRoles() {
 		return id.tokenAllows(orgID, tokencaps.OrganizationsManage), nil
 	}
-	if orgID == id.UserID {
+	if id.UserID != "" && orgID == id.UserID {
 		return true, nil
 	}
-	p, err := r.loadPrincipal(ctx, id.UserID)
+	if id.PrincipalID != "" && !id.tokenGate(orgID, tokencaps.OrganizationsManage) {
+		return false, nil
+	}
+	p, err := r.loadFor(ctx, id)
 	if err != nil {
 		return false, err
 	}
@@ -159,14 +209,26 @@ func (r *Resolver) IsProjectOwner(ctx context.Context, id Identity, projectID st
 	if id.Anonymous || projectID == "" {
 		return false, nil
 	}
-	if id.UserID == "" {
+	if !id.hasRoles() {
 		project, err := r.store.GetProjectByID(ctx, projectID)
 		if err != nil {
 			return false, err
 		}
 		return id.tokenAllows(project.OwnershipOrgID(), tokencaps.ProjectsManage), nil
 	}
-	p, err := r.loadPrincipal(ctx, id.UserID)
+	if id.PrincipalID != "" && id.Token != nil {
+		project, err := r.store.GetProjectByID(ctx, projectID)
+		if err != nil {
+			if errors.Is(err, store.ErrNotFound) {
+				return false, nil
+			}
+			return false, err
+		}
+		if !id.tokenAllows(project.OwnershipOrgID(), tokencaps.ProjectsManage) {
+			return false, nil
+		}
+	}
+	p, err := r.loadFor(ctx, id)
 	if err != nil {
 		return false, err
 	}
@@ -184,7 +246,7 @@ func (r *Resolver) IsProjectOwner(ctx context.Context, id Identity, projectID st
 		return false, err
 	}
 	orgID := project.OwnershipOrgID()
-	if orgID == id.UserID {
+	if id.UserID != "" && orgID == id.UserID {
 		return true, nil
 	}
 	return p.hasOrgRole(orgID, models.RoleAdmin), nil
@@ -211,7 +273,7 @@ func (r *Resolver) EffectiveRoleForProject(ctx context.Context, id Identity, pro
 		} else if isGlobal {
 			return models.RoleAdmin, nil
 		}
-		p, err := r.loadPrincipal(ctx, id.UserID)
+		p, err := r.loadFor(ctx, id)
 		if err != nil {
 			return "", err
 		}
@@ -220,7 +282,7 @@ func (r *Resolver) EffectiveRoleForProject(ctx context.Context, id Identity, pro
 		}
 		return models.RoleAdmin, nil // org-admin (or self-org) escalation
 	}
-	p, err := r.loadPrincipal(ctx, id.UserID)
+	p, err := r.loadFor(ctx, id)
 	if err != nil {
 		return "", err
 	}
@@ -242,7 +304,7 @@ func (r *Resolver) EffectiveRoleForOrg(ctx context.Context, id Identity, orgID s
 	} else if admin {
 		return models.RoleAdmin, nil
 	}
-	p, err := r.loadPrincipal(ctx, id.UserID)
+	p, err := r.loadFor(ctx, id)
 	if err != nil {
 		return "", err
 	}
@@ -330,6 +392,9 @@ func (r *Resolver) RequireProjectPolicyManager(ctx context.Context, id Identity,
 		}
 		if !id.tokenAllows(project.OwnershipOrgID(), tokencaps.PoliciesManage) {
 			return &PermissionError{Capability: "project_policy_manager", Detail: "project:" + projectID}
+		}
+		if id.PrincipalID != "" {
+			return r.RequireProjectOwner(ctx, Identity{PrincipalID: id.PrincipalID}, projectID)
 		}
 		if id.UserID == "" {
 			return nil

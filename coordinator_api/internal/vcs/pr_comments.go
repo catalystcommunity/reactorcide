@@ -222,6 +222,15 @@ func (u *JobStatusUpdater) renderPerJobCommentBody(job *models.Job, marker strin
 		duration := job.CompletedAt.Sub(*job.StartedAt)
 		fmt.Fprintf(&b, "\n**Duration:** %.3fs", duration.Seconds())
 	}
+	if text := models.FailureReportText(job.FailureClassValue()); text != "" && job.Status != "cancelled" {
+		fmt.Fprintf(&b, "\n**Failure:** %s (`%s`)", text, job.FailureClassValue())
+	}
+	if links := u.renderJobLinkLine(job); links != "" {
+		b.WriteString(links)
+	}
+	if tests := u.renderJobTestLine(job); tests != "" {
+		b.WriteString(tests)
+	}
 	if job.LastError != "" && job.Status == "failed" {
 		fmt.Fprintf(&b, "\n\n### Error\n```\n%s\n```", job.LastError)
 	}
@@ -247,6 +256,9 @@ func renderStatus(job *models.Job) (emoji string, text string) {
 		}
 		return "❌", "failed"
 	case "failed":
+		if owner := models.FailureOwner(job.FailureClassValue()); owner != "" {
+			return "❌", "failed (" + owner + ")"
+		}
 		return "❌", "failed"
 	case "cancelled":
 		return "⚠️", "cancelled"

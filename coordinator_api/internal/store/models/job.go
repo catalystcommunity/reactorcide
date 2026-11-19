@@ -70,24 +70,49 @@ type Job struct {
 
 	// Container configuration
 	ContainerImage *string `gorm:"type:text" json:"container_image"` // Custom image per job
+	// ImageAlias is the image alias name that the job named (migration
+	// 000068). The pinned reference of the alias at job creation is in the
+	// image field of the job (ContainerImage when set, else RunnerImage).
+	// nil when the job named a reference.
+	ImageAlias *string `gorm:"column:image_alias;type:text" json:"image_alias,omitempty"`
+	// ImagePinAlias is the name of the alias that pinned the digest of a
+	// job that named a pinned reference directly (migration 000072). A
+	// retry or a rerun of the job resolves through this alias and uses its
+	// current pin. nil when the job named an alias (see ImageAlias), or
+	// for a job with no image_digest.
+	ImagePinAlias *string `gorm:"column:image_pin_alias;type:text" json:"image_pin_alias,omitempty"`
+	// ImageRetryOf is the image of the earlier run in display form
+	// ("alias (ref)" or "ref"), when a retry or a rerun got another image
+	// than the earlier run because the alias has a new pin (migration
+	// 000072). nil when the image did not change.
+	ImageRetryOf *string `gorm:"column:image_retry_of;type:text" json:"image_retry_of,omitempty"`
 
 	// Runnerlib configuration
 	CodeDir     string `gorm:"type:text;not null;default:'/job/src'" json:"code_dir"`
 	JobDir      string `gorm:"type:text;not null;default:'/job/src'" json:"job_dir"`
 	JobCommand  string `gorm:"type:text;not null" json:"job_command"`
-	RunnerImage string `gorm:"type:text;not null;default:'quay.io/catalystcommunity/reactorcide_runner'" json:"runner_image"`
+	RunnerImage string `gorm:"type:text;not null;default:'containers.catalystsquad.com/public/reactorcide/runnerbase:dev'" json:"runner_image"`
 	JobEnvVars  JSONB  `gorm:"type:jsonb" json:"job_env_vars"`
 	JobEnvFile  string `gorm:"type:text" json:"job_env_file"`
 
 	// Job execution settings
-	TimeoutSeconds int            `gorm:"default:3600" json:"timeout_seconds"`
-	Priority       int            `gorm:"default:0" json:"priority"`
-	Capabilities   pq.StringArray `gorm:"type:text[]" json:"capabilities"`
+	TimeoutSeconds int `gorm:"default:3600" json:"timeout_seconds"`
+	Priority       int `gorm:"default:0" json:"priority"`
+	// PriorityLane and PriorityReason tell how the coordinator computed
+	// Priority (internal/priority, docs/priority.md). Empty for a job made
+	// before lanes.
+	PriorityLane   string          `gorm:"column:priority_lane;type:text;not null;default:''" json:"priority_lane,omitempty"`
+	PriorityReason *DecisionReason `gorm:"column:priority_reason;type:jsonb;serializer:json" json:"priority_reason,omitempty"`
+	Capabilities   pq.StringArray  `gorm:"type:text[]" json:"capabilities"`
 	// ImagePullSecrets holds Kubernetes Secret NAMES the job may use to pull
 	// its image — never credentials. The worker enforces its allowlist
 	// before Kubernetes Job creation.
 	ImagePullSecrets pq.StringArray `gorm:"type:text[]" json:"image_pull_secrets"`
 	RunAsUser        string         `gorm:"type:text" json:"run_as_user"`
+	// RunAsAdministrator is the job's run_as.administrator value. It applies
+	// only to Windows VM jobs whose guest daemon must create the job
+	// account. nil means not set (the guest default, administrator).
+	RunAsAdministrator *bool `gorm:"column:run_as_administrator" json:"run_as_administrator,omitempty"`
 
 	// Queue integration
 	//
@@ -146,6 +171,13 @@ type Job struct {
 	Notes               string     `gorm:"type:text" json:"notes"`
 	RetryCount          int        `gorm:"default:0" json:"retry_count"`
 	LastError           string     `gorm:"type:text" json:"last_error"`
+	// FailureClass is the structured cause of a terminal job that did not
+	// complete: one of FailureClasses (see failure_class.go). NULL for a
+	// job that is not terminal, completed, or (for rows older than
+	// migration 000047) has an unknown cause. FailureDetail is a short
+	// reason for the class, for example "OOMKilled" or "ErrImagePull".
+	FailureClass  *string `gorm:"type:text" json:"failure_class,omitempty"`
+	FailureDetail string  `gorm:"type:text" json:"failure_detail,omitempty"`
 
 	// Object store references
 	LogsObjectKey      string `gorm:"type:text" json:"logs_object_key"`
@@ -161,6 +193,24 @@ type Job struct {
 	// EventID links the job to the CI event it serves: the eval job of the
 	// event, and every job of the workflows the event created.
 	EventID *string `gorm:"type:uuid" json:"event_id,omitempty"`
+
+	// ActorPrincipalID is the principal that started the job. ActorIdentity is
+	// the identity it used ("TYPE:VALUE"). A database trigger sets them from
+	// the parent job, the workflow, or the event when the creator does not,
+	// and falls back to the system principal (models.SystemPrincipalID).
+	ActorPrincipalID *string `gorm:"type:uuid;default:null" json:"actor_principal_id,omitempty"`
+	ActorIdentity    string  `gorm:"type:text;not null;default:''" json:"actor_identity,omitempty"`
+	// RefClasses are the ref classes of the job (docs/ref-classes.md). A
+	// database trigger copies them from the parent job, the workflow, or the
+	// event when the creator does not set them, so child jobs and retries
+	// keep the classes of the original run. Job code cannot set them.
+	RefClasses pq.StringArray `gorm:"type:text[]" json:"ref_classes"`
+	// The owner snapshot of the workflow of the job (workflow_owner.go). A
+	// database trigger copies it from the workflow at insert and keeps it on
+	// update. OwnerGroup nil means unknown.
+	OwnerGroup    *string          `gorm:"column:owner_group;type:text;default:null" json:"owner_group,omitempty"`
+	OwnerSubjects pq.StringArray   `gorm:"column:owner_subjects;type:text[];default:null" json:"owner_subjects,omitempty"`
+	OwnerContact  *WorkflowContact `gorm:"column:owner_contact;type:jsonb;serializer:json;default:null" json:"owner_contact,omitempty"`
 
 	// Denormalized VCS metadata for fast lookup by (repo, pr, commit).
 	// Populated at job-creation time from Notes JSON; Notes remains authoritative.
@@ -192,6 +242,14 @@ type Job struct {
 	ResourceCPURequest  string `gorm:"column:resource_cpu_request;type:text;not null;default:'1'" json:"resource_cpu_request"`
 	ResourceCPULimit    string `gorm:"column:resource_cpu_limit;type:text;not null;default:'2'" json:"resource_cpu_limit"`
 	ResourceMemoryLimit string `gorm:"column:resource_memory_limit;type:text;not null;default:'4Gi'" json:"resource_memory_limit"`
+	// Ephemeral (scratch) storage of the job container, in the memory
+	// grammar. Empty means no request or no limit. Kubernetes applies them
+	// as ephemeral-storage; Docker and containerd on a best-effort basis.
+	ResourceStorageRequest string `gorm:"column:resource_storage_request;type:text;not null;default:''" json:"resource_storage_request,omitempty"`
+	ResourceStorageLimit   string `gorm:"column:resource_storage_limit;type:text;not null;default:''" json:"resource_storage_limit,omitempty"`
+	// Shifts are the resource and timeout changes a retry or a re-run
+	// made to this job (see run_shifts.go). Nil for a job with no shifts.
+	Shifts *RunShifts `gorm:"type:jsonb;serializer:json" json:"shifts,omitempty"`
 }
 
 // TableName specifies the table name for the model
@@ -205,6 +263,13 @@ func (j *Job) BeforeCreate(_ *gorm.DB) error {
 	if j.OrgID == "" {
 		j.OrgID = j.UserID
 	}
+	return nil
+}
+
+// BeforeSave keeps failure_class consistent with status on every create and
+// save: see normalizeFailureClass.
+func (j *Job) BeforeSave(_ *gorm.DB) error {
+	j.normalizeFailureClass()
 	return nil
 }
 

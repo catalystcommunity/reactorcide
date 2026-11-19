@@ -4,6 +4,7 @@ import type { ComboBox, PushButton, TextField } from '@catalystcommunity/control
 import type { CiPolicyDetail, CiPolicyDocument } from '~/api/csilapi/types.gen.ts'
 
 let stored: CiPolicyDetail | undefined
+let builtIn = false
 
 vi.mock('~/api/client.ts', async (importOriginal) => {
   const actual = await importOriginal<typeof import('~/api/client.ts')>()
@@ -12,6 +13,7 @@ vi.mock('~/api/client.ts', async (importOriginal) => {
     api: {
       getCiPolicy: vi.fn(async () => {
         if (!stored) throw new actual.ServiceError('not_found', 'no policy')
+        if (builtIn) return { policy: stored, builtIn: true, builtInReason: 'the organization has the secure defaults profile' }
         return { policy: stored }
       }),
       putCiPolicy: vi.fn(async (req: { document: CiPolicyDocument }) => ({ policy: { ...(stored ?? DETAIL), revision: 'r2', document: req.document } })),
@@ -202,5 +204,24 @@ describe('CI policy configurator', () => {
     pushButton(el, 'Delete policy').click()
     await waitFor(() => expect(api.deleteCiPolicy).toHaveBeenCalledWith({ projectId: 'p1', expectedRevision: 'r1' }))
     await waitFor(() => expect(el.querySelectorAll('.rule-card')).toHaveLength(0))
+  })
+})
+
+describe('built-in policy', () => {
+  it('starts the draft from the built-in policy and saves with no expected revision', async () => {
+    stored = { ...DETAIL, policyId: '', revision: 'builtin-r1', document: DOC }
+    builtIn = true
+    const el = ciPolicyEditor('p1')
+    document.body.append(el)
+    await settle()
+    await waitFor(() => expect(el.textContent).toContain('The built-in policy (revision builtin-r1) applies'))
+    expect(el.querySelectorAll('.rule-card').length).toBe(2)
+    const save = [...el.querySelectorAll('push-button')].find((b) => b.textContent === 'Save policy') as HTMLElement
+    save.click()
+    await waitFor(() => expect(api.putCiPolicy).toHaveBeenCalled())
+    expect(vi.mocked(api.putCiPolicy).mock.calls[0][0].expectedRevision).toBeUndefined()
+    el.remove()
+    builtIn = false
+    stored = undefined
   })
 })

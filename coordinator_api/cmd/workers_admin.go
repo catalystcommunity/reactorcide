@@ -49,22 +49,59 @@ func managementClient(ctx *cli.Context) (*csilapi.ReactorcideUiClient, error) {
 
 func workersListCommand() *cli.Command {
 	return &cli.Command{Name: "list", Usage: "List enrolled workers", Flags: append(apiFlags(),
-		&cli.StringFlag{Name: "pool", Usage: "Limit the result to one pool ID"}, formatFlag()), Action: func(ctx *cli.Context) error {
+		&cli.StringFlag{Name: "pool", Usage: "Limit the result to one pool ID"},
+		&cli.StringFlag{Name: "enrollment-token", Usage: "Only workers that last registered with this enrollment token ID"},
+		&cli.BoolFlag{Name: "on-deactivated-token", Usage: "Only workers with an active session from a deactivated enrollment token"},
+		formatFlag()), Action: func(ctx *cli.Context) error {
 		client, err := managementClient(ctx)
 		if err != nil {
 			return err
 		}
-		resp, err := client.ListWorkers(ctx.Context, csilapi.ListWorkersRequest{PoolId: optionalText(ctx.String("pool"))})
+		req := csilapi.ListWorkersRequest{PoolId: optionalText(ctx.String("pool")), EnrollmentTokenId: optionalText(ctx.String("enrollment-token"))}
+		if ctx.Bool("on-deactivated-token") {
+			on := true
+			req.OnDeactivatedToken = &on
+		}
+		resp, err := client.ListWorkers(ctx.Context, req)
 		if err != nil {
 			return err
 		}
 		return render(ctx.String("format"), resp.Workers, func(w *tabwriter.Writer) {
-			fmt.Fprintln(w, "ID\tHOST\tOS/ARCH\tSTATUS\tPOOL\tLEASES\tLAST SEEN")
+			fmt.Fprintln(w, "ID\tHOST\tOS/ARCH\tSTATUS\tIMAGES\tPOOL\tTOKEN\tLEASES\tLAST SEEN")
 			for _, item := range resp.Workers {
-				fmt.Fprintf(w, "%s\t%s\t%s/%s\t%s\t%s\t%d\t%s\n", item.WorkerId, textOrDash(item.Hostname), item.Os, item.Arch, item.Status, item.PoolId, item.ActiveLeaseCount, textOrDash(item.LastSeenAt))
+				fmt.Fprintf(w, "%s\t%s\t%s/%s\t%s\t%s\t%s\t%s\t%d\t%s\n", item.WorkerId, textOrDash(item.Hostname), item.Os, item.Arch, item.Status, workerImageLabel(item), item.PoolId, workerTokenLabel(item), item.ActiveLeaseCount, textOrDash(item.LastSeenAt))
 			}
 		})
 	}}
+}
+
+// workerImageLabel is the image readiness of a worker (healthy, updating
+// images, or image update failed with its reason), or "-" for a worker that
+// does not use image sets.
+func workerImageLabel(item csilapi.WorkerSummary) string {
+	if item.ImageStatus == nil {
+		return "-"
+	}
+	if item.ImageStatusDetail != nil && *item.ImageStatusDetail != "" {
+		return *item.ImageStatus + ": " + *item.ImageStatusDetail
+	}
+	return *item.ImageStatus
+}
+
+// workerTokenLabel is the enrollment token of a worker as "ID (name)", with
+// a DEACTIVATED mark for a worker that runs on a deactivated token.
+func workerTokenLabel(item csilapi.WorkerSummary) string {
+	if item.EnrollmentTokenId == nil {
+		return "-"
+	}
+	out := *item.EnrollmentTokenId
+	if item.EnrollmentTokenName != nil && *item.EnrollmentTokenName != "" {
+		out += " (" + *item.EnrollmentTokenName + ")"
+	}
+	if item.OnDeactivatedToken != nil && *item.OnDeactivatedToken {
+		out += " DEACTIVATED"
+	}
+	return out
 }
 
 func workersStatusCommand() *cli.Command {
@@ -109,7 +146,7 @@ func workersDrainCommand() *cli.Command {
 
 func workerPoolsCommand() *cli.Command {
 	return &cli.Command{Name: "pools", Usage: "Manage worker pools", Subcommands: []*cli.Command{
-		{Name: "list", Flags: append(apiFlags(), &cli.StringFlag{Name: "org"}, formatFlag()), Action: func(ctx *cli.Context) error {
+		{Name: "list", Usage: "List worker pools (needs workers:read or workers:manage)", Flags: append(apiFlags(), &cli.StringFlag{Name: "org", Usage: "Show only the pools of this organization"}, formatFlag()), Action: func(ctx *cli.Context) error {
 			client, err := managementClient(ctx)
 			if err != nil {
 				return err
@@ -125,7 +162,7 @@ func workerPoolsCommand() *cli.Command {
 				}
 			})
 		}},
-		{Name: "create", ArgsUsage: "<name>", Flags: append(apiFlags(), &cli.StringFlag{Name: "org"}, &cli.StringFlag{Name: "description"}, formatFlag()), Action: func(ctx *cli.Context) error {
+		{Name: "create", Usage: "Create a worker pool (needs workers:manage)", ArgsUsage: "<name>", Flags: append(apiFlags(), &cli.StringFlag{Name: "org", Usage: "Organization that owns the pool (default: a global pool, which only a global admin can create)"}, &cli.StringFlag{Name: "description", Usage: "Description of the pool"}, formatFlag()), Action: func(ctx *cli.Context) error {
 			if ctx.NArg() != 1 {
 				return fmt.Errorf("usage: reactorcide workers pools create <name>")
 			}
@@ -142,7 +179,7 @@ func workerPoolsCommand() *cli.Command {
 				fmt.Fprintf(w, "%s\t%s\n", resp.Pool.PoolId, resp.Pool.Name)
 			})
 		}},
-		{Name: "update", ArgsUsage: "<pool-id>", Flags: append(apiFlags(), &cli.StringFlag{Name: "name"}, &cli.StringFlag{Name: "description"}, formatFlag()), Action: func(ctx *cli.Context) error {
+		{Name: "update", Usage: "Change the name or description of a worker pool (needs workers:manage)", ArgsUsage: "<pool-id>", Flags: append(apiFlags(), &cli.StringFlag{Name: "name", Usage: "New name (default: keep the current value)"}, &cli.StringFlag{Name: "description", Usage: "New description (default: keep the current value)"}, formatFlag()), Action: func(ctx *cli.Context) error {
 			if ctx.NArg() != 1 || (ctx.String("name") == "" && ctx.String("description") == "") {
 				return fmt.Errorf("provide a pool ID and at least one of --name or --description")
 			}
@@ -159,7 +196,7 @@ func workerPoolsCommand() *cli.Command {
 				fmt.Fprintf(w, "%s\t%s\t%s\n", resp.Pool.PoolId, resp.Pool.Name, textOrDash(resp.Pool.Description))
 			})
 		}},
-		{Name: "delete", ArgsUsage: "<pool-id>", Flags: apiFlags(), Action: func(ctx *cli.Context) error {
+		{Name: "delete", Usage: "Delete a worker pool (needs workers:manage)", ArgsUsage: "<pool-id>", Flags: apiFlags(), Action: func(ctx *cli.Context) error {
 			if ctx.NArg() != 1 {
 				return fmt.Errorf("usage: reactorcide workers pools delete <pool-id>")
 			}
@@ -179,8 +216,8 @@ func workerPoolsCommand() *cli.Command {
 
 func workerTokensCommand() *cli.Command {
 	return &cli.Command{Name: "tokens", Usage: "Manage worker enrollment tokens", Subcommands: []*cli.Command{
-		{Name: "create", ArgsUsage: "<pool-id>", Flags: append(apiFlags(), &cli.StringFlag{Name: "name"}, &cli.StringFlag{Name: "output-file", Required: true, Usage: "New file that receives the raw token"}), Action: createEnrollmentToken},
-		{Name: "list", ArgsUsage: "<pool-id>", Flags: append(apiFlags(), formatFlag()), Action: func(ctx *cli.Context) error {
+		{Name: "create", Usage: "Create an enrollment token for a worker pool and write it to a new file", ArgsUsage: "<pool-id>", Flags: append(apiFlags(), &cli.StringFlag{Name: "name", Usage: "Name of the token"}, &cli.StringFlag{Name: "output-file", Required: true, Usage: "New file that receives the raw token"}), Action: createEnrollmentToken},
+		{Name: "list", Usage: "List the enrollment tokens of a worker pool", ArgsUsage: "<pool-id>", Flags: append(apiFlags(), formatFlag()), Action: func(ctx *cli.Context) error {
 			if ctx.NArg() != 1 {
 				return fmt.Errorf("usage: reactorcide workers tokens list <pool-id>")
 			}
@@ -193,27 +230,35 @@ func workerTokensCommand() *cli.Command {
 				return err
 			}
 			return render(ctx.String("format"), resp.Tokens, func(w *tabwriter.Writer) {
-				fmt.Fprintln(w, "ID\tNAME\tACTIVE\tLAST USED\tCREATED")
+				fmt.Fprintln(w, "ID\tNAME\tACTIVE\tACTIVE WORKERS\tLAST USED\tCREATED")
 				for _, item := range resp.Tokens {
-					fmt.Fprintf(w, "%s\t%s\t%t\t%s\t%s\n", item.TokenId, textOrDash(item.Name), item.IsActive, textOrDash(item.LastUsedAt), item.CreatedAt)
+					fmt.Fprintf(w, "%s\t%s\t%t\t%d\t%s\t%s\n", item.TokenId, textOrDash(item.Name), item.IsActive, derefInt(item.ActiveWorkerCount), textOrDash(item.LastUsedAt), item.CreatedAt)
 				}
 			})
 		}},
-		{Name: "deactivate", ArgsUsage: "<token-id>", Flags: append(apiFlags(), formatFlag()), Action: func(ctx *cli.Context) error {
+		{Name: "deactivate", Usage: "Deactivate an enrollment token permanently", ArgsUsage: "<token-id>", Flags: append(apiFlags(),
+			&cli.BoolFlag{Name: "confirm-permanent", Usage: "Required: deactivation is permanent and cannot be undone"}, formatFlag()), Action: func(ctx *cli.Context) error {
 			if ctx.NArg() != 1 {
-				return fmt.Errorf("usage: reactorcide workers tokens deactivate <token-id>")
+				return fmt.Errorf("usage: reactorcide workers tokens deactivate <token-id> --confirm-permanent")
+			}
+			if !ctx.Bool("confirm-permanent") {
+				return fmt.Errorf("deactivation is permanent and cannot be undone; run \"reactorcide workers list --enrollment-token %s\" first, then add --confirm-permanent", ctx.Args().First())
 			}
 			client, err := managementClient(ctx)
 			if err != nil {
 				return err
 			}
-			resp, err := client.DeactivateEnrollmentToken(ctx.Context, csilapi.DeactivateEnrollmentTokenRequest{TokenId: ctx.Args().First()})
+			confirm := true
+			resp, err := client.DeactivateEnrollmentToken(ctx.Context, csilapi.DeactivateEnrollmentTokenRequest{TokenId: ctx.Args().First(), ConfirmPermanent: &confirm})
 			if err != nil {
 				return err
 			}
+			if n := derefInt(resp.Summary.ActiveWorkerCount); n > 0 {
+				fmt.Fprintf(os.Stderr, "warning: %d worker(s) still run on this token. They cannot register again after they stop. List them with: reactorcide workers list --on-deactivated-token\n", n)
+			}
 			return render(ctx.String("format"), resp.Summary, func(w *tabwriter.Writer) {
-				fmt.Fprintln(w, "ID\tACTIVE")
-				fmt.Fprintf(w, "%s\t%t\n", resp.Summary.TokenId, resp.Summary.IsActive)
+				fmt.Fprintln(w, "ID\tNAME\tACTIVE\tACTIVE WORKERS")
+				fmt.Fprintf(w, "%s\t%s\t%t\t%d\n", resp.Summary.TokenId, textOrDash(resp.Summary.Name), resp.Summary.IsActive, derefInt(resp.Summary.ActiveWorkerCount))
 			})
 		}},
 	}}
@@ -259,7 +304,7 @@ func createEnrollmentToken(ctx *cli.Context) (retErr error) {
 
 func workerQueuesCommand() *cli.Command {
 	return &cli.Command{Name: "queues", Usage: "Manage worker queues", Subcommands: []*cli.Command{
-		{Name: "list", Flags: append(apiFlags(), formatFlag()), Action: func(ctx *cli.Context) error {
+		{Name: "list", Usage: "List worker queues with their characteristics and backlog (needs workers:read or workers:manage)", Flags: append(apiFlags(), formatFlag()), Action: func(ctx *cli.Context) error {
 			client, err := managementClient(ctx)
 			if err != nil {
 				return err
@@ -275,7 +320,7 @@ func workerQueuesCommand() *cli.Command {
 				}
 			})
 		}},
-		{Name: "create", Flags: append(apiFlags(), &cli.StringSliceFlag{Name: "characteristic", Aliases: []string{"c"}, Required: true, Usage: "Required worker value as key=value; repeat for each value"}, &cli.StringFlag{Name: "display-name"}, formatFlag()), Action: func(ctx *cli.Context) error {
+		{Name: "create", Usage: "Create a worker queue for a set of characteristics (needs workers:manage)", Flags: append(apiFlags(), &cli.StringSliceFlag{Name: "characteristic", Aliases: []string{"c"}, Required: true, Usage: "Required worker value as key=value; repeat for each value"}, &cli.StringFlag{Name: "display-name", Usage: "Display name of the queue"}, formatFlag()), Action: func(ctx *cli.Context) error {
 			entries, err := parseQueueCharacteristics(ctx.StringSlice("characteristic"))
 			if err != nil {
 				return err
@@ -293,7 +338,7 @@ func workerQueuesCommand() *cli.Command {
 				fmt.Fprintf(w, "%s\t%s\t%s\n", resp.Queue.QueueId, resp.Queue.DisplayName, formatCharacteristics(resp.Queue.Characteristics))
 			})
 		}},
-		{Name: "rename", ArgsUsage: "<queue-id> <display-name>", Flags: append(apiFlags(), formatFlag()), Action: func(ctx *cli.Context) error {
+		{Name: "rename", Usage: "Change the display name of a worker queue (needs workers:manage)", ArgsUsage: "<queue-id> <display-name>", Flags: append(apiFlags(), formatFlag()), Action: func(ctx *cli.Context) error {
 			if ctx.NArg() != 2 {
 				return fmt.Errorf("usage: reactorcide workers queues rename <queue-id> <display-name>")
 			}
@@ -310,7 +355,7 @@ func workerQueuesCommand() *cli.Command {
 				fmt.Fprintf(w, "%s\t%s\n", resp.Queue.QueueId, resp.Queue.DisplayName)
 			})
 		}},
-		{Name: "delete", ArgsUsage: "<queue-id>", Flags: append(apiFlags(), formatFlag()), Action: func(ctx *cli.Context) error {
+		{Name: "delete", Usage: "Delete a worker queue (needs workers:manage)", ArgsUsage: "<queue-id>", Flags: append(apiFlags(), formatFlag()), Action: func(ctx *cli.Context) error {
 			if ctx.NArg() != 1 {
 				return fmt.Errorf("usage: reactorcide workers queues delete <queue-id>")
 			}
@@ -332,7 +377,7 @@ func workerQueuesCommand() *cli.Command {
 
 func workerClassesCommand() *cli.Command {
 	return &cli.Command{Name: "classes", Usage: "Manage worker classes", Subcommands: []*cli.Command{
-		{Name: "list", Flags: append(apiFlags(), &cli.StringFlag{Name: "org", Required: true}, formatFlag()), Action: func(ctx *cli.Context) error {
+		{Name: "list", Usage: "List the worker classes of an organization and their pools", Flags: append(apiFlags(), &cli.StringFlag{Name: "org", Required: true, Usage: "Organization"}, formatFlag()), Action: func(ctx *cli.Context) error {
 			client, err := managementClient(ctx)
 			if err != nil {
 				return err
@@ -348,7 +393,7 @@ func workerClassesCommand() *cli.Command {
 				}
 			})
 		}},
-		{Name: "put", ArgsUsage: "<name>", Flags: append(apiFlags(), &cli.StringFlag{Name: "org", Required: true}, &cli.BoolFlag{Name: "protected"}, &cli.StringSliceFlag{Name: "pool"}, formatFlag()), Action: func(ctx *cli.Context) error {
+		{Name: "put", Usage: "Create or replace a worker class (needs workers:manage)", ArgsUsage: "<name>", Flags: append(apiFlags(), &cli.StringFlag{Name: "org", Required: true, Usage: "Organization"}, &cli.BoolFlag{Name: "protected", Usage: "A profile that denies secrets cannot select the class, unless the profile names it in allowed_worker_classes"}, &cli.StringSliceFlag{Name: "pool", Usage: "Pool ID that serves the class; repeat for each pool"}, formatFlag()), Action: func(ctx *cli.Context) error {
 			if ctx.NArg() != 1 {
 				return fmt.Errorf("usage: reactorcide workers classes put <name> --org ORG")
 			}
@@ -365,7 +410,7 @@ func workerClassesCommand() *cli.Command {
 				fmt.Fprintf(w, "%s\t%t\t%s\n", resp.WorkerClass.Name, resp.WorkerClass.Protected, strings.Join(resp.WorkerClass.PoolIds, ","))
 			})
 		}},
-		{Name: "delete", ArgsUsage: "<name>", Flags: append(apiFlags(), &cli.StringFlag{Name: "org", Required: true}), Action: func(ctx *cli.Context) error {
+		{Name: "delete", Usage: "Delete a worker class (needs workers:manage)", ArgsUsage: "<name>", Flags: append(apiFlags(), &cli.StringFlag{Name: "org", Required: true, Usage: "Organization"}), Action: func(ctx *cli.Context) error {
 			if ctx.NArg() != 1 {
 				return fmt.Errorf("usage: reactorcide workers classes delete <name> --org ORG")
 			}
@@ -380,7 +425,7 @@ func workerClassesCommand() *cli.Command {
 			fmt.Printf("deleted=%t\n", resp.Deleted)
 			return nil
 		}},
-		{Name: "set-pool", ArgsUsage: "<class-name> <pool-id>", Flags: append(apiFlags(), &cli.StringFlag{Name: "org", Required: true}, &cli.BoolFlag{Name: "revoke", Usage: "Remove the pool from the class"}), Action: func(ctx *cli.Context) error {
+		{Name: "set-pool", Usage: "Grant a pool to a worker class, or remove it with --revoke (needs workers:manage)", ArgsUsage: "<class-name> <pool-id>", Flags: append(apiFlags(), &cli.StringFlag{Name: "org", Required: true, Usage: "Organization"}, &cli.BoolFlag{Name: "revoke", Usage: "Remove the pool from the class"}), Action: func(ctx *cli.Context) error {
 			if ctx.NArg() != 2 {
 				return fmt.Errorf("usage: reactorcide workers classes set-pool <class-name> <pool-id> --org ORG")
 			}
@@ -459,4 +504,11 @@ func formatCharacteristics(entries []csilapi.CharacteristicEntry) string {
 	}
 	sort.Strings(parts)
 	return strings.Join(parts, ",")
+}
+
+func derefInt(value *int64) int64 {
+	if value == nil {
+		return 0
+	}
+	return *value
 }

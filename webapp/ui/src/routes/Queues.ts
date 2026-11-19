@@ -3,6 +3,7 @@ import { api } from '~/api/client.ts'
 import type { ListQueuesResponse, QueueSummary } from '~/api/csilapi/types.gen.ts'
 import { RcPage } from '~/app/page.ts'
 import { Action, ActionError, notPermitted } from '~/components/ManagementPage.ts'
+import { formatMetric } from '~/components/ResourceHistory.ts'
 import { SESSION, session } from '~/lib/session.ts'
 import { button, confirmAction, setButtonText, textField } from '~/ui/controls.ts'
 import { h, setText, show, syncKeyed } from '~/ui/dom.ts'
@@ -28,6 +29,8 @@ export class QueuesPage extends RcPage {
   #action = new Action(() => this.invalidate())
   #queues = new Loader<string, ListQueuesResponse>(this, () => api.listQueues({}))
   #views = new WeakMap<Element, QueueRow>()
+  #charRows!: HTMLTableSectionElement
+  #charCard!: HTMLElement
 
   protected build(): void {
     this.#refused = notPermitted('queues')
@@ -38,11 +41,42 @@ export class QueuesPage extends RcPage {
       h(
         'table',
         { class: 'table' },
-        h('thead', null, h('tr', null, h('th', null, 'Name'), h('th', null, 'Characteristics'), h('th', null, 'Backlog'), h('th', null, 'Default'), h('th'))),
+        h(
+          'thead',
+          null,
+          h(
+            'tr',
+            null,
+            h('th', null, 'Name'),
+            h('th', null, 'Characteristics'),
+            h('th', null, 'Backlog'),
+            h('th', null, 'Oldest wait'),
+            h('th', null, 'Requested'),
+            h('th', null, 'Default'),
+            h('th'),
+          ),
+        ),
         this.#rows,
       ),
     )
     this.#empty = h('div', { class: 'empty' }, 'No queues yet.')
+    this.#charRows = h('tbody')
+    this.#charCard = h(
+      'div',
+      { class: 'card' },
+      h('h2', null, 'Backlog by characteristic'),
+      h('p', { class: 'meta' }, 'Waiting jobs of every queue that requires a characteristic value. Use it to see where capacity is short, for example by region.'),
+      h(
+        'div',
+        { class: 'scroll-x' },
+        h(
+          'table',
+          { class: 'table' },
+          h('thead', null, h('tr', null, h('th', null, 'Characteristic'), h('th', null, 'Queues'), h('th', null, 'Jobs'), h('th', null, 'Oldest wait'), h('th', null, 'Requested'))),
+          this.#charRows,
+        ),
+      ),
+    )
     this.#body = h(
       'div',
       { class: 'page' },
@@ -62,6 +96,7 @@ export class QueuesPage extends RcPage {
         h('a', { href: href('/workers'), class: 'btn btn-sm' }, 'Back to workers'),
       ),
       h('div', { class: 'card' }, this.#error.el, this.#table, this.#empty),
+      this.#charCard,
     )
     this.append(this.#refused, this.#body)
   }
@@ -92,6 +127,23 @@ export class QueuesPage extends RcPage {
       },
       (el, queue) => this.#views.get(el)!.update(queue, this.#action.busy),
     )
+
+    const byCharacteristic = (this.#queues.state.data?.backlogByCharacteristic ?? []).filter((c) => c.count > 0)
+    show(this.#charCard, byCharacteristic.length > 0)
+    syncKeyed(
+      this.#charRows,
+      byCharacteristic,
+      (c) => `${c.key}=${c.value}`,
+      () => h('tr', null, h('td', { class: 'mono' }), h('td', { class: 'numeric' }), h('td', { class: 'numeric' }), h('td', { class: 'numeric' }), h('td', { class: 'meta' })),
+      (el, c) => {
+        const cells = el.children
+        setText(cells[0] as HTMLElement, `${c.key}=${c.value}`)
+        setText(cells[1] as HTMLElement, String(c.queues))
+        setText(cells[2] as HTMLElement, String(c.count))
+        setText(cells[3] as HTMLElement, formatMetric(c.oldestAgeSeconds, 'seconds'))
+        setText(cells[4] as HTMLElement, requested(c.cpuRequestMillicores, c.memoryLimitBytes))
+      },
+    )
   }
 
   async #delete(queue: QueueSummary): Promise<void> {
@@ -118,6 +170,8 @@ class QueueRow {
   readonly #save: PushButton
   readonly #characteristics: HTMLTableCellElement
   readonly #backlog: HTMLTableCellElement
+  readonly #oldest: HTMLTableCellElement
+  readonly #requested: HTMLTableCellElement
   readonly #isDefault: HTMLTableCellElement
   readonly #delete: PushButton
 
@@ -162,9 +216,11 @@ class QueueRow {
     })
     this.#characteristics = h('td', { class: 'meta mono' })
     this.#backlog = h('td', { class: 'numeric' })
+    this.#oldest = h('td', { class: 'numeric' })
+    this.#requested = h('td', { class: 'meta' })
     this.#isDefault = h('td')
     this.#delete = button('Delete', { small: true, variant: 'danger', onClick: () => onDelete(this.#queue) })
-    this.el = h('tr', null, h('td', null, this.#nameButton, this.#form), this.#characteristics, this.#backlog, this.#isDefault, h('td', null, this.#delete))
+    this.el = h('tr', null, h('td', null, this.#nameButton, this.#form), this.#characteristics, this.#backlog, this.#oldest, this.#requested, this.#isDefault, h('td', null, this.#delete))
   }
 
   update(queue: QueueSummary, pageBusy: boolean): void {
@@ -176,10 +232,18 @@ class QueueRow {
     this.#error.set(this.#action.error)
     setText(this.#characteristics, queue.characteristics.map((c) => `${c.key}=${c.value}`).join(', ') || '—')
     setText(this.#backlog, String(queue.backlogCount))
+    setText(this.#oldest, queue.backlogCount > 0 || queue.backlogOldestAgeSeconds ? formatMetric(queue.backlogOldestAgeSeconds, 'seconds') : '—')
+    setText(this.#requested, requested(queue.backlogCpuRequestMillicores, queue.backlogMemoryLimitBytes))
     setText(this.#isDefault, queue.isDefault ? 'Yes' : 'No')
     show(this.#delete, !queue.isDefault)
     this.#delete.disabled = pageBusy
   }
+}
+
+/** The CPU requests and memory limits of the waiting jobs, or a dash. */
+export function requested(cpuMillicores: number | undefined, memoryBytes: number | undefined): string {
+  if (!cpuMillicores && !memoryBytes) return '—'
+  return `${formatMetric(cpuMillicores ?? 0, 'millicores')} / ${formatMetric(memoryBytes ?? 0, 'bytes')}`
 }
 
 export const tag = 'rc-queues-page'

@@ -2,11 +2,13 @@ package middleware
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"strings"
 	"time"
 
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/audit"
+	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/authz"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/checkauth"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store/models"
@@ -40,31 +42,17 @@ func APITokenMiddleware(appStore store.Store) func(http.Handler) http.Handler {
 				return
 			}
 
-			// Validate token against database
-			apiToken, user, err := appStore.ValidateAPIToken(r.Context(), token)
+			principal, user, apiToken, err := PrincipalForToken(r.Context(), appStore, token)
 			if err != nil {
 				w.Header().Set("Content-Type", "application/json")
 				w.WriteHeader(http.StatusUnauthorized)
-				w.Write([]byte(`{"error":"unauthorized","message":"Invalid or expired token"}`))
+				w.Write([]byte(`{"error":"unauthorized","message":"` + err.Error() + `"}`))
 				return
 			}
 
-			capabilities, err := tokencaps.New(apiToken.Capabilities...)
-			if err != nil {
-				w.Header().Set("Content-Type", "application/json")
-				w.WriteHeader(http.StatusUnauthorized)
-				w.Write([]byte(`{"error":"unauthorized","message":"Invalid token authority"}`))
+			// Overload protection: a principal over the API rate limit gets 429.
+			if refuseRateLimitedAPI(w, principal) {
 				return
-			}
-			principal := &checkauth.Principal{
-				CredentialID: apiToken.TokenID, CredentialType: apiToken.SubjectType,
-				UserID: apiToken.UserID, AllOrganizations: apiToken.AllOrganizations,
-				OrganizationIDs: append([]string(nil), apiToken.OrganizationIDs...),
-				AllCapabilities: apiToken.AllCapabilities, Capabilities: capabilities,
-				BoundJobID: valueOrEmpty(apiToken.BoundJobID),
-			}
-			if apiToken.OwnerOrgID != nil {
-				principal.OwnerOrgID = *apiToken.OwnerOrgID
 			}
 
 			// Add the classified principal, optional user, and verification state.
@@ -82,6 +70,49 @@ func APITokenMiddleware(appStore store.Store) func(http.Handler) http.Handler {
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})
 	}
+}
+
+// errInvalidToken and errInvalidAuthority are the refusals of
+// PrincipalForToken. Their text is the message of the 401 response.
+var (
+	errInvalidToken     = errors.New("Invalid or expired token")
+	errInvalidAuthority = errors.New("Invalid token authority")
+)
+
+// PrincipalForToken validates an API token and returns its classified
+// principal and optional user, the same way for every endpoint that accepts
+// a bearer token (REST, and the UI event stream). A service principal token
+// is narrowed to the roles of its principal.
+func PrincipalForToken(ctx context.Context, appStore store.Store, token string) (*checkauth.Principal, *models.User, *models.APIToken, error) {
+	apiToken, user, err := appStore.ValidateAPIToken(ctx, token)
+	if err != nil || apiToken == nil {
+		return nil, nil, nil, errInvalidToken
+	}
+	capabilities, err := tokencaps.New(apiToken.Capabilities...)
+	if err != nil {
+		return nil, nil, nil, errInvalidAuthority
+	}
+	principal := &checkauth.Principal{
+		CredentialID: apiToken.TokenID, CredentialType: apiToken.SubjectType,
+		UserID: apiToken.UserID, AllOrganizations: apiToken.AllOrganizations,
+		OrganizationIDs: append([]string(nil), apiToken.OrganizationIDs...),
+		AllCapabilities: apiToken.AllCapabilities, Capabilities: capabilities,
+		BoundJobID: valueOrEmpty(apiToken.BoundJobID),
+	}
+	if apiToken.OwnerOrgID != nil {
+		principal.OwnerOrgID = *apiToken.OwnerOrgID
+	}
+	principal.PrincipalID = valueOrEmpty(apiToken.PrincipalID)
+	principal.IntersectRoles = apiToken.IntersectRoles
+	// A token issued for a service principal acts with its capabilities
+	// intersected with the principal's roles.
+	if principal.IsServicePrincipalToken() {
+		roleStore, ok := appStore.(authz.RoleStore)
+		if !ok || authz.NewResolver(roleStore).NarrowServicePrincipalToken(ctx, principal) != nil {
+			return nil, nil, nil, errInvalidToken
+		}
+	}
+	return principal, user, apiToken, nil
 }
 
 func valueOrEmpty(value *string) string {

@@ -29,6 +29,13 @@ const (
 	PoliciesManage      = "policies:manage"
 	TokensManage        = "tokens:manage"
 	AuditRead           = "audit:read"
+	// WorkersRead reads worker capacity data: the queue backlog. It is the
+	// least-privilege capability for an autoscaler.
+	WorkersRead = "workers:read"
+	// DiagnosisWrite posts diagnosis entries on jobs and workflows
+	// (docs/diagnosis.md). It is intersected with the roles of the
+	// principal, as each capability is.
+	DiagnosisWrite = "diagnosis:write"
 )
 
 var ordered = []string{
@@ -36,7 +43,8 @@ var ordered = []string{
 	ProjectsRead, ProjectsCreate, ProjectsManage,
 	JobsSubmit, JobsRead, JobsCancel, JobsRetry,
 	LogsRead, WorkflowsRead, WorkflowsControl,
-	SecretsManage, WorkersManage, PoliciesManage, TokensManage, AuditRead,
+	SecretsManage, WorkersManage, WorkersRead, PoliciesManage, TokensManage, AuditRead,
+	DiagnosisWrite,
 }
 
 var known = func() map[string]struct{} {

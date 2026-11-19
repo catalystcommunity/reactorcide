@@ -50,6 +50,8 @@ class JobTrigger:
         job_dir: Container path runnerlib treats as the job directory
         working_dir: Raw process working directory
         run_as_user: Container user for deployed workers
+        run_as_administrator: run_as.administrator (Windows VM jobs only);
+            None means not set and is omitted from the payload
         for_each: Values that expand this trigger into one job per value
         item_var: Environment variable name for the current for_each value
         worker_class: Worker policy class for the job
@@ -57,6 +59,7 @@ class JobTrigger:
         resources: CPU and memory requests and limits for the job
         disable_run_local: Whether local execution is prohibited
         run_local: Local-only execution settings
+        quarantine_policy: "report" or "ignore_quarantined" (see eval.JobConfig)
     """
     job_name: str
     depends_on: List[str] = field(default_factory=list)
@@ -79,6 +82,7 @@ class JobTrigger:
     job_dir: Optional[str] = None
     working_dir: Optional[str] = None
     run_as_user: Optional[str] = None
+    run_as_administrator: Optional[bool] = None
     for_each: Optional[List[Any]] = None
     item_var: Optional[str] = None
     worker_class: Optional[str] = None
@@ -86,6 +90,7 @@ class JobTrigger:
     resources: Optional[Dict[str, Any]] = None
     disable_run_local: Optional[bool] = None
     run_local: Optional[Dict[str, Any]] = None
+    quarantine_policy: Optional[str] = None
     # Set by the eval from the job's `if:`: skip=True means the predicates are
     # false for this event (the coordinator creates a skipped node);
     # decision_reasons explains the verdict either way.
@@ -109,6 +114,12 @@ class _SecureRedirectHandler(urllib.request.HTTPRedirectHandler):
             raise urllib.error.URLError("redirect uses an unsupported transport")
         if scheme != "https" and not self._allow_insecure_transport:
             raise urllib.error.URLError("redirect would use a transport without TLS")
+        # urllib copies the Authorization header (the job token) to the
+        # redirect target. Never follow a redirect to another origin.
+        current = urllib.parse.urlparse(req.full_url)
+        target = urllib.parse.urlparse(newurl)
+        if (target.scheme.lower(), target.netloc.lower()) != (current.scheme.lower(), current.netloc.lower()):
+            raise urllib.error.URLError("redirect to another host is refused")
         return super().redirect_request(req, fp, code, msg, headers, newurl)
 
 
@@ -147,20 +158,67 @@ class WorkflowContext:
         """Get current job ID from environment."""
         return self._job_id
 
+    @staticmethod
+    def _env(name: str) -> Optional[str]:
+        value = os.getenv(name, "").strip()
+        return value or None
+
+    def _is_pull_request(self) -> bool:
+        return bool(self._env("REACTORCIDE_PR_NUMBER")) or (
+            (self._env("REACTORCIDE_EVENT_TYPE") or "").startswith("pull_request")
+        )
+
+    def _is_tag(self) -> bool:
+        return self._env("REACTORCIDE_EVENT_TYPE") == "tag_created"
+
     @property
     def branch(self) -> Optional[str]:
-        """Get current branch from environment."""
-        return os.getenv("REACTORCIDE_GIT_BRANCH")
+        """The branch of the code under test.
+
+        REACTORCIDE_GIT_BRANCH wins when it is set (a local run). Else, for a
+        pull request, the head branch (REACTORCIDE_HEAD_REF, then
+        REACTORCIDE_PR_REF). It is not the target branch: a pull request into
+        main does not give "main". For a push, REACTORCIDE_BRANCH. For a tag,
+        None (see ref).
+        """
+        explicit = self._env("REACTORCIDE_GIT_BRANCH")
+        if explicit:
+            return explicit
+        if self._is_pull_request():
+            return self._env("REACTORCIDE_HEAD_REF") or self._env("REACTORCIDE_PR_REF")
+        if self._is_tag():
+            return None
+        return self._env("REACTORCIDE_BRANCH")
 
     @property
     def commit(self) -> Optional[str]:
-        """Get current commit SHA from environment."""
-        return os.getenv("REACTORCIDE_GIT_COMMIT")
+        """The commit SHA of the code under test.
+
+        REACTORCIDE_GIT_COMMIT wins when it is set, else REACTORCIDE_SHA.
+        """
+        return self._env("REACTORCIDE_GIT_COMMIT") or self._env("REACTORCIDE_SHA")
 
     @property
     def ref(self) -> Optional[str]:
-        """Get current git ref from environment."""
-        return os.getenv("REACTORCIDE_GIT_REF")
+        """The full git ref of the code under test.
+
+        REACTORCIDE_GIT_REF wins when it is set. Else refs/tags/<tag> for a
+        tag event, refs/heads/<head branch> for a pull request (a branch of
+        the head repository, which can be a fork), and refs/heads/<branch>
+        for a push. None when the job environment has no branch.
+        """
+        explicit = self._env("REACTORCIDE_GIT_REF")
+        if explicit:
+            return explicit
+        if self._is_tag():
+            tag = self._env("REACTORCIDE_BRANCH")
+            return f"refs/tags/{tag}" if tag else None
+        name = self.branch
+        if not name:
+            return None
+        if name.startswith("refs/"):
+            return name
+        return f"refs/heads/{name}"
 
     @property
     def workflow_id(self) -> Optional[str]:
@@ -363,6 +421,13 @@ class WorkflowContext:
                 # Optional extra commit status (YAML status.context). Not an
                 # authority field: the coordinator validates it again.
                 item["status_context"] = batch["status_context"]
+            # Optional owners and contact (YAML owners/contact). Facts, not
+            # authority: the coordinator uses them only from the trusted base
+            # definition and validates them again.
+            if batch.get("owners"):
+                item["owners"] = batch["owners"]
+            if batch.get("contact"):
+                item["contact"] = batch["contact"]
             if include_authority:
                 item.update({
                     "ci_origin": batch.get("ci_origin", "base"),
@@ -475,51 +540,6 @@ class WorkflowContext:
         except (urllib.error.URLError, OSError) as exc:
             raise RuntimeError("Trigger API submission failed") from exc
 
-    def is_job_running(self, job_name: str) -> bool:
-        """
-        Check if a job is currently running.
-
-        Args:
-            job_name: Name of the job to check
-
-        Returns:
-            True if the job is running, False otherwise
-
-        Note:
-            This requires API access to the Coordinator.
-            Returns False if API is not configured.
-        """
-        if not self._coordinator_url or not self._api_token:
-            print("⚠ Warning: Cannot check job state - API not configured", file=sys.stderr)
-            return False
-
-        # TODO: Implement API call to check job state
-        print(f"⚠ Warning: is_job_running() not yet implemented for job: {job_name}", file=sys.stderr)
-        return False
-
-    def get_job_result(self, job_name: str) -> Optional[Dict[str, Any]]:
-        """
-        Get the result of a previous job.
-
-        Args:
-            job_name: Name of the job to query
-
-        Returns:
-            Dictionary with job result information (exit_code, status, logs_url, etc.)
-            or None if job not found or API not configured
-
-        Note:
-            This requires API access to the Coordinator.
-            Returns None if API is not configured.
-        """
-        if not self._coordinator_url or not self._api_token:
-            print("⚠ Warning: Cannot get job result - API not configured", file=sys.stderr)
-            return None
-
-        # TODO: Implement API call to get job result
-        print(f"⚠ Warning: get_job_result() not yet implemented for job: {job_name}", file=sys.stderr)
-        return None
-
     def log_next_job(self, job_name: str, reason: str = "") -> None:
         """
         Log what job should run next (for local execution mode).
@@ -596,34 +616,6 @@ def flush_triggers() -> None:
     """
     ctx = _get_context()
     ctx.flush_triggers()
-
-
-def is_job_running(job_name: str) -> bool:
-    """
-    Check if a job is currently running.
-
-    Args:
-        job_name: Name of the job to check
-
-    Returns:
-        True if the job is running, False otherwise
-    """
-    ctx = _get_context()
-    return ctx.is_job_running(job_name)
-
-
-def get_job_result(job_name: str) -> Optional[Dict[str, Any]]:
-    """
-    Get the result of a previous job.
-
-    Args:
-        job_name: Name of the job to query
-
-    Returns:
-        Dictionary with job result information or None if not found
-    """
-    ctx = _get_context()
-    return ctx.get_job_result(job_name)
 
 
 def log_next_job(job_name: str, reason: str = "") -> None:

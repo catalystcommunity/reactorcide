@@ -9,10 +9,11 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"sync"
 	"time"
 
 	vz "github.com/Code-Hex/vz/v3"
+
+	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/vmguest"
 )
 
 func buildMacImage(ctx context.Context, opts MacImageBuildOptions) error {
@@ -22,11 +23,20 @@ func buildMacImage(ctx context.Context, opts MacImageBuildOptions) error {
 	if opts.OutputBundle == "" {
 		return errors.New("vmrunner: output bundle is required")
 	}
-	if opts.Creds.User == "" {
-		opts.Creds.User = "reactorcide"
+	if opts.User == "" {
+		opts.User = "reactorcide"
 	}
-	if len(opts.Creds.PrivateKeyPEM) == 0 && opts.Creds.Password == "" {
-		return errors.New("vmrunner: image build needs an SSH private key or password for the bootstrap image")
+	var guestDaemon []byte
+	if opts.GuestDaemon != "" {
+		data, err := os.ReadFile(opts.GuestDaemon)
+		if err != nil {
+			return fmt.Errorf("vmrunner: read guest daemon: %w", err)
+		}
+		guestDaemon = data
+	}
+	egressDialer, err := EgressDialerFromEnv()
+	if err != nil {
+		return err
 	}
 	if opts.LogWriter == nil {
 		opts.LogWriter = io.Discard
@@ -62,7 +72,7 @@ func buildMacImage(ctx context.Context, opts MacImageBuildOptions) error {
 		}
 	}
 
-	config, mac, err := buildVMConfig(tmp, filepath.Join(tmp, BundleDiskImage), filepath.Join(tmp, BundleAuxImage), BootSpec{
+	config, err := buildVMConfig(tmp, filepath.Join(tmp, BundleDiskImage), filepath.Join(tmp, BundleAuxImage), BootSpec{
 		CPUs: opts.CPUs, MemoryBytes: opts.MemoryBytes, Label: "reactorcide-image-build",
 	})
 	if err != nil {
@@ -83,34 +93,57 @@ func buildMacImage(ctx context.Context, opts MacImageBuildOptions) error {
 	if err := waitForRunning(ctx, vm, bootStateTimeout); err != nil {
 		return fmt.Errorf("vmrunner: wait for image build VM: %w", err)
 	}
-	ip, err := resolveGuestIP(ctx, mac, leaseResolveTimeout, leaseResolvePoll)
+	dev, err := socketDevice(vm)
 	if err != nil {
-		return fmt.Errorf("vmrunner: resolve image build VM address: %w", err)
+		return err
 	}
-	addr := GuestAddr{Host: ip, Port: 22}
-	if err := waitTCPReachable(ctx, addr, 2*time.Minute, 2*time.Second); err != nil {
-		return fmt.Errorf("vmrunner: wait for image build SSH: %w", err)
+	egress, err := listenEgress(dev, egressDialer, "image-build")
+	if err != nil {
+		return err
 	}
-	transport := NewSSHTransport()
+	defer egress.Close()
+	addr := GuestAddr{Dial: vsockGuestDialer(dev)}
+	transport := NewVsockTransport()
+	if err := waitGuestReachable(ctx, transport, addr, 5*time.Minute, 2*time.Second); err != nil {
+		return fmt.Errorf("vmrunner: wait for the image build guest daemon (is vmguest installed in the source image?): %w", err)
+	}
+	root := GuestCreds{}
+	user := GuestCreds{User: opts.User}
+	if guestDaemon != nil {
+		next := vmguest.MacDaemonPath + ".new"
+		code, err := runGuestCommand(ctx, transport, addr, root, GuestCommand{
+			Platform: GuestPlatformPOSIX,
+			Files:    []GuestFile{{Path: next, Data: guestDaemon, Mode: 0o755}},
+			Args:     []string{"/bin/mv", "-f", next, vmguest.MacDaemonPath},
+		}, opts.LogWriter)
+		if err != nil {
+			return fmt.Errorf("vmrunner: install guest daemon: %w", err)
+		}
+		if code != 0 {
+			return fmt.Errorf("vmrunner: install guest daemon exited with code %d", code)
+		}
+	}
+	// /job: images from before this step have no writable /job (the macOS
+	// system volume is read-only), so each build makes it.
+	code, err := runGuestCommand(ctx, transport, addr, root, GuestCommand{
+		Platform: GuestPlatformPOSIX,
+		Args:     []string{"/bin/sh", "-c", vmguest.MacJobDirSetupScript},
+	}, opts.LogWriter)
+	if err != nil {
+		return fmt.Errorf("vmrunner: set up /job: %w", err)
+	}
+	if code != 0 {
+		return fmt.Errorf("vmrunner: set up /job exited with code %d", code)
+	}
 	for i, script := range opts.Scripts {
 		if _, err := fmt.Fprintf(opts.LogWriter, "[provision %d/%d] starting\n", i+1, len(opts.Scripts)); err != nil {
 			return err
 		}
-		session, err := transport.Start(ctx, addr, opts.Creds, GuestCommand{
+		code, waitErr := runGuestCommand(ctx, transport, addr, user, GuestCommand{
 			Platform: GuestPlatformPOSIX,
 			Args:     []string{"/bin/zsh", "-c", script},
-			Env:      map[string]string{"HOME": "/Users/" + opts.Creds.User},
-		})
-		if err != nil {
-			return fmt.Errorf("vmrunner: start provision script %d: %w", i+1, err)
-		}
-		var wg sync.WaitGroup
-		wg.Add(2)
-		go func() { defer wg.Done(); _, _ = io.Copy(opts.LogWriter, session.Stdout()) }()
-		go func() { defer wg.Done(); _, _ = io.Copy(opts.LogWriter, session.Stderr()) }()
-		code, waitErr := session.Wait()
-		wg.Wait()
-		_ = session.Close()
+			Env:      map[string]string{"HOME": "/Users/" + opts.User},
+		}, opts.LogWriter)
 		if waitErr != nil {
 			return fmt.Errorf("vmrunner: provision script %d: %w", i+1, waitErr)
 		}
@@ -119,15 +152,10 @@ func buildMacImage(ctx context.Context, opts MacImageBuildOptions) error {
 		}
 	}
 
-	shutdownEnv := map[string]string{}
-	if opts.Creds.Password != "" {
-		shutdownEnv["REACTORCIDE_SHUTDOWN_PASSWORD"] = opts.Creds.Password
-	}
-	shutdownScript := `sync; if sudo -n /sbin/shutdown -h now >/dev/null 2>&1; then exit 0; fi; if [ -n "${REACTORCIDE_SHUTDOWN_PASSWORD:-}" ]; then printf '%s\n' "$REACTORCIDE_SHUTDOWN_PASSWORD" | sudo -S -p '' /sbin/shutdown -h now; else exit 1; fi`
-	shutdown, err := transport.Start(ctx, addr, opts.Creds, GuestCommand{
+	// The guest daemon runs as root, so the shutdown needs no sudo policy.
+	shutdown, err := transport.Start(ctx, addr, root, GuestCommand{
 		Platform: GuestPlatformPOSIX,
-		Args:     []string{"/bin/zsh", "-c", shutdownScript},
-		Env:      shutdownEnv,
+		Args:     []string{"/bin/sh", "-c", "sync; /sbin/shutdown -h now"},
 	})
 	if err == nil {
 		go func() { _, _ = io.Copy(io.Discard, shutdown.Stdout()) }()

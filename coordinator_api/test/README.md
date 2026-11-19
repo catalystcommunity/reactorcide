@@ -1,74 +1,62 @@
-# App API Test Infrastructure
+# Coordinator Database Integration Tests
 
-This package provides a database testing infrastructure for coordinator_api that:
-1. Initializes the database once for all tests
-2. Runs each test in a transaction that's rolled back after the test completes
-3. Provides utilities for generating test data
+This package holds the database integration tests of `coordinator_api`. The
+tests use a real PostgreSQL database, not mocks.
 
 ## How It Works
 
-The testing infrastructure:
-- Sets up a global database connection once during test initialization
-- Wraps each test in a transaction that is automatically rolled back
-- Ensures tests don't affect each other and don't require cleanup
-- Uses the same database initialization flow as the real application
+`TestMain` in `setup_test.go` does these steps one time for the package:
 
-## Using the Test Database
+1. It starts a PostgreSQL 17 container with testcontainers-go.
+2. It sets `TEST_DB_URI` and `DB_URI` to the connection string of the
+   container.
+3. It sets `COMMIT_ON_SUCCESS=false`.
+4. It runs all migrations (`cmd.RunMigrations`).
+5. It opens the test connections (`initTestDB` in `test_utils.go`).
+6. It makes the default organization.
+7. It runs the tests, then stops the container.
 
-### 1. Set up TestMain in your test package
+Each test runs in a transaction. The transaction rolls back after the test,
+also after a panic. Thus tests do not change the data of other tests, and no
+cleanup is necessary.
 
-```go
-func TestMain(m *testing.M) {
-    // Use the TestMain from test_utils.go
-    test.TestMain(m)
-}
+## Run the Tests
+
+A Docker-compatible container runtime is necessary.
+
+```bash
+cd coordinator_api
+go test ./test/... -count=1
 ```
 
-### 2. Write transactional tests
+`go test -short` skips this package. `TestMain` exits before it starts the
+container.
+
+## Write a Transactional Test
 
 ```go
 func TestSomething(t *testing.T) {
     RunTransactionalTest(t, func(ctx context.Context, tx *gorm.DB) {
-        // Your test code here
-        
-        // Use store.AppStore for database operations
-        testUser := CreateUser()
-        err := store.AppStore.CreateUser(ctx, testUser)
-        
-        // Or use the transaction directly for more complex operations
-        result := tx.Create(&models.YourModel{...})
-        
-        // Assertions
+        // Use store.AppStore with ctx: the store uses the transaction.
+        // Or use tx directly.
+        du := &DataUtils{db: tx}
+        user, err := du.CreateUser(DataSetup{})
         assert.NoError(t, err)
+        _ = user
     })
-    // No cleanup needed - transaction is automatically rolled back
+    // The transaction rolls back here.
 }
 ```
 
-### 3. Configuration
+`GetTestMux` in `test_utils.go` returns the application HTTP mux for
+handler tests.
 
-By default, tests connect to:
-```
-postgresql://root:root@localhost:26257/app_test?sslmode=disable
-```
+## Test Data
 
-To use a different database, set the `TEST_DB_URI` environment variable:
+`datautils.go` has these methods on `DataUtils`. Each method fills the
+fields that `DataSetup` does not give with random values:
 
-```bash
-export TEST_DB_URI="postgresql://devuser:devpass@monodemo-postgresql:5432/monodemopg?sslmode=disable"
-```
-
-## Test Data Generation
-
-The `datautils.go` file provides functions to create test data:
-
-- `CreateUser()` - Creates a test user with random data
-- `CreateJob()` - Creates a test job
-
-## Benefits
-
-1. **Speed**: Database is initialized only once for all tests
-2. **Isolation**: Each test runs in its own transaction
-3. **No cleanup**: All changes are rolled back automatically
-4. **Real database**: Tests run against a real database, not mocks
-5. **Consistent**: Uses the same initialization flow as the real app
+- `CreateUser(DataSetup)` makes a user.
+- `CreateJob(DataSetup)` makes a job.
+- `CreateAPIToken(DataSetup)` makes an API token. When the setup has no
+  `UserID`, it makes a user first.

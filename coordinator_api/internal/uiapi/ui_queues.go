@@ -39,13 +39,14 @@ func queueToSummary(q *models.Queue, backlog map[string]int64) csilapi.QueueSumm
 
 // ListQueues requires global admin: queues have no creation path that sets
 // an owning org today (see requireManageWorkers's doc comment), so this is
-// always the global-admin branch.
+// always the global-admin branch. It is a read (requireViewWorkers): a token
+// for every organization needs workers:read or workers:manage.
 func (s *UiService) ListQueues(ctx context.Context, req csilapi.ListQueuesRequest) (csilapi.ListQueuesResponse, error) {
-	id, _, authErr := s.deps.requireUser(ctx)
+	ctx, id, _, authErr := s.deps.requireManagementIdentity(ctx)
 	if authErr != nil {
 		return csilapi.ListQueuesResponse{}, authErr
 	}
-	if err := s.requireManageWorkers(ctx, id, nil); err != nil {
+	if err := s.requireViewWorkers(ctx, id, nil); err != nil {
 		return csilapi.ListQueuesResponse{}, err
 	}
 
@@ -58,7 +59,8 @@ func (s *UiService) ListQueues(ctx context.Context, req csilapi.ListQueuesReques
 	for i := range queues {
 		out[i] = queueToSummary(&queues[i], backlog)
 	}
-	return csilapi.ListQueuesResponse{Queues: out}, nil
+	byCharacteristic := s.addQueueBacklogDetail(ctx, out)
+	return csilapi.ListQueuesResponse{Queues: out, BacklogByCharacteristic: byCharacteristic}, nil
 }
 
 // CreateQueue lets an operator pre-create a queue (characteristics +
@@ -66,7 +68,7 @@ func (s *UiService) ListQueues(ctx context.Context, req csilapi.ListQueuesReques
 // there is no update-characteristics op, only RenameQueue for the display
 // name. Requires global admin, same as every queue op.
 func (s *UiService) CreateQueue(ctx context.Context, req csilapi.CreateQueueRequest) (csilapi.CreateQueueResponse, error) {
-	id, _, authErr := s.deps.requireUser(ctx)
+	ctx, id, _, authErr := s.deps.requireManagementIdentity(ctx)
 	if authErr != nil {
 		return csilapi.CreateQueueResponse{}, authErr
 	}
@@ -93,7 +95,7 @@ func (s *UiService) CreateQueue(ctx context.Context, req csilapi.CreateQueueRequ
 // RenameQueue updates a queue's mutable display name only. Requires global
 // admin, same as every queue op.
 func (s *UiService) RenameQueue(ctx context.Context, req csilapi.RenameQueueRequest) (csilapi.RenameQueueResponse, error) {
-	id, _, authErr := s.deps.requireUser(ctx)
+	ctx, id, _, authErr := s.deps.requireManagementIdentity(ctx)
 	if authErr != nil {
 		return csilapi.RenameQueueResponse{}, authErr
 	}
@@ -123,7 +125,7 @@ func (s *UiService) RenameQueue(ctx context.Context, req csilapi.RenameQueueRequ
 // untagged/os-less jobs would otherwise have nowhere to resolve to. Requires
 // global admin, same as every queue op.
 func (s *UiService) DeleteQueue(ctx context.Context, req csilapi.DeleteQueueRequest) (csilapi.DeleteQueueResponse, error) {
-	id, _, authErr := s.deps.requireUser(ctx)
+	ctx, id, _, authErr := s.deps.requireManagementIdentity(ctx)
 	if authErr != nil {
 		return csilapi.DeleteQueueResponse{}, authErr
 	}

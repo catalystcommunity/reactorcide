@@ -33,13 +33,27 @@ func (ps PostgresDbStore) ListRootWorkflowInstancesForEvent(ctx context.Context,
 	}
 	// The root workflows the event created, and the workflows of earlier
 	// events that it carries (a re-evaluation that did not change their
-	// decision).
+	// decision). A retry or a re-run of a workflow supersedes it: of each
+	// chain (the first instance and its re-runs, rerun_of_workflow_id),
+	// only the newest instance counts. Thus a re-run updates the checks,
+	// and a second re-run starts from the newest instances.
 	var workflows []models.WorkflowInstance
-	if err := ps.getDB(ctx).Where(`parent_workflow_id IS NULL AND (event_id = ? OR workflow_id IN (
-			SELECT workflow_id FROM ci_event_workflow_decisions
-			 WHERE event_id = ? AND decision = ? AND workflow_id IS NOT NULL))`,
-		eventID, eventID, models.WorkflowDecisionCarried).
-		Order("created_at ASC").Find(&workflows).Error; err != nil {
+	if err := ps.getDB(ctx).Raw(`
+WITH carried AS (
+    SELECT coalesce(w.rerun_of_workflow_id, w.workflow_id) AS chain_id
+      FROM ci_event_workflow_decisions d
+      JOIN workflow_instances w ON w.workflow_id = d.workflow_id
+     WHERE d.event_id = ? AND d.decision = ? AND d.workflow_id IS NOT NULL
+), candidates AS (
+    SELECT wi.*, coalesce(wi.rerun_of_workflow_id, wi.workflow_id) AS chain_id
+      FROM workflow_instances wi
+     WHERE wi.parent_workflow_id IS NULL
+       AND (wi.event_id = ? OR wi.rerun_event_id = ? OR coalesce(wi.rerun_of_workflow_id, wi.workflow_id) IN (SELECT chain_id FROM carried))
+), newest AS (
+    SELECT DISTINCT ON (chain_id) * FROM candidates ORDER BY chain_id, created_at DESC, workflow_id DESC
+)
+SELECT * FROM newest ORDER BY created_at ASC, workflow_id ASC`,
+		eventID, models.WorkflowDecisionCarried, eventID, eventID).Scan(&workflows).Error; err != nil {
 		return nil, fmt.Errorf("failed to list event workflows: %w", err)
 	}
 	return workflows, nil

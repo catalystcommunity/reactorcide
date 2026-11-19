@@ -12,6 +12,7 @@ import (
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/objects"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store/models"
+	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/vcs"
 )
 
 // Changed-file limits. The full list goes to object storage; the event row
@@ -62,6 +63,21 @@ func nonEmptyStrings(values []string) []string {
 	return out
 }
 
+// decisionsAreBaseView reports whether runnerlib's decisions describe the
+// TRUSTED base definitions of a pull request: the eval read its CI from the
+// base SHA or a separate CI repository, not from the head or the merge
+// commit. A push has no such view (its CI is the pushed commit, or
+// push.before, which the pusher wrote).
+func decisionsAreBaseView(parentJob *models.Job) bool {
+	if envString(parentJob, "REACTORCIDE_PR_NUMBER") == "" {
+		return false
+	}
+	if envString(parentJob, "REACTORCIDE_EVENT_TYPE") == string(vcs.EventPullRequestMerged) {
+		return false
+	}
+	return parentJob.CISHA != "" && parentJob.CISHA != stringValue(parentJob.SourceRef)
+}
+
 // recordEvalDecisions stores one decision per workflow the eval considered:
 // runnerlib's matches and skips, the coordinator's policy outcome for each
 // workflow that runs, and admission refusals. It is best-effort: a failure
@@ -78,6 +94,7 @@ func (tp *TriggerProcessor) recordEvalDecisions(ctx context.Context, parentJob *
 	if !ok {
 		return
 	}
+	baseView := decisionsAreBaseView(parentJob)
 	byID := map[string]*models.CIEventWorkflowDecision{}
 	order := []string{}
 	put := func(decision models.CIEventWorkflowDecision) *models.CIEventWorkflowDecision {
@@ -101,10 +118,14 @@ func (tp *TriggerProcessor) recordEvalDecisions(ctx context.Context, parentJob *
 		default:
 			decision = models.WorkflowDecisionSkipped
 		}
-		put(models.CIEventWorkflowDecision{
+		entry := put(models.CIEventWorkflowDecision{
 			EventID: eventID, WorkflowSecurityID: id, WorkflowName: item.Name, SourceFile: item.SourceFile,
 			Decision: decision, Reasons: append([]models.DecisionReason(nil), item.Reasons...),
 		})
+		if baseView && decision == models.WorkflowDecisionRun && !strings.HasPrefix(id, "file:") {
+			entry.Reasons = append(entry.Reasons, models.DecisionReason{Kind: models.DecisionReasonBaseDefinition,
+				Detail: "the trusted base definition matched this event"})
+		}
 	}
 	selectedIDs := map[string]bool{}
 	for _, spec := range selected {
@@ -122,6 +143,29 @@ func (tp *TriggerProcessor) recordEvalDecisions(ctx context.Context, parentJob *
 		if note, ok := notes[id]; ok {
 			entry.Reasons = append(entry.Reasons, note)
 		}
+		if note, ok := notes[pathAcceptanceNotePrefix+id]; ok {
+			entry.Reasons = append(entry.Reasons, note)
+		}
+	}
+	for key, note := range notes {
+		// A workflow that path acceptance skipped (path_acceptance.go).
+		id, ok := strings.CutPrefix(key, pathAcceptanceNotePrefix)
+		if !ok || selectedIDs[id] {
+			continue
+		}
+		entry := put(models.CIEventWorkflowDecision{EventID: eventID, WorkflowSecurityID: id})
+		entry.Decision = models.WorkflowDecisionSkipped
+		entry.Reasons = append(entry.Reasons, note)
+	}
+	for key, note := range notes {
+		// An advisory workflow that the shed level skipped (advisory_shed.go).
+		id, ok := strings.CutPrefix(key, advisorySkipNotePrefix)
+		if !ok || selectedIDs[id] {
+			continue
+		}
+		entry := put(models.CIEventWorkflowDecision{EventID: eventID, WorkflowSecurityID: id})
+		entry.Decision = models.WorkflowDecisionSkipped
+		entry.Reasons = append(entry.Reasons, note)
 	}
 	for id, carry := range carried {
 		entry := put(models.CIEventWorkflowDecision{EventID: eventID, WorkflowSecurityID: id, WorkflowName: carry.Name})
@@ -158,8 +202,11 @@ func (tp *TriggerProcessor) recordEvalDecisions(ctx context.Context, parentJob *
 		}
 	}
 	rows := make([]models.CIEventWorkflowDecision, 0, len(order))
+	refClassReason := tp.refClassDecisionReason(ctx, events, eventID, parentJob)
 	for _, id := range order {
-		rows = append(rows, *byID[id])
+		row := *byID[id]
+		row.Reasons = append(row.Reasons, refClassReason)
+		rows = append(rows, row)
 	}
 	if err := events.UpsertCIEventWorkflowDecisions(ctx, rows); err != nil {
 		logging.Log.WithError(err).WithField("event_id", eventID).Warn("Failed to store eval workflow decisions")

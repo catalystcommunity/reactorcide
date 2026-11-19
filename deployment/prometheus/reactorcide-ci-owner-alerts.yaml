@@ -1,0 +1,138 @@
+# Example Prometheus alerting rules for the CI owner (docs/observability.md).
+#
+# These rules are for the infrastructure that the CI owner operates:
+# infrastructure failure classes, queue wait, eval latency, outbox lag,
+# backlog age, and the rollup loop. Pipeline failures (job, timeout, oom)
+# are not here: pipeline owners get those from Reactorcide alert rules.
+#
+# The file is a PrometheusRule object (Prometheus Operator). For a plain
+# Prometheus, copy the "groups" list into a rule file.
+#
+# Change the thresholds to match your SLO targets (`reactorcide slo list`).
+# Histogram and counter metrics from the rollup loop are exported only by the
+# replica that holds the "observability-rollups" lease, so always aggregate
+# with sum(); the backlog gauges are the same on every replica, so use max().
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: reactorcide-ci-owner
+  labels:
+    app.kubernetes.io/name: reactorcide
+spec:
+  groups:
+    - name: reactorcide-infrastructure
+      rules:
+        - alert: ReactorcideInfraFailureRateHigh
+          expr: |
+            sum(rate(reactorcide_jobs_finished_total{failure_class=~"infra\\..*"}[30m]))
+              /
+            clamp_min(sum(rate(reactorcide_jobs_finished_total{failure_class!="cancelled"}[30m])), 1e-9)
+              > 0.05
+          for: 15m
+          labels:
+            severity: warning
+            owner: ci
+          annotations:
+            summary: More than 5% of finished jobs fail with an infrastructure class.
+            description: >-
+              See reactorcide_job_infra_failures_total by failure_class and
+              lane, and the CI owner dashboard (/app/insights?view=infrastructure).
+
+        - alert: ReactorcideInfraFailuresByClass
+          expr: sum by (failure_class) (increase(reactorcide_job_infra_failures_total[1h])) > 20
+          for: 10m
+          labels:
+            severity: warning
+            owner: ci
+          annotations:
+            summary: "Many {{ $labels.failure_class }} failures in the last hour."
+
+        - alert: ReactorcideQueueWaitHigh
+          expr: |
+            histogram_quantile(0.95,
+              sum by (lane, le) (rate(reactorcide_job_queue_wait_seconds_bucket[30m]))) > 600
+          for: 30m
+          labels:
+            severity: warning
+            owner: ci
+          annotations:
+            summary: "Queue wait p95 of lane {{ $labels.lane }} is above 10 minutes."
+
+        - alert: ReactorcideEvalLatencyHigh
+          expr: |
+            histogram_quantile(0.95,
+              sum by (le) (rate(reactorcide_eval_latency_seconds_bucket[30m]))) > 300
+          for: 30m
+          labels:
+            severity: warning
+            owner: ci
+          annotations:
+            summary: Webhook to first commit status p95 is above 5 minutes.
+
+        - alert: ReactorcideOutboxLag
+          expr: max(reactorcide_outbound_event_outbox_lag_seconds) > 600
+          for: 10m
+          labels:
+            severity: warning
+            owner: ci
+          annotations:
+            summary: Outbound events wait more than 10 minutes in the outbox.
+            description: Check Corndogs and the "outbound-events" lease holder.
+
+        - alert: ReactorcideBacklogOldJob
+          expr: max by (queue_name) (reactorcide_queue_backlog_oldest_age_seconds) > 1800
+          for: 10m
+          labels:
+            severity: warning
+            owner: ci
+          annotations:
+            summary: "A job waits more than 30 minutes for a worker on queue {{ $labels.queue_name }}."
+            description: Add capacity for the characteristics of the queue, or check the workers.
+
+        - alert: ReactorcideRollupsStale
+          expr: time() - max(reactorcide_rollup_last_success_timestamp_seconds{source="jobs"}) > 1800
+          for: 10m
+          labels:
+            severity: warning
+            owner: ci
+          annotations:
+            summary: The rollup loop did not finish a pass in 30 minutes. Dashboards, alerts, and SLOs are stale.
+
+        - alert: ReactorcideCoordinatorDown
+          expr: sum(up{job=~".*reactorcide.*coordinator.*|.*reactorcide-app.*"}) == 0
+          for: 5m
+          labels:
+            severity: critical
+            owner: ci
+          annotations:
+            summary: No coordinator replica answers the metrics scrape.
+            description: Change the job selector to the scrape job of your coordinator.
+
+        - alert: ReactorcideSLOErrorBudgetLow
+          expr: max by (org, sli, lane) (reactorcide_slo_error_budget_remaining_ratio) < 0.25
+          for: 30m
+          labels:
+            severity: warning
+            owner: ci
+          annotations:
+            summary: "Less than 25% of the {{ $labels.sli }} error budget is left (org {{ $labels.org }}, lane {{ $labels.lane }})."
+            description: See the SLOs on the Infrastructure view of the Insights page, or run reactorcide slo status.
+
+        - alert: ReactorcideSLOErrorBudgetExhausted
+          expr: max by (org, sli, lane) (reactorcide_slo_error_budget_remaining_ratio) <= 0
+          for: 30m
+          labels:
+            severity: critical
+            owner: ci
+          annotations:
+            summary: "The {{ $labels.sli }} error budget is exhausted (org {{ $labels.org }}, lane {{ $labels.lane }})."
+
+        - alert: ReactorcideWorkerOnDeactivatedEnrollmentToken
+          expr: max by (pool_id, enrollment_token_id) (reactorcide_workers_on_deactivated_enrollment_token) > 0
+          for: 15m
+          labels:
+            severity: warning
+            owner: ci
+          annotations:
+            summary: "{{ $value }} worker(s) run on deactivated enrollment token {{ $labels.enrollment_token_id }}."
+            description: They cannot register again after they stop. Give those hosts an active token (reactorcide workers list --on-deactivated-token).

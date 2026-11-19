@@ -415,6 +415,7 @@ def test_release_workflow_fans_out_and_joins():
         "image-runnerbase",
         "images-coordinator-worker",
         "image-web",
+        "image-egress",
         "cli-linux-amd64",
         "cli-linux-arm64",
         "cli-darwin-amd64",
@@ -436,6 +437,12 @@ def test_release_workflow_fans_out_and_joins():
         == "darwin/arm64"
     )
     assert jobs["image-runnerbase"].job.capabilities == ["builder"]
+    egress = jobs["image-egress"]
+    assert egress.job.capabilities == ["builder"]
+    assert egress.job.timeout == 3600
+    assert egress.job.resources["memory"]["limit"]
+    assert egress.environment["REACTORCIDE_RELEASE_JOB"] == "images"
+    assert egress.environment["REACTORCIDE_RELEASE_IMAGE"] == "egress"
 
 
 def test_release_workflows_match_only_merge_and_release_tag_events():
@@ -766,3 +773,63 @@ def test_image_builds_stamp_and_verify_the_version(
     assert verify.call_args.args[1:] == ("1.2.3", "linux", "amd64")
     assert verify.call_args.kwargs["module_dir"] == tmp_path / module
     assert verify.call_args.kwargs.get("command_name", "reactorcide") == command_name
+
+
+def _image_build_plugin(monkeypatch, target):
+    plugin = _load_release_plugin()
+    monkeypatch.setenv("REACTORCIDE_RELEASE_IMAGE", target)
+    monkeypatch.setenv("REGISTRY_INTERNAL", "registry.example")
+    monkeypatch.setattr(plugin, "_release_for_source", Mock(return_value={"id": 1, "tag_name": "v1.2.3"}))
+    monkeypatch.setattr(plugin, "_registry_environment", Mock(return_value={}))
+    monkeypatch.setattr(plugin, "_install_buildctl", Mock(return_value="buildctl"))
+    monkeypatch.setattr(plugin, "_wait_for_buildkit", Mock())
+    build_and_push = Mock()
+    monkeypatch.setattr(plugin, "_build_and_push", build_and_push)
+    monkeypatch.setattr(plugin, "_verify_binary_version", Mock())
+
+    def fake_run(command, *, cwd, env=None, capture_output=False):
+        if command[:2] == ["go", "build"]:
+            Path(command[command.index("-o") + 1]).write_bytes(b"binary")
+        return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
+
+    monkeypatch.setattr(plugin, "_run", fake_run)
+    return plugin, build_and_push
+
+
+def test_coordinator_worker_release_does_not_build_the_egress_image(monkeypatch, tmp_path):
+    """The egress image has its own release node (image-egress)."""
+    plugin, build_and_push = _image_build_plugin(monkeypatch, "coordinator-worker")
+    (tmp_path / "deployment").mkdir()
+    (tmp_path / "egress_proxy").mkdir()
+    (tmp_path / "egress_proxy" / "Dockerfile").write_text("FROM scratch\n")
+
+    plugin.build_release_images(tmp_path)
+
+    repositories = [call.kwargs["repository"] for call in build_and_push.call_args_list]
+    assert repositories == [
+        "registry.example/public/reactorcide/coordinator",
+        "registry.example/public/reactorcide/worker",
+    ]
+
+
+def test_egress_release_builds_the_egress_image(monkeypatch, tmp_path):
+    plugin, build_and_push = _image_build_plugin(monkeypatch, "egress")
+    (tmp_path / "egress_proxy").mkdir()
+    (tmp_path / "egress_proxy" / "Dockerfile").write_text("FROM scratch\n")
+
+    plugin.build_release_images(tmp_path)
+
+    build_and_push.assert_called_once()
+    egress = build_and_push.call_args.kwargs
+    assert egress["repository"] == "registry.example/public/reactorcide/egress"
+    assert egress["context"] == tmp_path / "egress_proxy"
+    assert egress["dockerfile"] == "Dockerfile"
+    assert egress["tag"] == "v1.2.3"
+
+
+def test_egress_release_fails_without_the_dockerfile(monkeypatch, tmp_path):
+    plugin, build_and_push = _image_build_plugin(monkeypatch, "egress")
+
+    with pytest.raises(RuntimeError, match="egress_proxy/Dockerfile"):
+        plugin.build_release_images(tmp_path)
+    build_and_push.assert_not_called()

@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/catalystcommunity/reactorcide/coordinator_api/cmd"
+	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/auth"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/config"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store"
 	"github.com/testcontainers/testcontainers-go"
@@ -97,6 +98,15 @@ func TestMain(m *testing.M) {
 			terminateContainer(ctx)
 			os.Exit(1)
 		}
+	}
+	// The login history guard, as Serve runs it. The test database is a
+	// fresh instance, so mode none (the default) gives the no-login
+	// behaviours.
+	historyStore, _ := store.AppStore.(auth.LoginHistoryStore)
+	if err := auth.EnforceLoginHistory(context.Background(), historyStore, false); err != nil {
+		fmt.Printf("Login history guard refused the test database: %v\n", err)
+		terminateContainer(ctx)
+		os.Exit(1)
 	}
 	// Run the tests
 	code := m.Run()

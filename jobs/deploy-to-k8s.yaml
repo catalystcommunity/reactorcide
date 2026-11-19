@@ -32,8 +32,10 @@ environment:
     # Inline helm values (YAML content)
     REACTORCIDE_HELM_VALUES: "${env:REACTORCIDE_HELM_VALUES}"
 
-    # Image tag
+    # Image tag (coordinator, worker, web, and egress proxy)
     REACTORCIDE_IMAGE_TAG: "${env:REACTORCIDE_IMAGE_TAG}"
+    # Optional egress proxy image repository (empty keeps the chart value)
+    REACTORCIDE_EGRESS_IMAGE_REPOSITORY: "${env:REACTORCIDE_EGRESS_IMAGE_REPOSITORY}"
 
     # Corndogs - deploy into namespace or provide external URL
     REACTORCIDE_DEPLOY_CORNDOGS: "${env:REACTORCIDE_DEPLOY_CORNDOGS}"

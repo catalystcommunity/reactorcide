@@ -9,7 +9,7 @@
 # again: it must keep matching the stored policy's `workflows:` entry.
 id: reactorcide-pr
 name: Reactorcide PR
-description: "Validate commits, then run the Go, Python, and web test suites and the CSIL generation check for pull requests."
+description: "Validate commits, then run the Go, Python, web, and egress proxy test suites and the CSIL generation check for pull requests."
 
 # The workflow trigger. One event can match several workflows, so pipelines
 # can split per team, product, or org. Each workflow shows up as its own
@@ -45,5 +45,10 @@ jobs:
 
   csil-gen-check:
     job_file: csil-gen-check.yaml
+    depends_on:
+      - conventional-commits
+
+  test-egress:
+    job_file: test-egress.yaml
     depends_on:
       - conventional-commits

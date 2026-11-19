@@ -14,8 +14,10 @@ import (
 	"time"
 
 	"github.com/catalystcommunity/app-utils-go/logging"
+	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/admission"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/characteristics"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/coordinatorworker"
+	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/resources"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/transportsecurity"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/worker"
 	"github.com/google/uuid"
@@ -28,6 +30,58 @@ import (
 // [A-Z0-9_], so a characteristic key containing "." or "-" is not reachable
 // this way -- use --custom for those.
 const customCharacteristicEnvPrefix = "REACTORCIDE_WORKER_CUSTOM_"
+
+// defaultResourcesModeMaxLeases is the lease upper bound in resources
+// admission mode when --concurrency is not set.
+const defaultResourcesModeMaxLeases = 64
+
+// standardCharacteristicKeys are the standard location characteristics. They
+// are custom characteristics on the wire, so a job that does not require one
+// matches a worker with any value or none.
+var standardCharacteristicKeys = []string{"region", "zone", "cloud"}
+
+// addStandardCharacteristics adds the non-empty standard characteristics
+// (region, zone, cloud) to custom. A key that a --custom flag or a
+// REACTORCIDE_WORKER_CUSTOM_* variable sets already is a startup error, the
+// same rule as for a duplicate custom key.
+func addStandardCharacteristics(custom []characteristics.KV, values map[string]string) ([]characteristics.KV, error) {
+	present := make(map[string]bool, len(custom))
+	for _, kv := range custom {
+		present[kv.Key] = true
+	}
+	for _, key := range standardCharacteristicKeys {
+		value := strings.TrimSpace(values[key])
+		if value == "" {
+			continue
+		}
+		if present[key] {
+			return nil, fmt.Errorf("characteristic %q is set by --%s and by a custom characteristic; set it once", key, key)
+		}
+		custom = append(custom, characteristics.KV{Key: key, Value: value})
+	}
+	return custom, nil
+}
+
+// parseAdmissionBudget parses the optional resources-mode budget. An empty
+// value leaves that resource at the measured capacity.
+func parseAdmissionBudget(cpu, memory string) (admission.Resources, error) {
+	var budget admission.Resources
+	if cpu = strings.TrimSpace(cpu); cpu != "" {
+		value, err := resources.CPUMillicores(cpu)
+		if err != nil || value <= 0 {
+			return budget, fmt.Errorf("--admission-cpu %q must be a positive CPU quantity", cpu)
+		}
+		budget.CPUMillicores = value
+	}
+	if memory = strings.TrimSpace(memory); memory != "" {
+		value, err := resources.MemoryBytes(memory)
+		if err != nil || value <= 0 {
+			return budget, fmt.Errorf("--admission-memory %q must be a positive memory quantity", memory)
+		}
+		budget.MemoryBytes = value
+	}
+	return budget, nil
+}
 
 // WorkerCommand runs a coordinator-mediated worker: it authenticates to a
 // coordinator over CSIL-RPC and pulls work through it (Register -> RequestJob
@@ -117,6 +171,43 @@ var workerFlags = []cli.Flag{
 		EnvVars: []string{"REACTORCIDE_WORKER_CONCURRENCY"},
 	},
 	&cli.StringFlag{
+		Name:    "admission",
+		Value:   admission.ModeConcurrency,
+		Usage:   "Admission mode: concurrency (a fixed lease count, the default) or resources (request work only when the CPU and memory headroom has room for it)",
+		EnvVars: []string{"REACTORCIDE_WORKER_ADMISSION"},
+	},
+	&cli.StringFlag{
+		Name:    "admission-cpu",
+		Usage:   "Resources mode: CPU budget for jobs (for example \"16\" or \"16000m\"). Empty uses the measured capacity",
+		EnvVars: []string{"REACTORCIDE_WORKER_ADMISSION_CPU"},
+	},
+	&cli.StringFlag{
+		Name:    "admission-memory",
+		Usage:   "Resources mode: memory budget for jobs (for example \"64Gi\"). Empty uses the measured capacity",
+		EnvVars: []string{"REACTORCIDE_WORKER_ADMISSION_MEMORY"},
+	},
+	&cli.StringFlag{
+		Name:    "region",
+		Usage:   "Standard \"region\" worker characteristic. Empty detects it from Kubernetes node labels when every node agrees",
+		EnvVars: []string{"REACTORCIDE_WORKER_REGION"},
+	},
+	&cli.StringFlag{
+		Name:    "zone",
+		Usage:   "Standard \"zone\" worker characteristic. Empty detects it from Kubernetes node labels when every node agrees",
+		EnvVars: []string{"REACTORCIDE_WORKER_ZONE"},
+	},
+	&cli.StringFlag{
+		Name:    "cloud",
+		Usage:   "Standard \"cloud\" worker characteristic (a free-form provider or site name)",
+		EnvVars: []string{"REACTORCIDE_WORKER_CLOUD"},
+	},
+	&cli.BoolFlag{
+		Name:    "detect-topology",
+		Value:   true,
+		Usage:   "Detect the region and zone characteristics from Kubernetes node topology labels when they are not set",
+		EnvVars: []string{"REACTORCIDE_WORKER_DETECT_TOPOLOGY"},
+	},
+	&cli.StringFlag{
 		Name:    "workspace-dir",
 		Usage:   "Base directory for each job's ephemeral workspace (bind-mounted as /job). When the worker runs in a container and drives a host container runtime, set this to a path bind-mounted identically on host and in the worker (e.g. /tmp/reactorcide-jobs); empty uses the OS temp dir.",
 		EnvVars: []string{"REACTORCIDE_WORKER_WORKSPACE_DIR"},
@@ -147,7 +238,7 @@ var workerFlags = []cli.Flag{
 	},
 	&cli.StringSliceFlag{
 		Name:    "vm-image-prefetch",
-		Usage:   "OCI VM image reference to pull before worker registration (repeatable)",
+		Usage:   "OCI or s3:// VM image reference to pull before worker registration (repeatable). The worker also pulls the image set that the coordinator sends; this list is added to it and is never removed",
 		EnvVars: []string{"REACTORCIDE_VM_IMAGE_PREFETCH"},
 	},
 	&cli.StringSliceFlag{
@@ -157,7 +248,7 @@ var workerFlags = []cli.Flag{
 	&cli.DurationFlag{
 		Name:    "vm-image-max-unused",
 		Value:   30 * 24 * time.Hour,
-		Usage:   "Remove cached VM images that have not been used for this duration",
+		Usage:   "Remove cached VM images that have not been used for this duration. Images of the current image set, of the prefetch list, and of running jobs are kept",
 		EnvVars: []string{"REACTORCIDE_VM_IMAGE_MAX_UNUSED"},
 	},
 	&cli.DurationFlag{
@@ -215,8 +306,30 @@ func RunWorker(ctx *cli.Context) error {
 		return fmt.Errorf("worker: %w", err)
 	}
 
+	custom, err = addStandardCharacteristics(custom, map[string]string{
+		"region": ctx.String("region"),
+		"zone":   ctx.String("zone"),
+		"cloud":  ctx.String("cloud"),
+	})
+	if err != nil {
+		return fmt.Errorf("worker: %w", err)
+	}
+
 	containerRuntime := ctx.String("container-runtime")
 	concurrency := ctx.Int("concurrency")
+	admissionMode, err := admission.ParseMode(ctx.String("admission"))
+	if err != nil {
+		return fmt.Errorf("worker: %w", err)
+	}
+	admissionBudget, err := parseAdmissionBudget(ctx.String("admission-cpu"), ctx.String("admission-memory"))
+	if err != nil {
+		return fmt.Errorf("worker: %w", err)
+	}
+	if admissionMode == admission.ModeResources && !ctx.IsSet("concurrency") {
+		// In resources mode the headroom limits the work. The lease count is
+		// only an upper bound, so the default of one lease does not apply.
+		concurrency = defaultResourcesModeMaxLeases
+	}
 	worker.ConfigureVMPlainHTTPRegistries(ctx.StringSlice("vm-image-registry-plain-http"))
 
 	logging.Log.WithFields(map[string]interface{}{
@@ -226,6 +339,7 @@ func RunWorker(ctx *cli.Context) error {
 		"arch":              workerArch,
 		"container_runtime": containerRuntime,
 		"concurrency":       concurrency,
+		"admission":         admissionMode,
 		"worker_key_file":   workerKeyFile,
 	}).Info("Starting coordinator-mediated worker")
 
@@ -254,6 +368,9 @@ func RunWorker(ctx *cli.Context) error {
 		WorkerVersion:          ctx.String("worker-version"),
 		ContainerRuntime:       containerRuntime,
 		Concurrency:            concurrency,
+		AdmissionMode:          admissionMode,
+		AdmissionBudget:        admissionBudget,
+		DetectTopology:         ctx.Bool("detect-topology"),
 		WorkspaceRoot:          strings.TrimSpace(ctx.String("workspace-dir")),
 		DataDir:                strings.TrimSpace(ctx.String("data-dir")),
 		MetricsInterval:        metricsInterval,

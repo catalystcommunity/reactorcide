@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/principals"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store/models"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/vcs"
@@ -53,7 +54,7 @@ func ciEventFromWebhook(project *models.Project, event *vcs.WebhookEvent) *model
 		ciEvent.Branch = pr.BaseRef
 		ciEvent.CommitSHA = sha
 		ciEvent.BaseSHA = pr.BaseSHA
-		ciEvent.Summary = models.CIEventSummary{Action: pr.Action, HeadRef: pr.HeadRef, BaseRef: pr.BaseRef}
+		ciEvent.Summary = models.CIEventSummary{Action: pr.Action, HeadRef: pr.HeadRef, BaseRef: pr.BaseRef, Draft: pr.Draft}
 	case event.Push != nil:
 		push := event.Push
 		ciEvent.Ref = push.Ref
@@ -89,9 +90,15 @@ func (h *WebhookHandler) recordCIEvent(ctx context.Context, project *models.Proj
 	if !ok {
 		return nil, true, nil
 	}
-	recorded, outcome, err := events.RecordCIEvent(ctx, ciEventFromWebhook(project, event))
+	ciEvent := ciEventFromWebhook(project, event)
+	principals.ApplyToEvent(ciEvent, h.webhookActor(ctx, event))
+	applyRefClassesToEvent(ctx, h.store, ciEvent, webhookRefClassFacts(event))
+	recorded, outcome, err := events.RecordCIEvent(ctx, ciEvent)
 	if err != nil {
 		return nil, false, err
+	}
+	if event.Coordinator != nil {
+		event.Coordinator.EventID = recorded.EventID
 	}
 	fields := logrus.Fields{
 		"event_id": recorded.EventID, "delivery_id": event.DeliveryID,
@@ -103,6 +110,16 @@ func (h *WebhookHandler) recordCIEvent(ctx context.Context, project *models.Proj
 		// the eval job existed has nothing running. Evaluate it now instead of
 		// dropping it for good; the claim below decides between concurrent
 		// redeliveries.
+		if recorded.EvalJobID == nil && recorded.Status == models.CIEventStatusRateLimited {
+			// Replay of a delivery that was over the rate limit. The event
+			// becomes received again, so the claim below can take it.
+			if err := events.SetCIEventStatus(ctx, recorded.EventID, models.CIEventStatusReceived); err != nil {
+				return nil, false, err
+			}
+			recorded.Status = models.CIEventStatusReceived
+			h.logger.WithFields(fields).Info("Redelivery of a rate-limited event; evaluating it")
+			break
+		}
 		if recorded.EvalJobID == nil &&
 			(recorded.Status == models.CIEventStatusReceived || recorded.Status == models.CIEventStatusEvaluating) {
 			h.logger.WithFields(fields).Info("Redelivery of an event with no eval job; evaluating it")
@@ -155,6 +172,8 @@ func applyCIEventToEvalJob(job *models.Job, ciEvent *models.CIEvent) {
 	}
 	eventID := ciEvent.EventID
 	job.EventID = &eventID
+	// The eval job carries the classes of its event (docs/ref-classes.md).
+	job.RefClasses = append([]string{}, ciEvent.RefClasses...)
 	if job.JobEnvVars == nil {
 		job.JobEnvVars = models.JSONB{}
 	}

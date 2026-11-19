@@ -950,3 +950,58 @@ func TestCreateWorkflowNode_LoadsPreviousSuccessfulDuration(t *testing.T) {
 		}
 	}
 }
+
+func TestProcessWorkflowCompletion_TimeoutNodeSaysWhoseFailure(t *testing.T) {
+	store := newWorkflowRuntimeStore()
+	wf := &models.WorkflowInstance{WorkflowID: "wf-t", UserID: "user-1", Name: "Reactorcide Jobs", Status: "running", QueueName: "reactorcide-jobs"}
+	store.workflows[wf.WorkflowID] = wf
+	jobID := "job-t"
+	node := &models.WorkflowNode{NodeID: "node-t", WorkflowID: wf.WorkflowID, Name: "build", Status: "running", JobID: &jobID}
+	store.nodes[node.NodeID] = node
+	store.nodeByJobID[jobID] = node.NodeID
+
+	tp := NewTriggerProcessor(store, nil)
+	tp.SetStatusUpdater(&workflowRuntimeStatusUpdater{})
+	class := models.FailureClassTimeout
+	job := &models.Job{JobID: jobID, WorkflowID: &wf.WorkflowID, Status: "timeout", FailureClass: &class}
+	if err := tp.ProcessWorkflowCompletion(context.Background(), t.TempDir(), job); err != nil {
+		t.Fatal(err)
+	}
+	got := store.nodes[node.NodeID]
+	if got.Status != "timeout" {
+		t.Fatalf("node status = %q, want timeout", got.Status)
+	}
+	if !strings.Contains(got.DecisionReason, "pipeline failure: the job exceeded its timeout") {
+		t.Fatalf("node reason = %q", got.DecisionReason)
+	}
+	if status := store.workflows[wf.WorkflowID].Status; status != "failed" {
+		t.Fatalf("a timed out node fails the workflow, got %q", status)
+	}
+}
+
+func TestEnsureWorkflowRecordsActor(t *testing.T) {
+	st := newWorkflowRuntimeStore()
+	sender := "11111111-1111-1111-1111-111111111111"
+	evalJob := &models.Job{JobID: "eval-job", UserID: "user-1", ActorPrincipalID: &sender, ActorIdentity: "vcs:github/alice"}
+	tp := NewTriggerProcessor(st, nil)
+
+	root, err := tp.ensureWorkflow(context.Background(), evalJob, &triggerWorkflowSpec{Name: "root", OperationID: "op-root"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if root.ActorPrincipalID == nil || *root.ActorPrincipalID != sender || root.ActorIdentity != "vcs:github/alice" {
+		t.Fatalf("root actor = %v %q, want the eval job actor", root.ActorPrincipalID, root.ActorIdentity)
+	}
+
+	// A child workflow keeps the actor of its parent workflow, also when the
+	// job that triggers it has a different actor.
+	other := "22222222-2222-2222-2222-222222222222"
+	workflowJob := &models.Job{JobID: "wf-job", UserID: "user-1", WorkflowID: &root.WorkflowID, ActorPrincipalID: &other}
+	child, err := tp.ensureWorkflow(context.Background(), workflowJob, &triggerWorkflowSpec{Name: "child", OperationID: "op-child"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if child.ActorPrincipalID == nil || *child.ActorPrincipalID != sender {
+		t.Fatalf("child actor = %v, want the parent workflow actor %q", child.ActorPrincipalID, sender)
+	}
+}

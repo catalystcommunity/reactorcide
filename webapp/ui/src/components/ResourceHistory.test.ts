@@ -18,6 +18,7 @@ import {
   PENDING_RETRY_MS,
   analyze,
   anomalyThreshold,
+  describeSuggestion,
   formatMetric,
   formatSeconds,
   mad,
@@ -237,5 +238,32 @@ describe('rc-resource-history', () => {
     expect(label('max')).toBe('Longest run')
     expect(el.querySelector<HTMLElement>('[data-stat="duration"]')!.hidden).toBe(true)
     expect(el.querySelector('.history-legend')?.textContent).toBe('Duration of each run')
+  })
+})
+
+describe('describeSuggestion', () => {
+  it('is empty without a suggestion', () => {
+    expect(describeSuggestion(undefined)).toBe('')
+  })
+
+  it('names the missing runs', () => {
+    expect(
+      describeSuggestion({
+        runs: 2, minRuns: 5, sufficient: false, cpuP95Millicores: 0, memoryPeakP95Bytes: 0, oomRuns: 0,
+        currentCpuRequestMillicores: 0, currentMemoryLimitBytes: 0,
+      }),
+    ).toBe('Right-sizing suggestion: needs 5 measured runs (2 now).')
+  })
+
+  it('gives the job spec values and the current ones', () => {
+    const text = describeSuggestion({
+      runs: 12, minRuns: 5, sufficient: true, cpuP95Millicores: 600, memoryPeakP95Bytes: 1024 ** 3, oomRuns: 1,
+      cpuRequest: '750m', cpuRequestMillicores: 750, memoryLimit: '1280Mi', memoryLimitBytes: 1280 * 1024 ** 2,
+      currentCpuRequestMillicores: 1000, currentMemoryLimitBytes: 4 * 1024 ** 3,
+    })
+    expect(text).toContain('from 12 runs')
+    expect(text).toContain('cpu.request 750m')
+    expect(text).toContain('memory.limit 1280Mi')
+    expect(text).toContain('1 run ran out of memory')
   })
 })

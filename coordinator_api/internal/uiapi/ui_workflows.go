@@ -4,7 +4,9 @@ import (
 	"context"
 	"sort"
 
+	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/refclass"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store/models"
+	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/tokencaps"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/uiapi/csilapi"
 )
 
@@ -64,6 +66,8 @@ func workflowToSummary(wf *models.WorkflowSummary) csilapi.WorkflowSummaryDetail
 		n := int64(*wf.LooseJobExit)
 		detail.LooseJobExit = &n
 	}
+	detail.Actor = actorToWire(wf.ActorPrincipalID, wf.ActorIdentity)
+	detail.RefClasses = refclass.Normalize(wf.RefClasses)
 	return detail
 }
 
@@ -122,13 +126,16 @@ func (s *UiService) ListWorkflows(ctx context.Context, req csilapi.ListWorkflows
 	if !ok {
 		return csilapi.ListWorkflowsResponse{}, NewServiceError("internal", "workflow listing is not available on this server")
 	}
-	viewerID, isGlobalAdmin, err := s.viewerScope(ctx)
+	viewerID, isGlobalAdmin, orgIDs, err := s.viewerScopeFor(ctx, tokencaps.WorkflowsRead)
 	if err != nil {
 		return csilapi.ListWorkflowsResponse{}, err
 	}
 	limit, offset := listPageBounds(req.Limit, req.Offset)
 
 	filters := map[string]interface{}{}
+	if orgIDs != nil {
+		filters["org_ids"] = orgIDs
+	}
 	if req.Status != nil && *req.Status != "" {
 		filters["status"] = *req.Status
 	}
@@ -147,8 +154,20 @@ func (s *UiService) ListWorkflows(ctx context.Context, req csilapi.ListWorkflows
 		Offset:    int64(offset),
 	}
 	for i := range workflows {
-		response.Workflows = append(response.Workflows, workflowToSummary(&workflows[i]))
+		summary := workflowToSummary(&workflows[i])
+		// The owner snapshot for the list row (owner group). One primary
+		// key read for each workflow row of the page (at most the page
+		// limit); a loose job row has no workflow.
+		if workflows[i].Kind == "workflow" {
+			summary.Owner = s.workflowOwnership(ctx, workflows[i].WorkflowID)
+		}
+		response.Workflows = append(response.Workflows, summary)
 	}
+	actors := make([]*csilapi.ActorSummary, 0, len(response.Workflows))
+	for i := range response.Workflows {
+		actors = append(actors, response.Workflows[i].Actor)
+	}
+	s.describeActors(ctx, actors...)
 	return response, nil
 }
 
@@ -189,6 +208,11 @@ func (s *UiService) GetWorkflow(ctx context.Context, req csilapi.GetWorkflowRequ
 		Jobs:     []csilapi.JobSummary{},
 		Why:      s.workflowWhy(ctx, req.WorkflowId),
 	}
+	// WP7: the owner snapshot, also in the "why" section.
+	response.Workflow.Owner = s.workflowOwnership(ctx, req.WorkflowId)
+	if response.Why != nil && response.Why.Owner == nil {
+		response.Why.Owner = response.Workflow.Owner
+	}
 	if response.Why == nil && workflow.RootWorkflowID != nil && *workflow.RootWorkflowID != "" {
 		// A child workflow (from a dynamic trigger) runs because its root runs.
 		response.Why = s.workflowWhy(ctx, *workflow.RootWorkflowID)
@@ -220,12 +244,15 @@ func (s *UiService) GetWorkflow(ctx context.Context, req csilapi.GetWorkflowRequ
 	// workflow's project/org), but routing them through one code path keeps a
 	// future divergence from becoming a leak here.
 	if visibleStore, ok := s.deps.Store.(jobsVisibleToStore); ok {
-		viewerID, isGlobalAdmin, scopeErr := s.viewerScope(ctx)
+		viewerID, isGlobalAdmin, orgIDs, scopeErr := s.viewerScopeFor(ctx, tokencaps.JobsRead)
 		if scopeErr != nil {
 			return csilapi.GetWorkflowResponse{}, scopeErr
 		}
-		jobs, _, jobErr := visibleStore.ListJobsVisibleTo(ctx, viewerID, isGlobalAdmin,
-			map[string]interface{}{"workflow_id": req.WorkflowId}, maxListLimit, 0)
+		jobFilters := map[string]interface{}{"workflow_id": req.WorkflowId}
+		if orgIDs != nil {
+			jobFilters["org_ids"] = orgIDs
+		}
+		jobs, _, jobErr := visibleStore.ListJobsVisibleTo(ctx, viewerID, isGlobalAdmin, jobFilters, maxListLimit, 0)
 		if jobErr != nil {
 			return csilapi.GetWorkflowResponse{}, NewServiceError("internal", "failed to read workflow jobs")
 		}
@@ -233,6 +260,7 @@ func (s *UiService) GetWorkflow(ctx context.Context, req csilapi.GetWorkflowRequ
 			response.Jobs = append(response.Jobs, jobToSummary(&jobs[i]))
 		}
 	}
+	s.describeActors(ctx, append(jobActors(response.Jobs), response.Workflow.Actor)...)
 
 	return response, nil
 }

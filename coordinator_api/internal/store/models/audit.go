@@ -8,6 +8,7 @@ type AuditEvent struct {
 	ActorCredentialID   *string   `gorm:"type:uuid" json:"actor_credential_id,omitempty"`
 	ActorCredentialType string    `gorm:"type:text" json:"actor_credential_type,omitempty"`
 	ActorUserID         *string   `gorm:"type:uuid" json:"actor_user_id,omitempty"`
+	ActorPrincipalID    *string   `gorm:"type:uuid;default:null" json:"actor_principal_id,omitempty"`
 	Action              string    `gorm:"type:text;not null" json:"action"`
 	SubjectType         string    `gorm:"type:text;not null" json:"subject_type"`
 	SubjectID           *string   `gorm:"type:text" json:"subject_id,omitempty"`

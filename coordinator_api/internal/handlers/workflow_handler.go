@@ -112,6 +112,7 @@ func (h *WorkflowHandler) ListWorkflows(w http.ResponseWriter, r *http.Request) 
 			h.respondWithError(w, http.StatusInternalServerError, err)
 			return
 		}
+		describeWorkflowActors(r.Context(), h.store, summaries)
 		h.respondWithJSON(w, http.StatusOK, ListWorkflowsResponse{Workflows: summaries, Total: len(summaries), Limit: limit, Offset: offset})
 		return
 	}
@@ -119,6 +120,12 @@ func (h *WorkflowHandler) ListWorkflows(w http.ResponseWriter, r *http.Request) 
 	// Primary path: SQL-side visibility filtering with exact pagination and
 	// Total — see workflowSummaryVisibleToStore and JobHandler.ListJobs'
 	// jobsVisibleToStore doc comment for the full rationale.
+	// A user-delegated token never exceeds the token: it needs
+	// workflows:read, and it sees only the organizations of the token.
+	if principal != nil && !principal.HasCapability(tokencaps.WorkflowsRead) {
+		h.respondWithError(w, http.StatusForbidden, store.ErrForbidden)
+		return
+	}
 	if wvs, ok := h.store.(workflowSummaryVisibleToStore); ok && h.visibility != nil {
 		id := authz.IdentityFromUser(user)
 		isGlobalAdmin, err := h.visibility.IsGlobalAdmin(r.Context(), id)
@@ -128,11 +135,15 @@ func (h *WorkflowHandler) ListWorkflows(w http.ResponseWriter, r *http.Request) 
 		}
 
 		filters := h.parseWorkflowFilters(r, user)
+		if principal != nil && !principal.AllOrganizations {
+			filters["org_ids"] = append([]string(nil), principal.OrganizationIDs...)
+		}
 		summaries, total, err := wvs.ListWorkflowSummariesVisibleTo(r.Context(), user.UserID, isGlobalAdmin, filters, limit, offset)
 		if err != nil {
 			h.respondWithError(w, http.StatusInternalServerError, err)
 			return
 		}
+		describeWorkflowActors(r.Context(), h.store, summaries)
 		h.respondWithJSON(w, http.StatusOK, ListWorkflowsResponse{
 			Workflows: summaries,
 			Total:     int(total),
@@ -164,6 +175,7 @@ func (h *WorkflowHandler) ListWorkflows(w http.ResponseWriter, r *http.Request) 
 		summaries = rows
 	}
 
+	describeWorkflowActors(r.Context(), h.store, summaries)
 	h.respondWithJSON(w, http.StatusOK, ListWorkflowsResponse{
 		Workflows: summaries,
 		Total:     len(summaries),
@@ -232,6 +244,18 @@ func (h *WorkflowHandler) CancelWorkflow(w http.ResponseWriter, r *http.Request)
 //
 // Authz here matches CancelWorkflow's pre-existing owner-or-admin check.
 func (h *WorkflowHandler) RetryWorkflow(w http.ResponseWriter, r *http.Request) {
+	h.retryOrRerunWorkflow(w, r, false)
+}
+
+// RerunWorkflow handles POST /api/v1/workflows/{workflow_id}/rerun. It runs a
+// finished workflow (also a completed one) again as a new instance with the
+// recorded authority of the original and optional shifts. Authorization is
+// the same as RetryWorkflow.
+func (h *WorkflowHandler) RerunWorkflow(w http.ResponseWriter, r *http.Request) {
+	h.retryOrRerunWorkflow(w, r, true)
+}
+
+func (h *WorkflowHandler) retryOrRerunWorkflow(w http.ResponseWriter, r *http.Request, rerun bool) {
 	user := checkauth.GetUserFromContext(r.Context())
 	if user == nil && checkauth.GetPrincipalFromContext(r.Context()) == nil {
 		h.respondWithError(w, http.StatusUnauthorized, store.ErrUnauthorized)
@@ -258,19 +282,36 @@ func (h *WorkflowHandler) RetryWorkflow(w http.ResponseWriter, r *http.Request) 
 		h.respondWithError(w, http.StatusForbidden, store.ErrForbidden)
 		return
 	}
-	if !existing.IsRetryable() {
-		h.respondWithError(w, http.StatusBadRequest, store.ErrInvalidInput)
+	if !rerun && !existing.IsRetryable() {
+		respondNotRetryable(&h.BaseHandler, w, jobcontrol.WorkflowNotRetryable(existing))
+		return
+	}
+	if rerun && !jobcontrol.IsWorkflowRerunnable(existing) {
+		respondNotRetryable(&h.BaseHandler, w, jobcontrol.WorkflowNotRerunnable(existing))
+		return
+	}
+	shifts, ok := readShiftsBody(&h.BaseHandler, w, r)
+	if !ok {
 		return
 	}
 
-	wf, err := jobcontrol.RetryWorkflow(r.Context(), h.store, h.corndogsClient, workflowID)
+	var wf *models.WorkflowInstance
+	if rerun {
+		wf, err = jobcontrol.RerunWorkflow(r.Context(), h.store, h.corndogsClient, workflowID, shifts)
+	} else {
+		wf, err = jobcontrol.RetryWorkflowWithShifts(r.Context(), h.store, h.corndogsClient, workflowID, shifts)
+	}
 	if err != nil {
 		if errors.Is(err, jobcontrol.ErrWorkflowsUnsupported) {
 			h.respondWithError(w, http.StatusNotImplemented, err)
 			return
 		}
-		if errors.Is(err, jobcontrol.ErrWorkflowNotRetryable) {
-			h.respondWithError(w, http.StatusBadRequest, store.ErrInvalidInput)
+		if errors.Is(err, jobcontrol.ErrWorkflowNotRetryable) || errors.Is(err, jobcontrol.ErrWorkflowNotRerunnable) {
+			respondNotRetryable(&h.BaseHandler, w, err)
+			return
+		}
+		if jobcontrol.IsShiftError(err) {
+			respondShiftError(&h.BaseHandler, w, err)
 			return
 		}
 		h.respondWithError(w, http.StatusInternalServerError, err)
@@ -331,14 +372,30 @@ func (h *WorkflowHandler) RetryUnsuccessfulJobs(w http.ResponseWriter, r *http.R
 		return
 	}
 	if !existing.IsRetryable() {
-		h.respondWithError(w, http.StatusBadRequest, store.ErrInvalidInput)
+		respondNotRetryable(&h.BaseHandler, w, jobcontrol.WorkflowNotRetryable(existing))
+		return
+	}
+	shifts, ok := readShiftsBody(&h.BaseHandler, w, r)
+	if !ok {
 		return
 	}
 
-	jobs, retryErr := jobcontrol.RetryUnsuccessfulJobs(r.Context(), h.store, h.corndogsClient, workflowID)
+	jobs, retryErr := jobcontrol.RetryUnsuccessfulJobsWithShifts(r.Context(), h.store, h.corndogsClient, workflowID, shifts)
 	if retryErr != nil {
 		if errors.Is(retryErr, jobcontrol.ErrWorkflowsUnsupported) {
 			h.respondWithError(w, http.StatusNotImplemented, retryErr)
+			return
+		}
+		if jobcontrol.IsShiftError(retryErr) && len(jobs) == 0 {
+			respondShiftError(&h.BaseHandler, w, retryErr)
+			return
+		}
+		if errors.Is(retryErr, jobcontrol.ErrWorkerClassRefused) && len(jobs) == 0 {
+			h.respondWithJSON(w, http.StatusForbidden, ErrorResponse{Error: "worker_class_refused", Message: retryErr.Error()})
+			return
+		}
+		if errors.Is(retryErr, jobcontrol.ErrImageGone) && len(jobs) == 0 {
+			h.respondWithJSON(w, http.StatusConflict, ErrorResponse{Error: "image_gone", Message: retryErr.Error()})
 			return
 		}
 		if len(jobs) == 0 {
@@ -379,7 +436,9 @@ func (h *WorkflowHandler) GetWorkflow(w http.ResponseWriter, r *http.Request) {
 			h.respondWithError(w, http.StatusForbidden, store.ErrForbidden)
 			return
 		}
-		h.respondWithJSON(w, http.StatusOK, summary)
+		single := []models.WorkflowSummary{*summary}
+		describeWorkflowActors(r.Context(), h.store, single)
+		h.respondWithJSON(w, http.StatusOK, single[0])
 		return
 	}
 
@@ -392,8 +451,9 @@ func (h *WorkflowHandler) GetWorkflow(w http.ResponseWriter, r *http.Request) {
 		h.respondWithError(w, http.StatusForbidden, store.ErrForbidden)
 		return
 	}
-	summary := workflowSummaryFromLooseJob(job)
-	h.respondWithJSON(w, http.StatusOK, summary)
+	single := []models.WorkflowSummary{workflowSummaryFromLooseJob(job)}
+	describeWorkflowActors(r.Context(), h.store, single)
+	h.respondWithJSON(w, http.StatusOK, single[0])
 }
 
 func (h *WorkflowHandler) parsePagination(r *http.Request) (limit, offset int) {
@@ -478,7 +538,7 @@ func workflowSummaryFromLooseJob(job *models.Job) models.WorkflowSummary {
 	case "failed", "timeout", "cancelled":
 		failed = 1
 	}
-	return models.WorkflowSummary{
+	summary := models.WorkflowSummary{
 		WorkflowID:      job.JobID,
 		Kind:            "job",
 		Name:            job.Name,
@@ -498,6 +558,8 @@ func workflowSummaryFromLooseJob(job *models.Job) models.WorkflowSummary {
 		LooseJobExit:    job.ExitCode,
 		DecisionSummary: job.LastError,
 	}
+	summary.ActorPrincipalID, summary.ActorIdentity = job.ActorPrincipalID, job.ActorIdentity
+	return summary
 }
 
 func (h *WorkflowHandler) canUserAccessWorkflow(user *models.User, summary *models.WorkflowSummary) bool {

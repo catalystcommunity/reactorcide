@@ -30,8 +30,23 @@ func (ps PostgresDbStore) ListExecutionProfiles(ctx context.Context, orgID strin
 	return profiles, err
 }
 
+// UpdateExecutionProfile writes the profile. GORM Updates with a struct
+// skips zero values, so a false boolean would keep the stored true. The
+// boolean columns are written explicitly; the other columns keep the
+// "zero keeps the stored value" rule that the callers use for absent lists.
 func (ps PostgresDbStore) UpdateExecutionProfile(ctx context.Context, profile *models.ExecutionProfile) error {
-	return ps.getDB(ctx).Model(profile).Omit("profile_id", "org_id", "name", "created_at").Updates(profile).Error
+	return ps.getDB(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Model(profile).Omit("profile_id", "org_id", "name", "created_at").Updates(profile).Error; err != nil {
+			return err
+		}
+		return tx.Model(&models.ExecutionProfile{}).Where("profile_id = ?", profile.ProfileID).Updates(map[string]interface{}{
+			"deny_secrets":         profile.DenySecrets,
+			"may_run_as_root":      profile.MayRunAsRoot,
+			"trusted_cache_writes": profile.TrustedCacheWrites,
+			"egress_control":       profile.EgressControl,
+			"updated_at":           gorm.Expr("timezone('utc', now())"),
+		}).Error
+	})
 }
 
 func (ps PostgresDbStore) DeleteExecutionProfile(ctx context.Context, orgID, name string) error {

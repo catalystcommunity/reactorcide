@@ -43,7 +43,7 @@ func TestReportResultRetriesUnavailable(t *testing.T) {
 	fastResultRetries(t)
 	c := &fakeClient{ReportResultFunc: failingResults(2, &workerclient.ServiceCallError{Code: "unavailable", Message: "coordinator store unavailable; retry"})}
 
-	reportResultWithOutput(c, testRetryConfig(), "lease-1", 0, "completed", "", "")
+	sendLeaseResult(c, testRetryConfig(), "lease-1", leaseResult{status: "completed"})
 
 	if got := len(c.snapshotReportResults()); got != 3 {
 		t.Fatalf("ReportResult calls = %d, want 3 (two failures, then success)", got)
@@ -54,7 +54,7 @@ func TestReportResultRetriesTransportError(t *testing.T) {
 	fastResultRetries(t)
 	c := &fakeClient{ReportResultFunc: failingResults(1, errors.New("dial tcp: connection refused"))}
 
-	reportResult(c, testRetryConfig(), "lease-1", 1, "failed", "boom")
+	reportPlatformFailure(c, testRetryConfig(), "lease-1", "boom")
 
 	if got := len(c.snapshotReportResults()); got != 2 {
 		t.Fatalf("ReportResult calls = %d, want 2", got)
@@ -65,7 +65,7 @@ func TestReportResultStopsWhenLeaseGone(t *testing.T) {
 	fastResultRetries(t)
 	c := &fakeClient{ReportResultFunc: failingResults(100, &workerclient.ServiceCallError{Code: "not_found", Message: "lease not found for this worker"})}
 
-	reportResult(c, testRetryConfig(), "lease-1", 0, "completed", "")
+	sendLeaseResult(c, testRetryConfig(), "lease-1", leaseResult{status: "completed"})
 
 	if got := len(c.snapshotReportResults()); got != 1 {
 		t.Fatalf("ReportResult calls = %d, want 1 (not_found is final)", got)
@@ -78,7 +78,7 @@ func TestReportResultRegistersAgainWhenUnauthorized(t *testing.T) {
 	fastResultRetries(t)
 	c := &fakeClient{ReportResultFunc: failingResults(1, &workerclient.ServiceCallError{Code: "unauthorized", Message: "a valid worker session is required"})}
 
-	reportResult(c, testRetryConfig(), "lease-1", 0, "completed", "")
+	sendLeaseResult(c, testRetryConfig(), "lease-1", leaseResult{status: "completed"})
 
 	if got := len(c.snapshotReportResults()); got != 2 {
 		t.Fatalf("ReportResult calls = %d, want 2", got)
@@ -97,7 +97,7 @@ func TestReportResultGivesUpAfterWindow(t *testing.T) {
 	c := &fakeClient{ReportResultFunc: failingResults(1<<30, &workerclient.ServiceCallError{Code: "unavailable"})}
 
 	start := time.Now()
-	reportResult(c, testRetryConfig(), "lease-1", 0, "completed", "")
+	sendLeaseResult(c, testRetryConfig(), "lease-1", leaseResult{status: "completed"})
 	if elapsed := time.Since(start); elapsed > time.Second {
 		t.Fatalf("deliverResult ran %v, want it to stop at the retry window", elapsed)
 	}

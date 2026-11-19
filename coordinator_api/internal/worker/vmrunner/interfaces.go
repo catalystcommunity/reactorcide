@@ -3,8 +3,9 @@
 //
 // VMRunner composes three seams so the platform-specific VM lifecycle code
 // (Virtualization.framework on darwin, Hyper-V on windows) stays isolated
-// behind build tags while everything else -- orchestration, the SSH guest
-// channel, and image resolution -- is cross-platform and testable on Linux:
+// behind build tags while everything else -- orchestration, the guest daemon
+// channel, the egress forwarder, and image resolution -- is cross-platform and
+// testable on Linux:
 //
 //   - ImageSource resolves an image reference to a local base image file.
 //     The package provides local and OCI-backed implementations.
@@ -13,9 +14,10 @@
 //     lifecycle_darwin.go / lifecycle_windows.go) and is the only piece of
 //     this package that differs per host OS.
 //   - GuestTransport reaches into the running guest to start a command and
-//     stream its output back. guest_ssh.go ships the SSH implementation;
-//     a vsock-based transport could implement the same interface later
-//     without touching VMRunner.
+//     stream its output back. guest_vsock.go ships the implementation: the
+//     guest daemon (cmd/vmguest) over a hypervisor socket (vsock on macOS,
+//     hvsock on Hyper-V). Guests have no network card; their egress goes
+//     through the same socket to EgressForwarder (egress_forwarder.go).
 //
 // This package intentionally does NOT import internal/worker (or anything
 // coordinator/lease/store-shaped): internal/worker/runner_factory.go needs to
@@ -32,6 +34,7 @@ import (
 	"context"
 	"io"
 	"io/fs"
+	"net"
 )
 
 // ImageSource resolves an image reference to a local, read-only base image
@@ -68,23 +71,16 @@ type BootSpec struct {
 	// Label is a human-readable name for the clone/VM (e.g.
 	// "reactorcide-job-<id>"), mirroring DockerRunner's container name.
 	Label string
-
-	// GuestAuthorizedKey is the per-boot SSH client public key that a
-	// lifecycle can inject into a writable VM clone. The read-only base image
-	// must not contain this key.
-	GuestAuthorizedKey []byte
-
-	// GuestUser is the account that receives GuestAuthorizedKey.
-	GuestUser string
 }
 
-// GuestAddr is how the host reaches a booted guest's transport endpoint. Both
-// fields are required for any transport dialed over TCP (SSH today); a future
-// vsock-based transport could repurpose Host as a CID.
+// GuestAddr is how the host reaches a booted guest's guest daemon. A
+// lifecycle sets Dial, which opens a new hypervisor socket connection to the
+// job channel port. Host and Port are a TCP address that tests use when Dial
+// is nil.
 type GuestAddr struct {
-	Host          string
-	Port          int
-	HostPublicKey []byte
+	Dial func(ctx context.Context) (net.Conn, error)
+	Host string
+	Port int
 }
 
 // VMLifecycle clones a base image and boots/destroys the resulting guest VM.
@@ -108,32 +104,12 @@ type VMLifecycle interface {
 	Destroy(ctx context.Context, handle string) error
 }
 
-// EphemeralSSHCredentialLifecycle marks a lifecycle that injects a new SSH
-// client public key into each VM clone. VMRunner generates the matching
-// private key for one job and does not read a shared private key from disk.
-type EphemeralSSHCredentialLifecycle interface {
-	UsesEphemeralSSHCredentials() bool
-}
-
-// GuestCreds carries whatever a GuestTransport needs to authenticate to the
-// guest. The SSH implementation (guest_ssh.go) uses User plus one of
-// Password/PrivateKeyPEM; a different transport can add or ignore fields.
+// GuestCreds names the guest account for a command. The guest daemon gives
+// uploaded files to that account and runs the command as that account. The
+// Windows daemon runs commands as its service account (see cmd/vmguest).
 type GuestCreds struct {
-	// User is the guest OS account the transport authenticates as.
+	// User is the guest OS account.
 	User string
-
-	// Password authenticates via SSH password auth when set.
-	Password string
-
-	// PrivateKeyPEM authenticates via SSH public-key auth when set (PEM
-	// encoded, unencrypted). Takes precedence over Password when both are
-	// set.
-	PrivateKeyPEM []byte
-
-	// HostPublicKey is an authorized_keys-format public key for the guest SSH
-	// server. When it is empty, the transport accepts the key from the private
-	// host-to-guest network.
-	HostPublicKey []byte
 }
 
 // GuestPlatform selects the command bootstrap syntax used inside a guest.
@@ -181,6 +157,12 @@ type GuestCommand struct {
 	Files      []GuestFile
 	Trees      []GuestTree
 	Results    []GuestResultFile
+
+	// JobID is for log correlation only.
+	JobID string
+
+	// CreateAdministrator: see JobConfig.CreateAdministrator.
+	CreateAdministrator *bool
 }
 
 // GuestTransport starts a command inside an already-booted guest and streams
@@ -189,6 +171,12 @@ type GuestTransport interface {
 	// Start creates command files and starts the process. Environment values
 	// and file data can contain secrets. Implementations must not log them.
 	Start(ctx context.Context, addr GuestAddr, creds GuestCreds, command GuestCommand) (GuestSession, error)
+}
+
+// GuestProber is a GuestTransport that can check that the guest is ready
+// without starting a command. VMRunner polls it after Boot.
+type GuestProber interface {
+	Probe(ctx context.Context, addr GuestAddr) error
 }
 
 // GuestSession represents one running guest command. Wait, Stdout, and Stderr
@@ -211,13 +199,12 @@ type GuestSession interface {
 	Wait() (exitCode int, err error)
 
 	// Signal requests the guest command terminate via sig (a POSIX signal
-	// name without the "SIG" prefix, e.g. "TERM", "KILL"). Best-effort: see
-	// guest_ssh.go's doc comment for why the SSH implementation also falls
-	// back to an explicit `kill` rather than relying solely on the SSH
-	// protocol's signal request.
+	// name without the "SIG" prefix, e.g. "TERM", "KILL"). Best-effort: the
+	// guest daemon signals the process group of the command; on Windows any
+	// signal stops the process tree.
 	Signal(sig string) error
 
-	// Close releases transport-level resources (the SSH session/client
+	// Close releases transport-level resources (the guest daemon
 	// connection). It does not affect the guest VM itself -- callers still
 	// call VMLifecycle.Destroy separately. Safe to call more than once.
 	Close() error

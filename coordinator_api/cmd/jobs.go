@@ -28,6 +28,7 @@ var JobsCommand = &cli.Command{
 				&cli.StringFlag{Name: "project-id", Usage: "Filter by project ID"},
 				&cli.StringFlag{Name: "workflow-id", Usage: "Filter by workflow ID"},
 				&cli.StringFlag{Name: "user-id", Usage: "Filter by owning user ID (admins only)"},
+				&cli.StringFlag{Name: "failure-class", Usage: "Filter by failure class: job, timeout, oom, infra.image_pull, infra.scheduling, infra.worker_lost, infra.platform, cancelled"},
 			),
 			Action: func(ctx *cli.Context) error {
 				client, err := newAPIClient(ctx)
@@ -35,12 +36,13 @@ var JobsCommand = &cli.Command{
 					return err
 				}
 				query := pagedQuery(ctx, map[string]string{
-					"status":      ctx.String("status"),
-					"queue_name":  ctx.String("queue-name"),
-					"source_type": ctx.String("source-type"),
-					"project_id":  ctx.String("project-id"),
-					"workflow_id": ctx.String("workflow-id"),
-					"user_id":     ctx.String("user-id"),
+					"status":        ctx.String("status"),
+					"queue_name":    ctx.String("queue-name"),
+					"source_type":   ctx.String("source-type"),
+					"project_id":    ctx.String("project-id"),
+					"workflow_id":   ctx.String("workflow-id"),
+					"user_id":       ctx.String("user-id"),
+					"failure_class": ctx.String("failure-class"),
 				})
 				var resp listJobsResponse
 				if err := client.doJSON(http.MethodGet, "/api/v1/jobs"+query, nil, http.StatusOK, &resp); err != nil {
@@ -85,11 +87,15 @@ var JobsCommand = &cli.Command{
 		},
 		{
 			Name:      "retry",
-			Usage:     "Retry a job as a new job in the same workflow node",
+			Usage:     "Retry a job as a new job in the same workflow node, with optional shifts (resources and timeout only)",
 			ArgsUsage: "<job-id>",
-			Flags:     append(apiFlags(), formatFlag()),
+			Flags:     append(append(apiFlags(), formatFlag()), shiftFlags()...),
 			Action: func(ctx *cli.Context) error {
-				return jobAction(ctx, http.MethodPost, "/retry", http.StatusCreated)
+				body, err := shiftsBody(ctx)
+				if err != nil {
+					return err
+				}
+				return jobActionWithBody(ctx, http.MethodPost, "/retry", http.StatusCreated, body)
 			},
 		},
 		{
@@ -109,6 +115,7 @@ var JobsCommand = &cli.Command{
 				return nil
 			},
 		},
+		jobsResourceSuggestionCommand(),
 		{
 			Name:      "metrics",
 			Usage:     "Get resource metrics for a job",
@@ -192,20 +199,34 @@ func jobTarget(ctx *cli.Context) (string, *apiClient, error) {
 // jobAction runs a job endpoint that responds with the full job body and
 // prints it. suffix is the sub-path after the job ID ("" for the job itself).
 func jobAction(ctx *cli.Context, method, suffix string, expectedStatus int) error {
+	return jobActionWithBody(ctx, method, suffix, expectedStatus, nil)
+}
+
+func jobActionWithBody(ctx *cli.Context, method, suffix string, expectedStatus int, body any) error {
 	jobID, client, err := jobTarget(ctx)
 	if err != nil {
 		return err
 	}
 	var job map[string]interface{}
 	path := "/api/v1/jobs/" + url.PathEscape(jobID) + suffix
-	if err := client.doJSON(method, path, nil, expectedStatus, &job); err != nil {
+	if err := client.doJSON(method, path, body, expectedStatus, &job); err != nil {
 		return err
 	}
 	return render(ctx.String("format"), job, func(w *tabwriter.Writer) {
-		for _, field := range []string{"job_id", "name", "status", "queue_name", "exit_code", "created_at", "started_at", "completed_at", "workflow_id", "last_error"} {
-			if value, ok := job[field]; ok && value != nil {
-				fmt.Fprintf(w, "%s\t%v\n", field, value)
-			}
-		}
+		writeJobTable(w, job)
 	})
+}
+
+// jobTableFields are the fields of the table form of one job (jobs get,
+// retry, cancel, kill). image_retry_of is the earlier image of a retry or a
+// re-run that changed the image (docs/image-aliases.md "Retry and rerun").
+var jobTableFields = []string{"job_id", "name", "status", "queue_name", "image_display", "image_retry_of", "exit_code",
+	"created_at", "started_at", "completed_at", "workflow_id", "shifts", "last_error"}
+
+func writeJobTable(w *tabwriter.Writer, job map[string]interface{}) {
+	for _, field := range jobTableFields {
+		if value, ok := job[field]; ok && value != nil {
+			fmt.Fprintf(w, "%s\t%v\n", field, value)
+		}
+	}
 }

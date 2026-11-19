@@ -78,6 +78,14 @@ current user roles. It never returns secret values. Add `?project=<project>`
 to select one project. Add `?scope=global` to list only organization-wide
 grants. The project route remains available for one project.
 
+An organization-wide grant (a grant with no project) does not apply to a job
+of a disabled project. A GitHub App can create a project that waits for
+approval (see [GitHub App](./github-app.md#self-service-registration)). The
+organization grants must not reach that project before an administrator
+enables it. A grant of the project itself still applies. If the coordinator
+cannot read the project of the job, the organization-wide grants do not
+apply.
+
 Create a grant:
 
 ```bash
@@ -115,20 +123,41 @@ curl -X DELETE \
 
 Grant APIs return metadata only. They never return secret values.
 
+Delivery fields (see [Egress Proxy](./egress-proxy.md)):
+
+| Field | Default | Meaning |
+| --- | --- | --- |
+| `delivery` | `env` | `env` puts the value in the job environment. `proxy` puts a placeholder there; the egress proxy adds the value. |
+| `proxy_hosts` | `[]` | Host patterns where the proxy may send the value. Necessary for `proxy`. |
+| `proxy_header` | `authorization` | The request header of the value. |
+| `proxy_header_format` | empty | The full header value, with `{}` for the value, for example `Bearer {}`. |
+
+```bash
+curl -X PATCH \
+  -H "Authorization: Bearer <token>" \
+  -H "Content-Type: application/json" \
+  https://reactorcide.example.com/api/v1/secret-grants/deploy-production?project=<project_id> \
+  -d '{"delivery":"proxy","proxy_hosts":["api.github.com"],"proxy_header_format":"Bearer {}"}'
+```
+
+A declarative grant file can set the same fields under `spec.delivery`
+(`mode`, `hosts`, `header`, `headerFormat`).
+
 ## Secret Grant CLI
 
 The CLI uses `REACTORCIDE_API_URL` and `REACTORCIDE_API_TOKEN`, or matching
-`--api-url` and `--token` flags.
+`--api-url` and `--token` flags. `--api-url`, `--token`, and `--project` are
+options of `secret-grants`. Put them before the subcommand.
 
 ```bash
 reactorcide secret-grants list
 
-reactorcide secret-grants list --project github.com/example/repo
+reactorcide secret-grants --project github.com/example/repo list
 
 reactorcide secret-grants list --global-only
 
-reactorcide secret-grants set deploy-production \
-  --project github.com/example/repo \
+reactorcide secret-grants --project github.com/example/repo \
+  set deploy-production \
   --secret-path deploy/production \
   --secret-match prefix \
   --job-name "github.com/example/repo:deploy" \
@@ -136,8 +165,17 @@ reactorcide secret-grants set deploy-production \
   --execution-profile standard \
   --ci-origin base
 
-reactorcide secret-grants delete deploy-production --project github.com/example/repo
+reactorcide secret-grants --project github.com/example/repo delete deploy-production
 ```
+
+`set` also accepts these options:
+
+- `--ref-class-any CLASS` and `--ref-class-none CLASS` (repeat). Use
+  `--clear-ref-classes` to remove both conditions.
+- `--delivery env` or `--delivery proxy`. With `proxy`, give
+  `--proxy-host PATTERN` (repeat), and optionally `--proxy-header` and
+  `--proxy-header-format`.
+- `--clear-execution-profiles` and `--clear-ci-origins` remove those limits.
 
 Bulk apply accepts a CSIL-style YAML file:
 
@@ -230,8 +268,11 @@ report updates.
 
 A secret grant always checks the job organization. A project grant also checks
 the project. The optional `execution_profiles` and `ci_origins` selectors can
-limit a grant to approved profiles and to base or head CI. A job name alone
-cannot grant a head-CI job access to a trusted secret.
+limit a grant to approved profiles and to base or head CI. The optional
+`ref_classes_any` and `ref_classes_none` conditions limit a grant to jobs with
+(or without) [ref classes](./ref-classes.md), for example `production` and
+`fork`. A job name alone cannot grant a head-CI job access to a trusted
+secret.
 
 Grant checks use the effective authority of the job. For a policy-controlled
 trusted base node in a head-CI workflow, the job carries the node authority:

@@ -3,6 +3,7 @@ package config
 import (
 	"fmt"
 	"strings"
+	"sync/atomic"
 
 	"github.com/catalystcommunity/app-utils-go/env"
 )
@@ -89,7 +90,43 @@ var (
 	// advance instead of one minted through the admin UI. Never logged; read
 	// only at startup.
 	DefaultWorkerEnrollmentToken = env.GetEnvOrDefault("REACTORCIDE_DEFAULT_WORKER_ENROLLMENT_TOKEN", "")
+
+	// UIAuthAllowDowngradeToNone is the deliberate override of the login
+	// history guard (auth.EnforceLoginHistory). An instance that ran with
+	// logins refuses to start in mode none. With this set to true, it starts,
+	// deletes the login history record, and logs a warning. Remove it after
+	// that start.
+	UIAuthAllowDowngradeToNone = env.GetEnvAsBoolOrDefault("REACTORCIDE_UI_AUTH_ALLOW_DOWNGRADE_TO_NONE", "false")
 )
+
+// noLoginGuardPassed is true only after the login history guard
+// (auth.EnforceLoginHistory) accepted mode none at startup. It is false by
+// default, so a process that did not run the guard gets no no-login
+// behaviour (fail closed).
+var noLoginGuardPassed atomic.Bool
+
+// SetNoLoginGuardPassed records the result of the login history guard. Only
+// auth.EnforceLoginHistory calls it in production. Tests call it to act as a
+// fresh no-login instance.
+func SetNoLoginGuardPassed(passed bool) { noLoginGuardPassed.Store(passed) }
+
+// NoLoginGuardPassed reports the recorded guard result. Use NoLoginMode to
+// decide a no-login behaviour.
+func NoLoginGuardPassed() bool { return noLoginGuardPassed.Load() }
+
+// NoLoginMode reports whether the no-login behaviours apply: the instance
+// runs without user logins (REACTORCIDE_UI_AUTH_MODE=none), the single-admin
+// mode, AND the login history guard accepted that mode at startup (the
+// instance never ran with logins, or the operator gave the downgrade
+// override). See docs/ui-auth.md "No-login instances" and "Login history
+// guard".
+//
+// This is the ONE gate of every no-login behaviour: wide service principal
+// tokens, anonymous cancel and retry, and pull request commands from the
+// admin token or a wide token. Do not test UIAuthMode against
+// UIAuthModeNone to grant something; call this. NOT for production: use a
+// login mode there.
+func NoLoginMode() bool { return UIAuthMode == UIAuthModeNone && noLoginGuardPassed.Load() }
 
 // ValidateUIAuthMode checks that REACTORCIDE_UI_AUTH_MODE holds one of the
 // recognized values (none|local-rp|rp) and that the config required by that

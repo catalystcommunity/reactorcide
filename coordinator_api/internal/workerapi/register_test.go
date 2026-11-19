@@ -103,3 +103,51 @@ func TestRegister_MissingWorkerKey(t *testing.T) {
 	})
 	assertServiceErrorCode(t, err, "invalid_argument")
 }
+
+// Register records the enrollment token (its ID, never its hash) on the
+// worker, and a register with a new token replaces it: the audit of a token
+// rotation.
+func TestRegister_RecordsEnrollmentTokenAcrossRotation(t *testing.T) {
+	h := newTestHarness()
+	pool := &models.WorkerPool{Name: "rotation"}
+	h.store.seedPool(pool)
+	oldTok := &models.PoolEnrollmentToken{PoolID: pool.PoolID, Name: "old", TokenHash: rawTokenHash("old-raw"), IsActive: true}
+	newTok := &models.PoolEnrollmentToken{PoolID: pool.PoolID, Name: "new", TokenHash: rawTokenHash("new-raw"), IsActive: true}
+	h.store.seedEnrollmentToken(oldTok)
+	h.store.seedEnrollmentToken(newTok)
+
+	register := func(raw string) string {
+		t.Helper()
+		resp, err := h.service.Register(context.Background(), csilapi.RegisterRequest{
+			EnrollmentToken: raw,
+			WorkerInfo:      csilapi.WorkerInfo{WorkerKey: "rotating-host", Os: "linux", Arch: "amd64"},
+		})
+		if err != nil {
+			t.Fatalf("Register(%s) failed: %v", raw, err)
+		}
+		// The response names the token (ID and name) for the worker log.
+		want := map[string]*models.PoolEnrollmentToken{"old-raw": oldTok, "new-raw": newTok}[raw]
+		if resp.EnrollmentTokenId == nil || *resp.EnrollmentTokenId != want.TokenID ||
+			resp.EnrollmentTokenName == nil || *resp.EnrollmentTokenName != want.Name {
+			t.Fatalf("Register(%s) response token = %v/%v, want %s/%s", raw, resp.EnrollmentTokenId, resp.EnrollmentTokenName, want.TokenID, want.Name)
+		}
+		return resp.WorkerId
+	}
+
+	id := register("old-raw")
+	saved, _ := h.store.GetWorkerByID(context.Background(), id)
+	if saved.EnrollmentTokenID == nil || *saved.EnrollmentTokenID != oldTok.TokenID {
+		t.Fatalf("EnrollmentTokenID = %v, want the old token %s", saved.EnrollmentTokenID, oldTok.TokenID)
+	}
+	if len(oldTok.TokenHash) == 0 {
+		t.Fatal("Register changed the stored token row (its hash is gone)")
+	}
+
+	if id2 := register("new-raw"); id2 != id {
+		t.Fatalf("rotation minted a new worker %s, want %s", id2, id)
+	}
+	saved, _ = h.store.GetWorkerByID(context.Background(), id)
+	if saved.EnrollmentTokenID == nil || *saved.EnrollmentTokenID != newTok.TokenID {
+		t.Fatalf("EnrollmentTokenID = %v, want the new token %s", saved.EnrollmentTokenID, newTok.TokenID)
+	}
+}

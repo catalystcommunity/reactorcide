@@ -9,7 +9,7 @@ The context manager ensures triggers are flushed even if exceptions occur,
 and provides a cleaner API for accessing workflow context.
 
 Usage:
-    python -m runnerlib.cli run \
+    runnerlib run \
         --source-type git \
         --source-url https://github.com/user/repo.git \
         --source-ref main \

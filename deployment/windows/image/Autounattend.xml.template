@@ -48,7 +48,7 @@
       <FirstLogonCommands>
         <SynchronousCommand wcm:action="add">
           <Order>1</Order>
-          <CommandLine>powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File C:\ReactorcideSetup\provision-guest.ps1 -GuestUser __GUEST_USER__</CommandLine>
+          <CommandLine>powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File C:\ReactorcideSetup\provision-guest.ps1 -GuestUser __GUEST_USER__ __GUEST_STANDARD__</CommandLine>
           <Description>Prepare the Reactorcide guest</Description>
           <RequiresUserInput>false</RequiresUserInput>
         </SynchronousCommand>

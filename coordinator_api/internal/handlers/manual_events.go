@@ -72,15 +72,20 @@ func (h *JobHandler) prepareManualEvent(ctx context.Context, r *http.Request, jo
 		OrgID:     job.OrgID,
 		ProjectID: job.ProjectID,
 		Source:    models.CIEventSourceManual,
-		EventType: jobEnvString(job, "REACTORCIDE_EVENT_TYPE"),
+		// Always "manual". The submitter states REACTORCIDE_EVENT_TYPE and
+		// REACTORCIDE_BRANCH, and no signed VCS event confirms them, so
+		// they never become the event type or a verified ref of the event
+		// (docs/oidc.md, docs/ref-classes.md). The branch is kept only as
+		// the submitted ref.
+		EventType: models.CIEventSourceManual,
 		Repo:      jobEnvString(job, "REACTORCIDE_REPO"),
 		Branch:    jobEnvString(job, "REACTORCIDE_BRANCH"),
 		CommitSHA: jobEnvString(job, "REACTORCIDE_SHA"),
 		Actor:     actor,
 		Status:    models.CIEventStatusReceived,
-	}
-	if ciEvent.EventType == "" {
-		ciEvent.EventType = "manual"
+		// The principal that submitted the eval (the token's principal).
+		ActorPrincipalID: job.ActorPrincipalID,
+		ActorIdentity:    job.ActorIdentity,
 	}
 	if ciEvent.CommitSHA == "" && job.SourceRef != nil {
 		ciEvent.CommitSHA = *job.SourceRef
@@ -94,6 +99,9 @@ func (h *JobHandler) prepareManualEvent(ctx context.Context, r *http.Request, jo
 		scoped := fmt.Sprintf("manual:%s:%s", job.OrgID, key)
 		ciEvent.IdempotencyKey = &scoped
 	}
+	// A manual event has the classes "manual" and the classes of rules that
+	// name the event type "manual" (docs/ref-classes.md).
+	applyRefClassesToEvent(ctx, h.store, ciEvent, models.RefClassFacts{Branch: ciEvent.Branch})
 	recorded, outcome, err := events.RecordCIEvent(ctx, ciEvent)
 	if err != nil {
 		return nil, nil, err

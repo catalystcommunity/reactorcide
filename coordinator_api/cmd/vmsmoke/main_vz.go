@@ -1,25 +1,25 @@
 //go:build darwin && vz
 
 // Command vmsmoke is a standalone Apple Silicon macOS smoke test for the "vm"
-// JobRunner backend's Virtualization.framework lifecycle + SSH transport. It
-// boots a guest from a base bundle directory, runs `echo hello` in it over the
-// existing vmrunner SSH transport, prints the output, then tears the guest
-// down. Run it to validate vz + NAT networking + guest SSH end to end BEFORE
-// wiring the full worker.
+// JobRunner backend's Virtualization.framework lifecycle + guest daemon
+// transport. It boots a guest (no network device) from a base bundle
+// directory, runs `echo hello` in it through the guest daemon over vsock,
+// checks guest egress through the vsock tunnel, prints the output, then tears
+// the guest down. Run it to validate vz + the virtio socket device + the guest
+// daemon end to end BEFORE wiring the full worker.
 //
 // Build + sign (it needs the virtualization entitlement, same as the worker):
 //
 //	cd coordinator_api
 //	CGO_ENABLED=1 go build -tags vz -o vmsmoke ./cmd/vmsmoke
-//	codesign --entitlements deployment/macos/vz.entitlements -s - ./vmsmoke
+//	codesign --entitlements ../deployment/macos/vz.entitlements -s - ./vmsmoke
 //
-// Run (the private key path is read from a file; its contents never go on the
-// command line or into logs):
+// Run:
 //
-//	./vmsmoke -bundle /path/to/base-bundle -user reactorcide -key ~/.ssh/reactorcide_vm
+//	./vmsmoke -bundle /path/to/base-bundle -user reactorcide
 //
-// See docs/vm-runners-macos.md for producing the base bundle and baking in the
-// worker's SSH public key.
+// See docs/vm-runners-macos.md for producing the base bundle and installing
+// the guest daemon (cmd/vmguest) in it.
 package main
 
 import (
@@ -35,10 +35,10 @@ import (
 
 func main() {
 	bundle := flag.String("bundle", "", "path to the base image bundle directory (required)")
-	user := flag.String("user", "reactorcide", "guest SSH user")
-	keyFile := flag.String("key", "", "path to the worker's SSH private key file (PEM)")
-	password := flag.String("password", "", "guest SSH password (used only if -key is empty; discouraged)")
+	user := flag.String("user", "reactorcide", "guest account that runs the command")
+	egressURL := flag.String("egress-url", "https://example.com/", "URL that the guest fetches with curl to check egress (empty skips the check)")
 	timeout := flag.Duration("timeout", 5*time.Minute, "overall timeout for the smoke run")
+	extra := flag.String("extra", "", "more shell commands that the guest runs after the checks (for hardware checks)")
 	flag.Parse()
 
 	if *bundle == "" {
@@ -47,50 +47,45 @@ func main() {
 		os.Exit(2)
 	}
 
-	creds := vmrunner.GuestCreds{User: *user, Password: *password}
-	if *keyFile != "" {
-		key, err := os.ReadFile(*keyFile)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "vmsmoke: read key file: %v\n", err)
-			os.Exit(1)
-		}
-		creds.PrivateKeyPEM = key
-	}
-	if len(creds.PrivateKeyPEM) == 0 && creds.Password == "" {
-		fmt.Fprintln(os.Stderr, "vmsmoke: need -key or -password to authenticate to the guest")
-		os.Exit(2)
-	}
-
-	if err := run(*bundle, creds, *timeout); err != nil {
+	if err := run(*bundle, vmrunner.GuestCreds{User: *user}, *egressURL, *extra, *timeout); err != nil {
 		fmt.Fprintf(os.Stderr, "vmsmoke: FAILED: %v\n", err)
 		os.Exit(1)
 	}
 	fmt.Println("vmsmoke: OK")
 }
 
-func run(bundle string, creds vmrunner.GuestCreds, timeout time.Duration) error {
+func run(bundle string, creds vmrunner.GuestCreds, egressURL, extra string, timeout time.Duration) error {
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 
 	// NewDefault selects the real darwin VMLifecycle (this is a `-tags vz`
-	// build), the SSH GuestTransport, and a LocalImageSource. Passing "" as the
+	// build), the guest daemon GuestTransport, and a LocalImageSource. Passing "" as the
 	// base dir means the bundle path below is used as an absolute image ref.
 	runner, err := vmrunner.NewDefaultWithImages(vmrunner.NewLocalImageSource(""), creds)
 	if err != nil {
 		return fmt.Errorf("build vm runner: %w", err)
 	}
 
-	fmt.Printf("vmsmoke: booting guest from bundle %q (the guest IP is logged as guest_ip once DHCP assigns it)...\n", bundle)
+	fmt.Printf("vmsmoke: booting guest from bundle %q (no network device; vsock only)...\n", bundle)
 
+	script := "echo hello"
+	if egressURL != "" {
+		// The guest has no network device, so this reaches the network only
+		// through the transparent route and the vsock egress tunnel.
+		script += "; curl -fsS -o /dev/null -w 'egress HTTP %{http_code}\\n' " + shellQuote(egressURL)
+	}
+	if extra != "" {
+		script += "; " + extra
+	}
 	job := &vmrunner.JobConfig{
 		Image:   bundle,
-		Command: []string{"echo", "hello"},
+		Command: []string{"/bin/sh", "-c", script},
 		JobID:   "vmsmoke",
 	}
 
 	id, err := runner.SpawnJob(ctx, job)
 	if err != nil {
-		return fmt.Errorf("spawn job (boot + ssh): %w", err)
+		return fmt.Errorf("spawn job (boot + guest daemon): %w", err)
 	}
 	// Always attempt cleanup (Destroy) even if the rest fails.
 	defer func() {
@@ -134,4 +129,16 @@ func (p prefixWriter) Write(b []byte) (int, error) {
 		return 0, err
 	}
 	return p.w.Write(b)
+}
+
+func shellQuote(s string) string {
+	out := "'"
+	for _, r := range s {
+		if r == '\'' {
+			out += `'\''`
+			continue
+		}
+		out += string(r)
+	}
+	return out + "'"
 }

@@ -352,9 +352,33 @@ func (c *GitLabClient) parseMergeRequestEvent(body []byte, event *WebhookEvent) 
 		HTMLURL:     payload.ObjectAttributes.URL,
 		AuthorLogin: payload.User.Username,
 		AuthorEmail: payload.User.Email,
+		Draft:       payload.ObjectAttributes.Draft || payload.ObjectAttributes.WorkInProgress,
 	}
+	attrs := payload.ObjectAttributes
+	targetID := attrs.TargetProjectID
+	if targetID == 0 {
+		targetID = payload.Project.ID
+	}
+	event.PullRequest.HeadRepository = gitlabHeadRepository(attrs.SourceProjectID, targetID, attrs.Source)
 
 	return nil
+}
+
+// gitlabHeadRepository returns the source project of a cross-project (fork)
+// merge request, or nil for a merge request inside one project. GitLab
+// gives source_project_id and target_project_id. An unknown project ID is a
+// fork (fail closed). A fork with no known project details gets an empty
+// RepositoryInfo; the eval job then fetches the head commit from the target
+// project (GitLab keeps refs/merge-requests/N/head).
+func gitlabHeadRepository(sourceProjectID, targetProjectID int, source *gitlabProject) *RepositoryInfo {
+	if sourceProjectID != 0 && targetProjectID != 0 && sourceProjectID == targetProjectID {
+		return nil
+	}
+	if source == nil {
+		return &RepositoryInfo{}
+	}
+	return &RepositoryInfo{FullName: source.PathWithNamespace, CloneURL: source.HTTPUrl, SSHURL: source.SSHUrl,
+		HTMLURL: source.WebURL, DefaultBranch: source.DefaultBranch}
 }
 
 // parsePushEvent parses a GitLab push event
@@ -451,7 +475,7 @@ func (c *GitLabClient) convertMRInfo(mr gitlabMergeRequest) *PullRequestInfo {
 		state = "merged"
 	}
 
-	return &PullRequestInfo{
+	result := &PullRequestInfo{
 		Number:      mr.IID,
 		Title:       mr.Title,
 		Description: mr.Description,
@@ -465,6 +489,8 @@ func (c *GitLabClient) convertMRInfo(mr gitlabMergeRequest) *PullRequestInfo {
 		AuthorLogin: mr.Author.Username,
 		AuthorEmail: "", // Not provided in API response
 	}
+	result.HeadRepository = gitlabHeadRepository(mr.SourceProjectID, mr.TargetProjectID, nil)
+	return result
 }
 
 // GitLab API structures
@@ -489,6 +515,16 @@ type gitlabMergeRequestAttrs struct {
 	URL            string       `json:"url"`
 	Action         string       `json:"action"`
 	OldRev         string       `json:"oldrev"`
+	// SourceProjectID and TargetProjectID tell a fork merge request: the
+	// source project is not the target project. Source is the source
+	// project.
+	SourceProjectID int            `json:"source_project_id"`
+	TargetProjectID int            `json:"target_project_id"`
+	Source          *gitlabProject `json:"source"`
+	// Draft (GitLab 13.2 and later) and WorkInProgress (older name) are true
+	// for a draft merge request.
+	Draft          bool `json:"draft"`
+	WorkInProgress bool `json:"work_in_progress"`
 }
 
 type gitlabMergeRequest struct {
@@ -505,6 +541,9 @@ type gitlabMergeRequest struct {
 	WebURL         string         `json:"web_url"`
 	Author         gitlabUser     `json:"author"`
 	DiffRefs       gitlabDiffRefs `json:"diff_refs"`
+	// SourceProjectID and TargetProjectID tell a fork merge request.
+	SourceProjectID int `json:"source_project_id"`
+	TargetProjectID int `json:"target_project_id"`
 }
 
 type gitlabDiffRefs struct {

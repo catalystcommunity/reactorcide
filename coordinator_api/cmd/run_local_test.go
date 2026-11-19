@@ -232,14 +232,16 @@ func TestParseCommand(t *testing.T) {
 		input    string
 		expected []string
 	}{
-		{"echo hello", []string{"echo", "hello"}},
+		// Every command goes through "sh -c" (owner decision A, 0.13).
+		{"echo hello", []string{"sh", "-c", "echo hello"}},
+		{"echo a; sleep 720", []string{"sh", "-c", "echo a; sleep 720"}},
+		// A command that starts with a shell is not wrapped again.
 		{"sh -c 'echo hello'", []string{"sh", "-c", "echo hello"}},
 		{`sh -c "echo hello"`, []string{"sh", "-c", "echo hello"}},
 		{`sh -c 'echo "hello world"'`, []string{"sh", "-c", `echo "hello world"`}},
 		{`sh -c "echo 'hello world'"`, []string{"sh", "-c", "echo 'hello world'"}},
-		{"cmd arg1 arg2 arg3", []string{"cmd", "arg1", "arg2", "arg3"}},
-		{`echo "multi word arg"`, []string{"echo", "multi word arg"}},
-		{`escaped\ space`, []string{"escaped space"}},
+		{"cmd arg1 arg2 arg3", []string{"sh", "-c", "cmd arg1 arg2 arg3"}},
+		{`echo "multi word arg"`, []string{"sh", "-c", `echo "multi word arg"`}},
 	}
 
 	for _, tt := range tests {

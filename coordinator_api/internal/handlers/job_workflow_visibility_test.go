@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"testing"
 
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/authz"
@@ -72,6 +73,9 @@ func (m *roleAwareMockStore) ListJobsVisibleTo(ctx context.Context, viewerID str
 			if j.WorkflowID == nil || *j.WorkflowID != wid {
 				continue
 			}
+		}
+		if orgIDs, ok := filters["org_ids"].([]string); ok && !slices.Contains(orgIDs, j.OrgID) {
+			continue
 		}
 		filtered = append(filtered, j)
 	}

@@ -3,8 +3,13 @@ import { api } from '~/api/client.ts'
 import type { GetCapabilitiesResponse, GetEventResponse, GetWorkflowResponse } from '~/api/csilapi/types.gen.ts'
 import { RcPage } from '~/app/page.ts'
 import { DagView } from '~/components/DagView.ts'
+import { diagnosisCard, type DiagnosisCard } from '~/components/Diagnoses.ts'
 import { describeError } from '~/components/ManagementPage.ts'
 import { ReasonList, reasonSummary } from '~/components/Reasons.ts'
+import { OwnerView } from '~/components/Owner.ts'
+import { actorText, ownerGroupText, requiredStateBadge, setRequiredState } from '~/components/Labels.ts'
+import { refClassLabels, setRefClasses } from '~/components/RefClasses.ts'
+import { ShiftFields } from '~/components/ShiftFields.ts'
 import { ErrorNotice, ResourceView, duration, relativeTime } from '~/components/States.ts'
 import { isTerminal, setStatus, statusBadge } from '~/components/StatusBadge.ts'
 import type { ResourceHandle } from '~/store/index.ts'
@@ -13,7 +18,7 @@ import { button } from '~/ui/controls.ts'
 import { h, setAttr, setText, show, syncKeyed } from '~/ui/dom.ts'
 import { Loader } from '~/ui/load.ts'
 import { define } from '~/ui/element.ts'
-import { href } from '~/ui/router.ts'
+import { href, navigate } from '~/ui/router.ts'
 
 type Tab = 'jobs' | 'graph'
 type WorkflowNode = GetWorkflowResponse['nodes'][number]
@@ -31,6 +36,7 @@ export class WorkflowDetailPage extends RcPage {
   #workflow!: ResourceHandle<GetWorkflowResponse>
   #caps!: ResourceHandle<GetCapabilitiesResponse>
   #view!: ResourceView<GetWorkflowResponse>
+  #diagnoses!: DiagnosisCard
   #tab: Tab = 'jobs'
   #actionError = new ErrorNotice()
   // The workflow's event, for the "Evaluate event" row. A failure (the event
@@ -50,6 +56,8 @@ export class WorkflowDetailPage extends RcPage {
 
   protected build(): void {
     this.#view = new ResourceView<GetWorkflowResponse>({ content: () => this.#content() })
+    // Outside the view: the entries load on their own, keyed by the status.
+    this.#diagnoses = diagnosisCard()
     this.append(
       h(
         'div',
@@ -57,18 +65,19 @@ export class WorkflowDetailPage extends RcPage {
         h('div', { style: { marginBottom: 'var(--space-4)' } }, h('a', { href: href('/'), class: 'meta' }, '← All workflows')),
         this.#actionError.el,
         this.#view.el,
+        this.#diagnoses,
       ),
     )
   }
 
   protected connected(): void {
     this.#workflow = useWorkflow(this, () => this.#id())
-    // Scoped to the workflow's project (see JobDetail). A workflow has no
-    // capability of its own: cancelling one cancels its jobs, so the job
-    // capabilities are the right question.
+    // Scoped to this workflow (see JobDetail): cancelling one cancels its
+    // jobs, so the job capabilities are the right question. The workflow
+    // scope adds the owners of this workflow (workflow roles, owner group).
     this.#caps = useCapabilities(this, () => {
       const workflow = this.#workflow.state().data?.workflow
-      return workflow ? { projectId: workflow.projectId } : undefined
+      return workflow ? { projectId: workflow.projectId, workflowId: workflow.workflowId } : undefined
     })
   }
 
@@ -76,6 +85,8 @@ export class WorkflowDetailPage extends RcPage {
     this.#workflow.sync()
     this.#caps.sync()
     this.#view.update(this.#workflow.state())
+    const workflow = this.#workflow.state().data?.workflow
+    this.#diagnoses.setTarget(workflow ? { workflowId: this.#id() } : undefined, workflow?.status ?? '')
     this.#event.sync(this.#workflow.state().data?.workflow.eventId || undefined)
     this.#applyEvent()
   }
@@ -93,15 +104,32 @@ export class WorkflowDetailPage extends RcPage {
   #content(): { node: Node; update(data: GetWorkflowResponse): void } {
     const title = h('h1')
     const badge = statusBadge()
+    const required = requiredStateBadge()
     const subtitle = h('p', { class: 'meta' })
     const cancel: PushButton = button('Cancel workflow', {
       small: true,
       variant: 'danger',
       onClick: () => void this.#act(() => api.cancelWorkflow({ workflowInstanceId: this.#id() }), 'The workflow could not be cancelled.'),
     })
+    // A retry or a re-run can change only the shifts (resources and
+    // timeout). It keeps the recorded authority of this workflow.
+    const shifts = new ShiftFields('retry or re-run')
     const retry: PushButton = button('Retry unsuccessful', {
       small: true,
-      onClick: () => void this.#act(() => api.retryUnsuccessfulJobs({ workflowInstanceId: this.#id() }), 'The jobs could not be retried.'),
+      onClick: () =>
+        void this.#act(async () => {
+          await api.retryUnsuccessfulJobs({ workflowInstanceId: this.#id(), shifts: shifts.value() })
+          shifts.clear()
+        }, 'The jobs could not be retried.'),
+    })
+    const rerun: PushButton = button('Re-run', {
+      small: true,
+      onClick: () =>
+        void this.#act(async () => {
+          const result = await api.rerunWorkflow({ workflowInstanceId: this.#id(), shifts: shifts.value() })
+          shifts.clear()
+          if (this.isActive()) navigate(`/workflows/${result.workflowInstanceId}`)
+        }, 'The workflow could not be re-run.'),
     })
 
     const dd = (cls: string): HTMLElement => h('dd', { class: cls })
@@ -112,6 +140,10 @@ export class WorkflowDetailPage extends RcPage {
     const originValue = dd('mono')
     const profileValue = dd('mono')
     const originItem = h('div', null, h('dt', null, 'CI origin'), originValue)
+    const actorValue = dd('')
+    const actorItem = h('div', null, h('dt', null, 'Started by'), actorValue)
+    const ownerValue = dd('mono')
+    const ownerItem = h('div', null, h('dt', null, 'Owner group'), ownerValue)
     const profileItem = h('div', null, h('dt', null, 'Execution profile'), profileValue)
     const decision = h('p', { class: 'meta', style: { marginTop: 'var(--space-3)' } })
 
@@ -123,6 +155,8 @@ export class WorkflowDetailPage extends RcPage {
     // Why is this workflow running? Closed by default: most visits are about
     // the jobs, and the answer is one click away when it is the question.
     const whyReasons = new ReasonList()
+    const whyClasses = refClassLabels()
+    const whyOwner = new OwnerView()
     const whyEventLink = h('a', null, 'View the event and every workflow it considered')
     const whyLegacy = h(
       'p',
@@ -133,6 +167,8 @@ export class WorkflowDetailPage extends RcPage {
       'details',
       { class: 'card disclosure why' },
       h('summary', null, 'Why is this workflow running?'),
+      h('div', { class: 'why-ref-classes' }, h('div', { class: 'field-label' }, 'Ref classes'), whyClasses),
+      whyOwner.el,
       whyLegacy,
       whyReasons.el,
       h('p', { style: { marginTop: 'var(--space-3)' } }, whyEventLink),
@@ -167,9 +203,10 @@ export class WorkflowDetailPage extends RcPage {
       h(
         'div',
         { class: 'page-header' },
-        h('div', null, h('div', { class: 'row' }, title, badge), subtitle),
-        h('div', { class: 'row' }, cancel, retry),
+        h('div', null, h('div', { class: 'row' }, title, badge, required), subtitle),
+        h('div', { class: 'row' }, cancel, retry, rerun),
       ),
+      shifts.el,
       h(
         'div',
         { class: 'card' },
@@ -180,6 +217,8 @@ export class WorkflowDetailPage extends RcPage {
           h('div', null, h('dt', null, 'Commit'), commitValue),
           h('div', null, h('dt', null, 'Jobs'), jobsValue),
           h('div', null, h('dt', null, 'Duration'), durationValue),
+          actorItem,
+          ownerItem,
           originItem,
           profileItem,
         ),
@@ -213,13 +252,22 @@ export class WorkflowDetailPage extends RcPage {
         setStatus(badge, wf.status)
         setText(subtitle, `${wf.vcsRepo || 'No repository'} · ${relativeTime(wf.updatedAt)}`)
         show(cancel, Boolean(caps?.cancelJob) && !isTerminal(wf.status))
-        show(retry, Boolean(caps?.retryJob) && isTerminal(wf.status))
+        const unsuccessful = wf.status === 'failed' || wf.status === 'cancelled'
+        show(retry, Boolean(caps?.retryJob) && unsuccessful)
+        show(rerun, Boolean(caps?.retryJob) && isTerminal(wf.status))
+        show(shifts.el, Boolean(caps?.retryJob) && isTerminal(wf.status))
         setText(idValue, wf.workflowId)
         setText(commitValue, wf.commitSha?.slice(0, 12) || '—')
         setText(jobsValue, `${wf.completedCount} of ${wf.jobCount} complete${wf.failedCount > 0 ? `, ${wf.failedCount} failed` : ''}`)
         setText(durationValue, duration(wf.createdAt, wf.completedAt))
         show(originItem, wf.ciOrigin)
         setText(originValue, wf.ciOrigin ?? '')
+        show(actorItem, wf.actor)
+        setText(actorValue, actorText(wf.actor))
+        const group = ownerGroupText(wf.owner)
+        show(ownerItem, group)
+        setText(ownerValue, group)
+        setRequiredState(required, data.why?.requiredState, data.why?.requiredLabel)
         show(profileItem, wf.executionProfile)
         setText(profileValue, wf.executionProfile ?? '')
         show(decision, wf.decisionSummary)
@@ -231,6 +279,8 @@ export class WorkflowDetailPage extends RcPage {
         show(whyLegacy, reasons.length === 0)
         show(whyReasons.el, reasons.length > 0)
         whyReasons.update(reasons, { projectId: wf.projectId })
+        setRefClasses(whyClasses, wf.refClasses)
+        whyOwner.update(data.why?.owner ?? wf.owner)
         show(whyEventLink.parentElement!, wf.eventId)
         setAttr(whyEventLink, 'href', wf.eventId ? href(`/events/${wf.eventId}`) : null)
 

@@ -19,8 +19,13 @@ Registered webhook routes are:
 
 ```text
 POST /api/v1/webhooks/github
+POST /api/v1/webhooks/github-app
 POST /api/v1/webhooks/gitlab
 ```
+
+`/api/v1/webhooks/github-app` is the one route for all GitHub Apps. The App
+ID is in the delivery headers. `/api/v1/webhooks/github` also accepts App
+deliveries. See [GitHub Apps](../../docs/github-app.md).
 
 The routes do not use API-token authentication. Provider webhook validation is
 mandatory.
@@ -66,8 +71,10 @@ The handler:
 6. Resolves webhook-secret candidates.
 7. Validates the request.
 8. Parses the provider payload.
-9. Filters the event by project event and target branch.
-10. Creates an eval job.
+9. Refuses the event with HTTP 429 when the project is over its webhook rate
+   limit. The coordinator records the event as `rate_limited`.
+10. Filters the event by project event and target branch.
+11. Creates an eval job.
 
 Webhook secret candidates include active rotation entries, project
 references, organization references, and deployment fallback values. Project
@@ -92,9 +99,17 @@ repository.
 The status updater uses project credentials when available. It falls back to
 organization or deployment credentials.
 
-Workflow status uses the workflow name as the status context. Pull-request
-workflow and policy entries use one shared report with the stable
-`<!-- reactorcide:report:v1 -->` marker.
+A root workflow of a CI event posts no commit status of its own. The
+`Reactorcide Checks` status of the event includes it. The workflow posts an
+extra status only when its definition sets `status.context`. A workflow with
+no CI event uses the `Reactorcide Jobs` context when it sets no context. An
+advisory or quarantined workflow posts no status (see
+[Required Set](../../docs/required-set.md)). Report mode `silent` posts no
+status (see [Reporting and Ownership](../../docs/reporting-and-ownership.md)).
+See [Events, Checks, and Schedules](../../docs/events-and-schedules.md).
+
+Pull-request workflow and policy entries use one shared report with the
+stable `<!-- reactorcide:report:v1 -->` marker.
 
 ## Add a Provider
 

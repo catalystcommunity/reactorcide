@@ -112,7 +112,11 @@ service ReactorcideAuth {
 ;;; conditionally on these; the coordinator remains the sole authorizer.
 GetCapabilitiesRequest = {
     ? org_id: text,
-    ? project_id: text
+    ? project_id: text,
+    ;; WP7: narrow the scope to one workflow instance. Its owners (workflow
+    ;; role holders, members of the trusted owner group) can cancel and
+    ;; retry it. project_id and org_id are then read from the workflow.
+    ? workflow_id: text
 }
 GetCapabilitiesResponse = {
     view_private: bool,
@@ -131,7 +135,10 @@ GetCapabilitiesResponse = {
     manage_global_settings: bool,
     is_global_admin: bool,
     is_org_admin: bool,
-    is_project_owner: bool
+    is_project_owner: bool,
+    ;; WP7: true for an owner of the workflow named by workflow_id (or an org
+    ;; admin / project owner): quarantine and required-set proposals.
+    ? manage_workflow: bool
 }
 
 ;;; Organizations own all tenant-scoped Reactorcide resources.
@@ -147,7 +154,18 @@ OrgSummary = {
     ? duplicate_events: text,
     ;; "allow" or "deny": whether running jobs may create jobs at runtime
     ;; (runnerlib trigger). The eval result is not affected.
-    ? dynamic_jobs: text
+    ? dynamic_jobs: text,
+    ;; "run", "skip" or "skip_when_shedding": what a draft pull request does.
+    ? draft_prs: text,
+    ;; "secure" or "legacy": the defaults profile of the organization.
+    ? defaults_profile: text,
+    ;; "normal", "degraded" or "critical": the organization shed level.
+    ? shed_level: text,
+    ;; Automatic retries of an infrastructure failure (0-5). Absent: the
+    ;; default (docs/runtime-behavior.md).
+    ? infra_retries: int,
+    ;; All job egress goes through the egress proxy (docs/egress-proxy.md).
+    ? egress_control: bool
 }
 ListOrgsRequest = {}
 ListOrgsResponse = {
@@ -170,7 +188,12 @@ UpdateOrgRequest = {
     ;; "run" or "skip".
     ? duplicate_events: text,
     ;; "allow" or "deny".
-    ? dynamic_jobs: text
+    ? dynamic_jobs: text,
+    ;; "run", "skip" or "skip_when_shedding".
+    ? draft_prs: text,
+    ;; 0-5 automatic retries of an infrastructure failure.
+    ? infra_retries: int,
+    ? egress_control: bool
 }
 UpdateOrgResponse = {
     org: OrgSummary
@@ -201,7 +224,15 @@ ExecutionProfileSummary = {
     resource_ceilings: any,
     ? cache_namespace: text,
     ? artifact_namespace: text,
-    trusted_cache_writes: bool
+    trusted_cache_writes: bool,
+    ;; Ref classes that split the cache namespace: the first class that the
+    ;; job has is added as a suffix (docs/builds-and-caches.md).
+    ? cache_namespace_classes: [* text],
+    ;; When not empty, cache writes need one of these ref classes.
+    ? cache_write_classes: [* text],
+    ;; All egress of a job with this profile goes through the egress proxy.
+    ;; Absent in a put keeps the stored value.
+    ? egress_control: bool
 }
 ListExecutionProfilesRequest = { organization: text }
 ListExecutionProfilesResponse = { profiles: [* ExecutionProfileSummary] }
@@ -210,7 +241,7 @@ PutExecutionProfileResponse = { profile: ExecutionProfileSummary }
 DeleteExecutionProfileRequest = { organization: text, name: text }
 DeleteExecutionProfileResponse = { deleted: bool }
 
-WorkerClassSummary = { name: text, protected: bool, pool_ids: [* text] }
+WorkerClassSummary = { name: text, protected: bool, pool_ids: [* text], ? ref_classes_any: [* text] }
 ListWorkerClassesRequest = { organization: text }
 ListWorkerClassesResponse = { worker_classes: [* WorkerClassSummary] }
 PutWorkerClassRequest = { organization: text, worker_class: WorkerClassSummary }
@@ -228,7 +259,9 @@ PrCommandRequest = {
     pr_number: int,
     command: text,
     ? label: text,
-    ? head_sha: text
+    ? head_sha: text,
+    ;; Only for retry and rerun: the resource and timeout shifts.
+    ? shifts: RunShifts
 }
 ;;; One approval action. Actions are append-only; for each role the last
 ;;; action wins.
@@ -297,7 +330,18 @@ CiTrustSettings = {
     ? run_approvers: [* text],
     ? override_approvers: [* text],
     ? override_profile: text,
-    ? required_reviews: [* RequiredReview]
+    ? required_reviews: [* RequiredReview],
+    ;; The largest values a retry or re-run shift can set. A project value
+    ;; that is not set inherits the organization value.
+    ? rerun_shift_limits: RerunShiftLimits
+}
+RerunShiftLimits = {
+    ;; Bounds cpu and cpu_request.
+    ? max_cpu: text,
+    ? max_memory: text,
+    ;; Bounds storage and storage_request.
+    ? max_storage: text,
+    ? max_timeout_seconds: int
 }
 GetCiTrustSettingsRequest = {
     organization: text,
@@ -368,7 +412,18 @@ ProjectDetail = {
     ? effective_duplicate_events: text,
     ;; "inherit", "allow" or "deny", and the value in force.
     ? dynamic_jobs: text,
-    ? effective_dynamic_jobs: text
+    ? effective_dynamic_jobs: text,
+    ;; "inherit", "run", "skip" or "skip_when_shedding", and the value in force.
+    ? draft_prs: text,
+    ? effective_draft_prs: text,
+    ;; The project infra_retries override (absent: inherit) and the value
+    ;; in force.
+    ? infra_retries: int,
+    ? effective_infra_retries: int,
+    ;; The project egress control setting and the value in force (the
+    ;; organization or the project turns it on).
+    ? egress_control: bool,
+    ? effective_egress_control: bool
 }
 GetProjectRequest = {
     project_id: text
@@ -407,7 +462,14 @@ UpdateProjectRequest = {
     ;; "inherit", "run" or "skip".
     ? duplicate_events: text,
     ;; "inherit", "allow" or "deny".
-    ? dynamic_jobs: text
+    ? dynamic_jobs: text,
+    ;; "inherit", "run", "skip" or "skip_when_shedding".
+    ? draft_prs: text,
+    ;; 0-5. infra_retries_inherit true clears the override (the
+    ;; organization value applies); infra_retries is then ignored.
+    ? infra_retries: int,
+    ? infra_retries_inherit: bool,
+    ? egress_control: bool
 }
 UpdateProjectResponse = {
     project: ProjectDetail
@@ -447,7 +509,22 @@ CiPolicyUse = {
 
 CiPolicyDefaults = {
     ? ci_source: text,
-    ? profile: text
+    ? profile: text,
+    ;; WP3 ref classes: the first entry whose condition the event's ref
+    ;; classes satisfy selects the default profile.
+    ? by_ref_class: [* CiPolicyClassProfile]
+}
+
+;;; A ref class condition (docs/ref-classes.md). any: one of the classes
+;;; must be present. none: no listed class may be present.
+CiPolicyRefClassMatch = {
+    ? any: [* text],
+    ? none: [* text]
+}
+
+CiPolicyClassProfile = {
+    ref_classes: CiPolicyRefClassMatch,
+    profile: text
 }
 
 CiPolicyRule = {
@@ -459,6 +536,8 @@ CiPolicyRule = {
     ? base_branches: [* text],
     ? head_repository: text,
     ? approval: CiPolicySubjectMatch,
+    ;; WP3: the rule applies only when the event's ref classes satisfy it.
+    ? ref_classes: CiPolicyRefClassMatch,
     use: CiPolicyUse
 }
 
@@ -481,7 +560,12 @@ GetCiPolicyRequest = {
     project_id: text
 }
 GetCiPolicyResponse = {
-    policy: CiPolicyDetail
+    policy: CiPolicyDetail,
+    ;; True when the project stores no policy and its organization has the
+    ;; secure defaults profile: policy is then the built-in policy that
+    ;; applies (policy_id is empty; there is no stored revision to expect).
+    ? built_in: bool,
+    ? built_in_reason: text
 }
 PutCiPolicyRequest = {
     project_id: text,
@@ -504,6 +588,8 @@ GroupSummary = {
     org_id: text,
     name: text,
     ? description: text,
+    ;; WP13b: the priority shift of the group, -50..50 (docs/priority.md).
+    ? priority_shift: int,
     created_at: text,
     updated_at: text
 }
@@ -567,6 +653,80 @@ ListGroupMembersRequest = {
 ListGroupMembersResponse = {
     members: [* GroupMemberEntry]
 }
+
+;;; Groups linked to VCS teams (docs/principals.md). A linked team gives its
+;;; members to the group after a sync (source vcs_sync). A sync never
+;;; removes a manual member.
+GroupVcsLink = {
+    link_id: text,
+    group_id: text,
+    provider: text,          ;; github
+    team: text,              ;; OWNER/SLUG
+    subject: text,           ;; vcs_team:OWNER/SLUG
+    ? last_synced_at: text,  ;; last successful sync
+    ? last_attempt_at: text,
+    ? next_sync_at: text,
+    last_error: text,        ;; empty after a successful sync
+    failure_count: int,
+    member_count: int,
+    created_at: text
+}
+ListGroupVcsLinksRequest = {
+    group_id: text
+}
+ListGroupVcsLinksResponse = {
+    links: [* GroupVcsLink]
+}
+LinkGroupVcsTeamRequest = {
+    group_id: text,
+    ? provider: text,        ;; default github
+    team: text               ;; OWNER/SLUG or vcs_team:OWNER/SLUG
+}
+LinkGroupVcsTeamResponse = {
+    link: GroupVcsLink
+}
+UnlinkGroupVcsTeamRequest = {
+    group_id: text,
+    link_id: text
+}
+UnlinkGroupVcsTeamResponse = {
+    removed: bool
+}
+GroupVcsSyncResult = {
+    link_id: text,
+    team: text,
+    members: int,
+    added: int,
+    removed: int,
+    ? error: text
+}
+SyncGroupVcsTeamsRequest = {
+    group_id: text
+}
+SyncGroupVcsTeamsResponse = {
+    results: [* GroupVcsSyncResult]
+}
+;;; One effective member of a group: a manual member, a synced member, or
+;;; both. A synced member can be a principal with no user (a VCS login).
+GroupMemberDetail = {
+    principal_id: text,
+    kind: text,              ;; human | service
+    name: text,
+    display_name: text,
+    ? user_id: text,
+    ? username: text,
+    source: text,            ;; manual | vcs_sync
+    manual: bool,
+    teams: [* text],         ;; vcs_team subjects of linked teams that have the member
+    vcs_logins: [* text],
+    added_at: text
+}
+ListGroupMemberDetailsRequest = {
+    group_id: text
+}
+ListGroupMemberDetailsResponse = {
+    members: [* GroupMemberDetail]
+}
 ;;; One user account, for pickers that grant roles or group membership.
 UserSummary = {
     user_id: text,
@@ -587,8 +747,10 @@ RoleAssignment = {
     assignment_id: text,
     principal_type: text, ;; user | group
     principal_id: text,
-    scope_type: text, ;; global | org | project
-    ? scope_id: text,
+    scope_type: text, ;; global | org | project | workflow
+    ? scope_id: text, ;; the project for scope_type workflow
+    ;; WP7: the workflow security ID of a workflow scope (role owner only).
+    ? scope_workflow: text,
     role: text, ;; admin | owner | member
     created_at: text,
     ? created_by: text
@@ -596,6 +758,7 @@ RoleAssignment = {
 ListRoleAssignmentsRequest = {
     ? scope_type: text,
     ? scope_id: text,
+    ? scope_workflow: text,
     ? principal_id: text
 }
 ListRoleAssignmentsResponse = {
@@ -607,6 +770,8 @@ AssignRoleRequest = {
     principal_id: text,
     scope_type: text,
     ? scope_id: text,
+    ;; WP7: required for scope_type workflow (scope_id is then the project).
+    ? scope_workflow: text,
     role: text
 }
 AssignRoleResponse = {
@@ -751,7 +916,18 @@ SecretGrant = {
     ? job_name_pattern: text,
     ? description: text,
     created_at: text,
-    updated_at: text
+    updated_at: text,
+    ;; WP3 ref class conditions (docs/ref-classes.md). Absent is no condition.
+    ? ref_classes_any: [* text],
+    ? ref_classes_none: [* text],
+    ;; docs/egress-proxy.md: "env" (default) or "proxy". A proxy grant
+    ;; gives the job a placeholder; the egress proxy puts the value in
+    ;; proxy_header (format proxy_header_format, "{}" is the secret)
+    ;; for the proxy_hosts only.
+    ? delivery: text,
+    ? proxy_hosts: [* text],
+    ? proxy_header: text,
+    ? proxy_header_format: text
 }
 ListSecretGrantsRequest = {
     org_id: text
@@ -768,7 +944,13 @@ CreateSecretGrantRequest = {
     secret_path_pattern: text,
     ? job_name_match: text,
     ? job_name_pattern: text,
-    ? description: text
+    ? description: text,
+    ? ref_classes_any: [* text],
+    ? ref_classes_none: [* text],
+    ? delivery: text,
+    ? proxy_hosts: [* text],
+    ? proxy_header: text,
+    ? proxy_header_format: text
 }
 CreateSecretGrantResponse = {
     grant: SecretGrant
@@ -781,7 +963,19 @@ UpdateSecretGrantRequest = {
     ? secret_path_pattern: text,
     ? job_name_match: text,
     ? job_name_pattern: text,
-    ? description: text
+    ? description: text,
+    ;; With set_ref_classes true, ref_classes_any and ref_classes_none
+    ;; replace the stored conditions (absent lists remove them). Otherwise
+    ;; the stored conditions stay.
+    ? set_ref_classes: bool,
+    ? ref_classes_any: [* text],
+    ? ref_classes_none: [* text],
+    ;; An absent delivery field keeps the stored value. proxy_hosts present
+    ;; (also empty) replaces the stored hosts.
+    ? delivery: text,
+    ? proxy_hosts: [* text],
+    ? proxy_header: text,
+    ? proxy_header_format: text
 }
 UpdateSecretGrantResponse = {
     grant: SecretGrant
@@ -825,8 +1019,24 @@ CancelWorkflowResponse = {
 ;;; cancelled one (old instance untouched); RetryUnsuccessfulJobs bulk-
 ;;; applies RetryJob to every failed/cancelled member job of a workflow, in
 ;;; place. See internal/jobcontrol/retry.go.
+;;; RunShifts are the only changes a retry or a re-run can make (D18, D25):
+;;; cpu (the CPU limit), cpu_request, memory (the memory limit), storage
+;;; (the ephemeral storage limit), storage_request, and timeout (a duration
+;;; such as "2h", or whole seconds). The new run keeps the authority of the
+;;; original run. An absent field keeps the original value. The
+;;; rerun_shift_limits setting bounds the values.
+RunShifts = {
+    ? cpu: text,
+    ? cpu_request: text,
+    ? memory: text,
+    ? storage: text,
+    ? storage_request: text,
+    ? timeout: text
+}
+
 RetryJobRequest = {
-    job_id: text
+    job_id: text,
+    ? shifts: RunShifts
 }
 RetryJobResponse = {
     job_id: text,
@@ -834,7 +1044,8 @@ RetryJobResponse = {
 }
 
 RetryWorkflowRequest = {
-    workflow_instance_id: text
+    workflow_instance_id: text,
+    ? shifts: RunShifts
 }
 RetryWorkflowResponse = {
     workflow_instance_id: text,
@@ -842,7 +1053,43 @@ RetryWorkflowResponse = {
 }
 
 RetryUnsuccessfulJobsRequest = {
-    workflow_instance_id: text
+    workflow_instance_id: text,
+    ? shifts: RunShifts
+}
+
+;;; RerunWorkflow runs a finished workflow (also a completed one) again as a
+;;; new instance, with the recorded authority of the original and optional
+;;; shifts. Authorization is the same as RetryWorkflow.
+RerunWorkflowRequest = {
+    workflow_instance_id: text,
+    ? shifts: RunShifts
+}
+RerunWorkflowResponse = {
+    workflow_instance_id: text,
+    status: text
+}
+
+;;; StartRun starts a new evaluated run on a ref of a project: a branch name,
+;;; refs/heads/NAME, refs/tags/NAME, or a pull request head (pr_number). Give
+;;; exactly one of ref and pr_number. The coordinator resolves the commit,
+;;; records a manual CI event with the caller as its actor, and evaluates it
+;;; with the normal policy of that ref. workflow, when set, is the one
+;;; workflow to run (a workflow ID or a path). Authorization is the retry
+;;; tier of the project.
+StartRunRequest = {
+    project_id: text,
+    ? ref: text,
+    ? pr_number: int,
+    ? workflow: text
+}
+StartRunResponse = {
+    event_id: text,
+    status: text,
+    ? eval_job_id: text,
+    ref: text,
+    commit_sha: text,
+    ? pr_number: int,
+    ? workflow: text
 }
 RetryUnsuccessfulJobsResponse = {
     job_ids: [* text],
@@ -869,6 +1116,47 @@ UpdateGlobalSettingsRequest = {
 UpdateGlobalSettingsResponse = {
     new_projects_private: bool,
     settings: [* GlobalSettingEntry]
+}
+
+;;; Shed levels (overload protection). The level in force for an
+;;; organization is the higher of the global level and the organization level.
+ShedActions = {
+    skip_drafts: bool,
+    pause_schedules: bool,
+    lower_pr_priority: bool,
+    skip_advisory: bool,
+    refuse_manual_runs: bool
+}
+ShedState = {
+    ;; "normal", "degraded" or "critical".
+    global_level: text,
+    ? org_level: text,
+    ;; The level in force.
+    level: text,
+    ;; "global" or "org" when the level is not normal.
+    ? source: text,
+    ;; The actions of the level in force.
+    actions: ShedActions,
+    ;; The actions of each level for the organization.
+    degraded_actions: ShedActions,
+    critical_actions: ShedActions
+}
+;; Without org_id: the global level. With org_id: the organization state.
+GetShedStateRequest = {
+    ? org_id: text
+}
+GetShedStateResponse = {
+    state: ShedState
+}
+;; Without org_id: sets the global level (global admin). With org_id: sets
+;; the organization level (organization admin). reason goes to the audit log.
+SetShedLevelRequest = {
+    level: text,
+    ? org_id: text,
+    ? reason: text
+}
+SetShedLevelResponse = {
+    state: ShedState
 }
 
 ;;; Trusted identity admission list: exact `[handle@]domain` selectors.
@@ -965,12 +1253,33 @@ QueueSummary = {
     characteristics: [* CharacteristicEntry],
     display_name: text,
     is_default: bool,
-    backlog_count: int
+    backlog_count: int,
+    ;; The waiting jobs of the queue in the coordinator database (status
+    ;; submitted or queued): the wait time of the oldest one, and the sum of
+    ;; their CPU requests and memory limits. Absent when the store has no
+    ;; backlog support. See docs/workers.md "Backlog and autoscaling".
+    ? backlog_oldest_age_seconds: int,
+    ? backlog_cpu_request_millicores: int,
+    ? backlog_memory_limit_bytes: int
+}
+
+;;; CharacteristicBacklog is the waiting work of every queue that requires one
+;;; characteristic value (for example region=us-east-1), so operators see
+;;; where capacity is short. A queue with many characteristics counts in each.
+CharacteristicBacklog = {
+    key: text,
+    value: text,
+    queues: int,
+    count: int,
+    oldest_age_seconds: int,
+    cpu_request_millicores: int,
+    memory_limit_bytes: int
 }
 
 ListQueuesRequest = {}
 ListQueuesResponse = {
-    queues: [* QueueSummary]
+    queues: [* QueueSummary],
+    ? backlog_by_characteristic: [* CharacteristicBacklog]
 }
 
 ;;; CreateQueue lets an operator pre-create a queue (define characteristics +
@@ -1015,11 +1324,55 @@ WorkerSummary = {
     ? worker_version: text,
     status: text, ;; active | quarantined | disabled
     ? last_seen_at: text,
-    active_lease_count: int
+    active_lease_count: int,
+    ;; The newest admission report of a worker in resources admission mode.
+    ;; Absent for a worker in the default concurrency mode.
+    ? admission: WorkerAdmissionSummary,
+    ;; The enrollment token of the newest Register: its ID and its name (if
+    ;; it has one). Never the token value. Absent for a worker that has not
+    ;; registered since migration 000066.
+    ? enrollment_token_id: text,
+    ? enrollment_token_name: text,
+    ? enrollment_token_active: bool,
+    ;; True when the worker has an active session from an enrollment token
+    ;; that is now deactivated. The worker runs until it stops; then it
+    ;; cannot register again with that token. Change its token.
+    ? on_deactivated_token: bool,
+    ;; online is true when the status is active, the worker has an active
+    ;; session, and its last heartbeat is less than 90 seconds old. The
+    ;; image alias rollout uses the same rule (docs/image-aliases.md).
+    ? online: bool,
+    ;; image_status is "healthy", "updating images", or "image update
+    ;; failed" (docs/image-aliases.md "Worker image states").
+    ;; image_status_detail is the failure reason of the worker. All image_*
+    ;; values are absent for a worker that does not use image sets.
+    ? image_status: text,
+    ? image_status_detail: text,
+    ? image_runtime: text,
+    ;; The image set version that the coordinator wants the worker to hold,
+    ;; and the version of the newest report of the worker.
+    ? image_set_version: int,
+    ? image_reported_version: int
+}
+
+;;; WorkerAdmissionSummary is the capacity and the headroom (capacity less
+;;; the resources in use) that a resources-mode worker reported. reported_at
+;;; is RFC 3339; the coordinator stores a report at most every 30 seconds.
+WorkerAdmissionSummary = {
+    mode: text,
+    capacity_cpu_millicores: int,
+    capacity_memory_bytes: int,
+    headroom_cpu_millicores: int,
+    headroom_memory_bytes: int,
+    reported_at: text
 }
 
 ListWorkersRequest = {
-    ? pool_id: text
+    ? pool_id: text,
+    ;; Only the workers that last registered with this enrollment token.
+    ? enrollment_token_id: text,
+    ;; true: only the workers with on_deactivated_token set.
+    ? on_deactivated_token: bool
 }
 ListWorkersResponse = {
     workers: [* WorkerSummary]
@@ -1102,7 +1455,10 @@ EnrollmentTokenSummary = {
     is_active: bool,
     ? last_used_at: text,
     created_at: text,
-    ? deactivated_at: text
+    ? deactivated_at: text,
+    ;; Workers with an active session that last registered with this token.
+    ;; A deactivated token with a count above 0 needs action.
+    ? active_worker_count: int
 }
 
 CreateEnrollmentTokenRequest = {
@@ -1124,8 +1480,13 @@ ListEnrollmentTokensResponse = {
     tokens: [* EnrollmentTokenSummary]
 }
 
+;;; Deactivation is permanent: no operation activates a token again.
+;;; confirm_permanent must be true, or the operation fails with
+;;; invalid_argument. Workers that run on the token keep their sessions
+;;; until they stop (see WorkerSummary.on_deactivated_token).
 DeactivateEnrollmentTokenRequest = {
-    token_id: text
+    token_id: text,
+    ? confirm_permanent: bool
 }
 DeactivateEnrollmentTokenResponse = {
     summary: EnrollmentTokenSummary
@@ -1280,6 +1641,194 @@ ListScheduleFiresResponse = {
     fires: [* ScheduleFireSummary]
 }
 
+;; ---------------------------------------------------------------------------
+;; Outbound event subscriptions (docs/outbound-events.md).
+;;
+;; A subscription sends phase events (node.pre_start, node.started,
+;; node.post_complete, node.skipped, event.evaluated, event.admitted,
+;; event.not_admitted, workflow.completed) to a sink. The first sink is a
+;; webhook (HTTPS POST, signed with HMAC-SHA256). An org admin manages org and
+;; owner_group subscriptions; a project owner manages project and workflow
+;; subscriptions. Timestamps are RFC3339 UTC text. Empty filter lists match
+;; everything.
+
+;;; scope is "org", "project", "workflow", or "owner_group".
+EventSubscriptionSummary = {
+    subscription_id: text,
+    org_id: text,
+    name: text,
+    description: text,
+    owner_principal_id: text,
+    ;; False when the owner principal is disabled: nothing is delivered.
+    owner_active: bool,
+    scope: text,
+    ? project_id: text,
+    workflow_security_id: text,
+    owner_group: text,
+    event_types: [* text],
+    ref_classes_any: [* text],
+    results: [* text],
+    actor_kinds: [* text],
+    ;; Failure classes of node events (docs/diagnosis.md). Empty or absent
+    ;; matches every event.
+    ? failure_classes: [* text],
+    sink_type: text,
+    webhook_url: text,
+    ;; 0 uses the coordinator default.
+    max_attempts: int,
+    enabled: bool,
+    created_at: text,
+    updated_at: text
+}
+
+;;; status is "pending", "queued", "sending", "delivered", or "dead_letter".
+EventDeliverySummary = {
+    delivery_id: text,
+    subscription_id: text,
+    event_id: text,
+    event_type: text,
+    order_key: text,
+    sequence: int,
+    status: text,
+    attempts: int,
+    ? last_http_status: int,
+    ? last_latency_ms: int,
+    last_error: text,
+    next_attempt_at: text,
+    ? delivered_at: text,
+    ? dead_lettered_at: text,
+    created_at: text
+}
+
+;;; result is "delivered", "failed", or "refused".
+EventDeliveryAttemptEntry = {
+    attempt: int,
+    started_at: text,
+    finished_at: text,
+    result: text,
+    ? http_status: int,
+    latency_ms: int,
+    error: text
+}
+
+;;; Without project_id: every subscription of the org (org admin). With
+;;; project_id: the project and workflow subscriptions of the project
+;;; (project owner).
+ListEventSubscriptionsRequest = {
+    org_id: text,
+    ? project_id: text
+}
+ListEventSubscriptionsResponse = {
+    subscriptions: [* EventSubscriptionSummary]
+}
+
+GetEventSubscriptionRequest = {
+    subscription_id: text
+}
+GetEventSubscriptionResponse = {
+    subscription: EventSubscriptionSummary
+}
+
+;;; signing_secret: empty makes a random secret. The answer shows the secret
+;;; one time. owner_principal_id: empty means the caller.
+CreateEventSubscriptionRequest = {
+    org_id: text,
+    name: text,
+    ? description: text,
+    scope: text,
+    ? project_id: text,
+    ? workflow_security_id: text,
+    ? owner_group: text,
+    ? event_types: [* text],
+    ? ref_classes_any: [* text],
+    ? results: [* text],
+    ? actor_kinds: [* text],
+    ? failure_classes: [* text],
+    ? sink_type: text,
+    webhook_url: text,
+    ? max_attempts: int,
+    ? enabled: bool,
+    ? signing_secret: text,
+    ? owner_principal_id: text
+}
+CreateEventSubscriptionResponse = {
+    subscription: EventSubscriptionSummary,
+    signing_secret: text
+}
+
+;;; Only the fields that are present change. rotate_secret makes a new
+;;; secret (or uses signing_secret) and shows it one time.
+UpdateEventSubscriptionRequest = {
+    subscription_id: text,
+    ? description: text,
+    ? event_types: [* text],
+    ? ref_classes_any: [* text],
+    ? results: [* text],
+    ? actor_kinds: [* text],
+    ? failure_classes: [* text],
+    ? webhook_url: text,
+    ? max_attempts: int,
+    ? enabled: bool,
+    ? rotate_secret: bool,
+    ? signing_secret: text,
+    ;; Filters to clear (match everything): "event_types",
+    ;; "ref_classes_any", "results", "actor_kinds", "failure_classes".
+    ? clear_filters: [* text]
+}
+UpdateEventSubscriptionResponse = {
+    subscription: EventSubscriptionSummary,
+    ? signing_secret: text
+}
+
+DeleteEventSubscriptionRequest = {
+    subscription_id: text
+}
+DeleteEventSubscriptionResponse = {
+    ok: bool
+}
+
+;;; Newest deliveries first. Default limit 50, maximum 500.
+ListEventDeliveriesRequest = {
+    subscription_id: text,
+    ? status: text,
+    ? limit: int
+}
+ListEventDeliveriesResponse = {
+    deliveries: [* EventDeliverySummary]
+}
+
+GetEventDeliveryRequest = {
+    subscription_id: text,
+    delivery_id: text
+}
+GetEventDeliveryResponse = {
+    delivery: EventDeliverySummary,
+    attempts: [* EventDeliveryAttemptEntry]
+}
+
+;;; Replays one delivered or dead_letter delivery (delivery_id), or every
+;;; dead_letter delivery of the subscription (all_dead_letters).
+ReplayEventDeliveryRequest = {
+    subscription_id: text,
+    ? delivery_id: text,
+    ? all_dead_letters: bool
+}
+ReplayEventDeliveryResponse = {
+    replayed: int
+}
+
+;;; Sends one test.ping event now. Nothing is recorded.
+TestEventSubscriptionRequest = {
+    subscription_id: text
+}
+TestEventSubscriptionResponse = {
+    delivered: bool,
+    ? http_status: int,
+    latency_ms: int,
+    error: text,
+    refused: bool
+}
+
 ;;; Resource history across the runs of one job, for capacity planning.
 ;;; A "job" here is every run with the same project and the same name as the
 ;;; job_id given. Values are integer-scaled by unit: millicores and bytes.
@@ -1326,7 +1875,29 @@ GetJobResourceHistoryResponse = {
     runs: [* JobRunResourceSummary],
     ;; Finished runs in range whose summary is not computed yet. The server
     ;; computes a bounded number per request; ask again to get the rest.
-    pending: int
+    pending: int,
+    ;; A p95-based right-sizing suggestion from the runs in this response.
+    ? suggestion: ResourceSuggestion
+}
+
+;;; ResourceSuggestion is a right-sizing suggestion (internal/resourcehistory
+;;; Suggest): CPU request = p95 of the per-run CPU p95 plus 20 percent; memory
+;;; limit = p95 of the per-run memory peak plus 25 percent. sufficient is
+;;; false, and the suggested values are empty, when fewer than min_runs runs
+;;; are measured. Reactorcide never applies a suggestion by itself.
+ResourceSuggestion = {
+    runs: int,
+    min_runs: int,
+    sufficient: bool,
+    cpu_p95_millicores: int,
+    memory_peak_p95_bytes: int,
+    oom_runs: int,
+    ? cpu_request: text,
+    ? cpu_request_millicores: int,
+    ? memory_limit: text,
+    ? memory_limit_bytes: int,
+    current_cpu_request_millicores: int,
+    current_memory_limit_bytes: int
 }
 
 GetJobLogsRequest = {
@@ -1375,20 +1946,71 @@ JobSummary = {
     ? started_at: text,
     ? completed_at: text,
     ? exit_code: int,
+    ;; failure_class is the cause of a failed, cancelled or timed out job:
+    ;; "job", "timeout", "oom", "infra.image_pull", "infra.scheduling",
+    ;; "infra.worker_lost", "infra.platform" or "cancelled". Absent for a
+    ;; job that did not fail, or whose cause is unknown. failure_owner is
+    ;; "pipeline" or "infrastructure". retry_count counts automatic
+    ;; infrastructure retries.
+    ? failure_class: text,
+    ? failure_detail: text,
+    ? failure_owner: text,
+    ? retry_count: int,
     source_url: text,
     source_ref: text,
     source_type: text,
     source_path: text,
     runner_image: text,
+    ;; image_alias is the image alias name that the job named. image_display
+    ;; is the image text for the UI: "alias (ref)" for an alias, else the
+    ;; reference (docs/image-aliases.md). Both are absent for a job with no
+    ;; image.
+    ? image_alias: text,
+    ? image_display: text,
+    ;; image_retry_of is the image of the earlier run in display form, when
+    ;; a retry or a re-run resolved the alias again to a new pin
+    ;; (docs/image-aliases.md "Retry and rerun"). Absent when the image did
+    ;; not change, and for a job that is not a retry or a re-run.
+    ? image_retry_of: text,
     queue_name: text,
     priority: int,
+    ;; WP13b: the lane of the job and how its priority was computed
+    ;; (docs/priority.md). Absent for a job made before lanes.
+    ? priority_lane: text,
+    ? priority_reason: CIDecisionReason,
     ? parent_job_id: text,
     ? project_id: text,
     ? workflow_id: text,
     workflow_node_name: text,
     ci_origin: text,
     execution_profile: text,
-    worker_class: text
+    worker_class: text,
+    ;; WP2 principals: the principal that started the job.
+    ? actor: ActorSummary,
+    ;; The shifts of a retry or a re-run (resources and timeout only).
+    ? shifts: RunShifts,
+    ;; WP3: the ref classes of the job (docs/ref-classes.md).
+    ? ref_classes: [* text],
+    ;; WP7: the owner snapshot of the job's workflow. Absent when unknown.
+    ? owner: WorkflowOwnership
+}
+
+;;; WP7: the owner and contact of a workflow, read from the TRUSTED CI
+;;; definition when the run was created (docs/workflow-design.md). An absent
+;;; group with no subjects means the trusted definition names no owner.
+;;; source: ci (read from the trusted CI at ci_sha), prior (copied from an
+;;; earlier trusted run), parent (the parent workflow), retry.
+WorkflowOwnership = {
+    ? group: text,
+    ? subjects: [* text],
+    ? channel: text,
+    ? help_url: text,
+    ? email: text,
+    ? source: text,
+    ? ci_sha: text,
+    ;; True when the snapshot came from a trusted ref. Only a trusted owner
+    ;; gives authority (owner approvals, workflow roles).
+    ? trusted: bool
 }
 
 ListJobsRequest = {
@@ -1396,6 +2018,8 @@ ListJobsRequest = {
     ? project_id: text,
     ? workflow_id: text,
     ? queue_name: text,
+    ;; One failure class (see JobSummary.failure_class).
+    ? failure_class: text,
     ? limit: int,
     ? offset: int
 }
@@ -1475,7 +2099,13 @@ WorkflowSummaryDetail = {
     worker_class: text,
     ;; The CI event that created this workflow (or loose job). Absent for
     ;; rows that predate events and for directly submitted jobs.
-    ? event_id: text
+    ? event_id: text,
+    ;; WP2 principals: the principal that started the workflow.
+    ? actor: ActorSummary,
+    ;; WP3: the ref classes of the workflow (docs/ref-classes.md).
+    ? ref_classes: [* text],
+    ;; WP7: the owner snapshot of the workflow. Absent when unknown.
+    ? owner: WorkflowOwnership
 }
 
 ListWorkflowsRequest = {
@@ -1553,7 +2183,18 @@ CIDecisionReason = {
     ;; kind "schedule" on a workflow a schedule fired: the schedule and the
     ;; fire time (RFC3339). value is the cron expression.
     ? schedule_id: text,
-    ? fire_time: text
+    ? fire_time: text,
+    ;; kind "ref_class": the ref classes of the event and the operator rules
+    ;; that added classes.
+    ? classes: [* text],
+    ? rule_ids: [* text],
+    ;; kind "priority" (docs/priority.md): the lane, its base, the shifts,
+    ;; and the final priority. rule_id is the lane rule, value the scope,
+    ;; detail the summary.
+    ? lane: text,
+    ? base: int,
+    ? shifts: [* PriorityShift],
+    ? final: int
 }
 
 CIDependencyOutcome = {
@@ -1568,7 +2209,15 @@ CIEventWorkflowDecision = {
     ;; run | skipped | invalid | not_admitted
     decision: text,
     reasons: [* CIDecisionReason],
-    ? workflow_id: text
+    ? workflow_id: text,
+    ;; WP7: the owner snapshot of the created workflow (workflow_id set).
+    ? owner: WorkflowOwnership,
+    ;; docs/required-set.md: "required", "advisory" or "quarantined" for
+    ;; the target branch of the event. Absent when the project has no
+    ;; required set (every workflow is required). required_label is the
+    ;; short text ("quarantined until ... — not required").
+    ? required_state: text,
+    ? required_label: text
 }
 
 CIEventDetail = {
@@ -1601,7 +2250,15 @@ CIEventDetail = {
     ;; pending | success | failure. Absent when none was posted.
     ? checks_state: text,
     ? checks_description: text,
-    ? checks_published_at: text
+    ? checks_published_at: text,
+    ;; WP2 principals: the principal of the event actor (actor above is the
+    ;; VCS login text).
+    ? actor_principal: ActorSummary,
+    ;; WP3: the ref classes of the event, the facts that gave them, and the
+    ;; rule that added each class.
+    ? ref_classes: [* text],
+    ? ref_class_facts: RefClassFacts,
+    ? ref_class_reasons: [* RefClassReason]
 }
 
 GetEventRequest = {
@@ -1648,8 +2305,1644 @@ DescribeFormMetadataResponse = {
     vcs_providers: [* EnumChoice]
 }
 
+;; ---------------------------------------------------------------------------
+;; WP2 principals.
+;;
+;; A principal is anything that can act: a human, a service, or the system
+;; principal "Reactorcide". Every operation here takes the org the caller
+;; administers (org_id) and authorizes the caller as an org admin of it (or a
+;; global admin). A human principal is listed for an org when it is a member
+;; of an org group or holds a role in the org.
+;; ---------------------------------------------------------------------------
+
+;;; The display form of an actor. identity is "TYPE:VALUE" of the identity
+;;; the actor used (for example vcs:github/octocat or token:UUID).
+ActorSummary = {
+    principal_id: text,
+    kind: text, ;; human | service | system
+    display_name: text,
+    ? identity: text
+}
+
+PrincipalIdentityEntry = {
+    identity_type: text, ;; user | vcs | vcsstar | linkkeys | token | federated
+    identity_value: text,
+    verified_by: text,
+    created_at: text
+}
+
+;;; A token of a service principal. The token value is never returned here.
+PrincipalTokenEntry = {
+    token_id: text,
+    name: text,
+    capabilities: [* text],
+    created_at: text,
+    ? expires_at: text,
+    ? last_used_at: text,
+    is_active: bool
+}
+
+PrincipalSummary = {
+    principal_id: text,
+    kind: text,
+    name: text,
+    display_name: text,
+    status: text, ;; active | disabled
+    ? org_id: text,
+    created_at: text
+}
+
+PrincipalDetail = {
+    principal: PrincipalSummary,
+    identities: [* PrincipalIdentityEntry],
+    ;; Names of the groups of the org that the principal is a member of.
+    groups: [* text],
+    tokens: [* PrincipalTokenEntry],
+    ;; The subjects the principal has by its own identities in this org
+    ;; (principal:, principal_kind:, service:, identity:, vcs_user:).
+    subjects: [* text]
+}
+
+ListPrincipalsRequest = {
+    org_id: text,
+    ? kind: text
+}
+ListPrincipalsResponse = {
+    principals: [* PrincipalSummary]
+}
+
+GetPrincipalRequest = {
+    org_id: text,
+    principal_id: text
+}
+GetPrincipalResponse = {
+    principal: PrincipalDetail
+}
+
+CreateServicePrincipalRequest = {
+    org_id: text,
+    name: text,
+    ? display_name: text
+}
+CreateServicePrincipalResponse = {
+    principal: PrincipalDetail
+}
+
+SetPrincipalStatusRequest = {
+    org_id: text,
+    principal_id: text,
+    status: text ;; active | disabled
+}
+SetPrincipalStatusResponse = {
+    principal: PrincipalDetail
+}
+
+PrincipalIdentityRequest = {
+    org_id: text,
+    principal_id: text,
+    identity_type: text,
+    identity_value: text
+}
+PrincipalIdentityResponse = {
+    principal: PrincipalDetail
+}
+
+SetPrincipalGroupRequest = {
+    org_id: text,
+    principal_id: text,
+    group_id: text,
+    member: bool
+}
+SetPrincipalGroupResponse = {
+    principal: PrincipalDetail
+}
+
+IssuePrincipalTokenRequest = {
+    org_id: text,
+    principal_id: text,
+    name: text,
+    ;; Empty means every capability the caller has (an admin token only).
+    capabilities: [* text],
+    ? expires_at: text
+}
+;;; token is shown one time. Store it at once; it cannot be read again.
+IssuePrincipalTokenResponse = {
+    token: text,
+    info: PrincipalTokenEntry
+}
+
+RevokePrincipalTokenRequest = {
+    org_id: text,
+    principal_id: text,
+    token_id: text
+}
+RevokePrincipalTokenResponse = {
+    revoked: bool
+}
+
+ResolvePrincipalRequest = {
+    org_id: text,
+    identity_type: text, ;; an identity type, or "principal" for a principal UUID
+    identity_value: text
+}
+ResolvePrincipalResponse = {
+    principal: PrincipalDetail,
+    identity: text
+}
+
+;; ---------------------------------------------------------------------------
+;; WP4 inbound federation (docs/federation.md). An org admin registers
+;; trusted external OIDC issuers and claim mappings to service principals of
+;; the org. A token exchange (REST POST /api/v1/federation/token) then gives
+;; a short-lived token to a workload with no static Reactorcide token.
+;; ---------------------------------------------------------------------------
+
+FederationIssuerEntry = {
+    issuer_id: text,
+    name: text,
+    ;; The exact "iss" value of the tokens.
+    issuer_url: text,
+    ;; Empty: the JWKS URL comes from the discovery document.
+    jwks_url: text,
+    audiences: [* text],
+    ;; RS256, ES256, EdDSA. Never none or HMAC.
+    algorithms: [* text],
+    clock_skew_seconds: int,
+    ;; active | disabled
+    status: text,
+    created_at: text
+}
+
+;;; One claim condition. op is "equals" or "glob" ("*" matches any run of
+;;; characters, "?" one character).
+FederationConditionEntry = {
+    claim: text,
+    op: text,
+    value: text
+}
+
+FederationMappingEntry = {
+    mapping_id: text,
+    issuer_id: text,
+    name: text,
+    principal_id: text,
+    principal_name: text,
+    conditions: [* FederationConditionEntry],
+    capabilities: [* text],
+    token_ttl_seconds: int,
+    ;; active | disabled
+    status: text,
+    created_at: text
+}
+
+ListFederationIssuersRequest = {
+    org_id: text
+}
+ListFederationIssuersResponse = {
+    issuers: [* FederationIssuerEntry],
+    ;; Every mapping of every issuer of the org.
+    mappings: [* FederationMappingEntry]
+}
+
+;;; Create (issuer_id absent) or update an issuer.
+SaveFederationIssuerRequest = {
+    org_id: text,
+    ? issuer_id: text,
+    name: text,
+    issuer_url: text,
+    ? jwks_url: text,
+    audiences: [* text],
+    ? algorithms: [* text],
+    ? clock_skew_seconds: int,
+    ? status: text
+}
+SaveFederationIssuerResponse = {
+    issuer: FederationIssuerEntry
+}
+
+DeleteFederationIssuerRequest = {
+    org_id: text,
+    issuer_id: text
+}
+DeleteFederationIssuerResponse = {
+    deleted: bool
+}
+
+;;; Create (mapping_id absent) or update a mapping. The capabilities are
+;;; never empty, and they are intersected with the roles of the principal at
+;;; each use of an issued token.
+SaveFederationMappingRequest = {
+    org_id: text,
+    issuer_id: text,
+    ? mapping_id: text,
+    name: text,
+    principal_id: text,
+    conditions: [* FederationConditionEntry],
+    capabilities: [* text],
+    ? token_ttl_seconds: int,
+    ? status: text
+}
+SaveFederationMappingResponse = {
+    mapping: FederationMappingEntry
+}
+
+DeleteFederationMappingRequest = {
+    org_id: text,
+    mapping_id: text
+}
+DeleteFederationMappingResponse = {
+    deleted: bool
+}
+
+;; ---------------------------------------------------------------------------
+;; WP3 ref classes (docs/ref-classes.md). Rules add classes to the ref of an
+;; event. organization is the org name; project_id absent selects the
+;; organization rules.
+;; ---------------------------------------------------------------------------
+
+;;; The trusted facts of an event that the classifier used.
+RefClassFacts = {
+    ? source: text,
+    ? event_type: text,
+    ? branch: text,
+    ;; The head branch of a pull request. The author names it; no rule
+    ;; matches it.
+    ? head_branch: text,
+    ? tag: text,
+    ? base_branch: text,
+    ? default_branch: text,
+    ? is_pr: bool,
+    ? is_fork: bool,
+    ? is_default_branch: bool
+}
+
+;;; Why one class applies. rule_id is "builtin:NAME" for a built-in rule.
+;;; scope is builtin | org | project.
+RefClassReason = {
+    class: text,
+    rule_id: text,
+    ? rule_name: text,
+    scope: text
+}
+
+;;; One operator rule. Absent match fields are no condition. is_pr, is_fork
+;;; and is_default_branch absent mean "any".
+RefClassRule = {
+    ? rule_id: text,
+    ? project_id: text,
+    name: text,
+    position: int,
+    ? description: text,
+    ? event_types: [* text],
+    ? branch_glob: text,
+    ? tag_glob: text,
+    ? base_branch_glob: text,
+    ? is_pr: bool,
+    ? is_fork: bool,
+    ? is_default_branch: bool,
+    classes: [* text],
+    enabled: bool,
+    ? created_at: text,
+    ? updated_at: text
+}
+
+RefClassBuiltin = {
+    rule_id: text,
+    classes: [* text]
+}
+
+RefClassRuleCheck = {
+    rule_id: text,
+    name: text,
+    scope: text,
+    enabled: bool,
+    matched: bool,
+    classes: [* text]
+}
+
+ListRefClassRulesRequest = {
+    organization: text,
+    ? project_id: text
+}
+ListRefClassRulesResponse = {
+    rules: [* RefClassRule],
+    ;; The organization rules, for a project listing.
+    inherited: [* RefClassRule],
+    builtin: [* RefClassBuiltin],
+    ;; The caller may change the rules of this scope.
+    can_manage: bool
+}
+PutRefClassRuleRequest = {
+    organization: text,
+    ? project_id: text,
+    rule: RefClassRule
+}
+PutRefClassRuleResponse = {
+    rule: RefClassRule
+}
+DeleteRefClassRuleRequest = {
+    organization: text,
+    ? project_id: text,
+    name: text
+}
+DeleteRefClassRuleResponse = {
+    deleted: bool
+}
+ExplainRefClassesRequest = {
+    organization: text,
+    ? project_id: text,
+    ;; A stored event: use its facts. Otherwise facts applies.
+    ? event_id: text,
+    ? facts: RefClassFacts
+}
+ExplainRefClassesResponse = {
+    facts: RefClassFacts,
+    classes: [* text],
+    reasons: [* RefClassReason],
+    rule_ids: [* text],
+    rules: [* RefClassRuleCheck],
+    ? stored_classes: [* text]
+}
+
+;;; Image aliases and worker image sets (docs/image-aliases.md).
+;;;
+;;; An alias gives a name to one pinned image reference. organization is the
+;;; organization name. An absent project_id is the organization scope (needs
+;;; organization admin); a project_id is the project scope (needs project
+;;; owner). scope is "organization" or "project". kind is "vm" or
+;;; "container". characteristics are more worker characteristics that a
+;;; worker must satisfy to get the image; the key worker_class names a
+;;; worker class that the pool of the worker must serve. Times are RFC 3339.
+ImageAliasSummary = {
+    alias_id: text,
+    org_id: text,
+    ? project_id: text,
+    scope: text,
+    name: text,
+    kind: text,
+    os: text,
+    arch: text,
+    characteristics: [* CharacteristicEntry],
+    active_ref: text,
+    active_digest: text,
+    ? pending_ref: text,
+    ? pending_digest: text,
+    ? pending_since: text,
+    created_at: text,
+    updated_at: text,
+    updated_by: text
+}
+;;; A project scope list also gives the organization aliases that the
+;;; project uses (an organization alias with no project alias of the same
+;;; name), with scope "organization".
+ListImageAliasesRequest = { organization: text, ? project_id: text }
+ListImageAliasesResponse = { aliases: [* ImageAliasSummary] }
+GetImageAliasRequest = { organization: text, ? project_id: text, name: text }
+GetImageAliasResponse = { alias: ImageAliasSummary }
+;;; SetImageAlias creates an alias or changes its pin. ref must be a pinned
+;;; reference (@sha256:). A new alias gets ref as its active pin at once.
+;;; For an alias that exists, a new digest becomes the pending pin, and the
+;;; coordinator promotes it when every online serving worker has the image;
+;;; force promotes it at once. os and arch are required for a new alias;
+;;; kind defaults to vm for os macos or windows, else container. kind, os,
+;;; arch, and characteristics cannot change after the create: for an alias
+;;; that exists, a value that is different is refused (failed_precondition).
+;;; Use a new alias name for a different platform or constraint. outcome is
+;;; "created", "pending", "promoted", "updated", or "unchanged".
+SetImageAliasRequest = {
+    organization: text,
+    ? project_id: text,
+    name: text,
+    ref: text,
+    ? kind: text,
+    ? os: text,
+    ? arch: text,
+    ? characteristics: [* CharacteristicEntry],
+    ? force: bool
+}
+SetImageAliasResponse = { alias: ImageAliasSummary, outcome: text }
+DeleteImageAliasRequest = { organization: text, ? project_id: text, name: text }
+DeleteImageAliasResponse = { deleted: bool }
+;;; An image that a worker could not pull. permanent is true when a retry
+;;; with the same reference cannot help (not found, digest mismatch,
+;;; unauthorized or denied, reference not valid): the alias owner or the
+;;; operator must fix it.
+ImageFailureSummary = {
+    digest: text,
+    permanent: bool,
+    detail: text
+}
+;;; One image-aware worker that serves an alias. has_active and has_pending
+;;; tell whether the worker reported the active and the pending digest as
+;;; ready. ready is true when the pending digest is ready (the state of
+;;; the other images of the worker does not count). failed gives the
+;;; failures of the active and the pending digest of this alias.
+ImageRolloutWorker = {
+    worker_id: text,
+    ? hostname: text,
+    pool_id: text,
+    online: bool,
+    image_status: text,
+    ? image_status_detail: text,
+    image_set_version: int,
+    ? image_reported_version: int,
+    has_active: bool,
+    has_pending: bool,
+    ready: bool,
+    ? failed: [* ImageFailureSummary]
+}
+;;; The serving workers of one pool that the caller cannot manage: counts
+;;; only, no worker IDs or host names.
+ImageRolloutPoolSummary = {
+    pool_name: text,
+    workers: int,
+    online_workers: int,
+    ready_workers: int,
+    failed_workers: int
+}
+;;; The rollout of one alias. online_workers and ready_workers count the
+;;; online serving workers. blocked tells why a pending pin is not promoted
+;;; yet, and is absent when the alias has no pending pin. workers has a row
+;;; for each serving worker in a pool that the caller can manage
+;;; (manage-workers permission); other_pools gives counts for the other
+;;; pools. problems are failures that the alias owner must fix, for
+;;; example serving workers that cannot pull the active pin (a permanent
+;;; failure).
+ImageAliasRollout = {
+    alias: ImageAliasSummary,
+    workers: [* ImageRolloutWorker],
+    online_workers: int,
+    ready_workers: int,
+    promotable: bool,
+    ? blocked: text,
+    ? other_pools: [* ImageRolloutPoolSummary],
+    ? problems: [* text]
+}
+;;; An absent name gives the rollout of each alias of the scope.
+GetImageRolloutStatusRequest = { organization: text, ? project_id: text, ? name: text }
+GetImageRolloutStatusResponse = { rollouts: [* ImageAliasRollout] }
+;;; One image of the set that the coordinator wants a worker to hold.
+WorkerImageSetEntrySummary = {
+    ref: text,
+    digest: text,
+    kind: text,
+    aliases: [* text],
+    ready: bool,
+    ;; pending is true when the digest is only the pending pin of a
+    ;; rollout. The startup gate of the worker does not wait for it.
+    ? pending: bool,
+    ;; failure is the newest pull failure of the digest on this worker.
+    ? failure: ImageFailureSummary
+}
+;;; The image state of one worker. image_status is absent for a worker that
+;;; does not use image sets. state is the state of the newest report
+;;; (updating, updated, failed). images is the set that the coordinator
+;;; computes now; image_set_version can be older until the next heartbeat.
+GetWorkerImageStateRequest = { worker_id: text }
+GetWorkerImageStateResponse = {
+    worker_id: text,
+    image_aware: bool,
+    ? image_runtime: text,
+    ? image_status: text,
+    ? image_status_detail: text,
+    image_set_version: int,
+    ? image_reported_version: int,
+    ? state: text,
+    ready_digests: [* text],
+    images: [* WorkerImageSetEntrySummary],
+    ;; failed gives each image of the newest report that the worker could
+    ;; not pull.
+    ? failed: [* ImageFailureSummary]
+}
+
+;;; WP14: environment defaults, the image policy, and job links
+;;; (docs/builds-and-caches.md).
+;;; Scope: no worker_class and no project_id is the organization; a
+;;; worker_class is that worker class; a project_id is that project.
+EnvDefaultEntry = {
+    key: text,
+    value: text,
+    ? updated_at: text
+}
+ListEnvDefaultsRequest = {
+    organization: text,
+    ? worker_class: text,
+    ? project_id: text
+}
+ListEnvDefaultsResponse = {
+    scope: text,
+    entries: [* EnvDefaultEntry]
+}
+PutEnvDefaultRequest = {
+    organization: text,
+    ? worker_class: text,
+    ? project_id: text,
+    key: text,
+    value: text
+}
+PutEnvDefaultResponse = {
+    entry: EnvDefaultEntry
+}
+DeleteEnvDefaultRequest = {
+    organization: text,
+    ? worker_class: text,
+    ? project_id: text,
+    key: text
+}
+DeleteEnvDefaultResponse = {
+    deleted: bool
+}
+ImagePolicySummary = {
+    enabled: bool,
+    allowed_prefixes: [* text],
+    require_digest: bool,
+    ? updated_at: text
+}
+GetImagePolicyRequest = { organization: text }
+GetImagePolicyResponse = { policy: ImagePolicySummary }
+PutImagePolicyRequest = { organization: text, policy: ImagePolicySummary }
+PutImagePolicyResponse = { policy: ImagePolicySummary }
+JobLinkSummary = {
+    name: text,
+    url: text
+}
+ListJobLinksRequest = { job_id: text }
+ListJobLinksResponse = { links: [* JobLinkSummary] }
+
+;;; WP15: job artifacts, test results, flaky tests, test quarantine, and
+;;; provenance (docs/artifacts-and-tests.md, docs/provenance.md). Every read
+;;; is authorized by the visibility of the job or the project, so a public
+;;; repository is public. status is uploading, complete, or failed; kind is
+;;; file, test_report, or provenance.
+JobArtifactSummary = {
+    artifact_id: text,
+    path: text,
+    kind: text,
+    media_type: text,
+    size_bytes: int,
+    sha256: text,
+    status: text,
+    ? status_reason: text,
+    created_at: text
+}
+ListJobArtifactsRequest = { job_id: text }
+ListJobArtifactsResponse = { artifacts: [* JobArtifactSummary] }
+;;; read-job-artifact returns at most 4 MiB from offset. The browser reads a
+;;; file in parts and saves it; eof is true at the end.
+ReadJobArtifactRequest = {
+    job_id: text,
+    artifact_id: text,
+    offset: int,
+    ? length: int
+}
+ReadJobArtifactResponse = {
+    data: bytes,
+    size_bytes: int,
+    sha256: text,
+    eof: bool
+}
+JobTestSummaryView = {
+    reports: int,
+    total: int,
+    passed: int,
+    failed: int,
+    errored: int,
+    skipped: int,
+    quarantined_failures: int,
+    flaky: int,
+    truncated: bool,
+    parse_errors: [* text],
+    quarantine_policy: text,
+    quarantine_override: bool
+}
+;;; message has at most 4096 bytes; it is plain text (show it as text).
+TestResultView = {
+    test_id: text,
+    suite: text,
+    classname: text,
+    name: text,
+    status: text,
+    duration_ms: int,
+    message: text,
+    file: text,
+    ? line: int,
+    quarantined: bool,
+    flaky: bool
+}
+GetJobTestResultsRequest = {
+    job_id: text,
+    ? failed_only: bool,
+    ? limit: int
+}
+GetJobTestResultsResponse = {
+    ? summary: JobTestSummaryView,
+    results: [* TestResultView],
+    ? project_id: text,
+    can_quarantine: bool
+}
+FlakyTestView = {
+    test_id: text,
+    suite: text,
+    classname: text,
+    name: text,
+    flaky_count: int,
+    total_runs: int,
+    ? last_flaky_at: text,
+    ? last_flaky_sha: text
+}
+ListFlakyTestsRequest = { project_id: text, ? days: int }
+ListFlakyTestsResponse = { tests: [* FlakyTestView], window_days: int }
+TestQuarantineView = {
+    quarantine_id: text,
+    test_id: text,
+    suite: text,
+    classname: text,
+    name: text,
+    owner_principal_id: text,
+    reason: text,
+    expires_at: text,
+    created_at: text,
+    ? created_by: text,
+    ? removed_at: text,
+    ? removed_by: text
+}
+ListTestQuarantinesRequest = { project_id: text, ? include_ended: bool }
+ListTestQuarantinesResponse = { quarantines: [* TestQuarantineView], can_manage: bool }
+;;; until is an RFC 3339 time or a duration ("72h", "7d"). owner_principal_id
+;;; defaults to the principal of the caller.
+QuarantineTestRequest = {
+    project_id: text,
+    ? test_id: text,
+    ? suite: text,
+    ? classname: text,
+    ? name: text,
+    reason: text,
+    until: text,
+    ? owner_principal_id: text,
+    ? workflow_security_id: text
+}
+QuarantineTestResponse = { quarantine: TestQuarantineView }
+UnquarantineTestRequest = { project_id: text, quarantine_id: text, ? workflow_security_id: text }
+UnquarantineTestResponse = { done: bool }
+;;; get-job-provenance verifies the stored envelope with the provenance keys
+;;; of the coordinator. statement_json is the verified in-toto statement.
+GetJobProvenanceRequest = { job_id: text }
+GetJobProvenanceResponse = {
+    present: bool,
+    verified: bool,
+    ? key_id: text,
+    ? envelope_json: text,
+    ? statement_json: text,
+    ? error: text
+}
+
+;;; Diagnosis entries from principals (docs/diagnosis.md). A diagnosis tool
+;;; is a service principal. One principal has at most one entry for each
+;;; target; a new put replaces it. title and body are plain text for the UI:
+;;; show them as text, never as HTML. The pull request comment shows a
+;;; sanitized form.
+DiagnosisLinkEntry = {
+    name: text,
+    url: text
+}
+DiagnosisSummary = {
+    diagnosis_id: text,
+    ;; "job" (also a workflow node) or "workflow".
+    target_type: text,
+    ? job_id: text,
+    ? workflow_id: text,
+    ? node_name: text,
+    ;; The author principal, with its kind ("service" or "human") and its
+    ;; display name when it wrote the entry.
+    author: ActorSummary,
+    title: text,
+    body: text,
+    ;; "", "low", "medium", or "high".
+    confidence: text,
+    category: text,
+    links: [* DiagnosisLinkEntry],
+    ? suggested_shifts: RunShifts,
+    ;; For example "memory=8Gi timeout=2h0m0s"; empty with no shifts.
+    suggested_shifts_text: text,
+    revision: int,
+    created_at: text,
+    updated_at: text
+}
+;;; Name a job (job_id), or a workflow (workflow_id). A workflow also lists
+;;; the entries of the jobs of its nodes.
+ListDiagnosesRequest = {
+    ? job_id: text,
+    ? workflow_id: text
+}
+ListDiagnosesResponse = { diagnoses: [* DiagnosisSummary] }
+;;; Name a job (job_id), a node (workflow_id and node_name), or a workflow
+;;; (workflow_id). Needs diagnosis:write for a token, and a role in the
+;;; scope of the job.
+PutDiagnosisRequest = {
+    ? job_id: text,
+    ? workflow_id: text,
+    ? node_name: text,
+    title: text,
+    ? body: text,
+    ? confidence: text,
+    ? category: text,
+    ? links: [* DiagnosisLinkEntry],
+    ? suggested_shifts: RunShifts
+}
+PutDiagnosisResponse = {
+    diagnosis: DiagnosisSummary,
+    created: bool
+}
+
+;;; Reporting and ownership (docs/reporting-and-ownership.md): report modes,
+;;; the agreement report, the code owners import, and owner acceptance of
+;;; path dependencies.
+PathOwnerRule = {
+    ;; A pattern of the code owners syntax. The last matching rule wins.
+    pattern: text,
+    ;; Owner subjects. Empty: the path has no owner.
+    owners: [* text]
+}
+
+;;; The values that apply to a project. A *_source is "project", "org", or
+;;; "default".
+ReportingSettings = {
+    ;; full, statuses_only, or silent.
+    report_mode: text,
+    report_mode_source: text,
+    agreement_contexts: [* text],
+    agreement_contexts_source: text,
+    ;; off or on.
+    codeowners_import: text,
+    codeowners_import_source: text,
+    codeowners_cache_ttl_seconds: int,
+    ;; off, warn, or enforce.
+    path_acceptance: text,
+    path_acceptance_source: text,
+    path_owners: [* PathOwnerRule],
+    path_owners_source: text
+}
+
+GetReportingSettingsRequest = {
+    project_id: text
+}
+;;; An absent project_* value inherits the organization value.
+GetReportingSettingsResponse = {
+    effective: ReportingSettings,
+    ? project_report_mode: text,
+    ? project_agreement_contexts: [* text],
+    ? project_codeowners_import: text,
+    ? project_codeowners_cache_ttl_seconds: int,
+    ? project_path_acceptance: text,
+    ? project_path_owners: [* PathOwnerRule],
+    ;; report_mode and agreement_contexts: a project owner or an org admin.
+    can_manage_reporting: bool,
+    ;; codeowners_import, path_acceptance, path_owners: an org admin.
+    can_manage_ownership: bool
+}
+;;; An absent value keeps the stored value. inherit names the values to
+;;; clear: report_mode, agreement_contexts, codeowners_import,
+;;; codeowners_cache_ttl_seconds, path_acceptance, path_owners.
+UpdateReportingSettingsRequest = {
+    project_id: text,
+    ? report_mode: text,
+    ? agreement_contexts: [* text],
+    ? codeowners_import: text,
+    ? codeowners_cache_ttl_seconds: int,
+    ? path_acceptance: text,
+    ? path_owners: [* PathOwnerRule],
+    ? inherit: [* text]
+}
+
+;;; One result of the other CI system: kind "status" or "check"; state
+;;; success, failure, or pending.
+AgreementOtherResult = {
+    name: text,
+    kind: text,
+    state: text,
+    ? raw: text,
+    ? target_url: text
+}
+;;; One commit. status: pending, complete, or no_other. agree is absent until
+;;; the comparison is complete.
+AgreementRow = {
+    commit_sha: text,
+    ? event_id: text,
+    ? pr_number: int,
+    ? branch: text,
+    reactorcide_result: text,
+    ? other_result: text,
+    ? agree: bool,
+    status: text,
+    other_results: [* AgreementOtherResult],
+    reactorcide_completed_at: text,
+    ? observed_at: text,
+    ? last_error: text,
+    ;; The commit on the VCS, when the coordinator can make the link.
+    ? commit_url: text
+}
+;;; since: an RFC 3339 time or a duration back from now ("7d", "72h").
+GetAgreementReportRequest = {
+    project_id: text,
+    ? since: text,
+    ? limit: int
+}
+GetAgreementReportResponse = {
+    contexts: [* text],
+    total: int,
+    compared: int,
+    agreed: int,
+    disagreed: int,
+    pending: int,
+    no_other: int,
+    ;; agreed / compared, in units of 0.01 % (10000 is 100 %). Absent when
+    ;; nothing was compared.
+    ? rate_basis_points: int,
+    reactorcide_failed_other_passed: int,
+    reactorcide_passed_other_failed: int,
+    disagreements: [* AgreementRow],
+    rows: [* AgreementRow]
+}
+
+;;; state: requested, accepted, rejected, or revoked.
+PathAcceptanceSummary = {
+    acceptance_id: text,
+    workflow_security_id: text,
+    path_pattern: text,
+    owner_subject: text,
+    state: text,
+    ? reason: text,
+    ? requested_by: text,
+    ? requested_by_name: text,
+    ? requested_at: text,
+    ? accepted_by: text,
+    ? accepted_by_name: text,
+    ? accepted_at: text,
+    ? revoked_by: text,
+    ? revoked_by_name: text,
+    ? revoked_at: text,
+    ? decision_reason: text
+}
+ListPathAcceptancesRequest = {
+    project_id: text,
+    ? state: text
+}
+ListPathAcceptancesResponse = {
+    ;; off, warn, or enforce.
+    path_acceptance: text,
+    ;; "codeowners" or "registry".
+    ownership_source: text,
+    rows: [* PathAcceptanceSummary],
+    can_manage_ownership: bool
+}
+;;; A workflow owner requests; an owner of the path can accept at once with
+;;; accept true.
+RequestPathAcceptanceRequest = {
+    project_id: text,
+    workflow_security_id: text,
+    path_pattern: text,
+    owner_subject: text,
+    ? reason: text,
+    ? accept: bool
+}
+PathAcceptanceResponse = {
+    acceptance: PathAcceptanceSummary
+}
+;;; decision: accept, reject, or revoke.
+DecidePathAcceptanceRequest = {
+    project_id: text,
+    acceptance_id: text,
+    decision: text,
+    ? reason: text
+}
+
+;;; Required set (docs/required-set.md). The workflows in the set count
+;;; toward "Reactorcide Checks"; the others are advisory.
+RequiredSetApproverRule = {
+    branches: [* text],
+    approvers: [* text]
+}
+
+;;; One workflow of a project. state: required, advisory, or quarantined.
+;;; branch_pattern "" is the entry for every branch. in_set is false for an
+;;; advisory workflow with no entry.
+RequiredSetWorkflow = {
+    workflow_security_id: text,
+    ? name: text,
+    branch_pattern: text,
+    state: text,
+    in_set: bool,
+    ? source: text,
+    ? added_by: text,
+    ? added_by_name: text,
+    ? added_at: text,
+    ? reason: text,
+    ? quarantined_until: text,
+    ? quarantine_reason: text,
+    ? quarantined_by: text,
+    ? quarantined_by_name: text,
+    ? last_seen: text
+}
+
+;;; action: promote or demote. state: pending, approved, rejected, withdrawn.
+RequiredSetProposal = {
+    proposal_id: text,
+    workflow_security_id: text,
+    branch_pattern: text,
+    action: text,
+    state: text,
+    ? reason: text,
+    ? proposed_by: text,
+    ? proposed_by_name: text,
+    proposed_at: text,
+    ? decided_by: text,
+    ? decided_by_name: text,
+    ? decided_at: text,
+    ? decision_reason: text
+}
+
+GetRequiredSetRequest = {
+    project_id: text
+}
+GetRequiredSetResponse = {
+    enabled: bool,
+    ? enabled_at: text,
+    workflows: [* RequiredSetWorkflow],
+    proposals: [* RequiredSetProposal],
+    ;; The approvers of an entry for every branch. Empty: org admins.
+    approvers: [* text],
+    ;; "setting", "rule N", or "org_admins".
+    approvers_source: text,
+    approver_rules: [* RequiredSetApproverRule],
+    approvers_inherit: bool,
+    approver_rules_inherit: bool,
+    max_quarantine_days: int,
+    can_propose: bool,
+    can_manage: bool,
+    can_approve_all_branches: bool
+}
+SetRequiredSetEnabledRequest = {
+    project_id: text,
+    enabled: bool
+}
+SetRequiredSetEnabledResponse = {
+    enabled: bool,
+    ;; The workflows that turning the set on added.
+    seeded: [* text]
+}
+ProposeRequiredSetChangeRequest = {
+    project_id: text,
+    action: text,
+    workflow_security_id: text,
+    ? branch_pattern: text,
+    ? reason: text,
+    ;; Approve at once. The caller must be an approver.
+    ? approve: bool
+}
+ProposeRequiredSetChangeResponse = {
+    proposal: RequiredSetProposal
+}
+;;; decision: approve, reject, or withdraw.
+DecideRequiredSetProposalRequest = {
+    project_id: text,
+    proposal_id: text,
+    decision: text,
+    ? reason: text
+}
+DecideRequiredSetProposalResponse = {
+    proposal: RequiredSetProposal
+}
+;;; until: an RFC 3339 time or a duration ("72h", "7d").
+QuarantineRequiredWorkflowRequest = {
+    project_id: text,
+    workflow_security_id: text,
+    ? branch_pattern: text,
+    until: text,
+    reason: text
+}
+QuarantineRequiredWorkflowResponse = {
+    workflow: RequiredSetWorkflow
+}
+UnquarantineRequiredWorkflowRequest = {
+    project_id: text,
+    workflow_security_id: text,
+    ? branch_pattern: text
+}
+UnquarantineRequiredWorkflowResponse = {
+    done: bool
+}
+;;; inherit_approvers / inherit_rules true: use the organization value.
+SetRequiredSetApproversRequest = {
+    project_id: text,
+    inherit_approvers: bool,
+    approvers: [* text],
+    inherit_rules: bool,
+    approver_rules: [* RequiredSetApproverRule]
+}
+
+;; ---------------------------------------------------------------------------
+;; WP13b priority lanes and group priority shifts (docs/priority.md). A lane
+;; maps trusted facts of a job to a base priority. organization is the org
+;; name; project_id absent selects the organization lanes.
+;; ---------------------------------------------------------------------------
+
+;;; The match facts of a lane. Absent or empty is no condition. job_kind is
+;;; eval or work. retry true makes a lane for retries only.
+PriorityLaneMatch = {
+    ? classes_any: [* text],
+    ? classes_none: [* text],
+    ? event_types: [* text],
+    ? draft: bool,
+    ? job_kind: text,
+    ? retry: bool
+}
+
+;;; One lane. scope is builtin | org | project. replaces is the scope of the
+;;; lane with the same name that this lane replaces.
+PriorityLane = {
+    ? lane_id: text,
+    ? rule_id: text,
+    ? project_id: text,
+    name: text,
+    position: int,
+    ? description: text,
+    base: int,
+    match: PriorityLaneMatch,
+    match_text: text,
+    enabled: bool,
+    ? scope: text,
+    ? replaces: text
+}
+
+PriorityBounds = {
+    min_base: int,
+    max_base: int,
+    min_group_shift: int,
+    max_group_shift: int,
+    max_requested: int,
+    shed_pr_shift: int
+}
+
+;;; One shift of a priority decision. source is group | owner_group |
+;;; requested | shed. applied is false for a group shift that is not the
+;;; largest.
+PriorityShift = {
+    source: text,
+    ? group: text,
+    value: int,
+    applied: bool
+}
+
+PriorityDecision = {
+    lane: text,
+    rule_id: text,
+    scope: text,
+    base: int,
+    shifts: [* PriorityShift],
+    final: int,
+    ? retained_from: text,
+    summary: text
+}
+
+PriorityLaneCheck = {
+    name: text,
+    scope: text,
+    base: int,
+    enabled: bool,
+    matched: bool,
+    match_text: text
+}
+
+ListPriorityLanesRequest = {
+    organization: text,
+    ? project_id: text
+}
+ListPriorityLanesResponse = {
+    ;; The stored lanes of this scope.
+    lanes: [* PriorityLane],
+    ;; The organization lanes, for a project listing.
+    inherited: [* PriorityLane],
+    builtin: [* PriorityLane],
+    ;; Every lane that applies, in evaluation order.
+    effective: [* PriorityLane],
+    bounds: PriorityBounds,
+    ;; The caller may change the lanes of this scope.
+    can_manage: bool
+}
+PutPriorityLaneRequest = {
+    organization: text,
+    ? project_id: text,
+    name: text,
+    base: int,
+    ;; Absent: a lane with the name of a built-in or organization lane keeps
+    ;; the position of that lane.
+    ? position: int,
+    ? description: text,
+    ;; Absent: a lane with the name of a built-in or organization lane keeps
+    ;; the match of that lane. A new lane needs a match.
+    ? match: PriorityLaneMatch,
+    ? enabled: bool
+}
+PutPriorityLaneResponse = {
+    lane: PriorityLane
+}
+DeletePriorityLaneRequest = {
+    organization: text,
+    ? project_id: text,
+    name: text
+}
+DeletePriorityLaneResponse = {
+    deleted: bool
+}
+ExplainPriorityRequest = {
+    organization: text,
+    ? project_id: text,
+    ;; A stored job: its facts now, and its recorded decision. Otherwise the
+    ;; facts below apply.
+    ? job_id: text,
+    ? ref_classes: [* text],
+    ? event_type: text,
+    ? draft: bool,
+    ? job_kind: text,
+    ? requested: int
+}
+ExplainPriorityResponse = {
+    decision: PriorityDecision,
+    ? stored: PriorityDecision,
+    lanes: [* PriorityLaneCheck]
+}
+SetGroupPriorityShiftRequest = {
+    group_id: text,
+    shift: int
+}
+SetGroupPriorityShiftResponse = {
+    group: GroupSummary
+}
+
+;;; WP16 observability dashboards (docs/observability.md). Every op reads
+;;; the rollups of the projects that the caller can view: an anonymous
+;;; caller sees public projects only. days is 7, 30 (default), or 90. Rates
+;;; are fractions (0-1); percentiles of a range are estimates from merged
+;;; histograms. Timestamps are RFC3339 UTC text.
+ObsClassCount = {
+    failure_class: text,
+    count: int
+}
+
+ObsSummary = {
+    runs: int,
+    successes: int,
+    ;; Failures of the classes job, timeout, and oom.
+    pipeline_failures: int,
+    ;; Failures of the infra.* classes.
+    infra_failures: int,
+    cancelled: int,
+    ;; successes / (successes + pipeline_failures).
+    ? pass_rate: float,
+    ;; infra_failures / (runs - cancelled).
+    ? infra_failure_rate: float,
+    ? duration_p50_seconds: float,
+    ? duration_p95_seconds: float,
+    ? queue_wait_p50_seconds: float,
+    ? queue_wait_p95_seconds: float,
+    by_class: [* ObsClassCount],
+    measured_runs: int,
+    cpu_core_hours: float,
+    memory_gib_hours: float,
+    cpu_reserved_core_hours: float,
+    memory_reserved_gib_hours: float
+}
+
+ObsTrendPoint = {
+    bucket_start: text,
+    runs: int,
+    ? pass_rate: float,
+    ? duration_p95_seconds: float,
+    ? queue_wait_p95_seconds: float,
+    infra_failures: int,
+    ? infra_failure_rate: float,
+    cpu_core_hours: float,
+    eval_events: int,
+    ? eval_p95_seconds: float
+}
+
+ObsWorkflowHealth = {
+    ? project_id: text,
+    ? project_name: text,
+    workflow_security_id: text,
+    owner_group: text,
+    summary: ObsSummary,
+    ;; Runs with the ref class bucket "default" (the default branch).
+    default_branch: ObsSummary,
+    ? cpu_core_hours_per_run: float,
+    trend: [* ObsTrendPoint]
+}
+
+ObsFlakyTest = {
+    ? project_id: text,
+    test_id: text,
+    suite: text,
+    classname: text,
+    name: text,
+    flaky_count: int,
+    total_runs: int,
+    ? last_flaky_at: text
+}
+
+ObsAlertRule = {
+    rule_id: text,
+    name: text,
+    scope: text,
+    ? project_id: text,
+    ? workflow_security_id: text,
+    ? owner_group: text,
+    condition: text,
+    ref_class_bucket: text,
+    threshold: float,
+    factor: float,
+    window_hours: int,
+    state: text,
+    enabled: bool,
+    ? last_value: float,
+    ? last_baseline: float,
+    last_runs: int,
+    ? last_evaluated_at: text,
+    ? state_changed_at: text,
+    ? description: text,
+    ? baseline_days: int,
+    ? min_runs: int,
+    ? resolve_margin: float,
+    ? fire_after: int,
+    ? resolve_after: int,
+    ;; True when the caller can change or delete the rule.
+    ? can_manage: bool
+}
+
+GetPipelineDashboardRequest = {
+    org_id: text,
+    ? project_id: text,
+    ? days: int
+}
+
+GetPipelineDashboardResponse = {
+    range_from: text,
+    range_to: text,
+    days: int,
+    totals: ObsSummary,
+    trend: [* ObsTrendPoint],
+    workflows: [* ObsWorkflowHealth],
+    flaky_tests: [* ObsFlakyTest],
+    alerts: [* ObsAlertRule]
+}
+
+ObsLaneHealth = {
+    lane: text,
+    summary: ObsSummary
+}
+
+ObsSloStatus = {
+    sli: text,
+    lane: text,
+    objective: float,
+    threshold_seconds: float,
+    window_days: int,
+    total: float,
+    good: float,
+    ? compliance: float,
+    ? p95_seconds: float,
+    error_budget_remaining: float,
+    budget_state: text,
+    measures: text
+}
+
+ObsQueueBacklog = {
+    queue_uuid: text,
+    display_name: text,
+    count: int,
+    oldest_age_seconds: int
+}
+
+ObsCapacity = {
+    workers_total: int,
+    workers_active: int,
+    workers_quarantined: int,
+    workers_disabled: int,
+    ;; Active workers seen in the last 5 minutes.
+    workers_seen: int,
+    backlog_jobs: int,
+    backlog_oldest_age_seconds: int,
+    queues: [* ObsQueueBacklog]
+}
+
+GetInfraDashboardRequest = {
+    org_id: text,
+    ? days: int
+}
+
+GetInfraDashboardResponse = {
+    range_from: text,
+    range_to: text,
+    days: int,
+    totals: ObsSummary,
+    lanes: [* ObsLaneHealth],
+    eval_events: int,
+    ? eval_p50_seconds: float,
+    ? eval_p95_seconds: float,
+    trend: [* ObsTrendPoint],
+    slos: [* ObsSloStatus],
+    capacity: ObsCapacity
+}
+
+ObsUsagePoint = {
+    bucket_start: text,
+    runs: int,
+    cpu_core_hours: float
+}
+
+ObsGroupUsage = {
+    ;; The owner group or actor group; empty is no group.
+    group: text,
+    runs: int,
+    successes: int,
+    pipeline_failures: int,
+    infra_failures: int,
+    ? pass_rate: float,
+    cpu_core_hours: float,
+    memory_gib_hours: float,
+    cpu_reserved_core_hours: float,
+    series: [* ObsUsagePoint]
+}
+
+GetUsageDashboardRequest = {
+    org_id: text,
+    ? days: int,
+    ;; owner (default): the owner group snapshot of each job. actor: the
+    ;; groups of the actor at the time of the run; needs every project of
+    ;; the organization to be visible to the caller.
+    ? attribution: text
+}
+
+GetUsageDashboardResponse = {
+    range_from: text,
+    range_to: text,
+    days: int,
+    attribution: text,
+    groups: [* ObsGroupUsage]
+}
+
+;;; GitHub Apps (WP11, docs/github-app.md). Global admin only. The private
+;;; key and the webhook secret are write-only (REST and CLI); no operation
+;;; returns them.
+GitHubAppSummary = {
+    app_id: int,
+    slug: text,
+    name: text,
+    enabled: bool,
+    ;; True: a new project of an account with no account mapping goes into
+    ;; the default organization of the App enabled. False: it is created
+    ;; disabled and waits for approval (pending_repositories).
+    open_registration: bool,
+    ;; The lowest remaining rate-limit budget of the App and of its active
+    ;; installations, 0 to 100. A snapshot past its reset counts as 100.
+    headroom_percent: int,
+    active_installations: int,
+    repositories: int,
+    ;; True for the App that new installations should use.
+    recommended: bool,
+    ? install_url: text,
+    ? ratelimit_limit: int,
+    ? ratelimit_remaining: int,
+    ? ratelimit_reset_at: text,
+    created_at: text
+}
+GitHubAppInstallationSummary = {
+    installation_id: int,
+    app_id: int,
+    account_login: text,
+    ;; "Organization" or "User".
+    account_type: text,
+    ;; "all" or "selected".
+    repository_selection: text,
+    suspended: bool,
+    deleted: bool,
+    headroom_percent: int,
+    ? ratelimit_limit: int,
+    ? ratelimit_remaining: int,
+    ? ratelimit_reset_at: text,
+    last_seen_at: text,
+    ;; owner/name of each bound repository.
+    repositories: [* text],
+    ;; owner/name of each repository whose project the registration created
+    ;; disabled. An administrator approves it by enabling the project.
+    pending_repositories: [* text]
+}
+ListGitHubAppsRequest = {
+}
+ListGitHubAppsResponse = {
+    apps: [* GitHubAppSummary],
+    installations: [* GitHubAppInstallationSummary]
+}
+SetGitHubAppEnabledRequest = {
+    app_id: int,
+    enabled: bool
+}
+SetGitHubAppEnabledResponse = {
+    app: GitHubAppSummary
+}
+;;; SyncGitHubApp reads the installations and repositories of the App from
+;;; GitHub and registers projects, as the installation webhooks do.
+SyncGitHubAppRequest = {
+    app_id: int
+}
+SyncGitHubAppResponse = {
+    installations: int,
+    created: int,
+    disabled: int,
+    errors: [* text]
+}
+
+;; ---------------------------------------------------------------------------
+;; Organization settings for the management UI. Each operation has the same
+;; authorization as its REST route. organization is the org NAME.
+;; ---------------------------------------------------------------------------
+
+;;; The shed actions of an organization (docs/events-and-schedules.md). Absent
+;;; degraded or critical keeps the stored actions of that level. reset true
+;;; returns the organization to the built-in actions. An org admin.
+SetShedActionsRequest = {
+    org_id: text,
+    ? degraded: ShedActions,
+    ? critical: ShedActions,
+    ? reset: bool
+}
+
+;;; The organization reporting defaults (docs/reporting-and-ownership.md).
+;;; A project follows them unless it sets its own value.
+OrgReportingSettingsView = {
+    report_mode: text,
+    agreement_contexts: [* text],
+    codeowners_import: text,
+    codeowners_cache_ttl_seconds: int,
+    path_acceptance: text,
+    path_owners: [* PathOwnerRule]
+}
+GetOrgReportingSettingsRequest = { organization: text }
+;;; can_manage: the caller is an org admin and can change the settings.
+GetOrgReportingSettingsResponse = { settings: OrgReportingSettingsView, can_manage: bool }
+;;; Replaces every organization value. An org admin.
+PutOrgReportingSettingsRequest = { organization: text, settings: OrgReportingSettingsView }
+
+;;; The organization required set defaults (docs/required-set.md).
+GetRequiredSetOrgSettingsRequest = { organization: text }
+GetRequiredSetOrgSettingsResponse = {
+    approvers: [* text],
+    approver_rules: [* RequiredSetApproverRule],
+    max_quarantine_days: int,
+    can_manage: bool
+}
+;;; Replaces the organization defaults. An org admin.
+PutRequiredSetOrgSettingsRequest = {
+    organization: text,
+    approvers: [* text],
+    approver_rules: [* RequiredSetApproverRule],
+    max_quarantine_days: int
+}
+
+;;; The VCS owners whose teams the group VCS sync of the organization may
+;;; read with the GLOBAL VCS credential (docs/principals.md). A global admin
+;;; only.
+GetVcsOwnerAllowlistRequest = { organization: text }
+VcsOwnerAllowlistResponse = { owners: [* text] }
+PutVcsOwnerAllowlistRequest = { organization: text, owners: [* text] }
+
+;;; The OIDC issuer settings of an organization or a project (docs/oidc.md).
+;;; issuer: "allow" or "deny" ("inherit" also for a project). audience_claims
+;;; are the extra claims of a token for one audience.
+OidcClaim = { name: text, value: text }
+OidcAudienceClaims = { audience: text, claims: [* OidcClaim] }
+GetOidcSettingsRequest = { organization: text, ? project_id: text }
+OidcSettingsResponse = {
+    issuer: text,
+    audience_claims: [* OidcAudienceClaims],
+    ;; True when jobs of the scope can get an OIDC token now (the issuer is
+    ;; configured and the settings allow it).
+    effective_enabled: bool,
+    ;; False when the coordinator has no OIDC issuer configured.
+    issuer_configured: bool,
+    ? issuer_url: text,
+    ;; An org admin can change the settings.
+    can_manage: bool
+}
+;;; An absent field keeps its value. An org admin.
+PutOidcSettingsRequest = {
+    organization: text,
+    ? project_id: text,
+    ? issuer: text,
+    ? audience_claims: [* OidcAudienceClaims]
+}
+;;; state: signing, published, pending, or retired.
+OidcSigningKey = {
+    kid: text,
+    algorithm: text,
+    created_at: text,
+    activates_at: text,
+    ? retires_at: text,
+    state: text
+}
+ListOidcKeysRequest = {}
+ListOidcKeysResponse = { issuer_configured: bool, ? issuer: text, keys: [* OidcSigningKey] }
+;;; immediate true signs with the new key at once; otherwise it is
+;;; published first and signs after the publish delay. A global admin.
+RotateOidcKeyRequest = { ? immediate: bool }
+RetireOidcKeyRequest = { kid: text }
+
+;;; Alert rules (docs/observability.md). A rule with a project needs a
+;;; project owner; an owner_group rule with no project needs an org admin.
+;;; project_id narrows the list to the rules of one project.
+ListAlertRulesRequest = { org_id: text, ? project_id: text }
+ListAlertRulesResponse = { rules: [* ObsAlertRule], can_create_org_rules: bool }
+AlertRuleInput = {
+    ? description: text,
+    ? condition: text,
+    ? ref_class_bucket: text,
+    ? threshold: float,
+    ? factor: float,
+    ? window_hours: int,
+    ? baseline_days: int,
+    ? min_runs: int,
+    ? resolve_margin: float,
+    ? fire_after: int,
+    ? resolve_after: int,
+    ? enabled: bool
+}
+;;; scope: workflow, project, or owner_group.
+CreateAlertRuleRequest = {
+    org_id: text,
+    name: text,
+    scope: text,
+    ? project_id: text,
+    ? workflow_security_id: text,
+    ? owner_group: text,
+    rule: AlertRuleInput
+}
+;;; The scope of a rule cannot change; an absent field keeps its value.
+UpdateAlertRuleRequest = { org_id: text, rule_id: text, rule: AlertRuleInput }
+AlertRuleResponse = { rule: ObsAlertRule }
+DeleteAlertRuleRequest = { org_id: text, rule_id: text }
+DeleteAlertRuleResponse = { deleted: bool }
+
+;;; Deletes the entry of the caller for a target, and its pull request
+;;; comment section (docs/diagnosis.md). Only the author deletes an entry.
+;;; Name exactly one of job_id and workflow_id, as in put-diagnosis.
+DeleteDiagnosisRequest = { ? job_id: text, ? workflow_id: text, ? node_name: text }
+DeleteDiagnosisResponse = { deleted: bool, ? diagnosis_id: text }
+
 service ReactorcideUi {
+    list-priority-lanes: ListPriorityLanesRequest -> ListPriorityLanesResponse / ServiceError,
+    put-priority-lane: PutPriorityLaneRequest -> PutPriorityLaneResponse / ServiceError,
+    delete-priority-lane: DeletePriorityLaneRequest -> DeletePriorityLaneResponse / ServiceError,
+    explain-priority: ExplainPriorityRequest -> ExplainPriorityResponse / ServiceError,
+    set-group-priority-shift: SetGroupPriorityShiftRequest -> SetGroupPriorityShiftResponse / ServiceError,
+    get-reporting-settings: GetReportingSettingsRequest -> GetReportingSettingsResponse / ServiceError,
+    update-reporting-settings: UpdateReportingSettingsRequest -> GetReportingSettingsResponse / ServiceError,
+    get-agreement-report: GetAgreementReportRequest -> GetAgreementReportResponse / ServiceError,
+    list-path-acceptances: ListPathAcceptancesRequest -> ListPathAcceptancesResponse / ServiceError,
+    request-path-acceptance: RequestPathAcceptanceRequest -> PathAcceptanceResponse / ServiceError,
+    decide-path-acceptance: DecidePathAcceptanceRequest -> PathAcceptanceResponse / ServiceError,
+    get-required-set: GetRequiredSetRequest -> GetRequiredSetResponse / ServiceError,
+    set-required-set-enabled: SetRequiredSetEnabledRequest -> SetRequiredSetEnabledResponse / ServiceError,
+    set-required-set-approvers: SetRequiredSetApproversRequest -> GetRequiredSetResponse / ServiceError,
+    propose-required-set-change: ProposeRequiredSetChangeRequest -> ProposeRequiredSetChangeResponse / ServiceError,
+    decide-required-set-proposal: DecideRequiredSetProposalRequest -> DecideRequiredSetProposalResponse / ServiceError,
+    quarantine-required-workflow: QuarantineRequiredWorkflowRequest -> QuarantineRequiredWorkflowResponse / ServiceError,
+    unquarantine-required-workflow: UnquarantineRequiredWorkflowRequest -> UnquarantineRequiredWorkflowResponse / ServiceError,
     get-capabilities: GetCapabilitiesRequest -> GetCapabilitiesResponse / ServiceError,
+    list-env-defaults: ListEnvDefaultsRequest -> ListEnvDefaultsResponse / ServiceError,
+    put-env-default: PutEnvDefaultRequest -> PutEnvDefaultResponse / ServiceError,
+    delete-env-default: DeleteEnvDefaultRequest -> DeleteEnvDefaultResponse / ServiceError,
+    get-image-policy: GetImagePolicyRequest -> GetImagePolicyResponse / ServiceError,
+    put-image-policy: PutImagePolicyRequest -> PutImagePolicyResponse / ServiceError,
+    list-image-aliases: ListImageAliasesRequest -> ListImageAliasesResponse / ServiceError,
+    get-image-alias: GetImageAliasRequest -> GetImageAliasResponse / ServiceError,
+    set-image-alias: SetImageAliasRequest -> SetImageAliasResponse / ServiceError,
+    delete-image-alias: DeleteImageAliasRequest -> DeleteImageAliasResponse / ServiceError,
+    get-image-rollout-status: GetImageRolloutStatusRequest -> GetImageRolloutStatusResponse / ServiceError,
+    get-worker-image-state: GetWorkerImageStateRequest -> GetWorkerImageStateResponse / ServiceError,
+    list-job-links: ListJobLinksRequest -> ListJobLinksResponse / ServiceError,
+    list-job-artifacts: ListJobArtifactsRequest -> ListJobArtifactsResponse / ServiceError,
+    read-job-artifact: ReadJobArtifactRequest -> ReadJobArtifactResponse / ServiceError,
+    get-job-test-results: GetJobTestResultsRequest -> GetJobTestResultsResponse / ServiceError,
+    list-flaky-tests: ListFlakyTestsRequest -> ListFlakyTestsResponse / ServiceError,
+    list-test-quarantines: ListTestQuarantinesRequest -> ListTestQuarantinesResponse / ServiceError,
+    quarantine-test: QuarantineTestRequest -> QuarantineTestResponse / ServiceError,
+    unquarantine-test: UnquarantineTestRequest -> UnquarantineTestResponse / ServiceError,
+    get-job-provenance: GetJobProvenanceRequest -> GetJobProvenanceResponse / ServiceError,
+    list-diagnoses: ListDiagnosesRequest -> ListDiagnosesResponse / ServiceError,
+    put-diagnosis: PutDiagnosisRequest -> PutDiagnosisResponse / ServiceError,
+    list-ref-class-rules: ListRefClassRulesRequest -> ListRefClassRulesResponse / ServiceError,
+    put-ref-class-rule: PutRefClassRuleRequest -> PutRefClassRuleResponse / ServiceError,
+    delete-ref-class-rule: DeleteRefClassRuleRequest -> DeleteRefClassRuleResponse / ServiceError,
+    explain-ref-classes: ExplainRefClassesRequest -> ExplainRefClassesResponse / ServiceError,
     list-orgs: ListOrgsRequest -> ListOrgsResponse / ServiceError,
     create-org: CreateOrgRequest -> CreateOrgResponse / ServiceError,
     update-org: UpdateOrgRequest -> UpdateOrgResponse / ServiceError,
@@ -1681,6 +3974,11 @@ service ReactorcideUi {
     add-group-member: AddGroupMemberRequest -> AddGroupMemberResponse / ServiceError,
     remove-group-member: RemoveGroupMemberRequest -> RemoveGroupMemberResponse / ServiceError,
     list-group-members: ListGroupMembersRequest -> ListGroupMembersResponse / ServiceError,
+    list-group-member-details: ListGroupMemberDetailsRequest -> ListGroupMemberDetailsResponse / ServiceError,
+    list-group-vcs-links: ListGroupVcsLinksRequest -> ListGroupVcsLinksResponse / ServiceError,
+    link-group-vcs-team: LinkGroupVcsTeamRequest -> LinkGroupVcsTeamResponse / ServiceError,
+    unlink-group-vcs-team: UnlinkGroupVcsTeamRequest -> UnlinkGroupVcsTeamResponse / ServiceError,
+    sync-group-vcs-teams: SyncGroupVcsTeamsRequest -> SyncGroupVcsTeamsResponse / ServiceError,
     list-users: ListUsersRequest -> ListUsersResponse / ServiceError,
     list-role-assignments: ListRoleAssignmentsRequest -> ListRoleAssignmentsResponse / ServiceError,
     assign-role: AssignRoleRequest -> AssignRoleResponse / ServiceError,
@@ -1706,8 +4004,12 @@ service ReactorcideUi {
     retry-job: RetryJobRequest -> RetryJobResponse / ServiceError,
     retry-workflow: RetryWorkflowRequest -> RetryWorkflowResponse / ServiceError,
     retry-unsuccessful-jobs: RetryUnsuccessfulJobsRequest -> RetryUnsuccessfulJobsResponse / ServiceError,
+    rerun-workflow: RerunWorkflowRequest -> RerunWorkflowResponse / ServiceError,
+    start-run: StartRunRequest -> StartRunResponse / ServiceError,
     get-global-settings: GetGlobalSettingsRequest -> GetGlobalSettingsResponse / ServiceError,
     update-global-settings: UpdateGlobalSettingsRequest -> UpdateGlobalSettingsResponse / ServiceError,
+    get-shed-state: GetShedStateRequest -> GetShedStateResponse / ServiceError,
+    set-shed-level: SetShedLevelRequest -> SetShedLevelResponse / ServiceError,
     list-trusted-identities: ListTrustedIdentitiesRequest -> ListTrustedIdentitiesResponse / ServiceError,
     add-trusted-identity: AddTrustedIdentityRequest -> AddTrustedIdentityResponse / ServiceError,
     remove-trusted-identity: RemoveTrustedIdentityRequest -> RemoveTrustedIdentityResponse / ServiceError,
@@ -1731,15 +4033,62 @@ service ReactorcideUi {
     get-job-metrics: GetJobMetricsRequest -> GetJobMetricsResponse / ServiceError,
     get-job-logs: GetJobLogsRequest -> GetJobLogsResponse / ServiceError,
     get-job-resource-history: GetJobResourceHistoryRequest -> GetJobResourceHistoryResponse / ServiceError,
+    get-pipeline-dashboard: GetPipelineDashboardRequest -> GetPipelineDashboardResponse / ServiceError,
+    get-infra-dashboard: GetInfraDashboardRequest -> GetInfraDashboardResponse / ServiceError,
+    get-usage-dashboard: GetUsageDashboardRequest -> GetUsageDashboardResponse / ServiceError,
     list-schedules: ListSchedulesRequest -> ListSchedulesResponse / ServiceError,
     create-schedule: CreateScheduleRequest -> CreateScheduleResponse / ServiceError,
     update-schedule: UpdateScheduleRequest -> UpdateScheduleResponse / ServiceError,
     delete-schedule: DeleteScheduleRequest -> DeleteScheduleResponse / ServiceError,
     list-schedule-fires: ListScheduleFiresRequest -> ListScheduleFiresResponse / ServiceError,
+    list-event-subscriptions: ListEventSubscriptionsRequest -> ListEventSubscriptionsResponse / ServiceError,
+    get-event-subscription: GetEventSubscriptionRequest -> GetEventSubscriptionResponse / ServiceError,
+    create-event-subscription: CreateEventSubscriptionRequest -> CreateEventSubscriptionResponse / ServiceError,
+    update-event-subscription: UpdateEventSubscriptionRequest -> UpdateEventSubscriptionResponse / ServiceError,
+    delete-event-subscription: DeleteEventSubscriptionRequest -> DeleteEventSubscriptionResponse / ServiceError,
+    list-event-deliveries: ListEventDeliveriesRequest -> ListEventDeliveriesResponse / ServiceError,
+    get-event-delivery: GetEventDeliveryRequest -> GetEventDeliveryResponse / ServiceError,
+    replay-event-delivery: ReplayEventDeliveryRequest -> ReplayEventDeliveryResponse / ServiceError,
+    test-event-subscription: TestEventSubscriptionRequest -> TestEventSubscriptionResponse / ServiceError,
     list-jobs: ListJobsRequest -> ListJobsResponse / ServiceError,
     get-job: GetJobRequest -> GetJobResponse / ServiceError,
     list-workflows: ListWorkflowsRequest -> ListWorkflowsResponse / ServiceError,
     get-workflow: GetWorkflowRequest -> GetWorkflowResponse / ServiceError,
     get-event: GetEventRequest -> GetEventResponse / ServiceError,
-    describe-form-metadata: DescribeFormMetadataRequest -> DescribeFormMetadataResponse / ServiceError
+    describe-form-metadata: DescribeFormMetadataRequest -> DescribeFormMetadataResponse / ServiceError,
+    list-principals: ListPrincipalsRequest -> ListPrincipalsResponse / ServiceError,
+    get-principal: GetPrincipalRequest -> GetPrincipalResponse / ServiceError,
+    create-service-principal: CreateServicePrincipalRequest -> CreateServicePrincipalResponse / ServiceError,
+    set-principal-status: SetPrincipalStatusRequest -> SetPrincipalStatusResponse / ServiceError,
+    link-principal-identity: PrincipalIdentityRequest -> PrincipalIdentityResponse / ServiceError,
+    unlink-principal-identity: PrincipalIdentityRequest -> PrincipalIdentityResponse / ServiceError,
+    set-principal-group: SetPrincipalGroupRequest -> SetPrincipalGroupResponse / ServiceError,
+    issue-principal-token: IssuePrincipalTokenRequest -> IssuePrincipalTokenResponse / ServiceError,
+    revoke-principal-token: RevokePrincipalTokenRequest -> RevokePrincipalTokenResponse / ServiceError,
+    resolve-principal: ResolvePrincipalRequest -> ResolvePrincipalResponse / ServiceError,
+    list-federation-issuers: ListFederationIssuersRequest -> ListFederationIssuersResponse / ServiceError,
+    save-federation-issuer: SaveFederationIssuerRequest -> SaveFederationIssuerResponse / ServiceError,
+    delete-federation-issuer: DeleteFederationIssuerRequest -> DeleteFederationIssuerResponse / ServiceError,
+    save-federation-mapping: SaveFederationMappingRequest -> SaveFederationMappingResponse / ServiceError,
+    delete-federation-mapping: DeleteFederationMappingRequest -> DeleteFederationMappingResponse / ServiceError,
+    list-github-apps: ListGitHubAppsRequest -> ListGitHubAppsResponse / ServiceError,
+    set-github-app-enabled: SetGitHubAppEnabledRequest -> SetGitHubAppEnabledResponse / ServiceError,
+    sync-github-app: SyncGitHubAppRequest -> SyncGitHubAppResponse / ServiceError,
+    set-shed-actions: SetShedActionsRequest -> SetShedLevelResponse / ServiceError,
+    get-org-reporting-settings: GetOrgReportingSettingsRequest -> GetOrgReportingSettingsResponse / ServiceError,
+    put-org-reporting-settings: PutOrgReportingSettingsRequest -> GetOrgReportingSettingsResponse / ServiceError,
+    get-required-set-org-settings: GetRequiredSetOrgSettingsRequest -> GetRequiredSetOrgSettingsResponse / ServiceError,
+    put-required-set-org-settings: PutRequiredSetOrgSettingsRequest -> GetRequiredSetOrgSettingsResponse / ServiceError,
+    get-vcs-owner-allowlist: GetVcsOwnerAllowlistRequest -> VcsOwnerAllowlistResponse / ServiceError,
+    put-vcs-owner-allowlist: PutVcsOwnerAllowlistRequest -> VcsOwnerAllowlistResponse / ServiceError,
+    get-oidc-settings: GetOidcSettingsRequest -> OidcSettingsResponse / ServiceError,
+    put-oidc-settings: PutOidcSettingsRequest -> OidcSettingsResponse / ServiceError,
+    list-oidc-keys: ListOidcKeysRequest -> ListOidcKeysResponse / ServiceError,
+    rotate-oidc-key: RotateOidcKeyRequest -> ListOidcKeysResponse / ServiceError,
+    retire-oidc-key: RetireOidcKeyRequest -> ListOidcKeysResponse / ServiceError,
+    list-alert-rules: ListAlertRulesRequest -> ListAlertRulesResponse / ServiceError,
+    create-alert-rule: CreateAlertRuleRequest -> AlertRuleResponse / ServiceError,
+    update-alert-rule: UpdateAlertRuleRequest -> AlertRuleResponse / ServiceError,
+    delete-alert-rule: DeleteAlertRuleRequest -> DeleteAlertRuleResponse / ServiceError,
+    delete-diagnosis: DeleteDiagnosisRequest -> DeleteDiagnosisResponse / ServiceError
 }

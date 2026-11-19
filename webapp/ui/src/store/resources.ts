@@ -68,18 +68,20 @@ export interface JobFilters {
   status?: string
   projectId?: string
   workflowId?: string
+  failureClass?: string
 }
 
 export function useJobs(host: ResourceHost, filters: () => JobFilters): ResourceHandle<ListJobsResponse> {
   return useResource<ListJobsResponse>(host, () => {
     const f = filters()
     return {
-      key: `jobs:${f.status ?? ''}:${f.projectId ?? ''}:${f.workflowId ?? ''}`,
+      key: `jobs:${f.status ?? ''}:${f.projectId ?? ''}:${f.workflowId ?? ''}:${f.failureClass ?? ''}`,
       fetcher: () =>
         api.listJobs({
           status: f.status || undefined,
           projectId: f.projectId || undefined,
           workflowId: f.workflowId || undefined,
+          failureClass: f.failureClass || undefined,
           limit: 50,
         }),
       topics: [topics.jobs],
@@ -211,6 +213,8 @@ export function useFormMetadata(host: ResourceHost) {
 export interface CapabilityScope {
   projectId?: string
   orgId?: string
+  /** One workflow instance: adds the owners of that workflow (WP7). */
+  workflowId?: string
 }
 
 /**
@@ -237,10 +241,17 @@ export function useCapabilities(host: ResourceHost, scope: () => CapabilityScope
         fetcher: async () => ({}) as GetCapabilitiesResponse,
       }
     }
-    const key = s.projectId ? `caps:project:${s.projectId}` : s.orgId ? `caps:org:${s.orgId}` : 'caps:global'
+    const key = s.workflowId
+      ? `caps:workflow:${s.workflowId}`
+      : s.projectId
+        ? `caps:project:${s.projectId}`
+        : s.orgId
+          ? `caps:org:${s.orgId}`
+          : 'caps:global'
     return {
       key,
-      fetcher: () => api.getCapabilities({ projectId: s.projectId, orgId: s.orgId }),
+      fetcher: () =>
+        s.workflowId ? api.getCapabilities({ workflowId: s.workflowId }) : api.getCapabilities({ projectId: s.projectId, orgId: s.orgId }),
     }
   })
 }

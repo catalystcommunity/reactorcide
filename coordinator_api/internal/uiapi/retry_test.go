@@ -2,6 +2,7 @@ package uiapi
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/config"
@@ -117,6 +118,9 @@ func TestRetryJob_NotRetryable(t *testing.T) {
 	ui := NewUiService(deps)
 	_, err := ui.RetryJob(anonCtx(), csilapi.RetryJobRequest{JobId: job.JobID})
 	requireCode(t, err, "conflict")
+	if want := "only a failed, cancelled, or timed-out job can be retried; job " + job.JobID + " is running"; !strings.Contains(err.Error(), want) {
+		t.Fatalf("err = %v, want the message %q", err, want)
+	}
 }
 
 // TestRetryJob_NotFound verifies an unknown job id maps to "not_found".
@@ -195,6 +199,9 @@ func TestRetryWorkflow_NotRetryable(t *testing.T) {
 	ui := NewUiService(deps)
 	_, err := ui.RetryWorkflow(anonCtx(), csilapi.RetryWorkflowRequest{WorkflowInstanceId: wf.WorkflowID})
 	requireCode(t, err, "conflict")
+	if want := "only a failed or cancelled workflow can be retried; workflow " + wf.WorkflowID + " is running"; !strings.Contains(err.Error(), want) {
+		t.Fatalf("err = %v, want the message %q", err, want)
+	}
 }
 
 // TestRetryWorkflow_HappyPath verifies a fresh workflow instance is created,

@@ -45,6 +45,10 @@ func mapPermissionErr(err error) error {
 	if authz.IsPermissionError(err) {
 		return NewServiceError("forbidden", "you do not have permission to perform this operation")
 	}
+	var serviceErr *ServiceErr
+	if errors.As(err, &serviceErr) {
+		return err
+	}
 	return NewServiceError("internal", "an internal error occurred")
 }
 

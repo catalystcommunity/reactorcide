@@ -10,11 +10,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
  */
 
 let status = 'running'
+let failure: Record<string, unknown> = {}
 
 vi.mock('~/api/client.ts', () => ({
   api: {
     getJob: vi.fn(async ({ jobId }: { jobId: string }) => ({
-      job: { jobId, name: 'build', status, projectId: 'p1', queueName: 'q', updatedAt: new Date().toISOString() },
+      job: { jobId, name: 'build', status, projectId: 'p1', queueName: 'q', updatedAt: new Date().toISOString(), ...failure },
     })),
     cancelJob: vi.fn(async () => ({})),
     getCapabilities: vi.fn(async () => ({ cancelJob: true, killJob: true, retryJob: true })),
@@ -48,11 +49,89 @@ function openJob(id: string): JobDetailPage {
 describe('JobDetail', () => {
   beforeEach(() => {
     status = 'running'
+    failure = {}
     resetStore()
+  })
+
+  it('shows the failure class and its owner, and no badge without a class', async () => {
+    let page = openJob('j-ok')
+    await settle()
+    let badge = page.querySelector('.failure-class') as HTMLElement
+    expect(badge).toBeTruthy()
+    expect(badge.hidden).toBe(true)
+
+    status = 'failed'
+    failure = { failureClass: 'infra.worker_lost', failureOwner: 'infrastructure', retryCount: 2 }
+    resetStore()
+    page = openJob('j-lost')
+    await settle()
+    badge = page.querySelector('.failure-class') as HTMLElement
+    expect(badge.hidden).toBe(false)
+    expect(badge.textContent).toContain('worker lost · infrastructure')
+    expect(badge.className).toContain('status-warn')
+    expect(page.textContent).toContain('Automatic retries')
+
+    status = 'timeout'
+    failure = { failureClass: 'timeout', failureOwner: 'pipeline' }
+    resetStore()
+    page = openJob('j-timeout')
+    await settle()
+    badge = page.querySelector('.failure-class') as HTMLElement
+    expect(badge.textContent).toContain('timed out · pipeline')
+    expect(badge.className).toContain('status-danger')
   })
   afterEach(() => {
     vi.clearAllMocks()
     resetStore()
+  })
+
+  it('shows the alias and the reference when the job used an image alias, and the reference alone otherwise', async () => {
+    const ref = 'registry.example.com/vm/win:2026.11@sha256:' + 'a'.repeat(64)
+    failure = { runnerImage: ref, imageAlias: 'win', imageDisplay: `win (${ref})` }
+    const page = openJob('j-alias')
+    await settle()
+    expect((page.querySelector('.job-image') as HTMLElement).textContent).toBe(`win (${ref})`)
+
+    failure = { runnerImage: 'alpine:3.20' }
+    resetStore()
+    const plain = openJob('j-plain')
+    await settle()
+    expect((plain.querySelector('.job-image') as HTMLElement).textContent).toBe('alpine:3.20')
+  })
+
+  it('shows the earlier image of a retry that changed the image, and hides the row otherwise', async () => {
+    const ref = 'registry.example.com/vm/win:2026.12@sha256:' + 'b'.repeat(64)
+    const old = 'win (registry.example.com/vm/win:2026.11@sha256:' + 'a'.repeat(64) + ')'
+    failure = { runnerImage: ref, imageAlias: 'win', imageDisplay: `win (${ref})`, imageRetryOf: old }
+    const page = openJob('j-retry')
+    await settle()
+    const row = page.querySelector('.job-image-retry-of') as HTMLElement
+    expect(row.textContent).toBe(old)
+    expect((row.parentElement as HTMLElement).hidden).toBe(false)
+
+    failure = { runnerImage: ref, imageAlias: 'win', imageDisplay: `win (${ref})` }
+    resetStore()
+    const first = openJob('j-first')
+    await settle()
+    expect(((first.querySelector('.job-image-retry-of') as HTMLElement).parentElement as HTMLElement).hidden).toBe(true)
+  })
+
+  it('shows the lane and how the priority was computed', async () => {
+    failure = {
+      priority: -90,
+      priorityLane: 'pr-ready',
+      priorityReason: { kind: 'priority', lane: 'pr-ready', value: 'builtin', base: -100, final: -90, shifts: [{ source: 'group', group: 'dev', value: 10, applied: true }] },
+    }
+    const page = openJob('j-prio')
+    await settle()
+    const value = page.querySelector('.job-priority') as HTMLElement
+    expect(value.textContent).toBe('Priority -90: lane pr-ready (builtin), base -100; group dev +10')
+
+    failure = { priority: 3 }
+    resetStore()
+    const old = openJob('j-old')
+    await settle()
+    expect((old.querySelector('.job-priority') as HTMLElement).textContent).toBe('Priority 3')
   })
 
   it('keeps the log viewer, its lines and its scroll position across a job refresh', async () => {

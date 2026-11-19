@@ -250,6 +250,17 @@ func (ps PostgresDbStore) ListJobsVisibleTo(ctx context.Context, viewerID string
 				q = q.Where("j.project_id = ?", value)
 			case "workflow_id":
 				q = q.Where("j.workflow_id = ?", value)
+			case "failure_class":
+				q = q.Where("j.failure_class = ?", value)
+			case "org_ids":
+				// The organizations of an API token (a token never sees
+				// outside them).
+				if orgIDs, ok := value.([]string); ok {
+					if len(orgIDs) == 0 {
+						orgIDs = []string{""}
+					}
+					q = q.Where("j.org_id::text IN ?", orgIDs)
+				}
 			}
 		}
 		if !isGlobalAdmin {
@@ -327,6 +338,20 @@ func (ps PostgresDbStore) ListWorkflowSummariesVisibleTo(ctx context.Context, vi
 		looseArgs = append(looseArgs, looseStatus)
 	}
 
+	if orgIDs, ok := filters["org_ids"].([]string); ok {
+		// The organizations of an API token. An empty list matches nothing.
+		if len(orgIDs) == 0 {
+			orgIDs = []string{""}
+		}
+		placeholders := strings.TrimSuffix(strings.Repeat("?,", len(orgIDs)), ",")
+		whereWorkflow = append(whereWorkflow, "wi.org_id::text IN ("+placeholders+")")
+		whereLoose = append(whereLoose, "j.org_id::text IN ("+placeholders+")")
+		for _, orgID := range orgIDs {
+			workflowArgs = append(workflowArgs, orgID)
+			looseArgs = append(looseArgs, orgID)
+		}
+	}
+
 	if !isGlobalAdmin {
 		whereWorkflow = append(whereWorkflow, visibilityPredicateSQL(summaryWorkflowAliases))
 		workflowArgs = append(workflowArgs, visibilityArgs(viewerID)...)
@@ -383,7 +408,10 @@ WITH workflow_rows AS (
 		COALESCE(wi.ci_origin, '') AS ci_origin,
 		COALESCE(wi.execution_profile, '') AS execution_profile,
 		COALESCE(wi.worker_class, '') AS worker_class,
-		wi.event_id
+		COALESCE(wi.event_id, wi.rerun_event_id) AS event_id,
+		wi.actor_principal_id,
+		COALESCE(wi.actor_identity, '') AS actor_identity,
+		wi.ref_classes
 	FROM workflow_instances wi
 	%s
 	LEFT JOIN workflow_nodes wn ON wn.workflow_id = wi.workflow_id
@@ -424,7 +452,10 @@ loose_rows AS (
 		COALESCE(j.ci_origin, '') AS ci_origin,
 		COALESCE(j.execution_profile, '') AS execution_profile,
 		COALESCE(j.worker_class, '') AS worker_class,
-		j.event_id
+		j.event_id,
+		j.actor_principal_id,
+		COALESCE(j.actor_identity, '') AS actor_identity,
+		j.ref_classes
 	FROM jobs j
 	%s
 	%s

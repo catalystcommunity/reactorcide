@@ -249,3 +249,50 @@ def test_provisioned_postgres_manifest_sets_resources(monkeypatch):
     assert 'memory: "1536Mi"' in manifest
     assert 'memory: "256Mi"' in manifest
     assert 'cpu: "1"' in manifest
+
+
+def _image_config(**overrides):
+    return _deployment_config() | {
+        "helm_values": "",
+        "image_tag": "v0.13.0",
+        "registry_pull_secret_name": "",
+        "object_store_type": "memory",
+        "vcs_enabled": False,
+        "vcs_base_url": "",
+        "default_org": "default",
+        "worker_coordinator_url": "",
+        "worker_enrollment_token_secret": "",
+    } | overrides
+
+
+def test_release_tag_applies_to_egress_proxy_image():
+    """The egress proxy image gets the same release tag as the other images."""
+    deploy = _load_deploy_module()
+
+    args = deploy.build_helm_values(_image_config(), "postgresql://configured", "corndogs:5080")
+
+    for section in ("app", "worker", "web", "egressProxy"):
+        assert f"{section}.image.tag=v0.13.0" in args
+    assert not any(arg.startswith("egressProxy.image.repository=") for arg in args)
+
+
+def test_egress_image_repository_is_optional():
+    """REACTORCIDE_EGRESS_IMAGE_REPOSITORY sets the egress repository."""
+    deploy = _load_deploy_module()
+
+    args = deploy.build_helm_values(
+        _image_config(egress_image_repository="registry.example/reactorcide/egress"),
+        "postgresql://configured",
+        "corndogs:5080",
+    )
+
+    assert "egressProxy.image.repository=registry.example/reactorcide/egress" in args
+
+
+def test_no_release_tag_keeps_chart_image_tags():
+    """An empty tag leaves every image tag to the chart values."""
+    deploy = _load_deploy_module()
+
+    args = deploy.build_helm_values(_image_config(image_tag=""), "postgresql://configured", "corndogs:5080")
+
+    assert not any(".image.tag=" in arg for arg in args)

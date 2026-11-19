@@ -1,0 +1,18 @@
+{{- if ((.Values.metrics).prometheusRule).enabled }}
+{{- /* The rules come from files/reactorcide-ci-owner-alerts.yaml, a copy of
+deployment/prometheus/reactorcide-ci-owner-alerts.yaml (a chart test keeps the
+two the same). The file is not a template, so the Prometheus "{{ $labels }}"
+text in it stays as it is. */}}
+{{- $rules := .Files.Get "files/reactorcide-ci-owner-alerts.yaml" | fromYaml }}
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: {{ include "app.name" . }}-ci-owner
+  labels:
+    {{- include "app.labels" . | nindent 4 }}
+    {{- with .Values.metrics.prometheusRule.labels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  {{- toYaml $rules.spec | nindent 2 }}
+{{- end }}

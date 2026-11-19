@@ -9,6 +9,7 @@ import (
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/pubsub"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store/models"
+	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/tokencaps"
 )
 
 // scopeStore is the narrow store surface uiStreamScope resolves ownership
@@ -59,6 +60,10 @@ type uiStreamScope struct {
 	// jobVisible caches the answer for events that carry only a job id. See
 	// canSee's fallback branch.
 	jobVisible map[string]bool
+	// jobOrg and projectOrg cache the owning organization of a job or a
+	// project, for the token check (tokenAllows).
+	jobOrg     map[string]string
+	projectOrg map[string]string
 }
 
 func (h *UIStreamHandler) newScope(ctx context.Context, identity authz.Identity) (*uiStreamScope, error) {
@@ -68,6 +73,8 @@ func (h *UIStreamHandler) newScope(ctx context.Context, identity authz.Identity)
 		projectVisible: make(map[string]bool),
 		orgVisible:     make(map[string]bool),
 		jobVisible:     make(map[string]bool),
+		jobOrg:         make(map[string]string),
+		projectOrg:     make(map[string]string),
 	}
 	if !identity.Anonymous {
 		isGlobalAdmin, err := h.resolver.IsGlobalAdmin(ctx, identity)
@@ -104,6 +111,13 @@ func (s *uiStreamScope) canSee(evt pubsub.Event) bool {
 		s.mu.Lock()
 		delete(s.projectVisible, evt.ProjectID)
 		s.mu.Unlock()
+	}
+	// An API token never receives an event that it could not fetch by API:
+	// the token must cover the organization of the event and have the read
+	// capability of the event type. The role checks below then intersect
+	// the roles of its owner.
+	if s.identity.Token != nil && !s.tokenAllows(evt) {
+		return false
 	}
 	if s.globalAdmin {
 		return true
@@ -247,4 +261,73 @@ func (s *uiStreamScope) orgIsPrivate(orgID string) (isPrivate, known bool) {
 		return false, false
 	}
 	return owner.IsPrivate, true
+}
+
+// eventCapability is the token capability that reads the resource of an
+// event by API: jobs:read for a job, logs:read for its log, workflows:read
+// for a workflow, projects:read for a project. An unknown event type needs a
+// capability that no token can have, so it fails closed.
+func eventCapability(t pubsub.EventType) string {
+	switch t {
+	case pubsub.EventJobUpdate, pubsub.EventJobCreated, pubsub.EventMetricsAvailable:
+		return tokencaps.JobsRead
+	case pubsub.EventLogAvailable:
+		return tokencaps.LogsRead
+	case pubsub.EventWorkflowCreated, pubsub.EventWorkflowUpdate, pubsub.EventWorkflowNodeUpdate:
+		return tokencaps.WorkflowsRead
+	case pubsub.EventProjectUpdate:
+		return tokencaps.ProjectsRead
+	}
+	return ""
+}
+
+// tokenAllows applies the token of the caller to one event.
+func (s *uiStreamScope) tokenAllows(evt pubsub.Event) bool {
+	capability := eventCapability(evt.Type)
+	if capability == "" || !s.identity.Token.HasCapability(capability) {
+		return false
+	}
+	orgID := s.eventOrg(evt)
+	return orgID != "" && s.identity.Token.HasOrganization(orgID)
+}
+
+// eventOrg is the owning organization of an event: OwnerUserID when the
+// publisher set it, else the organization of its project or job. "" when it
+// cannot be resolved (the event then fails closed).
+func (s *uiStreamScope) eventOrg(evt pubsub.Event) string {
+	if evt.OwnerUserID != "" {
+		return evt.OwnerUserID
+	}
+	if s.store == nil {
+		return ""
+	}
+	if evt.ProjectID != "" {
+		s.mu.Lock()
+		orgID, ok := s.projectOrg[evt.ProjectID]
+		s.mu.Unlock()
+		if !ok {
+			if project, err := s.store.GetProjectByID(context.Background(), evt.ProjectID); err == nil && project != nil {
+				orgID = project.OwnershipOrgID()
+			}
+			s.mu.Lock()
+			s.projectOrg[evt.ProjectID] = orgID
+			s.mu.Unlock()
+		}
+		return orgID
+	}
+	if evt.JobID != "" {
+		s.mu.Lock()
+		orgID, ok := s.jobOrg[evt.JobID]
+		s.mu.Unlock()
+		if !ok {
+			if job, err := s.store.GetJobByID(context.Background(), evt.JobID); err == nil && job != nil {
+				orgID = job.OwnershipOrgID()
+			}
+			s.mu.Lock()
+			s.jobOrg[evt.JobID] = orgID
+			s.mu.Unlock()
+		}
+		return orgID
+	}
+	return ""
 }

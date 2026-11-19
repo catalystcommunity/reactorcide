@@ -11,6 +11,12 @@ rules:
   - apiGroups: ["batch"]
     resources: ["jobs"]
     verbs: ["create", "get", "list", "watch", "delete"]
+  # The image pre-seed DaemonSet (docs/workers.md "Kubernetes image
+  # pre-seed"): the worker writes one DaemonSet for its image set, reads its
+  # status, and deletes it when the set is empty.
+  - apiGroups: ["apps"]
+    resources: ["daemonsets"]
+    verbs: ["create", "get", "list", "watch", "update", "patch", "delete"]
   # Permission to get pod logs and status for job execution
   - apiGroups: [""]
     resources: ["events"]

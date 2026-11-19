@@ -5,6 +5,8 @@ import (
 	"errors"
 
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/authz"
+	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/refclass"
+	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/requiredset"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store/models"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/uiapi/csilapi"
@@ -40,14 +42,19 @@ func (s *UiService) GetEvent(ctx context.Context, req csilapi.GetEventRequest) (
 	if err != nil {
 		return csilapi.GetEventResponse{}, NewServiceError("internal", "failed to read event decisions")
 	}
+	eventDetail := ciEventToDetail(event)
+	s.describeActors(ctx, eventDetail.ActorPrincipal)
 	response := csilapi.GetEventResponse{
-		Event:       ciEventToDetail(event),
+		Event:       eventDetail,
 		Decisions:   make([]csilapi.CIEventWorkflowDecision, 0, len(decisions)),
 		WorkflowIds: []string{},
 	}
+	classifier := requiredset.ForEvent(ctx, s.deps.Store, event)
 	for i := range decisions {
 		response.Decisions = append(response.Decisions, decisionToCSIL(&decisions[i]))
+		setRequiredState(&response.Decisions[len(response.Decisions)-1], classifier)
 		if decisions[i].WorkflowID != nil && *decisions[i].WorkflowID != "" {
+			response.Decisions[len(response.Decisions)-1].Owner = s.workflowOwnership(ctx, *decisions[i].WorkflowID)
 			response.WorkflowIds = append(response.WorkflowIds, *decisions[i].WorkflowID)
 		}
 	}
@@ -91,7 +98,27 @@ func (s *UiService) workflowWhy(ctx context.Context, workflowID string) *csilapi
 		return nil
 	}
 	converted := decisionToCSIL(decision)
+	if decision.WorkflowID != nil {
+		converted.Owner = s.workflowOwnership(ctx, *decision.WorkflowID)
+	}
+	if decision.EventID != "" {
+		if event, err := events.GetCIEvent(ctx, decision.EventID); err == nil && event != nil {
+			setRequiredState(&converted, requiredset.ForEvent(ctx, s.deps.Store, event))
+		}
+	}
 	return &converted
+}
+
+// setRequiredState labels a decision required, advisory or quarantined for
+// the target branch of its event (docs/required-set.md). With the set off
+// every workflow is required and the decision gets no label.
+func setRequiredState(decision *csilapi.CIEventWorkflowDecision, classifier requiredset.EventClassifier) {
+	if !classifier.Set.Enabled {
+		return
+	}
+	c := classifier.Classify(decision.WorkflowSecurityId)
+	decision.RequiredState = optionalText(c.State)
+	decision.RequiredLabel = optionalText(c.Label())
 }
 
 func ciEventToDetail(event *models.CIEvent) csilapi.CIEventDetail {
@@ -127,6 +154,12 @@ func ciEventToDetail(event *models.CIEvent) csilapi.CIEventDetail {
 		published := formatTime(*event.ChecksPublishedAt)
 		detail.ChecksPublishedAt = &published
 	}
+	detail.ActorPrincipal = actorToWire(event.ActorPrincipalID, event.ActorIdentity)
+	detail.RefClasses = refclass.ForEvent(event)
+	facts := refclass.FactsOfEvent(event)
+	wireFacts := refClassFactsToWire(facts)
+	detail.RefClassFacts = &wireFacts
+	detail.RefClassReasons = refClassReasonsToWire(event.RefClassReasons)
 	return detail
 }
 
@@ -183,6 +216,25 @@ func reasonToCSIL(reason models.DecisionReason) csilapi.CIDecisionReason {
 	out.Required = reason.Required
 	out.ScheduleId = optionalText(reason.ScheduleID)
 	out.FireTime = optionalText(reason.FireTime)
+	if len(reason.Classes) > 0 || reason.Kind == "ref_class" {
+		out.Classes = append([]string{}, reason.Classes...)
+	}
+	if len(reason.RuleIDs) > 0 {
+		out.RuleIds = append([]string{}, reason.RuleIDs...)
+	}
+	// kind "priority" (docs/priority.md).
+	out.Lane = optionalText(reason.Lane)
+	if reason.Base != nil {
+		base := int64(*reason.Base)
+		out.Base = &base
+	}
+	if reason.Final != nil {
+		final := int64(*reason.Final)
+		out.Final = &final
+	}
+	if len(reason.Shifts) > 0 {
+		out.Shifts = priorityShiftsToWire(reason.Shifts)
+	}
 	return out
 }
 

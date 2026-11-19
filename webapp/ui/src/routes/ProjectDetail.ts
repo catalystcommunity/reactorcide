@@ -25,8 +25,11 @@ import { h, setAttr, setText, show, syncKeyed, uid } from '~/ui/dom.ts'
 import { define } from '~/ui/element.ts'
 import { href } from '~/ui/router.ts'
 import { Loader } from '~/ui/load.ts'
-import type { EventSettingsCard, SchedulesCard } from './ProjectEvents.ts'
+import type { EventSettingsCard, RunCard, SchedulesCard } from './ProjectEvents.ts'
 import './ProjectEvents.ts'
+import { requiredSetCardTag, type RequiredSetCard } from '~/components/RequiredSet.ts'
+import { reportingCardTag, type ReportingCard } from '~/components/Reporting.ts'
+import { projectTestsCard, type ProjectTestsCard } from '~/components/ProjectTests.ts'
 
 type ProjectData = { project: ProjectDetail }
 type Capability = keyof GetCapabilitiesResponse
@@ -41,6 +44,7 @@ export class ProjectDetailPage extends RcPage {
   #caps!: ResourceHandle<GetCapabilitiesResponse>
   #view!: ResourceView<ProjectData>
   #tabs!: ProjectTabs
+  #tests!: ProjectTestsCard
 
   // The management cards. Each is made the first time its capability is
   // granted, and only hidden afterwards, so a card that holds a half-typed
@@ -52,7 +56,10 @@ export class ProjectDetailPage extends RcPage {
   #vcs: RotationCard | null = null
   #events: EventSettingsCard | null = null
   #schedules: SchedulesCard | null = null
-  #anchors: Record<'visibility' | 'settings' | 'events' | 'schedules' | 'access' | 'webhooks' | 'vcs', Comment> | null = null
+  #run: RunCard | null = null
+  #requiredSet: RequiredSetCard | null = null
+  #reporting: ReportingCard | null = null
+  #anchors: Record<'run' | 'requiredSet' | 'reporting' | 'visibility' | 'settings' | 'events' | 'schedules' | 'access' | 'webhooks' | 'vcs', Comment> | null = null
 
   #id(): string {
     return this.route().id ?? ''
@@ -64,6 +71,8 @@ export class ProjectDetailPage extends RcPage {
     // them; the coordinator authorizes each call again.
     this.#tabs = new ProjectTabs('')
     show(this.#tabs.el, false)
+    // Flaky tests and test quarantines (WP15). Hidden when there are none.
+    this.#tests = projectTestsCard(this.#id())
     this.append(
       h(
         'div',
@@ -71,6 +80,7 @@ export class ProjectDetailPage extends RcPage {
         h('div', { style: { marginBottom: 'var(--space-4)' } }, h('a', { href: href('/projects'), class: 'meta' }, '← All projects')),
         this.#tabs.el,
         this.#view.el,
+        this.#tests,
       ),
     )
   }
@@ -98,6 +108,7 @@ export class ProjectDetailPage extends RcPage {
     this.#tabs.update(this.#id())
     show(this.#tabs.el, this.#can('manageProjectSettings') || this.#can('isProjectOwner') || this.#can('isOrgAdmin'))
     this.#view.update(this.#project.state())
+    this.#tests.setProject(this.#id())
   }
 
   #content(): { node: Node; update(data: ProjectData): void } {
@@ -111,6 +122,9 @@ export class ProjectDetailPage extends RcPage {
     const events = h('dd')
 
     const anchors = {
+      run: document.createComment('run'),
+      requiredSet: document.createComment('required-set'),
+      reporting: document.createComment('reporting'),
       visibility: document.createComment('visibility'),
       settings: document.createComment('settings'),
       events: document.createComment('events'),
@@ -138,9 +152,12 @@ export class ProjectDetailPage extends RcPage {
           h('div', null, h('dt', null, 'Allowed events'), events),
         ),
       ),
+      anchors.run,
       anchors.settings,
       anchors.events,
       anchors.schedules,
+      anchors.requiredSet,
+      anchors.reporting,
       anchors.access,
       anchors.webhooks,
       anchors.vcs,
@@ -167,6 +184,26 @@ export class ProjectDetailPage extends RcPage {
     const refresh = (): Promise<void> => this.#project.refresh()
 
     const canManage = this.#can('manageProjectSettings')
+    // Starting a run is the retry tier of the project (the coordinator
+    // checks it again, and a token also needs jobs:submit).
+    const canRun = this.#can('retryJob') && project.enabled
+    if (canRun && !this.#run) {
+      this.#run = make<RunCard>('rc-project-run-card', {})
+      anchors.run.before(this.#run)
+    }
+    // The required set: readable by members; the coordinator decides each
+    // change (docs/required-set.md).
+    const canSeeRequiredSet = this.#can('retryJob') || canManage
+    if (canSeeRequiredSet && !this.#requiredSet) {
+      this.#requiredSet = make<RequiredSetCard>(requiredSetCardTag, {})
+      anchors.requiredSet.before(this.#requiredSet)
+    }
+    // Reporting and ownership (docs/reporting-and-ownership.md): the same
+    // readers; the coordinator decides each change.
+    if (canSeeRequiredSet && !this.#reporting) {
+      this.#reporting = make<ReportingCard>(reportingCardTag, {})
+      anchors.reporting.before(this.#reporting)
+    }
     if (canManage && !this.#visibility) {
       this.#visibility = make<VisibilityCard>('rc-project-visibility-card', { onChanged: refresh })
       anchors.visibility.before(this.#visibility)
@@ -225,6 +262,9 @@ export class ProjectDetailPage extends RcPage {
     }
 
     const cards: [ProjectCard | null, boolean][] = [
+      [this.#run, canRun],
+      [this.#requiredSet, canSeeRequiredSet],
+      [this.#reporting, canSeeRequiredSet],
       [this.#visibility, canManage],
       [this.#settings, canManage],
       [this.#events, canManage],

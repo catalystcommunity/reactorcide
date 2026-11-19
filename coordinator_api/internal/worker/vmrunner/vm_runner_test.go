@@ -9,27 +9,7 @@ import (
 	"sync"
 	"testing"
 	"time"
-
-	"golang.org/x/crypto/ssh"
 )
-
-func TestGenerateEphemeralSSHCredential(t *testing.T) {
-	privateKey, authorizedKey, err := generateEphemeralSSHCredential()
-	if err != nil {
-		t.Fatal(err)
-	}
-	signer, err := ssh.ParsePrivateKey(privateKey)
-	if err != nil {
-		t.Fatal(err)
-	}
-	publicKey, _, _, _, err := ssh.ParseAuthorizedKey(authorizedKey)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if string(signer.PublicKey().Marshal()) != string(publicKey.Marshal()) {
-		t.Fatal("generated private and public keys do not match")
-	}
-}
 
 // fakeImageSource records Resolve calls and returns a configured
 // path/error, standing in for a real ImageSource (local or, eventually,
@@ -68,10 +48,6 @@ type fakeLifecycle struct {
 	destroyedHandles []string
 	destroyErr       error
 }
-
-type ephemeralFakeLifecycle struct{ *fakeLifecycle }
-
-func (*ephemeralFakeLifecycle) UsesEphemeralSSHCredentials() bool { return true }
 
 func (f *fakeLifecycle) Boot(ctx context.Context, baseImagePath string, spec BootSpec) (string, GuestAddr, error) {
 	f.mu.Lock()
@@ -216,7 +192,7 @@ func baseTestConfig() *JobConfig {
 }
 
 // newTestRunner wires a VMRunner from fakes with a fast connect-retry loop
-// so waitTCPReachable-driven tests run quickly. Most tests point
+// so waitGuestReachable-driven tests run quickly. Most tests point
 // lifecycle.bootAddr at a real (currently listening) loopback port via
 // listenLoopback so the reachability wait succeeds on its first attempt.
 func newTestRunner(images ImageSource, lifecycle VMLifecycle, transport GuestTransport) *VMRunner {
@@ -225,62 +201,59 @@ func newTestRunner(images ImageSource, lifecycle VMLifecycle, transport GuestTra
 		WithConnectRetryInterval(20*time.Millisecond))
 }
 
-func TestVMRunnerUsesPerVMSSHCredentialsWhenLifecycleSupportsInjection(t *testing.T) {
+func TestVMRunnerPassesGuestUserToTransport(t *testing.T) {
 	guestAddr, cleanup := listenLoopback(t)
 	defer cleanup()
-	hostPrivate, hostPublic, err := generateEphemeralSSHCredential()
-	if err != nil {
-		t.Fatal(err)
-	}
-	_ = hostPrivate
-	guestAddr.HostPublicKey = hostPublic
-	baseLifecycle := &fakeLifecycle{bootHandle: "vm-1", bootAddr: guestAddr}
-	lifecycle := &ephemeralFakeLifecycle{fakeLifecycle: baseLifecycle}
+	lifecycle := &fakeLifecycle{bootHandle: "vm-1", bootAddr: guestAddr}
 	transport := &fakeTransport{next: newFakeSession("", "", 0)}
-	runner := New(&fakeImageSource{path: "base"}, lifecycle, transport, GuestCreds{
-		User:          "reactorcide",
-		Password:      "shared-password",
-		PrivateKeyPEM: []byte("shared-private-key"),
-		HostPublicKey: []byte("shared-host-key"),
-	}, WithConnectTimeout(2*time.Second), WithConnectRetryInterval(20*time.Millisecond))
+	runner := New(&fakeImageSource{path: "base"}, lifecycle, transport, GuestCreds{User: "reactorcide"},
+		WithConnectTimeout(2*time.Second), WithConnectRetryInterval(20*time.Millisecond))
 
 	if _, err := runner.SpawnJob(context.Background(), baseTestConfig()); err != nil {
 		t.Fatal(err)
 	}
-	if len(baseLifecycle.bootSpecs) != 1 || len(baseLifecycle.bootSpecs[0].GuestAuthorizedKey) == 0 {
-		t.Fatal("Boot did not receive a per-VM authorized key")
+	if len(transport.starts) != 1 || transport.starts[0].creds.User != "reactorcide" {
+		t.Fatalf("Start calls = %+v", transport.starts)
 	}
-	if baseLifecycle.bootSpecs[0].GuestUser != "reactorcide" {
-		t.Fatalf("GuestUser = %q", baseLifecycle.bootSpecs[0].GuestUser)
+}
+
+// probeTransport is a fakeTransport that is also a GuestProber.
+type probeTransport struct {
+	*fakeTransport
+	mu     sync.Mutex
+	probes int
+	failN  int
+}
+
+func (p *probeTransport) Probe(context.Context, GuestAddr) error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.probes++
+	if p.probes <= p.failN {
+		return errors.New("guest daemon is not ready")
 	}
-	if len(transport.starts) != 1 {
-		t.Fatalf("Start calls = %d", len(transport.starts))
-	}
-	call := transport.starts[0]
-	if call.creds.Password != "" || string(call.creds.PrivateKeyPEM) == "shared-private-key" {
-		t.Fatal("transport used a configured shared client credential")
-	}
-	if string(call.creds.HostPublicKey) != string(hostPublic) {
-		t.Fatal("transport did not pin the per-VM host key")
-	}
-	clientSigner, err := ssh.ParsePrivateKey(call.creds.PrivateKeyPEM)
-	if err != nil {
+	return nil
+}
+
+func TestVMRunnerPollsGuestProberUntilReady(t *testing.T) {
+	// No TCP listener: only the prober decides reachability.
+	lifecycle := &fakeLifecycle{bootHandle: "vm-1", bootAddr: GuestAddr{Host: "127.0.0.1", Port: 1}}
+	transport := &probeTransport{fakeTransport: &fakeTransport{next: newFakeSession("", "", 0)}, failN: 3}
+	runner := New(&fakeImageSource{path: "base"}, lifecycle, transport, GuestCreds{},
+		WithConnectTimeout(2*time.Second), WithConnectRetryInterval(5*time.Millisecond))
+	if _, err := runner.SpawnJob(context.Background(), baseTestConfig()); err != nil {
 		t.Fatal(err)
 	}
-	injectedKey, _, _, _, err := ssh.ParseAuthorizedKey(baseLifecycle.bootSpecs[0].GuestAuthorizedKey)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if string(clientSigner.PublicKey().Marshal()) != string(injectedKey.Marshal()) {
-		t.Fatal("transport private key does not match the injected public key")
+	if transport.probes != 4 || transport.startCount() != 1 {
+		t.Fatalf("probes = %d, starts = %d", transport.probes, transport.startCount())
 	}
 }
 
 // listenLoopback binds a real loopback TCP listener and returns the
 // GuestAddr for it (a stand-in "guest" endpoint) plus a cleanup func. This
-// lets SpawnJob's waitTCPReachable poll succeed immediately without a real
-// VM or SSH handshake, keeping these tests focused on VMRunner's
-// orchestration rather than the transport (guest_ssh_test.go covers that).
+// lets SpawnJob's reachability poll succeed immediately without a real VM or
+// guest daemon, keeping these tests focused on VMRunner's orchestration
+// rather than the transport (guest_vsock_test.go covers that).
 func listenLoopback(t *testing.T) (GuestAddr, func()) {
 	t.Helper()
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
@@ -371,7 +344,7 @@ func TestVMRunner_SpawnJob_BootFailure_ReturnsError(t *testing.T) {
 
 func TestVMRunner_SpawnJob_UnreachableGuest_DestroysVM(t *testing.T) {
 	images := &fakeImageSource{path: "/base/test-base.img"}
-	// Port 1 on loopback: nothing listens there, so waitTCPReachable
+	// Port 1 on loopback: nothing listens there, so waitGuestReachable
 	// reliably fails without depending on the platform's connection-
 	// refused timing beyond our own bounded retry/timeout.
 	lifecycle := &fakeLifecycle{bootHandle: "vm-handle-2", bootAddr: GuestAddr{Host: "127.0.0.1", Port: 1}}
@@ -398,7 +371,7 @@ func TestVMRunner_SpawnJob_TransportStartFailure_DestroysVM(t *testing.T) {
 
 	images := &fakeImageSource{path: "/base/test-base.img"}
 	lifecycle := &fakeLifecycle{bootHandle: "vm-handle-3", bootAddr: guestAddr}
-	transport := &fakeTransport{err: errors.New("ssh auth failed")}
+	transport := &fakeTransport{err: errors.New("guest handshake failed")}
 	runner := newTestRunner(images, lifecycle, transport)
 
 	_, err := runner.SpawnJob(context.Background(), baseTestConfig())
@@ -614,5 +587,29 @@ func TestVMRunner_CPUAndMemoryMapping(t *testing.T) {
 	}
 	if spec.JobID != "job-1" {
 		t.Fatalf("BootSpec.JobID = %q, want %q", spec.JobID, "job-1")
+	}
+}
+
+func TestVMRunnerRunDiagnosticUsesJobGuest(t *testing.T) {
+	guestAddr, cleanup := listenLoopback(t)
+	defer cleanup()
+	lifecycle := &fakeLifecycle{bootHandle: "vm-1", bootAddr: guestAddr}
+	transport := &fakeTransport{next: newFakeSession("", "", 0)}
+	runner := newTestRunner(&fakeImageSource{path: "base"}, lifecycle, transport)
+	id, err := runner.SpawnJob(context.Background(), baseTestConfig())
+	if err != nil {
+		t.Fatal(err)
+	}
+	transport.next = newFakeSession("0\n", "", 4)
+	out, code, err := runner.RunDiagnostic(context.Background(), id, []string{"count"})
+	if err != nil || code != 4 || out != "0\n" {
+		t.Fatalf("RunDiagnostic = %q, %d, %v", out, code, err)
+	}
+	last := transport.starts[len(transport.starts)-1]
+	if last.creds.User != "runner" || last.command.Args[0] != "count" || last.command.Platform != GuestPlatformPOSIX || last.command.JobID != id {
+		t.Fatalf("diagnostic Start = %+v", last)
+	}
+	if _, _, err := runner.RunDiagnostic(context.Background(), "nope", []string{"x"}); err == nil {
+		t.Fatal("RunDiagnostic of an unknown job did not fail")
 	}
 }

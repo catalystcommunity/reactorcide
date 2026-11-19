@@ -17,9 +17,11 @@ import { href } from '~/ui/router.ts'
  * Role assignments.
  *
  * A role binds a PRINCIPAL (a user, or a group) to a SCOPE (the organization,
- * or one project). The scope is what makes the same role name mean different
- * things: `admin` on an org administers that org; `owner` on a project owns
- * only that project.
+ * one project, or one workflow of a project). The scope is what makes the
+ * same role name mean different things: `admin` on an org administers that
+ * org; `owner` on a project owns only that project; `owner` on a workflow can
+ * cancel, retry and re-run, quarantine, and propose required-set changes for
+ * that one workflow (docs/organizations-and-ci-policy.md).
  */
 
 const PRINCIPAL_TYPES = [
@@ -30,6 +32,7 @@ const PRINCIPAL_TYPES = [
 const SCOPE_TYPES = [
   { value: 'org', label: 'Organization', description: 'Applies across the whole organization.' },
   { value: 'project', label: 'Project', description: 'Applies to one project only.' },
+  { value: 'workflow', label: 'Workflow', description: 'Owner of one workflow of a project (by its YAML id).' },
 ]
 
 const ROLES = [
@@ -72,6 +75,7 @@ export class OrgRolesPage extends ManagedOrgPage {
   #principalId = ''
   #scopeType = 'org'
   #scopeId = ''
+  #scopeWorkflow = ''
   #role = 'member'
   #grant = new Action(() => this.invalidate())
 
@@ -87,12 +91,36 @@ export class OrgRolesPage extends ManagedOrgPage {
   #scopeSelect!: ChoiceSelect
   #projectField!: Field
   #projectInput!: TextField
+  #workflowField!: Field
+  #workflowInput!: TextField
+  #roleField!: Field
   #roleSelect!: ChoiceSelect
   #submit!: PushButton
   #tbody!: HTMLTableSectionElement
   #tableWrap!: HTMLElement
   #noAssignments!: HTMLElement
   #rowActions = new WeakMap<Element, { action: Action; error: ActionError }>()
+
+  // Project and workflow roles of one project of the org.
+  #projects = new Loader(this, async (orgId: string) => {
+    try {
+      return (await api.listProjects({ orgId })).projects
+    } catch {
+      return []
+    }
+  })
+  #projectRoles = new Loader(this, async (projectId: string) => {
+    const [project, workflow] = await Promise.all([
+      api.listRoleAssignments({ scopeType: 'project', scopeId: projectId }),
+      api.listRoleAssignments({ scopeType: 'workflow', scopeId: projectId }),
+    ])
+    return [...project.assignments, ...workflow.assignments]
+  })
+  #rolesProject = ''
+  #projectPicker!: ChoiceSelect
+  #projectTbody!: HTMLTableSectionElement
+  #projectTableWrap!: HTMLElement
+  #noProjectRoles!: HTMLElement
 
   protected buildBody(): HTMLElement {
     this.#groupsLink = h('a', { class: 'btn btn-sm' }, 'Manage groups')
@@ -122,12 +150,43 @@ export class OrgRolesPage extends ManagedOrgPage {
     )
     this.#noAssignments = h('div', { class: 'empty' }, 'No roles have been assigned in this organization.')
 
+    this.#projectPicker = new ChoiceSelect({
+      ariaLabel: 'Project',
+      placeholder: 'Choose a project…',
+      value: '',
+      onChange: (next) => {
+        this.#rolesProject = next
+        this.invalidate()
+      },
+    })
+    this.#projectTbody = h('tbody')
+    this.#projectTableWrap = h(
+      'div',
+      { class: 'scroll-x', hidden: true },
+      h(
+        'table',
+        { class: 'table project-roles-table' },
+        h('thead', null, h('tr', null, h('th', null, 'Principal'), h('th', null, 'Role'), h('th', null, 'Scope'), h('th', null, 'Granted'), h('th'))),
+        this.#projectTbody,
+      ),
+    )
+    this.#noProjectRoles = h('div', { class: 'empty', hidden: true }, 'No project or workflow roles in this project.')
+
     return h(
       'div',
       { class: 'page' },
       header,
       this.#buildGrantCard(),
       h('div', { class: 'card' }, h('h3', { class: 'section-title' }, 'Assignments in this organization'), this.#tableWrap, this.#noAssignments),
+      h(
+        'div',
+        { class: 'card' },
+        h('h3', { class: 'section-title' }, 'Project and workflow roles'),
+        h('p', { class: 'meta' }, 'The roles of one project, and the owner roles of its workflows. A workflow owner can cancel, retry and re-run that workflow, quarantine it, and propose required set changes.'),
+        field({ label: 'Project', control: this.#projectPicker.el }).el,
+        this.#projectTableWrap,
+        this.#noProjectRoles,
+      ),
     )
   }
 
@@ -185,6 +244,19 @@ export class OrgRolesPage extends ManagedOrgPage {
       },
     })
     this.#projectField = field({ label: 'Project ID', required: true, hint: "From the project's detail page.", control: this.#projectInput })
+    this.#workflowInput = textField({
+      mono: true,
+      onInput: (value) => {
+        this.#scopeWorkflow = value
+        this.invalidate()
+      },
+    })
+    this.#workflowField = field({
+      label: 'Workflow ID',
+      required: true,
+      hint: 'The workflow security ID: the `id:` of the workflow YAML. A workflow role is always owner.',
+      control: this.#workflowInput,
+    })
     this.#roleSelect = new ChoiceSelect({
       value: this.#role,
       choices: ROLES,
@@ -205,14 +277,20 @@ export class OrgRolesPage extends ManagedOrgPage {
         this.#userField.el,
         this.#groupField.el,
       ),
-      h('div', { class: 'form-row' }, field({ label: 'Scope', required: true, control: this.#scopeSelect.el }).el, this.#projectField.el),
-      field({
+      h(
+        'div',
+        { class: 'form-row' },
+        field({ label: 'Scope', required: true, control: this.#scopeSelect.el }).el,
+        this.#projectField.el,
+        this.#workflowField.el,
+      ),
+      (this.#roleField = field({
         label: 'Role',
         required: true,
         tooltip:
           'Admin administers access as well as settings. Owner controls the scope but not who else may reach it. Member can see private resources in the scope.',
         control: this.#roleSelect.el,
-      }).el,
+      })).el,
       this.#submit,
     )
     return h('div', { class: 'card' }, h('h3', { class: 'section-title' }, 'Grant a role'), form)
@@ -231,17 +309,21 @@ export class OrgRolesPage extends ManagedOrgPage {
         // An org-scoped grant defaults to THIS org, so the common case needs
         // no id typed at all.
         scopeId: this.#scopeType === 'org' ? orgId : this.#scopeId.trim() || undefined,
-        role: this.#role,
+        scopeWorkflow: this.#scopeType === 'workflow' ? this.#scopeWorkflow.trim() || undefined : undefined,
+        role: this.#scopeType === 'workflow' ? 'owner' : this.#role,
       }),
     )
     if (!this.isActive()) return
     if (ok) {
       this.#principalId = ''
       this.#scopeId = ''
+      this.#scopeWorkflow = ''
       this.#picker.value = ''
       this.#groupSelect.update(this.#groupChoices(), '')
       clearField(this.#projectInput)
+      clearField(this.#workflowInput)
       void this.#assignments.reload()
+      void this.#projectRoles.reload()
     }
   }
 
@@ -278,8 +360,11 @@ export class OrgRolesPage extends ManagedOrgPage {
     this.#groupSelect.update(this.#groupChoices(), isGroup ? this.#principalId : '')
     this.#groupSelect.el.disabled = groups.length === 0
     setText(this.#groupHint, groups.length ? 'A group from the Groups page.' : 'No groups yet. Create one on the Groups page.')
-    show(this.#projectField.el, this.#scopeType === 'project')
-    this.#submit.disabled = this.#grant.busy || !this.#principalId.trim()
+    const isWorkflow = this.#scopeType === 'workflow'
+    show(this.#projectField.el, this.#scopeType === 'project' || isWorkflow)
+    show(this.#workflowField.el, isWorkflow)
+    show(this.#roleField.el, !isWorkflow)
+    this.#submit.disabled = this.#grant.busy || !this.#principalId.trim() || (isWorkflow && !this.#scopeWorkflow.trim())
     setButtonText(this.#submit, this.#grant.busy ? 'Granting…' : 'Grant role')
 
     // The assignments.
@@ -290,12 +375,33 @@ export class OrgRolesPage extends ManagedOrgPage {
       this.#tbody,
       assignments,
       (assignment) => assignment.assignmentId,
-      (assignment) => this.#createRow(assignment),
+      (assignment) => this.#createRow(assignment, () => this.#assignments.reload()),
+      (row, assignment) => this.#updateRow(row, assignment),
+    )
+
+    // The project and workflow roles of the chosen project.
+    this.#projects.sync(orgId || undefined)
+    const projects = this.#projects.state.data ?? []
+    if (this.#rolesProject && !projects.some((p) => p.projectId === this.#rolesProject)) this.#rolesProject = ''
+    this.#projectPicker.update(
+      projects.map((p) => ({ value: p.projectId, label: p.name, description: p.repoUrl })),
+      this.#rolesProject,
+    )
+    this.#projectRoles.sync(this.#rolesProject || undefined)
+    const projectRoles = this.#rolesProject ? (this.#projectRoles.state.data ?? []) : []
+    const loaded = Boolean(this.#rolesProject) && this.#projectRoles.state.loaded
+    show(this.#projectTableWrap, projectRoles.length > 0)
+    show(this.#noProjectRoles, loaded && projectRoles.length === 0)
+    syncKeyed(
+      this.#projectTbody,
+      projectRoles,
+      (assignment) => assignment.assignmentId,
+      (assignment) => this.#createRow(assignment, () => this.#projectRoles.reload()),
       (row, assignment) => this.#updateRow(row, assignment),
     )
   }
 
-  #createRow(assignment: Assignment): HTMLTableRowElement {
+  #createRow(assignment: Assignment, reload: () => Promise<void>): HTMLTableRowElement {
     const action = new Action(() => this.invalidate())
     const error = new ActionError()
     const revoke = button('Revoke', {
@@ -304,7 +410,7 @@ export class OrgRolesPage extends ManagedOrgPage {
       onClick: async () => {
         if (!(await confirmAction('Revoke this role? Access it granted is removed immediately.', { okLabel: 'Revoke' }))) return
         const ok = await action.run('The role could not be revoked.', () => api.revokeRole({ assignmentId: assignment.assignmentId }))
-        if (ok && this.isActive()) void this.#assignments.reload()
+        if (ok && this.isActive()) void reload()
       },
     })
     const row = h(
@@ -336,7 +442,7 @@ export class OrgRolesPage extends ManagedOrgPage {
     setText(row.querySelector('.scope-type')!, assignment.scopeType)
     const scopeId = row.querySelector<HTMLElement>('.scope-id')!
     show(scopeId, assignment.scopeId)
-    setText(scopeId, assignment.scopeId ?? '')
+    setText(scopeId, assignment.scopeWorkflow ? `${assignment.scopeId ?? ''} / ${assignment.scopeWorkflow}` : (assignment.scopeId ?? ''))
     setText(row.querySelector('.assignment-granted')!, relativeTime(assignment.createdAt))
     const state = this.#rowActions.get(row)!
     ;(row.querySelector('push-button') as PushButton).disabled = state.action.busy

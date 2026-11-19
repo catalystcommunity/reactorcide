@@ -74,8 +74,12 @@ Create the enrollment-token file without terminal output. One safe method is
 to copy an existing protected file with `scp`. Do not use `Write-Output`,
 `Get-Content`, or a command-line argument for the token.
 
-The worker creates and injects new guest SSH keys for each VM job. The service
-does not need a guest key file.
+The VM guests have no network adapter and no SSH server. The worker reaches
+the guest daemon in each VM through Hyper-V sockets. The service does not need
+a guest key file. On the first VM boot, the worker registers two Hyper-V
+socket services under `HKLM` (see
+[Windows VM Runners](./vm-runners-windows.md#hyper-v-socket-services)). The
+service runs as LocalSystem, so it has the necessary rights.
 
 ## Install and start the service
 
@@ -114,8 +118,19 @@ roots. Set them during installation:
 
 `StateDirectory` contains config, secrets, logs, and the stable worker key.
 `ImageDirectory` contains local image bundles. `ImageCacheDirectory` contains
-downloaded OCI content and materialized read-only bundles.
+downloaded OCI or S3 content and materialized read-only bundles.
 `VMScratchDirectory` contains per-job differencing disks and workspaces.
+These are ephemeral. The worker removes the VMs and disks that a stopped
+worker left in this directory when it starts and before each boot.
+
+The installer and `worker-service.example.json` use `-ImageSource oci` by
+default. A worker that gets jobs from a coordinator needs `oci`. The `oci`
+source also accepts `s3://` references. A coordinator VM job names an image
+alias, and the coordinator gives the job the pinned reference of the alias.
+The worker pulls the images of its image set before it claims a job. The
+`local` source cannot resolve a pinned reference, so it cannot run a
+coordinator VM job. Use `-ImageSource local` only for local tests. See
+[Image Aliases and Worker Image Sets](./image-aliases.md).
 
 The image and scratch roots can use different local disks. Do not use one
 writable OCI cache directory from multiple worker processes. Each worker must
@@ -156,8 +171,8 @@ executable.
 ## Test Hyper-V before you accept jobs
 
 The VM smoke test needs a prepared bundle. The bundle must contain
-`disk.vhdx`. The guest must have OpenSSH Server and the Hyper-V Data Exchange
-service. The base image must not contain SSH keys.
+`disk.vhdx`. The guest must have the Reactorcide guest daemon service. The
+base image must not contain SSH keys.
 
 Run this command in the elevated SSH session:
 
@@ -167,9 +182,10 @@ Run this command in the elevated SSH session:
   -user reactorcide
 ```
 
-The test creates an ephemeral differencing disk and VM. It waits for guest SSH,
-runs a command, checks CPU, memory, and storage metrics, and removes the VM. A
-successful test ends with `vmsmoke: OK`.
+The test creates an ephemeral differencing disk and a VM with no network
+adapter. It waits for the guest daemon, runs a command, checks egress through
+the proxy tunnel, checks CPU, memory, and storage metrics, and removes the VM.
+A successful test ends with `vmsmoke: OK`.
 
 ## Remove the service
 

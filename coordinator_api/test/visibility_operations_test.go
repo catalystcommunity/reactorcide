@@ -25,6 +25,7 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
+	"gorm.io/gorm"
 
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/authz"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store"
@@ -53,7 +54,14 @@ func requireJobsVisibleToStore(t *testing.T) jobsVisibleToStore {
 // IsPrivate/owning-org cascade).
 func createTestJobInProject(t *testing.T, userID, projectID, status string) *models.Job {
 	t.Helper()
-	du := &DataUtils{db: testDB}
+	return createTestJobInProjectIn(t, testDB, userID, projectID, status)
+}
+
+// createTestJobInProjectIn is createTestJobInProject on db (see
+// createTestUserIn in ui_auth_integration_test.go).
+func createTestJobInProjectIn(t *testing.T, db *gorm.DB, userID, projectID, status string) *models.Job {
+	t.Helper()
+	du := &DataUtils{db: db}
 	job, err := du.CreateJob(DataSetup{
 		"UserID":     userID,
 		"ProjectID":  &projectID,

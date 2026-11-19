@@ -103,3 +103,108 @@ func TestCIEventChecks_ConcurrentReplicasPublishOncePerState(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, roots, 1)
 }
+
+// A re-run of an event's workflow keeps the event and supersedes the
+// instance it re-runs: the aggregate sees the newest instance of each chain
+// once, and a second re-run starts from it.
+func TestCIEventChecks_RerunSupersedesItsInstance(t *testing.T) {
+	ctx := context.Background()
+	events := ciEventStore(t)
+	owner := createTestUser(t)
+	project := createTestProject(t, owner.UserID, "https://example.invalid/"+uniqueName("repo"), false)
+	cleanupProjectEvents(t, project.ProjectID)
+
+	event, _, err := events.RecordCIEvent(ctx, newTestCIEvent(project, uniqueName("delivery"), uniqueName("semantic")))
+	require.NoError(t, err)
+	eventID := event.EventID
+	newInstance := func(name, status string, rerunOf *string) *models.WorkflowInstance {
+		wf := &models.WorkflowInstance{UserID: owner.UserID, OrgID: project.OrgID, ProjectID: &project.ProjectID,
+			Name: name, WorkflowSecurityID: name, Status: status, QueueName: "reactorcide-jobs", EventID: &eventID,
+			RerunOfWorkflowID: rerunOf}
+		require.NoError(t, postgres_store.PostgresStore.CreateWorkflowInstance(ctx, wf))
+		return wf
+	}
+	build := newInstance("build", "failed", nil)
+	lint := newInstance("lint", "completed", nil)
+
+	// The (event, security ID) identity still refuses a second first instance.
+	duplicate := &models.WorkflowInstance{UserID: owner.UserID, OrgID: project.OrgID, ProjectID: &project.ProjectID,
+		Name: "build", WorkflowSecurityID: "build", Status: "running", QueueName: "reactorcide-jobs", EventID: &eventID}
+	require.Error(t, postgres_store.PostgresStore.CreateWorkflowInstance(ctx, duplicate))
+
+	checks, ok := store.AppStore.(store.CIEventChecksStore)
+	require.True(t, ok)
+	ids := func() []string {
+		roots, err := checks.ListRootWorkflowInstancesForEvent(ctx, eventID)
+		require.NoError(t, err)
+		result := []string{}
+		for _, wf := range roots {
+			result = append(result, wf.WorkflowID)
+		}
+		return result
+	}
+	require.ElementsMatch(t, []string{build.WorkflowID, lint.WorkflowID}, ids())
+
+	first := newInstance("build", "failed", &build.WorkflowID)
+	require.ElementsMatch(t, []string{first.WorkflowID, lint.WorkflowID}, ids(), "a re-run supersedes the first instance")
+	second := newInstance("build", "running", &build.WorkflowID)
+	require.ElementsMatch(t, []string{second.WorkflowID, lint.WorkflowID}, ids(), "the newest re-run of a chain counts once")
+
+	// The identity lookup still finds the first instance.
+	byEvent, err := postgres_store.PostgresStore.GetRootWorkflowInstanceByEvent(ctx, eventID, "build")
+	require.NoError(t, err)
+	require.Equal(t, build.WorkflowID, byEvent.WorkflowID)
+
+	// A root re-run keeps the event in rerun_event_id, not in event_id: the
+	// (event, security ID) index of migration 000041 stays unchanged.
+	var stored struct {
+		EventID      *string
+		RerunEventID *string
+	}
+	require.NoError(t, postgres_store.PostgresStore.GetDB().Raw(
+		`SELECT event_id::text AS event_id, rerun_event_id::text AS rerun_event_id FROM workflow_instances WHERE workflow_id = ?`,
+		second.WorkflowID).Scan(&stored).Error)
+	require.Nil(t, stored.EventID)
+	require.NotNil(t, stored.RerunEventID)
+	require.Equal(t, eventID, *stored.RerunEventID)
+	require.Equal(t, eventID, *second.CIEventID())
+}
+
+// Release v0.12.13 (and the current CreateWorkflowInstanceForTrigger) insert
+// a root workflow of an event with this exact ON CONFLICT clause. It must
+// still infer workflow_instances_event_security_idx after migration 000051,
+// with re-run instances of the same event present. Otherwise old pods fail
+// during a rolling deploy and after a rollback.
+func TestWorkflowEventIdentityIndex_OldReleaseOnConflict(t *testing.T) {
+	ctx := context.Background()
+	events := ciEventStore(t)
+	owner := createTestUser(t)
+	project := createTestProject(t, owner.UserID, "https://example.invalid/"+uniqueName("repo"), false)
+	cleanupProjectEvents(t, project.ProjectID)
+	event, _, err := events.RecordCIEvent(ctx, newTestCIEvent(project, uniqueName("delivery"), uniqueName("semantic")))
+	require.NoError(t, err)
+	eventID := event.EventID
+
+	first := &models.WorkflowInstance{UserID: owner.UserID, OrgID: project.OrgID, ProjectID: &project.ProjectID,
+		Name: "build", WorkflowSecurityID: "build", Status: "failed", QueueName: "reactorcide-jobs", EventID: &eventID}
+	require.NoError(t, postgres_store.PostgresStore.CreateWorkflowInstanceForTrigger(ctx, first))
+	rerun := &models.WorkflowInstance{UserID: owner.UserID, OrgID: project.OrgID, ProjectID: &project.ProjectID,
+		Name: "build", WorkflowSecurityID: "build", Status: "running", QueueName: "reactorcide-jobs", EventID: &eventID,
+		RerunOfWorkflowID: &first.WorkflowID}
+	require.NoError(t, postgres_store.PostgresStore.CreateWorkflowInstance(ctx, rerun))
+
+	oldInsert := `INSERT INTO workflow_instances (user_id, org_id, project_id, name, workflow_security_id, status, queue_name, event_id)
+VALUES (?, ?, ?, ?, ?, 'evaluating', 'reactorcide-jobs', ?)
+ON CONFLICT (event_id, workflow_security_id) WHERE event_id IS NOT NULL AND parent_workflow_id IS NULL DO NOTHING`
+	db := postgres_store.PostgresStore.GetDB()
+	result := db.Exec(oldInsert, owner.UserID, project.OrgID, project.ProjectID, "build", "build", eventID)
+	require.NoError(t, result.Error, "the v0.12.13 ON CONFLICT clause must infer the identity index")
+	require.Zero(t, result.RowsAffected, "the first instance is the identity of (event, build)")
+	result = db.Exec(oldInsert, owner.UserID, project.OrgID, project.ProjectID, "lint", "lint", eventID)
+	require.NoError(t, result.Error)
+	require.EqualValues(t, 1, result.RowsAffected)
+
+	var predicate string
+	require.NoError(t, db.Raw(`SELECT pg_get_indexdef('workflow_instances_event_security_idx'::regclass)`).Scan(&predicate).Error)
+	require.Contains(t, predicate, "WHERE ((event_id IS NOT NULL) AND (parent_workflow_id IS NULL))")
+}

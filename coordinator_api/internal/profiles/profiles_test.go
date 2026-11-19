@@ -33,3 +33,24 @@ func TestWeakerOrEqualResourceCeilings(t *testing.T) {
 		t.Fatal("a child profile removed its CPU ceiling")
 	}
 }
+
+func TestWeakerOrEqualCacheClasses(t *testing.T) {
+	parent := &models.ExecutionProfile{TrustedCacheWrites: true, CacheNamespaceClasses: []string{"release", "default"}, CacheWriteClasses: []string{"default", "release"}}
+	child := &models.ExecutionProfile{TrustedCacheWrites: true, CacheNamespaceClasses: []string{"release", "default"}, CacheWriteClasses: []string{"default"}}
+	if err := WeakerOrEqual(child, parent); err != nil {
+		t.Fatal(err)
+	}
+	child.CacheNamespaceClasses = []string{"default", "release"}
+	if err := WeakerOrEqual(child, parent); err == nil {
+		t.Fatal("a child changed the cache namespace split")
+	}
+	child.CacheNamespaceClasses = parent.CacheNamespaceClasses
+	child.CacheWriteClasses = nil
+	if err := WeakerOrEqual(child, parent); err == nil {
+		t.Fatal("a child removed the cache write condition")
+	}
+	child.CacheWriteClasses = []string{"pr"}
+	if err := WeakerOrEqual(child, parent); err == nil {
+		t.Fatal("a child widened the cache write classes")
+	}
+}

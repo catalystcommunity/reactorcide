@@ -7,7 +7,10 @@ import (
 	"strings"
 	"time"
 
+	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/principals"
+	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/priority"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/schedule"
+	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/shedding"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store/models"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/vcs"
@@ -91,6 +94,11 @@ func (f ScheduleFirer) Fire(ctx context.Context, sched models.CISchedule, fireTi
 	if !project.Enabled {
 		return "", fmt.Errorf("project %s is disabled", project.Name)
 	}
+	// A shed level with pause_schedules starts no work. The fire fails
+	// with the reason, so the schedule shows why (plan item D4).
+	if reason := shedding.ScheduleRefusal(shedding.State(ctx, h.store, project.OwnershipOrgID())); reason != "" {
+		return "", errors.New(reason)
+	}
 	events, ok := h.store.(store.CIEventStore)
 	if !ok {
 		return "", errors.New("the store does not support CI events")
@@ -112,7 +120,10 @@ func (f ScheduleFirer) Fire(ctx context.Context, sched models.CISchedule, fireTi
 	key := ScheduleIdempotencyKey(sched.ScheduleID, fireTime)
 	scheduleID := sched.ScheduleID
 	projectID := project.ProjectID
-	recorded, outcome, err := events.RecordCIEvent(ctx, &models.CIEvent{
+	// A schedule fire has no actor of its own. The system principal
+	// "Reactorcide" is the actor; it has no privileges.
+	system := principals.System()
+	scheduleEvent := &models.CIEvent{
 		OrgID:          project.OwnershipOrgID(),
 		ProjectID:      &projectID,
 		Source:         models.CIEventSourceSchedule,
@@ -125,7 +136,10 @@ func (f ScheduleFirer) Fire(ctx context.Context, sched models.CISchedule, fireTi
 		ScheduleID:     &scheduleID,
 		Status:         models.CIEventStatusReceived,
 		IdempotencyKey: &key,
-	})
+	}
+	principals.ApplyToEvent(scheduleEvent, system)
+	applyRefClassesToEvent(ctx, h.store, scheduleEvent, models.RefClassFacts{EventType: string(vcs.EventSchedule), Branch: sched.Branch})
+	recorded, outcome, err := events.RecordCIEvent(ctx, scheduleEvent)
 	if err != nil {
 		return "", fmt.Errorf("recording schedule event: %w", err)
 	}
@@ -150,6 +164,7 @@ func (f ScheduleFirer) Fire(ctx context.Context, sched models.CISchedule, fireTi
 
 	job := BuildScheduleEvalJob(project, sched, fireTime, provider, repo, cloneURL, sha)
 	applyCIEventToEvalJob(job, recorded)
+	principals.ApplyToJob(job, system)
 	// The policy snapshot gives the eval result the project's default
 	// profile, as for any other event. A schedule has no actor, so there are
 	// no actor subjects or approvals.
@@ -172,6 +187,7 @@ func (f ScheduleFirer) Fire(ctx context.Context, sched models.CISchedule, fireTi
 	if err := h.resolveJobQueue(ctx, job); err != nil {
 		return "", err
 	}
+	priority.Assign(ctx, h.store, job)
 	if err := h.store.CreateJob(ctx, job); err != nil {
 		return "", fmt.Errorf("creating eval job: %w", err)
 	}
@@ -235,7 +251,7 @@ func (h *WebhookHandler) postScheduleEvalPending(ctx context.Context, job *model
 			return
 		}
 	}
-	if client == nil {
+	if client == nil || !h.vcsStatusesAllowedForJob(ctx, job) {
 		return
 	}
 	if err := client.UpdateCommitStatus(ctx, repo, vcs.StatusUpdate{

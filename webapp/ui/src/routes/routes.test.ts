@@ -20,7 +20,7 @@ describe('route table', () => {
   })
 
   it('resolves every path a page cross-links to', () => {
-    for (const linked of ['/workers/classes', '/workers/queues', '/org/groups', '/org/ci-trust', '/projects/new', '/signin', '/projects/p-1/trust', '/projects/p-1/policy']) {
+    for (const linked of ['/workers/classes', '/workers/queues', '/org/groups', '/org/principals', '/org/subscriptions', '/org/ci-trust', '/projects/new', '/signin', '/projects/p-1/trust', '/projects/p-1/policy', '/projects/p-1/execution', '/projects/p-1/subscriptions', '/org/profiles', '/org/images', '/projects/p-1/images', '/workers/w-1']) {
       expect(resolveRoute(linked).name, `a page links to ${linked}`).not.toBe('notFound')
     }
   })
@@ -37,6 +37,11 @@ describe('route table', () => {
     // The CI trust and CI policy pages of a project.
     expect(resolveRoute('/projects/p-1/trust')).toEqual({ name: 'projectTrust', id: 'p-1' })
     expect(resolveRoute('/projects/p-1/policy')).toEqual({ name: 'projectPolicy', id: 'p-1' })
+    // Image aliases, and one worker. Fixed worker paths stay ahead of the detail route.
+    expect(resolveRoute('/projects/p-1/images')).toEqual({ name: 'projectImages', id: 'p-1' })
+    expect(resolveRoute('/workers/w-1')).toEqual({ name: 'worker', id: 'w-1' })
+    expect(resolveRoute('/workers/classes')).toEqual({ name: 'workerClasses' })
+    expect(resolveRoute('/workers/queues')).toEqual({ name: 'queues' })
   })
 
   it('sends unknown paths to NotFound', () => {
@@ -48,7 +53,7 @@ describe('route table', () => {
   })
 
   it('has a page module for every route name', () => {
-    const names = new Set([...Object.values(STATIC_ROUTES), 'workflow', 'event', 'job', 'project', 'projectTrust', 'projectPolicy', 'notFound'])
+    const names = new Set([...Object.values(STATIC_ROUTES), 'workflow', 'event', 'job', 'project', 'projectTrust', 'projectPolicy', 'projectExecution', 'projectSubscriptions', 'projectImages', 'worker', 'notFound'])
     for (const name of names) expect(PAGES, name).toHaveProperty(name)
   })
 

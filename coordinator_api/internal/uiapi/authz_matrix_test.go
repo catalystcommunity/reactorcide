@@ -6,6 +6,7 @@ import (
 
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/config"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store/models"
+	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/tokencaps"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/uiapi/csilapi"
 )
 
@@ -331,7 +332,7 @@ func TestAddTrustedDomainPattern_PermissionMatrix(t *testing.T) {
 // TestUnauthorizedSession reports how an invalid/expired/unknown session
 // token is handled: it is treated exactly like an anonymous caller by
 // resolveIdentity (never a transport error), and ops that require a session
-// then reject it with "unauthorized" via requireUser.
+// then reject it with "unauthorized" via requireManagementIdentity.
 func TestUnauthorizedSession(t *testing.T) {
 	deps, st := newTestDeps(t)
 	st.putUser(models.User{UserID: "org-1"})
@@ -583,4 +584,124 @@ func TestWorkflowControl_InvisibleWorkflowReportsNotFound(t *testing.T) {
 			requireCode(t, op(ui, anonCtx(), wf.WorkflowID), "not_found")
 		})
 	}
+}
+
+// TestListWorkers_PermissionMatrix drives list-workers (the CLI `workers
+// list`) for sessions and API tokens. A token gets the same check as a
+// session: the worker view capability of the pool organization, which for
+// a token is its role intersected with workers:read or workers:manage. The
+// worker mutations (set-worker-status, drain-worker) accept a token with
+// workers:manage (see TestSessionAndTokenCallers).
+func TestListWorkers_PermissionMatrix(t *testing.T) {
+	setup := func(t *testing.T) (*Deps, *fakeStore, models.WorkerPool) {
+		t.Helper()
+		withAuthMode(t, config.UIAuthModeLocalRP)
+		deps, st := newTestDeps(t)
+		st.putUser(models.User{UserID: "org-1"})
+		pool := st.putPool(models.WorkerPool{OrgID: strPtr("org-1"), Name: "pool-1"})
+		image := "updated"
+		st.putWorker(models.Worker{WorkerID: "w-1", PoolID: pool.PoolID, WorkerKey: "k1", OS: "windows", Arch: "amd64",
+			ImageState: &image, ImageSetVersion: 3, ImageStateVersion: int64Ptr(3), HasActiveSession: true})
+		return deps, st, pool
+	}
+	putToken := func(st *fakeStore, value string, token models.APIToken) {
+		token.TokenID = value + "-id"
+		token.SubjectType = "instance_token"
+		st.apiTokens[value] = token
+	}
+
+	t.Run("org admin session lists the pool", func(t *testing.T) {
+		deps, st, pool := setup(t)
+		admin := st.putUser(models.User{UserID: "admin-1"})
+		seedOrgAdmin(st, admin.UserID, "org-1")
+		resp, err := NewUiService(deps).ListWorkers(mintSessionCtx(t, deps, admin.UserID), csilapi.ListWorkersRequest{PoolId: &pool.PoolID})
+		requireOK(t, err)
+		if len(resp.Workers) != 1 {
+			t.Fatalf("got %d workers, want 1", len(resp.Workers))
+		}
+	})
+
+	t.Run("token with workers:manage for the org lists the pool with image state", func(t *testing.T) {
+		deps, st, pool := setup(t)
+		putToken(st, "workers-token", models.APIToken{OrganizationIDs: []string{"org-1"}, Capabilities: []string{tokencaps.WorkersManage}})
+		resp, err := NewUiService(deps).ListWorkers(WithAuthToken(context.Background(), "workers-token"), csilapi.ListWorkersRequest{PoolId: &pool.PoolID})
+		requireOK(t, err)
+		if len(resp.Workers) != 1 || resp.Workers[0].ImageStatus == nil {
+			t.Fatalf("workers = %+v, want one worker with an image status (the IMAGES column)", resp.Workers)
+		}
+	})
+
+	t.Run("token without a workers capability is refused", func(t *testing.T) {
+		deps, st, pool := setup(t)
+		putToken(st, "jobs-token", models.APIToken{OrganizationIDs: []string{"org-1"}, Capabilities: []string{tokencaps.JobsRead}})
+		_, err := NewUiService(deps).ListWorkers(WithAuthToken(context.Background(), "jobs-token"), csilapi.ListWorkersRequest{PoolId: &pool.PoolID})
+		requireCode(t, err, "forbidden")
+	})
+
+	t.Run("token of another org is refused", func(t *testing.T) {
+		deps, st, pool := setup(t)
+		putToken(st, "other-token", models.APIToken{OrganizationIDs: []string{"org-2"}, Capabilities: []string{tokencaps.WorkersManage}})
+		_, err := NewUiService(deps).ListWorkers(WithAuthToken(context.Background(), "other-token"), csilapi.ListWorkersRequest{PoolId: &pool.PoolID})
+		requireCode(t, err, "forbidden")
+	})
+
+	t.Run("org token without pool_id is refused (global admin only)", func(t *testing.T) {
+		deps, st, _ := setup(t)
+		putToken(st, "workers-token", models.APIToken{OrganizationIDs: []string{"org-1"}, Capabilities: []string{tokencaps.WorkersManage}})
+		_, err := NewUiService(deps).ListWorkers(WithAuthToken(context.Background(), "workers-token"), csilapi.ListWorkersRequest{})
+		requireCode(t, err, "forbidden")
+	})
+
+	t.Run("global admin token lists every pool", func(t *testing.T) {
+		deps, st, _ := setup(t)
+		putToken(st, "global-token", models.APIToken{AllOrganizations: true, Capabilities: []string{tokencaps.OrganizationsManage}})
+		resp, err := NewUiService(deps).ListWorkers(WithAuthToken(context.Background(), "global-token"), csilapi.ListWorkersRequest{})
+		requireOK(t, err)
+		if len(resp.Workers) != 1 {
+			t.Fatalf("got %d workers, want 1", len(resp.Workers))
+		}
+	})
+
+	t.Run("invalid token is unauthorized", func(t *testing.T) {
+		deps, _, pool := setup(t)
+		_, err := NewUiService(deps).ListWorkers(WithAuthToken(context.Background(), "not-a-token"), csilapi.ListWorkersRequest{PoolId: &pool.PoolID})
+		requireCode(t, err, "unauthorized")
+	})
+
+	t.Run("token with workers:read for the org lists the pool", func(t *testing.T) {
+		deps, st, pool := setup(t)
+		putToken(st, "read-token", models.APIToken{OrganizationIDs: []string{"org-1"}, Capabilities: []string{tokencaps.WorkersRead}})
+		resp, err := NewUiService(deps).ListWorkers(WithAuthToken(context.Background(), "read-token"), csilapi.ListWorkersRequest{PoolId: &pool.PoolID})
+		requireOK(t, err)
+		if len(resp.Workers) != 1 {
+			t.Fatalf("got %d workers, want 1", len(resp.Workers))
+		}
+	})
+
+	t.Run("instance token with workers:read for every org lists every pool", func(t *testing.T) {
+		deps, st, _ := setup(t)
+		putToken(st, "read-token", models.APIToken{AllOrganizations: true, Capabilities: []string{tokencaps.WorkersRead}})
+		resp, err := NewUiService(deps).ListWorkers(WithAuthToken(context.Background(), "read-token"), csilapi.ListWorkersRequest{})
+		requireOK(t, err)
+		if len(resp.Workers) != 1 {
+			t.Fatalf("got %d workers, want 1", len(resp.Workers))
+		}
+	})
+
+	t.Run("worker mutations accept a workers:manage token and refuse a workers:read token", func(t *testing.T) {
+		deps, st, _ := setup(t)
+		putToken(st, "workers-token", models.APIToken{OrganizationIDs: []string{"org-1"}, Capabilities: []string{tokencaps.WorkersManage}})
+		putToken(st, "read-token", models.APIToken{OrganizationIDs: []string{"org-1"}, Capabilities: []string{tokencaps.WorkersRead}})
+		ui := NewUiService(deps)
+		read := WithAuthToken(context.Background(), "read-token")
+		_, err := ui.SetWorkerStatus(read, csilapi.SetWorkerStatusRequest{WorkerId: "w-1", Status: models.WorkerStatusDisabled})
+		requireCode(t, err, "forbidden")
+		_, err = ui.DrainWorker(read, csilapi.DrainWorkerRequest{WorkerId: "w-1"})
+		requireCode(t, err, "forbidden")
+		manage := WithAuthToken(context.Background(), "workers-token")
+		_, err = ui.SetWorkerStatus(manage, csilapi.SetWorkerStatusRequest{WorkerId: "w-1", Status: models.WorkerStatusDisabled})
+		requireOK(t, err)
+		_, err = ui.DrainWorker(manage, csilapi.DrainWorkerRequest{WorkerId: "w-1"})
+		requireOK(t, err)
+	})
 }

@@ -1,4 +1,4 @@
-import { h, setAttr, setText } from '~/ui/dom.ts'
+import { h, setAttr, setText, show } from '~/ui/dom.ts'
 
 /**
  * A job or workflow status.
@@ -98,4 +98,62 @@ export function setVisibility(el: HTMLElement, isPrivate: boolean): void {
   setAttr(el, 'class', `status ${isPrivate ? 'status-ok' : 'status-warn'}`)
   setText(el.querySelector('.status-glyph')!, isPrivate ? '⚿' : '◍')
   setText(el.querySelector('.status-text')!, isPrivate ? 'Private' : 'Public')
+}
+
+/**
+ * The failure class of a job: who must act on the failure.
+ *
+ * A pipeline failure (the job's own exit, its timeout, its memory limit) is
+ * the pipeline owner's. An infrastructure failure (`infra.*`) is the CI
+ * owner's. The owner is in the text, not only in the colour.
+ */
+const FAILURE_LABELS: Record<string, string> = {
+  job: 'job failed',
+  timeout: 'timed out',
+  oom: 'out of memory',
+  'infra.image_pull': 'image pull',
+  'infra.scheduling': 'scheduling',
+  'infra.worker_lost': 'worker lost',
+  'infra.platform': 'platform',
+  cancelled: 'cancelled',
+}
+
+/** Every failure class, for a filter. */
+export const FAILURE_CLASS_CHOICES = Object.entries(FAILURE_LABELS).map(([value, label]) => ({
+  value,
+  label,
+  description: value.startsWith('infra.') ? 'Infrastructure: the CI owner acts.' : value === 'cancelled' ? 'Somebody cancelled it.' : 'Pipeline: the pipeline owner acts.',
+}))
+
+export function failureClassLabel(failureClass: string): string {
+  return FAILURE_LABELS[failureClass] ?? failureClass
+}
+
+/** The owner text for a failure owner value from the API. */
+export function failureOwnerLabel(owner: string | undefined): string {
+  if (owner === 'pipeline') return 'pipeline'
+  if (owner === 'infrastructure') return 'infrastructure'
+  return ''
+}
+
+/** A failure class badge. Change it with `setFailureClass`. */
+export function failureClassBadge(): HTMLSpanElement {
+  const el = h('span', { class: 'status failure-class' }, h('span', { class: 'status-glyph', 'aria-hidden': 'true' }), h('span', { class: 'status-text' }))
+  setFailureClass(el, undefined, undefined)
+  return el
+}
+
+/** Shows the class and its owner; hides the badge when there is no class. */
+export function setFailureClass(el: HTMLElement, failureClass: string | undefined, owner: string | undefined): void {
+  show(el, failureClass)
+  if (!failureClass) return
+  const ownerText = failureOwnerLabel(owner)
+  const tone = owner === 'pipeline' ? 'danger' : owner === 'infrastructure' ? 'warn' : 'neutral'
+  const glyph = owner === 'infrastructure' ? '⚙' : owner === 'pipeline' ? '✕' : '⊘'
+  const text = ownerText ? `${failureClassLabel(failureClass)} · ${ownerText}` : failureClassLabel(failureClass)
+  setAttr(el, 'class', `status failure-class status-${tone}`)
+  setAttr(el, 'title', ownerText ? `Failure class ${failureClass}: the ${ownerText} owner must act` : `Failure class ${failureClass}`)
+  setAttr(el, 'data-failure-class', failureClass)
+  setText(el.querySelector('.status-glyph')!, glyph)
+  setText(el.querySelector('.status-text')!, text)
 }

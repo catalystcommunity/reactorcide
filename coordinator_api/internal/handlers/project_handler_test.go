@@ -408,7 +408,6 @@ func TestProjectHandler_CreateProject(t *testing.T) {
 				DefaultCISourceURL:    "github.com/org/ci",
 				DefaultCISourceRef:    "v1",
 				DefaultRunnerImage:    "custom:latest",
-				DefaultJobCommand:     "make test",
 				DefaultTimeoutSeconds: intPtr(1800),
 				DefaultQueueName:      "custom-queue",
 				CheckoutMode:          "shared",

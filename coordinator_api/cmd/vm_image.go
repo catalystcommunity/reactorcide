@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"strings"
 	"time"
@@ -37,22 +38,98 @@ var vmImageBuildCommand = &cli.Command{
 			Name:  "macos",
 			Usage: "Clone and provision a macOS bootstrap image",
 			Flags: append(vmImageRegistryFlags(),
-				&cli.StringFlag{Name: "from", Required: true, Usage: "Bootstrap bundle path or OCI reference"},
+				&cli.StringFlag{Name: "from", Required: true, Usage: "Bootstrap bundle path, OCI reference, or s3:// reference"},
 				&cli.BoolFlag{Name: "from-local", Usage: "Treat --from as a local bundle path instead of an OCI reference"},
 				&cli.StringFlag{Name: "output", Required: true, Usage: "New bundle directory"},
 				&cli.StringFlag{Name: "cache-dir", Value: vmrunner.DefaultImageCacheDir(), Usage: "Local content-addressed VM image cache"},
-				&cli.StringFlag{Name: "ssh-user", Value: "reactorcide", Usage: "Bootstrap guest account"},
-				&cli.StringFlag{Name: "ssh-private-key-file", Usage: "Private key for the bootstrap guest"},
-				&cli.StringFlag{Name: "ssh-password-file", Usage: "Password file for the bootstrap guest"},
+				&cli.StringFlag{Name: "guest-user", Value: "reactorcide", Usage: "Guest account that runs the provisioning scripts"},
+				&cli.StringFlag{Name: "guest-daemon", Usage: "darwin/arm64 vmguest binary to install in the new image (updates the guest daemon)"},
 				&cli.StringSliceFlag{Name: "provision", Usage: "Shell script file to run in the guest (repeatable)"},
 				&cli.IntFlag{Name: "cpus", Value: 4, Usage: "Virtual CPUs used while provisioning"},
 				&cli.StringFlag{Name: "memory", Value: "8Gi", Usage: "Memory used while provisioning"},
-				&cli.StringFlag{Name: "publish", Usage: "Publish the completed bundle to this OCI reference"},
-				&cli.BoolFlag{Name: "allow-unclean-stop", Usage: "Force-stop after sync if the bootstrap account cannot request shutdown"},
+				&cli.StringFlag{Name: "publish", Usage: "Publish the completed bundle to this OCI or s3:// reference"},
+				&cli.BoolFlag{Name: "allow-unclean-stop", Usage: "Force-stop after sync if the guest does not shut down"},
 			),
 			Action: runVMImageBuildMacOS,
 		},
+		{
+			Name:  "windows",
+			Usage: "Provision a Windows base image in a Hyper-V VM and write a new base image",
+			Flags: append(vmImageRegistryFlags(),
+				&cli.StringFlag{Name: "from", Required: true, Usage: "Base bundle directory (disk.vhdx), OCI reference, or s3:// reference"},
+				&cli.BoolFlag{Name: "from-local", Usage: "Treat --from as a local bundle path (the default when --from is an existing directory)"},
+				&cli.StringFlag{Name: "output", Required: true, Usage: "New bundle directory (must not exist)"},
+				&cli.StringFlag{Name: "cache-dir", Value: vmrunner.DefaultImageCacheDir(), Usage: "Local content-addressed VM image cache"},
+				&cli.StringFlag{Name: "guest-user", Value: "reactorcide", Usage: "Guest account that runs the provisioning scripts"},
+				&cli.StringFlag{Name: "guest-daemon", Usage: "windows/amd64 vmguest.exe to install in the new image (updates the guest daemon)"},
+				&cli.StringSliceFlag{Name: "provision", Usage: "PowerShell script file to run in the guest (repeatable, in order)"},
+				&cli.IntFlag{Name: "cpus", Value: 4, Usage: "Virtual CPUs used while provisioning"},
+				&cli.StringFlag{Name: "memory", Value: "8Gi", Usage: "Memory used while provisioning"},
+				&cli.DurationFlag{Name: "shutdown-timeout", Value: 30 * time.Minute, Usage: "Time limit for the BitLocker decryption and the guest shutdown"},
+				&cli.StringFlag{Name: "publish", Usage: "Publish the completed bundle to this OCI or s3:// reference"},
+			),
+			Action: runVMImageBuildWindows,
+		},
 	},
+}
+
+func runVMImageBuildWindows(c *cli.Context) error {
+	store, err := openVMImageCredentialStore(c.String("auth-file"), false)
+	if err != nil {
+		return err
+	}
+	sourcePath := c.String("from")
+	local := c.Bool("from-local")
+	if info, statErr := os.Stat(sourcePath); statErr == nil && info.IsDir() {
+		local = true
+	}
+	// Ctrl-C cancels the build, and the build removes its VM and disks.
+	ctx, stop := signal.NotifyContext(c.Context, os.Interrupt)
+	defer stop()
+	if !local {
+		source, err := newVMImageSource(c, store)
+		if err != nil {
+			return err
+		}
+		sourcePath, err = source.Resolve(ctx, sourcePath)
+		if err != nil {
+			return err
+		}
+	}
+	var scripts []string
+	for _, path := range c.StringSlice("provision") {
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return fmt.Errorf("vm-image build windows: read provision script %q: %w", path, err)
+		}
+		scripts = append(scripts, string(data))
+	}
+	memoryBytes, err := resources.ParseMemory(c.String("memory"))
+	if err != nil {
+		return fmt.Errorf("vm-image build windows: invalid --memory: %w", err)
+	}
+	output := c.String("output")
+	if err := vmrunner.BuildWindowsImage(ctx, vmrunner.WindowsImageBuildOptions{
+		SourceBundle: sourcePath,
+		OutputBundle: output,
+		CPUs:         c.Int("cpus"), MemoryBytes: memoryBytes,
+		User:            strings.TrimSpace(c.String("guest-user")),
+		GuestDaemon:     strings.TrimSpace(c.String("guest-daemon")),
+		Scripts:         scripts,
+		LogWriter:       c.App.Writer,
+		ShutdownTimeout: c.Duration("shutdown-timeout"),
+	}); err != nil {
+		return err
+	}
+	if publish := strings.TrimSpace(c.String("publish")); publish != "" {
+		pinned, err := vmrunner.PublishWindowsBundle(ctx, output, publish, vmImagePublishOptions(c, store))
+		if err != nil {
+			return err
+		}
+		_, err = fmt.Fprintln(c.App.Writer, pinned)
+		return err
+	}
+	return nil
 }
 
 func runVMImageBuildMacOS(c *cli.Context) error {
@@ -62,33 +139,13 @@ func runVMImageBuildMacOS(c *cli.Context) error {
 	}
 	sourcePath := c.String("from")
 	if !c.Bool("from-local") {
-		source, err := vmrunner.NewOCIImageSource(c.String("cache-dir"),
-			vmrunner.WithCredentialStore(store),
-			vmrunner.WithPlainHTTPRegistries(c.StringSlice("plain-http")...),
-		)
+		source, err := newVMImageSource(c, store)
 		if err != nil {
 			return err
 		}
 		sourcePath, err = source.Resolve(c.Context, sourcePath)
 		if err != nil {
 			return err
-		}
-	}
-	creds := vmrunner.GuestCreds{User: c.String("ssh-user")}
-	if path := strings.TrimSpace(c.String("ssh-private-key-file")); path != "" {
-		creds.PrivateKeyPEM, err = os.ReadFile(path)
-		if err != nil {
-			return fmt.Errorf("vm-image build macos: read SSH private key: %w", err)
-		}
-	}
-	if path := strings.TrimSpace(c.String("ssh-password-file")); path != "" {
-		password, err := os.ReadFile(path)
-		if err != nil {
-			return fmt.Errorf("vm-image build macos: read SSH password file: %w", err)
-		}
-		creds.Password = strings.TrimSpace(string(password))
-		for i := range password {
-			password[i] = 0
 		}
 	}
 	var scripts []string
@@ -108,13 +165,15 @@ func runVMImageBuildMacOS(c *cli.Context) error {
 		SourceBundle: sourcePath,
 		OutputBundle: output,
 		CPUs:         c.Int("cpus"), MemoryBytes: memoryBytes,
-		Creds: creds, Scripts: scripts, LogWriter: c.App.Writer,
+		User:        strings.TrimSpace(c.String("guest-user")),
+		GuestDaemon: strings.TrimSpace(c.String("guest-daemon")),
+		Scripts:     scripts, LogWriter: c.App.Writer,
 		AllowUncleanStop: c.Bool("allow-unclean-stop"),
 	}); err != nil {
 		return err
 	}
 	if publish := strings.TrimSpace(c.String("publish")); publish != "" {
-		pinned, err := vmrunner.PushMacBundle(c.Context, output, publish, store, c.StringSlice("plain-http"))
+		pinned, err := vmrunner.PublishMacBundle(c.Context, output, publish, vmImagePublishOptions(c, store))
 		if err != nil {
 			return err
 		}
@@ -126,18 +185,18 @@ func runVMImageBuildMacOS(c *cli.Context) error {
 
 var vmImagePublishCommand = &cli.Command{
 	Name:      "publish",
-	Usage:     "Package a macOS or Windows VM bundle and publish it to an OCI registry",
-	ArgsUsage: "<bundle-directory> <registry/repository:tag>",
+	Usage:     "Package a macOS or Windows VM bundle and publish it to an OCI registry or S3; prints the pinned reference",
+	ArgsUsage: "<bundle-directory> <registry/repository:tag | s3://bucket/prefix/name:tag>",
 	Flags:     vmImageRegistryFlags(),
 	Action: func(c *cli.Context) error {
 		if c.NArg() != 2 {
-			return errors.New("vm-image publish: expected a bundle directory and OCI reference")
+			return errors.New("vm-image publish: expected a bundle directory and an OCI or s3:// reference")
 		}
 		store, err := openVMImageCredentialStore(c.String("auth-file"), false)
 		if err != nil {
 			return err
 		}
-		pinned, err := vmrunner.PushVMBundle(c.Context, c.Args().Get(0), c.Args().Get(1), store, c.StringSlice("plain-http"))
+		pinned, err := vmrunner.PublishVMBundle(c.Context, c.Args().Get(0), c.Args().Get(1), vmImagePublishOptions(c, store))
 		if err != nil {
 			return err
 		}
@@ -149,23 +208,20 @@ var vmImagePublishCommand = &cli.Command{
 var vmImagePullCommand = &cli.Command{
 	Name:      "pull",
 	Usage:     "Pull and materialize a VM image in the local cache",
-	ArgsUsage: "<registry/repository:tag-or-digest>",
+	ArgsUsage: "<registry/repository:tag-or-digest | s3://bucket/prefix/name:tag[@sha256:<hex>]>",
 	Flags: append(vmImageRegistryFlags(),
 		&cli.StringFlag{Name: "cache-dir", Value: vmrunner.DefaultImageCacheDir(), Usage: "Local content-addressed VM image cache"},
 		&cli.StringFlag{Name: "output", Usage: "Also copy the materialized bundle to this new directory"},
 	),
 	Action: func(c *cli.Context) error {
 		if c.NArg() != 1 {
-			return errors.New("vm-image pull: expected one OCI reference")
+			return errors.New("vm-image pull: expected one OCI or s3:// reference")
 		}
 		store, err := openVMImageCredentialStore(c.String("auth-file"), false)
 		if err != nil {
 			return err
 		}
-		source, err := vmrunner.NewOCIImageSource(c.String("cache-dir"),
-			vmrunner.WithCredentialStore(store),
-			vmrunner.WithPlainHTTPRegistries(c.StringSlice("plain-http")...),
-		)
+		source, err := newVMImageSource(c, store)
 		if err != nil {
 			return err
 		}
@@ -246,7 +302,41 @@ func vmImageRegistryFlags() []cli.Flag {
 	return []cli.Flag{
 		&cli.StringFlag{Name: "auth-file", Value: defaultVMImageAuthFile(), Usage: "Docker-compatible registry credential file"},
 		&cli.StringSliceFlag{Name: "plain-http", Usage: "Registry host that uses plain HTTP (repeatable; development only)"},
+		&cli.StringFlag{Name: "s3-endpoint", Usage: "S3-compatible endpoint URL for s3:// references (default: REACTORCIDE_VM_S3_ENDPOINT, then REACTORCIDE_S3_ENDPOINT, then AWS S3)"},
+		&cli.StringFlag{Name: "s3-region", Usage: "S3 region for s3:// references (default: AWS_REGION, then us-east-1)"},
 	}
+}
+
+// vmImageS3Config returns the S3 client settings of s3:// references.
+// Credentials come from the standard AWS chain and are never printed.
+func vmImageS3Config(c *cli.Context) vmrunner.S3ImageStoreConfig {
+	cfg := vmrunner.S3ImageStoreConfigFromEnv()
+	if v := strings.TrimSpace(c.String("s3-endpoint")); v != "" {
+		cfg.Endpoint = v
+	}
+	if v := strings.TrimSpace(c.String("s3-region")); v != "" {
+		cfg.Region = v
+	}
+	return cfg
+}
+
+// vmImagePublishOptions collects the registry and S3 settings of a publish.
+func vmImagePublishOptions(c *cli.Context, store credentials.Store) vmrunner.PublishOptions {
+	return vmrunner.PublishOptions{
+		CredentialStore: store,
+		PlainHTTPHosts:  c.StringSlice("plain-http"),
+		S3:              vmImageS3Config(c),
+	}
+}
+
+// newVMImageSource opens the local image cache for registry and s3://
+// references.
+func newVMImageSource(c *cli.Context, store credentials.Store) (*vmrunner.OCIImageSource, error) {
+	return vmrunner.NewOCIImageSource(c.String("cache-dir"),
+		vmrunner.WithCredentialStore(store),
+		vmrunner.WithPlainHTTPRegistries(c.StringSlice("plain-http")...),
+		vmrunner.WithS3Config(vmImageS3Config(c)),
+	)
 }
 
 func vmImageRegistryLogin(c *cli.Context) error {

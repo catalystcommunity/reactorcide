@@ -104,7 +104,7 @@ func (ps PostgresDbStore) PutCITrustSettings(ctx context.Context, settings *mode
 		// Select("*") writes NULL columns too: a NULL means "inherit".
 		return tx.Model(&models.CITrustSettings{}).Where("settings_id = ?", existing.SettingsID).
 			Select("run_gate", "gated_run_authority", "run_approvers", "override_approvers", "override_profile",
-				"required_reviews", "updated_at", "updated_by").Updates(settings).Error
+				"required_reviews", "rerun_shift_limits", "updated_at", "updated_by").Updates(settings).Error
 	})
 }
 

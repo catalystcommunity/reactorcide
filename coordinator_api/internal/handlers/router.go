@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/artifacts"
 	"log"
 	"net/http"
 	"strings"
@@ -11,6 +12,7 @@ import (
 	"time"
 
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/auth"
+	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/backlog"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/checkauth"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/config"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/corndogs"
@@ -20,7 +22,9 @@ import (
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/metrics"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/middleware"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/objects"
+	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/observability"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/pubsub"
+	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/requiredset"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/schedule"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/secrets"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store"
@@ -111,6 +115,7 @@ func createAppMux() *http.ServeMux {
 	}
 	startTelemetryRetentionOnce(singletonObjectStore, store.AppStore)
 	startAuditRetentionOnce(store.AppStore)
+	startOutboxRetentionOnce(store.AppStore)
 
 	// Create handlers
 	jobHandler := NewJobHandlerWithObjectStore(store.AppStore, singletoncorndogsClient, singletonObjectStore)
@@ -122,9 +127,19 @@ func createAppMux() *http.ServeMux {
 	auditHandler := NewAuditHandler(store.AppStore)
 	ciSecurityHandler := NewCISecurityHandler(store.AppStore)
 	ciSecurityHandler.SetApprovals(webhookHandler)
+	manualRunHandler := NewManualRunHandler(store.AppStore, webhookHandler)
 	groupHandler := NewGroupHandler(store.AppStore)
+	workflowRoleHandler := NewWorkflowRoleHandler(store.AppStore)
+	principalHandler := NewPrincipalHandler(store.AppStore)
+	refClassHandler := NewRefClassHandler(store.AppStore)
+	priorityHandler := NewPriorityHandler(store.AppStore)
+	observabilityHandler := NewObservabilityHandler(store.AppStore)
+	requiredSetHandler := NewRequiredSetHandler(store.AppStore)
+	reportingHandler := NewReportingHandler(store.AppStore)
 	workerClassHandler := NewWorkerClassHandler(store.AppStore)
 	workflowHandler := NewWorkflowHandlerWithCorndogs(store.AppStore, singletoncorndogsClient)
+	// Diagnosis entries from principals (WP17, docs/diagnosis.md).
+	diagnosisHandler := NewDiagnosisHandler(store.AppStore)
 
 	// Wire VCS clients into the webhook handler and the job handler's trigger
 	// processor, so jobs submitted via /api/v1/jobs/{id}/triggers register as
@@ -140,6 +155,8 @@ func createAppMux() *http.ServeMux {
 		reconciler := &vcsreport.Reconciler{Store: reportStore, Clients: vcs.NewReportClientResolver(vcsManager.GetStatusUpdater())}
 		startVCSReportReconcilerOnce(reconciler)
 	}
+	startAgreementPassOnce(store.AppStore, vcsManager.GetStatusUpdater())
+	startRequiredSetRepublishOnce(store.AppStore, vcsManager.GetStatusUpdater().PublishEventChecks)
 
 	// Wire per-project VCS token resolution into webhook handler. Deferred
 	// until after the key manager is initialized below.
@@ -178,9 +195,34 @@ func createAppMux() *http.ServeMux {
 		secretsHandler = NewSecretsHandler(store.AppStore, singletonKeyManager)
 		wireWebhookTokenResolver(singletonKeyManager)
 	}
+	// WP11: the GitHub App pool (github_app_handler.go). Without master keys
+	// there is no pool, and every project keeps its token path.
+	githubAppRoutes := newGitHubAppRoutes(store.AppStore, buildGitHubAppService(store.AppStore, singletonKeyManager, webhookHandler))
 	// After the VCS clients and per-project token resolution are wired: a
 	// fire resolves the branch head with the project's own credentials.
 	startSchedulerOnce(store.AppStore, webhookHandler.ScheduleFirer())
+	// WP8: groups linked to VCS teams (group_vcs_handler.go).
+	groupVCSSyncer := newGroupVCSSyncer(store.AppStore, webhookHandler)
+	groupHandler.SetTeamSync(groupVCSSyncer)
+	startGroupVCSSyncOnce(store.AppStore, groupVCSSyncer)
+	// WP12: outbound event subscriptions, dispatcher and delivery loop.
+	outboundManager, outboundSinks := buildOutboundEventsManager(store.AppStore, singletonKeyManager)
+	startOutboundEventsOnce(store.AppStore, singletoncorndogsClient, singletonKeyManager, outboundSinks)
+	// WP16: rollups, alerts, SLOs (observability_wiring.go).
+	startObservabilityOnce(store.AppStore)
+	// Image alias rollouts (image_rollout_wiring.go).
+	startImageRolloutOnce(store.AppStore)
+	// Workers that still run on a deactivated enrollment token (a scrape-time
+	// gauge; it does not need the observability loop).
+	if lister, ok := store.AppStore.(observability.WorkerLister); ok {
+		observability.RegisterEnrollmentTokenCollector(lister)
+	}
+	// SLO analysis gauges from the rollups (alerting is for the
+	// observability tool).
+	if src, ok := store.AppStore.(observability.SLOSource); ok && config.ObservabilityEnabled {
+		observability.RegisterSLOCollector(src)
+	}
+	subscriptionRoutes := newSubscriptionRoutes(store.AppStore, outboundManager)
 
 	transactionMiddleware := middleware.TransactionMiddleware
 	authMiddleware := middleware.APITokenMiddleware(store.AppStore)
@@ -218,6 +260,10 @@ func createAppMux() *http.ServeMux {
 		})))
 		handler.ServeHTTP(w, r)
 	})
+	mux.HandleFunc("/api/v1/principals/resolve", func(w http.ResponseWriter, r *http.Request) {
+		handler := transactionMiddleware(authMiddleware(http.HandlerFunc(principalHandler.ServeResolve)))
+		handler.ServeHTTP(w, r)
+	})
 	mux.HandleFunc("/api/v1/vcs-identities", func(w http.ResponseWriter, r *http.Request) {
 		handler := transactionMiddleware(authMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { ciSecurityHandler.Identities(w, r, "") })))
 		handler.ServeHTTP(w, r)
@@ -237,8 +283,44 @@ func createAppMux() *http.ServeMux {
 		})))
 		handler.ServeHTTP(w, r)
 	})
+	// WP4: inbound federation and the OIDC issuer for jobs.
+	wp4Routes := newFederationRoutes(store.AppStore, singletonKeyManager)
+	wp4Routes.register(mux, authMiddleware)
+	// WP9: shed levels and defaults profiles (shed_handler.go).
+	wp9Routes := newShedRoutes(store.AppStore)
+	vcsOwnerRoutes := newVCSOwnerAllowlistRoutes(store.AppStore)
+	wp9Routes.register(mux, transactionMiddleware, authMiddleware)
+	// WP14: environment defaults, image policy, job links (build_settings_handler.go).
+	buildSettings := newBuildSettingsRoutes(store.AppStore)
+	// WP15: artifacts, test results, test quarantine, and provenance
+	// (artifacts_handler.go).
+	artifactsRoutes := newArtifactRoutes(store.AppStore, singletonObjectStore, jobHandler, singletonKeyManager)
+	mux.HandleFunc("/api/v1/provenance/keys", artifactsRoutes.ProvenanceKeys)
 	mux.HandleFunc("/api/v1/organizations/", func(w http.ResponseWriter, r *http.Request) {
 		path := strings.TrimPrefix(r.URL.Path, "/api/v1/organizations/")
+		if wp4Routes.serveOrg(w, r, path, transactionMiddleware, authMiddleware) {
+			return
+		}
+		if wp9Routes.serveOrg(w, r, path, transactionMiddleware, authMiddleware) {
+			return
+		}
+		if vcsOwnerRoutes.serveOrg(w, r, path, transactionMiddleware, authMiddleware) {
+			return
+		}
+		if subscriptionRoutes.serveOrg(w, r, path, transactionMiddleware, authMiddleware) {
+			return
+		}
+		if buildSettings.serveOrg(w, r, path, transactionMiddleware, authMiddleware) {
+			return
+		}
+		if parts := strings.SplitN(path, "/", 2); len(parts) == 2 && (strings.HasPrefix(parts[1], "workflow-roles") || strings.Trim(parts[1], "/") == "workflow-owners") {
+			// WP7: workflow-scoped roles and workflow owners (workflow_role_handler.go).
+			handler := transactionMiddleware(authMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				workflowRoleHandler.ServeOrganization(w, r, parts[0], parts[1])
+			})))
+			handler.ServeHTTP(w, r)
+			return
+		}
 		if parts := strings.SplitN(path, "/", 3); len(parts) >= 2 && parts[1] == "groups" {
 			rest := ""
 			if len(parts) == 3 {
@@ -246,6 +328,58 @@ func createAppMux() *http.ServeMux {
 			}
 			handler := transactionMiddleware(authMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				groupHandler.ServeGroups(w, r, parts[0], rest)
+			})))
+			handler.ServeHTTP(w, r)
+			return
+		}
+		if parts := strings.SplitN(path, "/", 2); len(parts) == 2 && strings.Trim(parts[1], "/") == "reporting-settings" {
+			// Report modes, agreement contexts, code owners import, path
+			// acceptance defaults (reporting_handler.go).
+			handler := transactionMiddleware(authMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				reportingHandler.ServeOrganization(w, r, parts[0])
+			})))
+			handler.ServeHTTP(w, r)
+			return
+		}
+		if parts := strings.SplitN(path, "/", 2); len(parts) == 2 && strings.Trim(parts[1], "/") == "required-set-settings" {
+			// Required set defaults (required_set_handler.go).
+			handler := transactionMiddleware(authMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				requiredSetHandler.ServeOrganization(w, r, parts[0])
+			})))
+			handler.ServeHTTP(w, r)
+			return
+		}
+		if parts := strings.SplitN(path, "/", 2); len(parts) == 2 && IsObservabilityPath(parts[1]) {
+			// WP16: rollups, dashboards, alert rules, SLOs (observability_handler.go).
+			handler := transactionMiddleware(authMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				observabilityHandler.ServeOrganization(w, r, parts[0], parts[1])
+			})))
+			handler.ServeHTTP(w, r)
+			return
+		}
+		if parts := strings.SplitN(path, "/", 2); len(parts) == 2 && (strings.HasPrefix(parts[1], "priority-lanes") || strings.HasPrefix(parts[1], "priority/")) {
+			// Priority lanes and explain (priority_handler.go).
+			handler := transactionMiddleware(authMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				priorityHandler.ServeOrganization(w, r, parts[0], parts[1])
+			})))
+			handler.ServeHTTP(w, r)
+			return
+		}
+		if parts := strings.SplitN(path, "/", 2); len(parts) == 2 && (strings.HasPrefix(parts[1], "ref-class-rules") || strings.HasPrefix(parts[1], "ref-classes/")) {
+			// Ref class rules and explain (ref_class_handler.go).
+			handler := transactionMiddleware(authMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				refClassHandler.ServeOrganization(w, r, parts[0], parts[1])
+			})))
+			handler.ServeHTTP(w, r)
+			return
+		}
+		if parts := strings.SplitN(path, "/", 3); len(parts) >= 2 && parts[1] == "principals" {
+			rest := ""
+			if len(parts) == 3 {
+				rest = parts[2]
+			}
+			handler := transactionMiddleware(authMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				principalHandler.ServePrincipals(w, r, parts[0], rest)
 			})))
 			handler.ServeHTTP(w, r)
 			return
@@ -328,6 +462,15 @@ func createAppMux() *http.ServeMux {
 			http.Error(w, "Invalid path", http.StatusBadRequest)
 			return
 		}
+		// workflow_id/diagnosis and workflow_id/nodes/NODE/diagnosis (WP17).
+		if strings.HasSuffix(path, "/diagnosis") {
+			target := diagnosisTargetFromWorkflowPath(strings.TrimSuffix(path, "/diagnosis"))
+			transactionMiddleware(authMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				diagnosisHandler.Serve(w, r, target)
+			}))).ServeHTTP(w, r)
+			return
+		}
+
 		// Handle the special case for workflow_id/cancel
 		if strings.HasSuffix(path, "/cancel") {
 			workflowID := strings.TrimSuffix(path, "/cancel")
@@ -353,6 +496,22 @@ func createAppMux() *http.ServeMux {
 			handler := transactionMiddleware(authMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				if r.Method == http.MethodPost {
 					workflowHandler.RetryUnsuccessfulJobs(w, r)
+					return
+				}
+				http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+			})))
+			handler.ServeHTTP(w, r)
+			return
+		}
+
+		// Handle the special case for workflow_id/rerun (a finished
+		// workflow again, with its recorded authority and optional shifts).
+		if strings.HasSuffix(path, "/rerun") {
+			workflowID := strings.TrimSuffix(path, "/rerun")
+			r = r.WithContext(setIDContext(r.Context(), "workflow_id", workflowID))
+			handler := transactionMiddleware(authMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.Method == http.MethodPost {
+					workflowHandler.RerunWorkflow(w, r)
 					return
 				}
 				http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
@@ -399,6 +558,13 @@ func createAppMux() *http.ServeMux {
 
 	// Metrics endpoint (v1, no auth required)
 	mux.Handle("/api/v1/metrics", metrics.Handler())
+	// Queue backlog gauges on the metrics endpoint, and the backlog API for
+	// autoscalers (workers:read).
+	backlog.StartMetrics(backlog.SourceFrom(store.AppStore))
+	backlogHandler := NewBacklogHandler(store.AppStore)
+	mux.HandleFunc("/api/v1/backlog", func(w http.ResponseWriter, r *http.Request) {
+		transactionMiddleware(authMiddleware(backlogHandler)).ServeHTTP(w, r)
+	})
 
 	// Job routes (require auth)
 	mux.HandleFunc("/api/v1/jobs", func(w http.ResponseWriter, r *http.Request) {
@@ -419,6 +585,9 @@ func createAppMux() *http.ServeMux {
 		path := strings.TrimPrefix(r.URL.Path, "/api/v1/jobs/")
 		if path == "" {
 			http.Error(w, "Invalid path", http.StatusBadRequest)
+			return
+		}
+		if artifactsRoutes.serveJob(w, r, path, transactionMiddleware, authMiddleware) {
 			return
 		}
 
@@ -477,12 +646,40 @@ func createAppMux() *http.ServeMux {
 				return
 			}
 
+			// job_id/diagnosis: diagnosis entries (WP17).
+			if strings.HasSuffix(path, "/diagnosis") {
+				diagnosisHandler.Serve(w, r, diagnosisJobTarget(strings.TrimSuffix(path, "/diagnosis")))
+				return
+			}
+
 			// Handle the special case for job_id/logs
 			if strings.HasSuffix(path, "/logs") {
 				jobID := strings.TrimSuffix(path, "/logs")
 				r = r.WithContext(setIDContext(r.Context(), "job_id", jobID))
 				if r.Method == http.MethodGet {
 					jobHandler.GetJobLogs(w, r)
+					return
+				}
+				http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+				return
+			}
+
+			// job_id/links: named links from the workflow output (WP14).
+			if strings.HasSuffix(path, "/links") {
+				r = r.WithContext(setIDContext(r.Context(), "job_id", strings.TrimSuffix(path, "/links")))
+				if r.Method == http.MethodGet {
+					jobHandler.GetJobLinks(w, r)
+					return
+				}
+				http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+				return
+			}
+
+			// job_id/resource-suggestion: p95-based right-sizing.
+			if strings.HasSuffix(path, "/resource-suggestion") {
+				r = r.WithContext(setIDContext(r.Context(), "job_id", strings.TrimSuffix(path, "/resource-suggestion")))
+				if r.Method == http.MethodGet {
+					jobHandler.GetJobResourceSuggestion(w, r)
 					return
 				}
 				http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
@@ -571,6 +768,21 @@ func createAppMux() *http.ServeMux {
 			uiStreamHandler.Stream(w, r)
 		})
 
+		// WP12: pull stream of one workflow for service principal tokens.
+		mux.HandleFunc("/api/v1/workflows/stream/", func(w http.ResponseWriter, r *http.Request) {
+			if r.Method != http.MethodGet {
+				http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+				return
+			}
+			workflowID := strings.TrimPrefix(r.URL.Path, "/api/v1/workflows/stream/")
+			if workflowID == "" || strings.Contains(workflowID, "/") {
+				http.Error(w, "Invalid path", http.StatusBadRequest)
+				return
+			}
+			r = r.WithContext(setIDContext(r.Context(), "workflow_id", workflowID))
+			authMiddleware(http.HandlerFunc(wsHandler.StreamWorkflow)).ServeHTTP(w, r)
+		})
+
 		mux.HandleFunc("/api/v1/jobs/stream", func(w http.ResponseWriter, r *http.Request) {
 			if r.Method != http.MethodGet {
 				http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
@@ -603,6 +815,19 @@ func createAppMux() *http.ServeMux {
 		}
 		transactionMiddleware(http.HandlerFunc(webhookHandler.HandleGitHubWebhook)).ServeHTTP(w, r)
 	})
+
+	// One endpoint for every GitHub App: the App ID is in the delivery
+	// headers. /api/v1/webhooks/github accepts App deliveries too.
+	mux.HandleFunc("/api/v1/webhooks/github-app", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		transactionMiddleware(http.HandlerFunc(webhookHandler.HandleGitHubWebhook)).ServeHTTP(w, r)
+	})
+	githubAppHandler := transactionMiddleware(authMiddleware(http.HandlerFunc(githubAppRoutes.serve)))
+	mux.Handle("/api/v1/github-apps", githubAppHandler)
+	mux.Handle("/api/v1/github-apps/", githubAppHandler)
 
 	mux.HandleFunc("/api/v1/webhooks/gitlab", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
@@ -682,6 +907,60 @@ func createAppMux() *http.ServeMux {
 		}
 
 		parts := strings.Split(strings.Trim(path, "/"), "/")
+		if buildSettings.serveProject(w, r, parts, transactionMiddleware, authMiddleware) {
+			return
+		}
+		if artifactsRoutes.serveProject(w, r, parts, transactionMiddleware, authMiddleware) {
+			return
+		}
+		if ReportingRoutes(parts) {
+			// Report mode, agreement report, path acceptances (reporting_handler.go).
+			handler := transactionMiddleware(authMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				reportingHandler.ServeProject(w, r, parts)
+			})))
+			handler.ServeHTTP(w, r)
+			return
+		}
+		if len(parts) >= 2 && parts[1] == "required-set" {
+			// The required set of the project (required_set_handler.go).
+			rest := strings.Join(parts[2:], "/")
+			handler := transactionMiddleware(authMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				requiredSetHandler.ServeProject(w, r, parts[0], rest)
+			})))
+			handler.ServeHTTP(w, r)
+			return
+		}
+		if len(parts) >= 2 && (parts[1] == "priority-lanes" || parts[1] == "priority") {
+			// Priority lanes and explain (priority_handler.go).
+			rest := strings.Join(parts[1:], "/")
+			handler := transactionMiddleware(authMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				priorityHandler.ServeProject(w, r, parts[0], rest)
+			})))
+			handler.ServeHTTP(w, r)
+			return
+		}
+		if len(parts) >= 2 && (parts[1] == "ref-class-rules" || parts[1] == "ref-classes") {
+			// Ref class rules and explain (ref_class_handler.go).
+			rest := strings.Join(parts[1:], "/")
+			handler := transactionMiddleware(authMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				refClassHandler.ServeProject(w, r, parts[0], rest)
+			})))
+			handler.ServeHTTP(w, r)
+			return
+		}
+		if len(parts) == 2 && parts[1] == "runs" {
+			// A manual run on any ref of the project (see manual_runs.go).
+			r = r.WithContext(setIDContext(r.Context(), "project_id", parts[0]))
+			handler := transactionMiddleware(authMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.Method != http.MethodPost {
+					http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+					return
+				}
+				manualRunHandler.StartRun(w, r)
+			})))
+			handler.ServeHTTP(w, r)
+			return
+		}
 		if len(parts) == 2 && parts[1] == "local-context" {
 			r = r.WithContext(setIDContext(r.Context(), "project_id", parts[0]))
 			handler := transactionMiddleware(authMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -898,6 +1177,12 @@ func createAppMux() *http.ServeMux {
 	if uiStore, ok := store.AppStore.(uiapi.DataStore); ok {
 		if deps := buildUIAPIDeps(uiStore, singletonKeyManager, singletoncorndogsClient, singletonObjectStore); deps != nil {
 			deps.Approvals = webhookHandler
+			deps.ManualRuns = uiManualRuns{h: webhookHandler}
+			if groupVCSSyncer != nil {
+				deps.GroupVCSSync = groupVCSSyncer
+			}
+			deps.OutboundEvents = outboundManager
+			deps.OIDCIssuer = wp4Routes.oidc.Issuer
 			uiAuthImpl = uiapi.NewAuthService(deps)
 			uiUiImpl = uiapi.NewUiService(deps)
 		}
@@ -964,6 +1249,21 @@ func startSchedulerOnce(appStore store.Store, firer schedule.Firer) {
 	})
 }
 
+var requiredSetRepublishOnce sync.Once
+
+// startRequiredSetRepublishOnce runs the required set republish pass on the
+// one replica that holds its lease (docs/required-set.md).
+func startRequiredSetRepublishOnce(appStore store.Store, publish func(ctx context.Context, eventID string) error) {
+	leases, ok := appStore.(store.LeaseStore)
+	if _, republish := appStore.(store.RequiredSetRepublishStore); !ok || !republish {
+		return
+	}
+	requiredSetRepublishOnce.Do(func() {
+		pass := &requiredset.RepublishPass{Store: appStore, Publish: publish}
+		go lease.NewManager(leases).Run(context.Background(), requiredset.RepublishLeaseName, pass.Run)
+	})
+}
+
 func startVCSReportReconcilerOnce(reconciler *vcsreport.Reconciler) {
 	vcsReportReconcilerOnce.Do(func() { go reconciler.Run(context.Background(), 5*time.Second) })
 }
@@ -1002,6 +1302,13 @@ func startTelemetryRetentionOnce(objectStore objects.ObjectStore, appStore store
 				cutoff := time.Now().UTC().Add(-time.Duration(config.TelemetryRetentionDays) * 24 * time.Hour)
 				if _, err := jobtelemetry.PruneBefore(context.Background(), objectStore, cutoff, appStore.GetJobByID); err != nil {
 					log.Printf("WARNING: telemetry retention failed: %v", err)
+				}
+				// WP15: job artifacts follow the telemetry retention.
+				if st, ok := appStore.(store.ArtifactStore); ok {
+					service := &artifacts.Service{Store: st, Objects: objectStore}
+					if _, err := service.PruneBefore(context.Background(), cutoff, appStore.GetJobByID); err != nil {
+						log.Printf("WARNING: artifact retention failed: %v", err)
+					}
 				}
 				<-ticker.C
 			}

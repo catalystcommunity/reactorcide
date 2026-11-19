@@ -1,7 +1,10 @@
 import type { CIEventWorkflowDecision, GetEventResponse } from '~/api/csilapi/types.gen.ts'
 import { RcPage } from '~/app/page.ts'
+import { OwnerView } from '~/components/Owner.ts'
+import { requiredStateBadge, setRequiredState } from '~/components/Labels.ts'
 import { prApprovalsPanel, type PrApprovalsPanel } from '~/components/PrApprovals.ts'
 import { ReasonList, decisionBadge, setDecision } from '~/components/Reasons.ts'
+import { refClassFactRows, refClassLabels, refClassReasonText, setRefClasses } from '~/components/RefClasses.ts'
 import { ResourceView, emptyState, relativeTime } from '~/components/States.ts'
 import { setStatus, statusBadge } from '~/components/StatusBadge.ts'
 import type { ResourceHandle } from '~/store/index.ts'
@@ -85,6 +88,20 @@ export class EventDetailPage extends RcPage {
     const decisionsList = h('ul', { class: 'decision-list' })
     const decisionsCount = h('span', { class: 'meta' })
 
+    // Ref classes: the labels the coordinator gave the ref, the facts it
+    // used, and the rule that gave each class.
+    const classLabels = refClassLabels()
+    const classFacts = h('dl', { class: 'grid-dl ref-class-facts' })
+    const classReasons = h('ul', { class: 'reason-list' })
+    const classesCard = h(
+      'div',
+      { class: 'card event-ref-classes' },
+      h('h3', { class: 'section-title' }, 'Ref classes'),
+      classLabels,
+      classFacts,
+      classReasons,
+    )
+
     const filesCount = h('p', { class: 'meta' })
     const filesList = h('ul', { class: 'changed-files' })
     const filesCard = h('div', { class: 'card' }, h('h3', { class: 'section-title' }, 'Changed files'), filesCount, filesList)
@@ -114,6 +131,7 @@ export class EventDetailPage extends RcPage {
           fact('base', 'Base commit', true),
           fact('pr', 'Pull request'),
           fact('actor', 'Actor'),
+          fact('principal', 'Principal'),
           fact('schedule', 'Schedule', true),
           fact('received', 'Received'),
           fact('delivery', 'Delivery ID', true),
@@ -122,6 +140,7 @@ export class EventDetailPage extends RcPage {
           fact('duplicate', 'Duplicate of', true),
         ),
       ),
+      classesCard,
       approvalsAnchor,
       h(
         'div',
@@ -151,12 +170,33 @@ export class EventDetailPage extends RcPage {
         setFact('base', event.baseSha ? event.baseSha.slice(0, 12) : undefined)
         setFact('pr', event.prNumber ? `#${event.prNumber}` : undefined)
         setFact('actor', event.actor)
+        // The principal of the actor: who started the event (a person, a
+        // service, or the system principal "Reactorcide" for a schedule).
+        const principal = event.actorPrincipal
+        setFact(
+          'principal',
+          principal ? `${principal.displayName || principal.principalId} (${principal.kind || 'principal'})${principal.identity ? ` via ${principal.identity}` : ''}` : undefined,
+        )
         setFact('schedule', event.scheduleId, event.projectId ? href(`/projects/${event.projectId}`) : undefined)
         setFact('received', event.receivedAt ? new Date(event.receivedAt).toLocaleString() : undefined)
         setFact('delivery', event.deliveryId)
         setFact('checks', event.checksState ? `${event.checksState}${event.checksDescription ? `: ${event.checksDescription}` : ''}` : undefined)
         setFact('eval', event.evalJobId, event.evalJobId ? href(`/jobs/${event.evalJobId}`) : undefined)
         setFact('duplicate', event.duplicateOfEventId, event.duplicateOfEventId ? href(`/events/${event.duplicateOfEventId}`) : undefined)
+
+        setRefClasses(classLabels, event.refClasses)
+        const factRows = refClassFactRows(event.refClassFacts)
+        const factSignature = JSON.stringify(factRows)
+        if (classFacts.dataset.signature !== factSignature) {
+          classFacts.dataset.signature = factSignature
+          fill(classFacts, factRows.map(([label, value]) => h('div', null, h('dt', null, label), h('dd', null, value))))
+        }
+        const reasonLines = (event.refClassReasons ?? []).map(refClassReasonText)
+        const reasonSignature = JSON.stringify(reasonLines)
+        if (classReasons.dataset.signature !== reasonSignature) {
+          classReasons.dataset.signature = reasonSignature
+          fill(classReasons, reasonLines.map((line) => h('li', { class: 'reason reason-note' }, line)))
+        }
 
         if (event.prNumber && event.projectId) {
           if (!approvals) {
@@ -200,10 +240,14 @@ export function sortDecisions(decisions: readonly CIEventWorkflowDecision[]): CI
 
 interface DecisionRow extends HTMLLIElement {
   reasons: ReasonList
+  owner: OwnerView
 }
 
 function createDecision(): DecisionRow {
   const reasons = new ReasonList()
+  // The owner of a created workflow (its trusted snapshot). Hidden for a
+  // workflow that did not run.
+  const owner = new OwnerView()
   const el = h(
     'li',
     { class: 'decision-item' },
@@ -213,11 +257,14 @@ function createDecision(): DecisionRow {
       decisionBadge(),
       h('a', { class: 'decision-name decision-link' }),
       h('span', { class: 'decision-name decision-plain' }),
+      requiredStateBadge(),
       h('span', { class: 'meta mono decision-file' }),
     ),
+    owner.el,
     reasons.el,
   ) as DecisionRow
   el.reasons = reasons
+  el.owner = owner
   return el
 }
 
@@ -235,7 +282,10 @@ function updateDecision(el: DecisionRow, d: CIEventWorkflowDecision, projectId: 
   const showFile = d.sourceFile && d.sourceFile !== name
   show(file, showFile)
   setText(file, showFile ? d.sourceFile! : '')
+  setRequiredState(el.querySelector('.required-state')!, d.requiredState, d.requiredLabel)
   el.reasons.update(d.reasons, { projectId })
+  show(el.owner.el, d.workflowId && d.owner)
+  el.owner.update(d.owner)
 }
 
 export const tag = 'rc-event-detail-page'

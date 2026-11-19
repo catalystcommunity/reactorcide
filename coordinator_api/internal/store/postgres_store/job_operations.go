@@ -48,6 +48,9 @@ func (ps PostgresDbStore) CreateJob(ctx context.Context, job *models.Job) error 
 	if err := ps.getDB(ctx).Create(job).Error; err != nil {
 		return fmt.Errorf("failed to create job: %w", err)
 	}
+	refreshActor(ps.getDB(ctx), "jobs", "job_id", job.JobID, &job.ActorPrincipalID, &job.ActorIdentity)
+	refreshJobOwnership(ps.getDB(ctx), job)
+	refreshRefClasses(ps.getDB(ctx), "jobs", "job_id", job.JobID, &job.RefClasses)
 	return nil
 }
 
@@ -102,6 +105,8 @@ func (ps PostgresDbStore) ListJobs(ctx context.Context, filters map[string]inter
 			query = query.Where("workflow_id = ?", value)
 		case "org_id":
 			query = query.Where("org_id = ?", value)
+		case "failure_class":
+			query = query.Where("failure_class = ?", value)
 		}
 	}
 

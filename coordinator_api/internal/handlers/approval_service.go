@@ -13,8 +13,12 @@ import (
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/authz"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/cipolicy"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/jobcontrol"
+	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/owners"
+	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/principals"
+	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/runshifts"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store/models"
+	subjectgrammar "github.com/catalystcommunity/reactorcide/coordinator_api/internal/subjects"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/vcs"
 	"github.com/sirupsen/logrus"
 )
@@ -38,17 +42,23 @@ type approvalPerson struct {
 	Login    string
 	UserID   *string
 	Subjects []string
+	// Principal is the resolved principal of the person, or nil when the
+	// store has no principals.
+	Principal *principals.Resolution
 }
 
-func (p approvalPerson) has(subjects []string) bool {
-	for _, wanted := range subjects {
-		for _, have := range p.Subjects {
-			if wanted == have {
-				return true
-			}
-		}
+// actor is the person as an actor: the principal and the identity used.
+func (p approvalPerson) actor() principals.Actor {
+	if p.Principal == nil {
+		return principals.Actor{}
 	}
-	return false
+	return principals.Actor{PrincipalID: p.Principal.Principal.PrincipalID, Identity: personIdentity(p.Person)}
+}
+
+// has reports whether the person matches one of the wanted subjects. The
+// subject * matches every identified person.
+func (p approvalPerson) has(wanted []string) bool {
+	return subjectgrammar.HasAny(p.Subjects, wanted)
 }
 
 // prTarget is a pull request with the client that can read it.
@@ -79,9 +89,23 @@ func (h *WebhookHandler) loadPRTarget(ctx context.Context, project *models.Proje
 // resolvePerson finds the approver subjects of a VCS account or of a
 // Reactorcide user. A user with a verified identity link for the provider is
 // that VCS account, so a user has the same roles in the UI as in a comment.
-func (h *WebhookHandler) resolvePerson(ctx context.Context, project *models.Project, target *prTarget, login, userID string) (approvalPerson, error) {
+func (h *WebhookHandler) resolvePerson(ctx context.Context, project *models.Project, target *prTarget, login, userID string, signed bool) (approvalPerson, error) {
 	identities, _ := h.store.(approvalIdentityStore)
 	person := approvalPerson{Provider: string(target.Provider), Login: strings.TrimSpace(login)}
+	// The principal of the person. A login from a signed webhook (a comment or
+	// a review) becomes a principal on first sight.
+	switch {
+	case person.Login != "" && signed:
+		person.Principal = h.resolveVCSPrincipal(ctx, target.Provider, person.Login)
+	case person.Login != "":
+		person.Principal = h.lookupPrincipal(ctx, models.IdentityTypeVCS, models.VCSIdentityValue(string(target.Provider), person.Login))
+	case userID != "":
+		person.Principal = h.lookupPrincipal(ctx, models.IdentityTypeUser, userID)
+	}
+	if userID == "" && person.Principal != nil {
+		// A login linked to a user (by an admin or LinkKeys) is that user.
+		userID = person.Principal.UserID()
+	}
 	if userID != "" {
 		id := userID
 		person.UserID = &id
@@ -97,6 +121,16 @@ func (h *WebhookHandler) resolvePerson(ctx context.Context, project *models.Proj
 				}
 			}
 		}
+		if person.Login == "" && person.Principal != nil {
+			// A VCS identity linked to the principal of the user.
+			prefix := strings.ToLower(string(target.Provider)) + "/"
+			for _, value := range person.Principal.IdentitiesOf(models.IdentityTypeVCS) {
+				if strings.HasPrefix(value, prefix) {
+					person.Login = strings.TrimPrefix(value, prefix)
+					break
+				}
+			}
+		}
 	}
 	subjects := []string{}
 	if person.Login != "" {
@@ -108,12 +142,19 @@ func (h *WebhookHandler) resolvePerson(ctx context.Context, project *models.Proj
 			}
 			subjects = append(subjects, resolved...)
 		}
-		if person.UserID == nil && identities != nil {
+		if person.UserID == nil && identities != nil && (person.Principal == nil || !person.Principal.Inactive) {
 			if link, err := identities.ResolveVCSIdentityLink(ctx, string(target.Provider), person.Login); err == nil && link != nil && link.VerifiedBy != "" {
 				id := link.UserID
 				person.UserID = &id
 			}
 		}
+	}
+	if person.Principal != nil {
+		subjectsOfPrincipal, err := h.principalSubjects(ctx, project, person.Principal)
+		if err != nil {
+			return approvalPerson{}, fmt.Errorf("resolving approver principal: %w", err)
+		}
+		subjects = append(subjects, subjectsOfPrincipal...)
 	}
 	if person.UserID != nil && identities != nil {
 		groups, err := identities.ListGroupsForUser(ctx, *person.UserID)
@@ -176,7 +217,26 @@ func (h *WebhookHandler) overrideSubjects(ctx context.Context, project *models.P
 			}
 		}
 	}
-	return uniqueStrings(subjects)
+	return h.expandWorkflowOwnerForProject(ctx, project, uniqueStrings(subjects))
+}
+
+// expandWorkflowOwnerForProject replaces the workflow_owner placeholder with
+// the owner subjects of every workflow of the project (latest trusted
+// snapshots). It only decides who may record override-ci: the coordinator
+// still grants head CI per workflow, to owners of that workflow only.
+func (h *WebhookHandler) expandWorkflowOwnerForProject(ctx context.Context, project *models.Project, list []string) []string {
+	if !containsSubject(list, subjectgrammar.WorkflowOwner) {
+		return list
+	}
+	all := []string{}
+	snapshots, err := owners.ForProject(ctx, h.store, project.ProjectID)
+	if err != nil {
+		h.logger.WithError(err).Warn("Could not read the workflow owners of the project")
+	}
+	for _, snapshot := range snapshots {
+		all = append(all, owners.Subjects(snapshot)...)
+	}
+	return uniqueStrings(owners.Expand(list, all))
 }
 
 // Execute runs one command for one pull request.
@@ -200,7 +260,18 @@ func (h *WebhookHandler) Execute(ctx context.Context, request approvals.Request)
 	if !strings.EqualFold(pr.State, "open") && request.Command.Name != approvals.CommandRevoke {
 		return approvals.Result{}, approvals.ErrPullRequestClosed
 	}
-	person, err := h.resolvePerson(ctx, project, target, request.Login, request.UserID)
+	// A check run button comes in a signed GitHub App delivery, as a comment does.
+	signed := request.Channel == models.CIApprovalChannelComment || request.Channel == models.CIApprovalChannelReview ||
+		request.Channel == models.CIApprovalChannelCheckRun
+	var person approvalPerson
+	switch {
+	case request.InstanceAdmin:
+		person, err = h.resolveInstanceAdmin(ctx, project, target, request)
+	case request.PrincipalID != "" && request.UserID == "" && request.Login == "":
+		person, err = h.resolveServicePerson(ctx, project, target, request.PrincipalID)
+	default:
+		person, err = h.resolvePerson(ctx, project, target, request.Login, request.UserID, signed)
+	}
 	if err != nil {
 		return approvals.Result{}, err
 	}
@@ -213,8 +284,12 @@ func (h *WebhookHandler) Execute(ctx context.Context, request approvals.Request)
 
 	kinds := []string{}
 	switch request.Command.Name {
+	case approvals.CommandPromote, approvals.CommandDemote:
+		// A required set change records no CI approval. It goes through the
+		// required set service, with its approver rules.
+		return h.executeRequiredSetCommand(ctx, project, target, person, request)
 	case approvals.CommandApproveCI, approvals.CommandRetry, approvals.CommandRerun:
-		if !person.has(trust.RunApprovers) {
+		if !request.InstanceAdmin && !person.has(trust.RunApprovers) {
 			h.recordRefusedCommand(ctx, project, pr, person, request)
 			return approvals.Result{}, approvals.ErrNotAllowed
 		}
@@ -222,7 +297,7 @@ func (h *WebhookHandler) Execute(ctx context.Context, request approvals.Request)
 			kinds = []string{models.CIApprovalKindRun}
 		}
 	case approvals.CommandOverrideCI:
-		if !person.has(h.overrideSubjects(ctx, project, trust)) {
+		if !request.InstanceAdmin && !person.has(h.overrideSubjects(ctx, project, trust)) {
 			h.recordRefusedCommand(ctx, project, pr, person, request)
 			return approvals.Result{}, approvals.ErrNotAllowed
 		}
@@ -256,6 +331,9 @@ func (h *WebhookHandler) Execute(ctx context.Context, request approvals.Request)
 			OrgID: project.OwnershipOrgID(), ProjectID: project.ProjectID, PRNumber: pr.Number,
 			HeadRepository: headRepository, HeadSHA: pr.HeadSHA, Person: person.Person, Subjects: subjects,
 			Channel: request.Channel, ApproverUserID: person.UserID, ApproverProvider: person.Provider}
+		if person.Principal != nil {
+			action.ActorPrincipalID = principals.FromResolution(person.Principal).Ptr()
+		}
 		if request.Command.Name == approvals.CommandRevoke {
 			action.Action = models.CIApprovalActionRevoked
 		}
@@ -295,21 +373,27 @@ func (h *WebhookHandler) Execute(ctx context.Context, request approvals.Request)
 	case approvals.CommandOverrideCI:
 		result.Effect = "re-evaluate"
 		result.Message = "override-ci recorded; evaluating the head again"
-		h.startCoordinatorEvent(ctx, project, target, models.CIEventSourceApproval, result.Recorded[0].ApprovalID)
+		h.startCoordinatorEvent(ctx, project, target, models.CIEventSourceApproval, result.Recorded[0].ApprovalID, approvalActor(result.Recorded[0]))
 	case approvals.CommandAccept, approvals.CommandRevoke:
 		result.Effect = "reviews"
 		result.Message = request.Command.Name + " recorded"
 		h.publishReviewsStatus(ctx, project, target)
 	case approvals.CommandRetry:
 		result.Effect = "retry"
-		result.Message = h.retryHead(ctx, project, pr)
+		result.Message = h.retryHead(principals.WithActor(ctx, person.actor()), project, pr, request.Command.Shifts)
 	case approvals.CommandRerun:
 		result.Effect = "rerun"
+		if !request.Command.Shifts.IsZero() {
+			// A rerun with shifts keeps the authority of the runs it repeats
+			// (D18): it runs the workflows of the newest evaluation again.
+			result.Message = h.rerunHeadWithShifts(principals.WithActor(ctx, person.actor()), project, pr, request.Command.Shifts)
+			break
+		}
 		id := request.SourceObject
 		if id == "" {
 			id = fmt.Sprintf("%s:%d", person.Person, time.Now().UnixNano())
 		}
-		h.startCoordinatorEvent(ctx, project, target, models.CIEventSourceRerun, id)
+		h.startCoordinatorEvent(ctx, project, target, models.CIEventSourceRerun, id, person.actor())
 		result.Message = "running every workflow of the head again"
 	}
 	h.logger.WithFields(fields).WithField("effect", result.Effect).Info(result.Message)
@@ -327,7 +411,7 @@ func (h *WebhookHandler) recordRefusedCommand(ctx context.Context, project *mode
 func (h *WebhookHandler) reevaluateIfGated(ctx context.Context, project *models.Project, target *prTarget, approval models.CIApproval) (string, string) {
 	heads, ok := h.store.(store.PRHeadStore)
 	if !ok {
-		h.startCoordinatorEvent(ctx, project, target, models.CIEventSourceApproval, approval.ApprovalID)
+		h.startCoordinatorEvent(ctx, project, target, models.CIEventSourceApproval, approval.ApprovalID, approvalActor(approval))
 		return "re-evaluate", "approve-ci recorded; evaluating the head"
 	}
 	events, err := heads.ListCIEventsForPRHead(ctx, project.ProjectID, target.PR.Number, target.PR.HeadSHA)
@@ -337,8 +421,28 @@ func (h *WebhookHandler) reevaluateIfGated(ctx context.Context, project *models.
 	if err == nil && len(events) > 0 && events[0].Status != models.CIEventStatusAwaitingApproval {
 		return "", "approve-ci recorded; the head is not held by the run gate"
 	}
-	h.startCoordinatorEvent(ctx, project, target, models.CIEventSourceApproval, approval.ApprovalID)
+	h.startCoordinatorEvent(ctx, project, target, models.CIEventSourceApproval, approval.ApprovalID, approvalActor(approval))
 	return "re-evaluate", "approve-ci recorded; evaluating the head"
+}
+
+// approvalActor is the principal that gave an approval.
+func approvalActor(approval models.CIApproval) principals.Actor {
+	if approval.ActorPrincipalID == nil {
+		return principals.Actor{}
+	}
+	return principals.Actor{PrincipalID: *approval.ActorPrincipalID, Identity: personIdentity(approval.Person)}
+}
+
+// personIdentity is the actor identity of an approval person key.
+func personIdentity(person string) string {
+	if strings.HasPrefix(person, "user:") {
+		return models.ActorIdentity(models.IdentityTypeUser, strings.TrimPrefix(person, "user:"))
+	}
+	if strings.HasPrefix(person, "principal:") {
+		// A service principal through its token; the token is not known here.
+		return ""
+	}
+	return models.ActorIdentity(models.IdentityTypeVCS, person)
 }
 
 // startCoordinatorEvent starts a new evaluation of the current head. The event
@@ -346,7 +450,7 @@ func (h *WebhookHandler) reevaluateIfGated(ctx context.Context, project *models.
 // of the last webhook event for that head, so admission sees the same actor
 // facts as the event that ran CI first; an approver is only an approver. If no
 // such event is recorded, the pull request author is the actor.
-func (h *WebhookHandler) startCoordinatorEvent(ctx context.Context, project *models.Project, target *prTarget, source, id string) {
+func (h *WebhookHandler) startCoordinatorEvent(ctx context.Context, project *models.Project, target *prTarget, source, id string, starter principals.Actor) {
 	pr := target.PR
 	fields := logrus.Fields{"project": project.Name, "pr_number": pr.Number, "source": source, "id": id}
 	actor := pr.AuthorLogin
@@ -368,7 +472,8 @@ func (h *WebhookHandler) startCoordinatorEvent(ctx context.Context, project *mod
 		PullRequest:  &current,
 		SenderLogin:  actor,
 		DeliveryID:   source + ":" + id,
-		Coordinator:  &vcs.CoordinatorEvent{Source: source, ID: id},
+		Coordinator: &vcs.CoordinatorEvent{Source: source, ID: id,
+			ActorPrincipalID: starter.PrincipalID, ActorIdentity: starter.Identity},
 	}
 	if err := h.processPullRequestEvent(event, target.Client, project); err != nil {
 		// The approval is stored. A push or a reopen still evaluates the head.
@@ -378,7 +483,7 @@ func (h *WebhookHandler) startCoordinatorEvent(ctx context.Context, project *mod
 
 // retryHead retries the failed and cancelled jobs of every root workflow of
 // the newest evaluated event of the head.
-func (h *WebhookHandler) retryHead(ctx context.Context, project *models.Project, pr *vcs.PullRequestInfo) string {
+func (h *WebhookHandler) retryHead(ctx context.Context, project *models.Project, pr *vcs.PullRequestInfo, shifts models.RunShifts) string {
 	heads, okHeads := h.store.(store.PRHeadStore)
 	checks, okChecks := h.store.(store.CIEventChecksStore)
 	if !okHeads || !okChecks {
@@ -398,7 +503,10 @@ func (h *WebhookHandler) retryHead(ctx context.Context, project *models.Project,
 		}
 		retried := 0
 		for _, workflow := range workflows {
-			jobs, retryErr := jobcontrol.RetryUnsuccessfulJobs(ctx, h.store, h.corndogsClient, workflow.WorkflowID)
+			jobs, retryErr := jobcontrol.RetryUnsuccessfulJobsWithShifts(ctx, h.store, h.corndogsClient, workflow.WorkflowID, shifts)
+			if retryErr != nil && jobcontrol.IsShiftError(retryErr) && len(jobs) == 0 {
+				return "retry refused: " + retryErr.Error()
+			}
 			if retryErr != nil {
 				h.logger.WithError(retryErr).WithField("workflow_id", workflow.WorkflowID).Warn("Could not retry workflow jobs")
 				continue
@@ -429,8 +537,14 @@ func (h *WebhookHandler) runAuthorityFor(ctx context.Context, project *models.Pr
 		}
 	}
 	now := time.Now().UTC()
+	// workflow_owner never matches here (a recorded approval never holds
+	// it): an owner's override-ci is granted per workflow by the trigger
+	// processor, to the owners of that workflow only.
 	if granted := approvals.Granted(rows, models.CIApprovalKindHeadCI, pr.HeadSHA, trust.OverrideApprovers, now); granted != nil {
 		authority.Override = &approvals.RunOverride{ApprovalID: granted.ApprovalID, Person: granted.Person, Profile: trust.OverrideProfile}
+	}
+	if containsSubject(trust.OverrideApprovers, subjectgrammar.WorkflowOwner) {
+		authority.OwnerOverride = &approvals.RunOwnerOverride{Profile: trust.OverrideProfile}
 	}
 	gated, reasons := h.runGateApplies(ctx, trust, event, client)
 	if !gated {
@@ -520,4 +634,50 @@ func parseStoredPolicy(stored *models.CIPolicy) (*cipolicy.Policy, error) {
 		return nil, err
 	}
 	return cipolicy.ParseDocument(document)
+}
+
+// rerunHeadWithShifts runs every finished root workflow of the newest
+// evaluated event of the head again, as new instances with their recorded
+// authority and the shifts. A workflow that is still running is skipped.
+func (h *WebhookHandler) rerunHeadWithShifts(ctx context.Context, project *models.Project, pr *vcs.PullRequestInfo, shifts models.RunShifts) string {
+	heads, okHeads := h.store.(store.PRHeadStore)
+	checks, okChecks := h.store.(store.CIEventChecksStore)
+	if !okHeads || !okChecks {
+		return "rerun is not available"
+	}
+	events, err := heads.ListCIEventsForPRHead(ctx, project.ProjectID, pr.Number, pr.HeadSHA)
+	if err != nil {
+		return "could not list the events of the head"
+	}
+	for _, event := range events {
+		if event.EvalJobID == nil {
+			continue
+		}
+		workflows, err := checks.ListRootWorkflowInstancesForEvent(ctx, event.EventID)
+		if err != nil {
+			return "could not list the workflows of the head"
+		}
+		rerun, skipped := 0, 0
+		for i := range workflows {
+			workflow := &workflows[i]
+			if !jobcontrol.IsWorkflowRerunnable(workflow) {
+				skipped++
+				continue
+			}
+			if _, rerunErr := jobcontrol.RerunWorkflow(ctx, h.store, h.corndogsClient, workflow.WorkflowID, shifts); rerunErr != nil {
+				if jobcontrol.IsShiftError(rerunErr) {
+					return "rerun refused: " + rerunErr.Error()
+				}
+				h.logger.WithError(rerunErr).WithField("workflow_id", workflow.WorkflowID).Warn("Could not rerun workflow")
+				continue
+			}
+			rerun++
+		}
+		message := fmt.Sprintf("ran %d workflows again with shifts %s", rerun, runshifts.Describe(shifts))
+		if skipped > 0 {
+			message += fmt.Sprintf("; %d workflows are still running", skipped)
+		}
+		return message
+	}
+	return "the head has no workflows to rerun"
 }

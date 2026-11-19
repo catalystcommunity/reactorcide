@@ -1,0 +1,27 @@
+/* ---------- Ref classes (RefClasses.ts) ---------- */
+.ref-class-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+}
+.ref-class {
+  padding: 0 var(--space-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface-sunken);
+  font-size: var(--text-sm);
+}
+.ref-class-settings .ref-class-rule .rule-classes {
+  font-size: var(--text-sm);
+}
+.ref-class-settings form {
+  margin-top: var(--space-4);
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--border);
+}
+.ref-class-facts {
+  margin-top: var(--space-3);
+}

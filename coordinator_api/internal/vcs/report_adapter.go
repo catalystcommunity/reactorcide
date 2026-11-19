@@ -18,6 +18,11 @@ func (r *reportClientResolver) ResolveReportClient(ctx context.Context, target *
 	if target.TargetType != "pull_request" {
 		return nil, fmt.Errorf("report target %q has no comment surface", target.TargetType)
 	}
+	if !r.updater.commentsAllowed(ctx, target.OrgID, target.ProjectID) {
+		// Report mode statuses_only or silent: the reconciler marks the
+		// target rendered and writes nothing.
+		return suppressedCommentClient{}, nil
+	}
 	wf := &models.WorkflowInstance{ProjectID: target.ProjectID}
 	client := r.updater.getClientForWorkflow(ctx, wf, Provider(target.Provider))
 	if client == nil {
@@ -65,4 +70,16 @@ func valueOrEmpty(value *string) string {
 		return ""
 	}
 	return *value
+}
+
+// suppressedCommentClient writes no comment (report modes statuses_only and
+// silent).
+type suppressedCommentClient struct{}
+
+func (suppressedCommentClient) ReadComment(_ context.Context, target *models.VCSReportTarget) (string, string, error) {
+	return valueOrEmpty(target.ProviderCommentID), "", nil
+}
+
+func (suppressedCommentClient) WriteComment(_ context.Context, _ *models.VCSReportTarget, commentID string, _ string) (string, error) {
+	return commentID, nil
 }

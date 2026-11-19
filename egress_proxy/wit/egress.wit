@@ -1,0 +1,56 @@
+// Plugin interface of the Reactorcide egress proxy (docs/egress-proxy.md).
+// A plugin is a WebAssembly component. It gets no file system, network,
+// or environment. It can only return actions and call the host functions.
+package reactorcide:egress@0.1.0;
+
+interface types {
+  record header { name: string, value: string }
+
+  enum direction { out, in }
+
+  // One request (out) or one response (in). The body is decoded: TLS is
+  // ended and the body is decompressed. The built-in secret scan ran
+  // before the plugins, so the body has no real secret.
+  record flow {
+    id: string,
+    environment: string,   // the job that sent the request (job id)
+    owner: string,         // the identity summary of the job (org/project/node)
+    direction: direction,
+    destination: string,   // host:port
+    method: string,        // the request method, also for a response
+    url: string,           // the request URL, also for a response
+    status: u16,           // 0 for a request
+    headers: list<header>,
+    body: list<u8>,
+  }
+
+  // The host puts the value of secret `secret` in place of `placeholder`.
+  // place: "header:<name>", "url", "body", or "any". The plugin never
+  // sees the value. The host does the change only when the destination is
+  // permitted for that secret.
+  record secret-use { placeholder: string, secret: string, place: string }
+
+  variant action {
+    pass,
+    block(string),          // reason
+    review(string),         // block now; the flow record keeps the reason
+    set-body(list<u8>),
+    set-header(header),     // an empty value removes the header
+    use-secret(secret-use),
+  }
+}
+
+interface host {
+  // Calls an operation of the ask service (REACTORCIDE_EGRESS_ASK_URL)
+  // that the grant of the plugin permits (ask_ops). The request and the
+  // response are CBOR maps. The host adds the keys "plugin" and "flow" to
+  // the request, so a plugin cannot change them.
+  ask: func(op: string, request: list<u8>) -> result<list<u8>, string>;
+  log: func(message: string);
+}
+
+world filter {
+  use types.{flow, action};
+  import host;
+  export check: func(f: flow) -> list<action>;
+}

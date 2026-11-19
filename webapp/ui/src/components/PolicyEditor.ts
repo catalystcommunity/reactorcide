@@ -346,7 +346,7 @@ export class RuleCard {
   }
 }
 
-type Loaded = { policy?: CiPolicyDetail }
+type Loaded = { policy?: CiPolicyDetail; builtIn?: CiPolicyDetail; builtInReason?: string }
 
 const EMPTY: CiPolicyDocument = { version: 1, headCi: [] }
 
@@ -355,7 +355,11 @@ export class CiPolicyEditor extends RcElement {
 
   #load = new Loader<string, Loaded>(this, async (projectId) => {
     try {
-      return { policy: (await api.getCiPolicy({ projectId })).policy }
+      const response = await api.getCiPolicy({ projectId })
+      // The built-in policy applies, and nothing is stored: start the draft
+      // from it, with no revision to expect.
+      if (response.builtIn) return { builtIn: response.policy, builtInReason: response.builtInReason }
+      return { policy: response.policy }
     } catch (cause) {
       if (cause instanceof ServiceError && cause.isNotFound) return {}
       throw cause
@@ -442,6 +446,11 @@ export class CiPolicyEditor extends RcElement {
       ),
     )
     this.append(this.#loadError, this.#loading, this.#body)
+  }
+
+  #seedLoaded(data: Loaded | undefined): void {
+    this.#seed(data?.policy ?? data?.builtIn)
+    if (!data?.policy) this.#revision = undefined
   }
 
   #seed(policy: CiPolicyDetail | undefined): void {
@@ -552,7 +561,7 @@ export class CiPolicyEditor extends RcElement {
     this.#message = ''
     await this.#load.reload()
     if (!this.isActive()) return
-    if (!this.#load.state.error) this.#seed(this.#load.state.data?.policy)
+    if (!this.#load.state.error) this.#seedLoaded(this.#load.state.data)
     this.invalidate()
   }
 
@@ -585,7 +594,7 @@ export class CiPolicyEditor extends RcElement {
     const state = this.#load.state
     if (state.loaded && this.#seededFor !== this.projectId) {
       this.#seededFor = this.projectId
-      this.#seed(state.data?.policy)
+      this.#seedLoaded(state.data)
     }
     const ready = this.#seededFor === this.projectId && Boolean(this.projectId)
     show(this.#loading, !ready && !state.error)
@@ -599,7 +608,9 @@ export class CiPolicyEditor extends RcElement {
       this.#status,
       policy && this.#revision
         ? `Revision ${this.#revision}. Saved ${new Date(policy.updatedAt).toLocaleString()}${policy.updatedBy ? ` by ${policy.updatedBy}` : ''}.`
-        : 'No policy is stored for this project. Save to make one.',
+        : state.data?.builtIn
+          ? `No policy is stored for this project. The built-in policy (revision ${state.data.builtIn.revision}) applies: ${state.data.builtInReason ?? 'the organization has the secure defaults profile'}. The rules below are the built-in policy; save to store them for this project.`
+          : 'No policy is stored for this project. Save to make one.',
     )
     show(this.#errorBox, this.#error)
     setText(this.#errorBox.querySelector('.policy-error-text')!, this.#error)

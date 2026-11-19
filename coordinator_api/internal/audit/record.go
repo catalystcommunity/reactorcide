@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/checkauth"
+	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/principals"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store/models"
 )
 
@@ -47,5 +48,13 @@ func record(ctx context.Context, value any, user *models.User, orgID, action, su
 		event.ActorUserID = &user.UserID
 		event.ActorCredentialType = "ui_session"
 	}
+	// The actor principal. A user's principal has the user's UUID. With no
+	// actor here (a webhook, a job token), the database sets it: the job's
+	// actor for a job token, else the system principal.
+	actor := principals.ActorOf(ctx)
+	if actor.IsZero() && user != nil && user.UserID != "" {
+		actor = principals.Actor{PrincipalID: user.UserID}
+	}
+	event.ActorPrincipalID = actor.Ptr()
 	_ = store.AppendAuditEvent(ctx, event)
 }

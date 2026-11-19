@@ -149,3 +149,25 @@ func (AuthLoginAttempt) TableName() string {
 func (a *AuthLoginAttempt) IsExpired() bool {
 	return time.Now().After(a.ExpiresAt)
 }
+
+// Values of AuthLoginHistory.Source.
+const (
+	AuthLoginHistorySourceStartup      = "startup"
+	AuthLoginHistorySourceExistingData = "existing_data"
+)
+
+// AuthLoginHistory is the one row that records that the instance has run
+// with logins (migration 000073). While it exists, the coordinator refuses
+// to start in REACTORCIDE_UI_AUTH_MODE=none (see auth.EnforceLoginHistory).
+type AuthLoginHistory struct {
+	Singleton     bool      `gorm:"primaryKey;default:true" json:"-"`
+	LoginMode     string    `gorm:"type:text;not null" json:"login_mode"`
+	Source        string    `gorm:"type:text;not null" json:"source"`
+	FirstMarkedAt time.Time `gorm:"autoCreateTime:false;default:timezone('utc', now())" json:"first_marked_at"`
+	LastMarkedAt  time.Time `gorm:"autoUpdateTime:false;default:timezone('utc', now())" json:"last_marked_at"`
+}
+
+// TableName specifies the table name for the model.
+func (AuthLoginHistory) TableName() string {
+	return "auth_login_history"
+}

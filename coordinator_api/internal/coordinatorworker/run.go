@@ -8,8 +8,11 @@ import (
 	"time"
 
 	"github.com/catalystcommunity/app-utils-go/logging"
+	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/admission"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/worker"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/workerclient"
+	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/workerclient/csilapi"
+	"github.com/sirupsen/logrus"
 )
 
 // runnerFactory matches internal/worker.NewJobRunner's signature; tests
@@ -52,6 +55,10 @@ func runLoop(ctx context.Context, cfg Config, c client, newRunner runnerFactory)
 	if err != nil {
 		return fmt.Errorf("coordinatorworker: create job runner: %w", err)
 	}
+	cfg.runtime = worker.RuntimeName(runner)
+	// Make the image set manager before the first VM prune: it tells the
+	// retention to keep the images of the last set (the owned list).
+	images := newImageSetManager(cfg, runner)
 	if cache, ok, err := initializeVMImageCache(ctx, runner, cfg, time.Now()); err != nil {
 		return err
 	} else if ok {
@@ -64,22 +71,58 @@ func runLoop(ctx context.Context, cfg Config, c client, newRunner runnerFactory)
 	if concurrency < 1 {
 		concurrency = 1
 	}
+	mode, err := admission.ParseMode(cfg.AdmissionMode)
+	if err != nil {
+		return fmt.Errorf("coordinatorworker: %w", err)
+	}
+	resourcesMode := mode == admission.ModeResources
+	reservations := newLeaseReservations()
+	if resourcesMode {
+		// Fail at startup when the capacity cannot be measured, for example
+		// an unknown host memory size with no budget, or missing RBAC.
+		report, err := measureAdmission(ctx, cfg, runner, reservations)
+		if err != nil {
+			return fmt.Errorf("coordinatorworker: resources admission: %w", err)
+		}
+		if !report.Capacity.IsPositive() {
+			return errors.New("coordinatorworker: resources admission: capacity is zero; set REACTORCIDE_WORKER_ADMISSION_CPU and REACTORCIDE_WORKER_ADMISSION_MEMORY")
+		}
+		logging.Log.WithFields(map[string]any{
+			"capacity_cpu_millicores": report.Capacity.CPUMillicores,
+			"capacity_memory_bytes":   report.Capacity.MemoryBytes,
+			"max_leases":              concurrency,
+		}).Info("coordinatorworker: resources admission mode")
+	}
+	cfg = applyDetectedTopology(ctx, cfg, runner)
+	if cfg, err = applyEgressCharacteristic(cfg); err != nil {
+		return err
+	}
 
 	reg, err := registerWithBackoff(ctx, cfg, c)
 	if err != nil {
 		return err
 	}
+	images.offer(reg.ImageSet)
 	heartbeatInterval := time.Duration(reg.HeartbeatInterval) * time.Second
 	replayTelemetrySpool(c, cfg.DataDir)
 
 	tracker := newLeaseTracker()
+	tracker.images = images
 	sem := make(chan struct{}, concurrency)
 	var wg sync.WaitGroup
 
 	hbCtx, hbCancel := context.WithCancel(context.Background())
 	defer hbCancel()
+	go images.run(hbCtx)
 	go heartbeatLoop(hbCtx, c, runner, tracker, heartbeatInterval)
 	go telemetryReplayLoop(hbCtx, c, cfg.DataDir, cfg.TelemetrySendInterval)
+
+	// Startup pre-seed gate (owner decision I4): no RequestJob until the
+	// first pull of the image set ends. The heartbeat reports "updating"
+	// meanwhile.
+	if err := images.waitReady(ctx); err != nil {
+		return err
+	}
 
 	errBackoff := reconnectBackoffMin
 
@@ -95,8 +138,25 @@ pollLoop:
 			<-sem
 			return fmt.Errorf("coordinatorworker: %w", wcErr)
 		}
+		wc.Custom = withImageDigests(wc.Custom, images.digestCharacteristic())
 
-		resp, err := c.RequestJob(ctx, wc)
+		var report *csilapi.AdmissionReport
+		if resourcesMode {
+			measured, measureErr := measureAdmission(ctx, cfg, runner, reservations)
+			if measureErr != nil || !measured.Headroom.IsPositive() {
+				<-sem
+				if measureErr != nil {
+					logging.Log.WithError(measureErr).Warn("coordinatorworker: could not measure admission headroom; waiting")
+				}
+				if !sleepOrDone(ctx, noLeaseBackoff) {
+					break pollLoop
+				}
+				continue
+			}
+			report = admissionReportWire(measured)
+		}
+
+		resp, err := requestJob(ctx, c, wc, report)
 		if err != nil {
 			<-sem
 			logging.Log.WithError(err).Warn("coordinatorworker: RequestJob failed; backing off and re-registering")
@@ -109,9 +169,11 @@ pollLoop:
 			// registerWithBackoff itself only returns on success or ctx
 			// cancellation, so a persistently-down coordinator keeps retrying
 			// here rather than propagating an error out of Run.
-			if _, err := registerWithBackoff(ctx, cfg, c); err != nil {
+			rereg, err := registerWithBackoff(ctx, cfg, c)
+			if err != nil {
 				return err
 			}
+			images.offer(rereg.ImageSet)
 			continue
 		}
 		errBackoff = reconnectBackoffMin
@@ -125,10 +187,14 @@ pollLoop:
 		}
 
 		lease := *resp.Lease
+		if resourcesMode {
+			reservations.add(lease.LeaseId, lease.JobId, leaseNeed(lease))
+		}
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
 			defer func() { <-sem }()
+			defer reservations.remove(lease.LeaseId)
 			runLease(c, runner, lease, tracker, cfg)
 		}()
 	}
@@ -194,7 +260,8 @@ func registerWithBackoff(ctx context.Context, cfg Config, c client) (rr register
 		}
 		resp, err := c.Register(ctx, cfg.EnrollmentToken, info)
 		if err == nil {
-			return registerResult{HeartbeatInterval: resp.HeartbeatInterval, WorkerID: resp.WorkerId}, nil
+			logRegistered(resp)
+			return registerResult{HeartbeatInterval: resp.HeartbeatInterval, WorkerID: resp.WorkerId, ImageSet: resp.ImageSet}, nil
 		}
 		logging.Log.WithError(err).Warn("coordinatorworker: register failed; retrying")
 		if !sleepOrDone(ctx, backoff) {
@@ -204,12 +271,28 @@ func registerWithBackoff(ctx context.Context, cfg Config, c client) (rr register
 	}
 }
 
+// logRegistered logs the worker ID and the enrollment token (ID and name,
+// never the value) of a successful Register, for audits of a token
+// rotation. A coordinator before 0.13 sends no token fields.
+func logRegistered(resp csilapi.RegisterResponse) {
+	fields := logrus.Fields{"worker_id": resp.WorkerId, "enrollment_token_id": "unknown", "enrollment_token_name": ""}
+	if resp.EnrollmentTokenId != nil {
+		fields["enrollment_token_id"] = *resp.EnrollmentTokenId
+	}
+	if resp.EnrollmentTokenName != nil {
+		fields["enrollment_token_name"] = *resp.EnrollmentTokenName
+	}
+	logging.Log.WithFields(fields).Info("coordinatorworker: registered")
+}
+
 // registerResult is the small slice of RegisterResponse the run loop needs,
 // kept separate from csilapi.RegisterResponse only so registerWithBackoff's
 // signature doesn't force every caller to import csilapi.
 type registerResult struct {
 	HeartbeatInterval int64
 	WorkerID          string
+	// ImageSet is the image set of the register response, or nil.
+	ImageSet *csilapi.ImageSet
 }
 
 // sleepOrDone waits for d or ctx cancellation, whichever comes first. Returns

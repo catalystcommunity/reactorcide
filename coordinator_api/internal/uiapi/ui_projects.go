@@ -6,6 +6,7 @@ import (
 
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/authz"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store/models"
+	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/tokencaps"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/uiapi/csilapi"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/workflowevents"
 )
@@ -55,6 +56,9 @@ func projectToDetail(p *models.Project) csilapi.ProjectDetail {
 		UpdatedAt:             formatTime(p.UpdatedAt),
 		DuplicateEvents:       optionalText(p.DuplicateEvents),
 		DynamicJobs:           optionalText(p.DynamicJobs),
+		DraftPrs:              optionalText(p.DraftPRs),
+		InfraRetries:          intPtr64(p.InfraRetries),
+		EgressControl:         optionalBool(p.EgressControl),
 	}
 }
 
@@ -77,18 +81,30 @@ func (s *UiService) ListOrgs(ctx context.Context, req csilapi.ListOrgsRequest) (
 		}); ok {
 			defaultOrg, _ = defaultGetter.GetDefaultOrganization(ctx)
 		}
+		// A token sees member data only with organizations:read (or
+		// manage), and only for the organizations of the token, as in the
+		// REST organization routes.
+		tokenReads := id.Token == nil || id.Token.HasCapability(tokencaps.OrganizationsRead) || id.Token.HasCapability(tokencaps.OrganizationsManage)
+		if id.Token != nil {
+			global = global && tokenReads && id.Token.AllOrganizations
+		}
 		allowed := map[string]bool{}
-		if user != nil && !global {
+		if user != nil && !global && tokenReads {
 			assignments, _ := s.deps.Store.ListRoleAssignmentsForPrincipal(ctx, user.UserID, nil)
 			for _, assignment := range assignments {
-				if assignment.ScopeType == models.ScopeTypeOrg && assignment.ScopeID != nil {
+				if assignment.ScopeType == models.ScopeTypeOrg && assignment.ScopeID != nil &&
+					(id.Token == nil || id.Token.HasOrganization(*assignment.ScopeID)) {
 					allowed[*assignment.ScopeID] = true
 				}
 			}
 		}
 		orgs := make([]csilapi.OrgSummary, 0, len(all))
 		for _, org := range all {
-			if global || !org.IsPrivate || allowed[org.OrgID] {
+			if global || allowed[org.OrgID] {
+				// A member sees the settings of the organization (event
+				// defaults, shed level, infra retries, egress control).
+				orgs = append(orgs, orgSummary(&org, defaultOrg))
+			} else if !org.IsPrivate {
 				orgs = append(orgs, csilapi.OrgSummary{OrgId: org.OrgID, Name: org.Name, DisplayName: org.DisplayName,
 					Status: org.Status, IsDefault: defaultOrg != nil && defaultOrg.OrgID == org.OrgID, IsPrivate: org.IsPrivate})
 			}
@@ -195,7 +211,7 @@ func (s *UiService) GetProject(ctx context.Context, req csilapi.GetProjectReques
 // request omits is_private, the global new_projects_private setting decides
 // the default (see authz.NewProjectIsPrivate).
 func (s *UiService) CreateProject(ctx context.Context, req csilapi.CreateProjectRequest) (csilapi.CreateProjectResponse, error) {
-	id, user, authErr := s.deps.requireUser(ctx)
+	ctx, id, _, authErr := s.deps.requireManagementIdentity(ctx)
 	if authErr != nil {
 		return csilapi.CreateProjectResponse{}, authErr
 	}
@@ -209,7 +225,7 @@ func (s *UiService) CreateProject(ctx context.Context, req csilapi.CreateProject
 		return csilapi.CreateProjectResponse{}, err
 	}
 
-	if err := s.deps.Resolver.RequireOrgAdmin(ctx, id, req.OrgId); err != nil {
+	if err := s.requireOrgAdminGrant(ctx, id, req.OrgId, tokencaps.ProjectsCreate); err != nil {
 		return csilapi.CreateProjectResponse{}, mapPermissionErr(err)
 	}
 
@@ -219,9 +235,9 @@ func (s *UiService) CreateProject(ctx context.Context, req csilapi.CreateProject
 	}
 
 	orgID := req.OrgId
-	creatorID := user.UserID
 	project := &models.Project{
-		UserID:      &creatorID,
+		// The creating user; nil for a token with no user, as in REST.
+		UserID:      actorUserID(id),
 		OrgID:       orgID,
 		Name:        req.Name,
 		Description: derefOr(req.Description, ""),
@@ -251,7 +267,7 @@ func (s *UiService) CreateProject(ctx context.Context, req csilapi.CreateProject
 // UpdateProject requires project-settings capability: project owner, org
 // admin of the owning org, or global admin.
 func (s *UiService) UpdateProject(ctx context.Context, req csilapi.UpdateProjectRequest) (csilapi.UpdateProjectResponse, error) {
-	id, _, authErr := s.deps.requireUser(ctx)
+	ctx, id, _, authErr := s.deps.requireManagementIdentity(ctx)
 	if authErr != nil {
 		return csilapi.UpdateProjectResponse{}, authErr
 	}
@@ -262,6 +278,10 @@ func (s *UiService) UpdateProject(ctx context.Context, req csilapi.UpdateProject
 	project, err := s.deps.Store.GetProjectByID(ctx, req.ProjectId)
 	if err != nil {
 		return csilapi.UpdateProjectResponse{}, mapStoreErr(err, "project not found")
+	}
+	orgID := project.OwnershipOrgID()
+	if err := requireTokenGrant(id, &orgID, tokencaps.ProjectsManage); err != nil {
+		return csilapi.UpdateProjectResponse{}, err
 	}
 	if err := s.deps.Resolver.RequireProjectOwner(ctx, id, req.ProjectId); err != nil {
 		return csilapi.UpdateProjectResponse{}, mapPermissionErr(err)
@@ -291,7 +311,12 @@ func (s *UiService) UpdateProject(ctx context.Context, req csilapi.UpdateProject
 	if req.DefaultRunnerImage != nil {
 		project.DefaultRunnerImage = *req.DefaultRunnerImage
 	}
-	if req.DefaultJobCommand != nil {
+	if req.DefaultJobCommand != nil && *req.DefaultJobCommand != project.DefaultJobCommand {
+		// Declarative only (plan item G3): the eval command replaces the
+		// workflow evaluation, so only a global administrator sets it.
+		if err := s.requireGlobalAdminGrant(ctx, id, tokencaps.ProjectsManage); err != nil {
+			return csilapi.UpdateProjectResponse{}, NewServiceError("forbidden", "only a global administrator can set default_job_command")
+		}
 		project.DefaultJobCommand = *req.DefaultJobCommand
 	}
 	if req.DefaultTimeoutSeconds != nil {
@@ -309,7 +334,22 @@ func (s *UiService) UpdateProject(ctx context.Context, req csilapi.UpdateProject
 		}
 		project.CheckoutMode = *req.CheckoutMode
 	}
+	if req.InfraRetriesInherit != nil && *req.InfraRetriesInherit {
+		project.InfraRetries = nil
+	} else if req.InfraRetries != nil {
+		if !models.IsValidInfraRetries(int(*req.InfraRetries)) {
+			return csilapi.UpdateProjectResponse{}, NewServiceError("invalid_argument", "infra_retries must be from 0 to 5")
+		}
+		value := int(*req.InfraRetries)
+		project.InfraRetries = &value
+	}
+	if req.EgressControl != nil {
+		project.EgressControl = *req.EgressControl
+	}
 	settingsChanged, err := applyProjectEventSettings(project, req.DuplicateEvents, req.DynamicJobs)
+	if err == nil {
+		settingsChanged, err = applyProjectDraftPRs(project, req.DraftPrs, settingsChanged)
+	}
 	if err != nil {
 		return csilapi.UpdateProjectResponse{}, err
 	}
@@ -319,6 +359,13 @@ func (s *UiService) UpdateProject(ctx context.Context, req csilapi.UpdateProject
 	}
 	if settingsChanged != nil {
 		s.recordAudit(ctx, project.OwnershipOrgID(), "project.event_settings", "project", project.ProjectID, settingsChanged)
+	}
+	if req.InfraRetries != nil || req.InfraRetriesInherit != nil || req.EgressControl != nil {
+		details := models.JSONB{"egress_control": project.EgressControl, "infra_retries": "inherit"}
+		if project.InfraRetries != nil {
+			details["infra_retries"] = *project.InfraRetries
+		}
+		s.recordAudit(ctx, project.OwnershipOrgID(), "project.execution_settings", "project", project.ProjectID, details)
 	}
 	// Settings changed, and is_private may be among them. An open event stream
 	// caches "this caller may see project X"; this is what makes it drop that
@@ -331,7 +378,7 @@ func (s *UiService) UpdateProject(ctx context.Context, req csilapi.UpdateProject
 // DeleteProject requires org admin (of the owning org) or global admin —
 // stricter than UpdateProject: a plain project owner may not delete it.
 func (s *UiService) DeleteProject(ctx context.Context, req csilapi.DeleteProjectRequest) (csilapi.DeleteProjectResponse, error) {
-	id, _, authErr := s.deps.requireUser(ctx)
+	ctx, id, _, authErr := s.deps.requireManagementIdentity(ctx)
 	if authErr != nil {
 		return csilapi.DeleteProjectResponse{}, authErr
 	}
@@ -345,10 +392,10 @@ func (s *UiService) DeleteProject(ctx context.Context, req csilapi.DeleteProject
 	}
 
 	if project.UserID == nil {
-		if err := s.deps.Resolver.RequireGlobalAdmin(ctx, id); err != nil {
+		if err := s.requireGlobalAdminGrant(ctx, id, tokencaps.ProjectsManage); err != nil {
 			return csilapi.DeleteProjectResponse{}, mapPermissionErr(err)
 		}
-	} else if err := s.deps.Resolver.RequireOrgAdmin(ctx, id, *project.UserID); err != nil {
+	} else if err := s.requireOrgAdminGrant(ctx, id, *project.UserID, tokencaps.ProjectsManage); err != nil {
 		return csilapi.DeleteProjectResponse{}, mapPermissionErr(err)
 	}
 

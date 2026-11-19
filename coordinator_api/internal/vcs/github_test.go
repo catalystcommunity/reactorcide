@@ -38,11 +38,13 @@ func TestGitHubClient_ParseWebhook(t *testing.T) {
 					"html_url": "https://github.com/test/repo/pull/123",
 					"head": {
 						"ref": "feature-branch",
-						"sha": "abc123"
+						"sha": "abc123",
+						"repo": {"full_name": "test/repo"}
 					},
 					"base": {
 						"ref": "main",
-						"sha": "def456"
+						"sha": "def456",
+						"repo": {"full_name": "test/repo"}
 					},
 					"user": {
 						"login": "testuser"

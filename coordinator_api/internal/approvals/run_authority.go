@@ -28,6 +28,17 @@ type RunAuthority struct {
 	RunApprovalID string `json:"run_approval_id,omitempty"`
 	// Override is set when an override-ci approval lets the head's own CI run.
 	Override *RunOverride `json:"override,omitempty"`
+	// OwnerOverride is set when override_approvers names workflow_owner. The
+	// coordinator then grants head CI per workflow: when an override-ci
+	// approval comes from an owner of the TRUSTED definition of that
+	// workflow (docs/organizations-and-ci-policy.md). It carries only the
+	// profile; the approval is checked per workflow at decision time.
+	OwnerOverride *RunOwnerOverride `json:"owner_override,omitempty"`
+}
+
+// RunOwnerOverride enables per-workflow override-ci by workflow owners.
+type RunOwnerOverride struct {
+	Profile string `json:"profile"`
 }
 
 // RunOverride is an override-ci grant.
@@ -39,7 +50,7 @@ type RunOverride struct {
 
 // Encode returns the fact value, or "" when nothing is gated or overridden.
 func (a RunAuthority) Encode() (string, error) {
-	if !a.Gated && a.Override == nil && a.Profile == "" {
+	if !a.Gated && a.Override == nil && a.OwnerOverride == nil && a.Profile == "" {
 		return "", nil
 	}
 	encoded, err := json.Marshal(a)
@@ -61,6 +72,9 @@ func DecodeRunAuthority(value string) (RunAuthority, error) {
 	}
 	if authority.Override != nil && (authority.Override.ApprovalID == "" || authority.Override.Profile == "") {
 		return RunAuthority{}, fmt.Errorf("run authority override needs an approval and a profile")
+	}
+	if authority.OwnerOverride != nil && authority.OwnerOverride.Profile == "" {
+		return RunAuthority{}, fmt.Errorf("run authority owner override needs a profile")
 	}
 	return authority, nil
 }

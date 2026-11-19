@@ -109,6 +109,40 @@ describe('EventDetail', () => {
     expect(page.textContent).toContain('1 of 3 run')
   })
 
+  it('shows the ref classes, their facts, and the rule of each class', async () => {
+    state = {
+      data: {
+        ...EVENT,
+        event: {
+          ...EVENT.event,
+          refClasses: ['default', 'production'],
+          refClassFacts: { source: 'webhook', eventType: 'push', branch: 'main', defaultBranch: 'main', isPr: false, isDefaultBranch: true },
+          refClassReasons: [
+            { class: 'default', ruleId: 'builtin:default-branch', ruleName: 'default-branch', scope: 'builtin' },
+            { class: 'production', ruleId: 'r1', ruleName: 'prod', scope: 'org' },
+          ],
+        },
+        decisions: [{ ...EVENT.decisions[0], reasons: [{ kind: 'ref_class', classes: ['default', 'production'], ruleIds: ['r1'] }] }],
+      },
+      error: undefined,
+      loading: false,
+      loaded: true,
+    }
+    const page = await renderEvent()
+    const card = page.querySelector('.event-ref-classes')!
+    expect([...card.querySelectorAll('.ref-class')].map((li) => li.textContent)).toEqual(['default', 'production'])
+    expect(card.textContent).toContain('Default branch')
+    expect(card.textContent).toContain('default from built-in rule default-branch')
+    expect(card.textContent).toContain('production from organization rule prod')
+    expect(page.querySelector('.decision-item')!.textContent).toContain('Ref classes: default, production (from rules r1)')
+  })
+
+  it('says None for an event with no ref classes', async () => {
+    state = { data: EVENT, error: undefined, loading: false, loaded: true }
+    const page = await renderEvent()
+    expect(page.querySelector('.event-ref-classes .ref-class-list')!.textContent).toBe('None')
+  })
+
   it('shows the changed-file preview and how many more there are', async () => {
     state = { data: EVENT, error: undefined, loading: false, loaded: true }
     const page = await renderEvent()

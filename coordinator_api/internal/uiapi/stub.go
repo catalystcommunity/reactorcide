@@ -369,6 +369,18 @@ func (StubUi) GetJobMetrics(ctx context.Context, req csilapi.GetJobMetricsReques
 	return csilapi.GetJobMetricsResponse{}, ErrUnimplemented("ReactorcideUi/get-job-metrics")
 }
 
+func (StubUi) GetPipelineDashboard(ctx context.Context, req csilapi.GetPipelineDashboardRequest) (csilapi.GetPipelineDashboardResponse, error) {
+	return csilapi.GetPipelineDashboardResponse{}, ErrUnimplemented("ReactorcideUi/get-pipeline-dashboard")
+}
+
+func (StubUi) GetInfraDashboard(ctx context.Context, req csilapi.GetInfraDashboardRequest) (csilapi.GetInfraDashboardResponse, error) {
+	return csilapi.GetInfraDashboardResponse{}, ErrUnimplemented("ReactorcideUi/get-infra-dashboard")
+}
+
+func (StubUi) GetUsageDashboard(ctx context.Context, req csilapi.GetUsageDashboardRequest) (csilapi.GetUsageDashboardResponse, error) {
+	return csilapi.GetUsageDashboardResponse{}, ErrUnimplemented("ReactorcideUi/get-usage-dashboard")
+}
+
 func (StubUi) GetJobResourceHistory(ctx context.Context, req csilapi.GetJobResourceHistoryRequest) (csilapi.GetJobResourceHistoryResponse, error) {
 	return csilapi.GetJobResourceHistoryResponse{}, ErrUnimplemented("ReactorcideUi/get-job-resource-history")
 }
@@ -419,4 +431,182 @@ func (StubUi) ListScheduleFires(ctx context.Context, req csilapi.ListScheduleFir
 
 func (StubUi) GetEvent(ctx context.Context, req csilapi.GetEventRequest) (csilapi.GetEventResponse, error) {
 	return csilapi.GetEventResponse{}, ErrUnimplemented("ReactorcideUi/get-event")
+}
+
+// WP2 principals.
+
+func (StubUi) ListPrincipals(ctx context.Context, req csilapi.ListPrincipalsRequest) (csilapi.ListPrincipalsResponse, error) {
+	return csilapi.ListPrincipalsResponse{}, ErrUnimplemented("ReactorcideUi/list-principals")
+}
+
+func (StubUi) GetPrincipal(ctx context.Context, req csilapi.GetPrincipalRequest) (csilapi.GetPrincipalResponse, error) {
+	return csilapi.GetPrincipalResponse{}, ErrUnimplemented("ReactorcideUi/get-principal")
+}
+
+func (StubUi) CreateServicePrincipal(ctx context.Context, req csilapi.CreateServicePrincipalRequest) (csilapi.CreateServicePrincipalResponse, error) {
+	return csilapi.CreateServicePrincipalResponse{}, ErrUnimplemented("ReactorcideUi/create-service-principal")
+}
+
+func (StubUi) SetPrincipalStatus(ctx context.Context, req csilapi.SetPrincipalStatusRequest) (csilapi.SetPrincipalStatusResponse, error) {
+	return csilapi.SetPrincipalStatusResponse{}, ErrUnimplemented("ReactorcideUi/set-principal-status")
+}
+
+func (StubUi) LinkPrincipalIdentity(ctx context.Context, req csilapi.PrincipalIdentityRequest) (csilapi.PrincipalIdentityResponse, error) {
+	return csilapi.PrincipalIdentityResponse{}, ErrUnimplemented("ReactorcideUi/link-principal-identity")
+}
+
+func (StubUi) UnlinkPrincipalIdentity(ctx context.Context, req csilapi.PrincipalIdentityRequest) (csilapi.PrincipalIdentityResponse, error) {
+	return csilapi.PrincipalIdentityResponse{}, ErrUnimplemented("ReactorcideUi/unlink-principal-identity")
+}
+
+func (StubUi) SetPrincipalGroup(ctx context.Context, req csilapi.SetPrincipalGroupRequest) (csilapi.SetPrincipalGroupResponse, error) {
+	return csilapi.SetPrincipalGroupResponse{}, ErrUnimplemented("ReactorcideUi/set-principal-group")
+}
+
+func (StubUi) IssuePrincipalToken(ctx context.Context, req csilapi.IssuePrincipalTokenRequest) (csilapi.IssuePrincipalTokenResponse, error) {
+	return csilapi.IssuePrincipalTokenResponse{}, ErrUnimplemented("ReactorcideUi/issue-principal-token")
+}
+
+func (StubUi) RevokePrincipalToken(ctx context.Context, req csilapi.RevokePrincipalTokenRequest) (csilapi.RevokePrincipalTokenResponse, error) {
+	return csilapi.RevokePrincipalTokenResponse{}, ErrUnimplemented("ReactorcideUi/revoke-principal-token")
+}
+
+func (StubUi) ResolvePrincipal(ctx context.Context, req csilapi.ResolvePrincipalRequest) (csilapi.ResolvePrincipalResponse, error) {
+	return csilapi.ResolvePrincipalResponse{}, ErrUnimplemented("ReactorcideUi/resolve-principal")
+}
+
+func (StubUi) RerunWorkflow(ctx context.Context, req csilapi.RerunWorkflowRequest) (csilapi.RerunWorkflowResponse, error) {
+	return csilapi.RerunWorkflowResponse{}, ErrUnimplemented("ReactorcideUi/rerun-workflow")
+}
+
+func (StubUi) StartRun(ctx context.Context, req csilapi.StartRunRequest) (csilapi.StartRunResponse, error) {
+	return csilapi.StartRunResponse{}, ErrUnimplemented("ReactorcideUi/start-run")
+}
+
+func (StubUi) GetRequiredSet(ctx context.Context, req csilapi.GetRequiredSetRequest) (csilapi.GetRequiredSetResponse, error) {
+	return csilapi.GetRequiredSetResponse{}, ErrUnimplemented("ReactorcideUi/get-required-set")
+}
+
+func (StubUi) SetRequiredSetEnabled(ctx context.Context, req csilapi.SetRequiredSetEnabledRequest) (csilapi.SetRequiredSetEnabledResponse, error) {
+	return csilapi.SetRequiredSetEnabledResponse{}, ErrUnimplemented("ReactorcideUi/set-required-set-enabled")
+}
+
+func (StubUi) SetRequiredSetApprovers(ctx context.Context, req csilapi.SetRequiredSetApproversRequest) (csilapi.GetRequiredSetResponse, error) {
+	return csilapi.GetRequiredSetResponse{}, ErrUnimplemented("ReactorcideUi/set-required-set-approvers")
+}
+
+func (StubUi) ProposeRequiredSetChange(ctx context.Context, req csilapi.ProposeRequiredSetChangeRequest) (csilapi.ProposeRequiredSetChangeResponse, error) {
+	return csilapi.ProposeRequiredSetChangeResponse{}, ErrUnimplemented("ReactorcideUi/propose-required-set-change")
+}
+
+func (StubUi) DecideRequiredSetProposal(ctx context.Context, req csilapi.DecideRequiredSetProposalRequest) (csilapi.DecideRequiredSetProposalResponse, error) {
+	return csilapi.DecideRequiredSetProposalResponse{}, ErrUnimplemented("ReactorcideUi/decide-required-set-proposal")
+}
+
+func (StubUi) QuarantineRequiredWorkflow(ctx context.Context, req csilapi.QuarantineRequiredWorkflowRequest) (csilapi.QuarantineRequiredWorkflowResponse, error) {
+	return csilapi.QuarantineRequiredWorkflowResponse{}, ErrUnimplemented("ReactorcideUi/quarantine-required-workflow")
+}
+
+func (StubUi) UnquarantineRequiredWorkflow(ctx context.Context, req csilapi.UnquarantineRequiredWorkflowRequest) (csilapi.UnquarantineRequiredWorkflowResponse, error) {
+	return csilapi.UnquarantineRequiredWorkflowResponse{}, ErrUnimplemented("ReactorcideUi/unquarantine-required-workflow")
+}
+
+func (StubUi) ListPriorityLanes(ctx context.Context, req csilapi.ListPriorityLanesRequest) (csilapi.ListPriorityLanesResponse, error) {
+	return csilapi.ListPriorityLanesResponse{}, ErrUnimplemented("ReactorcideUi/list-priority-lanes")
+}
+
+func (StubUi) PutPriorityLane(ctx context.Context, req csilapi.PutPriorityLaneRequest) (csilapi.PutPriorityLaneResponse, error) {
+	return csilapi.PutPriorityLaneResponse{}, ErrUnimplemented("ReactorcideUi/put-priority-lane")
+}
+
+func (StubUi) DeletePriorityLane(ctx context.Context, req csilapi.DeletePriorityLaneRequest) (csilapi.DeletePriorityLaneResponse, error) {
+	return csilapi.DeletePriorityLaneResponse{}, ErrUnimplemented("ReactorcideUi/delete-priority-lane")
+}
+
+func (StubUi) ExplainPriority(ctx context.Context, req csilapi.ExplainPriorityRequest) (csilapi.ExplainPriorityResponse, error) {
+	return csilapi.ExplainPriorityResponse{}, ErrUnimplemented("ReactorcideUi/explain-priority")
+}
+
+func (StubUi) SetGroupPriorityShift(ctx context.Context, req csilapi.SetGroupPriorityShiftRequest) (csilapi.SetGroupPriorityShiftResponse, error) {
+	return csilapi.SetGroupPriorityShiftResponse{}, ErrUnimplemented("ReactorcideUi/set-group-priority-shift")
+}
+
+func (StubUi) ListRefClassRules(ctx context.Context, req csilapi.ListRefClassRulesRequest) (csilapi.ListRefClassRulesResponse, error) {
+	return csilapi.ListRefClassRulesResponse{}, ErrUnimplemented("ReactorcideUi/list-ref-class-rules")
+}
+
+func (StubUi) PutRefClassRule(ctx context.Context, req csilapi.PutRefClassRuleRequest) (csilapi.PutRefClassRuleResponse, error) {
+	return csilapi.PutRefClassRuleResponse{}, ErrUnimplemented("ReactorcideUi/put-ref-class-rule")
+}
+
+func (StubUi) DeleteRefClassRule(ctx context.Context, req csilapi.DeleteRefClassRuleRequest) (csilapi.DeleteRefClassRuleResponse, error) {
+	return csilapi.DeleteRefClassRuleResponse{}, ErrUnimplemented("ReactorcideUi/delete-ref-class-rule")
+}
+
+func (StubUi) ExplainRefClasses(ctx context.Context, req csilapi.ExplainRefClassesRequest) (csilapi.ExplainRefClassesResponse, error) {
+	return csilapi.ExplainRefClassesResponse{}, ErrUnimplemented("ReactorcideUi/explain-ref-classes")
+}
+
+func (StubUi) ListFederationIssuers(ctx context.Context, req csilapi.ListFederationIssuersRequest) (csilapi.ListFederationIssuersResponse, error) {
+	return csilapi.ListFederationIssuersResponse{}, ErrUnimplemented("ReactorcideUi/list-federation-issuers")
+}
+
+func (StubUi) SaveFederationIssuer(ctx context.Context, req csilapi.SaveFederationIssuerRequest) (csilapi.SaveFederationIssuerResponse, error) {
+	return csilapi.SaveFederationIssuerResponse{}, ErrUnimplemented("ReactorcideUi/save-federation-issuer")
+}
+
+func (StubUi) DeleteFederationIssuer(ctx context.Context, req csilapi.DeleteFederationIssuerRequest) (csilapi.DeleteFederationIssuerResponse, error) {
+	return csilapi.DeleteFederationIssuerResponse{}, ErrUnimplemented("ReactorcideUi/delete-federation-issuer")
+}
+
+func (StubUi) SaveFederationMapping(ctx context.Context, req csilapi.SaveFederationMappingRequest) (csilapi.SaveFederationMappingResponse, error) {
+	return csilapi.SaveFederationMappingResponse{}, ErrUnimplemented("ReactorcideUi/save-federation-mapping")
+}
+
+func (StubUi) DeleteFederationMapping(ctx context.Context, req csilapi.DeleteFederationMappingRequest) (csilapi.DeleteFederationMappingResponse, error) {
+	return csilapi.DeleteFederationMappingResponse{}, ErrUnimplemented("ReactorcideUi/delete-federation-mapping")
+}
+
+func (StubUi) GetShedState(ctx context.Context, req csilapi.GetShedStateRequest) (csilapi.GetShedStateResponse, error) {
+	return csilapi.GetShedStateResponse{}, ErrUnimplemented("ReactorcideUi/get-shed-state")
+}
+
+func (StubUi) SetShedLevel(ctx context.Context, req csilapi.SetShedLevelRequest) (csilapi.SetShedLevelResponse, error) {
+	return csilapi.SetShedLevelResponse{}, ErrUnimplemented("ReactorcideUi/set-shed-level")
+}
+
+func (StubUi) ListEventSubscriptions(ctx context.Context, req csilapi.ListEventSubscriptionsRequest) (csilapi.ListEventSubscriptionsResponse, error) {
+	return csilapi.ListEventSubscriptionsResponse{}, ErrUnimplemented("ReactorcideUi/list-event-subscriptions")
+}
+
+func (StubUi) GetEventSubscription(ctx context.Context, req csilapi.GetEventSubscriptionRequest) (csilapi.GetEventSubscriptionResponse, error) {
+	return csilapi.GetEventSubscriptionResponse{}, ErrUnimplemented("ReactorcideUi/get-event-subscription")
+}
+
+func (StubUi) CreateEventSubscription(ctx context.Context, req csilapi.CreateEventSubscriptionRequest) (csilapi.CreateEventSubscriptionResponse, error) {
+	return csilapi.CreateEventSubscriptionResponse{}, ErrUnimplemented("ReactorcideUi/create-event-subscription")
+}
+
+func (StubUi) UpdateEventSubscription(ctx context.Context, req csilapi.UpdateEventSubscriptionRequest) (csilapi.UpdateEventSubscriptionResponse, error) {
+	return csilapi.UpdateEventSubscriptionResponse{}, ErrUnimplemented("ReactorcideUi/update-event-subscription")
+}
+
+func (StubUi) DeleteEventSubscription(ctx context.Context, req csilapi.DeleteEventSubscriptionRequest) (csilapi.DeleteEventSubscriptionResponse, error) {
+	return csilapi.DeleteEventSubscriptionResponse{}, ErrUnimplemented("ReactorcideUi/delete-event-subscription")
+}
+
+func (StubUi) ListEventDeliveries(ctx context.Context, req csilapi.ListEventDeliveriesRequest) (csilapi.ListEventDeliveriesResponse, error) {
+	return csilapi.ListEventDeliveriesResponse{}, ErrUnimplemented("ReactorcideUi/list-event-deliveries")
+}
+
+func (StubUi) GetEventDelivery(ctx context.Context, req csilapi.GetEventDeliveryRequest) (csilapi.GetEventDeliveryResponse, error) {
+	return csilapi.GetEventDeliveryResponse{}, ErrUnimplemented("ReactorcideUi/get-event-delivery")
+}
+
+func (StubUi) ReplayEventDelivery(ctx context.Context, req csilapi.ReplayEventDeliveryRequest) (csilapi.ReplayEventDeliveryResponse, error) {
+	return csilapi.ReplayEventDeliveryResponse{}, ErrUnimplemented("ReactorcideUi/replay-event-delivery")
+}
+
+func (StubUi) TestEventSubscription(ctx context.Context, req csilapi.TestEventSubscriptionRequest) (csilapi.TestEventSubscriptionResponse, error) {
+	return csilapi.TestEventSubscriptionResponse{}, ErrUnimplemented("ReactorcideUi/test-event-subscription")
 }

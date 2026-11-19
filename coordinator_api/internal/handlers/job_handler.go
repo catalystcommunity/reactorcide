@@ -19,10 +19,15 @@ import (
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/checkauth"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/config"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/corndogs"
+	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/egress"
+	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/imagealias"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/jobcontrol"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/jobtelemetry"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/metrics"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/objects"
+	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/principals"
+	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/priority"
+	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/refclass"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/resources"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store/models"
@@ -136,6 +141,10 @@ type CreateJobRequest struct {
 	Priority       *int   `json:"priority,omitempty"`
 	RunAsUser      string `json:"run_as_user,omitempty"`
 	QueueName      string `json:"queue_name,omitempty"`
+	// RunAsAdministrator is run_as.administrator. It applies only to
+	// Windows VM jobs whose guest daemon creates the job account. Omit it
+	// to use the guest default (administrator).
+	RunAsAdministrator *bool `json:"run_as_administrator,omitempty"`
 
 	// ImagePullSecrets lists Kubernetes Secret NAMES for pulling the job
 	// image — never credentials. The worker enforces its allowlist before
@@ -168,6 +177,17 @@ type JobResponse struct {
 	CreatedAt   time.Time `json:"created_at"`
 	UpdatedAt   time.Time `json:"updated_at"`
 
+	// FailureClass is the structured cause of a failed, cancelled or timed
+	// out job (models.FailureClasses). FailureOwner says who must act on
+	// it: "pipeline" or "infrastructure". RetryCount counts automatic
+	// infrastructure retries.
+	FailureClass  string `json:"failure_class,omitempty"`
+	FailureDetail string `json:"failure_detail,omitempty"`
+	FailureOwner  string `json:"failure_owner,omitempty"`
+	RetryCount    int    `json:"retry_count"`
+	// Shifts are the resource and timeout changes of a retry or a re-run.
+	Shifts *models.RunShifts `json:"shifts,omitempty"`
+
 	// Source info (VCS-agnostic) - untrusted code being tested
 	SourceURL  string `json:"source_url,omitempty"`
 	SourceRef  string `json:"source_ref,omitempty"`
@@ -180,25 +200,39 @@ type JobResponse struct {
 	CISourceRef  string `json:"ci_source_ref,omitempty"`
 
 	// Runnerlib config
-	CodeDir     string            `json:"code_dir"`
-	JobDir      string            `json:"job_dir"`
-	JobCommand  string            `json:"job_command"`
-	RunnerImage string            `json:"runner_image"`
-	JobEnvVars  map[string]string `json:"job_env_vars,omitempty"`
-	JobEnvFile  string            `json:"job_env_file,omitempty"`
-	RunAsUser   string            `json:"run_as_user,omitempty"`
+	CodeDir     string `json:"code_dir"`
+	JobDir      string `json:"job_dir"`
+	JobCommand  string `json:"job_command"`
+	RunnerImage string `json:"runner_image"`
+	// ImageAlias is the image alias that the job named, if any.
+	// ImageDisplay is "alias (reference)" for an alias, else the reference
+	// (internal/imagealias.Display). ImageRetryOf is the image of the
+	// earlier run (display form) when a retry or a rerun got the current
+	// pin of the alias.
+	ImageAlias   *string           `json:"image_alias,omitempty"`
+	ImageDisplay string            `json:"image_display,omitempty"`
+	ImageRetryOf *string           `json:"image_retry_of,omitempty"`
+	JobEnvVars   map[string]string `json:"job_env_vars,omitempty"`
+	JobEnvFile   string            `json:"job_env_file,omitempty"`
+	RunAsUser    string            `json:"run_as_user,omitempty"`
+	// RunAsAdministrator is nil when the job did not set it.
+	RunAsAdministrator *bool `json:"run_as_administrator,omitempty"`
 
 	// ImagePullSecrets holds Kubernetes Secret names only, never values.
 	ImagePullSecrets []string `json:"image_pull_secrets,omitempty"`
 
 	// Execution info
-	TimeoutSeconds      int        `json:"timeout_seconds"`
-	Priority            int        `json:"priority"`
-	QueueName           string     `json:"queue_name"`
-	SchedulingStartedAt *time.Time `json:"scheduling_started_at,omitempty"`
-	StartedAt           *time.Time `json:"started_at,omitempty"`
-	CompletedAt         *time.Time `json:"completed_at,omitempty"`
-	ExitCode            *int       `json:"exit_code,omitempty"`
+	TimeoutSeconds int `json:"timeout_seconds"`
+	Priority       int `json:"priority"`
+	// PriorityLane and PriorityReason tell how the coordinator computed
+	// Priority (docs/priority.md). Absent for a job made before lanes.
+	PriorityLane        string                 `json:"priority_lane,omitempty"`
+	PriorityReason      *models.DecisionReason `json:"priority_reason,omitempty"`
+	QueueName           string                 `json:"queue_name"`
+	SchedulingStartedAt *time.Time             `json:"scheduling_started_at,omitempty"`
+	StartedAt           *time.Time             `json:"started_at,omitempty"`
+	CompletedAt         *time.Time             `json:"completed_at,omitempty"`
+	ExitCode            *int                   `json:"exit_code,omitempty"`
 
 	// Object store references
 	LogsObjectKey      string `json:"logs_object_key,omitempty"`
@@ -210,6 +244,11 @@ type JobResponse struct {
 	WorkflowNodeID   *string `json:"workflow_node_id,omitempty"`
 	WorkflowRunID    *string `json:"workflow_run_id,omitempty"`
 	WorkflowNodeName string  `json:"workflow_node_name,omitempty"`
+
+	// Actor is the principal that started the job and the identity it used.
+	Actor *principals.Summary `json:"actor,omitempty"`
+	// RefClasses are the ref classes of the job (docs/ref-classes.md).
+	RefClasses []string `json:"ref_classes"`
 }
 
 // ListJobsResponse represents the response for listing jobs
@@ -305,11 +344,32 @@ func (h *JobHandler) CreateJob(w http.ResponseWriter, r *http.Request) {
 		h.respondWithError(w, http.StatusForbidden, store.ErrForbidden)
 		return
 	}
+	if reason := shedManualRunRefusal(r.Context(), h.store, organization.OrgID); reason != "" {
+		respondShedRefused(w, reason)
+		return
+	}
 	job.OrgID = organization.OrgID
+	principals.ApplyToJob(job, requestActor(r.Context(), h.store))
 	job.WorkerClass = req.WorkerClass
 	if job.WorkerClass == "" {
 		job.WorkerClass = "default"
 	}
+	// The image alias of the job, before the queue: an alias or a VM image
+	// adds the image_digest characteristic (internal/imagealias).
+	if _, err := imagealias.ResolveJob(r.Context(), h.store, job); err != nil {
+		if refused, ok := imagealias.IsRefused(err); ok {
+			status := http.StatusBadRequest
+			if refused.Code == imagealias.CodeImagePolicy {
+				status = http.StatusForbidden
+			}
+			h.respondWithJSON(w, status, ErrorResponse{Error: refused.Code, Message: refused.Message})
+			return
+		}
+		h.respondWithError(w, http.StatusInternalServerError, err)
+		return
+	}
+	// A job with egress control waits for a worker with an egress proxy.
+	egress.RouteJob(r.Context(), h.store, job)
 	if qs, ok := h.store.(orgQueueResolvingStore); ok {
 		queue, err := qs.FindOrCreateQueueForOrg(r.Context(), job.OrgID, job.WorkerClass, job.Characteristics)
 		if err != nil {
@@ -324,6 +384,13 @@ func (h *JobHandler) CreateJob(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		job.QueueName = queue.QueueUUID
+	}
+
+	// The organization image policy (build_settings_handler.go). The claim
+	// checks it again, for jobs that other paths create.
+	if reason := imagePolicyRefusal(r.Context(), h.store, job); reason != "" {
+		h.respondWithJSON(w, http.StatusForbidden, ErrorResponse{Error: "image_policy", Message: reason})
+		return
 	}
 
 	// An eval submitted through the API is a `manual` CI event. An
@@ -349,6 +416,19 @@ func (h *JobHandler) CreateJob(w http.ResponseWriter, r *http.Request) {
 		h.respondWithJSON(w, http.StatusOK, h.jobToResponse(existingJob))
 		return
 	}
+
+	// A job with no CI event and no parent gets the "manual" ref classes.
+	applyManualRefClasses(r.Context(), h.store, job)
+	// The worker class conditions (ref classes, protected) apply to a REST
+	// submit as to a workflow node. Fail closed.
+	if err := worker.CheckWorkerClassAdmission(r.Context(), h.store, job.OrgID, job.WorkerClass, job.RefClasses, job.ExecutionProfile, nil); err != nil {
+		h.finishManualEvent(r.Context(), manualEvent, job, false)
+		h.respondWithJSON(w, http.StatusForbidden, ErrorResponse{Error: "worker_class_refused", Message: err.Error()})
+		return
+	}
+	// The lane and group shifts give the queue priority; a requested
+	// priority moves the job inside its lane only (docs/priority.md).
+	priority.Assign(r.Context(), h.store, job)
 
 	// Create job in database
 	if err := h.store.CreateJob(r.Context(), job); err != nil {
@@ -425,6 +505,8 @@ func (h *JobHandler) CreateJob(w http.ResponseWriter, r *http.Request) {
 				job.JobID, job.Name, job.QueueName, err)
 			job.Status = "failed"
 			job.LastError = fmt.Sprintf("failed to submit to Corndogs: %v", err)
+			job.SetFailure(models.FailureClassPlatform, "queue submission")
+			metrics.RecordJobFinished(job.Status, models.FailureClassPlatform, job.QueueName)
 			// Record failed submission metric
 			metrics.RecordCornDogsTaskSubmission(job.QueueName, false)
 		} else {
@@ -443,6 +525,7 @@ func (h *JobHandler) CreateJob(w http.ResponseWriter, r *http.Request) {
 
 	// Return created job
 	response := h.jobToResponse(job)
+	describeJobActors(r.Context(), h.store, []JobResponse{response})
 	h.respondWithJSON(w, http.StatusCreated, response)
 }
 
@@ -476,6 +559,7 @@ func (h *JobHandler) GetJob(w http.ResponseWriter, r *http.Request) {
 	}
 
 	response := h.jobToResponse(job)
+	describeJobActors(r.Context(), h.store, []JobResponse{response})
 	h.respondWithJSON(w, http.StatusOK, response)
 }
 
@@ -551,12 +635,19 @@ func (h *JobHandler) ListJobs(w http.ResponseWriter, r *http.Request) {
 		for i := range jobs {
 			responses[i] = h.jobToResponse(&jobs[i])
 		}
+		describeJobActors(r.Context(), h.store, responses)
 		h.respondWithJSON(w, http.StatusOK, ListJobsResponse{Jobs: responses, Total: len(responses), Limit: limit, Offset: offset})
 		return
 	}
 
 	// Primary path: SQL-side visibility filtering with exact pagination and
 	// Total (see jobsVisibleToStore's doc comment).
+	// A user-delegated token never exceeds the token: it needs jobs:read,
+	// and it sees only the organizations of the token.
+	if principal != nil && !principal.HasCapability(tokencaps.JobsRead) {
+		h.respondWithError(w, http.StatusForbidden, store.ErrForbidden)
+		return
+	}
 	if jvs, ok := h.store.(jobsVisibleToStore); ok && h.visibility != nil {
 		id := authz.IdentityFromUser(user)
 		isGlobalAdmin, err := h.visibility.IsGlobalAdmin(r.Context(), id)
@@ -566,6 +657,9 @@ func (h *JobHandler) ListJobs(w http.ResponseWriter, r *http.Request) {
 		}
 
 		filters := h.parseFilters(r, user)
+		if principal != nil && !principal.AllOrganizations {
+			filters["org_ids"] = append([]string(nil), principal.OrganizationIDs...)
+		}
 		jobs, total, err := jvs.ListJobsVisibleTo(r.Context(), user.UserID, isGlobalAdmin, filters, limit, offset)
 		if err != nil {
 			h.respondWithError(w, http.StatusInternalServerError, err)
@@ -576,6 +670,7 @@ func (h *JobHandler) ListJobs(w http.ResponseWriter, r *http.Request) {
 		for i, job := range jobs {
 			jobResponses[i] = h.jobToResponse(&job)
 		}
+		describeJobActors(r.Context(), h.store, jobResponses)
 		h.respondWithJSON(w, http.StatusOK, ListJobsResponse{
 			Jobs:   jobResponses,
 			Total:  int(total),
@@ -602,6 +697,7 @@ func (h *JobHandler) ListJobs(w http.ResponseWriter, r *http.Request) {
 	for i, job := range jobs {
 		jobResponses[i] = h.jobToResponse(&job)
 	}
+	describeJobActors(r.Context(), h.store, jobResponses)
 	h.respondWithJSON(w, http.StatusOK, ListJobsResponse{
 		Jobs:   jobResponses,
 		Total:  len(jobResponses),
@@ -748,14 +844,31 @@ func (h *JobHandler) RetryJob(w http.ResponseWriter, r *http.Request) {
 	// authoritative check is models.Job.IsRetryable inside
 	// jobcontrol.RetryJob itself.
 	if !job.IsRetryable() {
-		h.respondWithError(w, http.StatusBadRequest, store.ErrInvalidInput)
+		respondNotRetryable(&h.BaseHandler, w, jobcontrol.JobNotRetryable(job))
+		return
+	}
+	// The body may set only shifts (D18, D25); any other change is refused.
+	shifts, ok := readShiftsBody(&h.BaseHandler, w, r)
+	if !ok {
 		return
 	}
 
-	newJob, err := jobcontrol.RetryJob(r.Context(), h.store, h.corndogsClient, job)
+	newJob, err := jobcontrol.RetryJobWithShifts(r.Context(), h.store, h.corndogsClient, job, shifts)
 	if err != nil {
 		if errors.Is(err, jobcontrol.ErrNotRetryable) {
-			h.respondWithError(w, http.StatusBadRequest, store.ErrInvalidInput)
+			respondNotRetryable(&h.BaseHandler, w, err)
+			return
+		}
+		if errors.Is(err, jobcontrol.ErrWorkerClassRefused) {
+			h.respondWithJSON(w, http.StatusForbidden, ErrorResponse{Error: "worker_class_refused", Message: err.Error()})
+			return
+		}
+		if errors.Is(err, jobcontrol.ErrImageGone) {
+			h.respondWithJSON(w, http.StatusConflict, ErrorResponse{Error: "image_gone", Message: err.Error()})
+			return
+		}
+		if jobcontrol.IsShiftError(err) {
+			respondShiftError(&h.BaseHandler, w, err)
 			return
 		}
 		h.respondWithError(w, http.StatusInternalServerError, err)
@@ -1044,20 +1157,19 @@ func (h *JobHandler) SubmitTriggers(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Authorize the classified token subject in the parent job organization.
+	// Only the running parent job itself can submit its triggers, with its
+	// bound job token. A child job inherits the ref classes, the event, and
+	// the trusted CI authority of its parent. Any other credential (a user
+	// session, a service token, the admin token) could otherwise attach new
+	// jobs to a completed production job and launder its authority
+	// (docs/ui-auth.md, "API Credential Subjects").
 	user := checkauth.GetUserFromContext(r.Context())
 	principal := checkauth.GetPrincipalFromContext(r.Context())
 	if user == nil && principal == nil {
 		h.respondWithError(w, http.StatusUnauthorized, store.ErrUnauthorized)
 		return
 	}
-	allowed := false
-	if principal != nil && principal.HasCapability(tokencaps.JobsSubmit) && principal.HasOrganization(parentJob.OrgID) {
-		allowed = principal.CredentialType != "job_token" || principal.BoundJobID == parentJob.JobID
-	} else if principal == nil && user != nil {
-		allowed = h.canUserAccessJob(user, parentJob)
-	}
-	if !allowed {
+	if !canSubmitTriggersFor(principal, parentJob) {
 		h.respondWithError(w, http.StatusForbidden, store.ErrForbidden)
 		return
 	}
@@ -1099,6 +1211,21 @@ func (h *JobHandler) SubmitTriggers(w http.ResponseWriter, r *http.Request) {
 		Count:         len(result.CreatedJobIDs),
 		Workflows:     result.Workflows,
 	})
+}
+
+// canSubmitTriggersFor reports whether principal may submit triggers for
+// parent: only the bound job token of parent, while parent runs.
+func canSubmitTriggersFor(principal *checkauth.Principal, parent *models.Job) bool {
+	if principal == nil || parent == nil || principal.CredentialType != "job_token" {
+		return false
+	}
+	if principal.BoundJobID == "" || principal.BoundJobID != parent.JobID {
+		return false
+	}
+	if !principal.HasCapability(tokencaps.JobsSubmit) || !principal.HasOrganization(parent.OrgID) {
+		return false
+	}
+	return parent.Status == "running" || parent.Status == "scheduling"
 }
 
 func (h *JobHandler) validateTriggerAuthorityFields(body []byte) error {
@@ -1312,6 +1439,8 @@ func (h *JobHandler) createJobFromRequest(req *CreateJobRequest, userID string) 
 		JobEnvFile:  req.JobEnvFile,
 		RunAsUser:   req.RunAsUser,
 
+		RunAsAdministrator: req.RunAsAdministrator,
+
 		ImagePullSecrets: req.ImagePullSecrets,
 
 		QueueName: req.QueueName,
@@ -1400,6 +1529,12 @@ func (h *JobHandler) createJobFromRequest(req *CreateJobRequest, userID string) 
 	job.ResourceCPURequest = cpuRequest
 	job.ResourceCPULimit = cpuLimit
 	job.ResourceMemoryLimit = memoryLimit
+	storageRequest, storageLimit, err := resources.ParseStorage(req.Resources)
+	if err != nil {
+		return nil, fmt.Errorf("%w: invalid resources: %w", store.ErrInvalidInput, err)
+	}
+	job.ResourceStorageRequest = storageRequest
+	job.ResourceStorageLimit = storageLimit
 
 	return job, nil
 }
@@ -1447,6 +1582,12 @@ func (h *JobHandler) jobToResponse(job *models.Job) JobResponse {
 		CreatedAt:   job.CreatedAt,
 		UpdatedAt:   job.UpdatedAt,
 
+		FailureClass:  job.FailureClassValue(),
+		FailureDetail: job.FailureDetail,
+		FailureOwner:  models.FailureOwner(job.FailureClassValue()),
+		RetryCount:    job.RetryCount,
+		Shifts:        job.Shifts,
+
 		SourceURL:  sourceURL,
 		SourceRef:  sourceRef,
 		SourceType: sourceType,
@@ -1456,16 +1597,22 @@ func (h *JobHandler) jobToResponse(job *models.Job) JobResponse {
 		CISourceURL:  ciSourceURL,
 		CISourceRef:  ciSourceRef,
 
-		CodeDir:          job.CodeDir,
-		JobDir:           job.JobDir,
-		JobCommand:       job.JobCommand,
-		RunnerImage:      job.RunnerImage,
-		JobEnvFile:       job.JobEnvFile,
-		RunAsUser:        job.RunAsUser,
-		ImagePullSecrets: job.ImagePullSecrets,
-		TimeoutSeconds:   job.TimeoutSeconds,
-		Priority:         job.Priority,
-		QueueName:        job.QueueName,
+		CodeDir:            job.CodeDir,
+		JobDir:             job.JobDir,
+		JobCommand:         job.JobCommand,
+		RunnerImage:        job.RunnerImage,
+		ImageAlias:         job.ImageAlias,
+		ImageDisplay:       imagealias.DisplayJob(job),
+		ImageRetryOf:       job.ImageRetryOf,
+		JobEnvFile:         job.JobEnvFile,
+		RunAsUser:          job.RunAsUser,
+		RunAsAdministrator: job.RunAsAdministrator,
+		ImagePullSecrets:   job.ImagePullSecrets,
+		TimeoutSeconds:     job.TimeoutSeconds,
+		Priority:           job.Priority,
+		PriorityLane:       job.PriorityLane,
+		PriorityReason:     job.PriorityReason,
+		QueueName:          job.QueueName,
 
 		SchedulingStartedAt: job.SchedulingStartedAt,
 		StartedAt:           job.StartedAt,
@@ -1482,6 +1629,8 @@ func (h *JobHandler) jobToResponse(job *models.Job) JobResponse {
 		WorkflowRunID:    job.WorkflowRunID,
 		WorkflowNodeName: job.WorkflowNodeName,
 	}
+	response.Actor = principals.SummaryFor(nil, job.ActorPrincipalID, job.ActorIdentity)
+	response.RefClasses = refclass.ForJob(job)
 
 	// Convert env vars
 	if job.JobEnvVars != nil {
@@ -1634,6 +1783,11 @@ func (h *JobHandler) commonJobQueryFilters(r *http.Request) map[string]interface
 	if workflowID := r.URL.Query().Get("workflow_id"); workflowID != "" {
 		filters["workflow_id"] = workflowID
 	}
+	// failure_class: one of models.FailureClasses.
+	// An unknown value is ignored, as an unknown status is.
+	if class := r.URL.Query().Get("failure_class"); models.IsValidFailureClass(class) {
+		filters["failure_class"] = class
+	}
 
 	return filters
 }
@@ -1672,4 +1826,12 @@ func (h *JobHandler) parseFiltersStrict(r *http.Request, user *models.User) map[
 		filters["user_id"] = userID
 	}
 	return filters
+}
+
+// respondNotRetryable answers a refused retry or re-run (a job or a workflow
+// in a state that does not allow it) with HTTP 400, the error code
+// not_retryable, and the message of jobcontrol.StateError: the states that
+// allow it and the current status.
+func respondNotRetryable(h *BaseHandler, w http.ResponseWriter, err error) {
+	h.respondWithJSON(w, http.StatusBadRequest, ErrorResponse{Error: "not_retryable", Message: err.Error()})
 }

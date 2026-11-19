@@ -3,6 +3,7 @@ package worker
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -349,44 +350,49 @@ func TestParseCommand(t *testing.T) {
 		expected []string
 	}{
 		{
-			name:     "simple command",
+			name:     "simple command goes through sh -c",
 			input:    "echo hello",
-			expected: []string{"echo", "hello"},
+			expected: []string{"sh", "-c", "echo hello"},
 		},
 		{
-			name:     "command with multiple args",
-			input:    "echo hello from kubernetes",
-			expected: []string{"echo", "hello", "from", "kubernetes"},
+			name:     "shell syntax on one line",
+			input:    "echo a; sleep 720",
+			expected: []string{"sh", "-c", "echo a; sleep 720"},
 		},
 		{
-			name:     "single quotes",
+			name:     "pipe on one line",
+			input:    "go test ./... | tee out.txt",
+			expected: []string{"sh", "-c", "go test ./... | tee out.txt"},
+		},
+		{
+			name:     "single quotes after sh -c are not wrapped again",
 			input:    "sh -c 'echo hello world'",
 			expected: []string{"sh", "-c", "echo hello world"},
 		},
 		{
-			name:     "double quotes",
+			name:     "double quotes stay in the shell text",
 			input:    `echo "hello world"`,
-			expected: []string{"echo", "hello world"},
+			expected: []string{"sh", "-c", `echo "hello world"`},
 		},
 		{
-			name:     "mixed quotes",
+			name:     "mixed quotes after sh -c",
 			input:    `sh -c "echo 'hello'"`,
 			expected: []string{"sh", "-c", "echo 'hello'"},
 		},
 		{
-			name:     "escaped characters",
-			input:    `echo hello\ world`,
-			expected: []string{"echo", "hello world"},
+			name:     "bash -c is not wrapped again",
+			input:    `bash -c "set -e; make"`,
+			expected: []string{"bash", "-c", "set -e; make"},
 		},
 		{
 			name:     "runnerlib command",
 			input:    `runnerlib run --job-command "make build"`,
-			expected: []string{"runnerlib", "run", "--job-command", "make build"},
+			expected: []string{"sh", "-c", `runnerlib run --job-command "make build"`},
 		},
 		{
-			name:     "python with flags",
-			input:    "python script.py --verbose --output /tmp/out",
-			expected: []string{"python", "script.py", "--verbose", "--output", "/tmp/out"},
+			name:     "powershell invocation is not wrapped again",
+			input:    `powershell.exe -NoProfile -Command "Write-Output a"`,
+			expected: []string{"powershell.exe", "-NoProfile", "-Command", "Write-Output a"},
 		},
 	}
 
@@ -415,10 +421,28 @@ func TestParseCommandWithPrefix(t *testing.T) {
 		expected []string
 	}{
 		{
-			name:     "single-line command (no prefix needed)",
+			name:     "single-line command with default shell",
 			cmd:      "echo hello",
 			prefix:   "",
-			expected: []string{"echo", "hello"},
+			expected: []string{"sh", "-c", "echo hello"},
+		},
+		{
+			name:     "single-line command with prefix none runs directly",
+			cmd:      `/app/server --flag "a b"`,
+			prefix:   "none",
+			expected: []string{"/app/server", "--flag", "a b"},
+		},
+		{
+			name:     "prefix NONE is case-insensitive",
+			cmd:      "echo $HOME",
+			prefix:   " NONE ",
+			expected: []string{"echo", "$HOME"},
+		},
+		{
+			name:     "single-line command with Windows prefix",
+			cmd:      "go test ./...",
+			prefix:   WindowsShellPrefix,
+			expected: []string{"powershell.exe", "-NoProfile", "-NonInteractive", "-Command", "go test ./..."},
 		},
 		{
 			name:     "multiline command with default shell",
@@ -445,10 +469,40 @@ func TestParseCommandWithPrefix(t *testing.T) {
 			expected: []string{"sh", "-c", "echo hello\nexit 0"},
 		},
 		{
-			name:     "single-line with custom prefix (ignored for single-line)",
+			name:     "multiline command with multi-flag prefix",
+			cmd:      "Write-Output a\nWrite-Output b",
+			prefix:   "powershell.exe -NoProfile -NonInteractive -Command",
+			expected: []string{"powershell.exe", "-NoProfile", "-NonInteractive", "-Command", "Write-Output a\nWrite-Output b"},
+		},
+		{
+			name:     "env ref command with multi-flag prefix and extra spaces",
+			cmd:      "echo $HOME",
+			prefix:   "  bash   -e  -c ",
+			expected: []string{"bash", "-e", "-c", "echo $HOME"},
+		},
+		{
+			name:     "multiline command with quoted prefix word",
+			cmd:      "echo a\necho b",
+			prefix:   "\"C:/Program Files/PowerShell/7/pwsh.exe\" -Command",
+			expected: []string{"C:/Program Files/PowerShell/7/pwsh.exe", "-Command", "echo a\necho b"},
+		},
+		{
+			name:     "multiline command with backslash Windows path prefix",
+			cmd:      "echo a\necho b",
+			prefix:   `C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe -NoProfile -Command`,
+			expected: []string{`C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe`, "-NoProfile", "-Command", "echo a\necho b"},
+		},
+		{
+			name:     "single-word prefix falls back to sh -c",
+			cmd:      "echo a\necho b",
+			prefix:   "bash",
+			expected: []string{"sh", "-c", "echo a\necho b"},
+		},
+		{
+			name:     "single-line with custom prefix",
 			cmd:      "echo hello",
 			prefix:   "bash -c",
-			expected: []string{"echo", "hello"},
+			expected: []string{"bash", "-c", "echo hello"},
 		},
 	}
 
@@ -465,6 +519,50 @@ func TestParseCommandWithPrefix(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestResolveShellPrefix(t *testing.T) {
+	tests := []struct {
+		name, commandPrefix, envPrefix, osName, want string
+	}{
+		{"linux default", "", "", "linux", DefaultShellPrefix},
+		{"no os default", "", "", "", DefaultShellPrefix},
+		{"macos default", "", "", "macos", DefaultShellPrefix},
+		{"windows default", "", "", "windows", WindowsShellPrefix},
+		{"env overrides os default", "", "pwsh -Command", "windows", "pwsh -Command"},
+		{"command_prefix overrides env", "bash -c", "zsh -c", "linux", "bash -c"},
+		{"blank values fall through", "  ", " ", "windows", WindowsShellPrefix},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := ResolveShellPrefix(tt.commandPrefix, tt.envPrefix, tt.osName); got != tt.want {
+				t.Errorf("ResolveShellPrefix() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestToJobConfig_ShellPrefixSources(t *testing.T) {
+	windows := &JobSpec{Command: "go test ./...", Characteristics: map[string]interface{}{"os": "windows"}}
+	got := windows.ToJobConfig("/workspace", "job-1", "").Command
+	want := []string{"powershell.exe", "-NoProfile", "-NonInteractive", "-Command", "go test ./..."}
+	if strings.Join(got, "|") != strings.Join(want, "|") {
+		t.Errorf("windows default command = %q, want %q", got, want)
+	}
+
+	envPrefix := &JobSpec{Command: "echo a; echo b", Environment: map[string]string{ShellPrefixEnvVar: "/bin/zsh -c"}}
+	got = envPrefix.ToJobConfig("/workspace", "job-2", "").Command
+	want = []string{"/bin/zsh", "-c", "echo a; echo b"}
+	if strings.Join(got, "|") != strings.Join(want, "|") {
+		t.Errorf("env prefix command = %q, want %q", got, want)
+	}
+
+	direct := &JobSpec{Command: "/server --once", CommandPrefix: "none", Environment: map[string]string{ShellPrefixEnvVar: "bash -c"}}
+	got = direct.ToJobConfig("/workspace", "job-3", "").Command
+	want = []string{"/server", "--once"}
+	if strings.Join(got, "|") != strings.Join(want, "|") {
+		t.Errorf("command_prefix none command = %q, want %q", got, want)
 	}
 }
 

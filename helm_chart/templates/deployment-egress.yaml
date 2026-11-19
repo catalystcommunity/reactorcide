@@ -1,0 +1,203 @@
+{{- if .Values.egressProxy.enabled }}
+{{- if not .Values.egressProxy.secretName }}
+{{- fail "egressProxy.secretName is required when egressProxy.enabled is true (a Secret with ca.crt, ca.key, job.key, control.token)" }}
+{{- end }}
+# The egress proxy (egress_proxy/, docs/egress-proxy.md). Workers register
+# each job with egress control over the control port; job pods reach the
+# proxy port only.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "egress.name" . }}-policy
+  labels:
+    {{- include "egress.selectorLabels" . | nindent 4 }}
+data:
+  policy.json: {{ toJson .Values.egressProxy.policy | quote }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "egress.name" . }}
+  labels:
+    {{- include "egress.selectorLabels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.egressProxy.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "egress.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "egress.selectorLabels" . | nindent 8 }}
+      annotations:
+        checksum/policy: {{ toJson .Values.egressProxy.policy | sha256sum }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+      containers:
+        - name: egress
+          image: "{{ .Values.egressProxy.image.repository }}:{{ .Values.egressProxy.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.egressProxy.image.pullPolicy }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          env:
+            - name: REACTORCIDE_EGRESS_LISTEN
+              value: ":{{ .Values.egressProxy.service.controlPort }}"
+            - name: REACTORCIDE_EGRESS_PROXY_LISTEN
+              value: ":{{ .Values.egressProxy.service.proxyPort }}"
+            - name: REACTORCIDE_EGRESS_POLICY
+              value: /etc/reactorcide/egress-policy/policy.json
+            - name: REACTORCIDE_EGRESS_CA_CERT
+              value: /etc/reactorcide/egress/ca.crt
+            - name: REACTORCIDE_EGRESS_CA_KEY
+              value: /etc/reactorcide/egress/ca.key
+            - name: REACTORCIDE_EGRESS_JOB_KEY
+              value: /etc/reactorcide/egress/job.key
+            - name: REACTORCIDE_EGRESS_CONTROL_TOKEN_FILE
+              value: /etc/reactorcide/egress/control.token
+            {{- if .Values.egressProxy.secretsDirSecret }}
+            - name: REACTORCIDE_EGRESS_SECRETS_DIR
+              value: /etc/reactorcide/egress-secrets
+            {{- end }}
+            {{- if .Values.egressProxy.controlTLS.enabled }}
+            - name: REACTORCIDE_EGRESS_CONTROL_TLS_NAME
+              value: {{ include "egress.host" . | quote }}
+            {{- end }}
+            {{- if .Values.egressProxy.allowUnregistered }}
+            - name: REACTORCIDE_EGRESS_ALLOW_UNREGISTERED
+              value: "true"
+            {{- end }}
+          ports:
+            - name: proxy
+              containerPort: {{ .Values.egressProxy.service.proxyPort }}
+            - name: control
+              containerPort: {{ .Values.egressProxy.service.controlPort }}
+          # Exec probes: they need no ingress from the node (the control
+          # port NetworkPolicy permits only workers) and work with TLS.
+          readinessProbe:
+            exec:
+              command: ["/usr/local/bin/reactorcide-egress-net", "check", "-addr", "127.0.0.1:{{ .Values.egressProxy.service.controlPort }}"]
+            periodSeconds: 5
+          livenessProbe:
+            exec:
+              command: ["/usr/local/bin/reactorcide-egress-net", "check", "-addr", "127.0.0.1:{{ .Values.egressProxy.service.controlPort }}"]
+            periodSeconds: 20
+          resources:
+            {{- toYaml .Values.egressProxy.resources | nindent 12 }}
+          volumeMounts:
+            - name: egress-keys
+              mountPath: /etc/reactorcide/egress
+              readOnly: true
+            - name: egress-policy
+              mountPath: /etc/reactorcide/egress-policy
+              readOnly: true
+            {{- if .Values.egressProxy.secretsDirSecret }}
+            - name: egress-secrets
+              mountPath: /etc/reactorcide/egress-secrets
+              readOnly: true
+            {{- end }}
+      volumes:
+        - name: egress-keys
+          secret:
+            secretName: {{ .Values.egressProxy.secretName }}
+            defaultMode: 0400
+        - name: egress-policy
+          configMap:
+            name: {{ include "egress.name" . }}-policy
+        {{- if .Values.egressProxy.secretsDirSecret }}
+        - name: egress-secrets
+          secret:
+            secretName: {{ .Values.egressProxy.secretsDirSecret }}
+            defaultMode: 0400
+        {{- end }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "egress.name" . }}
+  labels:
+    {{- include "egress.selectorLabels" . | nindent 4 }}
+spec:
+  type: ClusterIP
+  ports:
+    - name: proxy
+      port: {{ .Values.egressProxy.service.proxyPort }}
+      targetPort: proxy
+    - name: control
+      port: {{ .Values.egressProxy.service.controlPort }}
+      targetPort: control
+  selector:
+    {{- include "egress.selectorLabels" . | nindent 4 }}
+{{- if .Values.egressProxy.networkPolicy.enabled }}
+---
+# Job pods with egress control may only reach the proxy port. DNS is not
+# needed: the pod answers DNS itself (fake DNS of egress-forward). No
+# ingress: a connection into the job could carry data out on its replies.
+# The pod has exec probes only (egress-forward startup probe), so the
+# kubelet needs no ingress.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "egress.name" . }}-jobs
+  namespace: {{ default .Release.Namespace .Values.worker.jobNamespace }}
+spec:
+  podSelector:
+    matchLabels:
+      reactorcide.io/egress: proxy
+  policyTypes: ["Egress", "Ingress"]
+  ingress: []
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Release.Namespace }}
+          podSelector:
+            matchLabels:
+              {{- include "egress.selectorLabels" . | nindent 14 }}
+      ports:
+        - protocol: TCP
+          port: {{ .Values.egressProxy.service.proxyPort }}
+---
+# Only workers reach the control port (job registration with secret
+# values). Only egress job pods (and proxyClients) reach the proxy port.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "egress.name" . }}-control
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "egress.selectorLabels" . | nindent 6 }}
+  policyTypes: ["Ingress"]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              {{- include "worker.selectorLabels" . | nindent 14 }}
+      ports:
+        - protocol: TCP
+          port: {{ .Values.egressProxy.service.controlPort }}
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ default .Release.Namespace .Values.worker.jobNamespace }}
+          podSelector:
+            matchLabels:
+              reactorcide.io/egress: proxy
+        {{- with .Values.egressProxy.networkPolicy.proxyClients }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      ports:
+        - protocol: TCP
+          port: {{ .Values.egressProxy.service.proxyPort }}
+{{- end }}
+{{- end }}

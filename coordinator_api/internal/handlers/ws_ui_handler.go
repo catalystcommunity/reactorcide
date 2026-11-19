@@ -10,6 +10,7 @@ import (
 
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/auth"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/authz"
+	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/middleware"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/pubsub"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store"
 	"github.com/gorilla/websocket"
@@ -113,8 +114,8 @@ func NewUIStreamHandler(bus *pubsub.Bus, s store.Store) *UIStreamHandler {
 
 // Stream upgrades the connection and serves authorized events.
 //
-// Authentication is the browser's own UI SESSION token, presented as a bearer
-// token by the webapp proxy. An unauthenticated connection is allowed and is
+// Authentication is a bearer token: the browser's own UI session (presented
+// by the webapp proxy) or an API token (the CLI). See identityFor. An unauthenticated connection is allowed and is
 // treated as anonymous: the UI supports logged-out browsing of public data, and
 // the visibility rule already answers "what can an anonymous caller see" —
 // refusing the socket outright would break that page rather than protect
@@ -125,7 +126,11 @@ func (h *UIStreamHandler) Stream(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	identity := h.identityFor(r)
+	identity, ok := h.identityFor(r)
+	if !ok {
+		http.Error(w, "invalid or expired token", http.StatusUnauthorized)
+		return
+	}
 
 	// Resolve the caller's visibility ONCE, before the upgrade. Every frame is
 	// then a field comparison against this snapshot.
@@ -168,20 +173,42 @@ func (h *UIStreamHandler) Stream(w http.ResponseWriter, r *http.Request) {
 	h.writeLoop(ctx, ws, sub)
 }
 
-// identityFor resolves the bearer token as a UI SESSION, falling back to
-// anonymous. API tokens are deliberately not accepted here: this endpoint
-// exists for the browser, whose credential is a session, and accepting a
-// service token would re-open the very hole this replaces.
-func (h *UIStreamHandler) identityFor(r *http.Request) authz.Identity {
-	token := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
-	if token == "" || h.sessions == nil {
-		return authz.AnonymousIdentity()
+// identityFor resolves the bearer token as a UI session or as an API token,
+// with the same token rules as REST (middleware.PrincipalForToken). A
+// browser is not special: the webapp forwards the session of the browser, and
+// the CLI sends its API token. No bearer token is an anonymous caller (public
+// data only). A bearer token that is neither a valid session nor a valid API
+// token is refused (ok false): the caller asked to be someone, and is not.
+//
+// The webapp keeps its own protection for the cookie session (an HttpOnly
+// SameSite=Lax cookie). A bearer token needs no origin check here, as in REST.
+func (h *UIStreamHandler) identityFor(r *http.Request) (authz.Identity, bool) {
+	header := r.Header.Get("Authorization")
+	if header == "" {
+		return authz.AnonymousIdentity(), true
 	}
-	user, _, err := h.sessions.ResolveSession(r.Context(), token)
-	if err == nil && user != nil {
-		return authz.IdentityFromUser(user)
+	token := strings.TrimPrefix(header, "Bearer ")
+	if token == "" || token == header {
+		return authz.Identity{}, false
 	}
-	return authz.AnonymousIdentity()
+	if h.sessions != nil {
+		user, _, err := h.sessions.ResolveSession(r.Context(), token)
+		if err == nil && user != nil {
+			return authz.IdentityFromUser(user), true
+		}
+	}
+	if h.store == nil {
+		return authz.Identity{}, false
+	}
+	principal, user, _, err := middleware.PrincipalForToken(r.Context(), h.store, token)
+	if err != nil {
+		return authz.Identity{}, false
+	}
+	identity := authz.IdentityFromPrincipal(principal, user)
+	if identity.Anonymous {
+		return authz.Identity{}, false
+	}
+	return identity, true
 }
 
 // readLoop consumes client messages. The client may only manage its topic set;
