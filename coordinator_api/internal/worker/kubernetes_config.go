@@ -50,7 +50,14 @@ func loadKubernetesClusterConfig(kubeconfig, kubeContext string) (kubernetesClus
 		// The error text names the file and context, never credential values.
 		return kubernetesClusterConfig{}, fmt.Errorf("failed to load kubeconfig %q: %w", kubeconfig, err)
 	}
-	namespace, _, err := clientConfig.Namespace()
+	// The deferred loader uses the namespace of the pod that runs the
+	// worker when the context sets none. That is the wrong cluster for a
+	// remote kubeconfig, so read the namespace from the kubeconfig only.
+	raw, err := clientConfig.RawConfig()
+	if err != nil {
+		return kubernetesClusterConfig{}, fmt.Errorf("failed to load kubeconfig %q: %w", kubeconfig, err)
+	}
+	namespace, _, err := clientcmd.NewDefaultClientConfig(raw, overrides).Namespace()
 	if err != nil {
 		return kubernetesClusterConfig{}, fmt.Errorf("failed to read the namespace of kubeconfig %q: %w", kubeconfig, err)
 	}
