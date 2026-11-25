@@ -158,6 +158,10 @@ class Reader {
     return this.pos === this.data.length;
   }
 
+  private remaining(): number {
+    return this.data.length - this.pos;
+  }
+
   private byte(): number {
     if (this.pos >= this.data.length) {
       throw new Error("unexpected end of CBOR input");
@@ -200,7 +204,8 @@ class Reader {
     throw new Error(`unsupported CBOR additional info ${ai} (indefinite lengths are not allowed)`);
   }
 
-  value(): Cbor {
+  value(depth = 0): Cbor {
+    if (depth > 64) throw new Error("CBOR nesting limit exceeded");
     const head = this.byte();
     const major = head >> 5;
     const arg = this.argument(head & 0x1f);
@@ -214,17 +219,19 @@ class Reader {
       case 3:
         return text(TEXT_DECODER.decode(this.take(arg)));
       case 4: {
+        if (arg > this.remaining()) throw new Error("CBOR array length exceeds remaining input");
         const items: Cbor[] = [];
-        for (let i = 0; i < arg; i++) items.push(this.value());
+        for (let i = 0; i < arg; i++) items.push(this.value(depth + 1));
         return array(items);
       }
       case 5: {
+        if (arg > this.remaining()) throw new Error("CBOR map length exceeds remaining input");
         const entries: [Cbor, Cbor][] = [];
-        for (let i = 0; i < arg; i++) entries.push([this.value(), this.value()]);
+        for (let i = 0; i < arg; i++) entries.push([this.value(depth + 1), this.value(depth + 1)]);
         return map(entries);
       }
       case 6:
-        return tag(arg, this.value());
+        return tag(arg, this.value(depth + 1));
       default:
         throw new Error(`unsupported CBOR major type ${major}`);
     }

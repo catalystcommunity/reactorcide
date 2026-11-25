@@ -5,22 +5,13 @@ package csilapi
 
 import (
 	"context"
-	"fmt"
 )
 
-// ClientError is returned by a generated client call: a structured error the
-// service returned (Code/Message), or a transport-level failure (Err).
-type ClientError struct {
-	Code    int64
-	Message string
-	Err     error
-}
-
-func (e *ClientError) Error() string {
-	if e.Err != nil {
-		return "transport error: " + e.Err.Error()
-	}
-	return fmt.Sprintf("service error %d: %s", e.Code, e.Message)
+// WireReply is a status-zero CSIL-RPC reply: Variant names the declared output arm
+// that Payload encodes. A transport returns it from CallReply.
+type WireReply struct {
+	Variant *string
+	Payload []byte
 }
 
 // Transport is the caller-supplied byte carrier: it performs the call named by
@@ -28,9 +19,12 @@ func (e *ClientError) Error() string {
 // bytes, or an error. Both names are the verbatim CSIL names (service as written,
 // op in kebab-case as written), ready to go on the wire unmodified. The generated
 // client owns (de)serialization via the codec; the carrier only moves bytes, so
-// it can be HTTP, a queue, or an in-process loop.
+// it can be HTTP, a queue, or an in-process loop. CallReply serves operations
+// that declare several reply arms: it also returns the reply variant, so the
+// client can return the success arm or the declared error arm.
 type Transport interface {
 	Call(ctx context.Context, service string, op string, req []byte) ([]byte, error)
+	CallReply(ctx context.Context, service string, op string, req []byte) (WireReply, error)
 }
 
 // ReactorcideWorkerClient is a typed client for the ReactorcideWorker service. The client owns
@@ -45,72 +39,168 @@ func NewReactorcideWorkerClient(transport Transport) *ReactorcideWorkerClient {
 
 func (c *ReactorcideWorkerClient) Register(ctx context.Context, req RegisterRequest) (RegisterResponse, error) {
 	var csilZero RegisterResponse
-	csilResp, csilErr := c.transport.Call(ctx, "ReactorcideWorker", "register", EncodeRegisterRequest(req))
+	csilReq, csilErr := EncodeRegisterRequest(req)
+	if csilErr != nil {
+		return csilZero, &RPCEncodeError{csilErr}
+	}
+	csilReply, csilErr := c.transport.CallReply(ctx, "ReactorcideWorker", "register", csilReq)
 	if csilErr != nil {
 		return csilZero, csilErr
 	}
-	return DecodeRegisterResponse(csilResp)
+	csilResp, csilErr := ResolveRPCReply("ReactorcideWorker", "register", csilReply.Variant, csilReply.Payload)
+	if csilErr != nil {
+		return csilZero, csilErr
+	}
+	value, err := DecodeRegisterResponse(csilResp)
+	if err != nil {
+		return csilZero, &RPCDecodeError{err}
+	}
+	return value, nil
 }
 
 func (c *ReactorcideWorkerClient) RequestJob(ctx context.Context, req RequestJobRequest) (RequestJobResponse, error) {
 	var csilZero RequestJobResponse
-	csilResp, csilErr := c.transport.Call(ctx, "ReactorcideWorker", "request-job", EncodeRequestJobRequest(req))
+	csilReq, csilErr := EncodeRequestJobRequest(req)
+	if csilErr != nil {
+		return csilZero, &RPCEncodeError{csilErr}
+	}
+	csilReply, csilErr := c.transport.CallReply(ctx, "ReactorcideWorker", "request-job", csilReq)
 	if csilErr != nil {
 		return csilZero, csilErr
 	}
-	return DecodeRequestJobResponse(csilResp)
+	csilResp, csilErr := ResolveRPCReply("ReactorcideWorker", "request-job", csilReply.Variant, csilReply.Payload)
+	if csilErr != nil {
+		return csilZero, csilErr
+	}
+	value, err := DecodeRequestJobResponse(csilResp)
+	if err != nil {
+		return csilZero, &RPCDecodeError{err}
+	}
+	return value, nil
 }
 
 func (c *ReactorcideWorkerClient) Heartbeat(ctx context.Context, req HeartbeatRequest) (HeartbeatResponse, error) {
 	var csilZero HeartbeatResponse
-	csilResp, csilErr := c.transport.Call(ctx, "ReactorcideWorker", "heartbeat", EncodeHeartbeatRequest(req))
+	csilReq, csilErr := EncodeHeartbeatRequest(req)
+	if csilErr != nil {
+		return csilZero, &RPCEncodeError{csilErr}
+	}
+	csilReply, csilErr := c.transport.CallReply(ctx, "ReactorcideWorker", "heartbeat", csilReq)
 	if csilErr != nil {
 		return csilZero, csilErr
 	}
-	return DecodeHeartbeatResponse(csilResp)
+	csilResp, csilErr := ResolveRPCReply("ReactorcideWorker", "heartbeat", csilReply.Variant, csilReply.Payload)
+	if csilErr != nil {
+		return csilZero, csilErr
+	}
+	value, err := DecodeHeartbeatResponse(csilResp)
+	if err != nil {
+		return csilZero, &RPCDecodeError{err}
+	}
+	return value, nil
 }
 
 func (c *ReactorcideWorkerClient) AppendLogs(ctx context.Context, req AppendLogsRequest) (AppendLogsResponse, error) {
 	var csilZero AppendLogsResponse
-	csilResp, csilErr := c.transport.Call(ctx, "ReactorcideWorker", "append-logs", EncodeAppendLogsRequest(req))
+	csilReq, csilErr := EncodeAppendLogsRequest(req)
+	if csilErr != nil {
+		return csilZero, &RPCEncodeError{csilErr}
+	}
+	csilReply, csilErr := c.transport.CallReply(ctx, "ReactorcideWorker", "append-logs", csilReq)
 	if csilErr != nil {
 		return csilZero, csilErr
 	}
-	return DecodeAppendLogsResponse(csilResp)
+	csilResp, csilErr := ResolveRPCReply("ReactorcideWorker", "append-logs", csilReply.Variant, csilReply.Payload)
+	if csilErr != nil {
+		return csilZero, csilErr
+	}
+	value, err := DecodeAppendLogsResponse(csilResp)
+	if err != nil {
+		return csilZero, &RPCDecodeError{err}
+	}
+	return value, nil
 }
 
 func (c *ReactorcideWorkerClient) AppendLogBatch(ctx context.Context, req AppendLogBatchRequest) (AppendLogBatchResponse, error) {
 	var csilZero AppendLogBatchResponse
-	csilResp, csilErr := c.transport.Call(ctx, "ReactorcideWorker", "append-log-batch", EncodeAppendLogBatchRequest(req))
+	csilReq, csilErr := EncodeAppendLogBatchRequest(req)
+	if csilErr != nil {
+		return csilZero, &RPCEncodeError{csilErr}
+	}
+	csilReply, csilErr := c.transport.CallReply(ctx, "ReactorcideWorker", "append-log-batch", csilReq)
 	if csilErr != nil {
 		return csilZero, csilErr
 	}
-	return DecodeAppendLogBatchResponse(csilResp)
+	csilResp, csilErr := ResolveRPCReply("ReactorcideWorker", "append-log-batch", csilReply.Variant, csilReply.Payload)
+	if csilErr != nil {
+		return csilZero, csilErr
+	}
+	value, err := DecodeAppendLogBatchResponse(csilResp)
+	if err != nil {
+		return csilZero, &RPCDecodeError{err}
+	}
+	return value, nil
 }
 
 func (c *ReactorcideWorkerClient) AppendMetricBatch(ctx context.Context, req AppendMetricBatchRequest) (AppendMetricBatchResponse, error) {
 	var csilZero AppendMetricBatchResponse
-	csilResp, csilErr := c.transport.Call(ctx, "ReactorcideWorker", "append-metric-batch", EncodeAppendMetricBatchRequest(req))
+	csilReq, csilErr := EncodeAppendMetricBatchRequest(req)
+	if csilErr != nil {
+		return csilZero, &RPCEncodeError{csilErr}
+	}
+	csilReply, csilErr := c.transport.CallReply(ctx, "ReactorcideWorker", "append-metric-batch", csilReq)
 	if csilErr != nil {
 		return csilZero, csilErr
 	}
-	return DecodeAppendMetricBatchResponse(csilResp)
+	csilResp, csilErr := ResolveRPCReply("ReactorcideWorker", "append-metric-batch", csilReply.Variant, csilReply.Payload)
+	if csilErr != nil {
+		return csilZero, csilErr
+	}
+	value, err := DecodeAppendMetricBatchResponse(csilResp)
+	if err != nil {
+		return csilZero, &RPCDecodeError{err}
+	}
+	return value, nil
 }
 
 func (c *ReactorcideWorkerClient) ReportResult(ctx context.Context, req ReportResultRequest) (ReportResultResponse, error) {
 	var csilZero ReportResultResponse
-	csilResp, csilErr := c.transport.Call(ctx, "ReactorcideWorker", "report-result", EncodeReportResultRequest(req))
+	csilReq, csilErr := EncodeReportResultRequest(req)
+	if csilErr != nil {
+		return csilZero, &RPCEncodeError{csilErr}
+	}
+	csilReply, csilErr := c.transport.CallReply(ctx, "ReactorcideWorker", "report-result", csilReq)
 	if csilErr != nil {
 		return csilZero, csilErr
 	}
-	return DecodeReportResultResponse(csilResp)
+	csilResp, csilErr := ResolveRPCReply("ReactorcideWorker", "report-result", csilReply.Variant, csilReply.Payload)
+	if csilErr != nil {
+		return csilZero, csilErr
+	}
+	value, err := DecodeReportResultResponse(csilResp)
+	if err != nil {
+		return csilZero, &RPCDecodeError{err}
+	}
+	return value, nil
 }
 
 func (c *ReactorcideWorkerClient) UploadArtifact(ctx context.Context, req UploadArtifactRequest) (UploadArtifactResponse, error) {
 	var csilZero UploadArtifactResponse
-	csilResp, csilErr := c.transport.Call(ctx, "ReactorcideWorker", "upload-artifact", EncodeUploadArtifactRequest(req))
+	csilReq, csilErr := EncodeUploadArtifactRequest(req)
+	if csilErr != nil {
+		return csilZero, &RPCEncodeError{csilErr}
+	}
+	csilReply, csilErr := c.transport.CallReply(ctx, "ReactorcideWorker", "upload-artifact", csilReq)
 	if csilErr != nil {
 		return csilZero, csilErr
 	}
-	return DecodeUploadArtifactResponse(csilResp)
+	csilResp, csilErr := ResolveRPCReply("ReactorcideWorker", "upload-artifact", csilReply.Variant, csilReply.Payload)
+	if csilErr != nil {
+		return csilZero, csilErr
+	}
+	value, err := DecodeUploadArtifactResponse(csilResp)
+	if err != nil {
+		return csilZero, &RPCDecodeError{err}
+	}
+	return value, nil
 }

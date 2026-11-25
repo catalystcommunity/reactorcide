@@ -85,28 +85,16 @@ func (b *RPBackend) Mode() Mode { return ModeRP }
 // subject and an EMPTY handle, so `handle@domain` selectors in
 // REACTORCIDE_FIRST_ADMIN and the trusted-identity list could never match a
 // handle, and users were provisioned with a uuid for a username. The
-// datatype is advisory metadata for the consent screen ("text" per the
-// LinkKeys CSIL); the protocol carries claim values as opaque bytes.
+// datatype is advisory metadata for the consent screen (ClaimValueType
+// text); the protocol carries claim values as opaque bytes.
 func rpRequestedClaims() *api.ClaimRequest {
 	return &api.ClaimRequest{
-		Required: []api.RequestedClaim{{ClaimType: "handle", Datatype: "text"}},
+		Required: []api.RequestedClaim{{ClaimType: "handle", Datatype: api.ClaimValueTypeText}},
 		Optional: []api.RequestedClaim{
-			{ClaimType: "display_name", Datatype: "text"},
-			{ClaimType: "email", Datatype: "text"},
+			{ClaimType: "display_name", Datatype: api.ClaimValueTypeText},
+			{ClaimType: "email", Datatype: api.ClaimValueTypeText},
 		},
 	}
-}
-
-// rpApplicationID returns the configured LinkKeys application_id, or nil so
-// the RP server falls back to the API-key account username. Since LinkKeys
-// 0.16.7 standing consent is per application, so this value must stay stable:
-// changing it makes every user consent again.
-func rpApplicationID() *string {
-	id := strings.TrimSpace(config.LinkKeysRPApplicationID)
-	if id == "" {
-		return nil
-	}
-	return &id
 }
 
 // BeginLogin is steps 1-2 of example.md's flow: Rp/sign-request, then build
@@ -124,12 +112,11 @@ func (b *RPBackend) BeginLogin(ctx context.Context, identitySelector, callbackUR
 		return "", nil, err
 	}
 
-	signResp, err := b.transport.Call(ctx, "sign-request", api.EncodeRpSignRequest(api.RpSignRequest{
+	signResp, err := callRP(ctx, b.transport, "sign-request", api.EncodeRpSignRequest, api.RpSignRequest{
 		CallbackUrl:     callbackURL,
 		Nonce:           nonce,
-		ApplicationId:   rpApplicationID(),
 		RequestedClaims: rpRequestedClaims(),
-	}))
+	})
 	if err != nil {
 		return "", nil, fmt.Errorf("auth: rp sign-request: %w", err)
 	}
@@ -184,7 +171,7 @@ func (b *RPBackend) CompleteLogin(ctx context.Context, pendingBlob []byte, arriv
 		return nil, err
 	}
 
-	decResp, err := b.transport.Call(ctx, "decrypt-token", api.EncodeRpDecryptRequest(api.RpDecryptRequest{EncryptedToken: encryptedToken}))
+	decResp, err := callRP(ctx, b.transport, "decrypt-token", api.EncodeRpDecryptRequest, api.RpDecryptRequest{EncryptedToken: encryptedToken})
 	if err != nil {
 		return nil, fmt.Errorf("auth: rp decrypt-token: %w", err)
 	}
@@ -193,10 +180,10 @@ func (b *RPBackend) CompleteLogin(ctx context.Context, pendingBlob []byte, arriv
 		return nil, fmt.Errorf("auth: decode decrypt-token response: %w", err)
 	}
 
-	verResp, err := b.transport.Call(ctx, "verify-assertion", api.EncodeRpVerifyRequest(api.RpVerifyRequest{
+	verResp, err := callRP(ctx, b.transport, "verify-assertion", api.EncodeRpVerifyRequest, api.RpVerifyRequest{
 		SignedAssertion: decoded.SignedAssertion,
 		ExpectedDomain:  pending.UserDomain,
-	}))
+	})
 	if err != nil {
 		return nil, fmt.Errorf("auth: rp verify-assertion: %w", err)
 	}
@@ -254,11 +241,11 @@ func (b *RPBackend) CompleteLogin(ctx context.Context, pendingBlob []byte, arriv
 }
 
 func (b *RPBackend) userInfoFetch(ctx context.Context, signedAssertion, apiBase, domain string) (api.UserInfo, error) {
-	resp, err := b.transport.Call(ctx, "userinfo-fetch", api.EncodeRpUserInfoRequest(api.RpUserInfoRequest{
+	resp, err := callRP(ctx, b.transport, "userinfo-fetch", api.EncodeRpUserInfoRequest, api.RpUserInfoRequest{
 		Token:   signedAssertion,
 		ApiBase: apiBase,
 		Domain:  domain,
-	}))
+	})
 	if err != nil {
 		return api.UserInfo{}, err
 	}
@@ -303,4 +290,14 @@ func resolveBrowserEndpoint(dns localrp.DnsResolver, domain, route, signedReques
 		base = "https://" + domain
 	}
 	return localrp.BuildBrowserEndpoint(base, route, signedRequest)
+}
+
+// callRP encodes req and calls op on the RP server. An encode error (a value
+// with no wire form) is returned before anything is sent.
+func callRP[Req any](ctx context.Context, transport RPTransport, op string, encode func(Req) ([]byte, error), req Req) ([]byte, error) {
+	payload, err := encode(req)
+	if err != nil {
+		return nil, fmt.Errorf("encode Rp/%s request: %w", op, err)
+	}
+	return transport.Call(ctx, op, payload)
 }

@@ -252,6 +252,16 @@ func (ps PostgresDbStore) ListJobsVisibleTo(ctx context.Context, viewerID string
 				q = q.Where("j.workflow_id = ?", value)
 			case "failure_class":
 				q = q.Where("j.failure_class = ?", value)
+			case "name_pattern":
+				// Substring of the job name, or a glob (see likePattern).
+				if pattern, ok := value.(string); ok && pattern != "" {
+					q = q.Where("j.name ILIKE ?", likePattern(pattern, true))
+				}
+			case "branch_pattern":
+				// The whole source branch, or a glob such as "todpunk/*".
+				if pattern, ok := value.(string); ok && pattern != "" {
+					q = q.Where(sourceBranchSQL("j")+" ILIKE ?", likePattern(pattern, false))
+				}
 			case "org_ids":
 				// The organizations of an API token (a token never sees
 				// outside them).
@@ -390,6 +400,10 @@ WITH workflow_rows AS (
 		COALESCE(wi.vcs_repo, '') AS vcs_repo,
 		wi.pr_number,
 		COALESCE(wi.commit_sha, '') AS commit_sha,
+		COALESCE(
+			NULLIF((SELECT %[5]s FROM jobs bj WHERE bj.job_id = wi.parent_job_id), ''),
+			(SELECT %[5]s FROM jobs bj WHERE bj.workflow_id = wi.workflow_id ORDER BY bj.created_at LIMIT 1),
+			'') AS branch,
 		COUNT(wn.node_id)::int AS job_count,
 		COUNT(*) FILTER (WHERE wn.status = 'running')::int AS running_count,
 		COUNT(*) FILTER (WHERE wn.status = 'completed')::int AS completed_count,
@@ -413,9 +427,9 @@ WITH workflow_rows AS (
 		COALESCE(wi.actor_identity, '') AS actor_identity,
 		wi.ref_classes
 	FROM workflow_instances wi
-	%s
+	%[1]s
 	LEFT JOIN workflow_nodes wn ON wn.workflow_id = wi.workflow_id
-	%s
+	%[2]s
 	GROUP BY wi.workflow_id
 ),
 loose_rows AS (
@@ -434,6 +448,7 @@ loose_rows AS (
 		COALESCE(j.vcs_repo, '') AS vcs_repo,
 		j.pr_number,
 		COALESCE(j.commit_sha, '') AS commit_sha,
+		%[6]s AS branch,
 		1 AS job_count,
 		CASE WHEN j.status = 'running' THEN 1 ELSE 0 END AS running_count,
 		CASE WHEN j.status = 'completed' THEN 1 ELSE 0 END AS completed_count,
@@ -457,8 +472,8 @@ loose_rows AS (
 		COALESCE(j.actor_identity, '') AS actor_identity,
 		j.ref_classes
 	FROM jobs j
-	%s
-	%s
+	%[3]s
+	%[4]s
 ),
 combined AS (
 	SELECT * FROM workflow_rows
@@ -466,18 +481,35 @@ combined AS (
 	SELECT * FROM loose_rows
 )`,
 		strings.Join(visibilityJoins(summaryWorkflowAliases), "\n\t"), workflowClause,
-		strings.Join(visibilityJoins(summaryLooseAliases), "\n\t"), looseClause)
+		strings.Join(visibilityJoins(summaryLooseAliases), "\n\t"), looseClause,
+		sourceBranchSQL("bj"), sourceBranchSQL("j"))
 
 	args := append(append([]interface{}{}, workflowArgs...), looseArgs...)
 
+	// The name and branch filters apply to the combined rows, so one
+	// clause serves both workflows and loose jobs.
+	var combinedWhere []string
+	if pattern, ok := filters["name_pattern"].(string); ok && pattern != "" {
+		combinedWhere = append(combinedWhere, "name ILIKE ?")
+		args = append(args, likePattern(pattern, true))
+	}
+	if pattern, ok := filters["branch_pattern"].(string); ok && pattern != "" {
+		combinedWhere = append(combinedWhere, "branch ILIKE ?")
+		args = append(args, likePattern(pattern, false))
+	}
+	from := "combined"
+	if len(combinedWhere) > 0 {
+		from = "combined WHERE " + strings.Join(combinedWhere, " AND ")
+	}
+
 	var total int64
-	if err := ps.getDB(ctx).Raw(cte+"\nSELECT COUNT(*) FROM combined", args...).Scan(&total).Error; err != nil {
+	if err := ps.getDB(ctx).Raw(cte+"\nSELECT COUNT(*) FROM "+from, args...).Scan(&total).Error; err != nil {
 		return nil, 0, fmt.Errorf("failed to count visible workflow summaries: %w", err)
 	}
 
 	listArgs := append(append([]interface{}{}, args...), limit, offset)
 	var summaries []models.WorkflowSummary
-	if err := ps.getDB(ctx).Raw(cte+"\nSELECT * FROM combined ORDER BY created_at DESC LIMIT ? OFFSET ?", listArgs...).Scan(&summaries).Error; err != nil {
+	if err := ps.getDB(ctx).Raw(cte+"\nSELECT * FROM "+from+" ORDER BY created_at DESC LIMIT ? OFFSET ?", listArgs...).Scan(&summaries).Error; err != nil {
 		return nil, 0, fmt.Errorf("failed to list visible workflow summaries: %w", err)
 	}
 

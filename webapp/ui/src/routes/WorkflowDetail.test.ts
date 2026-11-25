@@ -4,6 +4,7 @@ import type { ResourceState } from '~/store/index.ts'
 
 let workflow: GetWorkflowResponse
 let event: GetEventResponse | Error
+let caps: Record<string, boolean> = {}
 
 vi.mock('~/api/client.ts', async (importOriginal) => {
   const actual = await importOriginal<typeof import('~/api/client.ts')>()
@@ -23,7 +24,7 @@ vi.mock('~/store/resources.ts', () => {
   const handle = <T>(state: () => ResourceState<T>) => ({ state, refresh: async () => {}, sync: () => {}, release: () => {} })
   return {
     useWorkflow: () => handle(() => ready(workflow)),
-    useCapabilities: () => handle(() => ready({})),
+    useCapabilities: () => handle(() => ready(caps)),
   }
 })
 
@@ -225,5 +226,38 @@ describe('WorkflowDetail: why it runs', () => {
     expect(items).toHaveLength(2)
     expect(items[1].textContent).toContain('node skipped')
     expect(items[1].textContent).toContain('docs')
+  })
+})
+
+describe('WorkflowDetail: retry unsuccessful', () => {
+  function retryButton(page: HTMLElement): HTMLElement | undefined {
+    return [...page.querySelectorAll<HTMLElement>('push-button')].find((b) => b.textContent?.includes('Retry unsuccessful'))
+  }
+
+  it('offers it for a success workflow when the coordinator says it has work', async () => {
+    caps = { retryJob: true }
+    workflow = makeWorkflow({ retryUnsuccessfulAvailable: true })
+    event = makeEvent(['wf-1'])
+    const page = await renderWorkflow()
+    expect(retryButton(page)?.hidden).toBe(false)
+  })
+
+  it('hides it when the coordinator says there is no work, also for a failed workflow', async () => {
+    caps = { retryJob: true }
+    const base = makeWorkflow()
+    workflow = { ...base, workflow: { ...base.workflow, status: 'failed' }, retryUnsuccessfulAvailable: false }
+    event = makeEvent(['wf-1'])
+    const page = await renderWorkflow()
+    expect(retryButton(page)?.hidden).toBe(true)
+  })
+
+  it('falls back to the workflow status for an older coordinator', async () => {
+    caps = { retryJob: true }
+    const base = makeWorkflow()
+    workflow = { ...base, workflow: { ...base.workflow, status: 'failed' } }
+    event = makeEvent(['wf-1'])
+    const page = await renderWorkflow()
+    expect(retryButton(page)?.hidden).toBe(false)
+    caps = {}
   })
 })

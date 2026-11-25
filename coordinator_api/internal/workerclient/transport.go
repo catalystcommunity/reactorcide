@@ -65,14 +65,13 @@ func (t *CSILRPCTransport) Session() string {
 	return t.session
 }
 
-// Call encodes req into a CsilRpcRequest envelope, POSTs it, and returns the
-// response payload bytes (which the generated client decodes). A
-// "ServiceError" response variant or a non-zero transport status becomes a
-// *csilapi.ClientError, matching the generated client's documented error
-// shape.
-func (t *CSILRPCTransport) Call(ctx context.Context, service, op string, req []byte) ([]byte, error) {
+// CallReply encodes req into a CsilRpcRequest envelope, POSTs it, and
+// returns the reply variant and payload bytes (the generated client checks
+// the variant and decodes the payload). A non-zero transport status becomes
+// a *TransportError. A "ServiceError" variant becomes a *ServiceCallError.
+func (t *CSILRPCTransport) CallReply(ctx context.Context, service, op string, req []byte) (csilapi.WireReply, error) {
 	if err := transportsecurity.ValidateURL(t.BaseURL, t.AllowInsecureTransport, "worker CSIL-RPC connection"); err != nil {
-		return nil, &csilapi.ClientError{Err: err}
+		return csilapi.WireReply{}, &TransportError{Err: err}
 	}
 	auth := t.Session()
 	hasAuth := auth != ""
@@ -83,12 +82,12 @@ func (t *CSILRPCTransport) Call(ctx context.Context, service, op string, req []b
 	}
 	body, err := rpcReq.Encode()
 	if err != nil {
-		return nil, &csilapi.ClientError{Err: err}
+		return csilapi.WireReply{}, &TransportError{Err: err}
 	}
 
 	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, trimSlash(t.BaseURL)+rpcPath, bytes.NewReader(body))
 	if err != nil {
-		return nil, &csilapi.ClientError{Err: err}
+		return csilapi.WireReply{}, &TransportError{Err: err}
 	}
 	httpReq.Header.Set("Content-Type", "application/cbor")
 	httpReq.Header.Set("Accept", "application/cbor")
@@ -103,55 +102,68 @@ func (t *CSILRPCTransport) Call(ctx context.Context, service, op string, req []b
 	client = transportsecurity.HTTPClient(client, t.AllowInsecureTransport, "worker CSIL-RPC connection")
 	httpResp, err := client.Do(httpReq)
 	if err != nil {
-		return nil, &csilapi.ClientError{Err: err}
+		return csilapi.WireReply{}, &TransportError{Err: err}
 	}
 	defer httpResp.Body.Close()
 	respBody, err := io.ReadAll(httpResp.Body)
 	if err != nil {
-		return nil, &csilapi.ClientError{Err: err}
+		return csilapi.WireReply{}, &TransportError{Err: err}
 	}
 	if httpResp.StatusCode < 200 || httpResp.StatusCode >= 300 {
-		return nil, &csilapi.ClientError{Err: fmt.Errorf("workerclient %s/%s: http %d", service, op, httpResp.StatusCode)}
+		return csilapi.WireReply{}, &TransportError{Err: fmt.Errorf("workerclient %s/%s: http %d", service, op, httpResp.StatusCode)}
 	}
 
 	resp, err := rpctransport.DecodeRpcResponse(respBody)
 	if err != nil {
-		return nil, &csilapi.ClientError{Err: fmt.Errorf("decode response envelope: %w", err)}
+		return csilapi.WireReply{}, &TransportError{Err: fmt.Errorf("decode response envelope: %w", err)}
 	}
 	if !resp.Status.IsOk() {
 		msg := ""
 		if resp.Error != nil {
 			msg = *resp.Error
 		}
-		return nil, &csilapi.ClientError{Err: fmt.Errorf("transport status %d: %s", resp.Status.Code(), msg)}
+		return csilapi.WireReply{}, &TransportError{Err: fmt.Errorf("transport status %d: %s", resp.Status.Code(), msg)}
 	}
-	variant := ""
-	if resp.Variant != nil {
-		variant = *resp.Variant
-	}
-	if variant == "ServiceError" {
+	if resp.Variant != nil && *resp.Variant == "ServiceError" {
 		se, derr := csilapi.DecodeServiceError(resp.Payload)
 		if derr != nil {
-			return nil, &csilapi.ClientError{Err: fmt.Errorf("undecodable ServiceError payload: %w", derr)}
+			return csilapi.WireReply{}, &TransportError{Err: fmt.Errorf("undecodable ServiceError payload: %w", derr)}
 		}
-		return nil, &ServiceCallError{Code: se.Code, Message: se.Message}
+		// Returned here, not left to the generated ResolveRPCReply: that
+		// would give *csilapi.RPCApplicationError[ServiceError], whose
+		// message is "application error: {code message}", and callers match
+		// on *ServiceCallError.
+		return csilapi.WireReply{}, &ServiceCallError{Code: se.Code, Message: se.Message}
 	}
-	// rpctransport.DecodeRpcResponse always yields a non-nil Payload (empty
-	// bytes when the wire envelope's "payload" was absent or an empty
-	// tag-24 byte string), so a Status-ok, non-ServiceError response's
-	// Payload is trusted as-is here; there is no wire-level way to
-	// distinguish "empty typed payload" from "no payload sent" once decoded
-	// through the shared module.
-	return resp.Payload, nil
+	// rpctransport.DecodeRpcResponse always yields a non-nil Payload. The
+	// generated client checks that Variant names the success arm.
+	return csilapi.WireReply{Variant: resp.Variant, Payload: resp.Payload}, nil
 }
 
+// Call is CallReply without the variant, for a caller that knows the
+// operation has one reply arm.
+func (t *CSILRPCTransport) Call(ctx context.Context, service, op string, req []byte) ([]byte, error) {
+	reply, err := t.CallReply(ctx, service, op, req)
+	if err != nil {
+		return nil, err
+	}
+	return reply.Payload, nil
+}
+
+// TransportError is a carrier failure: the call got no typed reply (bad
+// URL, network, non-2xx HTTP, undecodable envelope, or a non-zero transport
+// status). It unwraps, so errors.Is(err, context.Canceled) works.
+type TransportError struct {
+	Err error
+}
+
+func (e *TransportError) Error() string { return "transport error: " + e.Err.Error() }
+func (e *TransportError) Unwrap() error { return e.Err }
+
 // ServiceCallError is the application-level error arm: the coordinator
-// returned the "ServiceError" response variant. It is returned directly
-// (not wrapped in *csilapi.ClientError) because this service's
-// ServiceError.code is text (e.g. "unauthorized", "invalid_argument",
-// "not_found", "conflict", "internal" -- see internal/workerapi/service.go),
-// not the int64 the generated client's generic ClientError.Code field
-// assumes.
+// returned the "ServiceError" response variant. The transport returns it
+// itself, so callers keep this type and its "service error <code>: <msg>"
+// message, rather than the generated *csilapi.RPCApplicationError.
 type ServiceCallError struct {
 	Code    string
 	Message string

@@ -394,7 +394,9 @@ func (s *UiService) RetryUnsuccessfulJobs(ctx context.Context, req csilapi.Retry
 		return csilapi.RetryUnsuccessfulJobsResponse{}, err
 	}
 	retried, err := jobcontrol.RetryUnsuccessfulJobsWithShifts(s.deps.actorContext(ctx), s.deps.Store, s.deps.CorndogsClient, req.WorkflowInstanceId, shifts)
-	if err != nil && (errors.Is(err, jobcontrol.ErrWorkflowsUnsupported) || (jobcontrol.IsShiftError(err) && len(retried) == 0)) {
+	var stateErr *jobcontrol.StateError
+	if err != nil && (errors.Is(err, jobcontrol.ErrWorkflowsUnsupported) || (jobcontrol.IsShiftError(err) && len(retried) == 0) ||
+		(errors.As(err, &stateErr) && len(retried) == 0)) {
 		return csilapi.RetryUnsuccessfulJobsResponse{}, mapJobControlErr(err)
 	}
 

@@ -1017,8 +1017,11 @@ CancelWorkflowResponse = {
 ;;; single job in place (same workflow node, if any) into a brand-new job
 ;;; row; RetryWorkflow starts a fresh workflow instance from a failed/
 ;;; cancelled one (old instance untouched); RetryUnsuccessfulJobs bulk-
-;;; applies RetryJob to every failed/cancelled member job of a workflow, in
-;;; place. See internal/jobcontrol/retry.go.
+;;; applies RetryJob to every failed/cancelled/timed-out member job of a
+;;; workflow, in place, and puts each node skipped because of an unsuccessful
+;;; dependency, and each finished node downstream, back to pending for the
+;;; workflow to evaluate again. A workflow with nothing to retry is refused
+;;; (conflict). See internal/jobcontrol/retry.go.
 ;;; RunShifts are the only changes a retry or a re-run can make (D18, D25):
 ;;; cpu (the CPU limit), cpu_request, memory (the memory limit), storage
 ;;; (the ephemeral storage limit), storage_request, and timeout (a duration
@@ -1946,6 +1949,9 @@ JobSummary = {
     ? started_at: text,
     ? completed_at: text,
     ? exit_code: int,
+    ;; The source branch (or tag) of the job: the head branch of an opened
+    ;; or updated pull request, else REACTORCIDE_BRANCH. Absent when unknown.
+    ? branch: text,
     ;; failure_class is the cause of a failed, cancelled or timed out job:
     ;; "job", "timeout", "oom", "infra.image_pull", "infra.scheduling",
     ;; "infra.worker_lost", "infra.platform" or "cancelled". Absent for a
@@ -2020,6 +2026,12 @@ ListJobsRequest = {
     ? queue_name: text,
     ;; One failure class (see JobSummary.failure_class).
     ? failure_class: text,
+    ;; Part of the job name, ignoring case. `*` (any text) and `?` (one
+    ;; character) make it a pattern of the whole name.
+    ? name: text,
+    ;; The whole source branch, ignoring case, or a pattern such as
+    ;; "todpunk/*" (see JobSummary.branch).
+    ? branch: text,
     ? limit: int,
     ? offset: int
 }
@@ -2080,6 +2092,8 @@ WorkflowSummaryDetail = {
     vcs_repo: text,
     ? pr_number: int,
     commit_sha: text,
+    ;; The source branch of the workflow (see JobSummary.branch).
+    ? branch: text,
     job_count: int,
     running_count: int,
     completed_count: int,
@@ -2111,6 +2125,10 @@ WorkflowSummaryDetail = {
 ListWorkflowsRequest = {
     ? status: text,
     ? project_id: text,
+    ;; Part of the workflow name, or a pattern (see ListJobsRequest.name).
+    ? name: text,
+    ;; The source branch, or a pattern (see ListJobsRequest.branch).
+    ? branch: text,
     ? limit: int,
     ? offset: int
 }
@@ -2135,7 +2153,12 @@ GetWorkflowResponse = {
     ;; Absent for a workflow no CI event created (or one that predates events).
     ? why: CIEventWorkflowDecision,
     ;; The workflow's state changes, oldest first (capped).
-    ? events: [* WorkflowEventSummary]
+    ? events: [* WorkflowEventSummary],
+    ;; True when retry-unsuccessful-jobs has work: a node with a failed,
+    ;; cancelled or timed-out job, or a node skipped because of a dependency
+    ;; that is unsuccessful or that a retry made pass. Also for a success
+    ;; workflow. Absent from older servers.
+    ? retry_unsuccessful_available: bool
 }
 
 ;; ---------------------------------------------------------------------------

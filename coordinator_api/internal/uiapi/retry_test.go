@@ -337,7 +337,10 @@ func TestRetryWorkflow_OrgAdminOfProjectOrg_NoWorkflowUser(t *testing.T) {
 		deps, wf, ctx := setup(t)
 		ui := NewUiService(deps)
 		_, err := ui.RetryUnsuccessfulJobs(ctx, csilapi.RetryUnsuccessfulJobsRequest{WorkflowInstanceId: wf.WorkflowID})
-		requireOK(t, err)
+		// The workflow has no nodes, so the authorized call reaches
+		// jobcontrol and gets "nothing to retry". A refused caller gets
+		// forbidden before that.
+		requireCode(t, err, "conflict")
 	})
 
 	t.Run("cancel-workflow", func(t *testing.T) {

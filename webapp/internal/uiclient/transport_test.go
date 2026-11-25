@@ -89,29 +89,29 @@ func newStubDispatcherServer(t *testing.T) *httptest.Server {
 		var resp []byte
 		switch {
 		case env.Service == "ReactorcideAuth" && env.Op == "get-auth-config":
-			payload := csilapi.EncodeGetAuthConfigResponse(csilapi.GetAuthConfigResponse{
+			payload := mustEncode(csilapi.EncodeGetAuthConfigResponse(csilapi.GetAuthConfigResponse{
 				AuthMode:                "local-rp",
 				BootstrapAdminAvailable: true,
-			})
+			}))
 			resp = stubEncodeSuccessResponse(t, "GetAuthConfigResponse", payload)
 		case env.Service == "ReactorcideAuth" && env.Op == "authenticate":
 			if env.HasAuth && env.Auth != "" {
-				payload := csilapi.EncodeAuthenticateResponse(csilapi.AuthenticateResponse{
+				payload := mustEncode(csilapi.EncodeAuthenticateResponse(csilapi.AuthenticateResponse{
 					Authenticated: true,
 					Identity:      &csilapi.AuthenticatedIdentity{UserId: "user-for-" + env.Auth},
-				})
+				}))
 				resp = stubEncodeSuccessResponse(t, "AuthenticateResponse", payload)
 			} else {
-				payload := csilapi.EncodeAuthenticateResponse(csilapi.AuthenticateResponse{Authenticated: false})
+				payload := mustEncode(csilapi.EncodeAuthenticateResponse(csilapi.AuthenticateResponse{Authenticated: false}))
 				resp = stubEncodeSuccessResponse(t, "AuthenticateResponse", payload)
 			}
 		case env.Service == "" || env.Op == "":
 			resp = stubEncodeTransportErrorResponse(t, 2, "malformed request")
 		default:
-			sePayload := csilapi.EncodeServiceError(csilapi.ServiceError{
+			sePayload := mustEncode(csilapi.EncodeServiceError(csilapi.ServiceError{
 				Code:    "unimplemented",
 				Message: env.Service + "/" + env.Op + " is not implemented yet",
-			})
+			}))
 			resp = stubEncodeSuccessResponse(t, "ServiceError", sePayload)
 		}
 
@@ -206,4 +206,13 @@ func TestTransport_AuthTokenPropagatesPerRequest(t *testing.T) {
 			t.Errorf("Identity B = %+v, want UserId user-for-token-b", respB.Identity)
 		}
 	})
+}
+
+// mustEncode returns the bytes of a generated encoder, or panics. A test
+// fixture is always a valid value, so an error is a defect in the test.
+func mustEncode(data []byte, err error) []byte {
+	if err != nil {
+		panic(err)
+	}
+	return data
 }

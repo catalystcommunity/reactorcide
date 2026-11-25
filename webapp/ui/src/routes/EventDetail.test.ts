@@ -134,6 +134,12 @@ describe('EventDetail', () => {
     expect(card.textContent).toContain('Default branch')
     expect(card.textContent).toContain('default from built-in rule default-branch')
     expect(card.textContent).toContain('production from organization rule prod')
+    // A reason row is a grid of a glyph column and a text column. Bare text
+    // falls into the narrow glyph column, so the line must be in .reason-text.
+    for (const row of card.querySelectorAll('.reason-list > li')) {
+      expect([...row.childNodes].every((n) => n.nodeType === Node.ELEMENT_NODE)).toBe(true)
+      expect(row.querySelector('.reason-text')?.textContent).toMatch(/ from /)
+    }
     expect(page.querySelector('.decision-item')!.textContent).toContain('Ref classes: default, production (from rules r1)')
   })
 

@@ -1,4 +1,5 @@
 import { RpcRequest, RpcResponse } from './transport/rpc.ts'
+import { decode, fromServiceErrorCborValue } from './csilapi/codec.gen.ts'
 import {
   ReactorcideUiAsyncClient,
   ReactorcideAuthAsyncClient,
@@ -54,6 +55,16 @@ export class TransportFailure extends Error {
 
 class BridgeTransport implements AsyncServiceTransport {
   async call(service: string, op: string, req: Uint8Array): Promise<Uint8Array> {
+    return (await this.callReply(service, op, req)).payload
+  }
+
+  /**
+   * The reply arm and its bytes. The generated client checks that the
+   * variant names the success arm. The ServiceError arm is thrown here as
+   * this module's ServiceError, so every caller can test `instanceof
+   * ServiceError`; the generated client would throw its own type.
+   */
+  async callReply(service: string, op: string, req: Uint8Array): Promise<{ variant?: string | null; payload: Uint8Array }> {
     const envelope = new RpcRequest(service, op, req).encode()
 
     let response: Response
@@ -88,68 +99,22 @@ class BridgeTransport implements AsyncServiceTransport {
     if (decoded.variant === 'ServiceError') {
       throw decodeServiceError(decoded.payload)
     }
-    return decoded.payload
+    return { variant: decoded.variant, payload: decoded.payload }
   }
 }
 
 /**
- * Decodes the ServiceError arm.
- *
- * Hand-decoded rather than routed through the generated codec because the
- * generated per-op decoders each expect their own success type; the error arm
- * is one shared shape ({code, message}) across every operation. Keeping this
- * here means one small decoder instead of a special case in ninety call sites.
+ * Decodes the ServiceError arm with the generated codec. A payload that does
+ * not decode still gives a ServiceError, so the error path cannot itself
+ * throw something unhelpful.
  */
 function decodeServiceError(payload: Uint8Array): ServiceError {
   try {
-    const view = new DataView(payload.buffer, payload.byteOffset, payload.byteLength)
-    const fields = decodeSmallTextMap(payload, view)
-    return new ServiceError(fields.code ?? 'unknown', fields.message ?? 'The request failed.')
+    const value = fromServiceErrorCborValue(decode(payload))
+    return new ServiceError(value.code || 'unknown', value.message || 'The request failed.')
   } catch {
     return new ServiceError('unknown', 'The request failed.')
   }
-}
-
-/**
- * A minimal CBOR reader for a flat map of short text keys to text values.
- *
- * Deliberately narrow: it decodes exactly the ServiceError shape and nothing
- * else. A general decoder is already vendored for real payloads; this exists so
- * the error path cannot itself throw something unhelpful.
- */
-function decodeSmallTextMap(bytes: Uint8Array, view: DataView): Record<string, string> {
-  let offset = 0
-  const readHead = (): [number, number] => {
-    const initial = bytes[offset++]
-    const major = initial >> 5
-    const low = initial & 0x1f
-    if (low < 24) return [major, low]
-    if (low === 24) return [major, bytes[offset++]]
-    if (low === 25) {
-      const value = view.getUint16(offset)
-      offset += 2
-      return [major, value]
-    }
-    throw new Error('unsupported CBOR head')
-  }
-  const readText = (length: number): string => {
-    const text = new TextDecoder().decode(bytes.subarray(offset, offset + length))
-    offset += length
-    return text
-  }
-
-  const [major, count] = readHead()
-  if (major !== 5) throw new Error('not a map')
-  const out: Record<string, string> = {}
-  for (let i = 0; i < count; i++) {
-    const [keyMajor, keyLength] = readHead()
-    if (keyMajor !== 3) throw new Error('non-text key')
-    const key = readText(keyLength)
-    const [valueMajor, valueLength] = readHead()
-    if (valueMajor !== 3) throw new Error('non-text value')
-    out[key] = readText(valueLength)
-  }
-  return out
 }
 
 const transport = new BridgeTransport()

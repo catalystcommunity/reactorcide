@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"os"
@@ -44,7 +45,21 @@ func managementClient(ctx *cli.Context) (*csilapi.ReactorcideUiClient, error) {
 		AllowInsecureTransport: api.allowInsecureTransport,
 	}
 	transport.SetSession(api.token)
-	return csilapi.NewReactorcideUiClient(transport), nil
+	return csilapi.NewReactorcideUiClient(uiTransport{transport}), nil
+}
+
+// uiTransport carries the ReactorcideUi service over the worker transport.
+// The envelope is the same; only the generated WireReply type differs.
+type uiTransport struct {
+	*workerclient.CSILRPCTransport
+}
+
+func (t uiTransport) CallReply(ctx context.Context, service, op string, req []byte) (csilapi.WireReply, error) {
+	reply, err := t.CSILRPCTransport.CallReply(ctx, service, op, req)
+	if err != nil {
+		return csilapi.WireReply{}, err
+	}
+	return csilapi.WireReply{Variant: reply.Variant, Payload: reply.Payload}, nil
 }
 
 func workersListCommand() *cli.Command {

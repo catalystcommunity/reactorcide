@@ -111,7 +111,7 @@ func (f *fakeCoordinator) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	var resp rpctransport.RpcResponse
 	if !ok {
 		se := csilapi.ServiceError{Code: "unimplemented", Message: "no fake handler for " + req.Service + "/" + req.Op}
-		resp = rpctransport.NewRpcResponseOk("ServiceError", csilapi.EncodeServiceError(se))
+		resp = rpctransport.NewRpcResponseOk("ServiceError", mustEncode(csilapi.EncodeServiceError(se)))
 	} else {
 		payload, variant, isErr := fn(req.Payload, auth, hasAuth)
 		if isErr {
@@ -134,7 +134,7 @@ func (f *fakeCoordinator) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 // fakeServiceErrorPayload encodes a ServiceError response payload for a
 // fakeOp to return alongside isServiceError=true.
 func fakeServiceErrorPayload(code, message string) []byte {
-	return csilapi.EncodeServiceError(csilapi.ServiceError{Code: code, Message: message})
+	return mustEncode(csilapi.EncodeServiceError(csilapi.ServiceError{Code: code, Message: message}))
 }
 
 func newTestServer(t interface{ Cleanup(func()) }, fc *fakeCoordinator) *httptest.Server {

@@ -523,7 +523,7 @@ export class RefClassSettings extends RcElement {
       const signature = JSON.stringify(lines)
       if (this.#explainRules.dataset.signature !== signature) {
         this.#explainRules.dataset.signature = signature
-        fill(this.#explainRules, lines.map((line) => h('li', { class: 'reason reason-note' }, line)))
+        fill(this.#explainRules, lines.map((line) => h('li', { class: 'reason reason-note' }, h('span', { class: 'reason-text' }, line))))
       }
     }
   }

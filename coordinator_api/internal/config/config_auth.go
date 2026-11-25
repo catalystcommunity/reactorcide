@@ -37,13 +37,11 @@ var (
 	// master-keys env-or-DB convention (see internal/secrets/master_keys.go).
 	LinkKeysRPAPIKey = env.GetEnvOrDefault("REACTORCIDE_LINKKEYS_RP_API_KEY", "")
 
-	// LinkKeysRPApplicationID is the optional `application_id` sent on
-	// Rp/sign-request (LinkKeys 0.16.7+). Standing consent is keyed per
-	// (user, RP domain, application), and the IDP consent screen names the
-	// application. Empty: the RP server uses the API-key account username,
-	// and sign-request fails if that username is not a valid identifier
-	// (1-128 of A-Z a-z 0-9 - _ .). Set it to keep a stable application
-	// identity across API-key accounts, or to match an act-as enrollment.
+	// LinkKeysRPApplicationID is no longer used. Since LinkKeys 0.16.11,
+	// Rp/sign-request has no application_id: the RP server names the
+	// application from the API-key account (an application account whose
+	// application_id an administrator sets). Startup refuses a set value, so
+	// an operator does not think it still has an effect.
 	LinkKeysRPApplicationID = env.GetEnvOrDefault("REACTORCIDE_LINKKEYS_RP_APPLICATION_ID", "")
 
 	// LocalRPName is the display name (design doc: "app_name", audit/ display
@@ -148,8 +146,8 @@ func ValidateUIAuthMode() error {
 		if len(SplitTrustedFingerprints()) == 0 {
 			return fmt.Errorf("REACTORCIDE_UI_AUTH_MODE=rp requires REACTORCIDE_LINKKEYS_RP_FINGERPRINTS")
 		}
-		if id := strings.TrimSpace(LinkKeysRPApplicationID); id != "" && !ValidLinkKeysApplicationID(id) {
-			return fmt.Errorf("invalid REACTORCIDE_LINKKEYS_RP_APPLICATION_ID %q: must be 1-128 of A-Z a-z 0-9 - _ .", id)
+		if strings.TrimSpace(LinkKeysRPApplicationID) != "" {
+			return fmt.Errorf("REACTORCIDE_LINKKEYS_RP_APPLICATION_ID is no longer used (LinkKeys 0.16.11): remove it, and set the application_id on the LinkKeys application account instead (LinkKeys Admin set-application-id)")
 		}
 		return nil
 	default:
@@ -176,22 +174,4 @@ func SplitCommaList(s string) []string {
 		}
 	}
 	return out
-}
-
-// ValidLinkKeysApplicationID reports whether id is a valid LinkKeys
-// application identifier: 1-128 characters of A-Z a-z 0-9 - _ . (the rule
-// Rp/sign-request enforces on `application_id`).
-func ValidLinkKeysApplicationID(id string) bool {
-	if len(id) == 0 || len(id) > 128 {
-		return false
-	}
-	for i := 0; i < len(id); i++ {
-		c := id[i]
-		switch {
-		case c >= 'a' && c <= 'z', c >= 'A' && c <= 'Z', c >= '0' && c <= '9', c == '-', c == '_', c == '.':
-		default:
-			return false
-		}
-	}
-	return true
 }

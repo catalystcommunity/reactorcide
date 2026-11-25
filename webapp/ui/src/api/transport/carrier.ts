@@ -51,7 +51,7 @@
 //
 // In every case the library code is untouched; only this thin adapter changes.
 
-import { MAX_FRAME_DEFAULT, TransportError } from "./conventions.ts";
+import { MAX_FRAME_DEFAULT, TransportError, validateMaxFrame } from "./conventions.ts";
 
 // A stream/frame carrier: sends and receives one *delimited message* at a time.
 // Used by CSIL-RPC and CSIL-Events. `recvFrame` resolves to `null` at a clean end
@@ -72,6 +72,7 @@ export interface DatagramCarrier {
 // Prefix `bytes` with a 4-byte big-endian length (CSIL stream framing), enforcing
 // the max-frame guard before producing the frame.
 export function frameLengthPrefixed(bytes: Uint8Array, max: number = MAX_FRAME_DEFAULT): Uint8Array {
+  validateMaxFrame(max);
   if (bytes.length > max) throw TransportError.frameTooLarge(bytes.length, max);
   const out = new Uint8Array(4 + bytes.length);
   const view = new DataView(out.buffer);
@@ -90,7 +91,14 @@ export class LengthPrefixedDeframer {
   private readonly max: number;
 
   constructor(max: number = MAX_FRAME_DEFAULT) {
-    this.max = max;
+    // Validated here rather than at the first frame, so a misconfigured deframer
+    // is a construction-time error the host can surface at startup.
+    this.max = validateMaxFrame(max);
+  }
+
+  // The limit this deframer enforces on an inbound length prefix.
+  get maxFrame(): number {
+    return this.max;
   }
 
   push(chunk: Uint8Array): void {

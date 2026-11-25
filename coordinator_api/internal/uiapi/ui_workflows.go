@@ -2,6 +2,7 @@ package uiapi
 
 import (
 	"context"
+	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/jobcontrol"
 	"sort"
 
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/refclass"
@@ -40,6 +41,7 @@ func workflowToSummary(wf *models.WorkflowSummary) csilapi.WorkflowSummaryDetail
 		QueueName:        wf.QueueName,
 		VcsRepo:          wf.VCSRepo,
 		CommitSha:        wf.CommitSHA,
+		Branch:           optionalText(wf.Branch),
 		JobCount:         int64(wf.JobCount),
 		RunningCount:     int64(wf.RunningCount),
 		CompletedCount:   int64(wf.CompletedCount),
@@ -142,6 +144,9 @@ func (s *UiService) ListWorkflows(ctx context.Context, req csilapi.ListWorkflows
 	if req.ProjectId != nil && *req.ProjectId != "" {
 		filters["project_id"] = *req.ProjectId
 	}
+	if err := addNameBranchFilters(filters, req.Name, req.Branch); err != nil {
+		return csilapi.ListWorkflowsResponse{}, err
+	}
 
 	workflows, total, err := visibleStore.ListWorkflowSummariesVisibleTo(ctx, viewerID, isGlobalAdmin, filters, limit, offset)
 	if err != nil {
@@ -228,6 +233,8 @@ func (s *UiService) GetWorkflow(ctx context.Context, req csilapi.GetWorkflowRequ
 	for i := range nodes {
 		response.Nodes = append(response.Nodes, workflowNodeToSummary(&nodes[i]))
 	}
+	available := jobcontrol.RetryUnsuccessfulAvailable(nodes)
+	response.RetryUnsuccessfulAvailable = &available
 	if eventStore, ok := s.deps.Store.(workflowEventsStore); ok {
 		events, eventErr := eventStore.ListWorkflowEvents(ctx, req.WorkflowId, maxWorkflowEvents, 0)
 		if eventErr != nil {

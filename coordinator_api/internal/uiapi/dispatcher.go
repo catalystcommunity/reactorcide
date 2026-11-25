@@ -326,7 +326,7 @@ func NewHandlerWithWorker(auth csilapi.ReactorcideAuth, ui csilapi.ReactorcideUi
 // this generic's parameters without any adapter code.
 func wrapOp[Req any, Resp any](
 	decode func([]byte) (Req, error),
-	encode func(Resp) []byte,
+	encode func(Resp) ([]byte, error),
 	variant string,
 	call func(context.Context, Req) (Resp, error),
 ) opFunc {
@@ -339,11 +339,22 @@ func wrapOp[Req any, Resp any](
 		if err != nil {
 			var svcErr *ServiceErr
 			if errors.As(err, &svcErr) {
-				return "ServiceError", csilapi.EncodeServiceError(svcErr.ServiceError), nil
+				data, encErr := csilapi.EncodeServiceError(svcErr.ServiceError)
+				if encErr != nil {
+					return "", nil, fmt.Errorf("encode ServiceError reply: %w", encErr)
+				}
+				return "ServiceError", data, nil
 			}
 			return "", nil, err
 		}
-		return variant, encode(resp), nil
+		// An encode error means the handler built a value with no wire form
+		// (for example, an unset enum). No reply payload exists, so the call
+		// fails as a transport error (statusHandlerError, "internal").
+		data, err := encode(resp)
+		if err != nil {
+			return "", nil, fmt.Errorf("encode %s reply: %w", variant, err)
+		}
+		return variant, data, nil
 	}
 }
 

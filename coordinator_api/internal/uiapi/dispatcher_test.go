@@ -101,7 +101,7 @@ func TestDispatcher_StubReturnsUnimplemented(t *testing.T) {
 	srv := httptest.NewServer(h)
 	defer srv.Close()
 
-	reqPayload := csilapi.EncodeGetAuthConfigRequest(csilapi.GetAuthConfigRequest{})
+	reqPayload := mustEncode(csilapi.EncodeGetAuthConfigRequest(csilapi.GetAuthConfigRequest{}))
 	body := testBuildRequestEnvelope("ReactorcideAuth", "get-auth-config", reqPayload, "", false)
 
 	env := testPostEnvelope(t, srv, body)
@@ -203,7 +203,7 @@ func TestDispatcher_RealImplementationReturnsData(t *testing.T) {
 	srv := httptest.NewServer(h)
 	defer srv.Close()
 
-	reqPayload := csilapi.EncodeGetAuthConfigRequest(csilapi.GetAuthConfigRequest{})
+	reqPayload := mustEncode(csilapi.EncodeGetAuthConfigRequest(csilapi.GetAuthConfigRequest{}))
 	body := testBuildRequestEnvelope("ReactorcideAuth", "get-auth-config", reqPayload, "", false)
 
 	env := testPostEnvelope(t, srv, body)
@@ -237,7 +237,7 @@ func TestDispatcher_AuthTokenPropagatesToContext(t *testing.T) {
 	srv := httptest.NewServer(h)
 	defer srv.Close()
 
-	reqPayload := csilapi.EncodeAuthenticateRequest(csilapi.AuthenticateRequest{})
+	reqPayload := mustEncode(csilapi.EncodeAuthenticateRequest(csilapi.AuthenticateRequest{}))
 
 	t.Run("with auth token", func(t *testing.T) {
 		body := testBuildRequestEnvelope("ReactorcideAuth", "authenticate", reqPayload, "sekrit-session-token", true)
@@ -308,7 +308,7 @@ func TestDispatcher_WireCompatGoldenRequestBytes(t *testing.T) {
 	// produces for this call today, so a future rpctransport change that
 	// alters wire bytes fails this assertion (not just a mysterious
 	// Handler decode error) and a stale/hand-edited fixture is caught too.
-	reqPayload := csilapi.EncodeAuthenticateRequest(csilapi.AuthenticateRequest{})
+	reqPayload := mustEncode(csilapi.EncodeAuthenticateRequest(csilapi.AuthenticateRequest{}))
 	rebuilt, err := rpctransport.NewRpcRequest("ReactorcideAuth", "authenticate", reqPayload).WithAuth("golden-token").Encode()
 	if err != nil {
 		t.Fatalf("re-encode golden request: %v", err)
@@ -348,7 +348,7 @@ func TestDispatcher_WireCompatServiceErrorResponseDecodesLikeTheClient(t *testin
 	srv := httptest.NewServer(h)
 	defer srv.Close()
 
-	reqPayload := csilapi.EncodeGetAuthConfigRequest(csilapi.GetAuthConfigRequest{})
+	reqPayload := mustEncode(csilapi.EncodeGetAuthConfigRequest(csilapi.GetAuthConfigRequest{}))
 	reqBody, err := rpctransport.NewRpcRequest("ReactorcideAuth", "get-auth-config", reqPayload).Encode()
 	if err != nil {
 		t.Fatalf("encode request: %v", err)
@@ -382,4 +382,13 @@ func TestDispatcher_WireCompatServiceErrorResponseDecodesLikeTheClient(t *testin
 	if se.Code != "unimplemented" {
 		t.Errorf("ServiceError.Code = %q, want unimplemented", se.Code)
 	}
+}
+
+// mustEncode returns the bytes of a generated encoder, or panics. A test
+// fixture is always a valid value, so an error is a defect in the test.
+func mustEncode(data []byte, err error) []byte {
+	if err != nil {
+		panic(err)
+	}
+	return data
 }

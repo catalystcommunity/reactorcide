@@ -170,17 +170,75 @@ func (ps PostgresDbStore) GetAPITokenByID(ctx context.Context, tokenID string) (
 	return &token, nil
 }
 
-func (ps PostgresDbStore) ListAPITokens(ctx context.Context) ([]models.APIToken, error) {
-	var tokens []models.APIToken
-	if err := ps.getDB(ctx).Order("created_at DESC").Find(&tokens).Error; err != nil {
-		return nil, fmt.Errorf("failed to list API tokens: %w", err)
+// ListAPITokens returns one page of API tokens, newest first, and the number
+// of tokens that match the filter. The scopes of the page are loaded in two
+// queries, not two queries per token.
+func (ps PostgresDbStore) ListAPITokens(ctx context.Context, filter store.APITokenListFilter) ([]models.APIToken, int64, error) {
+	query := ps.getDB(ctx).Model(&models.APIToken{})
+	if !filter.AllOrganizations {
+		if len(filter.OrgIDs) == 0 {
+			return []models.APIToken{}, 0, nil
+		}
+		query = query.Where("owner_org_id IN ? OR token_id IN (SELECT token_id FROM api_token_organizations WHERE org_id IN ?)",
+			filter.OrgIDs, filter.OrgIDs)
 	}
+	if filter.ExcludeExpired {
+		query = query.Where("expires_at IS NULL OR expires_at > timezone('utc', now())")
+	}
+	var total int64
+	if err := query.Count(&total).Error; err != nil {
+		return nil, 0, fmt.Errorf("failed to count API tokens: %w", err)
+	}
+	var tokens []models.APIToken
+	page := query.Order("created_at DESC").Order("token_id DESC").Offset(filter.Offset)
+	if filter.Limit > 0 {
+		page = page.Limit(filter.Limit)
+	}
+	if err := page.Find(&tokens).Error; err != nil {
+		return nil, 0, fmt.Errorf("failed to list API tokens: %w", err)
+	}
+	if err := ps.loadTokenScopesBatch(ctx, tokens); err != nil {
+		return nil, 0, err
+	}
+	return tokens, total, nil
+}
+
+// loadTokenScopesBatch fills OrganizationIDs and Capabilities of each token.
+func (ps PostgresDbStore) loadTokenScopesBatch(ctx context.Context, tokens []models.APIToken) error {
+	if len(tokens) == 0 {
+		return nil
+	}
+	ids := make([]string, len(tokens))
+	index := make(map[string]int, len(tokens))
 	for i := range tokens {
-		if err := ps.loadTokenScopes(ctx, &tokens[i]); err != nil {
-			return nil, err
+		ids[i] = tokens[i].TokenID
+		index[tokens[i].TokenID] = i
+	}
+	type scopeRow struct {
+		TokenID string
+		Value   string
+	}
+	var orgRows []scopeRow
+	if err := ps.getDB(ctx).Table("api_token_organizations").Select("token_id, org_id AS value").
+		Where("token_id IN ?", ids).Order("org_id").Scan(&orgRows).Error; err != nil {
+		return fmt.Errorf("failed to load token organizations: %w", err)
+	}
+	for _, row := range orgRows {
+		if i, ok := index[row.TokenID]; ok {
+			tokens[i].OrganizationIDs = append(tokens[i].OrganizationIDs, row.Value)
 		}
 	}
-	return tokens, nil
+	var capRows []scopeRow
+	if err := ps.getDB(ctx).Table("api_token_capabilities").Select("token_id, capability AS value").
+		Where("token_id IN ?", ids).Order("capability").Scan(&capRows).Error; err != nil {
+		return fmt.Errorf("failed to load token capabilities: %w", err)
+	}
+	for _, row := range capRows {
+		if i, ok := index[row.TokenID]; ok {
+			tokens[i].Capabilities = append(tokens[i].Capabilities, row.Value)
+		}
+	}
+	return nil
 }
 
 func (ps PostgresDbStore) loadTokenScopes(ctx context.Context, token *models.APIToken) error {

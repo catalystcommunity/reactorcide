@@ -1098,8 +1098,11 @@ export interface CancelWorkflowResponse {
  * single job in place (same workflow node, if any) into a brand-new job
  * row; RetryWorkflow starts a fresh workflow instance from a failed/
  * cancelled one (old instance untouched); RetryUnsuccessfulJobs bulk-
- * applies RetryJob to every failed/cancelled member job of a workflow, in
- * place. See internal/jobcontrol/retry.go.
+ * applies RetryJob to every failed/cancelled/timed-out member job of a
+ * workflow, in place, and puts each node skipped because of an unsuccessful
+ * dependency, and each finished node downstream, back to pending for the
+ * workflow to evaluate again. A workflow with nothing to retry is refused
+ * (conflict). See internal/jobcontrol/retry.go.
  * RunShifts are the only changes a retry or a re-run can make (D18, D25):
  * cpu (the CPU limit), cpu_request, memory (the memory limit), storage
  * (the ephemeral storage limit), storage_request, and timeout (a duration
@@ -2052,6 +2055,7 @@ export interface JobSummary {
   startedAt?: string;
   completedAt?: string;
   exitCode?: number;
+  branch?: string;
   failureClass?: string;
   failureDetail?: string;
   failureOwner?: string;
@@ -2105,6 +2109,8 @@ export interface ListJobsRequest {
   workflowId?: string;
   queueName?: string;
   failureClass?: string;
+  name?: string;
+  branch?: string;
   limit?: number;
   offset?: number;
 }
@@ -2169,6 +2175,7 @@ export interface WorkflowSummaryDetail {
   vcsRepo: string;
   prNumber?: number;
   commitSha: string;
+  branch?: string;
   jobCount: number;
   runningCount: number;
   completedCount: number;
@@ -2195,6 +2202,8 @@ export interface WorkflowSummaryDetail {
 export interface ListWorkflowsRequest {
   status?: string;
   projectId?: string;
+  name?: string;
+  branch?: string;
   limit?: number;
   offset?: number;
 }
@@ -2221,6 +2230,7 @@ export interface GetWorkflowResponse {
   jobs: JobSummary[];
   why?: CIEventWorkflowDecision;
   events?: WorkflowEventSummary[];
+  retryUnsuccessfulAvailable?: boolean;
 }
 
 /**

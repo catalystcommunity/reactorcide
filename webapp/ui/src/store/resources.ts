@@ -34,18 +34,29 @@ import { topics, type LiveEvent } from './events.ts'
 export interface WorkflowFilters {
   status?: string
   projectId?: string
+  /** Part of the name, or a `*`/`?` pattern. */
+  name?: string
+  /** The whole branch, or a pattern such as `todpunk/*`. */
+  branch?: string
+  /** Rows before the page. */
+  offset?: number
+  /** Rows per page. Default 50. */
+  limit?: number
 }
 
 export function useWorkflows(host: ResourceHost, filters: () => WorkflowFilters): ResourceHandle<ListWorkflowsResponse> {
   return useResource<ListWorkflowsResponse>(host, () => {
     const f = filters()
     return {
-      key: `workflows:${f.status ?? ''}:${f.projectId ?? ''}`,
+      key: `workflows:${JSON.stringify([f.status ?? '', f.projectId ?? '', f.name ?? '', f.branch ?? '', f.offset ?? 0, f.limit ?? 50])}`,
       fetcher: () =>
         api.listWorkflows({
           status: f.status || undefined,
           projectId: f.projectId || undefined,
-          limit: 50,
+          name: f.name || undefined,
+          branch: f.branch || undefined,
+          limit: f.limit ?? 50,
+          offset: f.offset || undefined,
         }),
       topics: [topics.workflows, topics.jobs],
       shouldRefresh: (event) => {
@@ -69,20 +80,31 @@ export interface JobFilters {
   projectId?: string
   workflowId?: string
   failureClass?: string
+  /** Part of the name, or a `*`/`?` pattern. */
+  name?: string
+  /** The whole branch, or a pattern such as `todpunk/*`. */
+  branch?: string
+  /** Rows before the page. */
+  offset?: number
+  /** Rows per page. Default 50. */
+  limit?: number
 }
 
 export function useJobs(host: ResourceHost, filters: () => JobFilters): ResourceHandle<ListJobsResponse> {
   return useResource<ListJobsResponse>(host, () => {
     const f = filters()
     return {
-      key: `jobs:${f.status ?? ''}:${f.projectId ?? ''}:${f.workflowId ?? ''}:${f.failureClass ?? ''}`,
+      key: `jobs:${JSON.stringify([f.status ?? '', f.projectId ?? '', f.workflowId ?? '', f.failureClass ?? '', f.name ?? '', f.branch ?? '', f.offset ?? 0, f.limit ?? 50])}`,
       fetcher: () =>
         api.listJobs({
           status: f.status || undefined,
           projectId: f.projectId || undefined,
           workflowId: f.workflowId || undefined,
           failureClass: f.failureClass || undefined,
-          limit: 50,
+          name: f.name || undefined,
+          branch: f.branch || undefined,
+          limit: f.limit ?? 50,
+          offset: f.offset || undefined,
         }),
       topics: [topics.jobs],
       shouldRefresh: (event) => event.type === 'job_created' || event.type === 'job_update',

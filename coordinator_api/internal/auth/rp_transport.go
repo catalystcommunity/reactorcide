@@ -11,6 +11,7 @@ import (
 
 	rpctransport "github.com/catalystcommunity/csilgen/transports/go"
 	localrp "github.com/catalystcommunity/linkkeys/sdks/local-rp/go"
+	api "github.com/catalystcommunity/linkkeys/sdks/local-rp/go/generated"
 )
 
 // maxRPFrameSize bounds a single CSIL-RPC frame, matching the local-RP
@@ -103,7 +104,10 @@ func (t *tcpRPTransport) Call(_ context.Context, op string, payload []byte) ([]b
 	}
 	defer conn.Close()
 
-	carrier := rpctransport.NewStreamCarrierWithMaxFrame(conn, maxRPFrameSize)
+	carrier, err := rpctransport.NewStreamCarrierWithMaxFrame(conn, maxRPFrameSize)
+	if err != nil {
+		return nil, fmt.Errorf("max frame: %w", err)
+	}
 
 	req := rpctransport.NewRpcRequest("Rp", op, payload).WithAuth(t.apiKey)
 	frame, err := req.Encode()
@@ -129,5 +133,32 @@ func (t *tcpRPTransport) Call(_ context.Context, op string, payload []byte) ([]b
 	if err := resp.AsTransportError(); err != nil {
 		return nil, fmt.Errorf("Rp/%s: %w", op, err)
 	}
+	// Since LinkKeys 0.16.11 the Rp operations reply status 0 with a variant:
+	// the success type, or RpError for a refusal (for example
+	// application_mismatch). Return the refusal as an error, so the caller
+	// does not decode it as the success type.
+	if resp.Variant != nil && *resp.Variant == "RpError" {
+		rpErr, err := api.DecodeRpError(resp.Payload)
+		if err != nil {
+			return nil, fmt.Errorf("Rp/%s: undecodable RpError reply: %w", op, err)
+		}
+		return nil, &RPError{Op: op, Code: rpErr.Code, Message: rpErr.Message}
+	}
 	return resp.Payload, nil
+}
+
+// RPError is a refusal that the RP server returned as the RpError reply
+// variant.
+type RPError struct {
+	Op      string
+	Code    api.RpErrorCode
+	Message string
+}
+
+func (e *RPError) Error() string {
+	code, err := e.Code.MarshalText()
+	if err != nil {
+		code = []byte(fmt.Sprintf("code %d", e.Code))
+	}
+	return fmt.Sprintf("Rp/%s refused: %s: %s", e.Op, code, e.Message)
 }
