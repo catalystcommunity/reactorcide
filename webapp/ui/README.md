@@ -61,6 +61,13 @@ same page with the same id. Thus a query change (a filter) updates the page in
 place. A page that reads the route reads `this.route()`. Its resource builders
 read the route too, and `handle.sync()` in `render()` follows a change.
 
+A long list (jobs, workflows) uses `ListFilterBar` and `Pager`
+(`src/components/ListControls.ts`). The filters and the page are in the URL
+query: `name`, `branch`, `project` and `page`. A filter change goes back to
+page 1. A name filter matches part of the name. A branch filter matches the
+whole branch. `*` and `?` are wildcards in both. Typing waits 300 ms before
+the list loads again.
+
 Org-management pages extend `ManagedOrgPage`
 (`src/components/ManagedOrg.ts`). It shows the loading, refusal and no-org
 states, and calls `buildBody()` one time and `renderBody()` while the page is

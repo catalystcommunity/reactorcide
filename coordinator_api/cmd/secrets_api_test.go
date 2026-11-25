@@ -169,3 +169,72 @@ func TestSecretsAPIClientOperations(t *testing.T) {
 		t.Fatal("Delete should return false for missing secret")
 	}
 }
+
+func TestSecretsAPIClientSendsOrg(t *testing.T) {
+	var seen []string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if got := r.URL.Query().Get("org"); got != "team-a" {
+			t.Errorf("%s %s: org = %q, want team-a", r.Method, r.URL.Path, got)
+		}
+		seen = append(seen, r.Method+" "+r.URL.Path)
+		switch {
+		case r.URL.Path == "/api/v1/secrets/init":
+			w.WriteHeader(http.StatusCreated)
+			_, _ = w.Write([]byte(`{}`))
+		case r.URL.Path == "/api/v1/secrets/value" && r.Method == http.MethodGet:
+			if r.URL.Query().Get("path") != "app" || r.URL.Query().Get("key") != "K" {
+				t.Errorf("unexpected query %s", r.URL.RawQuery)
+			}
+			_, _ = w.Write([]byte(`{"value":"v"}`))
+		case r.URL.Path == "/api/v1/secrets":
+			_, _ = w.Write([]byte(`{"keys":[]}`))
+		case r.URL.Path == "/api/v1/secrets/paths":
+			_, _ = w.Write([]byte(`{"paths":[]}`))
+		case r.URL.Path == "/api/v1/secrets/batch/get":
+			_, _ = w.Write([]byte(`{"secrets":{}}`))
+		default:
+			_, _ = w.Write([]byte(`{"status":"ok"}`))
+		}
+	}))
+	defer server.Close()
+
+	client := &secretsAPIClient{org: "team-a", apiClient: &apiClient{
+		apiURL: server.URL, token: "api-token", client: server.Client(), allowInsecureTransport: true,
+	}}
+	if err := client.Init(); err != nil {
+		t.Fatal(err)
+	}
+	if err := client.Set("app", "K", "v"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := client.Get("app", "K"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := client.Delete("app", "K"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := client.ListKeys("app"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := client.ListPaths(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := client.GetMulti([]secrets.SecretRef{{Path: "app", Key: "K"}}); err != nil {
+		t.Fatal(err)
+	}
+	if len(seen) != 7 {
+		t.Fatalf("requests = %v", seen)
+	}
+
+	// The --org flag of the secrets command reaches the client.
+	seen = nil
+	app := cli.NewApp()
+	app.Commands = []*cli.Command{SecretsCommand}
+	if err := app.Run([]string{"reactorcide", "secrets", "--api-url", server.URL, "--token", "api-token",
+		"--allow-insecure-transport", "--org", "team-a", "list-paths"}); err != nil {
+		t.Fatal(err)
+	}
+	if len(seen) != 1 {
+		t.Fatalf("requests = %v", seen)
+	}
+}

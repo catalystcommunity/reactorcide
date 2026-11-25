@@ -371,7 +371,10 @@ func (h *WorkflowHandler) RetryUnsuccessfulJobs(w http.ResponseWriter, r *http.R
 		h.respondWithError(w, http.StatusForbidden, store.ErrForbidden)
 		return
 	}
-	if !existing.IsRetryable() {
+	// A finished workflow can still have work: a success workflow can have
+	// nodes skipped by a dependency that a retry made pass. jobcontrol
+	// refuses one with nothing to retry (a StateError).
+	if !existing.IsRetryable() && !jobcontrol.IsWorkflowRerunnable(existing) {
 		respondNotRetryable(&h.BaseHandler, w, jobcontrol.WorkflowNotRetryable(existing))
 		return
 	}
@@ -388,6 +391,11 @@ func (h *WorkflowHandler) RetryUnsuccessfulJobs(w http.ResponseWriter, r *http.R
 		}
 		if jobcontrol.IsShiftError(retryErr) && len(jobs) == 0 {
 			respondShiftError(&h.BaseHandler, w, retryErr)
+			return
+		}
+		var stateErr *jobcontrol.StateError
+		if errors.As(retryErr, &stateErr) && len(jobs) == 0 {
+			respondNotRetryable(&h.BaseHandler, w, retryErr)
 			return
 		}
 		if errors.Is(retryErr, jobcontrol.ErrWorkerClassRefused) && len(jobs) == 0 {

@@ -45,7 +45,11 @@ func getPasswordConfirm() (string, error) {
 var SecretsCommand = &cli.Command{
 	Name:  "secrets",
 	Usage: "Manage secrets locally or through a Reactorcide coordinator API",
-	Flags: apiFlags(),
+	Flags: append(apiFlags(), &cli.StringFlag{
+		Name:    "org",
+		Usage:   "Organization of the secrets (API only). Default: the token organization, else the default organization",
+		EnvVars: []string{"REACTORCIDE_ORG"},
+	}),
 	Subcommands: []*cli.Command{
 		{
 			Name:  "init",
@@ -321,6 +325,23 @@ var SecretsCommand = &cli.Command{
 // secretsAPIClient adds the secrets endpoints to the shared apiClient.
 type secretsAPIClient struct {
 	*apiClient
+	// org is the organization name sent as ?org= on the secrets endpoints.
+	// Empty lets the server select it.
+	org string
+}
+
+// secretsPath adds the organization to a secrets endpoint path.
+func (c *secretsAPIClient) secretsPath(path string, values url.Values) string {
+	if values == nil {
+		values = url.Values{}
+	}
+	if c.org != "" {
+		values.Set("org", c.org)
+	}
+	if encoded := values.Encode(); encoded != "" {
+		return path + "?" + encoded
+	}
+	return path
 }
 
 type secretValueAPIResponse struct {
@@ -344,7 +365,7 @@ func newSecretsAPIClient(ctx *cli.Context) (*secretsAPIClient, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &secretsAPIClient{apiClient: client}, nil
+	return &secretsAPIClient{apiClient: client, org: strings.TrimSpace(ctx.String("org"))}, nil
 }
 
 func getSecretValue(ctx *cli.Context, path, key string) (string, error) {
@@ -433,24 +454,24 @@ func getMultiSecrets(ctx *cli.Context, refs []secrets.SecretRef) (map[string]str
 }
 
 func (c *secretsAPIClient) Init() error {
-	return c.doJSON(http.MethodPost, "/api/v1/secrets/init", nil, http.StatusCreated, nil)
+	return c.doJSON(http.MethodPost, c.secretsPath("/api/v1/secrets/init", nil), nil, http.StatusCreated, nil)
 }
 
 func (c *secretsAPIClient) Set(path, key, value string) error {
 	body := map[string]string{"value": value}
-	return c.doJSON(http.MethodPut, "/api/v1/secrets/value?"+secretQuery(path, key), body, http.StatusOK, nil)
+	return c.doJSON(http.MethodPut, c.secretsPath("/api/v1/secrets/value", secretQuery(path, key)), body, http.StatusOK, nil)
 }
 
 func (c *secretsAPIClient) Get(path, key string) (string, error) {
 	var response secretValueAPIResponse
-	if err := c.doJSON(http.MethodGet, "/api/v1/secrets/value?"+secretQuery(path, key), nil, http.StatusOK, &response); err != nil {
+	if err := c.doJSON(http.MethodGet, c.secretsPath("/api/v1/secrets/value", secretQuery(path, key)), nil, http.StatusOK, &response); err != nil {
 		return "", err
 	}
 	return response.Value, nil
 }
 
 func (c *secretsAPIClient) Delete(path, key string) (bool, error) {
-	err := c.doJSON(http.MethodDelete, "/api/v1/secrets/value?"+secretQuery(path, key), nil, http.StatusOK, nil)
+	err := c.doJSON(http.MethodDelete, c.secretsPath("/api/v1/secrets/value", secretQuery(path, key)), nil, http.StatusOK, nil)
 	if err != nil {
 		var apiErr *apiError
 		if errors.As(err, &apiErr) && apiErr.StatusCode == http.StatusNotFound {
@@ -465,7 +486,7 @@ func (c *secretsAPIClient) ListKeys(path string) ([]string, error) {
 	values := url.Values{}
 	values.Set("path", path)
 	var response listKeysAPIResponse
-	if err := c.doJSON(http.MethodGet, "/api/v1/secrets?"+values.Encode(), nil, http.StatusOK, &response); err != nil {
+	if err := c.doJSON(http.MethodGet, c.secretsPath("/api/v1/secrets", values), nil, http.StatusOK, &response); err != nil {
 		return nil, err
 	}
 	return response.Keys, nil
@@ -473,7 +494,7 @@ func (c *secretsAPIClient) ListKeys(path string) ([]string, error) {
 
 func (c *secretsAPIClient) ListPaths() ([]string, error) {
 	var response listPathsAPIResponse
-	if err := c.doJSON(http.MethodGet, "/api/v1/secrets/paths", nil, http.StatusOK, &response); err != nil {
+	if err := c.doJSON(http.MethodGet, c.secretsPath("/api/v1/secrets/paths", nil), nil, http.StatusOK, &response); err != nil {
 		return nil, err
 	}
 	return response.Paths, nil
@@ -482,7 +503,7 @@ func (c *secretsAPIClient) ListPaths() ([]string, error) {
 func (c *secretsAPIClient) GetMulti(refs []secrets.SecretRef) (map[string]string, error) {
 	body := map[string][]secrets.SecretRef{"refs": refs}
 	var response batchGetAPIResponse
-	if err := c.doJSON(http.MethodPost, "/api/v1/secrets/batch/get", body, http.StatusOK, &response); err != nil {
+	if err := c.doJSON(http.MethodPost, c.secretsPath("/api/v1/secrets/batch/get", nil), body, http.StatusOK, &response); err != nil {
 		return nil, err
 	}
 
@@ -497,9 +518,9 @@ func (c *secretsAPIClient) GetMulti(refs []secrets.SecretRef) (map[string]string
 	return results, nil
 }
 
-func secretQuery(path, key string) string {
+func secretQuery(path, key string) url.Values {
 	values := url.Values{}
 	values.Set("path", path)
 	values.Set("key", key)
-	return values.Encode()
+	return values
 }

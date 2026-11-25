@@ -22,6 +22,23 @@ export const CONTROL_SERVICE_ORD = 0;
 // carrier rejects anything larger before allocating for it.
 export const MAX_FRAME_DEFAULT = 16 * 1024 * 1024;
 
+// Largest max-frame limit a host may configure (2 GiB - 1). The 4-byte length
+// prefix can express more, but the limit lives in a signed 32-bit integer in
+// several supported languages, so this is the portable ceiling every CSIL
+// transport agrees on. Anything above it would also disable the receive guard
+// outright, since no wire length could exceed it.
+export const MAX_FRAME_LIMIT = 2147483647;
+
+// Check a host-supplied max-frame limit against the conventions doc range
+// (1..=MAX_FRAME_LIMIT), so an unusable framer fails where the host configures it
+// rather than on its first frame.
+export function validateMaxFrame(maxFrame: number): number {
+  if (!Number.isInteger(maxFrame) || maxFrame < 1 || maxFrame > MAX_FRAME_LIMIT) {
+    throw TransportError.invalidMaxFrame(maxFrame, MAX_FRAME_LIMIT);
+  }
+  return maxFrame;
+}
+
 // Transport-level status. Distinct from application errors, which ride inside the
 // payload as a declared `/ ErrorType` arm. See the conventions doc registry.
 // Modeled as a numeric code (with named constants) rather than a closed enum so
@@ -65,6 +82,7 @@ export type TransportErrorKind =
   | "decode"
   | "malformed"
   | "frame-too-large"
+  | "invalid-max-frame"
   | "unsupported-version"
   | "status"
   | "carrier";
@@ -91,6 +109,13 @@ export class TransportError extends Error {
     return new TransportError(
       "frame-too-large",
       `frame of ${got} bytes exceeds max-frame guard of ${max} bytes`,
+    );
+  }
+
+  static invalidMaxFrame(got: number, limit: number): TransportError {
+    return new TransportError(
+      "invalid-max-frame",
+      `max-frame limit of ${got} is outside the valid range 1..=${limit}`,
     );
   }
 

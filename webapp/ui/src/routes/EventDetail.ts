@@ -195,7 +195,7 @@ export class EventDetailPage extends RcPage {
         const reasonSignature = JSON.stringify(reasonLines)
         if (classReasons.dataset.signature !== reasonSignature) {
           classReasons.dataset.signature = reasonSignature
-          fill(classReasons, reasonLines.map((line) => h('li', { class: 'reason reason-note' }, line)))
+          fill(classReasons, reasonLines.map((line) => h('li', { class: 'reason reason-note' }, h('span', { class: 'reason-text' }, line))))
         }
 
         if (event.prNumber && event.projectId) {

@@ -11,8 +11,6 @@ import (
 
 	localrp "github.com/catalystcommunity/linkkeys/sdks/local-rp/go"
 	api "github.com/catalystcommunity/linkkeys/sdks/local-rp/go/generated"
-
-	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/config"
 )
 
 // fakeRPTransport is a hand-rolled RPTransport test double: canned
@@ -83,7 +81,7 @@ func strPtr(s string) *string { return &s }
 
 func TestRPBackendBeginLogin(t *testing.T) {
 	transport := newFakeRPTransport()
-	transport.responses["sign-request"] = api.EncodeRpSignResponse(api.RpSignResponse{SignedRequest: "signed-request-blob"})
+	transport.responses["sign-request"] = mustEncode(api.EncodeRpSignResponse(api.RpSignResponse{SignedRequest: "signed-request-blob"}))
 	backend := newTestRPBackend(transport)
 
 	redirectURL, pendingBlob, err := backend.BeginLogin(context.Background(), "alice@idp.example.com", "https://app.example.com/auth/callback")
@@ -117,7 +115,7 @@ func TestRPBackendBeginLogin(t *testing.T) {
 
 func TestRPBackendBeginLoginUsesDiscoveredHTTPSBase(t *testing.T) {
 	transport := newFakeRPTransport()
-	transport.responses["sign-request"] = api.EncodeRpSignResponse(api.RpSignResponse{SignedRequest: "signed-request-blob"})
+	transport.responses["sign-request"] = mustEncode(api.EncodeRpSignResponse(api.RpSignResponse{SignedRequest: "signed-request-blob"}))
 	backend := newTestRPBackend(transport)
 	backend.dns = staticDNSResolver{records: map[string][]string{
 		localrp.LinkKeysApisDNSName("idp.example.com"): {
@@ -194,15 +192,15 @@ func TestRPBackendCompleteLoginRejectsUnverified(t *testing.T) {
 	}
 
 	transport := newFakeRPTransport()
-	transport.responses["decrypt-token"] = api.EncodeRpDecryptResponse(api.RpDecryptResponse{SignedAssertion: "signed-assertion-blob"})
-	transport.responses["verify-assertion"] = api.EncodeRpVerifyResponse(api.RpVerifyResponse{
+	transport.responses["decrypt-token"] = mustEncode(api.EncodeRpDecryptResponse(api.RpDecryptResponse{SignedAssertion: "signed-assertion-blob"}))
+	transport.responses["verify-assertion"] = mustEncode(api.EncodeRpVerifyResponse(api.RpVerifyResponse{
 		Verified: false, // MUST be rejected regardless of a nil transport error
 		Assertion: api.IdentityAssertion{
 			UserId: "mallory",
 			Domain: "idp.example.com",
 			Nonce:  "the-nonce",
 		},
-	})
+	}))
 	backend := newTestRPBackend(transport)
 
 	_, err = backend.CompleteLogin(context.Background(), pendingBlob, "https://app.example.com/auth/callback?encrypted_token=abc123")
@@ -221,8 +219,8 @@ func TestRPBackendCompleteLoginHappyPath(t *testing.T) {
 	}
 
 	transport := newFakeRPTransport()
-	transport.responses["decrypt-token"] = api.EncodeRpDecryptResponse(api.RpDecryptResponse{SignedAssertion: "signed-assertion-blob"})
-	transport.responses["verify-assertion"] = api.EncodeRpVerifyResponse(api.RpVerifyResponse{
+	transport.responses["decrypt-token"] = mustEncode(api.EncodeRpDecryptResponse(api.RpDecryptResponse{SignedAssertion: "signed-assertion-blob"}))
+	transport.responses["verify-assertion"] = mustEncode(api.EncodeRpVerifyResponse(api.RpVerifyResponse{
 		Verified: true,
 		Assertion: api.IdentityAssertion{
 			UserId:      "alice-uuid",
@@ -230,8 +228,8 @@ func TestRPBackendCompleteLoginHappyPath(t *testing.T) {
 			Nonce:       "the-nonce",
 			DisplayName: strPtr("Alice Assertion"),
 		},
-	})
-	transport.responses["userinfo-fetch"] = api.EncodeUserInfo(api.UserInfo{
+	}))
+	transport.responses["userinfo-fetch"] = mustEncode(api.EncodeUserInfo(api.UserInfo{
 		UserId:      "alice-uuid",
 		Domain:      "idp.example.com",
 		DisplayName: "Alice Userinfo",
@@ -239,7 +237,7 @@ func TestRPBackendCompleteLoginHappyPath(t *testing.T) {
 			{ClaimType: "handle", ClaimValue: []byte("alice")},
 			{ClaimType: "email", ClaimValue: []byte("alice@idp.example.com")},
 		},
-	})
+	}))
 	backend := newTestRPBackend(transport)
 
 	identity, err := backend.CompleteLogin(context.Background(), pendingBlob, "https://app.example.com/auth/callback?encrypted_token=abc123")
@@ -281,15 +279,15 @@ func TestRPBackendCompleteLoginDomainMismatch(t *testing.T) {
 	}
 
 	transport := newFakeRPTransport()
-	transport.responses["decrypt-token"] = api.EncodeRpDecryptResponse(api.RpDecryptResponse{SignedAssertion: "signed-assertion-blob"})
-	transport.responses["verify-assertion"] = api.EncodeRpVerifyResponse(api.RpVerifyResponse{
+	transport.responses["decrypt-token"] = mustEncode(api.EncodeRpDecryptResponse(api.RpDecryptResponse{SignedAssertion: "signed-assertion-blob"}))
+	transport.responses["verify-assertion"] = mustEncode(api.EncodeRpVerifyResponse(api.RpVerifyResponse{
 		Verified: true,
 		Assertion: api.IdentityAssertion{
 			UserId: "attacker",
 			Domain: "attacker-controlled.example.com", // does not match pending.UserDomain
 			Nonce:  "the-nonce",
 		},
-	})
+	}))
 	backend := newTestRPBackend(transport)
 
 	if _, err := backend.CompleteLogin(context.Background(), pendingBlob, "https://app.example.com/callback?encrypted_token=abc"); err == nil {
@@ -304,15 +302,15 @@ func TestRPBackendCompleteLoginNonceMismatch(t *testing.T) {
 	}
 
 	transport := newFakeRPTransport()
-	transport.responses["decrypt-token"] = api.EncodeRpDecryptResponse(api.RpDecryptResponse{SignedAssertion: "signed-assertion-blob"})
-	transport.responses["verify-assertion"] = api.EncodeRpVerifyResponse(api.RpVerifyResponse{
+	transport.responses["decrypt-token"] = mustEncode(api.EncodeRpDecryptResponse(api.RpDecryptResponse{SignedAssertion: "signed-assertion-blob"}))
+	transport.responses["verify-assertion"] = mustEncode(api.EncodeRpVerifyResponse(api.RpVerifyResponse{
 		Verified: true,
 		Assertion: api.IdentityAssertion{
 			UserId: "alice",
 			Domain: "idp.example.com",
 			Nonce:  "a-replayed-nonce", // does not match pending.Nonce
 		},
-	})
+	}))
 	backend := newTestRPBackend(transport)
 
 	if _, err := backend.CompleteLogin(context.Background(), pendingBlob, "https://app.example.com/callback?encrypted_token=abc"); err == nil {
@@ -338,7 +336,7 @@ func TestRPBackendCompleteLoginMissingEncryptedToken(t *testing.T) {
 // handle@domain REACTORCIDE_FIRST_ADMIN could never match.
 func TestRPBackendBeginLoginRequestsHandleClaim(t *testing.T) {
 	transport := newFakeRPTransport()
-	transport.responses["sign-request"] = api.EncodeRpSignResponse(api.RpSignResponse{SignedRequest: "signed-request-blob"})
+	transport.responses["sign-request"] = mustEncode(api.EncodeRpSignResponse(api.RpSignResponse{SignedRequest: "signed-request-blob"}))
 	backend := newTestRPBackend(transport)
 
 	if _, _, err := backend.BeginLogin(context.Background(), "tod@example.com", "https://cb"); err != nil {
@@ -365,47 +363,15 @@ func TestRPBackendBeginLoginRequestsHandleClaim(t *testing.T) {
 		t.Errorf("optional claims = %v, want [display_name email]", optional)
 	}
 	for _, c := range append(req.RequestedClaims.Required, req.RequestedClaims.Optional...) {
-		if c.Datatype != "text" {
-			t.Errorf("claim %s datatype = %q, want text", c.ClaimType, c.Datatype)
+		if c.Datatype != api.ClaimValueTypeText {
+			t.Errorf("claim %s datatype = %v, want text", c.ClaimType, c.Datatype)
 		}
 	}
 }
 
-// TestRPBackendBeginLoginApplicationID pins application_id on sign-request
-// (LinkKeys 0.16.7 keys standing consent per application): absent when
-// unconfigured, so the RP server uses the account username, and sent
-// verbatim when REACTORCIDE_LINKKEYS_RP_APPLICATION_ID is set.
-func TestRPBackendBeginLoginApplicationID(t *testing.T) {
-	for _, tc := range []struct {
-		name, configured string
-		want             *string
-	}{
-		{name: "unset", configured: "", want: nil},
-		{name: "set", configured: " reactorcide-ui ", want: ptrString("reactorcide-ui")},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			old := config.LinkKeysRPApplicationID
-			config.LinkKeysRPApplicationID = tc.configured
-			t.Cleanup(func() { config.LinkKeysRPApplicationID = old })
-
-			transport := newFakeRPTransport()
-			transport.responses["sign-request"] = api.EncodeRpSignResponse(api.RpSignResponse{SignedRequest: "signed-request-blob"})
-			backend := newTestRPBackend(transport)
-			if _, _, err := backend.BeginLogin(context.Background(), "tod@example.com", "https://cb"); err != nil {
-				t.Fatalf("BeginLogin() error = %v", err)
-			}
-			req, err := api.DecodeRpSignRequest(transport.payloads["sign-request"])
-			if err != nil {
-				t.Fatalf("decode sign-request payload: %v", err)
-			}
-			switch {
-			case tc.want == nil && req.ApplicationId != nil:
-				t.Errorf("application_id = %q, want absent", *req.ApplicationId)
-			case tc.want != nil && (req.ApplicationId == nil || *req.ApplicationId != *tc.want):
-				t.Errorf("application_id = %v, want %q", req.ApplicationId, *tc.want)
-			}
-		})
+func mustEncode(data []byte, err error) []byte {
+	if err != nil {
+		panic(err)
 	}
+	return data
 }
-
-func ptrString(s string) *string { return &s }

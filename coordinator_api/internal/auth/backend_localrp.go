@@ -57,7 +57,11 @@ func NewLocalRPBackend(ctx context.Context, credStore CredentialStore, keys *sec
 		if err != nil {
 			return nil, fmt.Errorf("auth: generating local-rp identity: %w", err)
 		}
-		if err := StoreCredential(ctx, credStore, keys, models.AuthCredentialLocalRPIdentity, localrp.LocalRpIdentityToBytes(identity)); err != nil {
+		identityBytes, err := localrp.LocalRpIdentityToBytes(identity)
+		if err != nil {
+			return nil, fmt.Errorf("auth: encoding local-rp identity: %w", err)
+		}
+		if err := StoreCredential(ctx, credStore, keys, models.AuthCredentialLocalRPIdentity, identityBytes); err != nil {
 			return nil, fmt.Errorf("auth: persisting local-rp identity: %w", err)
 		}
 	default:

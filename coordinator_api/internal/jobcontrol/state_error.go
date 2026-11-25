@@ -56,6 +56,19 @@ func WorkflowNotRerunnable(wf *models.WorkflowInstance) error {
 		status, id = wf.Status, wf.WorkflowID
 	}
 	return &StateError{sentinel: ErrWorkflowNotRerunnable, message: fmt.Sprintf(
-		"only a finished (completed, failed, cancelled, or timed-out) workflow can be re-run; workflow %s is %s",
+		"only a finished (success, skipped, failed, or cancelled) workflow can be re-run; workflow %s is %s",
+		id, statusOf(status))}
+}
+
+// nothingToRetry is the error of a retry-unsuccessful of wf when no node is
+// failed, cancelled, timed out, or skipped because of an unsuccessful
+// dependency.
+func nothingToRetry(wf *models.WorkflowInstance) error {
+	status, id := "", ""
+	if wf != nil {
+		status, id = wf.Status, wf.WorkflowID
+	}
+	return &StateError{sentinel: ErrWorkflowNotRetryable, message: fmt.Sprintf(
+		"nothing to retry: workflow %s is %s and has no failed, cancelled, or timed-out job and no node skipped because of an unsuccessful dependency",
 		id, statusOf(status))}
 }

@@ -224,24 +224,24 @@ func TestNoSecretValueLeaks(t *testing.T) {
 		ProjectId: proj.ProjectID, Provider: "github", Name: "primary", Value: secretValue,
 	})
 	requireOK(t, err)
-	assertNoSecretLeak(t, csilapi.EncodeAddWebhookSecretResponse(addWH), secretValue)
+	assertNoSecretLeak(t, mustEncode(csilapi.EncodeAddWebhookSecretResponse(addWH)), secretValue)
 
 	listWH, err := ui.ListWebhookSecrets(ctx, csilapi.ListWebhookSecretsRequest{ProjectId: proj.ProjectID})
 	requireOK(t, err)
-	assertNoSecretLeak(t, csilapi.EncodeListWebhookSecretsResponse(listWH), secretValue)
+	assertNoSecretLeak(t, mustEncode(csilapi.EncodeListWebhookSecretsResponse(listWH)), secretValue)
 
 	addVCS, err := ui.AddVcsCredential(ctx, csilapi.AddVcsCredentialRequest{
 		ProjectId: proj.ProjectID, Provider: "github", Name: "primary", Value: secretValue,
 	})
 	requireOK(t, err)
-	assertNoSecretLeak(t, csilapi.EncodeAddVcsCredentialResponse(addVCS), secretValue)
+	assertNoSecretLeak(t, mustEncode(csilapi.EncodeAddVcsCredentialResponse(addVCS)), secretValue)
 
 	requireOK(t, err)
 	_, err = ui.SetSecret(ctx, csilapi.SetSecretRequest{OrgId: "org-1", Path: "svc/a", Key: "token", Value: secretValue})
 	requireOK(t, err)
 	paths, err := ui.ListSecretPaths(ctx, csilapi.ListSecretPathsRequest{OrgId: "org-1"})
 	requireOK(t, err)
-	assertNoSecretLeak(t, csilapi.EncodeListSecretPathsResponse(paths), secretValue)
+	assertNoSecretLeak(t, mustEncode(csilapi.EncodeListSecretPathsResponse(paths)), secretValue)
 }
 
 func assertNoSecretLeak(t *testing.T, encoded []byte, secretValue string) {

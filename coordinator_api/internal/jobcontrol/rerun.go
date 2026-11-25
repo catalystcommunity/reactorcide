@@ -61,8 +61,11 @@ func IsWorkflowRerunnable(wf *models.WorkflowInstance) bool {
 	if wf == nil {
 		return false
 	}
+	// A workflow finishes as success, skipped, failed or cancelled
+	// (workflowengine.ComputeStatus). completed and timeout are job statuses;
+	// they stay for rows written by older code.
 	switch wf.Status {
-	case "completed", "failed", "cancelled", "timeout":
+	case "success", "skipped", "failed", "cancelled", "completed", "timeout":
 		return true
 	}
 	return false

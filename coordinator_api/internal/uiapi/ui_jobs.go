@@ -3,6 +3,7 @@ package uiapi
 import (
 	"context"
 	"slices"
+	"strings"
 
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/imagealias"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/refclass"
@@ -156,7 +157,29 @@ func jobToSummary(job *models.Job) csilapi.JobSummary {
 	summary.RefClasses = refclass.ForJob(job)
 	summary.Shifts = shiftsToWire(job.Shifts)
 	summary.Owner = ownershipToWire(job.Ownership())
+	summary.Branch = optionalText(job.SourceBranch())
 	return summary
+}
+
+// maxListFilterLen bounds a name or branch filter of a list op.
+const maxListFilterLen = 200
+
+// addNameBranchFilters adds the name and branch filters of a list request.
+func addNameBranchFilters(filters map[string]interface{}, name, branch *string) error {
+	for key, value := range map[string]*string{"name_pattern": name, "branch_pattern": branch} {
+		if value == nil {
+			continue
+		}
+		trimmed := strings.TrimSpace(*value)
+		if trimmed == "" {
+			continue
+		}
+		if len(trimmed) > maxListFilterLen {
+			return NewServiceError("invalid_argument", "a name or branch filter is longer than 200 characters")
+		}
+		filters[key] = trimmed
+	}
+	return nil
 }
 
 // ListJobs returns the page of jobs visible to the caller, with an exact
@@ -181,6 +204,9 @@ func (s *UiService) ListJobs(ctx context.Context, req csilapi.ListJobsRequest) (
 	}
 	if req.ProjectId != nil && *req.ProjectId != "" {
 		filters["project_id"] = *req.ProjectId
+	}
+	if err := addNameBranchFilters(filters, req.Name, req.Branch); err != nil {
+		return csilapi.ListJobsResponse{}, err
 	}
 	if req.WorkflowId != nil && *req.WorkflowId != "" {
 		filters["workflow_id"] = *req.WorkflowId

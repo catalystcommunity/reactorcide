@@ -2075,6 +2075,7 @@ type JobSummary struct {
 	StartedAt           *string            `json:"started_at,omitempty" yaml:"started_at,omitempty"`
 	CompletedAt         *string            `json:"completed_at,omitempty" yaml:"completed_at,omitempty"`
 	ExitCode            *int64             `json:"exit_code,omitempty" yaml:"exit_code,omitempty"`
+	Branch              *string            `json:"branch,omitempty" yaml:"branch,omitempty"`
 	FailureClass        *string            `json:"failure_class,omitempty" yaml:"failure_class,omitempty"`
 	FailureDetail       *string            `json:"failure_detail,omitempty" yaml:"failure_detail,omitempty"`
 	FailureOwner        *string            `json:"failure_owner,omitempty" yaml:"failure_owner,omitempty"`
@@ -2123,6 +2124,8 @@ type ListJobsRequest struct {
 	WorkflowId   *string `json:"workflow_id,omitempty" yaml:"workflow_id,omitempty"`
 	QueueName    *string `json:"queue_name,omitempty" yaml:"queue_name,omitempty"`
 	FailureClass *string `json:"failure_class,omitempty" yaml:"failure_class,omitempty"`
+	Name         *string `json:"name,omitempty" yaml:"name,omitempty"`
+	Branch       *string `json:"branch,omitempty" yaml:"branch,omitempty"`
 	Limit        *int64  `json:"limit,omitempty" yaml:"limit,omitempty"`
 	Offset       *int64  `json:"offset,omitempty" yaml:"offset,omitempty"`
 }
@@ -2186,6 +2189,7 @@ type WorkflowSummaryDetail struct {
 	VcsRepo          string             `json:"vcs_repo" yaml:"vcs_repo"`
 	PrNumber         *int64             `json:"pr_number,omitempty" yaml:"pr_number,omitempty"`
 	CommitSha        string             `json:"commit_sha" yaml:"commit_sha"`
+	Branch           *string            `json:"branch,omitempty" yaml:"branch,omitempty"`
 	JobCount         int64              `json:"job_count" yaml:"job_count"`
 	RunningCount     int64              `json:"running_count" yaml:"running_count"`
 	CompletedCount   int64              `json:"completed_count" yaml:"completed_count"`
@@ -2213,6 +2217,8 @@ type WorkflowSummaryDetail struct {
 type ListWorkflowsRequest struct {
 	Status    *string `json:"status,omitempty" yaml:"status,omitempty"`
 	ProjectId *string `json:"project_id,omitempty" yaml:"project_id,omitempty"`
+	Name      *string `json:"name,omitempty" yaml:"name,omitempty"`
+	Branch    *string `json:"branch,omitempty" yaml:"branch,omitempty"`
 	Limit     *int64  `json:"limit,omitempty" yaml:"limit,omitempty"`
 	Offset    *int64  `json:"offset,omitempty" yaml:"offset,omitempty"`
 }
@@ -2232,11 +2238,12 @@ type GetWorkflowRequest struct {
 
 // GetWorkflowResponse represents a structured data type
 type GetWorkflowResponse struct {
-	Workflow WorkflowSummaryDetail    `json:"workflow" yaml:"workflow"`
-	Nodes    []WorkflowNodeSummary    `json:"nodes" yaml:"nodes"`
-	Jobs     []JobSummary             `json:"jobs" yaml:"jobs"`
-	Why      *CIEventWorkflowDecision `json:"why,omitempty" yaml:"why,omitempty"`
-	Events   []WorkflowEventSummary   `json:"events,omitempty" yaml:"events,omitempty"`
+	Workflow                   WorkflowSummaryDetail    `json:"workflow" yaml:"workflow"`
+	Nodes                      []WorkflowNodeSummary    `json:"nodes" yaml:"nodes"`
+	Jobs                       []JobSummary             `json:"jobs" yaml:"jobs"`
+	Why                        *CIEventWorkflowDecision `json:"why,omitempty" yaml:"why,omitempty"`
+	Events                     []WorkflowEventSummary   `json:"events,omitempty" yaml:"events,omitempty"`
+	RetryUnsuccessfulAvailable *bool                    `json:"retry_unsuccessful_available,omitempty" yaml:"retry_unsuccessful_available,omitempty"`
 }
 
 // CIDecisionReason represents a structured data type

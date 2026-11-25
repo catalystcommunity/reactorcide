@@ -45,7 +45,7 @@ func TestRunLease_CarriesRunAsAdministrator(t *testing.T) {
 // decodes as nil.
 func TestLeaseWire_RunAsAdministrator(t *testing.T) {
 	no := false
-	data := serverapi.EncodeLease(serverapi.Lease{LeaseId: "l", JobId: "j", RunAsAdministrator: &no})
+	data := mustEncode(serverapi.EncodeLease(serverapi.Lease{LeaseId: "l", JobId: "j", RunAsAdministrator: &no}))
 	got, err := csilapi.DecodeLease(data)
 	if err != nil {
 		t.Fatalf("decode: %v", err)
@@ -53,11 +53,20 @@ func TestLeaseWire_RunAsAdministrator(t *testing.T) {
 	if got.RunAsAdministrator == nil || *got.RunAsAdministrator {
 		t.Fatalf("decoded RunAsAdministrator = %v, want false", got.RunAsAdministrator)
 	}
-	got, err = csilapi.DecodeLease(serverapi.EncodeLease(serverapi.Lease{LeaseId: "l", JobId: "j"}))
+	got, err = csilapi.DecodeLease(mustEncode(serverapi.EncodeLease(serverapi.Lease{LeaseId: "l", JobId: "j"})))
 	if err != nil {
 		t.Fatalf("decode unset: %v", err)
 	}
 	if got.RunAsAdministrator != nil {
 		t.Fatalf("unset decoded as %v, want nil", *got.RunAsAdministrator)
 	}
+}
+
+// mustEncode returns the bytes of a generated encoder, or panics. A test
+// fixture is always a valid value, so an error is a defect in the test.
+func mustEncode(data []byte, err error) []byte {
+	if err != nil {
+		panic(err)
+	}
+	return data
 }

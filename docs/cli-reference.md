@@ -295,13 +295,33 @@ reactorcide images rollout status --org acme windows-vs2022
 | `workflows get <workflow-id>` | Show one workflow and its job counts. |
 | `workflows cancel <workflow-id>` | Cancel a workflow and its unfinished jobs. |
 | `workflows retry <workflow-id>` | Run a failed or cancelled workflow again as a new instance. Optional shifts. |
-| `workflows rerun <workflow-id>` | Run a finished workflow (also a completed one) again as a new instance. Optional shifts. |
-| `workflows retry-unsuccessful <workflow-id>` | Run the failed and cancelled jobs again in the same instance. Optional shifts. |
+| `workflows rerun <workflow-id>` | Run a finished workflow (`success`, `skipped`, `failed`, or `cancelled`) again as a new instance. Optional shifts. |
+| `workflows retry-unsuccessful <workflow-id>` | Run the failed, cancelled, and timed-out jobs again in the same instance, and run again the nodes that they caused to skip. Optional shifts. |
 
 Filter `workflows list` with `--status`, `--project-id`, and `--user-id`.
 
 `workflows retry` keeps the original instance for history. `workflows
-retry-unsuccessful` changes the original instance. Both retry forms replay
+retry-unsuccessful` changes the original instance.
+
+`workflows retry-unsuccessful` does these steps:
+
+1. It sets these nodes to pending:
+   - Each node that the workflow skipped because a dependency was not
+     successful.
+   - Each finished node that is downstream of a retried node or of a skipped
+     node.
+   - A node that is skipped by its own `if:` stays skipped.
+   - The old job of a node stays in the history of the node.
+2. It retries each failed, cancelled, or timed-out job that is not
+   downstream of another node in step 1. A retryable job that is downstream
+   gets a new job when its dependencies are complete.
+3. The workflow evaluates each pending node again, as in a new workflow.
+   The condition of the node decides if it runs.
+
+The workflow is not `success` while a node can still run. You can also use
+the command on a `success` workflow: for example, after an earlier retry made
+a dependency pass while its dependent node stayed skipped. If the workflow
+has no node to retry, the command fails with the error `not_retryable`. Both retry forms replay
 the recorded workflow and node authority, including the exact CI SHA and
 execution profile. A retry does not evaluate a newer coordinator policy.
 
@@ -576,8 +596,17 @@ somebody retries with it. See [Failure Diagnosis](./diagnosis.md).
 | Command | Purpose |
 | --- | --- |
 | `token create` | Create a token. Writes to the database. |
-| `token list` | List your tokens. |
+| `token list [--limit N] [--offset N] [--all] [--exclude-expired]` | List the tokens that you can manage, newest first. |
 | `token delete <token-id>` | Delete a token. |
+
+`token list` shows one page of tokens. The default page size is 100, and the
+largest is 1000 (`--limit`). Use `--offset` to skip tokens, or `--all` to get
+every page. In table format, a line on stderr gives the rows on the page, the
+total, and the offset of the next page. The list includes expired tokens by
+default. Use `--exclude-expired` to leave out tokens with an expiry in the
+past. A revoked token that has not expired stays in the list. The API is
+`GET /api/v1/tokens?limit=N&offset=N&exclude_expired=true`. The response has
+`tokens`, `total` (all tokens that match), `limit`, and `offset`.
 
 `token create` needs database access, not an API token, so you can use it to
 make the first token. Give it `--db-uri` or set `REACTORCIDE_DB_URI`. The
@@ -613,6 +642,12 @@ standard input. Use `--stdin` so that the value is not in the shell history.
 `secrets` uses the coordinator API when `REACTORCIDE_API_URL` is set.
 Otherwise it uses local file storage and asks for
 `REACTORCIDE_SECRETS_PASSWORD`.
+
+With the API, `--org <name>` (or `REACTORCIDE_ORG`) selects the organization
+of the secrets. Put it before the subcommand: `secrets --org example get app
+KEY`. If you do not set it, the server uses the owner organization of the
+token. If the token has no owner organization, the server uses the default
+organization. See [Secrets](./secrets.md#organization).
 
 See [Secrets](./secrets.md).
 

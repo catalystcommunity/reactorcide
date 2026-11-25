@@ -252,7 +252,10 @@ export class WorkflowDetailPage extends RcPage {
         setStatus(badge, wf.status)
         setText(subtitle, `${wf.vcsRepo || 'No repository'} · ${relativeTime(wf.updatedAt)}`)
         show(cancel, Boolean(caps?.cancelJob) && !isTerminal(wf.status))
-        const unsuccessful = wf.status === 'failed' || wf.status === 'cancelled'
+        // The coordinator says when retry-unsuccessful has work: also for a
+        // success workflow with a node skipped by a dependency that a retry
+        // made pass. An older coordinator does not send it.
+        const unsuccessful = data.retryUnsuccessfulAvailable ?? (wf.status === 'failed' || wf.status === 'cancelled')
         show(retry, Boolean(caps?.retryJob) && unsuccessful)
         show(rerun, Boolean(caps?.retryJob) && isTerminal(wf.status))
         show(shifts.el, Boolean(caps?.retryJob) && isTerminal(wf.status))

@@ -258,7 +258,7 @@ func csilCall[Req any, Resp any](
 	t *testing.T,
 	mux http.Handler,
 	service, op string,
-	encode func(Req) []byte,
+	encode func(Req) ([]byte, error),
 	decode func([]byte) (Resp, error),
 	req Req,
 	token string,
@@ -266,7 +266,9 @@ func csilCall[Req any, Resp any](
 	t.Helper()
 
 	hasAuth := token != ""
-	body := buildCSILRequestEnvelope(service, op, encode(req), token, hasAuth)
+	payload, err := encode(req)
+	require.NoError(t, err, "encode %s/%s request", service, op)
+	body := buildCSILRequestEnvelope(service, op, payload, token, hasAuth)
 
 	httpReq := httptest.NewRequest(http.MethodPost, uiapi.RpcPath, bytes.NewReader(body))
 	httpReq.Header.Set("Content-Type", "application/cbor")

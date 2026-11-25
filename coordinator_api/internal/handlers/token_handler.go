@@ -6,7 +6,9 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/audit"
@@ -22,7 +24,7 @@ type tokenAdministrationStore interface {
 	GetOrganizationByID(ctx context.Context, orgID string) (*models.Organization, error)
 	GetUserByUsername(ctx context.Context, username string) (*models.User, error)
 	GetAPITokenByID(ctx context.Context, tokenID string) (*models.APIToken, error)
-	ListAPITokens(ctx context.Context) ([]models.APIToken, error)
+	ListAPITokens(ctx context.Context, filter store.APITokenListFilter) ([]models.APIToken, int64, error)
 	RevokeAPIToken(ctx context.Context, tokenID string) error
 }
 
@@ -64,10 +66,21 @@ type TokenResponse struct {
 	IsActive      bool       `json:"is_active"`
 }
 
+// ListTokensResponse is one page of tokens. Total counts every token that
+// matches the query, not only this page.
 type ListTokensResponse struct {
 	Tokens []TokenResponse `json:"tokens"`
 	Total  int             `json:"total"`
+	Limit  int             `json:"limit"`
+	Offset int             `json:"offset"`
 }
+
+// The page size of GET /api/v1/tokens when the request gives no limit, and
+// the largest page size that a request can ask for.
+const (
+	defaultTokenPageSize = 100
+	maxTokenPageSize     = 1000
+)
 
 func (h *TokenHandler) CreateToken(w http.ResponseWriter, r *http.Request) {
 	principal := checkauth.GetPrincipalFromContext(r.Context())
@@ -174,29 +187,102 @@ func (h *TokenHandler) CreateToken(w http.ResponseWriter, r *http.Request) {
 	h.respondWithJSON(w, http.StatusCreated, response)
 }
 
+// ListTokens returns one page of the tokens that the caller can manage,
+// newest first. Query parameters: limit (default 100, at most 1000), offset,
+// and exclude_expired=true to leave out tokens whose expiry is in the past.
+// Expired tokens are listed by default.
 func (h *TokenHandler) ListTokens(w http.ResponseWriter, r *http.Request) {
 	principal := checkauth.GetPrincipalFromContext(r.Context())
 	if h.administration == nil || principal == nil || !principal.HasCapability(tokencaps.TokensManage) {
 		h.respondWithError(w, http.StatusForbidden, store.ErrForbidden)
 		return
 	}
-	tokens, err := h.administration.ListAPITokens(r.Context())
+	filter, err := parseTokenListQuery(r)
+	if err != nil {
+		h.respondWithError(w, http.StatusBadRequest, store.ErrInvalidInput)
+		return
+	}
+	if principal.AllOrganizations {
+		if !h.globalTokensVisible(r, principal) {
+			h.respondWithJSON(w, http.StatusOK, ListTokensResponse{Tokens: []TokenResponse{}, Limit: filter.Limit, Offset: filter.Offset})
+			return
+		}
+		filter.AllOrganizations = true
+	} else {
+		filter.OrgIDs = h.manageableTokenOrgs(r, principal)
+	}
+	tokens, total, err := h.administration.ListAPITokens(r.Context(), filter)
 	if err != nil {
 		h.respondWithError(w, http.StatusInternalServerError, err)
 		return
 	}
+	names := map[string]string{}
 	responses := make([]TokenResponse, 0, len(tokens))
 	for i := range tokens {
-		if h.tokenVisibleToPrincipal(r, &tokens[i], principal) {
-			responses = append(responses, h.tokenToResponse(r, &tokens[i]))
+		responses = append(responses, h.tokenToResponseNamed(r, &tokens[i], names))
+	}
+	h.respondWithJSON(w, http.StatusOK, ListTokensResponse{Tokens: responses, Total: int(total), Limit: filter.Limit, Offset: filter.Offset})
+}
+
+// parseTokenListQuery reads limit, offset, and exclude_expired.
+func parseTokenListQuery(r *http.Request) (store.APITokenListFilter, error) {
+	filter := store.APITokenListFilter{Limit: defaultTokenPageSize}
+	query := r.URL.Query()
+	if raw := query.Get("limit"); raw != "" {
+		limit, err := strconv.Atoi(raw)
+		if err != nil || limit < 1 || limit > maxTokenPageSize {
+			return filter, fmt.Errorf("limit must be 1 to %d", maxTokenPageSize)
+		}
+		filter.Limit = limit
+	}
+	if raw := query.Get("offset"); raw != "" {
+		offset, err := strconv.Atoi(raw)
+		if err != nil || offset < 0 {
+			return filter, fmt.Errorf("offset must be 0 or more")
+		}
+		filter.Offset = offset
+	}
+	if raw := query.Get("exclude_expired"); raw != "" {
+		exclude, err := strconv.ParseBool(raw)
+		if err != nil {
+			return filter, fmt.Errorf("exclude_expired must be true or false")
+		}
+		filter.ExcludeExpired = exclude
+	}
+	return filter, nil
+}
+
+// globalTokensVisible reports whether a principal of all organizations can
+// see every token.
+func (h *TokenHandler) globalTokensVisible(r *http.Request, principal *checkauth.Principal) bool {
+	return principal.CredentialType != "user_token" || principalAllowsGlobal(r.Context(), h.store, tokencaps.TokensManage)
+}
+
+// manageableTokenOrgs returns the organizations of the principal in which it
+// can manage tokens. A token is visible when one of them owns it or is in its
+// scope (the same rule as tokenVisibleToPrincipal).
+func (h *TokenHandler) manageableTokenOrgs(r *http.Request, principal *checkauth.Principal) []string {
+	candidates := append([]string(nil), principal.OrganizationIDs...)
+	if principal.OwnerOrgID != "" {
+		candidates = append(candidates, principal.OwnerOrgID)
+	}
+	seen := map[string]bool{}
+	allowed := make([]string, 0, len(candidates))
+	for _, orgID := range candidates {
+		if orgID == "" || seen[orgID] {
+			continue
+		}
+		seen[orgID] = true
+		if principalAllowsOrg(r.Context(), h.store, orgID, tokencaps.TokensManage) {
+			allowed = append(allowed, orgID)
 		}
 	}
-	h.respondWithJSON(w, http.StatusOK, ListTokensResponse{Tokens: responses, Total: len(responses)})
+	return allowed
 }
 
 func (h *TokenHandler) tokenVisibleToPrincipal(r *http.Request, token *models.APIToken, principal *checkauth.Principal) bool {
 	if principal.AllOrganizations {
-		return principal.CredentialType != "user_token" || principalAllowsGlobal(r.Context(), h.store, tokencaps.TokensManage)
+		return h.globalTokensVisible(r, principal)
 	}
 	if token.OwnerOrgID != nil && principalAllowsOrg(r.Context(), h.store, *token.OwnerOrgID, tokencaps.TokensManage) {
 		return true
@@ -237,12 +323,32 @@ func (h *TokenHandler) DeleteToken(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *TokenHandler) tokenToResponse(r *http.Request, token *models.APIToken) TokenResponse {
+	return h.tokenToResponseNamed(r, token, nil)
+}
+
+// tokenToResponseNamed is tokenToResponse with a cache of organization names
+// by id (nil for no cache), so a page of tokens looks up each organization
+// once. An organization that cannot be found is left out, as before.
+func (h *TokenHandler) tokenToResponseNamed(r *http.Request, token *models.APIToken, names map[string]string) TokenResponse {
+	orgName := func(orgID string) (string, bool) {
+		if name, ok := names[orgID]; ok {
+			return name, name != ""
+		}
+		name := ""
+		if organization, err := h.administration.GetOrganizationByID(r.Context(), orgID); err == nil {
+			name = organization.Name
+		}
+		if names != nil {
+			names[orgID] = name
+		}
+		return name, name != ""
+	}
 	organizations := []string{"*"}
 	if !token.AllOrganizations {
 		organizations = make([]string, 0, len(token.OrganizationIDs))
 		for _, orgID := range token.OrganizationIDs {
-			if organization, err := h.administration.GetOrganizationByID(r.Context(), orgID); err == nil {
-				organizations = append(organizations, organization.Name)
+			if name, ok := orgName(orgID); ok {
+				organizations = append(organizations, name)
 			}
 		}
 	}
@@ -252,9 +358,7 @@ func (h *TokenHandler) tokenToResponse(r *http.Request, token *models.APIToken) 
 	}
 	owner := ""
 	if token.OwnerOrgID != nil {
-		if org, err := h.administration.GetOrganizationByID(r.Context(), *token.OwnerOrgID); err == nil {
-			owner = org.Name
-		}
+		owner, _ = orgName(*token.OwnerOrgID)
 	}
 	return TokenResponse{TokenID: token.TokenID, Name: token.Name, SubjectType: token.SubjectType, Owner: owner,
 		Organizations: organizations, Capabilities: capabilities, CreatedAt: token.CreatedAt, UpdatedAt: token.UpdatedAt,

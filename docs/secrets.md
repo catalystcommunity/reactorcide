@@ -71,6 +71,29 @@ reactorcide secrets \
   list-paths
 ```
 
+### Organization
+
+Each organization has its own secrets. The server selects the organization
+in this sequence:
+
+1. The `org` query parameter (`?org=<name>`). The CLI sends it from `--org`
+   or `REACTORCIDE_ORG`.
+2. The owner organization of the token.
+3. The organization of the token scope, when the scope has one organization.
+4. The personal organization of a signed-in user.
+5. The default organization of the instance.
+
+An instance token for all organizations has no owner organization. Thus it
+uses the default organization. To use a different organization, set `--org`:
+
+```bash
+reactorcide secrets --org example list-paths
+```
+
+If no step gives an organization, the server returns `400
+organization_required`. If the named organization does not exist, the server
+returns `404 not_found`.
+
 ## Initializing Secrets
 
 Initialize secret storage for your organization. This is a one-time operation that generates your organization's encryption key.
@@ -472,8 +495,9 @@ curl -X POST "https://reactorcide.example.com/api/v1/admin/secrets/sync-primary"
 | HTTP Status | Error | Cause |
 |-------------|-------|-------|
 | 400 | `invalid_input` | Missing or invalid `path`/`key` parameter, or malformed request body |
+| 400 | `organization_required` | No organization was found for the request. Set `?org=<name>` (CLI: `--org`). |
 | 403 | `forbidden` | Token does not have access to this organization's secrets |
-| 404 | `not_found` | Secret at the given path/key does not exist |
+| 404 | `not_found` | Secret at the given path/key does not exist, or the `org` organization does not exist |
 | 409 | `already_exists` | Secrets already initialized, or master key name already registered |
 | 412 | `not_initialized` | Call `POST /api/v1/secrets/init` first |
 | 500 | `internal_error` | Database or encryption failure — check server logs |

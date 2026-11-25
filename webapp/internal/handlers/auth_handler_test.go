@@ -30,7 +30,7 @@ func withAuthMode(fc *fakeCoordinator, mode string, bootstrapAvailable, hasGloba
 			BootstrapAdminAvailable: bootstrapAvailable,
 			HasGlobalAdmin:          hasGlobalAdmin,
 		}
-		return csilapi.EncodeGetAuthConfigResponse(resp), "GetAuthConfigResponse", false
+		return mustEncode(csilapi.EncodeGetAuthConfigResponse(resp)), "GetAuthConfigResponse", false
 	})
 }
 
@@ -38,7 +38,7 @@ func withAuthMode(fc *fakeCoordinator, mode string, bootstrapAvailable, hasGloba
 // capabilities so tests that don't care about it don't need their own stub.
 func withNoopCapabilities(fc *fakeCoordinator) {
 	fc.handle("ReactorcideUi", "get-capabilities", func(_ []byte, _ string, _ bool) ([]byte, string, bool) {
-		return csilapi.EncodeGetCapabilitiesResponse(csilapi.GetCapabilitiesResponse{}), "GetCapabilitiesResponse", false
+		return mustEncode(csilapi.EncodeGetCapabilitiesResponse(csilapi.GetCapabilitiesResponse{})), "GetCapabilitiesResponse", false
 	})
 }
 
@@ -55,7 +55,7 @@ func TestLoginSubmit_BeginsLoginAndRedirects(t *testing.T) {
 			return fakeServiceErrorPayload("bad_request", "unexpected identity hint"), "ServiceError", true
 		}
 		resp := csilapi.BeginLoginResponse{RedirectUrl: "https://idp.example/authorize?attempt=attempt-1", AttemptToken: "attempt-1"}
-		return csilapi.EncodeBeginLoginResponse(resp), "BeginLoginResponse", false
+		return mustEncode(csilapi.EncodeBeginLoginResponse(resp)), "BeginLoginResponse", false
 	})
 	h := newTestWebHandler(t, fc)
 
@@ -121,10 +121,10 @@ func TestAuthCallback_UsesAttemptCookie(t *testing.T) {
 		if req.AttemptToken != "attempt-1" || req.EncryptedToken != "enc-abc" {
 			return fakeServiceErrorPayload("bad_request", "unexpected attempt/encrypted token"), "ServiceError", true
 		}
-		return csilapi.EncodeCompleteLoginResponse(csilapi.CompleteLoginResponse{
+		return mustEncode(csilapi.EncodeCompleteLoginResponse(csilapi.CompleteLoginResponse{
 			SessionToken: "session-token-xyz",
 			ExpiresAt:    expires,
-		}), "CompleteLoginResponse", false
+		})), "CompleteLoginResponse", false
 	})
 	h := newTestWebHandler(t, fc)
 
@@ -156,7 +156,7 @@ func TestLoginSubmit_EmptyIdentityRejectedServerSide(t *testing.T) {
 	beginLoginCalled := false
 	fc.handle("ReactorcideAuth", "begin-login", func(payload []byte, _ string, _ bool) ([]byte, string, bool) {
 		beginLoginCalled = true
-		return csilapi.EncodeBeginLoginResponse(csilapi.BeginLoginResponse{}), "BeginLoginResponse", false
+		return mustEncode(csilapi.EncodeBeginLoginResponse(csilapi.BeginLoginResponse{})), "BeginLoginResponse", false
 	})
 	h := newTestWebHandler(t, fc)
 
@@ -201,7 +201,7 @@ func TestAuthCallback_HappyPathSetsCookieAndRedirects(t *testing.T) {
 				DisplayName: "User One",
 			},
 		}
-		return csilapi.EncodeCompleteLoginResponse(resp), "CompleteLoginResponse", false
+		return mustEncode(csilapi.EncodeCompleteLoginResponse(resp)), "CompleteLoginResponse", false
 	})
 	h := newTestWebHandler(t, fc)
 
@@ -304,7 +304,7 @@ func TestLogout_ClearsCookieAndCallsLogoutWithToken(t *testing.T) {
 		if !hasAuth || auth != "session-token-xyz" {
 			return fakeServiceErrorPayload("unauthenticated", "missing/wrong token"), "ServiceError", true
 		}
-		return csilapi.EncodeLogoutResponse(csilapi.LogoutResponse{Ok: true}), "LogoutResponse", false
+		return mustEncode(csilapi.EncodeLogoutResponse(csilapi.LogoutResponse{Ok: true})), "LogoutResponse", false
 	})
 	h := newTestWebHandler(t, fc)
 
@@ -356,7 +356,7 @@ func TestCookieInsecureFlag(t *testing.T) {
 	expires := time.Now().Add(time.Hour).UTC().Format(time.RFC3339)
 	fc.handle("ReactorcideAuth", "complete-login", func(_ []byte, _ string, _ bool) ([]byte, string, bool) {
 		resp := csilapi.CompleteLoginResponse{SessionToken: "tok", ExpiresAt: expires}
-		return csilapi.EncodeCompleteLoginResponse(resp), "CompleteLoginResponse", false
+		return mustEncode(csilapi.EncodeCompleteLoginResponse(resp)), "CompleteLoginResponse", false
 	})
 	h := newTestWebHandler(t, fc)
 
@@ -383,7 +383,7 @@ func TestBootstrapSubmit_HappyPathSetsCookie(t *testing.T) {
 		}
 		seenToken = req.BootstrapToken
 		resp := csilapi.BootstrapAdminResponse{SessionToken: "bootstrap-session", ExpiresAt: time.Now().Add(time.Hour).UTC().Format(time.RFC3339)}
-		return csilapi.EncodeBootstrapAdminResponse(resp), "BootstrapAdminResponse", false
+		return mustEncode(csilapi.EncodeBootstrapAdminResponse(resp)), "BootstrapAdminResponse", false
 	})
 	h := newTestWebHandler(t, fc)
 
@@ -470,7 +470,7 @@ func TestSessionInfo_LoggedInResolvesIdentity(t *testing.T) {
 	fc.handle("ReactorcideAuth", "authenticate", func(_ []byte, auth string, hasAuth bool) ([]byte, string, bool) {
 		if !hasAuth || auth != "valid-token" {
 			resp := csilapi.AuthenticateResponse{Authenticated: false}
-			return csilapi.EncodeAuthenticateResponse(resp), "AuthenticateResponse", false
+			return mustEncode(csilapi.EncodeAuthenticateResponse(resp)), "AuthenticateResponse", false
 		}
 		resp := csilapi.AuthenticateResponse{
 			Authenticated: true,
@@ -480,7 +480,7 @@ func TestSessionInfo_LoggedInResolvesIdentity(t *testing.T) {
 				DisplayName: "Jane Admin",
 			},
 		}
-		return csilapi.EncodeAuthenticateResponse(resp), "AuthenticateResponse", false
+		return mustEncode(csilapi.EncodeAuthenticateResponse(resp)), "AuthenticateResponse", false
 	})
 	h := newTestWebHandler(t, fc)
 
@@ -520,7 +520,7 @@ func TestCapabilitiesForProject_ScopesRequestAndThreadsResult(t *testing.T) {
 		}
 		sawProjectID = req.ProjectId
 		resp := csilapi.GetCapabilitiesResponse{CancelJob: true, KillJob: false}
-		return csilapi.EncodeGetCapabilitiesResponse(resp), "GetCapabilitiesResponse", false
+		return mustEncode(csilapi.EncodeGetCapabilitiesResponse(resp)), "GetCapabilitiesResponse", false
 	})
 	h := newTestWebHandler(t, fc)
 
@@ -558,11 +558,11 @@ func withIdentity(fc *fakeCoordinator, id csilapi.AuthenticatedIdentity) {
 	fc.handle("ReactorcideAuth", "authenticate", func(_ []byte, auth string, hasAuth bool) ([]byte, string, bool) {
 		if !hasAuth || auth != "valid-token" {
 			resp := csilapi.AuthenticateResponse{Authenticated: false}
-			return csilapi.EncodeAuthenticateResponse(resp), "AuthenticateResponse", false
+			return mustEncode(csilapi.EncodeAuthenticateResponse(resp)), "AuthenticateResponse", false
 		}
 		identity := id
 		resp := csilapi.AuthenticateResponse{Authenticated: true, Identity: &identity}
-		return csilapi.EncodeAuthenticateResponse(resp), "AuthenticateResponse", false
+		return mustEncode(csilapi.EncodeAuthenticateResponse(resp)), "AuthenticateResponse", false
 	})
 }
 
@@ -708,7 +708,7 @@ func TestResolveSession_CapabilitiesRequestIsUnscoped(t *testing.T) {
 		if req.ProjectId != nil {
 			t.Errorf("nav get-capabilities must be unscoped, got project_id=%q", *req.ProjectId)
 		}
-		return csilapi.EncodeGetCapabilitiesResponse(csilapi.GetCapabilitiesResponse{}), "GetCapabilitiesResponse", false
+		return mustEncode(csilapi.EncodeGetCapabilitiesResponse(csilapi.GetCapabilitiesResponse{})), "GetCapabilitiesResponse", false
 	})
 	h := newTestWebHandler(t, fc)
 
@@ -725,4 +725,13 @@ func TestResolveSession_CapabilitiesRequestIsUnscoped(t *testing.T) {
 	if len(si.Roles) != 1 || si.Roles[0].Role != "admin" {
 		t.Errorf("Roles not threaded from authenticate: %+v", si.Roles)
 	}
+}
+
+// mustEncode returns the bytes of a generated encoder, or panics. A test
+// fixture is always a valid value, so an error is a defect in the test.
+func mustEncode(data []byte, err error) []byte {
+	if err != nil {
+		panic(err)
+	}
+	return data
 }

@@ -6,10 +6,12 @@ import (
 	"crypto/sha256"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/checkauth"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/handlers"
@@ -450,4 +452,110 @@ func createTokenAuthHeader(ctx context.Context, tx *gorm.DB, userID string) (str
 	}
 
 	return "Bearer " + tokenValue, nil
+}
+
+// listTokensAs calls the token list handler as principal with query.
+func listTokensAs(t *testing.T, ctx context.Context, principal *checkauth.Principal, query string) (int, handlers.ListTokensResponse) {
+	t.Helper()
+	handler := handlers.NewTokenHandler(postgres_store.PostgresStore)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/tokens"+query, nil).WithContext(checkauth.SetPrincipalContext(ctx, principal))
+	recorder := httptest.NewRecorder()
+	handler.ListTokens(recorder, req)
+	var response handlers.ListTokensResponse
+	if recorder.Code == http.StatusOK {
+		require.NoError(t, json.Unmarshal(recorder.Body.Bytes(), &response))
+	}
+	return recorder.Code, response
+}
+
+func createListToken(t *testing.T, ctx context.Context, name string, expiresAt *time.Time, ownerOrg *string, orgs []string) string {
+	t.Helper()
+	hash := sha256.Sum256([]byte(uuid.NewString()))
+	token := &models.APIToken{TokenHash: hash[:], Name: name, IsActive: true, SubjectType: "service_token",
+		ExpiresAt: expiresAt, OwnerOrgID: ownerOrg, OrganizationIDs: orgs, Capabilities: []string{tokencaps.JobsRead}}
+	require.NoError(t, postgres_store.PostgresStore.CreateAPIToken(ctx, token))
+	return token.TokenID
+}
+
+func TestTokenListPagingAndExpiredFilter(t *testing.T) {
+	RunTransactionalTest(t, func(ctx context.Context, tx *gorm.DB) {
+		global := &checkauth.Principal{CredentialID: uuid.NewString(), CredentialType: "instance_token",
+			AllOrganizations: true, AllCapabilities: true}
+		past := time.Now().UTC().Add(-time.Hour)
+		future := time.Now().UTC().Add(time.Hour)
+		expired := createListToken(t, ctx, "list-expired", &past, nil, nil)
+		current := createListToken(t, ctx, "list-current", &future, nil, nil)
+		forever := createListToken(t, ctx, "list-forever", nil, nil, nil)
+
+		code, first := listTokensAs(t, ctx, global, "?limit=2")
+		require.Equal(t, http.StatusOK, code)
+		assert.Len(t, first.Tokens, 2)
+		assert.Equal(t, 2, first.Limit)
+		assert.Equal(t, 0, first.Offset)
+		assert.GreaterOrEqual(t, first.Total, 3)
+
+		// Walk every page: each token appears once, and the walk sees Total tokens.
+		seen := map[string]int{}
+		for offset := 0; offset < first.Total; offset += 2 {
+			code, page := listTokensAs(t, ctx, global, fmt.Sprintf("?limit=2&offset=%d", offset))
+			require.Equal(t, http.StatusOK, code)
+			assert.Equal(t, first.Total, page.Total)
+			for _, token := range page.Tokens {
+				seen[token.TokenID]++
+			}
+		}
+		assert.Len(t, seen, first.Total)
+		for _, id := range []string{expired, current, forever} {
+			assert.Equal(t, 1, seen[id], "token %s listed once", id)
+		}
+
+		// Expired tokens are listed by default and left out on request.
+		_, all := listTokensAs(t, ctx, global, "?limit=1000")
+		_, live := listTokensAs(t, ctx, global, "?limit=1000&exclude_expired=true")
+		ids := func(r handlers.ListTokensResponse) map[string]bool {
+			out := map[string]bool{}
+			for _, token := range r.Tokens {
+				out[token.TokenID] = true
+			}
+			return out
+		}
+		assert.True(t, ids(all)[expired])
+		assert.False(t, ids(live)[expired])
+		assert.True(t, ids(live)[current])
+		assert.True(t, ids(live)[forever])
+		assert.Less(t, live.Total, all.Total)
+
+		for _, bad := range []string{"?limit=0", "?limit=1001", "?limit=x", "?offset=-1", "?exclude_expired=maybe"} {
+			code, _ := listTokensAs(t, ctx, global, bad)
+			assert.Equal(t, http.StatusBadRequest, code, bad)
+		}
+	})
+}
+
+func TestTokenListOrganizationScope(t *testing.T) {
+	RunTransactionalTest(t, func(ctx context.Context, tx *gorm.DB) {
+		defaultOrg, err := postgres_store.PostgresStore.GetDefaultOrganization(ctx)
+		require.NoError(t, err)
+		org := &models.Organization{Name: uniqueName("token-list-org"), DisplayName: "List", Status: models.OrganizationStatusActive}
+		require.NoError(t, postgres_store.PostgresStore.CreateOrganization(ctx, org))
+		owned := createListToken(t, ctx, "list-owned", nil, &org.OrgID, nil)
+		scoped := createListToken(t, ctx, "list-scoped", nil, nil, []string{org.OrgID})
+		other := createListToken(t, ctx, "list-other", nil, &defaultOrg.OrgID, []string{defaultOrg.OrgID})
+
+		capabilities, err := tokencaps.New(tokencaps.TokensManage)
+		require.NoError(t, err)
+		principal := &checkauth.Principal{CredentialID: uuid.NewString(), CredentialType: "service_token",
+			OwnerOrgID: org.OrgID, OrganizationIDs: []string{org.OrgID}, Capabilities: capabilities}
+		code, response := listTokensAs(t, ctx, principal, "?limit=1")
+		require.Equal(t, http.StatusOK, code)
+		assert.Equal(t, 2, response.Total)
+		assert.Len(t, response.Tokens, 1)
+		_, rest := listTokensAs(t, ctx, principal, "?limit=1&offset=1")
+		got := map[string]bool{response.Tokens[0].TokenID: true}
+		for _, token := range rest.Tokens {
+			got[token.TokenID] = true
+		}
+		assert.Equal(t, map[string]bool{owned: true, scoped: true}, got)
+		assert.False(t, got[other])
+	})
 }

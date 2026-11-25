@@ -96,27 +96,22 @@ func TestSplitTrustedFingerprints(t *testing.T) {
 	}
 }
 
-func TestValidateUIAuthModeRPApplicationID(t *testing.T) {
+// LinkKeys 0.16.11 removed application_id from Rp/sign-request, so a set
+// REACTORCIDE_LINKKEYS_RP_APPLICATION_ID is refused, not ignored.
+func TestValidateUIAuthModeRPApplicationIDRefused(t *testing.T) {
 	defer withUIAuthConfig(t)()
 	UIAuthMode = UIAuthModeRP
 	LinkKeysRPAddr = "rp.example.com:4987"
 	LinkKeysRPFingerprints = "abc123"
 
-	for _, tc := range []struct {
-		id      string
-		wantErr bool
-	}{
-		{"", false},
-		{"reactorcide-ui", false},
-		{"Reactorcide_UI.v2", false},
-		{"has space", true},
-		{"slash/name", true},
-		{strings.Repeat("a", 128), false},
-		{strings.Repeat("a", 129), true},
-	} {
-		LinkKeysRPApplicationID = tc.id
-		if err := ValidateUIAuthMode(); (err != nil) != tc.wantErr {
-			t.Errorf("ValidateUIAuthMode() with application id %q: err = %v, wantErr %v", tc.id, err, tc.wantErr)
+	for id, wantErr := range map[string]bool{"": false, "  ": false, "reactorcide-ui": true} {
+		LinkKeysRPApplicationID = id
+		err := ValidateUIAuthMode()
+		if (err != nil) != wantErr {
+			t.Errorf("ValidateUIAuthMode() with application id %q: err = %v, wantErr %v", id, err, wantErr)
+		}
+		if err != nil && !strings.Contains(err.Error(), "no longer used") {
+			t.Errorf("error %q does not say the setting is no longer used", err)
 		}
 	}
 }

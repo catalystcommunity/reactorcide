@@ -123,17 +123,35 @@ func (h *SecretsHandler) getProviderForOrg(r *http.Request, orgID string) (secre
 	return secrets.NewDatabaseProvider(db, orgID, orgKey)
 }
 
+var (
+	errSecretsOrgRequired = errors.New("an organization is required: pass ?org=<name> (CLI: --org)")
+	errSecretsOrgNotFound = errors.New("organization not found")
+)
+
+type secretsOrgStore interface {
+	GetOrganizationByName(context.Context, string) (*models.Organization, error)
+	GetDefaultOrganization(context.Context) (*models.Organization, error)
+}
+
+// resolveSecretsOrg selects the organization of a secrets request. The
+// order is: the ?org= name, the owner organization of the token, the one
+// organization in the token scope, the personal organization of the user,
+// and last the default organization of the instance. The caller checks
+// access to the organization.
 func (h *SecretsHandler) resolveSecretsOrg(r *http.Request) (string, error) {
-	if name := r.URL.Query().Get("org"); name != "" {
-		if finder, ok := h.store.(interface {
-			GetOrganizationByName(context.Context, string) (*models.Organization, error)
-		}); ok {
-			org, err := finder.GetOrganizationByName(r.Context(), name)
-			if err != nil {
-				return "", err
-			}
-			return org.OrgID, nil
+	orgs, hasOrgs := h.store.(secretsOrgStore)
+	if name := strings.TrimSpace(r.URL.Query().Get("org")); name != "" {
+		if !hasOrgs {
+			return "", errSecretsOrgNotFound
 		}
+		org, err := orgs.GetOrganizationByName(r.Context(), name)
+		if err != nil {
+			if errors.Is(err, store.ErrNotFound) {
+				return "", errSecretsOrgNotFound
+			}
+			return "", err
+		}
+		return org.OrgID, nil
 	}
 	if p := checkauth.GetPrincipalFromContext(r.Context()); p != nil {
 		if p.OwnerOrgID != "" {
@@ -146,7 +164,31 @@ func (h *SecretsHandler) resolveSecretsOrg(r *http.Request) (string, error) {
 	if user := checkauth.GetUserFromContext(r.Context()); user != nil {
 		return user.UserID, nil
 	}
-	return "", errors.New("an organization is required")
+	if hasOrgs {
+		if org, err := orgs.GetDefaultOrganization(r.Context()); err == nil && org.OrgID != "" {
+			return org.OrgID, nil
+		}
+	}
+	return "", errSecretsOrgRequired
+}
+
+// respondSecretsProviderError writes the response for an error from
+// getProvider or batchGetProvider.
+func (h *SecretsHandler) respondSecretsProviderError(w http.ResponseWriter, err error) {
+	switch {
+	case errors.Is(err, secrets.ErrNotInitialized):
+		h.respondWithJSON(w, http.StatusPreconditionFailed, ErrorResponse{Error: "not_initialized", Message: "secrets not initialized for this organization"})
+	case errors.Is(err, errSecretsOrgRequired):
+		h.respondWithJSON(w, http.StatusBadRequest, ErrorResponse{Error: "organization_required", Message: err.Error()})
+	case errors.Is(err, errSecretsOrgNotFound):
+		h.respondWithJSON(w, http.StatusNotFound, ErrorResponse{Error: "not_found", Message: err.Error()})
+	case secrets.IsAuthorizationError(err) || errors.Is(err, store.ErrForbidden):
+		h.respondWithJSON(w, http.StatusForbidden, ErrorResponse{Error: "forbidden", Message: err.Error()})
+	case errors.Is(err, store.ErrInvalidInput):
+		h.respondWithJSON(w, http.StatusBadRequest, ErrorResponse{Error: "invalid_input", Message: "invalid project-scoped secret selection"})
+	default:
+		h.respondWithJSON(w, http.StatusInternalServerError, ErrorResponse{Error: "internal_error", Message: "failed to get provider"})
+	}
 }
 
 // GetSecret handles GET /api/v1/secrets/value?path=...&key=...
@@ -164,24 +206,7 @@ func (h *SecretsHandler) GetSecret(w http.ResponseWriter, r *http.Request) {
 
 	provider, err := h.getProvider(r)
 	if err != nil {
-		if errors.Is(err, secrets.ErrNotInitialized) {
-			h.respondWithJSON(w, http.StatusPreconditionFailed, ErrorResponse{
-				Error:   "not_initialized",
-				Message: "secrets not initialized for this organization",
-			})
-			return
-		}
-		if secrets.IsAuthorizationError(err) || errors.Is(err, store.ErrForbidden) {
-			h.respondWithJSON(w, http.StatusForbidden, ErrorResponse{
-				Error:   "forbidden",
-				Message: err.Error(),
-			})
-			return
-		}
-		h.respondWithJSON(w, http.StatusInternalServerError, ErrorResponse{
-			Error:   "internal_error",
-			Message: "failed to get provider",
-		})
+		h.respondSecretsProviderError(w, err)
 		return
 	}
 
@@ -236,24 +261,7 @@ func (h *SecretsHandler) SetSecret(w http.ResponseWriter, r *http.Request) {
 
 	provider, err := h.getProvider(r)
 	if err != nil {
-		if errors.Is(err, secrets.ErrNotInitialized) {
-			h.respondWithJSON(w, http.StatusPreconditionFailed, ErrorResponse{
-				Error:   "not_initialized",
-				Message: "secrets not initialized for this organization",
-			})
-			return
-		}
-		if secrets.IsAuthorizationError(err) || errors.Is(err, store.ErrForbidden) {
-			h.respondWithJSON(w, http.StatusForbidden, ErrorResponse{
-				Error:   "forbidden",
-				Message: err.Error(),
-			})
-			return
-		}
-		h.respondWithJSON(w, http.StatusInternalServerError, ErrorResponse{
-			Error:   "internal_error",
-			Message: "failed to get provider",
-		})
+		h.respondSecretsProviderError(w, err)
 		return
 	}
 
@@ -290,24 +298,7 @@ func (h *SecretsHandler) DeleteSecret(w http.ResponseWriter, r *http.Request) {
 
 	provider, err := h.getProvider(r)
 	if err != nil {
-		if errors.Is(err, secrets.ErrNotInitialized) {
-			h.respondWithJSON(w, http.StatusPreconditionFailed, ErrorResponse{
-				Error:   "not_initialized",
-				Message: "secrets not initialized for this organization",
-			})
-			return
-		}
-		if secrets.IsAuthorizationError(err) {
-			h.respondWithJSON(w, http.StatusForbidden, ErrorResponse{
-				Error:   "forbidden",
-				Message: err.Error(),
-			})
-			return
-		}
-		h.respondWithJSON(w, http.StatusInternalServerError, ErrorResponse{
-			Error:   "internal_error",
-			Message: "failed to get provider",
-		})
+		h.respondSecretsProviderError(w, err)
 		return
 	}
 
@@ -352,24 +343,7 @@ func (h *SecretsHandler) ListKeys(w http.ResponseWriter, r *http.Request) {
 
 	provider, err := h.getProvider(r)
 	if err != nil {
-		if errors.Is(err, secrets.ErrNotInitialized) {
-			h.respondWithJSON(w, http.StatusPreconditionFailed, ErrorResponse{
-				Error:   "not_initialized",
-				Message: "secrets not initialized for this organization",
-			})
-			return
-		}
-		if secrets.IsAuthorizationError(err) {
-			h.respondWithJSON(w, http.StatusForbidden, ErrorResponse{
-				Error:   "forbidden",
-				Message: err.Error(),
-			})
-			return
-		}
-		h.respondWithJSON(w, http.StatusInternalServerError, ErrorResponse{
-			Error:   "internal_error",
-			Message: "failed to get provider",
-		})
+		h.respondSecretsProviderError(w, err)
 		return
 	}
 
@@ -396,24 +370,7 @@ func (h *SecretsHandler) ListKeys(w http.ResponseWriter, r *http.Request) {
 func (h *SecretsHandler) ListPaths(w http.ResponseWriter, r *http.Request) {
 	provider, err := h.getProvider(r)
 	if err != nil {
-		if errors.Is(err, secrets.ErrNotInitialized) {
-			h.respondWithJSON(w, http.StatusPreconditionFailed, ErrorResponse{
-				Error:   "not_initialized",
-				Message: "secrets not initialized for this organization",
-			})
-			return
-		}
-		if secrets.IsAuthorizationError(err) {
-			h.respondWithJSON(w, http.StatusForbidden, ErrorResponse{
-				Error:   "forbidden",
-				Message: err.Error(),
-			})
-			return
-		}
-		h.respondWithJSON(w, http.StatusInternalServerError, ErrorResponse{
-			Error:   "internal_error",
-			Message: "failed to get provider",
-		})
+		h.respondSecretsProviderError(w, err)
 		return
 	}
 
@@ -442,28 +399,7 @@ func (h *SecretsHandler) BatchGet(w http.ResponseWriter, r *http.Request) {
 
 	provider, project, err := h.batchGetProvider(r, &req)
 	if err != nil {
-		if errors.Is(err, secrets.ErrNotInitialized) {
-			h.respondWithJSON(w, http.StatusPreconditionFailed, ErrorResponse{
-				Error:   "not_initialized",
-				Message: "secrets not initialized for this organization",
-			})
-			return
-		}
-		if secrets.IsAuthorizationError(err) || errors.Is(err, store.ErrForbidden) {
-			h.respondWithJSON(w, http.StatusForbidden, ErrorResponse{
-				Error:   "forbidden",
-				Message: err.Error(),
-			})
-			return
-		}
-		if errors.Is(err, store.ErrInvalidInput) {
-			h.respondWithJSON(w, http.StatusBadRequest, ErrorResponse{Error: "invalid_input", Message: "invalid project-scoped secret selection"})
-			return
-		}
-		h.respondWithJSON(w, http.StatusInternalServerError, ErrorResponse{
-			Error:   "internal_error",
-			Message: "failed to get provider",
-		})
+		h.respondSecretsProviderError(w, err)
 		return
 	}
 
@@ -566,24 +502,7 @@ func (h *SecretsHandler) BatchSet(w http.ResponseWriter, r *http.Request) {
 
 	provider, err := h.getProvider(r)
 	if err != nil {
-		if errors.Is(err, secrets.ErrNotInitialized) {
-			h.respondWithJSON(w, http.StatusPreconditionFailed, ErrorResponse{
-				Error:   "not_initialized",
-				Message: "secrets not initialized for this organization",
-			})
-			return
-		}
-		if secrets.IsAuthorizationError(err) {
-			h.respondWithJSON(w, http.StatusForbidden, ErrorResponse{
-				Error:   "forbidden",
-				Message: err.Error(),
-			})
-			return
-		}
-		h.respondWithJSON(w, http.StatusInternalServerError, ErrorResponse{
-			Error:   "internal_error",
-			Message: "failed to get provider",
-		})
+		h.respondSecretsProviderError(w, err)
 		return
 	}
 
@@ -620,7 +539,7 @@ func (h *SecretsHandler) InitSecrets(w http.ResponseWriter, r *http.Request) {
 
 	orgID, err := h.resolveSecretsOrg(r)
 	if err != nil {
-		h.respondWithError(w, http.StatusBadRequest, err)
+		h.respondSecretsProviderError(w, err)
 		return
 	}
 	if principal := checkauth.GetPrincipalFromContext(r.Context()); principal != nil && (!principal.HasCapability(tokencaps.SecretsManage) || !principal.HasOrganization(orgID)) {

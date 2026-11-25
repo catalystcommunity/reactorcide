@@ -40,6 +40,7 @@ import (
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/egress"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/principals"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/priority"
+	"strings"
 	"time"
 
 	"github.com/catalystcommunity/app-utils-go/logging"
@@ -50,6 +51,7 @@ import (
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store/models"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/worker"
+	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/workflowengine"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/workflowevents"
 	"github.com/google/uuid"
 	"github.com/lib/pq"
@@ -367,14 +369,28 @@ func retryWorkflow(ctx context.Context, st store.Store, corndogsClient corndogs.
 	return newWf, nil
 }
 
-// RetryUnsuccessfulJobs job-retries every member job of workflowID that is
-// failed, cancelled, or timeout, in place (same workflow instance, same nodes — no
-// new workflow is created; compare RetryWorkflow). Nodes with no job, or
-// whose job isn't retryable (still running, or already terminal-success),
-// are skipped without error. Individual RetryJob failures don't abort the
-// batch: this continues past them and returns both the jobs that succeeded
-// and an aggregated error describing what failed, so a caller can show
-// partial success rather than an all-or-nothing failure.
+// RetryUnsuccessfulJobs retries a workflow in place (same workflow instance,
+// same nodes; compare RetryWorkflow). It does three things:
+//
+//  1. Each node that was skipped because a dependency was not successful
+//     (dependency-skipped, see isDependencySkipped), and each finished node
+//     downstream of such a node or of a failed, cancelled or timed-out node,
+//     goes back to "pending" (resetNodeForRetry). A node skipped by its own
+//     `if:` stays skipped. Its old job stays in the history.
+//  2. Each failed, cancelled or timed-out job that is not downstream of
+//     another reset or retried node is retried with RetryJob semantics (a
+//     clone of the job, with shifts). A retryable node that is downstream
+//     goes back to pending instead, so it cannot run before its upstream.
+//  3. When it reset a node, it evaluates the workflow once, as for a new
+//     workflow: a pending node whose dependencies are finished runs or is
+//     skipped by its condition now; the others wait, and the normal
+//     completion hooks evaluate them when the retried jobs finish.
+//
+// The returned jobs are the retried jobs and the jobs that the evaluation
+// started. Individual retry failures do not abort the batch: the result has
+// both the jobs that succeeded and an aggregated error. A workflow with
+// nothing to retry or reset gives a *StateError (ErrWorkflowNotRetryable),
+// not an empty success.
 func RetryUnsuccessfulJobs(ctx context.Context, st store.Store, corndogsClient corndogs.ClientInterface, workflowID string) ([]*models.Job, error) {
 	return retryUnsuccessfulJobs(ctx, st, corndogsClient, workflowID, models.RunShifts{})
 }
@@ -384,12 +400,12 @@ func retryUnsuccessfulJobs(ctx context.Context, st store.Store, corndogsClient c
 	if !ok {
 		return nil, ErrWorkflowsUnsupported
 	}
+	wf, err := ws.GetWorkflowInstance(ctx, workflowID)
+	if err != nil {
+		return nil, err
+	}
 	if !shifts.IsZero() {
 		// Refuse shifts over the limits before any job is retried.
-		wf, err := ws.GetWorkflowInstance(ctx, workflowID)
-		if err != nil {
-			return nil, err
-		}
 		if err := CheckShifts(ctx, st, wf.OwnershipOrgID(), wf.ProjectID, shifts); err != nil {
 			return nil, err
 		}
@@ -400,8 +416,8 @@ func retryUnsuccessfulJobs(ctx context.Context, st store.Store, corndogsClient c
 		return nil, err
 	}
 
-	var retried []*models.Job
 	var errs []error
+	retryable := map[string]*models.Job{}
 	for i := range nodes {
 		node := &nodes[i]
 		if node.JobID == nil || *node.JobID == "" {
@@ -415,9 +431,26 @@ func retryUnsuccessfulJobs(ctx context.Context, st store.Store, corndogsClient c
 			errs = append(errs, fmt.Errorf("node %q: failed to load job %s: %w", node.DisplayName, *node.JobID, err))
 			continue
 		}
-		if !job.IsRetryable() {
-			continue
+		if job.IsRetryable() {
+			retryable[node.NodeID] = job
 		}
+	}
+	plan := planRetryUnsuccessful(nodes, retryable)
+	if len(plan.retry) == 0 && len(plan.reset) == 0 && len(errs) == 0 {
+		return nil, nothingToRetry(wf)
+	}
+
+	// Reset first: a retried job must not finish while its dependents still
+	// read as finished, or its completion hook would not run them.
+	for _, node := range plan.reset {
+		if err := resetNodeForRetry(ctx, ws, wf, node); err != nil {
+			errs = append(errs, fmt.Errorf("node %q: %w", node.DisplayName, err))
+		}
+	}
+
+	var retried []*models.Job
+	for _, node := range plan.retry {
+		job := retryable[node.NodeID]
 		newJob, err := retryJob(ctx, st, corndogsClient, job, shifts)
 		if err != nil {
 			errs = append(errs, fmt.Errorf("node %q (job %s): %w", node.DisplayName, job.JobID, err))
@@ -426,11 +459,198 @@ func retryUnsuccessfulJobs(ctx context.Context, st store.Store, corndogsClient c
 		retried = append(retried, newJob)
 	}
 
+	if len(plan.reset) > 0 {
+		reloaded, err := ws.GetWorkflowInstance(ctx, workflowID)
+		if err == nil {
+			wf = reloaded
+		}
+		started, err := worker.NewTriggerProcessor(st, corndogsClient).EvaluateWorkflow(ctx, wf)
+		if err != nil {
+			errs = append(errs, fmt.Errorf("evaluate workflow after reset: %w", err))
+		}
+		for _, jobID := range started {
+			if job, err := st.GetJobByID(ctx, jobID); err == nil {
+				retried = append(retried, job)
+			}
+		}
+		bumpWorkflowReportRevision(ctx, st, wf)
+	}
+
 	if len(errs) > 0 {
 		return retried, fmt.Errorf("retry-unsuccessful-jobs: %d of %d retries failed: %w",
 			len(errs), len(errs)+len(retried), errors.Join(errs...))
 	}
 	return retried, nil
+}
+
+// RetryUnsuccessfulAvailable reports whether RetryUnsuccessfulJobs has work
+// for a workflow with these nodes: a node with a failed, cancelled or
+// timed-out job, or a dependency-skipped node. It reads the node statuses
+// only (a node's status follows its job), so a UI can show the action
+// without loading every job.
+func RetryUnsuccessfulAvailable(nodes []models.WorkflowNode) bool {
+	retryable := map[string]*models.Job{}
+	for i := range nodes {
+		if nodes[i].JobID != nil && *nodes[i].JobID != "" && workflowengine.Failure(nodes[i].Status) {
+			retryable[nodes[i].NodeID] = &models.Job{JobID: *nodes[i].JobID}
+		}
+	}
+	plan := planRetryUnsuccessful(nodes, retryable)
+	return len(plan.retry) > 0 || len(plan.reset) > 0
+}
+
+// retryUnsuccessfulPlan is what RetryUnsuccessfulJobs does to each node.
+type retryUnsuccessfulPlan struct {
+	// retry: nodes whose job is retried in place (RetryJob).
+	retry []*models.WorkflowNode
+	// reset: nodes that go back to pending and are evaluated again.
+	reset []*models.WorkflowNode
+}
+
+// planRetryUnsuccessful selects the nodes to retry and to reset. retryable
+// maps a node ID to its failed, cancelled or timed-out job. The seeds are the
+// retryable nodes and the dependency-skipped nodes. Every finished node
+// downstream of a seed is reset, except a node skipped by its own `if:`. A
+// retryable node that is downstream of a seed is reset, not retried.
+func planRetryUnsuccessful(nodes []models.WorkflowNode, retryable map[string]*models.Job) retryUnsuccessfulPlan {
+	byName := map[string][]int{}
+	for i := range nodes {
+		byName[nodes[i].Name] = append(byName[nodes[i].Name], i)
+	}
+	dependents := map[string][]int{}
+	for i := range nodes {
+		for _, dep := range nodes[i].DependsOn {
+			dependents[dep] = append(dependents[dep], i)
+		}
+	}
+
+	seed := make([]bool, len(nodes))
+	for i := range nodes {
+		if retryable[nodes[i].NodeID] != nil || isDependencySkipped(nodes, &nodes[i]) {
+			seed[i] = true
+		}
+	}
+
+	// downstream[i]: node i depends, directly or not, on a seed.
+	downstream := make([]bool, len(nodes))
+	var queue []string
+	queued := map[string]bool{}
+	for i := range nodes {
+		if seed[i] && !queued[nodes[i].Name] {
+			queued[nodes[i].Name] = true
+			queue = append(queue, nodes[i].Name)
+		}
+	}
+	for len(queue) > 0 {
+		name := queue[0]
+		queue = queue[1:]
+		for _, i := range dependents[name] {
+			if downstream[i] {
+				continue
+			}
+			downstream[i] = true
+			if !queued[nodes[i].Name] {
+				queued[nodes[i].Name] = true
+				queue = append(queue, nodes[i].Name)
+			}
+		}
+	}
+
+	var plan retryUnsuccessfulPlan
+	for i := range nodes {
+		node := &nodes[i]
+		switch {
+		case retryable[node.NodeID] != nil && !downstream[i]:
+			plan.retry = append(plan.retry, node)
+		case isDependencySkipped(nodes, node):
+			plan.reset = append(plan.reset, node)
+		case downstream[i] && workflowengine.Terminal(node.Status) && !(node.Status == "skipped" && !hasDependencyDecision(node)):
+			plan.reset = append(plan.reset, node)
+		}
+	}
+	return plan
+}
+
+// isDependencySkipped reports whether the engine skipped node because of a
+// dependency that can change: a dependency is failed, cancelled, timed out,
+// or itself dependency-skipped, or the skip is stale (the condition holds for
+// the dependencies as they are now, for example after an earlier retry made
+// them pass). A node skipped by its own `if:` has no dependency decision, and
+// as a dependency it is final. A node whose condition is false for
+// successful dependencies (for example any_failed) is not dependency-skipped:
+// evaluated again, it is skipped again.
+func isDependencySkipped(nodes []models.WorkflowNode, node *models.WorkflowNode) bool {
+	return dependencySkipped(nodes, node, map[string]bool{})
+}
+
+func dependencySkipped(nodes []models.WorkflowNode, node *models.WorkflowNode, visiting map[string]bool) bool {
+	if node.Status != "skipped" || !hasDependencyDecision(node) || visiting[node.NodeID] {
+		return false
+	}
+	visiting[node.NodeID] = true
+	defer delete(visiting, node.NodeID)
+	for _, dep := range node.DependsOn {
+		for i := range nodes {
+			if nodes[i].Name != dep {
+				continue
+			}
+			if workflowengine.Failure(nodes[i].Status) || dependencySkipped(nodes, &nodes[i], visiting) {
+				return true
+			}
+		}
+	}
+	engineNodes := make([]workflowengine.Node, len(nodes))
+	for i := range nodes {
+		engineNodes[i] = workflowengine.Node{ID: nodes[i].NodeID, Name: nodes[i].Name, DisplayName: nodes[i].DisplayName,
+			Status: nodes[i].Status, DependsOn: []string(nodes[i].DependsOn), Condition: nodes[i].Condition}
+	}
+	self := workflowengine.Node{ID: node.NodeID, Name: node.Name, Status: node.Status,
+		DependsOn: []string(node.DependsOn), Condition: node.Condition}
+	if ready, _ := workflowengine.DependenciesReady(engineNodes, self); !ready {
+		return false
+	}
+	stale, _ := workflowengine.EvaluateCondition(engineNodes, self)
+	return stale
+}
+
+// hasDependencyDecision reports whether the workflow engine decided node's
+// skip from its dependencies (workflowengine.ActionSkip), as opposed to the
+// job's `if:` at registration ("skipped by if: ...").
+func hasDependencyDecision(node *models.WorkflowNode) bool {
+	for _, reason := range node.DecisionReasons {
+		if reason.Kind == "dependency" && reason.Matched != nil && !*reason.Matched {
+			return true
+		}
+	}
+	// Nodes written before decision reasons were recorded have only the
+	// summary text of the engine skip.
+	return len(node.DecisionReasons) == 0 && strings.HasPrefix(node.DecisionReason, "skipped: ")
+}
+
+// resetNodeForRetry puts node back to pending, with no job, for the engine
+// to evaluate again. The old job keeps its workflow_node_id, so the history
+// of the node still has it.
+func resetNodeForRetry(ctx context.Context, ws workflowControlStore, wf *models.WorkflowInstance, node *models.WorkflowNode) error {
+	previous := node.Status
+	node.Status = "pending"
+	node.JobID = nil
+	node.CompletedAt = nil
+	node.DecisionReasons = nil
+	node.DecisionReason = "reset by retry-unsuccessful (was " + previous + ")"
+	if err := ws.UpdateWorkflowNode(ctx, node); err != nil {
+		return fmt.Errorf("failed to reset workflow node for retry: %w", err)
+	}
+	if wf.Status != "running" {
+		wf.Status = "running"
+		wf.CompletedAt = nil
+		if err := ws.UpdateWorkflowInstance(ctx, wf); err != nil {
+			return fmt.Errorf("failed to set the workflow to running after reset: %w", err)
+		}
+		workflowevents.WorkflowUpdated(ctx, wf)
+	}
+	workflowevents.NodeUpdated(ctx, wf, node)
+	recordRetryEvent(ctx, ws, wf.WorkflowID, &node.NodeID, nil, "node reset for evaluation (was "+previous+")")
+	return nil
 }
 
 // rebindWorkflowNodeForRetry points the workflow node that owned oldJob at

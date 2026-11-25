@@ -62,12 +62,12 @@ func TestClient_RegisterThenRequestJob_CarriesSessionInAuth(t *testing.T) {
 			require.Equal(t, "enroll-token-xyz", req.EnrollmentToken)
 			require.Equal(t, "worker-key-1", req.WorkerInfo.WorkerKey)
 			resp := csilapi.RegisterResponse{WorkerSession: wantSession, WorkerId: "worker-1", HeartbeatInterval: 15}
-			return rpctransport.NewRpcResponseOk("RegisterResponse", csilapi.EncodeRegisterResponse(resp))
+			return rpctransport.NewRpcResponseOk("RegisterResponse", mustEncode(csilapi.EncodeRegisterResponse(resp)))
 		case "request-job":
 			require.NotNil(t, auth, "RequestJob must carry the session auth")
 			require.Equal(t, wantSession, *auth)
 			resp := csilapi.RequestJobResponse{HasLease: false}
-			return rpctransport.NewRpcResponseOk("RequestJobResponse", csilapi.EncodeRequestJobResponse(resp))
+			return rpctransport.NewRpcResponseOk("RequestJobResponse", mustEncode(csilapi.EncodeRequestJobResponse(resp)))
 		default:
 			t.Fatalf("unexpected op %q", op)
 			return rpctransport.RpcResponse{}
@@ -103,7 +103,7 @@ func TestClient_ServiceError_TranslatesToServiceCallError(t *testing.T) {
 	handler := &fakeCoordinatorHandler{t: t}
 	handler.dispatch = func(op string, auth *string, payload []byte) rpctransport.RpcResponse {
 		se := csilapi.ServiceError{Code: "unauthorized", Message: "a valid worker session is required"}
-		return rpctransport.NewRpcResponseOk("ServiceError", csilapi.EncodeServiceError(se))
+		return rpctransport.NewRpcResponseOk("ServiceError", mustEncode(csilapi.EncodeServiceError(se)))
 	}
 	server := httptest.NewServer(handler)
 	defer server.Close()
@@ -127,7 +127,7 @@ func TestClient_SetSession_OverridesStoredToken(t *testing.T) {
 	handler.dispatch = func(op string, auth *string, payload []byte) rpctransport.RpcResponse {
 		sawAuth = auth
 		resp := csilapi.HeartbeatResponse{}
-		return rpctransport.NewRpcResponseOk("HeartbeatResponse", csilapi.EncodeHeartbeatResponse(resp))
+		return rpctransport.NewRpcResponseOk("HeartbeatResponse", mustEncode(csilapi.EncodeHeartbeatResponse(resp)))
 	}
 	server := httptest.NewServer(handler)
 	defer server.Close()
@@ -139,4 +139,13 @@ func TestClient_SetSession_OverridesStoredToken(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, sawAuth)
 	require.Equal(t, "preexisting-session", *sawAuth)
+}
+
+// mustEncode returns the bytes of a generated encoder, or panics. A test
+// fixture is always a valid value, so an error is a defect in the test.
+func mustEncode(data []byte, err error) []byte {
+	if err != nil {
+		panic(err)
+	}
+	return data
 }

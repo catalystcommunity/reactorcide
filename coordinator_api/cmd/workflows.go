@@ -103,7 +103,7 @@ var WorkflowsCommand = &cli.Command{
 		},
 		{
 			Name:      "retry-unsuccessful",
-			Usage:     "Retry the failed and cancelled jobs of a workflow in place, with optional shifts",
+			Usage:     "Retry the failed, cancelled and timed-out jobs of a workflow in place, and run the nodes they skipped, with optional shifts",
 			ArgsUsage: "<workflow-id>",
 			Flags:     append(append(apiFlags(), formatFlag()), shiftFlags()...),
 			Action: func(ctx *cli.Context) error {

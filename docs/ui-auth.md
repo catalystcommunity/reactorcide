@@ -142,10 +142,10 @@ job YAML, env files checked into a repo, or command output.
 | `REACTORCIDE_UI_AUTH_MODE` | always (has a default) | `none` (default) \| `local-rp` \| `rp`. Misconfiguration fails fast at startup (`ValidateUIAuthMode`) rather than silently falling back to `none`. An instance that ran with logins does not start with `none` (see [Login history guard](#login-history-guard)). |
 | `REACTORCIDE_UI_AUTH_ALLOW_DOWNGRADE_TO_NONE` | optional (default `false`) | Set to `true` for one start to change an instance that ran with logins to mode `none` on purpose. The coordinator deletes the login history and logs a warning. Remove it after that start. |
 | `REACTORCIDE_LOCAL_RP_NAME` | `mode=local-rp` | Display name (audit/UI metadata only, never an identity input) used when generating this coordinator's local-RP identity bundle. |
-| `REACTORCIDE_LINKKEYS_RP_ADDR` | `mode=rp` | `host:port` TCP CSIL-RPC address of your LinkKeys RP server. **The coordinator dials this address itself, so it must be reachable from the coordinator, not only from a browser.** In Kubernetes, a public hostname often resolves to a load-balancer IP that pods cannot reach; use the in-cluster service address (for example `linkkeys.linkkeys-ns.svc.cluster.local:4987`) instead. The TLS pin below, not the hostname, is the trust anchor, so an internal address is just as safe. |
+| `REACTORCIDE_LINKKEYS_RP_ADDR` | `mode=rp` | `host:port` TCP CSIL-RPC address of your LinkKeys RP server. The RP server must be LinkKeys 0.16.11 or later: the wire format changed in that release, and an older server does not decode the requests. **The coordinator dials this address itself, so it must be reachable from the coordinator, not only from a browser.** In Kubernetes, a public hostname often resolves to a load-balancer IP that pods cannot reach; use the in-cluster service address (for example `linkkeys.linkkeys-ns.svc.cluster.local:4987`) instead. The TLS pin below, not the hostname, is the trust anchor, so an internal address is just as safe. |
 | `REACTORCIDE_LINKKEYS_RP_FINGERPRINTS` | `mode=rp` | Comma-separated pinned SPKI SHA-256 fingerprints for the RP server's TLS certificate (mirrors the RP's own `_linkkeys` DNS TXT record). |
 | `REACTORCIDE_LINKKEYS_RP_API_KEY` | `mode=rp`, first boot only | The RP server's API key. Presented once on first boot; the coordinator persists it encrypted (Fernet, under the active master key) in `auth_credentials` (`name='rp_api_key'`) and you can drop the env var afterward — same env-or-DB convention as `REACTORCIDE_MASTER_KEYS`. |
-| `REACTORCIDE_LINKKEYS_RP_APPLICATION_ID` | `mode=rp`, optional | The `application_id` sent on `Rp/sign-request` (LinkKeys 0.16.7 or later). Use 1 to 128 of `A-Z a-z 0-9 - _ .`. If you do not set it, the RP server uses the API-key account username. Then `sign-request` fails if that username is not a valid identifier. Users give standing consent to each application, so keep this value stable. If you change it, each user sees the consent screen again. |
+| `REACTORCIDE_LINKKEYS_RP_APPLICATION_ID` | removed | Do not set it. LinkKeys 0.16.11 removed `application_id` from `Rp/sign-request`. The RP server names the application from the API-key account. Set the `application_id` on that LinkKeys application account (Admin `set-application-id`). The LinkKeys migration gives an existing API-key account the `application_id` of its username, so the consent of users does not change. If the variable is set, the coordinator does not start. |
 | `REACTORCIDE_FIRST_ADMIN` | optional | An identity selector (`handle@domain`, `uuid@domain`, `email@domain`, or a bare `domain` to match any identity at it) that is granted global admin the *first time* it completes a real login, as long as no global admin exists yet. Safe to leave set permanently — it's a no-op once any admin exists. This gate is deliberate: a standing grant would let whoever edits the deployment configuration take over an instance that already has administrators. |
 | `REACTORCIDE_BOOTSTRAP_ADMIN_TOKEN` | optional | Enables a one-time bootstrap-admin session (see below) while zero global admins exist. Unset (default) disables the feature entirely. |
 | `REACTORCIDE_TRUSTED_IDENTITIES` | `local-rp`/`rp` modes | Comma-separated `[handle@]domain` selectors seeded into the admission list at startup as `source=config` rows. A bare domain admits any handle at that domain. Global admins can add more from the UI (`source=admin`); config-seeded rows are re-applied on every restart. |
@@ -552,15 +552,17 @@ own button in the webapp:
   untouched for history/audit — this is a new run, not a mutation. The workflow detail page's
   **Retry workflow** button redirects to the *new* workflow's detail page, since the button's
   own page still describes the old (untouched) instance.
-- **Retry-all = failed + cancelled + timeout members.** `retry-unsuccessful-jobs` applies the
-  same in-place job-retry to every failed/cancelled/timeout member job of a workflow, without
-  creating a new workflow instance — the workflow-scoped analog of "retry all the red jobs" in
-  one click. A node with no job, or whose job is already successful, is skipped rather than
-  erroring; an individual retry failure doesn't abort the batch, so the response always
-  reports how many jobs were actually retried vs. skipped. The workflow detail page's
-  **Retry all unsuccessful jobs** button (shown whenever at least one member job is
-  failed/cancelled/timeout, independent of the workflow instance's own overall status) drives
-  this and redirects back to the same workflow page.
+- **Retry-all = failed + cancelled + timeout members, and the nodes they
+  skipped.** `retry-unsuccessful-jobs` retries each failed, cancelled, or
+  timed-out member job in place. It does not make a new workflow instance.
+  It also sets these nodes to pending: each node that is skipped because of a
+  dependency that is not successful (or that an earlier retry made pass), and
+  each finished node downstream. A node that is skipped by its own `if:` stays
+  skipped. The workflow then evaluates the pending nodes again. A failed
+  individual retry does not stop the batch. A workflow with no node to retry
+  gets the error `conflict`. The **Retry unsuccessful** button on the workflow
+  detail page shows when `get-workflow` sets `retry_unsuccessful_available`.
+  This can also be true for a `success` workflow.
 
 Retried jobs update their PR comment/commit-status row in place rather than posting a new
 one. See "Retry and VCS report updates" below.

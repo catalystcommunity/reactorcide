@@ -40,21 +40,45 @@ func lookupAccount(name string, _ bool) (account, error) {
 	if err1 != nil || err2 != nil {
 		return account{}, fmt.Errorf("vmguest: guest account %q has a non-numeric id", name)
 	}
+	// The account of the daemon itself (root for a root daemon) needs no
+	// credential switch.
+	if uint64(os.Geteuid()) == uid {
+		return account{name: u.Username, home: u.HomeDir, admin: unixAdmin(u)}, nil
+	}
 	if os.Geteuid() != 0 {
-		if uint64(os.Geteuid()) == uid {
-			return account{name: u.Username, home: u.HomeDir, admin: unixAdmin(u)}, nil
-		}
 		return account{}, fmt.Errorf("vmguest: the daemon is not root and cannot run commands as %q", name)
 	}
 	a := account{set: true, uid: uint32(uid), gid: uint32(gid), name: u.Username, home: u.HomeDir, admin: unixAdmin(u)}
 	if ids, err := u.GroupIds(); err == nil {
+		var groups []uint32
 		for _, id := range ids {
 			if g, err := strconv.ParseUint(id, 10, 32); err == nil {
-				a.groups = append(a.groups, uint32(g))
+				groups = append(groups, uint32(g))
 			}
 		}
+		a.groups = limitGroups(a.gid, groups, maxSupplementaryGroups)
 	}
 	return a, nil
+}
+
+// maxSupplementaryGroups is the setgroups limit (NGROUPS_MAX). On macOS it
+// is 16, and root alone is in more groups: a longer list makes fork/exec fail
+// with EINVAL. macOS resolves the other memberships dynamically.
+const maxSupplementaryGroups = 16
+
+// limitGroups returns at most max groups: the primary group first, then the
+// other groups in order, without duplicates.
+func limitGroups(primary uint32, groups []uint32, max int) []uint32 {
+	out := []uint32{primary}
+	for _, g := range groups {
+		if len(out) == max {
+			break
+		}
+		if g != primary {
+			out = append(out, g)
+		}
+	}
+	return out
 }
 
 // unixAdmin reports if the account is root or in an administrator group

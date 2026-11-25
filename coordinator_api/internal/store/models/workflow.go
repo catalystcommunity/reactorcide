@@ -240,20 +240,23 @@ func (WorkflowEvent) TableName() string {
 }
 
 type WorkflowSummary struct {
-	WorkflowID         string        `json:"workflow_id"`
-	Kind               string        `json:"kind"`
-	Name               string        `json:"name"`
-	Status             string        `json:"status"`
-	UserID             string        `json:"-"`
-	OrgID              string        `json:"-"`
-	ProjectID          *string       `json:"project_id,omitempty"`
-	CreatedAt          time.Time     `json:"created_at"`
-	UpdatedAt          time.Time     `json:"updated_at"`
-	CompletedAt        *time.Time    `json:"completed_at,omitempty"`
-	QueueName          string        `json:"queue_name"`
-	VCSRepo            string        `json:"vcs_repo,omitempty"`
-	PRNumber           *int          `json:"pr_number,omitempty"`
-	CommitSHA          string        `json:"commit_sha,omitempty"`
+	WorkflowID  string     `json:"workflow_id"`
+	Kind        string     `json:"kind"`
+	Name        string     `json:"name"`
+	Status      string     `json:"status"`
+	UserID      string     `json:"-"`
+	OrgID       string     `json:"-"`
+	ProjectID   *string    `json:"project_id,omitempty"`
+	CreatedAt   time.Time  `json:"created_at"`
+	UpdatedAt   time.Time  `json:"updated_at"`
+	CompletedAt *time.Time `json:"completed_at,omitempty"`
+	QueueName   string     `json:"queue_name"`
+	VCSRepo     string     `json:"vcs_repo,omitempty"`
+	PRNumber    *int       `json:"pr_number,omitempty"`
+	CommitSHA   string     `json:"commit_sha,omitempty"`
+	// Branch is the source branch of the workflow (Job.SourceBranch of its
+	// evaluation job, or of one of its jobs). Empty when unknown.
+	Branch             string        `json:"branch,omitempty"`
 	JobCount           int           `json:"job_count"`
 	RunningCount       int           `json:"running_count"`
 	CompletedCount     int           `json:"completed_count"`

@@ -1,0 +1,20 @@
+/* The filter bar and pager of the job and workflow lists. */
+.list-filters {
+  margin-bottom: var(--space-3);
+}
+.list-filters > text-field {
+  flex: 1 1 14rem;
+  min-width: 0;
+}
+.list-filters > combo-box {
+  flex: 0 1 16rem;
+  min-width: 0;
+}
+.pager {
+  justify-content: flex-end;
+  padding: var(--space-3) var(--space-4);
+  border-top: 1px solid var(--border);
+}
+.pager-range {
+  margin-right: auto;
+}

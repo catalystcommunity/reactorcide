@@ -1,10 +1,11 @@
-import type { DescribeFormMetadataResponse, ListWorkflowsResponse } from '~/api/csilapi/types.gen.ts'
+import type { DescribeFormMetadataResponse, ListWorkflowsResponse, ProjectSummary } from '~/api/csilapi/types.gen.ts'
 import { RcPage } from '~/app/page.ts'
 import { ChoiceSelect } from '~/components/ChoiceInput.ts'
+import { LIST_PAGE_SIZE, ListFilterBar, Pager, listQuery } from '~/components/ListControls.ts'
 import { ResourceView, emptyState, relativeTime } from '~/components/States.ts'
 import { setStatus, statusBadge } from '~/components/StatusBadge.ts'
 import type { ResourceHandle } from '~/store/index.ts'
-import { useFormMetadata, useWorkflows } from '~/store/resources.ts'
+import { useFormMetadata, useProjects, useWorkflows } from '~/store/resources.ts'
 import { actorShort, ownerGroupText } from '~/components/Labels.ts'
 import { h, setAttr, setText, show, syncKeyed } from '~/ui/dom.ts'
 import { define } from '~/ui/element.ts'
@@ -23,7 +24,10 @@ type WorkflowRow = ListWorkflowsResponse['workflows'][number]
 export class WorkflowsPage extends RcPage {
   #workflows!: ResourceHandle<ListWorkflowsResponse>
   #metadata!: ResourceHandle<DescribeFormMetadataResponse>
+  #projects!: ResourceHandle<{ projects: ProjectSummary[] }>
   #status!: ChoiceSelect
+  #filters!: ListFilterBar
+  #pager!: Pager
   #view!: ResourceView<ListWorkflowsResponse>
 
   #statusFilter(): string {
@@ -35,11 +39,14 @@ export class WorkflowsPage extends RcPage {
       ariaLabel: 'Filter by status',
       placeholder: 'All statuses',
       value: this.#statusFilter(),
-      onChange: (value) => setQuery({ status: value || undefined }),
+      onChange: (value) => setQuery({ status: value || undefined, page: undefined }),
     })
+    this.#filters = new ListFilterBar({ nameLabel: 'Filter by workflow name' })
+    this.#filters.el.append(this.#status.el)
+    this.#pager = new Pager()
     this.#view = new ResourceView<ListWorkflowsResponse>({
       isEmpty: (data) => data.workflows.length === 0,
-      empty: emptyState('No workflows yet.', 'A workflow appears here the moment it is submitted.'),
+      empty: emptyState('No workflows found.', 'A workflow appears here the moment it is submitted. With filters set, only matching workflows show.'),
       content: () => workflowTable(),
     })
     this.append(
@@ -50,22 +57,30 @@ export class WorkflowsPage extends RcPage {
           'div',
           { class: 'page-header' },
           h('div', null, h('h1', null, 'Workflows'), h('p', { class: 'meta' }, 'Every workflow you can see, updating as it runs.')),
-          h('div', { class: 'row' }, this.#status.el),
         ),
-        h('div', { class: 'card' }, this.#view.el),
+        this.#filters.el,
+        h('div', { class: 'card' }, this.#view.el, this.#pager.el),
       ),
     )
   }
 
   protected connected(): void {
-    this.#workflows = useWorkflows(this, () => ({ status: this.#statusFilter() || undefined }))
+    this.#workflows = useWorkflows(this, () => {
+      const q = listQuery(this.route().query)
+      return { status: this.#statusFilter() || undefined, projectId: q.projectId, name: q.name, branch: q.branch, offset: q.offset, limit: LIST_PAGE_SIZE }
+    })
     this.#metadata = useFormMetadata(this)
+    this.#projects = useProjects(this)
+    this.own(() => this.#filters.dispose())
   }
 
   render(): void {
     this.#workflows.sync()
     this.#status.update(this.#metadata.state().data?.workflowStatuses ?? [], this.#statusFilter())
-    this.#view.update(this.#workflows.state())
+    this.#filters.update(listQuery(this.route().query), this.#projects.state().data?.projects)
+    const state = this.#workflows.state()
+    this.#view.update(state)
+    this.#pager.update(state.data && { total: state.data.total, offset: state.data.offset, shown: state.data.workflows.length })
   }
 }
 
@@ -111,8 +126,9 @@ function updateRow(row: HTMLTableRowElement, workflow: WorkflowRow): void {
   setAttr(link, 'href', href(toEvent ? `/events/${workflow.eventId}` : `/workflows/${workflow.workflowId}`))
   setText(link, workflow.name)
   const commit = row.querySelector<HTMLElement>('.wf-commit')!
-  show(commit, workflow.commitSha)
-  setText(commit, workflow.commitSha ? workflow.commitSha.slice(0, 12) : '')
+  const commitText = [workflow.branch, workflow.commitSha ? workflow.commitSha.slice(0, 12) : ''].filter(Boolean).join(' · ')
+  show(commit, commitText)
+  setText(commit, commitText)
   setStatus(row.querySelector('.status')!, workflow.status)
   updateJobCounts(row.querySelector('.job-counts')!, workflow)
   setText(row.querySelector('.wf-repo')!, workflow.vcsRepo || '—')

@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"os"
+	"strconv"
 	"text/tabwriter"
 	"time"
 
@@ -126,26 +128,63 @@ var TokenCommand = &cli.Command{
 		},
 		{
 			Name:  "list",
-			Usage: "List the API tokens of the authenticated user",
-			Flags: append(apiFlags(), formatFlag()),
+			Usage: "List the API tokens that you can manage, newest first, one page at a time",
+			Flags: append(apiFlags(), formatFlag(),
+				&cli.IntFlag{Name: "limit", Value: 100, Usage: "Number of tokens on a page (1 to 1000)"},
+				&cli.IntFlag{Name: "offset", Usage: "Number of tokens to skip"},
+				&cli.BoolFlag{Name: "all", Usage: "Get every page (ignores --offset)"},
+				&cli.BoolFlag{Name: "exclude-expired", Usage: "Do not list tokens whose expiry is in the past (expired tokens are listed by default)"},
+			),
 			Action: func(ctx *cli.Context) error {
+				limit := ctx.Int("limit")
+				if limit < 1 || limit > 1000 {
+					return fmt.Errorf("--limit must be 1 to 1000")
+				}
+				offset := ctx.Int("offset")
+				if offset < 0 {
+					return fmt.Errorf("--offset must be 0 or more")
+				}
+				if ctx.Bool("all") {
+					offset = 0
+				}
 				client, err := newAPIClient(ctx)
 				if err != nil {
 					return err
 				}
-				var resp listTokensResponse
-				if err := client.doJSON(http.MethodGet, "/api/v1/tokens", nil, http.StatusOK, &resp); err != nil {
-					return err
+				var tokens []tokenSummary
+				total := 0
+				for {
+					query := url.Values{}
+					query.Set("limit", strconv.Itoa(limit))
+					query.Set("offset", strconv.Itoa(offset))
+					if ctx.Bool("exclude-expired") {
+						query.Set("exclude_expired", "true")
+					}
+					var resp listTokensResponse
+					if err := client.doJSON(http.MethodGet, "/api/v1/tokens?"+query.Encode(), nil, http.StatusOK, &resp); err != nil {
+						return err
+					}
+					tokens = append(tokens, resp.Tokens...)
+					total = resp.Total
+					offset += len(resp.Tokens)
+					if !ctx.Bool("all") || len(resp.Tokens) == 0 || offset >= resp.Total {
+						break
+					}
 				}
-				return render(ctx.String("format"), resp.Tokens, func(w *tabwriter.Writer) {
+				first := offset - len(tokens)
+				err = render(ctx.String("format"), tokens, func(w *tabwriter.Writer) {
 					fmt.Fprintln(w, "TOKEN ID\tNAME\tACTIVE\tCREATED\tEXPIRES\tLAST USED")
-					for _, t := range resp.Tokens {
+					for _, t := range tokens {
 						fmt.Fprintf(w, "%s\t%s\t%t\t%s\t%s\t%s\n",
 							t.TokenID, t.Name, t.IsActive,
 							t.CreatedAt.Format(time.RFC3339),
 							timeOrDash(t.ExpiresAt), timeOrDash(t.LastUsedAt))
 					}
 				})
+				if err == nil && ctx.String("format") == "table" {
+					fmt.Fprintln(os.Stderr, tokenPageNote(first, len(tokens), total))
+				}
+				return err
 			},
 		},
 		{
@@ -175,6 +214,21 @@ var TokenCommand = &cli.Command{
 type listTokensResponse struct {
 	Tokens []tokenSummary `json:"tokens"`
 	Total  int            `json:"total"`
+	Limit  int            `json:"limit"`
+	Offset int            `json:"offset"`
+}
+
+// tokenPageNote describes the listed rows, for example
+// "Tokens 101-200 of 3456. Next page: --offset 200".
+func tokenPageNote(first, count, total int) string {
+	if count == 0 {
+		return fmt.Sprintf("No tokens on this page (%d in total).", total)
+	}
+	note := fmt.Sprintf("Tokens %d-%d of %d.", first+1, first+count, total)
+	if first+count < total {
+		note += fmt.Sprintf(" Next page: --offset %d", first+count)
+	}
+	return note
 }
 
 type tokenSummary struct {

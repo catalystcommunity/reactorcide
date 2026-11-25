@@ -167,7 +167,7 @@ func TestImageSetWireRoundTrip(t *testing.T) {
 	req := clientapi.HeartbeatRequest{Status: "running", RunningLeases: []clientapi.RunningLease{},
 		ImageSetReport: &clientapi.ImageSetReport{Version: 7, State: "updating", Detail: &detail,
 			ReadyDigests: []string{imgDigestA}, FreeBytes: &free, RequiredBytes: &required}}
-	gotReq, err := csilapi.DecodeHeartbeatRequest(clientapi.EncodeHeartbeatRequest(req))
+	gotReq, err := csilapi.DecodeHeartbeatRequest(mustEncode(clientapi.EncodeHeartbeatRequest(req)))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -180,8 +180,8 @@ func TestImageSetWireRoundTrip(t *testing.T) {
 	set := &csilapi.ImageSet{Version: 7, Images: []csilapi.ImageSetEntry{
 		{Ref: "oci://r.example/vm/win:1@" + imgDigestA, Digest: imgDigestA, Kind: "vm", Aliases: []string{"windows-vs2022"}},
 	}}
-	gotResp, err := clientapi.DecodeHeartbeatResponse(csilapi.EncodeHeartbeatResponse(csilapi.HeartbeatResponse{
-		Directives: []csilapi.Directive{}, ImageSet: set}))
+	gotResp, err := clientapi.DecodeHeartbeatResponse(mustEncode(csilapi.EncodeHeartbeatResponse(csilapi.HeartbeatResponse{
+		Directives: []csilapi.Directive{}, ImageSet: set})))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -189,8 +189,8 @@ func TestImageSetWireRoundTrip(t *testing.T) {
 		gotResp.ImageSet.Images[0].Aliases[0] != "windows-vs2022" || gotResp.ImageSet.Images[0].Kind != "vm" {
 		t.Fatalf("decoded heartbeat image set = %+v", gotResp.ImageSet)
 	}
-	gotReg, err := clientapi.DecodeRegisterResponse(csilapi.EncodeRegisterResponse(csilapi.RegisterResponse{
-		WorkerSession: "s", WorkerId: "w", HeartbeatInterval: 10, ImageSet: set}))
+	gotReg, err := clientapi.DecodeRegisterResponse(mustEncode(csilapi.EncodeRegisterResponse(csilapi.RegisterResponse{
+		WorkerSession: "s", WorkerId: "w", HeartbeatInterval: 10, ImageSet: set})))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -199,16 +199,25 @@ func TestImageSetWireRoundTrip(t *testing.T) {
 	}
 
 	// Old messages: no optional field.
-	oldReq, err := csilapi.DecodeHeartbeatRequest(clientapi.EncodeHeartbeatRequest(clientapi.HeartbeatRequest{Status: "idle", RunningLeases: []clientapi.RunningLease{}}))
+	oldReq, err := csilapi.DecodeHeartbeatRequest(mustEncode(clientapi.EncodeHeartbeatRequest(clientapi.HeartbeatRequest{Status: "idle", RunningLeases: []clientapi.RunningLease{}})))
 	if err != nil || oldReq.ImageSetReport != nil {
 		t.Fatalf("old heartbeat request: %+v %v", oldReq, err)
 	}
-	oldResp, err := clientapi.DecodeHeartbeatResponse(csilapi.EncodeHeartbeatResponse(csilapi.HeartbeatResponse{Directives: []csilapi.Directive{}}))
+	oldResp, err := clientapi.DecodeHeartbeatResponse(mustEncode(csilapi.EncodeHeartbeatResponse(csilapi.HeartbeatResponse{Directives: []csilapi.Directive{}})))
 	if err != nil || oldResp.ImageSet != nil {
 		t.Fatalf("old heartbeat response: %+v %v", oldResp, err)
 	}
-	oldReg, err := clientapi.DecodeRegisterResponse(csilapi.EncodeRegisterResponse(csilapi.RegisterResponse{WorkerSession: "s", WorkerId: "w"}))
+	oldReg, err := clientapi.DecodeRegisterResponse(mustEncode(csilapi.EncodeRegisterResponse(csilapi.RegisterResponse{WorkerSession: "s", WorkerId: "w"})))
 	if err != nil || oldReg.ImageSet != nil {
 		t.Fatalf("old register response: %+v %v", oldReg, err)
 	}
+}
+
+// mustEncode returns the bytes of a generated encoder, or panics. A test
+// fixture is always a valid value, so an error is a defect in the test.
+func mustEncode(data []byte, err error) []byte {
+	if err != nil {
+		panic(err)
+	}
+	return data
 }
