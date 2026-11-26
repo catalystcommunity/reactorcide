@@ -136,7 +136,8 @@ func (f *fakeChecksStore) SetCIEventStatus(_ context.Context, _ string, status s
 	f.event.Status = status
 	return nil
 }
-func (f *fakeChecksStore) SetCIEventSummary(context.Context, string, models.CIEventSummary) error {
+func (f *fakeChecksStore) SetCIEventSummary(_ context.Context, _ string, summary models.CIEventSummary) error {
+	f.event.Summary = summary
 	return nil
 }
 func (f *fakeChecksStore) UpsertCIEventWorkflowDecisions(context.Context, []models.CIEventWorkflowDecision) error {
@@ -491,6 +492,27 @@ func TestUpdateCIPolicyStatusEventScopedFailsChecks(t *testing.T) {
 	}
 	if last := client.last(); last.State != StatusFailure || last.Description != "Policy refused 1 CI change" {
 		t.Fatalf("status = %+v", last)
+	}
+}
+
+func TestUpdateCIPolicyDecisionsRecordsPathDecisions(t *testing.T) {
+	updater, fake, client := newChecksFixture()
+	job := eventJob("eval-job", JobMetadata{VCSProvider: "github", Repo: "org/repo", CommitSHA: "abc123",
+		StatusContext: "reactorcide/eval", IsEval: true}, testEventID, nil)
+	accepted := []CIPolicyAcceptance{{Path: ".reactorcide/jobs/release-control.yaml", WorkflowID: "release",
+		Rule: "override-ci", ApprovalID: "approval-1", Reason: "override-ci approved by github/todpunk"}}
+	if err := updater.UpdateCIPolicyDecisions(context.Background(), job, nil, accepted); err != nil {
+		t.Fatal(err)
+	}
+	if fake.violations != 0 {
+		t.Fatalf("violation count = %d", fake.violations)
+	}
+	paths := fake.event.Summary.PolicyPaths
+	if len(paths) != 1 || !paths[0].Accepted || paths[0].ApprovalID != "approval-1" || paths[0].WorkflowID != "release" {
+		t.Fatalf("policy paths = %+v", paths)
+	}
+	if last := client.last(); last.State == StatusFailure {
+		t.Fatalf("an accepted change must not fail the checks: %+v", last)
 	}
 }
 

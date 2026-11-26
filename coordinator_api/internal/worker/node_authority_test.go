@@ -152,7 +152,7 @@ func TestSelectPolicyCandidatesAppliesCoordinatorAuthority(t *testing.T) {
 	}
 	tp := NewTriggerProcessor(processorStore, nil)
 	candidates := mixedTrustCandidates()
-	selected, violations, _, err := tp.selectPolicyCandidates(context.Background(), parent, candidates, []string{".reactorcide/workflows/pr.yaml"})
+	selected, violations, _, err := tp.selectPolicyCandidatesRefused(context.Background(), parent, candidates, []string{".reactorcide/workflows/pr.yaml"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -197,7 +197,7 @@ func TestSelectPolicyCandidatesLoadsApprovalForExactTarget(t *testing.T) {
 	processorStore := &multiProfileStore{workflowRuntimeStore: newWorkflowRuntimeStore(), profiles: mixedTrustProfiles(), approvals: []models.CIApproval{approval}}
 	tp := NewTriggerProcessor(processorStore, nil)
 
-	selected, violations, _, err := tp.selectPolicyCandidates(context.Background(), parent, mixedTrustCandidates(), []string{".reactorcide/workflows/pr.yaml"})
+	selected, violations, _, err := tp.selectPolicyCandidatesRefused(context.Background(), parent, mixedTrustCandidates(), []string{".reactorcide/workflows/pr.yaml"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -206,7 +206,7 @@ func TestSelectPolicyCandidatesLoadsApprovalForExactTarget(t *testing.T) {
 	}
 
 	processorStore.approvals[0].HeadRepository = "fork/repo"
-	selected, violations, _, err = tp.selectPolicyCandidates(context.Background(), parent, mixedTrustCandidates(), []string{".reactorcide/workflows/pr.yaml"})
+	selected, violations, _, err = tp.selectPolicyCandidatesRefused(context.Background(), parent, mixedTrustCandidates(), []string{".reactorcide/workflows/pr.yaml"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -610,7 +610,7 @@ func TestSelectPolicyCandidatesIgnoresWhetherTheWorkflowIDWasExplicit(t *testing
 			}
 			tp := NewTriggerProcessor(processorStore, nil)
 
-			selected, violations, _, err := tp.selectPolicyCandidates(
+			selected, violations, _, err := tp.selectPolicyCandidatesRefused(
 				context.Background(), parent, candidates,
 				[]string{".reactorcide/workflows/pr.yaml"},
 			)

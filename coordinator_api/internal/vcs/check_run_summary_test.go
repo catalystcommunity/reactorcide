@@ -198,3 +198,22 @@ func TestProjectClientUsesAppInstallation(t *testing.T) {
 		t.Fatalf("ProjectClient = %T, want the App client (global %T)", got, global)
 	}
 }
+
+func TestRenderCheckRunSummaryListsPolicyPaths(t *testing.T) {
+	summary := RenderCheckRunSummary(EventChecksResult{Description: "Policy refused 1 CI change"}, CheckRunDetails{
+		PolicyViolations: 1,
+		PolicyPaths: []models.CIPolicyPathDecision{
+			{Path: ".reactorcide/jobs/nightly.yaml", WorkflowID: "nightly"},
+			{Path: ".reactorcide/jobs/release-control.yaml", Accepted: true, WorkflowID: "release", RuleID: "override-ci",
+				ApprovalID: "approval-1", Reason: "override-ci approved by github/todpunk"},
+		},
+	})
+	for _, want := range []string{
+		"| `.reactorcide/jobs/nightly.yaml` | refused: needs approval (workflow nightly) |",
+		"| `.reactorcide/jobs/release-control.yaml` | accepted: override-ci approved by github/todpunk (approval approval-1) |",
+	} {
+		if !strings.Contains(summary, want) {
+			t.Errorf("summary does not contain %q:\n%s", want, summary)
+		}
+	}
+}

@@ -148,6 +148,19 @@ type CIEventSummary struct {
 	// SkipReasons tells why the coordinator did not evaluate the event
 	// (status skipped or rate_limited). Kind is draft, shed or rate_limit.
 	SkipReasons []DecisionReason `json:"skip_reasons,omitempty"`
+	// PolicyPaths is the CI policy decision for each changed CI file of a
+	// pull request event: refused, or accepted with the authority.
+	PolicyPaths []CIPolicyPathDecision `json:"policy_paths,omitempty"`
+}
+
+// CIPolicyPathDecision is the CI policy decision for one changed CI file.
+type CIPolicyPathDecision struct {
+	Path       string `json:"path"`
+	Accepted   bool   `json:"accepted"`
+	WorkflowID string `json:"workflow_id,omitempty"`
+	RuleID     string `json:"rule_id,omitempty"`
+	ApprovalID string `json:"approval_id,omitempty"`
+	Reason     string `json:"reason,omitempty"`
 }
 
 // DecisionReason is one structured reason why a workflow (or later a job)

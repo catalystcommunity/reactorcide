@@ -49,6 +49,7 @@ type CheckRunDetails struct {
 	NotAdmitted         []string
 	NotAdmittedAdvisory []string
 	PolicyViolations    int
+	PolicyPaths         []models.CIPolicyPathDecision
 	BaseURL             string
 }
 
@@ -107,6 +108,21 @@ func RenderCheckRunSummary(result EventChecksResult, details CheckRunDetails) st
 	if details.PolicyViolations > 0 {
 		fmt.Fprintf(&b, "The CI policy refused %d CI %s.\n\n", details.PolicyViolations,
 			plural(details.PolicyViolations, "change", "changes"))
+	}
+	if len(details.PolicyPaths) > 0 {
+		b.WriteString("### CI policy\n\n| CI file | Decision |\n| --- | --- |\n")
+		for _, item := range details.PolicyPaths {
+			decision := "refused: needs approval"
+			if item.WorkflowID != "" {
+				decision += fmt.Sprintf(" (workflow %s)", item.WorkflowID)
+			}
+			if item.Accepted {
+				decision = "accepted: " + ciPolicyAcceptanceText(CIPolicyAcceptance{Rule: item.RuleID,
+					ApprovalID: item.ApprovalID, Reason: item.Reason})
+			}
+			fmt.Fprintf(&b, "| `%s` | %s |\n", strings.ReplaceAll(markdownCell(item.Path), "`", "'"), markdownCell(decision))
+		}
+		b.WriteString("\n")
 	}
 	if len(details.FailedJobs) > 0 {
 		b.WriteString("### Failed jobs\n\n")
@@ -174,7 +190,8 @@ func CheckRunAnnotations(details CheckRunDetails) []CheckRunAnnotation {
 // missing optional store gives a summary with only the workflow table.
 func (u *JobStatusUpdater) loadCheckRunDetails(ctx context.Context, input EventChecksInput) CheckRunDetails {
 	details := CheckRunDetails{Workflows: input.Workflows, NotAdmitted: input.NotAdmitted,
-		NotAdmittedAdvisory: input.NotAdmittedAdvisory, PolicyViolations: input.PolicyViolations, BaseURL: u.baseURL}
+		NotAdmittedAdvisory: input.NotAdmittedAdvisory, PolicyViolations: input.PolicyViolations,
+		PolicyPaths: input.PolicyPaths, BaseURL: u.baseURL}
 	nodes, ok := u.store.(checkRunNodeStore)
 	if !ok || u.store == nil {
 		return details

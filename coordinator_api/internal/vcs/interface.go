@@ -128,6 +128,12 @@ type CIPolicyViolation struct {
 	Path, WorkflowID, Actor, Rule, BaseSHA, HeadSHA string
 }
 
+// CIPolicyAcceptance is a changed CI file that an authority accepted: a
+// policy rule (Rule), an approval (ApprovalID), or override-ci.
+type CIPolicyAcceptance struct {
+	Path, WorkflowID, Rule, ApprovalID, Reason string
+}
+
 func (e WebhookEvent) ActorFacts() ActorFacts {
 	facts := ActorFacts{HeadUpdateActor: e.SenderLogin, HeadRepository: e.Repository.FullName, HeadRelation: "same"}
 	if e.PullRequest != nil {

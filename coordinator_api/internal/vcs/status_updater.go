@@ -19,6 +19,13 @@ type JobStatusUpdaterInterface interface {
 // UpdateCIPolicyStatus publishes the admission result independently from the
 // evaluator status. Policy failures do not suppress safe workflow triggers.
 func (u *JobStatusUpdater) UpdateCIPolicyStatus(ctx context.Context, job *models.Job, violations []CIPolicyViolation) error {
+	return u.UpdateCIPolicyDecisions(ctx, job, violations, nil)
+}
+
+// UpdateCIPolicyDecisions is UpdateCIPolicyStatus with the accepted CI files
+// too. The aggregate check and the PR report list each refused file and the
+// authority of each accepted file.
+func (u *JobStatusUpdater) UpdateCIPolicyDecisions(ctx context.Context, job *models.Job, violations []CIPolicyViolation, accepted []CIPolicyAcceptance) error {
 	metadata, err := MetadataFromJob(job)
 	if err != nil || metadata == nil || metadata.CommitSHA == "" {
 		return err
@@ -31,7 +38,11 @@ func (u *JobStatusUpdater) UpdateCIPolicyStatus(ctx context.Context, job *models
 				return err
 			}
 		}
-		if err := u.upsertCIPolicyReport(ctx, job, metadata, violations); err != nil {
+		if err := u.saveCIPolicyPaths(ctx, *job.EventID, violations, accepted); err != nil {
+			// The path list is display-only; the count above decides the state.
+			u.logger.WithError(err).Warn("Could not save the CI policy path decisions")
+		}
+		if err := u.upsertCIPolicyReport(ctx, job, metadata, violations, accepted); err != nil {
 			return err
 		}
 		return u.PublishEventChecks(ctx, *job.EventID)
@@ -42,7 +53,7 @@ func (u *JobStatusUpdater) UpdateCIPolicyStatus(ctx context.Context, job *models
 	}
 	if !u.statusesAllowed(ctx, job.OrgID, job.ProjectID) {
 		// Report mode (docs/reporting-and-ownership.md): no VCS status.
-		return u.upsertCIPolicyReport(ctx, job, metadata, violations)
+		return u.upsertCIPolicyReport(ctx, job, metadata, violations, accepted)
 	}
 	state := StatusSuccess
 	description := "CI changes satisfy coordinator policy"
@@ -54,12 +65,42 @@ func (u *JobStatusUpdater) UpdateCIPolicyStatus(ctx context.Context, job *models
 		TargetURL: u.getJobURL(job.JobID), Description: description, Context: "Reactorcide CI Policy"}); err != nil {
 		return err
 	}
-	return u.upsertCIPolicyReport(ctx, job, metadata, violations)
+	return u.upsertCIPolicyReport(ctx, job, metadata, violations, accepted)
+}
+
+// ciPolicyPathStore stores the CI policy path decisions in the event summary.
+type ciPolicyPathStore interface {
+	GetCIEvent(ctx context.Context, eventID string) (*models.CIEvent, error)
+	SetCIEventSummary(ctx context.Context, eventID string, summary models.CIEventSummary) error
+}
+
+// saveCIPolicyPaths records the path decisions in the event summary, for the
+// aggregate check summary. A store without the methods keeps only the count.
+func (u *JobStatusUpdater) saveCIPolicyPaths(ctx context.Context, eventID string, violations []CIPolicyViolation, accepted []CIPolicyAcceptance) error {
+	paths, ok := u.store.(ciPolicyPathStore)
+	if !ok || u.store == nil {
+		return nil
+	}
+	event, err := paths.GetCIEvent(ctx, eventID)
+	if err != nil || event == nil {
+		return err
+	}
+	decisions := make([]models.CIPolicyPathDecision, 0, len(violations)+len(accepted))
+	for _, violation := range violations {
+		decisions = append(decisions, models.CIPolicyPathDecision{Path: violation.Path, WorkflowID: violation.WorkflowID, RuleID: violation.Rule})
+	}
+	for _, item := range accepted {
+		decisions = append(decisions, models.CIPolicyPathDecision{Path: item.Path, Accepted: true, WorkflowID: item.WorkflowID,
+			RuleID: item.Rule, ApprovalID: item.ApprovalID, Reason: item.Reason})
+	}
+	summary := event.Summary
+	summary.PolicyPaths = decisions
+	return paths.SetCIEventSummary(ctx, eventID, summary)
 }
 
 // upsertCIPolicyReport adds or replaces the policy section of the PR report
 // comment. It does nothing outside a pull request.
-func (u *JobStatusUpdater) upsertCIPolicyReport(ctx context.Context, job *models.Job, metadata *JobMetadata, violations []CIPolicyViolation) error {
+func (u *JobStatusUpdater) upsertCIPolicyReport(ctx context.Context, job *models.Job, metadata *JobMetadata, violations []CIPolicyViolation, accepted []CIPolicyAcceptance) error {
 	if metadata.PRNumber <= 0 || u.store == nil {
 		return nil
 	}
@@ -83,6 +124,12 @@ func (u *JobStatusUpdater) upsertCIPolicyReport(ctx context.Context, job *models
 			if violation.WorkflowID != "" {
 				fmt.Fprintf(&body, " (workflow `%s`)", strings.ReplaceAll(violation.WorkflowID, "`", "\\`"))
 			}
+		}
+	}
+	if len(accepted) > 0 {
+		body.WriteString("\n\nAccepted CI files:\n")
+		for _, item := range accepted {
+			fmt.Fprintf(&body, "\n- `%s`: %s", strings.ReplaceAll(item.Path, "`", "\\`"), ciPolicyAcceptanceText(item))
 		}
 	}
 	status := "success"
@@ -505,4 +552,16 @@ func (u *JobStatusUpdater) getJobURL(jobID string) string {
 		return ""
 	}
 	return fmt.Sprintf("%s/app/jobs/%s", u.baseURL, jobID)
+}
+
+// ciPolicyAcceptanceText tells which authority accepted a CI file.
+func ciPolicyAcceptanceText(item CIPolicyAcceptance) string {
+	text := item.Reason
+	if text == "" {
+		text = "accepted by policy rule " + item.Rule
+	}
+	if item.ApprovalID != "" {
+		text += " (approval " + item.ApprovalID + ")"
+	}
+	return text
 }

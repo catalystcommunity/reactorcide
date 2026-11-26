@@ -30,7 +30,7 @@ func TestBuiltInPolicy_CIChangeNeedsOverride(t *testing.T) {
 	changed := []string{".reactorcide/workflows/pr.yaml"}
 	tp := newMixedTrustProcessor()
 
-	selected, violations, _, err := tp.selectPolicyCandidates(context.Background(), parent, mixedTrustCandidates(), changed)
+	selected, violations, _, err := tp.selectPolicyCandidatesRefused(context.Background(), parent, mixedTrustCandidates(), changed)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -46,7 +46,7 @@ func TestBuiltInPolicy_CIChangeNeedsOverride(t *testing.T) {
 		t.Fatal(err)
 	}
 	parent.JobEnvVars[approvals.RunAuthorityEnv] = encoded
-	selected, violations, _, err = tp.selectPolicyCandidates(context.Background(), parent, mixedTrustCandidates(), changed)
+	selected, violations, _, err = tp.selectPolicyCandidatesRefused(context.Background(), parent, mixedTrustCandidates(), changed)
 	if err != nil {
 		t.Fatal(err)
 	}

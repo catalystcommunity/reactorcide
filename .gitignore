@@ -231,3 +231,9 @@ webapp/ui/dist/
 !webapp/internal/embedui/dist/
 webapp/internal/embedui/dist/*
 !webapp/internal/embedui/dist/.gitkeep
+
+# requests
+request-*
+
+# Core dumps
+/core.*
