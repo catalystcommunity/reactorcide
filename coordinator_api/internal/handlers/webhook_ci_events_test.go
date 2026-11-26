@@ -191,8 +191,9 @@ func TestWebhookCIEvent_PushCarriesPolicyFactsAndTrustedBase(t *testing.T) {
 	}}
 	push := &vcs.WebhookEvent{
 		Provider: vcs.GitHub, EventType: "push", GenericEvent: vcs.EventPush, SenderLogin: "pusher",
-		Repository: vcs.RepositoryInfo{FullName: "test-org/test-repo", CloneURL: "https://github.com/test-org/test-repo.git", DefaultBranch: "main"},
-		Push:       &vcs.PushInfo{Ref: "refs/heads/main", Before: "before-sha", After: "after-sha"},
+		Repository: vcs.RepositoryInfo{FullName: "test-org/test-repo", CloneURL: "https://github.com/test-org/test-repo.git", DefaultBranch: "trunk"},
+		// Not the default branch: a push to the default branch is trusted.
+		Push: &vcs.PushInfo{Ref: "refs/heads/main", Before: "before-sha", After: "after-sha"},
 	}
 	handler := newEventWebhookHandler(t, st, push)
 	deliverWebhook(t, handler, "push", "delivery-p", makePushWebhookBody("test-org/test-repo", "https://github.com/test-org/test-repo.git", "after-sha", "refs/heads/main"))
@@ -220,4 +221,15 @@ func TestPushCIBaseRef(t *testing.T) {
 	assert.Equal(t, "new", pushCIBaseRef(newBranch, "new"), "with no other revision the pushed commit stays the CI source")
 	normal := &vcs.WebhookEvent{Push: &vcs.PushInfo{Before: "old", After: "new"}}
 	assert.Equal(t, "old", pushCIBaseRef(normal, "new"))
+
+	// The default branch and tags are trusted: they run their own CI.
+	toMain := &vcs.WebhookEvent{Repository: vcs.RepositoryInfo{DefaultBranch: "main"},
+		Push: &vcs.PushInfo{Ref: "refs/heads/main", Before: "old", After: "new"}}
+	assert.Equal(t, "new", pushCIBaseRef(toMain, "new"), "a push to the default branch uses the pushed commit")
+	toBranch := &vcs.WebhookEvent{Repository: vcs.RepositoryInfo{DefaultBranch: "main"},
+		Push: &vcs.PushInfo{Ref: "refs/heads/dev", Before: "old", After: "new"}}
+	assert.Equal(t, "old", pushCIBaseRef(toBranch, "new"), "a push to another branch stays policy-checked")
+	tag := &vcs.WebhookEvent{GenericEvent: vcs.EventTagCreated, Repository: vcs.RepositoryInfo{DefaultBranch: "main"},
+		Push: &vcs.PushInfo{Ref: "refs/tags/v1.0.0", Before: "0000000000000000000000000000000000000000", After: "new"}}
+	assert.Equal(t, "new", pushCIBaseRef(tag, "new"), "a tag uses the tagged commit")
 }

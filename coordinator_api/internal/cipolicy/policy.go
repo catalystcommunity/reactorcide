@@ -243,7 +243,17 @@ func validatePolicy(policy *Policy) error {
 		if len(rule.Workflows) == 0 || len(rule.Paths) == 0 {
 			return fmt.Errorf("rule %s must select workflows and paths", rule.ID)
 		}
+		if contains(rule.Workflows, AnyWorkflow) {
+			// The wildcard is opt-in and stands alone: it names every
+			// workflow, so a list with other IDs is ambiguous.
+			if len(rule.Workflows) != 1 {
+				return fmt.Errorf("rule %s: workflow %q must be the only workflow of the rule", rule.ID, AnyWorkflow)
+			}
+		}
 		for _, workflow := range rule.Workflows {
+			if workflow == AnyWorkflow {
+				continue
+			}
 			if !securityIDPattern.MatchString(workflow) {
 				return fmt.Errorf("rule %s has invalid workflow ID %q", rule.ID, workflow)
 			}
@@ -427,11 +437,30 @@ func equalNodeDecisions(a, b map[string]NodeDecision) bool {
 	return true
 }
 
+// AnyWorkflow in a rule's workflows selects every workflow, also one that
+// does not run for the event (its CI files still need an authority). A rule
+// that names the workflow wins over a wildcard rule.
+const AnyWorkflow = "*"
+
 func Decide(policy *Policy, facts Facts) (Decision, error) {
+	decision, named, err := decide(policy, facts, false)
+	if err != nil || named {
+		return decision, err
+	}
+	decision, _, err = decide(policy, facts, true)
+	return decision, err
+}
+
+// decide matches the rules that name the workflow (wildcard false) or the
+// wildcard rules (wildcard true). matched is true when a rule matched.
+func decide(policy *Policy, facts Facts, wildcard bool) (Decision, bool, error) {
 	base := Decision{CISource: policy.Defaults.CISource, Profile: policy.Defaults.Profile, WorkerClass: "default", Allowed: false}
 	var matches []Decision
 	for _, rule := range policy.HeadCI {
-		if !contains(rule.Workflows, facts.WorkflowID) {
+		if wildcard != contains(rule.Workflows, AnyWorkflow) {
+			continue
+		}
+		if !wildcard && !contains(rule.Workflows, facts.WorkflowID) {
 			continue
 		}
 		if !allPathsMatch(facts.ChangedCIPaths, rule.Paths) || !optionalContains(rule.Events, facts.Event) || !optionalGlobContains(rule.BaseBranches, facts.BaseBranch) || (rule.HeadRepository != "any" && rule.HeadRepository != facts.HeadRepositoryRelation) {
@@ -455,15 +484,15 @@ func Decide(policy *Policy, facts Facts) (Decision, error) {
 	}
 	if len(matches) == 0 {
 		base.Reasons = []string{"no complete coordinator policy rule authorized head CI"}
-		return base, nil
+		return base, false, nil
 	}
 	selected := matches[0]
 	for _, match := range matches[1:] {
 		if match.Profile != selected.Profile || match.WorkerClass != selected.WorkerClass || !equalNodeDecisions(match.BaseNodes, selected.BaseNodes) {
-			return base, fmt.Errorf("ambiguous head CI authority for workflow %q", facts.WorkflowID)
+			return base, true, fmt.Errorf("ambiguous head CI authority for workflow %q", facts.WorkflowID)
 		}
 	}
-	return selected, nil
+	return selected, true, nil
 }
 
 func contains(values []string, value string) bool {

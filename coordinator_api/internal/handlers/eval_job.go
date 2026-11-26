@@ -145,9 +145,10 @@ func BuildEvalJob(project *models.Project, event *vcs.WebhookEvent) *models.Job 
 		// the target branch.
 		//
 		// Push events go through CI policy like PRs: the trusted base is the
-		// push's `before` commit (a new branch or tag uses the default branch),
-		// and the pushed commit is head-CI candidate data that the coordinator
-		// policy must allow before it runs. See pushCIBaseRef.
+		// push's `before` commit (a new branch uses the default branch), and
+		// the pushed commit is head-CI candidate data that the coordinator
+		// policy must allow before it runs. A push to the default branch and
+		// a tag are trusted and run their own CI. See pushCIBaseRef.
 		st := models.SourceTypeGit
 		ciSourceType = &st
 		ciSourceURL = &upstreamURL
@@ -268,12 +269,17 @@ func useEventCIWithoutPolicy(job *models.Job, project *models.Project, event *vc
 }
 
 // pushCIBaseRef returns the trusted CI revision for a push: the commit the
-// branch pointed at before the push. A new branch or a tag has no previous
-// commit, so it uses the repository's default branch. With neither, it
-// returns the pushed commit (the pre-policy behavior), because there is no
-// other revision to trust.
+// branch pointed at before the push. A new branch has no previous commit, so
+// it uses the repository's default branch. With neither, it returns the
+// pushed commit (the pre-policy behavior), because there is no other revision
+// to trust.
+//
+// A push to the default branch and a tag are trusted content: they arrive
+// through a merged pull request (or a maintainer with push access), and the
+// default branch is the trusted base of every later run. They use the pushed
+// commit, so the policy has nothing to refuse.
 func pushCIBaseRef(event *vcs.WebhookEvent, pushed string) string {
-	if event.Push == nil {
+	if event.Push == nil || trustedPushRef(event) {
 		return pushed
 	}
 	if isRealCommit(event.Push.Before) {
@@ -283,6 +289,18 @@ func pushCIBaseRef(event *vcs.WebhookEvent, pushed string) string {
 		return branch
 	}
 	return pushed
+}
+
+// trustedPushRef reports whether a push is to the default branch or is a tag.
+func trustedPushRef(event *vcs.WebhookEvent) bool {
+	if event.Push == nil {
+		return false
+	}
+	if event.GenericEvent == vcs.EventTagCreated || strings.HasPrefix(event.Push.Ref, "refs/tags/") {
+		return true
+	}
+	branch := strings.TrimSpace(event.Repository.DefaultBranch)
+	return branch != "" && event.Push.Ref == "refs/heads/"+branch
 }
 
 // isRealCommit reports whether a push's before/after value names a commit.

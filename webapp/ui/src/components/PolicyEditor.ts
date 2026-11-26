@@ -178,7 +178,7 @@ export class RuleCard {
       validate: (v) => subjectError(v, { projectOwner: false }),
       onChange: change,
     })
-    this.workflows = new ChipList({ ariaLabel: 'Add a workflow id', placeholder: 'docs', mono: true, validate: (v) => securityIdError(v, 'A workflow id'), onChange: change })
+    this.workflows = new ChipList({ ariaLabel: 'Add a workflow id', placeholder: 'docs', mono: true, validate: (v) => (v === '*' ? undefined : securityIdError(v, 'A workflow id')), onChange: change })
     this.paths = new ChipList({ ariaLabel: 'Add a CI file pattern', placeholder: '.reactorcide/workflows/docs.yaml', mono: true, validate: pathPatternError, onChange: change })
     this.events = new ChipList({ ariaLabel: 'Add an event', placeholder: 'pull_request_opened', mono: true, validate: eventError, onChange: change })
     this.branches = new ChipList({ ariaLabel: 'Add a target branch', placeholder: 'main', mono: true, onChange: change })
@@ -206,7 +206,7 @@ export class RuleCard {
       workflows: field({
         label: 'Which workflows',
         required: true,
-        hint: 'Workflow ids. A workflow can be in one rule only.',
+        hint: 'Workflow ids. A workflow can be in one rule only. * alone selects every workflow; a rule that names the workflow wins over it.',
         control: this.workflows.el,
         labelTarget: this.workflows.input,
       }),

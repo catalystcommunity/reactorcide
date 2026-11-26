@@ -261,3 +261,54 @@ head_ci:
 		t.Fatalf("revision=%s want %s", policy.Revision, expected)
 	}
 }
+
+const wildcardPolicy = `version: 1
+defaults: {ci_source: base, profile: standard}
+head_ci:
+  - id: backend
+    actors: {any: [repository_write]}
+    workflows: [backend-tests]
+    paths: [.reactorcide/**]
+    use: {ci_source: head, profile: standard, workers: default}
+  - id: ci-dev
+    actors: {any: ["vcs_user:github/dev"]}
+    workflows: ["*"]
+    paths: [.reactorcide/**]
+    use: {ci_source: head, profile: pr-untrusted, workers: default}
+`
+
+// A wildcard rule selects every workflow, and a rule that names the workflow
+// wins over it.
+func TestWildcardWorkflowRule(t *testing.T) {
+	policy, err := ParseDocument([]byte(wildcardPolicy))
+	if err != nil {
+		t.Fatal(err)
+	}
+	dev := map[string]bool{"vcs_user:github/dev": true, "repository_write": true}
+	facts := Facts{WorkflowID: "release", ChangedCIPaths: []string{".reactorcide/jobs/release.yaml"}, HeadRepositoryRelation: "same", ActorSubjects: dev}
+	decision, err := Decide(policy, facts)
+	if err != nil || !decision.Allowed || decision.RuleID != "ci-dev" {
+		t.Fatalf("the wildcard rule must select workflow release: %+v err=%v", decision, err)
+	}
+	facts.WorkflowID = "backend-tests"
+	decision, err = Decide(policy, facts)
+	if err != nil || !decision.Allowed || decision.RuleID != "backend" {
+		t.Fatalf("the named rule must win over the wildcard rule: %+v err=%v", decision, err)
+	}
+	facts.ActorSubjects = map[string]bool{"vcs_user:github/dev": true}
+	decision, err = Decide(policy, facts)
+	if err != nil || !decision.Allowed || decision.RuleID != "ci-dev" {
+		t.Fatalf("when the named rule does not match, the wildcard rule applies: %+v err=%v", decision, err)
+	}
+	facts.WorkflowID, facts.ActorSubjects = "release", map[string]bool{"vcs_user:github/other": true}
+	if decision, err := Decide(policy, facts); err != nil || decision.Allowed {
+		t.Fatalf("the wildcard rule still checks the actors: %+v err=%v", decision, err)
+	}
+}
+
+func TestWildcardWorkflowMustStandAlone(t *testing.T) {
+	document := strings.Replace(wildcardPolicy, `workflows: ["*"]`, `workflows: ["*", release]`, 1)
+	if _, err := ParseDocument([]byte(document)); err == nil || !strings.Contains(err.Error(), "only workflow") {
+		t.Fatalf("a wildcard with other workflow IDs must be refused: %v", err)
+	}
+}
