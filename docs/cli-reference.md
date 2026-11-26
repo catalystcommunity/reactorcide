@@ -661,6 +661,11 @@ See [Secrets](./secrets.md).
 | `secret-grants delete <name-or-id>` | Delete a grant. |
 | `secret-grants apply --file <file>` | Apply a set of grants from a file. |
 
+Each command needs a token with `secrets:manage` for the scope of the grant:
+the admin token, an organization token of the project's organization, or a
+user who owns the project (an organization admin for an organization-wide
+grant). A token with no user can use all of these commands.
+
 `secret-grants set <name>` takes `--secret-path` and `--secret-match`
 (`exact`, `prefix` (default), `glob`, `regex`). It also takes `--job-name`
 and `--job-match` (`any` (default), `exact`, `prefix`, `glob`, `regex`), and
@@ -805,11 +810,12 @@ pull request head. The commands are `approve-ci`, `override-ci`, `accept`
 (with an optional `--label`), `revoke`, `retry`, and `rerun`. Use
 `reactorcide approvals show` to see the approval actions and the required
 reviews of the current head. Add `--head-sha SHA` to refuse a command when the
-head changed. The CLI needs a user API token, or a service principal token
-from `principals tokens create` (or a federation exchange) with
-`workflows:control`. The coordinator refuses a token from `token create`
-(also the admin token), a job token, and the wide token of a no-login
-instance (HTTP 403).
+head changed. The CLI needs a user API token, the admin token, a wide token
+of a no-login instance, or a service principal token from
+`principals tokens create` (or a federation exchange) with
+`workflows:control`. The admin token and a wide token act as the instance
+administrator. The coordinator refuses a job token and any other token from
+`token create` (HTTP 403).
 
 A pull request comment gives the same commands:
 

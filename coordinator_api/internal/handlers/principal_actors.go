@@ -241,8 +241,8 @@ func (h *WebhookHandler) resolveServicePerson(ctx context.Context, project *mode
 		Subjects: valid, Principal: resolution}, nil
 }
 
-// resolveInstanceAdmin is the person of the instance administrator of a
-// no-login instance (approvals.Request.InstanceAdmin). A wide service
+// resolveInstanceAdmin is the person of the instance administrator
+// (approvals.Request.InstanceAdmin). A wide service
 // principal token is its principal; the admin token, which has no
 // principal, is the token. Both have the subject project_owner: the
 // instance administrator is a global admin, and a global admin owns every

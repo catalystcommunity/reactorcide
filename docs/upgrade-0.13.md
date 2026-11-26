@@ -26,7 +26,7 @@ features are off until you turn them on.
    plain PostgreSQL server. Ignore the errors for the extensions
    `pg_stat_kcache` and `set_user`: they are Spilo extensions and Reactorcide
    does not use them.
-5. Back up the Corndogs file store (see [section 2.1](#21-corndogs-080)).
+5. Back up the Corndogs file store (see [section 2.1](#21-corndogs-081)).
 6. If you run macOS or Windows VM jobs, rebuild each VM image with the 0.13
    tools. The 0.13 worker cannot use an image without the guest daemon (see
    [section 3](#3-behavior-changes-at-the-default-settings)).
@@ -44,7 +44,7 @@ Do the steps in this order. Each step needs the step before it.
 
 | Step | Part | Why this position |
 | --- | --- | --- |
-| 1 | Corndogs 0.8.0 | The 0.13 coordinator uses keyed submits and guarded tasks. Corndogs 0.7.x does not have these operations. |
+| 1 | Corndogs 0.8.1 | The 0.13 coordinator uses keyed submits and guarded tasks. Corndogs 0.7.x does not have these operations. |
 | 2 | Coordinator 0.13 and web app 0.13, together | The coordinator applies migrations `000047` to `000074` when it starts. The web app and the coordinator use the same CSIL UI schema (`coordinator_api/csil/reactorcide-ui.csil`). The 0.13 UI pages use operations and fields that only a 0.13 coordinator has. Deploy both from the same release tag in the same rollout. |
 | 3 | Workers 0.13 | A 0.13 worker uses worker operations that only a 0.13 coordinator has (for example `upload-artifact`). Upgrade the workers directly after the coordinator. Each VM job of a 0.13 coordinator has the characteristic `image_digest`, and a VM worker older than 0.13 does not send `image_digest`. Thus an old VM worker cannot claim VM jobs: VM jobs wait until a 0.13 VM worker has the image. |
 | 4 | Runner image (`runnerbase`) 0.13 | The new runnerlib commands (artifacts, test results, `oidc-token`) need the 0.13 coordinator. |
@@ -118,7 +118,7 @@ kubectl -n reactorcide cp corndogs-backup:/tmp/corndogs.tgz "./corndogs-$(date +
 kubectl -n reactorcide delete pod corndogs-backup
 ```
 
-Then deploy Corndogs 0.8.0. `jobs/deploy-to-k8s.yaml` deletes the old
+Then deploy Corndogs 0.8.1. `jobs/deploy-to-k8s.yaml` deletes the old
 Corndogs deployment before it installs the new chart, and
 `jobs/deploy-to-vm.yaml` stops all services before it starts them again.
 
@@ -212,8 +212,8 @@ These changes apply after the upgrade with no configuration change.
 | Windows VM host | Job VMs need no virtual switch. Only the ISO builder uses one. At the first boot, the worker writes two Hyper-V socket service keys under `HKLM` (`GuestCommunicationServices`). | Run the worker elevated or as LocalSystem, or add the keys one time as an administrator. Smart App Control or another application control policy blocks unsigned binaries: turn it off or sign the binaries. See [Windows VM Runner](./vm-runners-windows.md). |
 | Windows guest egress | Guest egress works only for programs that use the proxy settings (WinHTTP, WinINET, or the proxy environment variables). The guest daemon adds a loopback adapter (`10.255.255.1/30`). A tool that ignores the proxy cannot connect. | Examine jobs that used direct network access. Set the proxy for such tools. |
 | macOS VM host | The worker must run as a user LaunchAgent with the Local Network approval. | See [macOS VM Runner](./vm-runners-macos.md). |
-| Pull request commands through the API | `POST /api/v1/approvals` (and `reactorcide approvals`) accepts a user token or a service principal token from `principals tokens create` or a federation exchange, with `workflows:control`. Before, only a user token worked. With a login mode, a token from `token create` (also the admin token), a job token, and a wide token issued in no-login mode get HTTP 403. On a no-login instance, the admin token and wide service principal tokens act as the instance administrator: they pass each approver check, and their approvals record `project_owner`. See [No-login instances](./ui-auth.md#no-login-instances-single-admin). | To automate approvals with logins, issue a principal token with `--capability workflows:control`. |
-| No-login mode after logins | The coordinator does not start with `REACTORCIDE_UI_AUTH_MODE=none` (also the default when the setting is missing) on an instance that ran with logins. Migration `000073` marks an existing instance that has login data (LinkKeys login identities, a stored RP API key or local-RP identity, trusted identities, or trusted domain patterns). Each start in `rp` or `local-rp` marks it. The no-login behaviours (wide principal tokens, anonymous cancel and retry, pull request commands of the admin token) apply only when the guard accepts mode `none`. See [Login history guard](./ui-auth.md#login-history-guard). | Set the login mode of the instance. To change to mode `none` on purpose, start one time with `REACTORCIDE_UI_AUTH_ALLOW_DOWNGRADE_TO_NONE=true`, then remove it. |
+| Pull request commands through the API | `POST /api/v1/approvals` (and `reactorcide approvals`) accepts a user token or a service principal token from `principals tokens create` or a federation exchange, with `workflows:control`. Before, only a user token worked. A job token and other tokens from `token create` get HTTP 403. From 0.13.4, the admin token and wide service principal tokens act as the instance administrator in every auth mode: they pass each approver check, and their approvals record `project_owner`. See [No-login instances](./ui-auth.md#no-login-instances-single-admin). | To automate approvals with logins, issue a principal token with `--capability workflows:control`. |
+| No-login mode after logins | The coordinator does not start with `REACTORCIDE_UI_AUTH_MODE=none` (also the default when the setting is missing) on an instance that ran with logins. Migration `000073` marks an existing instance that has login data (LinkKeys login identities, a stored RP API key or local-RP identity, trusted identities, or trusted domain patterns). Each start in `rp` or `local-rp` marks it. The no-login behaviours (wide principal tokens, anonymous cancel and retry) apply only when the guard accepts mode `none`. See [Login history guard](./ui-auth.md#login-history-guard). | Set the login mode of the instance. To change to mode `none` on purpose, start one time with `REACTORCIDE_UI_AUTH_ALLOW_DOWNGRADE_TO_NONE=true`, then remove it. |
 | UI pull request commands with an API token | The UI operation `pr-command` with an API token needs `workflows:control` for the organization of the project, as REST does. It now also accepts a service principal token (the principal is the person), as REST does. | Add `workflows:control` to user tokens that give pull request commands through the UI service. |
 | Refused retry message | A retry of a job that is not `failed`, `cancelled`, or `timeout` (REST `POST /api/v1/jobs/{id}/retry`, `reactorcide jobs retry`) gets HTTP 400 with the error code `not_retryable` and a message with the current status, for example `only a failed, cancelled, or timed-out job can be retried; job ID is completed`. Before, it was `invalid_input` (`Invalid input data`). A workflow retry, `retry-unsuccessful`, and a re-run that is refused give the same code with their own message. The UI service keeps the code `conflict`, with the new message. | Change scripts that compare the error code `invalid_input` of a refused retry. |
 | Shifts and new comment commands | `/reactorcide retry` and `/reactorcide rerun` accept `key=value` shifts. `/reactorcide promote` and `/reactorcide demote` are new. A word that is not a valid shift makes the comment not a command. Each shift has a bound by default: CPU 16, memory 64Gi, storage 200Gi, timeout 86400 seconds. | Set `rerun_shift_limits` to make the bounds smaller. |
@@ -421,8 +421,8 @@ schema). It does not use the new tables and columns. The full verification
 below was done at version 66. Migrations `000067` to `000074` add only
 nullable columns, two tables, indexes, and new column defaults; the paragraphs below tell why
 each one is safe for the old coordinator. This is the fast rollback: deploy the old images
-and keep the database. Keep Corndogs at 0.8.0 (see
-[section 2.1](#21-corndogs-080)). The same is true during the rolling
+and keep the database. Keep Corndogs at 0.8.1 (see
+[section 2.1](#21-corndogs-081)). The same is true during the rolling
 deploy, when old and new coordinator pods use the database at the same time.
 
 Migration `000067` adds one nullable column, `jobs.run_as_administrator`,

@@ -113,9 +113,9 @@ type Request struct {
 	// PrincipalID is a service principal that gives the command through its
 	// token. Its person key is "principal:UUID".
 	PrincipalID string
-	// InstanceAdmin is true for the instance administrator of a no-login
-	// instance: the admin token, or a wide service principal token
-	// (checkauth.Principal.IsWideInstanceToken with config.NoLoginMode).
+	// InstanceAdmin is true for the instance administrator, in every auth
+	// mode: the admin token, or a wide service principal token issued on a
+	// no-login instance (checkauth.Principal.IsWideInstanceToken).
 	// The caller sets it only after that check. The person is the principal
 	// of the token (PrincipalID), or the token itself (TokenID) when it has
 	// none. It passes every approver check of approve-ci, override-ci,
