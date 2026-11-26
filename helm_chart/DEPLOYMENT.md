@@ -220,7 +220,7 @@ corndogs:
 
 The value is a CSIL-RPC TCP address. Do not add `http://`.
 
-The subchart is Corndogs chart 0.6.0 (server 0.8.0). Its resilience
+The subchart is Corndogs chart 0.6.1 (server 0.8.1). Its resilience
 policies stay at `compatibility`.
 
 **Known limit:** do not set `corndogs.resilience.submissionKeyPolicy:
