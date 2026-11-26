@@ -24,7 +24,8 @@ command: |-
     chmod 600 ~/.ssh/config
     SSH_KEY_PATH=/tmp/reactorcide_deploy_ssh_key
     ssh() {
-      command ssh -i "${SSH_KEY_PATH}" -o IdentitiesOnly=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null "$@"
+      # LogLevel=ERROR: no "Permanently added ... to known hosts" line per call.
+      command ssh -i "${SSH_KEY_PATH}" -o IdentitiesOnly=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR "$@"
     }
 
     if [ -z "${SSH_PRIVATE_KEY:-}" ]; then
@@ -364,15 +365,17 @@ command: |-
 
     # Pull all Reactorcide images from registry
     echo "Pulling coordinator image..."
-    $DOCKER_CMD compose -f docker-compose.prod.yml -f docker-compose.override.yml pull coordinator-api
+    # --quiet: no progress bars. Without a TTY each refresh is a new line
+    # (thousands of lines per deploy). Errors still print.
+    $DOCKER_CMD compose -f docker-compose.prod.yml -f docker-compose.override.yml pull --quiet coordinator-api
 
     echo "Pulling worker image..."
-    $DOCKER_CMD compose -f docker-compose.prod.yml -f docker-compose.override.yml pull worker
+    $DOCKER_CMD compose -f docker-compose.prod.yml -f docker-compose.override.yml pull --quiet worker
 
     # Pull runner image (used by worker to spawn job containers)
     RUNNER_IMAGE="${REACTORCIDE_RUNNER_IMAGE:-containers.catalystsquad.com/public/reactorcide/runnerbase:dev}"
     echo "Pulling runner image: ${RUNNER_IMAGE}..."
-    $DOCKER_CMD pull "${RUNNER_IMAGE}"
+    $DOCKER_CMD pull --quiet "${RUNNER_IMAGE}"
 
     # Tag as local name for worker to use
     $DOCKER_CMD tag "${RUNNER_IMAGE}" reactorcide/runner:latest

@@ -362,7 +362,7 @@ func runLease(c client, runner worker.JobRunner, lease csilapi.Lease, tracker *l
 
 	maskedCmd := masker.MaskCommandArgs(jobConfig.Command)
 	// Owner decision I2: "alias (ref)" when the job named an alias.
-	spawnFields := map[string]interface{}{"image": imagealias.Display(jobConfig.Image, lease.ImageAlias), "command": strings.Join(maskedCmd, " ")}
+	spawnFields := map[string]interface{}{"image": imagealias.Display(jobConfig.Image, lease.ImageAlias), "command": worker.LogCommand(maskedCmd)}
 	if lease.ImageRetryOf != nil && *lease.ImageRetryOf != "" {
 		spawnFields["image_retry_of"] = *lease.ImageRetryOf
 	}

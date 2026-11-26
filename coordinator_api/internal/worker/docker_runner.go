@@ -202,7 +202,7 @@ func (dr *DockerRunner) SpawnJob(ctx context.Context, config *JobConfig) (string
 	logger.WithFields(map[string]interface{}{
 		"container_name": containerName,
 		"image":          config.Image,
-		"command":        config.Command,
+		"command":        LogCommand(config.Command),
 	}).Info("Creating Docker container")
 
 	resp, err := dr.client.ContainerCreate(ctx, containerConfig, hostConfig, nil, nil, containerName)
