@@ -52,6 +52,9 @@ type EventChecksInput struct {
 	// renamed them, or nothing selected them). Each one is a failure.
 	Missing          []string
 	PolicyViolations int
+	// PolicyPaths is the CI policy decision for each changed CI file, for
+	// the check summary. It does not change the state.
+	PolicyPaths []models.CIPolicyPathDecision
 	// SkipReason is the text of the first skip reason of a skipped or rate
 	// limited event.
 	SkipReason string
@@ -317,7 +320,8 @@ func (u *JobStatusUpdater) PublishEventChecks(ctx context.Context, eventID strin
 		if event.Status == models.CIEventStatusDuplicate || event.Provider == "" || event.Repo == "" || event.CommitSHA == "" {
 			return nil
 		}
-		input := EventChecksInput{EventStatus: event.Status, PolicyViolations: event.PolicyViolationCount}
+		input := EventChecksInput{EventStatus: event.Status, PolicyViolations: event.PolicyViolationCount,
+			PolicyPaths: event.Summary.PolicyPaths}
 		if len(event.Summary.SkipReasons) > 0 {
 			input.SkipReason = event.Summary.SkipReasons[0].Detail
 			input.SkipKind = event.Summary.SkipReasons[0].Kind

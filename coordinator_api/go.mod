@@ -14,7 +14,7 @@ require (
 	github.com/brianvoe/gofakeit/v6 v6.28.0
 	github.com/catalystcommunity/app-utils-go v1.0.9
 	github.com/catalystcommunity/csilgen/transports/go v0.0.0-20260926220402-baec1dad191c
-	github.com/catalystcommunity/linkkeys/sdks/local-rp/go v0.0.0-20261125192503-f081f8aa65ae
+	github.com/catalystcommunity/linkkeys/sdks/local-rp/go v0.0.0-20261125235542-0996efcfa718
 	github.com/catalystcommunity/reactorcide/coredb v0.0.0-00010101000000-000000000000
 	github.com/docker/docker v28.5.1+incompatible
 	github.com/gammazero/workerpool v1.1.3

@@ -133,6 +133,24 @@ type policyViolation struct {
 	HeadSHA    string `json:"head_sha,omitempty"`
 }
 
+// ciPathAuthority is the authority that accepted the head's change to a CI
+// file: a policy rule, an approval, or override-ci.
+type ciPathAuthority struct {
+	WorkflowID string
+	Rule       string
+	ApprovalID string
+	Reason     string
+}
+
+// ciPathDecision is the authorization decision for one changed CI file.
+// Authority is nil when the policy refused the change. WorkflowID names the
+// workflow that uses a refused file.
+type ciPathDecision struct {
+	Path       string
+	WorkflowID string
+	Authority  *ciPathAuthority
+}
+
 type triggerWorkflowSpec struct {
 	ID               string   `json:"id,omitempty"`
 	Name             string   `json:"name"`
@@ -377,11 +395,11 @@ func (tp *TriggerProcessor) processTriggersFromData(ctx context.Context, data []
 	if len(tf.ChangedFiles) > maxChangedFilesAccepted {
 		return nil, invalidTrigger(fmt.Errorf("changed_files has more than %d entries", maxChangedFilesAccepted))
 	}
-	policyViolations := []policyViolation(nil)
+	pathDecisions := []ciPathDecision(nil)
 	policyNotes := map[string]models.DecisionReason{}
 	if isEvalResult && tf.PolicyCandidates != nil {
 		var err error
-		batches, policyViolations, policyNotes, err = tp.selectPolicyCandidates(ctx, parentJob, tf.PolicyCandidates, tf.ChangedCIPaths)
+		batches, pathDecisions, policyNotes, err = tp.selectPolicyCandidates(ctx, parentJob, tf.PolicyCandidates, tf.ChangedCIPaths)
 		if err != nil {
 			return nil, err
 		}
@@ -479,27 +497,41 @@ func (tp *TriggerProcessor) processTriggersFromData(ctx context.Context, data []
 		}
 	}
 	if isEvalResult {
-		headAuthorized := false
-		for i := range batches {
-			if batches[i].CIOrigin == "head" {
-				headAuthorized = true
-				break
-			}
-		}
 		// A violation means a stored policy refused a CI change. A project
 		// with no stored policy runs the event's own CI code and has nothing
 		// to refuse (Reactorcide CI Policy applies only when a policy exists).
 		storedPolicy, _ := policySnapshot(parentJob)
-		if headAuthorized || storedPolicy == nil {
-			policyViolations = nil
-		} else if policyViolations == nil {
-			policyViolations = make([]policyViolation, 0, len(tf.ChangedCIPaths))
-			for _, pathValue := range uniqueNonEmpty(tf.ChangedCIPaths) {
-				policyViolations = append(policyViolations, policyViolation{
-					Path: pathValue, Actor: fmt.Sprint(parentJob.JobEnvVars["REACTORCIDE_HEAD_ACTOR"]),
-					BaseSHA: parentJob.CISHA, HeadSHA: stringValue(parentJob.SourceRef),
-				})
+		if storedPolicy == nil {
+			pathDecisions = nil
+		} else if tf.PolicyCandidates == nil {
+			// No candidates: only trusted base CI runs. override-ci still
+			// accepts the changes of its head.
+			runAuthority, _ := runAuthoritySnapshot(parentJob)
+			if !runAuthority.Gated {
+				for _, pathValue := range uniqueNonEmpty(tf.ChangedCIPaths) {
+					decision := ciPathDecision{Path: pathValue}
+					if runAuthority.Override != nil {
+						decision.Authority = &ciPathAuthority{Rule: overrideRuleID, ApprovalID: runAuthority.Override.ApprovalID,
+							Reason: fmt.Sprintf("override-ci approved by %s", runAuthority.Override.Person)}
+					}
+					pathDecisions = append(pathDecisions, decision)
+				}
 			}
+		}
+		policyViolations := []policyViolation{}
+		accepted := []vcs.CIPolicyAcceptance{}
+		for _, decision := range pathDecisions {
+			if decision.Authority == nil {
+				policyViolations = append(policyViolations, policyViolation{Path: decision.Path, WorkflowID: decision.WorkflowID,
+					Actor: envString(parentJob, "REACTORCIDE_HEAD_ACTOR"), BaseSHA: parentJob.CISHA, HeadSHA: stringValue(parentJob.SourceRef)})
+				continue
+			}
+			accepted = append(accepted, vcs.CIPolicyAcceptance{Path: decision.Path, WorkflowID: decision.Authority.WorkflowID,
+				Rule: decision.Authority.Rule, ApprovalID: decision.Authority.ApprovalID, Reason: decision.Authority.Reason})
+			audit.Record(ctx, tp.store, parentJob.OrgID, "ci_policy.accepted_path", "job", parentJob.JobID, models.JSONB{
+				"path": decision.Path, "workflow_id": decision.Authority.WorkflowID, "rule": decision.Authority.Rule,
+				"approval_id": decision.Authority.ApprovalID, "base_sha": parentJob.CISHA, "head_sha": stringValue(parentJob.SourceRef),
+			})
 		}
 		for _, violation := range policyViolations {
 			logging.Log.WithFields(map[string]interface{}{
@@ -513,14 +545,14 @@ func (tp *TriggerProcessor) processTriggersFromData(ctx context.Context, data []
 			})
 		}
 		if updater, ok := tp.statusUpdater.(interface {
-			UpdateCIPolicyStatus(context.Context, *models.Job, []vcs.CIPolicyViolation) error
+			UpdateCIPolicyDecisions(context.Context, *models.Job, []vcs.CIPolicyViolation, []vcs.CIPolicyAcceptance) error
 		}); ok {
 			violations := make([]vcs.CIPolicyViolation, len(policyViolations))
 			for i, item := range policyViolations {
 				violations[i] = vcs.CIPolicyViolation{Path: item.Path, WorkflowID: item.WorkflowID, Actor: item.Actor,
 					Rule: item.Rule, BaseSHA: item.BaseSHA, HeadSHA: item.HeadSHA}
 			}
-			if err := updater.UpdateCIPolicyStatus(ctx, parentJob, violations); err != nil {
+			if err := updater.UpdateCIPolicyDecisions(ctx, parentJob, violations, accepted); err != nil {
 				logging.Log.WithError(err).Warn("Could not publish CI policy status")
 			}
 		}
@@ -687,7 +719,7 @@ func candidateMap(candidates []triggerWorkflowSpec) (map[string]triggerWorkflowS
 // the eval job already runs the event's own CI code (or the project's
 // configured CI source), so the evaluator sends no candidates; if a stale
 // evaluator sends some anyway, the base definitions run.
-func (tp *TriggerProcessor) selectPolicyCandidates(ctx context.Context, parentJob *models.Job, candidates *policyCandidateSet, changedCIPaths []string) ([]triggerWorkflowSpec, []policyViolation, map[string]models.DecisionReason, error) {
+func (tp *TriggerProcessor) selectPolicyCandidates(ctx context.Context, parentJob *models.Job, candidates *policyCandidateSet, changedCIPaths []string) ([]triggerWorkflowSpec, []ciPathDecision, map[string]models.DecisionReason, error) {
 	notes := map[string]models.DecisionReason{}
 	metadata, err := vcs.MetadataFromJob(parentJob)
 	if err != nil || metadata == nil || !metadata.IsEval || parentJob.ProjectID == nil {
@@ -784,8 +816,46 @@ func (tp *TriggerProcessor) selectPolicyCandidates(ctx context.Context, parentJo
 	sort.Strings(ids)
 
 	actorSubjects := parseStringSet(parentJob.JobEnvVars["REACTORCIDE_ACTOR_SUBJECTS"])
+	baseBranch := envString(parentJob, "REACTORCIDE_BASE_REF")
+	if baseBranch == "" {
+		baseBranch = envString(parentJob, "REACTORCIDE_PR_BASE_REF")
+	}
+	if baseBranch == "" {
+		baseBranch = envString(parentJob, "REACTORCIDE_BRANCH")
+	}
+	relation := "same"
+	if envString(parentJob, "REACTORCIDE_IS_FORK_PR") == "true" {
+		relation = "fork"
+	}
+	// decidePolicy asks the stored policy whether the head may change the CI
+	// of workflow id. dependencies are the CI paths the workflow uses.
+	decidePolicy := func(id string, dependencies, ownerSubjects []string) (cipolicy.Decision, error) {
+		allPolicyPaths := uniqueNonEmpty(append(append([]string{}, changedCIPaths...), dependencies...))
+		return cipolicy.Decide(policy, cipolicy.Facts{
+			WorkflowID: id, ChangedCIPaths: allPolicyPaths,
+			Event: envString(parentJob, "REACTORCIDE_EVENT_TYPE"), BaseBranch: baseBranch,
+			HeadRepositoryRelation: relation, ActorSubjects: actorSubjects,
+			ApprovalSubjects:      approvedHeadCI,
+			RefClasses:            parentJob.RefClasses,
+			WorkflowOwnerSubjects: ownerSubjects,
+		})
+	}
+	// ownerSubjectsOf gives the owners of the TRUSTED definition of a
+	// workflow (never the head's).
+	ownerSubjectsOf := func(base triggerWorkflowSpec, hasBase bool) []string {
+		if !hasBase {
+			return nil
+		}
+		snapshot, ownerErr := owners.FromSpec(base.Owners, base.Contact, parentJob.CISHA)
+		if ownerErr != nil {
+			return nil
+		}
+		return owners.Subjects(snapshot)
+	}
+	// authorizedBy records, per workflow, the authority that accepted the
+	// head's change to the CI that the workflow uses.
+	authorizedBy := map[string]ciPathAuthority{}
 	selected := make([]triggerWorkflowSpec, 0, len(ids))
-	headAuthorized := false
 	for _, id := range ids {
 		base, hasBase := baseByID[id]
 		head, hasHead := headByID[id]
@@ -832,12 +902,7 @@ func (tp *TriggerProcessor) selectPolicyCandidates(ctx context.Context, parentJo
 		}
 		// The owner of the TRUSTED definition of this workflow (never the
 		// head's). It stands in for workflow_owner in approver lists.
-		ownerSubjects := []string(nil)
-		if hasBase {
-			if snapshot, ownerErr := owners.FromSpec(base.Owners, base.Contact, parentJob.CISHA); ownerErr == nil {
-				ownerSubjects = owners.Subjects(snapshot)
-			}
-		}
+		ownerSubjects := ownerSubjectsOf(base, hasBase)
 		// override-ci by an owner of this workflow, when override_approvers
 		// names workflow_owner. It grants head CI for this workflow only.
 		var ownerOverride *models.CIApproval
@@ -853,26 +918,7 @@ func (tp *TriggerProcessor) selectPolicyCandidates(ctx context.Context, parentJo
 			dependencies := uniqueNonEmpty(append(append([]string{}, head.DependencyPaths...), sharedPaths...))
 			{
 				considered = true
-				allPolicyPaths := uniqueNonEmpty(append(append([]string{}, changedCIPaths...), dependencies...))
-				baseBranch := envString(parentJob, "REACTORCIDE_BASE_REF")
-				if baseBranch == "" {
-					baseBranch = envString(parentJob, "REACTORCIDE_PR_BASE_REF")
-				}
-				if baseBranch == "" {
-					baseBranch = envString(parentJob, "REACTORCIDE_BRANCH")
-				}
-				relation := "same"
-				if envString(parentJob, "REACTORCIDE_IS_FORK_PR") == "true" {
-					relation = "fork"
-				}
-				decision, err = cipolicy.Decide(policy, cipolicy.Facts{
-					WorkflowID: id, ChangedCIPaths: allPolicyPaths,
-					Event: envString(parentJob, "REACTORCIDE_EVENT_TYPE"), BaseBranch: baseBranch,
-					HeadRepositoryRelation: relation, ActorSubjects: actorSubjects,
-					ApprovalSubjects:      approvedHeadCI,
-					RefClasses:            parentJob.RefClasses,
-					WorkflowOwnerSubjects: ownerSubjects,
-				})
+				decision, err = decidePolicy(id, dependencies, ownerSubjects)
 				if err != nil {
 					return nil, nil, nil, fmt.Errorf("workflow %q policy decision failed: %w", id, err)
 				}
@@ -981,12 +1027,12 @@ func (tp *TriggerProcessor) selectPolicyCandidates(ctx context.Context, parentJo
 				tp.setOwnershipFromSpec(parentJob, &head, nil, nil)
 			}
 			selected = append(selected, head)
-			headAuthorized = true
 			reasons := decision.Reasons
 			if len(reasons) == 0 {
 				reasons = []string{fmt.Sprintf("policy rule %s granted head CI", decision.RuleID)}
 			}
 			notes[id] = policyNote("head", decision.Profile, decision.WorkerClass, decision.RuleID, revision, reasons...)
+			authorizedBy[id] = ciPathAuthority{WorkflowID: id, Rule: decision.RuleID, ApprovalID: stringValue(approvalID), Reason: reasons[0]}
 			continue
 		}
 		if hasBase && base.EventMatched {
@@ -1004,17 +1050,94 @@ func (tp *TriggerProcessor) selectPolicyCandidates(ctx context.Context, parentJo
 	}
 
 	// Only a stored policy can refuse a CI change. Without one there is no
-	// violation to report. A gated run reports none either: the gate, not the
+	// decision to report. A gated run reports none either: the gate, not the
 	// policy, held the head's CI.
-	if headAuthorized || policy == nil || runAuthority.Gated {
+	if policy == nil || runAuthority.Gated {
 		return selected, nil, notes, nil
 	}
-	violations := make([]policyViolation, 0, len(changedCIPaths))
-	for _, pathValue := range uniqueNonEmpty(changedCIPaths) {
-		violations = append(violations, policyViolation{Path: pathValue,
-			Actor: envString(parentJob, "REACTORCIDE_HEAD_ACTOR"), BaseSHA: parentJob.CISHA, HeadSHA: stringValue(parentJob.SourceRef)})
+
+	// A workflow that does not run for this event (a release workflow on a
+	// pull request) still owns its CI files. Its change needs an authority
+	// too: an owner override or a policy rule for that workflow. Nothing of
+	// it runs.
+	dependenciesOf := map[string][]string{}
+	for _, id := range ids {
+		base, hasBase := baseByID[id]
+		head, hasHead := headByID[id]
+		deps := append([]string{}, sharedPaths...)
+		if hasHead {
+			deps = append(deps, head.DependencyPaths...)
+		}
+		if hasBase {
+			deps = append(deps, base.DependencyPaths...)
+		}
+		dependenciesOf[id] = uniqueNonEmpty(deps)
+		if _, ok := authorizedBy[id]; ok || runAuthority.Override != nil {
+			continue
+		}
+		if hasHead && head.EventMatched {
+			// Decided above, for the run.
+			continue
+		}
+		if len(changedCIPaths) == 0 || !intersects(changedCIPaths, dependenciesOf[id]) {
+			continue
+		}
+		ownerSubjects := ownerSubjectsOf(base, hasBase)
+		if runAuthority.OwnerOverride != nil && len(ownerSubjects) > 0 {
+			if granted := approvalstate.Granted(approvals, models.CIApprovalKindHeadCI, headSHA, ownerSubjects, decisionTime); granted != nil {
+				authorizedBy[id] = ciPathAuthority{WorkflowID: id, Rule: overrideRuleID, ApprovalID: granted.ApprovalID,
+					Reason: fmt.Sprintf("override-ci approved by %s, an owner of this workflow", granted.Person)}
+				continue
+			}
+		}
+		decision, decideErr := decidePolicy(id, dependenciesOf[id], ownerSubjects)
+		if decideErr != nil {
+			return nil, nil, nil, fmt.Errorf("workflow %q policy decision failed: %w", id, decideErr)
+		}
+		if !decision.Allowed {
+			continue
+		}
+		authority := ciPathAuthority{WorkflowID: id, Rule: decision.RuleID,
+			Reason: fmt.Sprintf("policy rule %s accepts the change", decision.RuleID)}
+		if len(decision.ApprovalSubjects) > 0 {
+			granted := approvalstate.Granted(approvals, models.CIApprovalKindHeadCI, headSHA, decision.ApprovalSubjects, decisionTime)
+			if granted == nil {
+				continue
+			}
+			authority.ApprovalID = granted.ApprovalID
+			authority.Reason = fmt.Sprintf("policy rule %s accepts the change with the approval of %s", decision.RuleID, granted.Person)
+		}
+		authorizedBy[id] = authority
 	}
-	return selected, violations, notes, nil
+
+	decisions := make([]ciPathDecision, 0, len(changedCIPaths))
+	for _, pathValue := range uniqueNonEmpty(changedCIPaths) {
+		decision := ciPathDecision{Path: pathValue}
+		if runAuthority.Override != nil {
+			// override-ci covers the whole head.
+			decision.Authority = &ciPathAuthority{Rule: overrideRuleID, ApprovalID: runAuthority.Override.ApprovalID,
+				Reason: fmt.Sprintf("override-ci approved by %s", runAuthority.Override.Person)}
+			decisions = append(decisions, decision)
+			continue
+		}
+		// The path is accepted when an authority accepted the change of a
+		// workflow that uses it. Without one, the first workflow that uses
+		// it is the one named in the refusal.
+		for _, id := range ids {
+			if !containsString(dependenciesOf[id], pathValue) {
+				continue
+			}
+			if authority, ok := authorizedBy[id]; ok {
+				decision.Authority = &authority
+				break
+			}
+			if decision.WorkflowID == "" {
+				decision.WorkflowID = id
+			}
+		}
+		decisions = append(decisions, decision)
+	}
+	return selected, decisions, notes, nil
 }
 
 func (tp *TriggerProcessor) validateWorkflowAuthority(ctx context.Context, parentJob *models.Job, spec *triggerWorkflowSpec, _ []string) error {

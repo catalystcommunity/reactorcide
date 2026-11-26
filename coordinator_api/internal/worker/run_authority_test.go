@@ -35,7 +35,7 @@ func prEvalParent(t *testing.T, policyDocument []byte) *models.Job {
 func TestSelectPolicyCandidates_GatedRunUsesBaseCI(t *testing.T) {
 	parent := prEvalParent(t, []byte(mixedTrustPolicy))
 	withRunAuthority(t, parent, approvalstate.RunAuthority{Gated: true, Profile: "pr-untrusted", RunApprovalID: "run-1"})
-	selected, violations, notes, err := newMixedTrustProcessor().selectPolicyCandidates(context.Background(), parent,
+	selected, violations, notes, err := newMixedTrustProcessor().selectPolicyCandidatesRefused(context.Background(), parent,
 		mixedTrustCandidates(), []string{".reactorcide/workflows/pr.yaml"})
 	if err != nil {
 		t.Fatal(err)

@@ -829,6 +829,32 @@ files the head changed runs from the head, with `override_profile` (default
 `pr-untrusted`) and the default worker class. A workflow that the head did not
 change runs from the base. `override-ci` also releases the run gate.
 
+### Decisions for each changed CI file
+
+The coordinator records one decision for each changed CI file of a pull
+request. A file is accepted when an authority accepts the change of a
+workflow that uses the file. Otherwise the policy refuses the file, and
+"Reactorcide Checks" fails. The authorities are:
+
+- `override-ci` for the current head SHA. It accepts every changed file.
+- An `override-ci` from an owner of a workflow (`workflow_owner` in
+  `override_approvers`). It accepts only the files of the owned workflows.
+- A `head_ci` rule for the workflow, with its approval when the rule has
+  `approval:`.
+
+This also applies to a workflow that does not run for the event. For
+example, a pull request that changes only a job file of the release workflow
+needs one of these authorities. The release workflow does not run. The
+workflows of the pull request run as usual.
+
+A head CI grant for one workflow does not accept a file that only another
+workflow uses. An approval binds to its head SHA, so a new commit needs a
+new approval.
+
+The check summary and the pull request report list each refused file, with
+the workflow that uses it, and each accepted file, with its rule and
+approval.
+
 A `head_ci` policy rule that matches the change wins over an override. A rule
 can be narrower: it can have its own profile and trusted base nodes. A rule
 with `approval:` grants head CI when a person with a listed subject gives

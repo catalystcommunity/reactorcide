@@ -256,7 +256,7 @@ func TestSelectPolicyCandidates_PushWithoutPolicyRunsBaseWithoutViolation(t *tes
 	changed := []string{".reactorcide/workflows/ci.yaml"}
 
 	parent := pushEvalParent(t, `["vcs_user:github/pusher","repository_write"]`)
-	selected, violations, notes, err := tp.selectPolicyCandidates(context.Background(), parent, pushCandidates(), changed)
+	selected, violations, notes, err := tp.selectPolicyCandidatesRefused(context.Background(), parent, pushCandidates(), changed)
 	if err != nil {
 		t.Fatal(err)
 	}
