@@ -49,11 +49,12 @@ instance get all permissions when you do not give a list:
 | `POST /api/v1/tokens` | All capabilities and all organizations. The caller must have all capabilities and all organizations. This is the same in all modes. | Only the given values, inside the authority of the caller. |
 | `reactorcide principals tokens create`, REST `POST /api/v1/organizations/{org}/principals/{p}/tokens`, UI `issue-principal-token` | **No-login mode only:** all capabilities and all organizations. The token is an instance token of the principal. The roles of the principal do not narrow it (`intersect_roles` is false), so it passes each check that the admin token passes. Only a global caller (the admin token, or a global admin) can issue it. | The given capabilities in the organization of the principal, intersected with the roles of the principal (as with logins). |
 
-On a no-login instance, the admin token and a wide service principal token
-(an instance token with all capabilities and all organizations) can also
-give pull request commands: REST `POST /api/v1/approvals`, UI `pr-command`,
-and `reactorcide approvals`. No user can log in, so these tokens act as the
-instance administrator:
+The admin token and a wide service principal token (an instance token with
+all capabilities and all organizations, issued on a no-login instance) can
+give pull request commands in every auth mode: REST `POST /api/v1/approvals`,
+UI `pr-command`, and `reactorcide approvals`. These tokens need no user. They
+act as the instance administrator. A wide token keeps this after you turn on
+logins. If you do not want it, revoke the token. The rules of these commands:
 
 - The token must have `workflows:control` (a wide token has it).
 - The token passes every approver check of `approve-ci`, `override-ci`,
@@ -360,7 +361,7 @@ For an API token, the coordinator applies three checks:
 | Alert rules | `organizations:manage` (organization rule), `projects:manage` (project rule); `projects:read` to see organization rules |
 | CI trust settings | `policies:manage` (and the role) |
 | CI policy: `get-ci-policy`, `put-ci-policy`, `delete-ci-policy` | `policies:manage` |
-| `pr-command` | `workflows:control` for the organization of the project. The person is the user of a session or a user token, or the service principal of a service principal token. On a no-login instance, also the admin token and wide tokens (see [No-login instances](#no-login-instances-single-admin)). The subject rules of the command then decide. |
+| `pr-command` | `workflows:control` for the organization of the project. The person is the user of a session or a user token, or the service principal of a service principal token. Also the admin token and wide tokens, in every auth mode (see [No-login instances](#no-login-instances-single-admin)). The subject rules of the command then decide. |
 | `cancel-job`, `cancel-workflow` | `jobs:cancel` or `workflows:control` |
 | `kill-job` | `jobs:cancel` |
 | `retry-job`, `retry-workflow`, `retry-unsuccessful-jobs`, `rerun-workflow` | `jobs:retry` or `workflows:control` |

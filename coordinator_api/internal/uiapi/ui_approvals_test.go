@@ -141,9 +141,10 @@ func TestTrustSettings_PolicyTokenManagesOrganization(t *testing.T) {
 	}
 }
 
-// On a no-login instance only, the admin token and a wide service principal
-// token give pull request commands as the instance administrator.
-func TestPrCommand_InstanceAdminOnNoLoginInstance(t *testing.T) {
+// The admin token and a wide service principal token give pull request
+// commands as the instance administrator. The admin token needs no user in
+// any auth mode.
+func TestPrCommand_InstanceAdmin(t *testing.T) {
 	svc, st, deps, project := seedTrustFixture(t)
 	executor := &fakeExecutor{}
 	deps.Approvals = executor
@@ -172,17 +173,18 @@ func TestPrCommand_InstanceAdminOnNoLoginInstance(t *testing.T) {
 		t.Fatalf("wide token request: %+v", wide)
 	}
 
-	// The login history guard refused mode none: no instance administrator.
+	// The login history guard refused mode none, and a login mode: the admin
+	// token is still the instance administrator.
 	config.SetNoLoginGuardPassed(false)
-	_, err := svc.PrCommand(WithAuthToken(context.Background(), "admin-token"), command)
-	requireCode(t, err, "forbidden")
-
-	// A login mode: the admin token has no person.
+	if _, err := svc.PrCommand(WithAuthToken(context.Background(), "admin-token"), command); err != nil {
+		t.Fatalf("the admin token was refused after the guard refused mode none: %v", err)
+	}
 	withAuthMode(t, "local-rp")
-	_, err = svc.PrCommand(WithAuthToken(context.Background(), "admin-token"), command)
-	requireCode(t, err, "forbidden")
-	if len(executor.requests) != 2 {
-		t.Fatalf("a refused command reached the approval path: %+v", executor.requests)
+	if _, err := svc.PrCommand(WithAuthToken(context.Background(), "admin-token"), command); err != nil {
+		t.Fatalf("the admin token was refused in a login mode: %v", err)
+	}
+	if len(executor.requests) != 4 || !executor.requests[3].InstanceAdmin || executor.requests[3].TokenID != "token-admin" {
+		t.Fatalf("admin token requests: %+v", executor.requests)
 	}
 }
 

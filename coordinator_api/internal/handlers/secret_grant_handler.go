@@ -148,9 +148,8 @@ func (h *ProjectHandler) DeleteGlobalSecretGrant(w http.ResponseWriter, r *http.
 }
 
 func (h *ProjectHandler) ApplySecretGrants(w http.ResponseWriter, r *http.Request) {
-	user := checkauth.GetUserFromContext(r.Context())
-	if user == nil {
-		h.respondWithError(w, http.StatusUnauthorized, store.ErrUnauthorized)
+	callerOwnerID, ok := h.secretGrantCaller(w, r)
+	if !ok {
 		return
 	}
 	grantStore, ok := h.store.(projectSecretGrantStore)
@@ -167,7 +166,7 @@ func (h *ProjectHandler) ApplySecretGrants(w http.ResponseWriter, r *http.Reques
 	resp := SecretGrantApplyResponse{DryRun: req.DryRun}
 	seenByScope := map[string]map[string]bool{}
 	for _, item := range req.Grants {
-		ownerID, projectID, ok := h.secretGrantScopeFromRequest(w, r, user.UserID, item)
+		ownerID, projectID, ok := h.secretGrantScopeFromRequest(w, r, callerOwnerID, item)
 		if !ok {
 			return
 		}
@@ -260,10 +259,67 @@ func (h *ProjectHandler) ApplySecretGrants(w http.ResponseWriter, r *http.Reques
 	h.respondWithJSON(w, http.StatusOK, resp)
 }
 
+// secretGrantCaller returns the owner of an organization-wide grant made by
+// the caller: the user of a user credential, or the owning organization of a
+// token that has no user (an organization service token). A global token
+// (the admin token) has no owner; it is accepted with an empty owner, and a
+// project grant then belongs to the owner of the project. It refuses a
+// request that has no user and no token.
+func (h *ProjectHandler) secretGrantCaller(w http.ResponseWriter, r *http.Request) (string, bool) {
+	if user := checkauth.GetUserFromContext(r.Context()); user != nil {
+		return user.UserID, true
+	}
+	if principal := checkauth.GetPrincipalFromContext(r.Context()); principal != nil {
+		return principal.OwnerOrgID, true
+	}
+	h.respondWithError(w, http.StatusUnauthorized, store.ErrUnauthorized)
+	return "", false
+}
+
+// authorizeSecretGrantScope refuses the request with 403 unless the caller
+// can manage grants in the scope. Every grant read and write goes through it.
+func (h *ProjectHandler) authorizeSecretGrantScope(w http.ResponseWriter, r *http.Request, orgID string, projectID *string) bool {
+	allowed, err := h.canManageSecretGrantScope(r, orgID, projectID)
+	if err != nil {
+		h.respondWithError(w, http.StatusInternalServerError, err)
+		return false
+	}
+	if !allowed {
+		h.respondWithError(w, http.StatusForbidden, store.ErrForbidden)
+		return false
+	}
+	return true
+}
+
+// secretGrantProject resolves the project of a project route and authorizes
+// the caller for grants in it.
+func (h *ProjectHandler) secretGrantProject(w http.ResponseWriter, r *http.Request, fallbackOwnerID string) (*models.Project, string, bool) {
+	project, _, ok := h.projectAndOwner(w, r, fallbackOwnerID)
+	if !ok {
+		return nil, "", false
+	}
+	if !h.authorizeSecretGrantScope(w, r, project.OwnershipOrgID(), &project.ProjectID) {
+		return nil, "", false
+	}
+	return project, secretGrantProjectOwner(project, fallbackOwnerID), true
+}
+
+// secretGrantProjectOwner is the owner column of a grant of project: the
+// project's user, else the caller's owner, else (a global token) the
+// project's organization.
+func secretGrantProjectOwner(project *models.Project, fallbackOwnerID string) string {
+	if project.UserID != nil && *project.UserID != "" {
+		return *project.UserID
+	}
+	if fallbackOwnerID != "" {
+		return fallbackOwnerID
+	}
+	return project.OwnershipOrgID()
+}
+
 func (h *ProjectHandler) createSecretGrantWithScope(w http.ResponseWriter, r *http.Request, projectRoute bool) {
-	user := checkauth.GetUserFromContext(r.Context())
-	if user == nil {
-		h.respondWithError(w, http.StatusUnauthorized, store.ErrUnauthorized)
+	callerOwnerID, ok := h.secretGrantCaller(w, r)
+	if !ok {
 		return
 	}
 	grantStore, ok := h.store.(projectSecretGrantStore)
@@ -288,9 +344,9 @@ func (h *ProjectHandler) createSecretGrantWithScope(w http.ResponseWriter, r *ht
 	var projectID *string
 	var scopeOK bool
 	if projectRoute {
-		ownerID, projectID, scopeOK = h.secretGrantScope(w, r, user.UserID, projectRoute)
+		ownerID, projectID, scopeOK = h.secretGrantScope(w, r, callerOwnerID, projectRoute)
 	} else {
-		ownerID, projectID, scopeOK = h.secretGrantScopeFromRequest(w, r, user.UserID, req)
+		ownerID, projectID, scopeOK = h.secretGrantScopeFromRequest(w, r, callerOwnerID, req)
 	}
 	if !scopeOK {
 		return
@@ -308,9 +364,8 @@ func (h *ProjectHandler) createSecretGrantWithScope(w http.ResponseWriter, r *ht
 }
 
 func (h *ProjectHandler) getSecretGrantWithScope(w http.ResponseWriter, r *http.Request, projectRoute bool) {
-	user := checkauth.GetUserFromContext(r.Context())
-	if user == nil {
-		h.respondWithError(w, http.StatusUnauthorized, store.ErrUnauthorized)
+	callerOwnerID, ok := h.secretGrantCaller(w, r)
+	if !ok {
 		return
 	}
 	grantStore, ok := h.store.(projectSecretGrantStore)
@@ -318,7 +373,7 @@ func (h *ProjectHandler) getSecretGrantWithScope(w http.ResponseWriter, r *http.
 		h.respondWithError(w, http.StatusNotImplemented, errors.New("secret grant store not available"))
 		return
 	}
-	ownerID, projectID, ok := h.secretGrantScope(w, r, user.UserID, projectRoute)
+	ownerID, projectID, ok := h.secretGrantScope(w, r, callerOwnerID, projectRoute)
 	if !ok {
 		return
 	}
@@ -336,9 +391,8 @@ func (h *ProjectHandler) getSecretGrantWithScope(w http.ResponseWriter, r *http.
 }
 
 func (h *ProjectHandler) updateSecretGrantWithScope(w http.ResponseWriter, r *http.Request, projectRoute bool) {
-	user := checkauth.GetUserFromContext(r.Context())
-	if user == nil {
-		h.respondWithError(w, http.StatusUnauthorized, store.ErrUnauthorized)
+	callerOwnerID, ok := h.secretGrantCaller(w, r)
+	if !ok {
 		return
 	}
 	grantStore, ok := h.store.(projectSecretGrantStore)
@@ -346,7 +400,7 @@ func (h *ProjectHandler) updateSecretGrantWithScope(w http.ResponseWriter, r *ht
 		h.respondWithError(w, http.StatusNotImplemented, errors.New("secret grant store not available"))
 		return
 	}
-	ownerID, projectID, ok := h.secretGrantScope(w, r, user.UserID, projectRoute)
+	ownerID, projectID, ok := h.secretGrantScope(w, r, callerOwnerID, projectRoute)
 	if !ok {
 		return
 	}
@@ -377,9 +431,8 @@ func (h *ProjectHandler) updateSecretGrantWithScope(w http.ResponseWriter, r *ht
 }
 
 func (h *ProjectHandler) deleteSecretGrantWithScope(w http.ResponseWriter, r *http.Request, projectRoute bool) {
-	user := checkauth.GetUserFromContext(r.Context())
-	if user == nil {
-		h.respondWithError(w, http.StatusUnauthorized, store.ErrUnauthorized)
+	callerOwnerID, ok := h.secretGrantCaller(w, r)
+	if !ok {
 		return
 	}
 	grantStore, ok := h.store.(projectSecretGrantStore)
@@ -387,7 +440,7 @@ func (h *ProjectHandler) deleteSecretGrantWithScope(w http.ResponseWriter, r *ht
 		h.respondWithError(w, http.StatusNotImplemented, errors.New("secret grant store not available"))
 		return
 	}
-	ownerID, projectID, ok := h.secretGrantScope(w, r, user.UserID, projectRoute)
+	ownerID, projectID, ok := h.secretGrantScope(w, r, callerOwnerID, projectRoute)
 	if !ok {
 		return
 	}
@@ -407,7 +460,7 @@ func (h *ProjectHandler) secretGrantScope(w http.ResponseWriter, r *http.Request
 	if !projectRoute {
 		return h.secretGrantScopeFromQuery(w, r, fallbackUserID)
 	}
-	project, ownerID, ok := h.projectAndOwner(w, r, fallbackUserID)
+	project, ownerID, ok := h.secretGrantProject(w, r, fallbackUserID)
 	if !ok {
 		return "", nil, false
 	}
@@ -428,6 +481,13 @@ func (h *ProjectHandler) secretGrantScopeFromRequest(w http.ResponseWriter, r *h
 		projectRef = strings.TrimSpace(req.Project)
 	}
 	if projectRef == "" {
+		if fallbackUserID == "" {
+			h.respondWithError(w, http.StatusBadRequest, errors.New("an organization-wide grant needs a token of an organization; give a project"))
+			return "", nil, false
+		}
+		if !h.authorizeSecretGrantScope(w, r, fallbackUserID, nil) {
+			return "", nil, false
+		}
 		return fallbackUserID, nil, true
 	}
 	project, err := h.resolveSecretGrantProject(r, projectRef)
@@ -435,11 +495,10 @@ func (h *ProjectHandler) secretGrantScopeFromRequest(w http.ResponseWriter, r *h
 		h.respondWithError(w, http.StatusNotFound, err)
 		return "", nil, false
 	}
-	ownerID := fallbackUserID
-	if project.UserID != nil && *project.UserID != "" {
-		ownerID = *project.UserID
+	if !h.authorizeSecretGrantScope(w, r, project.OwnershipOrgID(), &project.ProjectID) {
+		return "", nil, false
 	}
-	return ownerID, &project.ProjectID, true
+	return secretGrantProjectOwner(project, fallbackUserID), &project.ProjectID, true
 }
 
 func (h *ProjectHandler) resolveSecretGrantProject(r *http.Request, ref string) (*models.Project, error) {

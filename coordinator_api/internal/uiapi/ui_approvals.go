@@ -8,7 +8,6 @@ import (
 
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/approvals"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/authz"
-	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/config"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/profiles"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store/models"
@@ -69,10 +68,10 @@ func (s *UiService) PrCommand(ctx context.Context, req csilapi.PrCommandRequest)
 		return csilapi.PrCommandResponse{}, authErr
 	}
 	// The person: a user (a session or a user token), or a service
-	// principal token, as in REST. On a no-login instance only, the admin
-	// token and a wide service principal token act as the instance
-	// administrator.
-	instanceAdmin := config.NoLoginMode() && id.Token.IsWideInstanceToken()
+	// principal token, as in REST. A global token (the admin token, or a
+	// wide service principal token issued on a no-login instance) acts as
+	// the instance administrator in every auth mode: it needs no user.
+	instanceAdmin := id.Token.IsWideInstanceToken()
 	if id.UserID == "" && id.PrincipalID == "" && !instanceAdmin {
 		return csilapi.PrCommandResponse{}, NewServiceError("forbidden", "a pull request command needs a person: use a session, a user token, or a service principal token")
 	}

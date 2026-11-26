@@ -83,9 +83,8 @@ func (p *Principal) IsServicePrincipalToken() bool {
 // IsWideInstanceToken reports whether the credential is an instance token
 // with all capabilities and all organizations whose roles do not narrow it:
 // the admin token (reactorcide token create), or a service principal token
-// issued with no capability list on a no-login instance. On a no-login
-// instance (config.NoLoginMode) such a token acts as the instance
-// administrator.
+// issued with no capability list on a no-login instance. Such a token acts
+// as the instance administrator in every auth mode.
 func (p *Principal) IsWideInstanceToken() bool {
 	return p != nil && p.CredentialType == "instance_token" && p.UserID == "" && !p.IntersectRoles &&
 		p.AllOrganizations && p.AllCapabilities

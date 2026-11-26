@@ -1083,3 +1083,162 @@ func strPtr(s string) *string { return &s }
 func boolPtr(b bool) *bool    { return &b }
 
 // intPtr is defined in job_handler_test.go
+
+func serviceTokenRequest(t *testing.T, method, target string, body []byte, orgID string, capabilities ...string) *http.Request {
+	t.Helper()
+	caps, err := tokencaps.New(capabilities...)
+	require.NoError(t, err)
+	principal := &checkauth.Principal{CredentialType: "service_token", OwnerOrgID: orgID, OrganizationIDs: []string{orgID}, Capabilities: caps}
+	req := httptest.NewRequest(method, target, bytes.NewReader(body))
+	return req.WithContext(checkauth.SetPrincipalContext(req.Context(), principal))
+}
+
+func secretGrantApplyBody(t *testing.T, projectID string) []byte {
+	t.Helper()
+	data, err := json.Marshal(SecretGrantApplyRequest{Grants: []SecretGrantRequest{{
+		Name: "deploy", ProjectID: projectID,
+		SecretPathMatch: models.SecretGrantMatchExact, SecretPathPattern: "app/k8s",
+		JobNameMatch: models.SecretGrantMatchAny,
+	}}})
+	require.NoError(t, err)
+	return data
+}
+
+// An organization service token has no user. Apply must accept it when it can
+// manage secrets in the project's organization (it was refused with 401).
+func TestApplySecretGrantsAcceptsOrganizationServiceToken(t *testing.T) {
+	projectID := uuid.New().String()
+	mockStore := &ProjectMockStore{
+		GetProjectByIDFunc: func(context.Context, string) (*models.Project, error) {
+			p := testProject(projectID)
+			p.OrgID = "org-1"
+			return p, nil
+		},
+		GetSecretGrantFunc: func(context.Context, string, *string, string) (*models.SecretGrant, error) {
+			return nil, store.ErrNotFound
+		},
+	}
+	req := serviceTokenRequest(t, http.MethodPost, "/api/v1/secret-grants/apply", secretGrantApplyBody(t, projectID), "org-1", tokencaps.SecretsManage)
+	w := httptest.NewRecorder()
+
+	NewProjectHandler(mockStore).ApplySecretGrants(w, req)
+
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	require.Len(t, mockStore.CreateSecretGrantCalls, 1)
+	require.Equal(t, "org-1", mockStore.CreateSecretGrantCalls[0].UserID)
+}
+
+func TestApplySecretGrantsRefusesTokenOfOtherOrganization(t *testing.T) {
+	projectID := uuid.New().String()
+	mockStore := &ProjectMockStore{
+		GetProjectByIDFunc: func(context.Context, string) (*models.Project, error) {
+			p := testProject(projectID)
+			p.OrgID = "org-1"
+			return p, nil
+		},
+	}
+	req := serviceTokenRequest(t, http.MethodPost, "/api/v1/secret-grants/apply", secretGrantApplyBody(t, projectID), "org-2", tokencaps.SecretsManage)
+	w := httptest.NewRecorder()
+
+	NewProjectHandler(mockStore).ApplySecretGrants(w, req)
+
+	require.Equal(t, http.StatusForbidden, w.Code)
+	require.Empty(t, mockStore.CreateSecretGrantCalls)
+}
+
+func TestApplySecretGrantsRefusesTokenWithoutManageCapability(t *testing.T) {
+	projectID := uuid.New().String()
+	mockStore := &ProjectMockStore{
+		GetProjectByIDFunc: func(context.Context, string) (*models.Project, error) {
+			p := testProject(projectID)
+			p.OrgID = "org-1"
+			return p, nil
+		},
+	}
+	req := serviceTokenRequest(t, http.MethodPost, "/api/v1/secret-grants/apply", secretGrantApplyBody(t, projectID), "org-1")
+	w := httptest.NewRecorder()
+
+	NewProjectHandler(mockStore).ApplySecretGrants(w, req)
+
+	require.Equal(t, http.StatusForbidden, w.Code)
+	require.Empty(t, mockStore.CreateSecretGrantCalls)
+}
+
+// A user who does not own the project cannot write its grants through either
+// route (both only checked that a user was present).
+func TestSecretGrantWritesRefuseUserWithoutProjectAccess(t *testing.T) {
+	projectID := uuid.New().String()
+	otherOwner := "someone-else"
+	newStore := func() *ProjectMockStore {
+		return &ProjectMockStore{GetProjectByIDFunc: func(context.Context, string) (*models.Project, error) {
+			p := testProject(projectID)
+			p.UserID = &otherOwner
+			p.OrgID = otherOwner
+			return p, nil
+		}}
+	}
+	grantBody, err := json.Marshal(SecretGrantRequest{
+		Name: "steal", ProjectID: projectID,
+		SecretPathMatch: models.SecretGrantMatchPrefix, SecretPathPattern: "",
+		JobNameMatch: models.SecretGrantMatchAny,
+	})
+	require.NoError(t, err)
+
+	t.Run("apply", func(t *testing.T) {
+		mockStore := newStore()
+		req := withUser(httptest.NewRequest(http.MethodPost, "/api/v1/secret-grants/apply", bytes.NewReader(secretGrantApplyBody(t, projectID))))
+		w := httptest.NewRecorder()
+		NewProjectHandler(mockStore).ApplySecretGrants(w, req)
+		require.Equal(t, http.StatusForbidden, w.Code)
+		require.Empty(t, mockStore.CreateSecretGrantCalls)
+	})
+	t.Run("global create", func(t *testing.T) {
+		mockStore := newStore()
+		req := withUser(httptest.NewRequest(http.MethodPost, "/api/v1/secret-grants", bytes.NewReader(grantBody)))
+		w := httptest.NewRecorder()
+		NewProjectHandler(mockStore).CreateGlobalSecretGrant(w, req)
+		require.Equal(t, http.StatusForbidden, w.Code)
+		require.Empty(t, mockStore.CreateSecretGrantCalls)
+	})
+	t.Run("project create", func(t *testing.T) {
+		mockStore := newStore()
+		req := withProjectID(withUser(httptest.NewRequest(http.MethodPost, "/api/v1/projects/"+projectID+"/secret-grants", bytes.NewReader(grantBody))), projectID)
+		w := httptest.NewRecorder()
+		NewProjectHandler(mockStore).CreateSecretGrant(w, req)
+		require.Equal(t, http.StatusForbidden, w.Code)
+		require.Empty(t, mockStore.CreateSecretGrantCalls)
+	})
+	t.Run("project list", func(t *testing.T) {
+		mockStore := newStore()
+		req := withProjectID(withUser(httptest.NewRequest(http.MethodGet, "/api/v1/projects/"+projectID+"/secret-grants", nil)), projectID)
+		w := httptest.NewRecorder()
+		NewProjectHandler(mockStore).ListSecretGrants(w, req)
+		require.Equal(t, http.StatusForbidden, w.Code)
+	})
+}
+
+// The admin token has no user and no owning organization. It can apply
+// project grants; the grant belongs to the project's owner.
+func TestApplySecretGrantsAcceptsAdminToken(t *testing.T) {
+	projectID := uuid.New().String()
+	mockStore := &ProjectMockStore{
+		GetProjectByIDFunc: func(context.Context, string) (*models.Project, error) {
+			p := testProject(projectID)
+			p.OrgID = "org-1"
+			return p, nil
+		},
+		GetSecretGrantFunc: func(context.Context, string, *string, string) (*models.SecretGrant, error) {
+			return nil, store.ErrNotFound
+		},
+	}
+	principal := &checkauth.Principal{CredentialType: "instance_token", AllOrganizations: true, AllCapabilities: true}
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/secret-grants/apply", bytes.NewReader(secretGrantApplyBody(t, projectID)))
+	req = req.WithContext(checkauth.SetPrincipalContext(req.Context(), principal))
+	w := httptest.NewRecorder()
+
+	NewProjectHandler(mockStore).ApplySecretGrants(w, req)
+
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	require.Len(t, mockStore.CreateSecretGrantCalls, 1)
+	require.Equal(t, "org-1", mockStore.CreateSecretGrantCalls[0].UserID)
+}

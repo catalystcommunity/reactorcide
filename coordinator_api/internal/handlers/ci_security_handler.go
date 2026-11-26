@@ -10,7 +10,6 @@ import (
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/approvals"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/audit"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/checkauth"
-	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/config"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/runshifts"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store/models"
@@ -146,9 +145,10 @@ func (h *CISecurityHandler) Approve(w http.ResponseWriter, r *http.Request) {
 	p := checkauth.GetPrincipalFromContext(r.Context())
 	// A user token acts as its user; a service principal token acts as its
 	// service principal. The command's own subject rules decide what either
-	// may do. On a no-login instance only, the admin token and a wide
-	// service principal token act as the instance administrator.
-	instanceAdmin := config.NoLoginMode() && p.IsWideInstanceToken()
+	// may do. A global token (the admin token, or a wide service principal
+	// token issued on a no-login instance) acts as the instance
+	// administrator in every auth mode: it needs no user.
+	instanceAdmin := p.IsWideInstanceToken()
 	if h.store == nil || h.approvals == nil || p == nil ||
 		(p.UserID == "" && !p.IsServicePrincipalToken() && !instanceAdmin) ||
 		!p.HasCapability(tokencaps.WorkflowsControl) {

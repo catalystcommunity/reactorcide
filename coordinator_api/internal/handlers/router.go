@@ -30,6 +30,7 @@ import (
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store/models"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store/postgres_store"
+	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/tokencaps"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/uiapi"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/uiapi/csilapi"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/vcs"
@@ -1101,8 +1102,9 @@ func createAppMux() *http.ServeMux {
 			handler.ServeHTTP(w, r)
 		})
 
-		// Admin endpoints for master key management (require admin role)
-		adminMiddleware := middleware.RequireRoleMiddleware("admin")
+		// Admin endpoints for master key management: the admin token, a
+		// global token with secrets:manage, or a user with the admin role.
+		adminMiddleware := requireGlobalAdmin(store.AppStore, tokencaps.SecretsManage)
 
 		// POST /api/v1/admin/secrets/master-keys - Create master key
 		// GET  /api/v1/admin/secrets/master-keys - List master keys

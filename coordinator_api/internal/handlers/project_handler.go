@@ -799,9 +799,8 @@ func (h *ProjectHandler) DeleteProject(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *ProjectHandler) ListSecretGrants(w http.ResponseWriter, r *http.Request) {
-	user := checkauth.GetUserFromContext(r.Context())
-	if user == nil {
-		h.respondWithError(w, http.StatusUnauthorized, store.ErrUnauthorized)
+	callerOwnerID, ok := h.secretGrantCaller(w, r)
+	if !ok {
 		return
 	}
 	grantStore, ok := h.store.(projectSecretGrantStore)
@@ -809,7 +808,7 @@ func (h *ProjectHandler) ListSecretGrants(w http.ResponseWriter, r *http.Request
 		h.respondWithError(w, http.StatusNotImplemented, errors.New("secret grant store not available"))
 		return
 	}
-	project, ownerID, ok := h.projectAndOwner(w, r, user.UserID)
+	project, ownerID, ok := h.secretGrantProject(w, r, callerOwnerID)
 	if !ok {
 		return
 	}
@@ -829,9 +828,8 @@ func (h *ProjectHandler) CreateSecretGrant(w http.ResponseWriter, r *http.Reques
 }
 
 func (h *ProjectHandler) GetSecretGrant(w http.ResponseWriter, r *http.Request) {
-	user := checkauth.GetUserFromContext(r.Context())
-	if user == nil {
-		h.respondWithError(w, http.StatusUnauthorized, store.ErrUnauthorized)
+	callerOwnerID, ok := h.secretGrantCaller(w, r)
+	if !ok {
 		return
 	}
 	grantStore, ok := h.store.(projectSecretGrantStore)
@@ -839,7 +837,7 @@ func (h *ProjectHandler) GetSecretGrant(w http.ResponseWriter, r *http.Request) 
 		h.respondWithError(w, http.StatusNotImplemented, errors.New("secret grant store not available"))
 		return
 	}
-	project, ownerID, ok := h.projectAndOwner(w, r, user.UserID)
+	project, ownerID, ok := h.secretGrantProject(w, r, callerOwnerID)
 	if !ok {
 		return
 	}
@@ -857,9 +855,8 @@ func (h *ProjectHandler) GetSecretGrant(w http.ResponseWriter, r *http.Request) 
 }
 
 func (h *ProjectHandler) UpdateSecretGrant(w http.ResponseWriter, r *http.Request) {
-	user := checkauth.GetUserFromContext(r.Context())
-	if user == nil {
-		h.respondWithError(w, http.StatusUnauthorized, store.ErrUnauthorized)
+	callerOwnerID, ok := h.secretGrantCaller(w, r)
+	if !ok {
 		return
 	}
 	grantStore, ok := h.store.(projectSecretGrantStore)
@@ -867,7 +864,7 @@ func (h *ProjectHandler) UpdateSecretGrant(w http.ResponseWriter, r *http.Reques
 		h.respondWithError(w, http.StatusNotImplemented, errors.New("secret grant store not available"))
 		return
 	}
-	project, ownerID, ok := h.projectAndOwner(w, r, user.UserID)
+	project, ownerID, ok := h.secretGrantProject(w, r, callerOwnerID)
 	if !ok {
 		return
 	}
@@ -898,9 +895,8 @@ func (h *ProjectHandler) UpdateSecretGrant(w http.ResponseWriter, r *http.Reques
 }
 
 func (h *ProjectHandler) DeleteSecretGrant(w http.ResponseWriter, r *http.Request) {
-	user := checkauth.GetUserFromContext(r.Context())
-	if user == nil {
-		h.respondWithError(w, http.StatusUnauthorized, store.ErrUnauthorized)
+	callerOwnerID, ok := h.secretGrantCaller(w, r)
+	if !ok {
 		return
 	}
 	grantStore, ok := h.store.(projectSecretGrantStore)
@@ -908,7 +904,7 @@ func (h *ProjectHandler) DeleteSecretGrant(w http.ResponseWriter, r *http.Reques
 		h.respondWithError(w, http.StatusNotImplemented, errors.New("secret grant store not available"))
 		return
 	}
-	project, ownerID, ok := h.projectAndOwner(w, r, user.UserID)
+	project, ownerID, ok := h.secretGrantProject(w, r, callerOwnerID)
 	if !ok {
 		return
 	}

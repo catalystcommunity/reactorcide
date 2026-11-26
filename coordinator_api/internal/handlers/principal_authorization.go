@@ -127,3 +127,39 @@ func principalAllowsGlobalAdmin(ctx context.Context, appStore store.Store, capab
 	allowed, err := authz.NewResolver(roleStore).IsGlobalAdmin(ctx, authz.Identity{UserID: identity.UserID, PrincipalID: identity.PrincipalID})
 	return err == nil && allowed
 }
+
+// requireGlobalAdmin is the middleware of instance administration routes
+// (the master keys). It accepts a global token with capability (the admin
+// token, or a global service principal token), or a user with the admin role.
+// A global token needs no user.
+func requireGlobalAdmin(appStore store.Store, capability string) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if principalAllowsGlobal(r.Context(), appStore, capability) || userHasAdminRole(r.Context(), capability) {
+				next.ServeHTTP(w, r)
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusForbidden)
+			w.Write([]byte(`{"error":"forbidden","message":"Requires the admin token, a global token with ` + capability + `, or a user with the admin role"}`))
+		})
+	}
+}
+
+// userHasAdminRole reports whether the request has an active user with the
+// admin role. A token of that user must also have capability.
+func userHasAdminRole(ctx context.Context, capability string) bool {
+	user := checkauth.GetUserFromContext(ctx)
+	if user == nil || !user.IsActive() {
+		return false
+	}
+	if principal := checkauth.GetPrincipalFromContext(ctx); principal != nil && !principal.HasCapability(capability) {
+		return false
+	}
+	for _, role := range user.Roles {
+		if role == "admin" {
+			return true
+		}
+	}
+	return false
+}
