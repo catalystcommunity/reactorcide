@@ -504,19 +504,7 @@ func (tp *TriggerProcessor) processTriggersFromData(ctx context.Context, data []
 		if storedPolicy == nil {
 			pathDecisions = nil
 		} else if tf.PolicyCandidates == nil {
-			// No candidates: only trusted base CI runs. override-ci still
-			// accepts the changes of its head.
-			runAuthority, _ := runAuthoritySnapshot(parentJob)
-			if !runAuthority.Gated {
-				for _, pathValue := range uniqueNonEmpty(tf.ChangedCIPaths) {
-					decision := ciPathDecision{Path: pathValue}
-					if runAuthority.Override != nil {
-						decision.Authority = &ciPathAuthority{Rule: overrideRuleID, ApprovalID: runAuthority.Override.ApprovalID,
-							Reason: fmt.Sprintf("override-ci approved by %s", runAuthority.Override.Person)}
-					}
-					pathDecisions = append(pathDecisions, decision)
-				}
-			}
+			pathDecisions = noCandidatePathDecisions(parentJob, tf.ChangedCIPaths)
 		}
 		policyViolations := []policyViolation{}
 		accepted := []vcs.CIPolicyAcceptance{}
@@ -686,6 +674,28 @@ func policySnapshot(parentJob *models.Job) (*cipolicy.Policy, error) {
 		return nil, fmt.Errorf("coordinator CI policy snapshot failed integrity validation")
 	}
 	return policy, nil
+}
+
+// noCandidatePathDecisions decides the changed CI files of an evaluation
+// with no head candidates: only trusted base CI runs. override-ci still
+// accepts the changes of its head. When the trusted CI is the event's own
+// revision (a push to the default branch, a tag), the changes already run
+// and there is nothing to decide.
+func noCandidatePathDecisions(parentJob *models.Job, changedCIPaths []string) []ciPathDecision {
+	runAuthority, _ := runAuthoritySnapshot(parentJob)
+	if runAuthority.Gated || (parentJob.CISHA != "" && parentJob.CISHA == stringValue(parentJob.SourceRef)) {
+		return nil
+	}
+	var decisions []ciPathDecision
+	for _, pathValue := range uniqueNonEmpty(changedCIPaths) {
+		decision := ciPathDecision{Path: pathValue}
+		if runAuthority.Override != nil {
+			decision.Authority = &ciPathAuthority{Rule: overrideRuleID, ApprovalID: runAuthority.Override.ApprovalID,
+				Reason: fmt.Sprintf("override-ci approved by %s", runAuthority.Override.Person)}
+		}
+		decisions = append(decisions, decision)
+	}
+	return decisions
 }
 
 func candidateMap(candidates []triggerWorkflowSpec) (map[string]triggerWorkflowSpec, error) {

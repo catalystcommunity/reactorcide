@@ -851,6 +851,33 @@ A head CI grant for one workflow does not accept a file that only another
 workflow uses. An approval binds to its head SHA, so a new commit needs a
 new approval.
 
+To let trusted CI developers change every CI file with no `override-ci`, use
+the workflow wildcard `"*"` in a rule. The actor, path, event, branch and
+repository conditions of the rule still apply:
+
+```yaml
+head_ci:
+- id: ci-dev
+  actors:
+    any: [vcs_user:github/todpunk, vcs_user:github/junipuff]
+  workflows: ["*"]
+  paths: [.reactorcide/**]
+  events: [pull_request_opened, pull_request_updated]
+  base_branches: [main]
+  head_repository: same
+  use: {ci_source: head, profile: pr-untrusted, workers: default}
+```
+
+The wildcard is not a default. It must be the only workflow of its rule. It
+selects every workflow, also one that does not run for the event. A rule
+that names the workflow wins over a wildcard rule. Only when no named rule
+matches does the coordinator use the wildcard rules.
+
+A push to the default branch and a tag run their own CI. They come from a
+merged pull request or from a person with push access, so the policy has no
+change to refuse. A push to another branch uses the commit before the push
+as its trusted base, and the policy decides its CI changes.
+
 The check summary and the pull request report list each refused file, with
 the workflow that uses it, and each accepted file, with its rule and
 approval.

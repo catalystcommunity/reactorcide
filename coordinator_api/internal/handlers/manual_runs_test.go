@@ -98,15 +98,14 @@ func TestStartManualRun_TagUsesDefaultBranchAsTrustedBase(t *testing.T) {
 	job := st.CreateJobCalls[0]
 	assert.Equal(t, "tag_created", job.JobEnvVars["REACTORCIDE_EVENT_TYPE"])
 	assert.NotContains(t, job.JobEnvVars, "REACTORCIDE_WORKFLOW_REF")
-	// With no stored CI policy the event's own commit is the CI, exactly as
-	// for a webhook tag push (useEventCIWithoutPolicy). With a policy, the
-	// default branch is the trusted base (pushCIBaseRef), which the
-	// synthesized event names.
+	// A tag is trusted content: its own commit is the CI, with or without a
+	// stored CI policy (pushCIBaseRef).
 	assert.Equal(t, "tag-sha", *job.CISourceRef)
 	webhookTag := BuildEvalJob(st.project, &vcs.WebhookEvent{Provider: vcs.GitHub, GenericEvent: vcs.EventTagCreated,
 		Repository: vcs.RepositoryInfo{FullName: "test-org/test-repo", CloneURL: "https://github.com/test-org/test-repo.git", DefaultBranch: "main"},
 		Push:       &vcs.PushInfo{Ref: "refs/tags/v1.2.0", After: "tag-sha"}})
-	assert.Equal(t, "main", webhookTag.JobEnvVars["REACTORCIDE_CI_SOURCE_REF"])
+	assert.Equal(t, "tag-sha", webhookTag.JobEnvVars["REACTORCIDE_CI_SOURCE_REF"])
+	assert.NotContains(t, webhookTag.JobEnvVars, "REACTORCIDE_EVAL_DUAL_CI")
 }
 
 func TestStartManualRun_PullRequestHead(t *testing.T) {

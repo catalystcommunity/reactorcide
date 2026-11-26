@@ -2,6 +2,7 @@ package worker
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	approvalstate "github.com/catalystcommunity/reactorcide/coordinator_api/internal/approvals"
@@ -170,5 +171,59 @@ func TestReleaseOnlyChange_HeadGrantDoesNotCoverOtherWorkflowFile(t *testing.T) 
 	refused := refusedPaths(decisions)
 	if len(refused) != 1 || refused[0].Path != releaseControlJob {
 		t.Fatalf("the release file must stay refused: %+v", decisions)
+	}
+}
+
+// The ci-dev rule with workflows ["*"]: the actor match is enough. A change
+// that only the release workflow uses is accepted with no override-ci, and
+// nothing of the release workflow runs.
+func TestReleaseOnlyChange_WildcardRuleAccepts(t *testing.T) {
+	policy := strings.Replace(firepitPolicy, "workflows: [pr]", `workflows: ["*"]`, 1)
+	parent := prEvalParent(t, []byte(policy))
+	parent.JobEnvVars["REACTORCIDE_ACTOR_SUBJECTS"] = `["vcs_user:github/todpunk"]`
+	parent.JobEnvVars["REACTORCIDE_IS_FORK_PR"] = "false"
+	selected, decisions := selectFirepit(t, parent, nil, releaseControlJob)
+	assertOnlyBasePR(t, selected)
+	if len(decisions) != 1 || decisions[0].Authority == nil || decisions[0].Authority.Rule != "ci-dev" ||
+		decisions[0].Authority.WorkflowID != "release" {
+		t.Fatalf("rule ci-dev must accept the release file: %+v", decisions)
+	}
+
+	// A change to the pr workflow and the release workflow: pr runs head CI
+	// and both files are accepted.
+	selected, decisions = selectFirepit(t, parent, nil, ".reactorcide/workflows/pr.yaml", releaseControlJob)
+	if len(selected) != 1 || selected[0].CIOrigin != "head" {
+		t.Fatalf("the pr workflow must run head CI: %+v", selected)
+	}
+	if refused := refusedPaths(decisions); len(refused) != 0 {
+		t.Fatalf("no file may be refused: %+v", refused)
+	}
+
+	// Another actor still needs override-ci.
+	parent.JobEnvVars["REACTORCIDE_ACTOR_SUBJECTS"] = `["vcs_user:github/someone"]`
+	_, decisions = selectFirepit(t, parent, nil, releaseControlJob)
+	if refused := refusedPaths(decisions); len(refused) != 1 {
+		t.Fatalf("the rule must not accept another actor: %+v", decisions)
+	}
+}
+
+// With no head candidates, an evaluation whose trusted CI is the event's own
+// revision (a push to the default branch, a tag) refuses nothing. Another
+// revision refuses each changed file, unless override-ci accepts it.
+func TestNoCandidatePathDecisions(t *testing.T) {
+	head := "pushed-sha"
+	parent := &models.Job{SourceRef: &head, CISHA: head, JobEnvVars: models.JSONB{}}
+	if decisions := noCandidatePathDecisions(parent, []string{releaseControlJob}); len(decisions) != 0 {
+		t.Fatalf("the event's own CI ran; nothing may be refused: %+v", decisions)
+	}
+	parent.CISHA = "before-sha"
+	decisions := noCandidatePathDecisions(parent, []string{releaseControlJob})
+	if len(decisions) != 1 || decisions[0].Authority != nil {
+		t.Fatalf("trusted base CI ran; the change must be refused: %+v", decisions)
+	}
+	withRunAuthority(t, parent, approvalstate.RunAuthority{Override: &approvalstate.RunOverride{ApprovalID: "o-1", Person: "github/todpunk", Profile: "pr-untrusted"}})
+	decisions = noCandidatePathDecisions(parent, []string{releaseControlJob})
+	if len(decisions) != 1 || decisions[0].Authority == nil || decisions[0].Authority.ApprovalID != "o-1" {
+		t.Fatalf("override-ci must accept the change: %+v", decisions)
 	}
 }
