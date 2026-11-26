@@ -181,10 +181,10 @@ func TestHelmChartPrometheusRule(t *testing.T) {
 	}
 }
 
-// TestHelmChartCorndogs080 checks the vendored Corndogs chart: server 0.8.0,
+// TestHelmChartCorndogs081 checks the vendored Corndogs chart: server 0.8.1,
 // resilience policies in compatibility mode, and the readiness probe on the
 // ops port (8080), not on the CSIL-RPC port.
-func TestHelmChartCorndogs080(t *testing.T) {
+func TestHelmChartCorndogs081(t *testing.T) {
 	if _, err := exec.LookPath("helm"); err != nil {
 		t.Skip("helm not installed; skipping chart-render regression test")
 	}
@@ -194,8 +194,8 @@ func TestHelmChartCorndogs080(t *testing.T) {
 	}
 	render := string(out)
 	for _, want := range []string{
-		"corndogs:0.8.0",
-		"helm.sh/chart: corndogs-0.6.0",
+		"corndogs:0.8.1",
+		"helm.sh/chart: corndogs-0.6.1",
 		"name: CORNDOGS_SUBMISSION_KEY_POLICY\n              value: \"compatibility\"",
 		"name: CORNDOGS_TASK_GUARD_POLICY\n              value: \"compatibility\"",
 		"containerPort: 8080",
