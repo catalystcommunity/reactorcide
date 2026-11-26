@@ -201,12 +201,10 @@ func retryJob(ctx context.Context, st store.Store, corndogsClient corndogs.Clien
 			newJob.Status = "failed"
 			newJob.LastError = fmt.Sprintf("failed to submit to Corndogs: %v", err)
 			newJob.SetFailure(models.FailureClassPlatform, "queue submission")
-		} else {
-			taskID := task.Uuid
-			newJob.CorndogsTaskID = &taskID
-			newJob.Status = task.CurrentState
-		}
-		if err := st.UpdateJob(ctx, newJob); err != nil {
+			if err := st.UpdateJob(ctx, newJob); err != nil {
+				return newJob, fmt.Errorf("failed to record queue submission failure of retried job: %w", err)
+			}
+		} else if err := worker.RecordQueueSubmission(ctx, st, newJob, task.Uuid, task.CurrentState); err != nil {
 			return newJob, fmt.Errorf("failed to update retried job after Corndogs submission: %w", err)
 		}
 	}

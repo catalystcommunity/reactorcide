@@ -1733,13 +1733,10 @@ func (tp *TriggerProcessor) createAndSubmitJob(ctx context.Context, spec trigger
 		job.Status = "failed"
 		job.LastError = fmt.Sprintf("failed to submit to Corndogs: %v", err)
 		job.SetFailure(models.FailureClassPlatform, "queue submission")
-	} else {
-		taskID := task.Uuid
-		job.CorndogsTaskID = &taskID
-		job.Status = task.CurrentState
-	}
-
-	if err := tp.store.UpdateJob(ctx, job); err != nil {
+		if err := tp.store.UpdateJob(ctx, job); err != nil {
+			logging.Log.WithError(err).WithField("job_id", job.JobID).Error("Failed to record queue submission failure of triggered job")
+		}
+	} else if err := RecordQueueSubmission(ctx, tp.store, job, task.Uuid, task.CurrentState); err != nil {
 		logging.Log.WithError(err).WithField("job_id", job.JobID).Error("Failed to update triggered job after Corndogs submission")
 	}
 

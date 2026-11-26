@@ -46,6 +46,8 @@ func (s *WorkerService) ReportResult(ctx context.Context, req csilapi.ReportResu
 
 	if !leaseOwnsJob(lease, job) {
 		if lease.IsActive() {
+			logging.Log.WithFields(map[string]any{"lease_id": lease.LeaseID, "job_id": job.JobID,
+				"job_status": job.Status, "worker_id": wkr.WorkerID}).Warn("Discarding result of a lease that no longer owns its job")
 			if err := s.deps.Store.ReleaseWorkerLease(ctx, lease.LeaseID, "superseded"); err != nil {
 				return csilapi.ReportResultResponse{}, errUnavailable()
 			}
