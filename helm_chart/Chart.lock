@@ -1,6 +1,6 @@
 dependencies:
 - name: corndogs
   repository: file://charts/corndogs
-  version: 0.6.0
-digest: sha256:600077a70ab680b0d9e215ecffe06f33fb828f769c3d49671c084a8cdd4f6c60
-generated: "2026-11-17T00:00:17.127199083-07:00"
+  version: 0.6.1
+digest: sha256:ab50e9866390ca54f6204e3ad2f49090b0e4923f475dee2a2d4cbef6c8c60399
+generated: "2026-11-25T21:42:31.697143687-07:00"

@@ -3,7 +3,7 @@ module github.com/catalystcommunity/reactorcide/coordinator_api
 go 1.26.4
 
 require (
-	github.com/CatalystCommunity/corndogs/clients/corndogs v0.0.0-20260930033320-f1b6ec6086dd
+	github.com/CatalystCommunity/corndogs/clients/corndogs v0.0.0-20261125195221-b927975cda52
 	github.com/Code-Hex/vz/v3 v3.7.1
 	github.com/Microsoft/go-winio v0.6.2
 	github.com/aws/aws-sdk-go-v2 v1.41.1
