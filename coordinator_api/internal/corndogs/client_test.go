@@ -31,6 +31,14 @@ func (f *fakeTransport) Call(_ context.Context, service, op string, req []byte) 
 	return f.respond(service, op, req)
 }
 
+// CallReply is Call with the success variant that the server names: the
+// operation name followed by "Response".
+func (f *fakeTransport) CallReply(ctx context.Context, service, op string, req []byte) (csil.WireReply, error) {
+	payload, err := f.Call(ctx, service, op, req)
+	variant := op + "Response"
+	return csil.WireReply{Variant: &variant, Payload: payload}, err
+}
+
 func newTestClient(t *testing.T, transport *fakeTransport, queueName string) *Client {
 	t.Helper()
 	return &Client{
@@ -66,7 +74,7 @@ func TestSubmitTaskToQueue_SendsGivenQueueNotConfigDefault(t *testing.T) {
 			}
 			return csil.EncodeSubmitTaskResponse(csil.SubmitTaskResponse{
 				Task: &csil.Task{Uuid: "task-1", Queue: decoded.Queue, CurrentState: "submitted"},
-			}), nil
+			})
 		},
 	}
 
@@ -98,7 +106,7 @@ func TestSubmitTask_UsesConfiguredQueue(t *testing.T) {
 			}
 			return csil.EncodeSubmitTaskResponse(csil.SubmitTaskResponse{
 				Task: &csil.Task{Uuid: "task-1", Queue: decoded.Queue, CurrentState: "submitted"},
-			}), nil
+			})
 		},
 	}
 
@@ -147,7 +155,7 @@ func TestGetNextTaskGroup_PassesAllQueuesAndReturnsTask(t *testing.T) {
 					Task:    csil.Task{Uuid: "task-1", Queue: decoded.Queues[1], CurrentState: "submitted-working", Priority: 7},
 					Payload: []byte(`{"job_id":"job-1"}`),
 				},
-			}), nil
+			})
 		},
 	}
 
@@ -177,7 +185,7 @@ func TestGetNextTaskGroup_ReturnsNilOnEmptyGroup(t *testing.T) {
 		respond: func(service, op string, req []byte) ([]byte, error) {
 			// The server returns a response with no delivery (not an error) when no
 			// task is available anywhere in the group.
-			return csil.EncodeGetNextTaskGroupResponse(csil.GetNextTaskGroupResponse{Delivery: nil}), nil
+			return csil.EncodeGetNextTaskGroupResponse(csil.GetNextTaskGroupResponse{Delivery: nil})
 		},
 	}
 
@@ -203,7 +211,7 @@ func TestGetNextTask_ReadsTaskAndPayloadFromDelivery(t *testing.T) {
 					Task:    csil.Task{Uuid: "task-2", Queue: "reactorcide-jobs", CurrentState: "submitted-working"},
 					Payload: []byte(`{"job_id":"job-2"}`),
 				},
-			}), nil
+			})
 		},
 	}
 	c := newTestClient(t, transport, "reactorcide-jobs")
@@ -224,7 +232,7 @@ func TestGetNextTask_ReadsTaskAndPayloadFromDelivery(t *testing.T) {
 func TestGetNextTask_ReturnsNilWithoutDelivery(t *testing.T) {
 	transport := &fakeTransport{
 		respond: func(service, op string, req []byte) ([]byte, error) {
-			return csil.EncodeGetNextTaskResponse(csil.GetNextTaskResponse{}), nil
+			return csil.EncodeGetNextTaskResponse(csil.GetNextTaskResponse{})
 		},
 	}
 	c := newTestClient(t, transport, "reactorcide-jobs")
@@ -253,7 +261,7 @@ func updateResponder(t *testing.T, got *csil.UpdateTaskRequest) *fakeTransport {
 			*got = decodeUpdate(t, req)
 			return csil.EncodeUpdateTaskResponse(csil.UpdateTaskResponse{
 				Task: &csil.Task{Uuid: got.Uuid, Queue: got.Queue, CurrentState: got.NewState},
-			}), nil
+			})
 		},
 	}
 }

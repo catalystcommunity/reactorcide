@@ -61,10 +61,15 @@ The Helm chart changes the coordinator, the web app, and the worker
 Deployments in one `helm upgrade`. Kubernetes rolls them at the same time.
 This is permitted: the workers try again until the coordinator is ready.
 
-### 2.1 Corndogs 0.8.0
+### 2.1 Corndogs 0.8.1
 
-The Helm chart includes the Corndogs chart 0.6.0 (server 0.8.0). The compose
-files use the image `corndogs:0.8.0`.
+The Helm chart includes the Corndogs chart 0.6.1 (server 0.8.1). The compose
+files use the image `corndogs:0.8.1`.
+
+Corndogs 0.8.1 sends a service error as a `ServiceError` reply variant. A
+coordinator before 0.13.2 cannot read this reply. Upgrade Corndogs and the
+coordinator together. The Helm chart and the compose files do this in one
+step.
 
 The resilience policies stay at `compatibility`
 (`resilience.submissionKeyPolicy` and `resilience.taskGuardPolicy` of the
