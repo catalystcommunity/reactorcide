@@ -448,7 +448,8 @@ func runLocalAction(ctx *cli.Context) error {
 
 	fmt.Printf("Job: %s\n", spec.Name)
 	fmt.Printf("Image: %s\n", spec.Image)
-	fmt.Printf("Command: %s\n", spec.Command)
+	// A job script can be hundreds of lines; --dry-run shows all of it.
+	fmt.Printf("Command: %s\n", worker.LogCommand([]string{spec.Command}))
 
 	// Resolve the application source and trusted CI roots. Both default to the
 	// current repository, but they remain independent so a caller can test one

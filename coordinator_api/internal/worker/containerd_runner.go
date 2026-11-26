@@ -274,7 +274,7 @@ func (cr *ContainerdRunner) SpawnJob(ctx context.Context, config *JobConfig) (st
 	logger.WithFields(map[string]interface{}{
 		"container_id": containerID,
 		"image":        config.Image,
-		"command":      config.Command,
+		"command":      LogCommand(config.Command),
 	}).Info("Creating nerdctl container")
 
 	// Create pipes returned to the caller; both job and sidecar output flow

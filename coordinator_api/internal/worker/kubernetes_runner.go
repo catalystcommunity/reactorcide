@@ -794,7 +794,7 @@ func (kr *KubernetesRunner) SpawnJob(ctx context.Context, config *JobConfig) (st
 		"job_name":  jobName,
 		"namespace": kr.namespace,
 		"image":     config.Image,
-		"command":   config.Command,
+		"command":   LogCommand(config.Command),
 	}).Info("Creating Kubernetes Job")
 
 	createdJob, err := kr.clientset.BatchV1().Jobs(kr.namespace).Create(ctx, job, metav1.CreateOptions{})
