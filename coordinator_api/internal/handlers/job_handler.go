@@ -509,17 +509,16 @@ func (h *JobHandler) CreateJob(w http.ResponseWriter, r *http.Request) {
 			metrics.RecordJobFinished(job.Status, models.FailureClassPlatform, job.QueueName)
 			// Record failed submission metric
 			metrics.RecordCornDogsTaskSubmission(job.QueueName, false)
+			if err := h.store.UpdateJob(r.Context(), job); err != nil {
+				log.Printf("ERROR: Failed to record queue submission failure - job_id=%s error=%v", job.JobID, err)
+			}
 		} else {
 			// Record successful submission metric
 			metrics.RecordCornDogsTaskSubmission(job.QueueName, true)
-			taskID := task.Uuid
-			job.CorndogsTaskID = &taskID
-			job.Status = task.CurrentState
-		}
-
-		// Update job with Corndogs task ID and status
-		if err := h.store.UpdateJob(r.Context(), job); err != nil {
-			// Log error but continue - job was created
+			// A worker can claim the task before this write; do not overwrite it.
+			if err := worker.RecordQueueSubmission(r.Context(), h.store, job, task.Uuid, task.CurrentState); err != nil {
+				log.Printf("ERROR: Failed to update job after Corndogs submission - job_id=%s error=%v", job.JobID, err)
+			}
 		}
 	}
 

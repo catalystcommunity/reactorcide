@@ -869,10 +869,7 @@ func (tp *TriggerProcessor) submitWorkflowNode(ctx context.Context, wf *models.W
 			}
 			return "", &workflowSubmissionError{cause: fmt.Errorf("failed to submit to Corndogs: %w", err)}
 		}
-		taskID := task.Uuid
-		job.CorndogsTaskID = &taskID
-		job.Status = task.CurrentState
-		if err := tp.store.UpdateJob(ctx, job); err != nil {
+		if err := RecordQueueSubmission(ctx, tp.store, job, task.Uuid, task.CurrentState); err != nil {
 			return "", err
 		}
 	}

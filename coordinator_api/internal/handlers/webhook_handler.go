@@ -25,6 +25,7 @@ import (
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/store/models"
 	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/vcs"
+	"github.com/catalystcommunity/reactorcide/coordinator_api/internal/worker"
 	"github.com/sirupsen/logrus"
 )
 
@@ -1347,15 +1348,17 @@ func (h *WebhookHandler) submitJobToCorndogs(job *models.Job) {
 		job.SetFailure(models.FailureClassPlatform, "queue submission")
 		metrics.RecordJobFinished(job.Status, models.FailureClassPlatform, job.QueueName)
 		metrics.RecordCornDogsTaskSubmission(job.QueueName, false)
-	} else {
-		metrics.RecordCornDogsTaskSubmission(job.QueueName, true)
-		taskID := task.Uuid
-		job.CorndogsTaskID = &taskID
-		job.Status = task.CurrentState
+		if err := h.store.UpdateJob(context.Background(), job); err != nil {
+			h.logger.WithFields(logrus.Fields{
+				"job_id": job.JobID,
+				"error":  err.Error(),
+			}).Error("Failed to record queue submission failure")
+		}
+		return
 	}
-
-	// Update job with Corndogs task ID and status
-	if err := h.store.UpdateJob(context.Background(), job); err != nil {
+	metrics.RecordCornDogsTaskSubmission(job.QueueName, true)
+	// A worker can claim the task before this write; do not overwrite it.
+	if err := worker.RecordQueueSubmission(context.Background(), h.store, job, task.Uuid, task.CurrentState); err != nil {
 		h.logger.WithFields(logrus.Fields{
 			"job_id": job.JobID,
 			"error":  err.Error(),
